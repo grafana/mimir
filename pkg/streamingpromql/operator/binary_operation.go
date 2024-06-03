@@ -19,6 +19,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 // BinaryOperation represents a binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
@@ -26,6 +28,7 @@ type BinaryOperation struct {
 	Left  InstantVectorOperator
 	Right InstantVectorOperator
 	Op    parser.ItemType
+	Pool  *pooling.LimitingPool
 
 	VectorMatching parser.VectorMatching
 
@@ -33,8 +36,8 @@ type BinaryOperation struct {
 	// multiple points match on a single side.
 	// Note that we don't retain the output series metadata: if we need to return an error message, we can compute
 	// the output series labels from these again.
-	leftMetadata  []SeriesMetadata
-	rightMetadata []SeriesMetadata
+	leftMetadata  []types.SeriesMetadata
+	rightMetadata []types.SeriesMetadata
 
 	remainingSeries []*binaryOperationOutputSeries
 	leftBuffer      *binaryOperationSeriesBuffer
@@ -63,7 +66,7 @@ func (s binaryOperationOutputSeries) latestRightSeries() int {
 	return s.rightSeriesIndices[len(s.rightSeriesIndices)-1]
 }
 
-func NewBinaryOperation(left InstantVectorOperator, right InstantVectorOperator, vectorMatching parser.VectorMatching, op parser.ItemType) (*BinaryOperation, error) {
+func NewBinaryOperation(left InstantVectorOperator, right InstantVectorOperator, vectorMatching parser.VectorMatching, op parser.ItemType, pool *pooling.LimitingPool) (*BinaryOperation, error) {
 	opFunc := arithmeticOperationFuncs[op]
 	if opFunc == nil {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
@@ -74,6 +77,7 @@ func NewBinaryOperation(left InstantVectorOperator, right InstantVectorOperator,
 		Right:          right,
 		VectorMatching: vectorMatching,
 		Op:             op,
+		Pool:           pool,
 
 		opFunc: opFunc,
 	}, nil
@@ -94,19 +98,23 @@ func NewBinaryOperation(left InstantVectorOperator, right InstantVectorOperator,
 // (The alternative would be to compute the entire result here in SeriesMetadata and only return the series that
 // contain points, but that would mean we'd need to hold the entire result in memory at once, which we want to
 // avoid.)
-func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
+func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	if canProduceAnySeries, err := b.loadSeriesMetadata(ctx); err != nil {
 		return nil, err
 	} else if !canProduceAnySeries {
 		return nil, nil
 	}
 
-	allMetadata, allSeries, leftSeriesUsed, rightSeriesUsed := b.computeOutputSeries()
+	allMetadata, allSeries, leftSeriesUsed, rightSeriesUsed, err := b.computeOutputSeries()
+	if err != nil {
+		return nil, err
+	}
+
 	b.sortSeries(allMetadata, allSeries)
 	b.remainingSeries = allSeries
 
-	b.leftBuffer = newBinaryOperationSeriesBuffer(b.Left, leftSeriesUsed)
-	b.rightBuffer = newBinaryOperationSeriesBuffer(b.Right, rightSeriesUsed)
+	b.leftBuffer = newBinaryOperationSeriesBuffer(b.Left, leftSeriesUsed, b.Pool)
+	b.rightBuffer = newBinaryOperationSeriesBuffer(b.Right, rightSeriesUsed, b.Pool)
 
 	return allMetadata, nil
 }
@@ -152,7 +160,7 @@ func (b *BinaryOperation) loadSeriesMetadata(ctx context.Context) (bool, error) 
 // - a corresponding list of the source series for each output series
 // - a list indicating which series from the left side are needed to compute the output
 // - a list indicating which series from the right side are needed to compute the output
-func (b *BinaryOperation) computeOutputSeries() ([]SeriesMetadata, []*binaryOperationOutputSeries, []bool, []bool) {
+func (b *BinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*binaryOperationOutputSeries, []bool, []bool, error) {
 	labelsFunc := b.labelsFunc()
 	outputSeriesMap := map[string]*binaryOperationOutputSeries{}
 
@@ -189,14 +197,25 @@ func (b *BinaryOperation) computeOutputSeries() ([]SeriesMetadata, []*binaryOper
 		}
 	}
 
-	allMetadata := make([]SeriesMetadata, 0, len(outputSeriesMap))
+	allMetadata := make([]types.SeriesMetadata, 0, len(outputSeriesMap))
 	allSeries := make([]*binaryOperationOutputSeries, 0, len(outputSeriesMap))
-	leftSeriesUsed := GetBoolSlice(len(b.leftMetadata))[:len(b.leftMetadata)]
-	rightSeriesUsed := GetBoolSlice(len(b.rightMetadata))[:len(b.rightMetadata)]
+
+	leftSeriesUsed, err := b.Pool.GetBoolSlice(len(b.leftMetadata))
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	rightSeriesUsed, err := b.Pool.GetBoolSlice(len(b.rightMetadata))
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	leftSeriesUsed = leftSeriesUsed[:len(b.leftMetadata)]
+	rightSeriesUsed = rightSeriesUsed[:len(b.rightMetadata)]
 
 	for _, outputSeries := range outputSeriesMap {
 		firstSeriesLabels := b.leftMetadata[outputSeries.leftSeriesIndices[0]].Labels
-		allMetadata = append(allMetadata, SeriesMetadata{Labels: labelsFunc(firstSeriesLabels)})
+		allMetadata = append(allMetadata, types.SeriesMetadata{Labels: labelsFunc(firstSeriesLabels)})
 		allSeries = append(allSeries, outputSeries)
 
 		for _, leftSeriesIndex := range outputSeries.leftSeriesIndices {
@@ -208,7 +227,7 @@ func (b *BinaryOperation) computeOutputSeries() ([]SeriesMetadata, []*binaryOper
 		}
 	}
 
-	return allMetadata, allSeries, leftSeriesUsed, rightSeriesUsed
+	return allMetadata, allSeries, leftSeriesUsed, rightSeriesUsed, nil
 }
 
 // sortSeries sorts metadata and series in place to try to minimise the number of input series we'll need to buffer in memory.
@@ -218,7 +237,7 @@ func (b *BinaryOperation) computeOutputSeries() ([]SeriesMetadata, []*binaryOper
 //
 // At present, sortSeries uses a very basic heuristic to guess the best way to sort the output series, but we could make
 // this more sophisticated in the future.
-func (b *BinaryOperation) sortSeries(metadata []SeriesMetadata, series []*binaryOperationOutputSeries) {
+func (b *BinaryOperation) sortSeries(metadata []types.SeriesMetadata, series []*binaryOperationOutputSeries) {
 	// For one-to-one matching, we assume that each output series takes one series from each side of the operator.
 	// If this is true, then the best order is the one in which we read from the highest cardinality side in order.
 	// If we do this, then in the worst case, we'll have to buffer the whole of the lower cardinality side.
@@ -241,7 +260,7 @@ func (b *BinaryOperation) sortSeries(metadata []SeriesMetadata, series []*binary
 }
 
 type binaryOperationOutputSorter struct {
-	metadata []SeriesMetadata
+	metadata []types.SeriesMetadata
 	series   []*binaryOperationOutputSeries
 }
 
@@ -249,7 +268,7 @@ type favourLeftSideSorter struct {
 	binaryOperationOutputSorter
 }
 
-func newFavourLeftSideSorter(metadata []SeriesMetadata, series []*binaryOperationOutputSeries) favourLeftSideSorter {
+func newFavourLeftSideSorter(metadata []types.SeriesMetadata, series []*binaryOperationOutputSeries) favourLeftSideSorter {
 	return favourLeftSideSorter{binaryOperationOutputSorter{metadata, series}}
 }
 
@@ -257,7 +276,7 @@ type favourRightSideSorter struct {
 	binaryOperationOutputSorter
 }
 
-func newFavourRightSideSorter(metadata []SeriesMetadata, series []*binaryOperationOutputSeries) favourRightSideSorter {
+func newFavourRightSideSorter(metadata []types.SeriesMetadata, series []*binaryOperationOutputSeries) favourRightSideSorter {
 	return favourRightSideSorter{binaryOperationOutputSorter{metadata, series}}
 }
 
@@ -310,9 +329,9 @@ func (b *BinaryOperation) labelsFunc() func(labels.Labels) labels.Labels {
 	}
 }
 
-func (b *BinaryOperation) NextSeries(ctx context.Context) (InstantVectorSeriesData, error) {
+func (b *BinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if len(b.remainingSeries) == 0 {
-		return InstantVectorSeriesData{}, EOS
+		return types.InstantVectorSeriesData{}, EOS
 	}
 
 	thisSeries := b.remainingSeries[0]
@@ -320,22 +339,22 @@ func (b *BinaryOperation) NextSeries(ctx context.Context) (InstantVectorSeriesDa
 
 	allLeftSeries, err := b.leftBuffer.getSeries(ctx, thisSeries.leftSeriesIndices)
 	if err != nil {
-		return InstantVectorSeriesData{}, err
+		return types.InstantVectorSeriesData{}, err
 	}
 
 	mergedLeftSide, err := b.mergeOneSide(allLeftSeries, thisSeries.leftSeriesIndices, b.leftMetadata, "left")
 	if err != nil {
-		return InstantVectorSeriesData{}, err
+		return types.InstantVectorSeriesData{}, err
 	}
 
 	allRightSeries, err := b.rightBuffer.getSeries(ctx, thisSeries.rightSeriesIndices)
 	if err != nil {
-		return InstantVectorSeriesData{}, err
+		return types.InstantVectorSeriesData{}, err
 	}
 
 	mergedRightSide, err := b.mergeOneSide(allRightSeries, thisSeries.rightSeriesIndices, b.rightMetadata, "right")
 	if err != nil {
-		return InstantVectorSeriesData{}, err
+		return types.InstantVectorSeriesData{}, err
 	}
 
 	return b.computeResult(mergedLeftSide, mergedRightSide), nil
@@ -354,17 +373,17 @@ func (b *BinaryOperation) NextSeries(ctx context.Context) (InstantVectorSeriesDa
 // mergeOneSide is optimised for the case where there is only one source series, or the source series do not overlap, as in the example above.
 //
 // FIXME: for many-to-one / one-to-many matching, we could avoid re-merging each time for the side used multiple times
-func (b *BinaryOperation) mergeOneSide(data []InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []SeriesMetadata, side string) (InstantVectorSeriesData, error) {
+func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []types.SeriesMetadata, side string) (types.InstantVectorSeriesData, error) {
 	if len(data) == 1 {
 		// Fast path: if there's only one series on this side, there's no merging required.
 		return data[0], nil
 	}
 
 	if len(data) == 0 {
-		return InstantVectorSeriesData{}, nil
+		return types.InstantVectorSeriesData{}, nil
 	}
 
-	slices.SortFunc(data, func(a, b InstantVectorSeriesData) int {
+	slices.SortFunc(data, func(a, b types.InstantVectorSeriesData) int {
 		return int(a.Floats[0].T - b.Floats[0].T)
 	})
 
@@ -375,7 +394,7 @@ func (b *BinaryOperation) mergeOneSide(data []InstantVectorSeriesData, sourceSer
 	// We'll return the other slices in the for loop below.
 	// We must defer here, rather than at the end, as the merge loop below reslices Floats.
 	// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
-	defer PutFPointSlice(data[0].Floats)
+	defer b.Pool.PutFPointSlice(data[0].Floats)
 
 	for i := 0; i < len(data)-1; i++ {
 		first := data[i]
@@ -385,7 +404,7 @@ func (b *BinaryOperation) mergeOneSide(data []InstantVectorSeriesData, sourceSer
 		// We're going to create a new slice, so return this one to the pool.
 		// We must defer here, rather than at the end, as the merge loop below reslices Floats.
 		// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
-		defer PutFPointSlice(second.Floats)
+		defer b.Pool.PutFPointSlice(second.Floats)
 
 		// Check if first overlaps with second.
 		// InstantVectorSeriesData.Floats is required to be sorted in timestamp order, so if the last point
@@ -395,7 +414,10 @@ func (b *BinaryOperation) mergeOneSide(data []InstantVectorSeriesData, sourceSer
 		}
 	}
 
-	output := GetFPointSlice(mergedSize)
+	output, err := b.Pool.GetFPointSlice(mergedSize)
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
 
 	if !haveOverlaps {
 		// Fast path: no overlaps, so we can just concatenate the slices together, and there's no
@@ -404,7 +426,7 @@ func (b *BinaryOperation) mergeOneSide(data []InstantVectorSeriesData, sourceSer
 			output = append(output, d.Floats...)
 		}
 
-		return InstantVectorSeriesData{Floats: output}, nil
+		return types.InstantVectorSeriesData{Floats: output}, nil
 	}
 
 	// Slow path: there are overlaps, so we need to merge slices together and check for conflicts as we go.
@@ -417,7 +439,7 @@ func (b *BinaryOperation) mergeOneSide(data []InstantVectorSeriesData, sourceSer
 			for _, d := range data {
 				if len(d.Floats) > 0 {
 					output = append(output, d.Floats...)
-					return InstantVectorSeriesData{Floats: output}, nil
+					return types.InstantVectorSeriesData{Floats: output}, nil
 				}
 			}
 		}
@@ -437,7 +459,7 @@ func (b *BinaryOperation) mergeOneSide(data []InstantVectorSeriesData, sourceSer
 				secondConflictingSeriesLabels := sourceSeriesMetadata[sourceSeriesIndices[seriesIndexInData]].Labels
 				groupLabels := b.labelsFunc()(firstConflictingSeriesLabels)
 
-				return InstantVectorSeriesData{}, fmt.Errorf("found duplicate series for the match group %s on the %s side of the operation at timestamp %s: %s and %s", groupLabels, side, timestamp.Time(nextT).Format(time.RFC3339Nano), firstConflictingSeriesLabels, secondConflictingSeriesLabels)
+				return types.InstantVectorSeriesData{}, fmt.Errorf("found duplicate series for the match group %s on the %s side of the operation at timestamp %s: %s and %s", groupLabels, side, timestamp.Time(nextT).Format(time.RFC3339Nano), firstConflictingSeriesLabels, secondConflictingSeriesLabels)
 			}
 
 			if d.Floats[0].T < nextT {
@@ -455,7 +477,7 @@ func (b *BinaryOperation) mergeOneSide(data []InstantVectorSeriesData, sourceSer
 	}
 }
 
-func (b *BinaryOperation) computeResult(left InstantVectorSeriesData, right InstantVectorSeriesData) InstantVectorSeriesData {
+func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, right types.InstantVectorSeriesData) types.InstantVectorSeriesData {
 	var output []promql.FPoint
 
 	// For one-to-one matching for arithmetic operators, reuse one of the input slices to avoid allocating another slice.
@@ -464,10 +486,10 @@ func (b *BinaryOperation) computeResult(left InstantVectorSeriesData, right Inst
 	// FIXME: this is not safe to do for one-to-many, many-to-one or many-to-many matching, as we may need the input series for later output series.
 	if len(left.Floats) < len(right.Floats) {
 		output = left.Floats[:0]
-		defer PutFPointSlice(right.Floats)
+		defer b.Pool.PutFPointSlice(right.Floats)
 	} else {
 		output = right.Floats[:0]
-		defer PutFPointSlice(left.Floats)
+		defer b.Pool.PutFPointSlice(left.Floats)
 	}
 
 	nextRightIndex := 0
@@ -491,7 +513,7 @@ func (b *BinaryOperation) computeResult(left InstantVectorSeriesData, right Inst
 		}
 	}
 
-	return InstantVectorSeriesData{
+	return types.InstantVectorSeriesData{
 		Floats: output,
 	}
 }
@@ -501,11 +523,11 @@ func (b *BinaryOperation) Close() {
 	b.Right.Close()
 
 	if b.leftMetadata != nil {
-		PutSeriesMetadataSlice(b.leftMetadata)
+		pooling.PutSeriesMetadataSlice(b.leftMetadata)
 	}
 
 	if b.rightMetadata != nil {
-		PutSeriesMetadataSlice(b.rightMetadata)
+		pooling.PutSeriesMetadataSlice(b.rightMetadata)
 	}
 
 	if b.leftBuffer != nil {
@@ -531,27 +553,30 @@ type binaryOperationSeriesBuffer struct {
 	// FIXME: could use a bitmap here to save some memory
 	seriesUsed []bool
 
+	pool *pooling.LimitingPool
+
 	// Stores series read but required for later series.
-	buffer map[int]InstantVectorSeriesData
+	buffer map[int]types.InstantVectorSeriesData
 
 	// Reused to avoid allocating on every call to getSeries.
-	output []InstantVectorSeriesData
+	output []types.InstantVectorSeriesData
 }
 
-func newBinaryOperationSeriesBuffer(source InstantVectorOperator, seriesUsed []bool) *binaryOperationSeriesBuffer {
+func newBinaryOperationSeriesBuffer(source InstantVectorOperator, seriesUsed []bool, pool *pooling.LimitingPool) *binaryOperationSeriesBuffer {
 	return &binaryOperationSeriesBuffer{
 		source:     source,
 		seriesUsed: seriesUsed,
-		buffer:     map[int]InstantVectorSeriesData{},
+		pool:       pool,
+		buffer:     map[int]types.InstantVectorSeriesData{},
 	}
 }
 
 // getSeries returns the data for the series in seriesIndices.
 // The returned slice is only safe to use until getSeries is called again.
 // seriesIndices should be sorted in ascending order to avoid unnecessary buffering.
-func (b *binaryOperationSeriesBuffer) getSeries(ctx context.Context, seriesIndices []int) ([]InstantVectorSeriesData, error) {
+func (b *binaryOperationSeriesBuffer) getSeries(ctx context.Context, seriesIndices []int) ([]types.InstantVectorSeriesData, error) {
 	if cap(b.output) < len(seriesIndices) {
-		b.output = make([]InstantVectorSeriesData, len(seriesIndices))
+		b.output = make([]types.InstantVectorSeriesData, len(seriesIndices))
 	}
 
 	b.output = b.output[:len(seriesIndices)]
@@ -569,11 +594,11 @@ func (b *binaryOperationSeriesBuffer) getSeries(ctx context.Context, seriesIndic
 	return b.output, nil
 }
 
-func (b *binaryOperationSeriesBuffer) getSingleSeries(ctx context.Context, seriesIndex int) (InstantVectorSeriesData, error) {
+func (b *binaryOperationSeriesBuffer) getSingleSeries(ctx context.Context, seriesIndex int) (types.InstantVectorSeriesData, error) {
 	for seriesIndex > b.nextIndexToRead {
 		d, err := b.source.NextSeries(ctx)
 		if err != nil {
-			return InstantVectorSeriesData{}, err
+			return types.InstantVectorSeriesData{}, err
 		}
 
 		if b.seriesUsed[b.nextIndexToRead] {
@@ -581,7 +606,7 @@ func (b *binaryOperationSeriesBuffer) getSingleSeries(ctx context.Context, serie
 			b.buffer[b.nextIndexToRead] = d
 		} else {
 			// We don't need this series at all, return the slice to the pool now.
-			PutFPointSlice(d.Floats)
+			b.pool.PutFPointSlice(d.Floats)
 		}
 
 		b.nextIndexToRead++
@@ -601,7 +626,7 @@ func (b *binaryOperationSeriesBuffer) getSingleSeries(ctx context.Context, serie
 
 func (b *binaryOperationSeriesBuffer) close() {
 	if b.seriesUsed != nil {
-		PutBoolSlice(b.seriesUsed)
+		b.pool.PutBoolSlice(b.seriesUsed)
 	}
 }
 

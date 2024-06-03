@@ -14,10 +14,14 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type InstantVectorSelector struct {
 	Selector *Selector
+	Pool     *pooling.LimitingPool
 
 	numSteps int
 
@@ -27,14 +31,14 @@ type InstantVectorSelector struct {
 
 var _ InstantVectorOperator = &InstantVectorSelector{}
 
-func (v *InstantVectorSelector) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
+func (v *InstantVectorSelector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	// Compute value we need on every call to NextSeries() once, here.
 	v.numSteps = stepCount(v.Selector.Start, v.Selector.End, v.Selector.Interval)
 
 	return v.Selector.SeriesMetadata(ctx)
 }
 
-func (v *InstantVectorSelector) NextSeries(ctx context.Context) (InstantVectorSeriesData, error) {
+func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if v.memoizedIterator == nil {
 		v.memoizedIterator = storage.NewMemoizedEmptyIterator(v.Selector.LookbackDelta.Milliseconds())
 	}
@@ -42,12 +46,12 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (InstantVectorSe
 	var err error
 	v.chunkIterator, err = v.Selector.Next(ctx, v.chunkIterator)
 	if err != nil {
-		return InstantVectorSeriesData{}, err
+		return types.InstantVectorSeriesData{}, err
 	}
 
 	v.memoizedIterator.Reset(v.chunkIterator)
 
-	data := InstantVectorSeriesData{}
+	data := types.InstantVectorSeriesData{}
 
 	for stepT := v.Selector.Start; stepT <= v.Selector.End; stepT += v.Selector.Interval {
 		var t int64
@@ -64,14 +68,14 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (InstantVectorSe
 		switch valueType {
 		case chunkenc.ValNone:
 			if v.memoizedIterator.Err() != nil {
-				return InstantVectorSeriesData{}, v.memoizedIterator.Err()
+				return types.InstantVectorSeriesData{}, v.memoizedIterator.Err()
 			}
 		case chunkenc.ValFloat:
 			t, f = v.memoizedIterator.At()
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 			t, h = v.memoizedIterator.AtFloatHistogram()
 		default:
-			return InstantVectorSeriesData{}, fmt.Errorf("streaming PromQL engine: unknown value type %s", valueType.String())
+			return types.InstantVectorSeriesData{}, fmt.Errorf("streaming PromQL engine: unknown value type %s", valueType.String())
 		}
 
 		if valueType == chunkenc.ValNone || t > ts {
@@ -93,20 +97,26 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (InstantVectorSe
 			if len(data.Histograms) == 0 {
 				// Only create the slice once we know the series is a histogram or not.
 				// (It is possible to over-allocate in the case where we have both floats and histograms, but that won't be common).
-				data.Histograms = GetHPointSlice(v.numSteps)
+				var err error
+				if data.Histograms, err = v.Pool.GetHPointSlice(v.numSteps); err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
 			}
 			data.Histograms = append(data.Histograms, promql.HPoint{T: stepT, H: h})
 		} else {
 			if len(data.Floats) == 0 {
 				// Only create the slice once we know the series is a histogram or not
-				data.Floats = GetFPointSlice(v.numSteps)
+				var err error
+				if data.Floats, err = v.Pool.GetFPointSlice(v.numSteps); err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
 			}
 			data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: f})
 		}
 	}
 
 	if v.memoizedIterator.Err() != nil {
-		return InstantVectorSeriesData{}, v.memoizedIterator.Err()
+		return types.InstantVectorSeriesData{}, v.memoizedIterator.Err()
 	}
 
 	return data, nil

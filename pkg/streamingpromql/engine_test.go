@@ -20,11 +20,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
 	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts)
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
 	require.NoError(t, err)
 	ctx := context.Background()
 
@@ -84,7 +86,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 
 func TestNewRangeQuery_InvalidQueryTime(t *testing.T) {
 	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts)
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
 	require.NoError(t, err)
 	ctx := context.Background()
 
@@ -98,7 +100,7 @@ func TestNewRangeQuery_InvalidQueryTime(t *testing.T) {
 
 func TestNewRangeQuery_InvalidExpressionTypes(t *testing.T) {
 	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts)
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
 	require.NoError(t, err)
 	ctx := context.Background()
 
@@ -114,7 +116,7 @@ func TestNewRangeQuery_InvalidExpressionTypes(t *testing.T) {
 // Once the streaming engine supports all PromQL features exercised by Prometheus' test cases, we can remove these files and instead call promql.RunBuiltinTests here instead.
 func TestUpstreamTestCases(t *testing.T) {
 	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts)
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
 	require.NoError(t, err)
 
 	testdataFS := os.DirFS("./testdata")
@@ -137,7 +139,7 @@ func TestUpstreamTestCases(t *testing.T) {
 
 func TestOurTestCases(t *testing.T) {
 	opts := NewTestEngineOpts()
-	streamingEngine, err := NewEngine(opts)
+	streamingEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
 	require.NoError(t, err)
 
 	prometheusEngine := promql.NewEngine(opts)
@@ -175,7 +177,7 @@ func TestOurTestCases(t *testing.T) {
 // So instead, we test these few cases here instead.
 func TestRangeVectorSelectors(t *testing.T) {
 	opts := NewTestEngineOpts()
-	streamingEngine, err := NewEngine(opts)
+	streamingEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
 	require.NoError(t, err)
 
 	prometheusEngine := promql.NewEngine(opts)
@@ -288,7 +290,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 
 func TestQueryCancellation(t *testing.T) {
 	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts)
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
 	require.NoError(t, err)
 
 	// Simulate the query being cancelled by another goroutine by waiting for the Select() call to be made,
@@ -316,7 +318,7 @@ func TestQueryCancellation(t *testing.T) {
 func TestQueryTimeout(t *testing.T) {
 	opts := NewTestEngineOpts()
 	opts.Timeout = 20 * time.Millisecond
-	engine, err := NewEngine(opts)
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
 	require.NoError(t, err)
 
 	// Simulate the query doing some work and check that the query context has been cancelled.
@@ -382,7 +384,7 @@ func (w cancellationQuerier) waitForCancellation(ctx context.Context) error {
 
 func TestQueryContextCancelledOnceQueryFinished(t *testing.T) {
 	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts)
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
 	require.NoError(t, err)
 
 	storage := promqltest.LoadedStorage(t, `
@@ -448,4 +450,112 @@ func (q *contextCapturingQuerier) Select(ctx context.Context, sortSeries bool, h
 
 func (q *contextCapturingQuerier) Close() error {
 	return q.inner.Close()
+}
+
+func TestMemoryConsumptionLimit(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			some_metric{idx="1"} 0+1x5
+			some_metric{idx="2"} 0+1x5
+			some_metric{idx="3"} 0+1x5
+			some_metric{idx="4"} 0+1x5
+			some_metric{idx="5"} 0+1x5
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	ctx := context.Background()
+
+	testCases := map[string]struct {
+		expr              string
+		rangeQueryLimit   uint64
+		instantQueryLimit uint64
+		shouldSucceed     bool
+	}{
+		"limit disabled": {
+			expr:              "some_metric",
+			rangeQueryLimit:   0,
+			instantQueryLimit: 0,
+			shouldSucceed:     true,
+		},
+		"limit enabled, but query does not exceed limit": {
+			expr:              "some_metric",
+			rangeQueryLimit:   1000,
+			instantQueryLimit: 1000,
+			shouldSucceed:     true,
+		},
+		"limit enabled, and query exceeds limit": {
+			expr:          "some_metric",
+			shouldSucceed: false,
+
+			// Allow only a single sample.
+			rangeQueryLimit:   pooling.FPointSize,
+			instantQueryLimit: pooling.FPointSize,
+		},
+		"limit enabled, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is under limit": {
+			expr:          "sum(some_metric)",
+			shouldSucceed: true,
+
+			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
+			// At peak we'll hold in memory: the running total for the sum() (a float and a bool at each step, with the number of steps rounded to the nearest power of 2), and the next series from the selector.
+			rangeQueryLimit: 8*(pooling.Float64Size+pooling.BoolSize) + 8*pooling.FPointSize,
+
+			// Each series has one sample, which is already a power of two.
+			// At peak we'll hold in memory: the running total for the sum() (a float and a bool), the next series from the selector, and the output sample.
+			instantQueryLimit: pooling.Float64Size + pooling.BoolSize + pooling.FPointSize + pooling.VectorSampleSize,
+		},
+		"limit enabled, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is over limit": {
+			expr:          "sum(some_metric)",
+			shouldSucceed: false,
+
+			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
+			// At peak we'll hold in memory: the running total for the sum() (a float and a bool at each step, with the number of steps rounded to the nearest power of 2), and the next series from the selector.
+			rangeQueryLimit: 8*(pooling.Float64Size+pooling.BoolSize) + 8*pooling.FPointSize - 1,
+
+			// Each series has one sample, which is already a power of two.
+			// At peak we'll hold in memory: the running total for the sum() (a float and a bool), the next series from the selector, and the output sample.
+			instantQueryLimit: pooling.Float64Size + pooling.BoolSize + pooling.FPointSize + pooling.VectorSampleSize - 1,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Run("range query", func(t *testing.T) {
+				opts := NewTestEngineOpts()
+				engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(testCase.rangeQueryLimit))
+				require.NoError(t, err)
+
+				start := timestamp.Time(0)
+				q, err := engine.NewRangeQuery(ctx, storage, nil, testCase.expr, start, start.Add(4*time.Minute), time.Minute)
+				require.NoError(t, err)
+				defer q.Close()
+
+				res := q.Exec(ctx)
+
+				if testCase.shouldSucceed {
+					require.NoError(t, res.Err)
+				} else {
+					require.ErrorContains(t, res.Err, globalerror.MaxEstimatedMemoryConsumptionPerQuery.Error())
+				}
+			})
+
+			t.Run("instant query", func(t *testing.T) {
+				opts := NewTestEngineOpts()
+				engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(testCase.instantQueryLimit))
+				require.NoError(t, err)
+
+				start := timestamp.Time(0)
+				q, err := engine.NewInstantQuery(ctx, storage, nil, testCase.expr, start)
+				require.NoError(t, err)
+				defer q.Close()
+
+				res := q.Exec(ctx)
+
+				if testCase.shouldSucceed {
+					require.NoError(t, res.Err)
+				} else {
+					require.ErrorContains(t, res.Err, globalerror.MaxEstimatedMemoryConsumptionPerQuery.Error())
+				}
+			})
+		})
+	}
 }
