@@ -56,3 +56,26 @@ eval instant at 5m histogram_count(route)
 	{path="three"} 10
 
 clear
+
+# TODO: Verify if these tests are correct. At the moment they match promql engine.
+# See: https://github.com/prometheus/prometheus/issues/14172
+
+# Test metric with mixed floats and histograms
+load 1m
+	mixed_metric 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:8 count:6 buckets:[1 4 1]}} 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
+
+# This is what we would expect, but it currently fails (disabled)
+# eval range from 0 to 8m step 1m mixed_metric
+#	{__name__="mixed_metric"} 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}} {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
+
+# eval range from 0 to 8m step 1m histogram_count(mixed_metric)
+# {} _ _ _ 4 6 _ _ 10 10
+
+# Instead this is what we get from both engines.
+eval range from 0 to 8m step 1m mixed_metric
+	{__name__="mixed_metric"} 1 2 3 3 3 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}} {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
+
+eval range from 0 to 8m step 1m histogram_count(mixed_metric)
+{} _ _ _ _ _ _ _ 10 10
+
+clear
