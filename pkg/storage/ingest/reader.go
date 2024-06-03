@@ -124,7 +124,7 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 		r.consumedOffsetWatcher.Notify(lastConsumedOffset)
 	}
 
-	r.client, err = r.newKafkaReader()
+	r.client, err = r.newKafkaReader(kgo.NewOffset().At(startOffset))
 	if err != nil {
 		return errors.Wrap(err, "creating kafka reader client")
 	}
@@ -404,11 +404,14 @@ func (r *PartitionReader) recordFetchesMetrics(fetches kgo.Fetches, delayObserve
 	r.metrics.recordsPerFetch.Observe(float64(numRecords))
 }
 
-func (r *PartitionReader) newKafkaReader() (*kgo.Client, error) {
+func (r *PartitionReader) newKafkaReader(at kgo.Offset) (*kgo.Client, error) {
 	const fetchMaxBytes = 100_000_000
 
 	opts := append(
 		commonKafkaClientOptions(r.kafkaCfg, r.metrics.kprom, r.logger),
+		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
+			r.kafkaCfg.Topic: {r.partitionID: at},
+		}),
 		kgo.FetchMinBytes(1),
 		kgo.FetchMaxBytes(fetchMaxBytes),
 		kgo.FetchMaxWait(5*time.Second),
@@ -594,8 +597,8 @@ func (r *PartitionReader) pollFetches(ctx context.Context) (result kgo.Fetches) 
 		})
 	}(time.Now())
 
-	//return r.client.PollFetches(ctx)
-	return r.fetcher.fetch(ctx)
+	return r.client.PollFetches(ctx)
+	//return r.fetcher.fetch(ctx)
 }
 
 type concurrentFetcher struct {
