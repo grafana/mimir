@@ -13,12 +13,16 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 )
 
 // InstantVectorFunction performs a histogram_count over a range vector.
 type InstantVectorFunction struct {
 	Inner InstantVectorOperator
 	Pool  *pooling.LimitingPool
+
+	Args parser.Expressions
+	Func functionCall
 }
 
 var _ InstantVectorOperator = &InstantVectorFunction{}
@@ -43,7 +47,21 @@ func (m *InstantVectorFunction) NextSeries(ctx context.Context) (types.InstantVe
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	floats, err := m.Pool.GetFPointSlice(len(series.Histograms))
+	return m.Func(series, m.Args, m.Pool)
+}
+
+func (m *InstantVectorFunction) Close() {
+	m.Inner.Close()
+}
+
+type functionCall func(seriesData types.InstantVectorSeriesData, args parser.Expressions, pool *pooling.LimitingPool) (types.InstantVectorSeriesData, error)
+
+var InstantVectorFunctionCalls = map[string]functionCall{
+	"histogram_count": histogramCount,
+}
+
+func histogramCount(series types.InstantVectorSeriesData, _ parser.Expressions, pool *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
+	floats, err := pool.GetFPointSlice(len(series.Histograms))
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -58,8 +76,4 @@ func (m *InstantVectorFunction) NextSeries(ctx context.Context) (types.InstantVe
 		})
 	}
 	return data, nil
-}
-
-func (m *InstantVectorFunction) Close() {
-	m.Inner.Close()
 }

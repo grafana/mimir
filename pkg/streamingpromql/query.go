@@ -195,8 +195,32 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (operator.Insta
 }
 
 func (q *Query) handleFunction(e *parser.Call) (operator.InstantVectorOperator, error) {
-	switch e.Func.Name {
-	case "rate":
+	if call, ok := operator.InstantVectorFunctionCalls[e.Func.Name]; ok {
+		// At the moment no instant-vector promql function takes more than one instant-vector
+		// as an argument. We can assume this will always be the Inner operator and therefore
+		// what we use for the SeriesMetadata.
+		// The instant-vector is not always the first argument, such in the case of histogram_quantile etc.
+		// so we loop over the arguments to find the vectors. This could be expanded in the
+		// future if we need to support multiple inner vectors.
+		var inner operator.InstantVectorOperator
+		for i := range e.Args {
+			if e.Args[i].Type() == "vector" {
+				var err error
+				inner, err = q.convertToInstantVectorOperator(e.Args[i])
+				if err != nil {
+					return nil, err
+				}
+				break
+			}
+		}
+
+		return &operator.InstantVectorFunction{
+			Inner: inner,
+			Pool:  q.pool,
+			Func:  call,
+		}, nil
+	} else if e.Func.Name == "rate" {
+		// TODO: lookup function name for RangeVectorFunctionCalls
 		if len(e.Args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly one argument for rate, got %v", len(e.Args))
@@ -211,22 +235,7 @@ func (q *Query) handleFunction(e *parser.Call) (operator.InstantVectorOperator, 
 			Inner: inner,
 			Pool:  q.pool,
 		}, nil
-	case "histogram_count":
-		if len(e.Args) != 1 {
-			// Should be caught by the PromQL parser, but we check here for safety.
-			return nil, fmt.Errorf("expected exactly one argument for histogram_count, got %v", len(e.Args))
-		}
-
-		inner, err := q.convertToInstantVectorOperator(e.Args[0])
-		if err != nil {
-			return nil, err
-		}
-
-		return &operator.InstantVectorFunction{
-			Inner: inner,
-			Pool:  q.pool,
-		}, nil
-	default:
+	} else {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
 	}
 }
