@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors
 
-package operator
+package operators
 
 import (
 	"context"
@@ -25,8 +25,8 @@ import (
 
 // BinaryOperation represents a binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
 type BinaryOperation struct {
-	Left  InstantVectorOperator
-	Right InstantVectorOperator
+	Left  types.InstantVectorOperator
+	Right types.InstantVectorOperator
 	Op    parser.ItemType
 	Pool  *pooling.LimitingPool
 
@@ -45,7 +45,7 @@ type BinaryOperation struct {
 	opFunc          binaryOperationFunc
 }
 
-var _ InstantVectorOperator = &BinaryOperation{}
+var _ types.InstantVectorOperator = &BinaryOperation{}
 
 type binaryOperationOutputSeries struct {
 	leftSeriesIndices  []int
@@ -66,7 +66,7 @@ func (s binaryOperationOutputSeries) latestRightSeries() int {
 	return s.rightSeriesIndices[len(s.rightSeriesIndices)-1]
 }
 
-func NewBinaryOperation(left InstantVectorOperator, right InstantVectorOperator, vectorMatching parser.VectorMatching, op parser.ItemType, pool *pooling.LimitingPool) (*BinaryOperation, error) {
+func NewBinaryOperation(left types.InstantVectorOperator, right types.InstantVectorOperator, vectorMatching parser.VectorMatching, op parser.ItemType, pool *pooling.LimitingPool) (*BinaryOperation, error) {
 	opFunc := arithmeticOperationFuncs[op]
 	if opFunc == nil {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
@@ -331,7 +331,7 @@ func (b *BinaryOperation) labelsFunc() func(labels.Labels) labels.Labels {
 
 func (b *BinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if len(b.remainingSeries) == 0 {
-		return types.InstantVectorSeriesData{}, EOS
+		return types.InstantVectorSeriesData{}, types.EOS
 	}
 
 	thisSeries := b.remainingSeries[0]
@@ -545,7 +545,7 @@ func (b *BinaryOperation) Close() {
 // binary operation are in order B, A, C, binaryOperationSeriesBuffer will buffer the data for series A while series B is
 // produced, then return series A when needed.
 type binaryOperationSeriesBuffer struct {
-	source          InstantVectorOperator
+	source          types.InstantVectorOperator
 	nextIndexToRead int
 
 	// If seriesUsed[i] == true, then the series at index i is needed for this operation and should be buffered if not used immediately.
@@ -562,7 +562,7 @@ type binaryOperationSeriesBuffer struct {
 	output []types.InstantVectorSeriesData
 }
 
-func newBinaryOperationSeriesBuffer(source InstantVectorOperator, seriesUsed []bool, pool *pooling.LimitingPool) *binaryOperationSeriesBuffer {
+func newBinaryOperationSeriesBuffer(source types.InstantVectorOperator, seriesUsed []bool, pool *pooling.LimitingPool) *binaryOperationSeriesBuffer {
 	return &binaryOperationSeriesBuffer{
 		source:     source,
 		seriesUsed: seriesUsed,

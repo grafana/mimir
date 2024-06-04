@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors
 
-package operator
+package operators
 
 import (
 	"context"
@@ -22,7 +22,7 @@ import (
 )
 
 type Aggregation struct {
-	Inner    InstantVectorOperator
+	Inner    types.InstantVectorOperator
 	Start    time.Time
 	End      time.Time
 	Interval time.Duration
@@ -51,7 +51,7 @@ type group struct {
 	present []bool
 }
 
-var _ InstantVectorOperator = &Aggregation{}
+var _ types.InstantVectorOperator = &Aggregation{}
 
 var groupPool = zeropool.New(func() *group {
 	return &group{}
@@ -125,7 +125,7 @@ func (a *Aggregation) labelsForGroup(m labels.Labels, lb *labels.Builder) labels
 func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if len(a.remainingGroups) == 0 {
 		// No more groups left.
-		return types.InstantVectorSeriesData{}, EOS
+		return types.InstantVectorSeriesData{}, types.EOS
 	}
 
 	start := timestamp.FromTime(a.Start)
@@ -142,7 +142,7 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 		s, err := a.Inner.NextSeries(ctx)
 
 		if err != nil {
-			if errors.Is(err, EOS) {
+			if errors.Is(err, types.EOS) {
 				return types.InstantVectorSeriesData{}, fmt.Errorf("exhausted series before all groups were completed: %w", err)
 			}
 
