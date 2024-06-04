@@ -9358,7 +9358,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 		tenantOverride.ExpectedCalls = nil
 		tenantLimits := defaultLimitsTestConfig()
 		tenantLimits.OutOfOrderTimeWindow = oooTW
-		tenantOverride.On("ByUserID", "test").Return(tenantLimits)
+		tenantOverride.On("ByUserID", "test").Return(&tenantLimits)
 		// TSDB config is updated every second.
 		<-time.After(1500 * time.Millisecond)
 	}
