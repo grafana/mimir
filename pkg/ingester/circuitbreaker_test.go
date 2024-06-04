@@ -28,30 +28,30 @@ import (
 
 func TestIsFailure(t *testing.T) {
 	t.Run("no error", func(t *testing.T) {
-		require.False(t, isFailure(nil))
+		require.False(t, isCircuitBreakerFailure(nil))
 	})
 
 	t.Run("context cancelled", func(t *testing.T) {
-		require.False(t, isFailure(context.Canceled))
-		require.False(t, isFailure(fmt.Errorf("%w", context.Canceled)))
+		require.False(t, isCircuitBreakerFailure(context.Canceled))
+		require.False(t, isCircuitBreakerFailure(fmt.Errorf("%w", context.Canceled)))
 	})
 
 	t.Run("gRPC context cancelled", func(t *testing.T) {
 		err := status.Error(codes.Canceled, "cancelled!")
-		require.False(t, isFailure(err))
-		require.False(t, isFailure(fmt.Errorf("%w", err)))
+		require.False(t, isCircuitBreakerFailure(err))
+		require.False(t, isCircuitBreakerFailure(fmt.Errorf("%w", err)))
 	})
 
 	t.Run("gRPC deadline exceeded", func(t *testing.T) {
 		err := status.Error(codes.DeadlineExceeded, "broken!")
-		require.True(t, isFailure(err))
-		require.True(t, isFailure(fmt.Errorf("%w", err)))
+		require.True(t, isCircuitBreakerFailure(err))
+		require.True(t, isCircuitBreakerFailure(fmt.Errorf("%w", err)))
 	})
 
 	t.Run("gRPC unavailable with INSTANCE_LIMIT details", func(t *testing.T) {
 		err := newInstanceLimitReachedError("broken")
-		require.True(t, isFailure(err))
-		require.True(t, isFailure(fmt.Errorf("%w", err)))
+		require.True(t, isCircuitBreakerFailure(err))
+		require.True(t, isCircuitBreakerFailure(fmt.Errorf("%w", err)))
 	})
 
 	t.Run("gRPC unavailable with SERVICE_UNAVAILABLE details is not a failure", func(t *testing.T) {
@@ -59,14 +59,14 @@ func TestIsFailure(t *testing.T) {
 		stat, err := stat.WithDetails(&mimirpb.ErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE})
 		require.NoError(t, err)
 		err = stat.Err()
-		require.False(t, isFailure(err))
-		require.False(t, isFailure(fmt.Errorf("%w", err)))
+		require.False(t, isCircuitBreakerFailure(err))
+		require.False(t, isCircuitBreakerFailure(fmt.Errorf("%w", err)))
 	})
 
 	t.Run("gRPC unavailable without details is not a failure", func(t *testing.T) {
 		err := status.Error(codes.Unavailable, "broken!")
-		require.False(t, isFailure(err))
-		require.False(t, isFailure(fmt.Errorf("%w", err)))
+		require.False(t, isCircuitBreakerFailure(err))
+		require.False(t, isCircuitBreakerFailure(fmt.Errorf("%w", err)))
 	})
 }
 
@@ -77,10 +77,9 @@ func TestCircuitBreaker_IsActive(t *testing.T) {
 
 	registry := prometheus.NewRegistry()
 	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 10 * time.Millisecond}
-	cb = newCircuitBreaker(cfg, false, log.NewNopLogger(), registry)
-	time.AfterFunc(cfg.InitialDelay, func() {
-		cb.setActive()
-	})
+	cb = newCircuitBreaker(cfg, log.NewNopLogger(), registry)
+	cb.activate()
+
 	// When InitialDelay is set, circuit breaker is not immediately active.
 	require.False(t, cb.isActive())
 
@@ -104,18 +103,26 @@ func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
 		expectedMetrics             string
 	}{
 		"if circuit breaker is not active, status false and no error are returned": {
-			initialDelay:                1 * time.Minute,
-			circuitBreakerSetup:         func(cb *circuitBreaker) { cb.cb.Close() },
+			initialDelay: 1 * time.Minute,
+			circuitBreakerSetup: func(cb *circuitBreaker) {
+				cb.active.Store(false)
+			},
 			expectedSuccess:             false,
 			expectedCircuitBreakerError: false,
 		},
 		"if circuit breaker closed, status true and no error are returned": {
-			circuitBreakerSetup:         func(cb *circuitBreaker) { cb.cb.Close() },
+			circuitBreakerSetup: func(cb *circuitBreaker) {
+				cb.activate()
+				cb.cb.Close()
+			},
 			expectedSuccess:             true,
 			expectedCircuitBreakerError: false,
 		},
 		"if circuit breaker open, status false and a circuitBreakerErrorOpen are returned": {
-			circuitBreakerSetup:         func(cb *circuitBreaker) { cb.cb.Open() },
+			circuitBreakerSetup: func(cb *circuitBreaker) {
+				cb.activate()
+				cb.cb.Open()
+			},
 			expectedSuccess:             false,
 			expectedCircuitBreakerError: true,
 			expectedMetrics: `
@@ -137,7 +144,10 @@ func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
 			`,
 		},
 		"if circuit breaker half-open, status false and a circuitBreakerErrorOpen are returned": {
-			circuitBreakerSetup:         func(cb *circuitBreaker) { cb.cb.HalfOpen() },
+			circuitBreakerSetup: func(cb *circuitBreaker) {
+				cb.activate()
+				cb.cb.HalfOpen()
+			},
 			expectedSuccess:             false,
 			expectedCircuitBreakerError: true,
 			expectedMetrics: `
@@ -162,8 +172,8 @@ func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			registry := prometheus.NewRegistry()
-			cfg := CircuitBreakerConfig{Enabled: true, CooldownPeriod: 10 * time.Second, InitialDelay: testCase.initialDelay}
-			cb := newCircuitBreaker(cfg, cfg.InitialDelay == 0, log.NewNopLogger(), registry)
+			cfg := CircuitBreakerConfig{Enabled: true, CooldownPeriod: 10 * time.Second}
+			cb := newCircuitBreaker(cfg, log.NewNopLogger(), registry)
 			testCase.circuitBreakerSetup(cb)
 			status, err := cb.tryAcquirePermit()
 			require.Equal(t, testCase.expectedSuccess, status)
@@ -220,7 +230,8 @@ func TestCircuitBreaker_RecordResult(t *testing.T) {
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			registry := prometheus.NewRegistry()
-			cb := newCircuitBreaker(cfg, true, log.NewNopLogger(), registry)
+			cb := newCircuitBreaker(cfg, log.NewNopLogger(), registry)
+			cb.activate()
 			cb.recordResult(testCase.err)
 			assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(testCase.expectedMetrics), metricNames...))
 		})
@@ -233,13 +244,14 @@ func TestCircuitBreaker_FinishPushRequest(t *testing.T) {
 	}
 	testCases := map[string]struct {
 		pushRequestDuration time.Duration
-		initialDelay        time.Duration
+		isActive            bool
 		err                 error
 		expectedErr         error
 		expectedMetrics     string
 	}{
 		"with a permit acquired, pushRequestDuration lower than PushTimeout and no input error, finishPushRequest gives success": {
 			pushRequestDuration: 1 * time.Second,
+			isActive:            true,
 			err:                 nil,
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
@@ -251,7 +263,7 @@ func TestCircuitBreaker_FinishPushRequest(t *testing.T) {
 		},
 		"with circuit breaker not active, pushRequestDuration lower than PushTimeout and no input error, finishPushRequest does nothing": {
 			pushRequestDuration: 1 * time.Second,
-			initialDelay:        1 * time.Minute,
+			isActive:            false,
 			err:                 nil,
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
@@ -263,6 +275,7 @@ func TestCircuitBreaker_FinishPushRequest(t *testing.T) {
 		},
 		"with circuit breaker active, pushRequestDuration higher than PushTimeout and no input error, finishPushRequest gives context deadline exceeded error": {
 			pushRequestDuration: 3 * time.Second,
+			isActive:            true,
 			err:                 nil,
 			expectedErr:         context.DeadlineExceeded,
 			expectedMetrics: `
@@ -275,7 +288,7 @@ func TestCircuitBreaker_FinishPushRequest(t *testing.T) {
 		},
 		"with circuit breaker not active, pushRequestDuration higher than PushTimeout and no input error, finishPushRequest does nothing": {
 			pushRequestDuration: 3 * time.Second,
-			initialDelay:        1 * time.Minute,
+			isActive:            false,
 			err:                 nil,
 			expectedErr:         nil,
 			expectedMetrics: `
@@ -288,6 +301,7 @@ func TestCircuitBreaker_FinishPushRequest(t *testing.T) {
 		},
 		"with circuit breaker active, pushRequestDuration higher than PushTimeout and an input error different from context deadline exceeded, finishPushRequest gives context deadline exceeded error": {
 			pushRequestDuration: 3 * time.Second,
+			isActive:            true,
 			err:                 newInstanceLimitReachedError("error"),
 			expectedErr:         context.DeadlineExceeded,
 			expectedMetrics: `
@@ -300,7 +314,7 @@ func TestCircuitBreaker_FinishPushRequest(t *testing.T) {
 		},
 		"with circuit breaker not active, pushRequestDuration higher than PushTimeout and an input error different from context deadline exceeded, finishPushRequest does nothing": {
 			pushRequestDuration: 3 * time.Second,
-			initialDelay:        1 * time.Minute,
+			isActive:            false,
 			err:                 newInstanceLimitReachedError("error"),
 			expectedErr:         nil,
 			expectedMetrics: `
@@ -316,11 +330,11 @@ func TestCircuitBreaker_FinishPushRequest(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			registry := prometheus.NewRegistry()
 			cfg := CircuitBreakerConfig{
-				Enabled:      true,
-				InitialDelay: testCase.initialDelay,
-				PushTimeout:  2 * time.Second,
+				Enabled:     true,
+				PushTimeout: 2 * time.Second,
 			}
-			cb := newCircuitBreaker(cfg, cfg.InitialDelay == 0, log.NewNopLogger(), registry)
+			cb := newCircuitBreaker(cfg, log.NewNopLogger(), registry)
+			cb.active.Store(testCase.isActive)
 			err := cb.finishPushRequest(testCase.pushRequestDuration, testCase.err)
 			if testCase.expectedErr == nil {
 				require.NoError(t, err)

@@ -398,10 +398,8 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
 
-	if cfg.CircuitBreakerConfig.Enabled {
-		// We create an inactive circuit breaker, which will be activated on a successful completion of starting.
-		i.circuitBreaker = newCircuitBreaker(cfg.CircuitBreakerConfig, false, logger, registerer)
-	}
+	// We create a circuit breaker, which will be activated on a successful completion of starting.
+	i.circuitBreaker = newCircuitBreaker(cfg.CircuitBreakerConfig, logger, registerer)
 
 	if registerer != nil {
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
@@ -644,13 +642,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		return errors.Wrap(err, "failed to start ingester subservices after ingester ring lifecycler")
 	}
 
-	if i.cfg.CircuitBreakerConfig.InitialDelay == 0 {
-		i.circuitBreaker.setActive()
-	} else {
-		time.AfterFunc(i.cfg.CircuitBreakerConfig.InitialDelay, func() {
-			i.circuitBreaker.setActive()
-		})
-	}
+	i.circuitBreaker.activate()
 	return nil
 }
 
@@ -1054,12 +1046,15 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (context
 
 	instanceLimitsErr := i.checkInstanceLimits(inflight, inflightBytes, rejectEqualInflightBytes)
 	if instanceLimitsErr == nil {
+		// In this case a pull request has been successfully started, and we return
+		// the context enriched with the corresponding pushRequestState object.
 		return ctx, true, nil
 	}
 
 	// In this case a per-instance limit has been hit, and the corresponding error has to be passed
 	// to FinishPushRequest, which finishes the push request, records the error with the circuit breaker,
 	// and gives it a possibly acquired permit back.
+	st.pushErr = instanceLimitsErr
 	i.FinishPushRequest(ctx)
 	return nil, false, instanceLimitsErr
 }

@@ -21,10 +21,10 @@ import (
 )
 
 const (
-	resultSuccess      = "success"
-	resultError        = "error"
-	resultOpen         = "circuit_breaker_open"
-	defaultPushTimeout = 2 * time.Second
+	circuitBreakerResultSuccess      = "success"
+	circuitBreakerResultError        = "error"
+	circuitBreakerResultOpen         = "circuit_breaker_open"
+	circuitBreakerDefaultPushTimeout = 2 * time.Second
 )
 
 type circuitBreakerMetrics struct {
@@ -60,7 +60,7 @@ func newCircuitBreakerMetrics(r prometheus.Registerer, currentStateFn func() cir
 		// We initialize all possible states for the circuitBreakerTransitions metrics
 		cbMetrics.circuitBreakerTransitions.WithLabelValues(s.String())
 	}
-	for _, r := range []string{resultSuccess, resultError, resultOpen} {
+	for _, r := range []string{circuitBreakerResultSuccess, circuitBreakerResultError, circuitBreakerResultOpen} {
 		// We initialize all possible results for the circuitBreakerResults metrics
 		cbMetrics.circuitBreakerResults.WithLabelValues(r)
 	}
@@ -85,10 +85,12 @@ func (cfg *CircuitBreakerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.UintVar(&cfg.FailureExecutionThreshold, prefix+"failure-execution-threshold", 100, "How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures")
 	f.DurationVar(&cfg.ThresholdingPeriod, prefix+"thresholding-period", time.Minute, "Moving window of time that the percentage of failed requests is computed over")
 	f.DurationVar(&cfg.CooldownPeriod, prefix+"cooldown-period", 10*time.Second, "How long the circuit breaker will stay in the open state before allowing some requests")
-	f.DurationVar(&cfg.InitialDelay, prefix+"initial-delay", 0, "How long the circuit breaker should wait to start up after the corresponding ingester started. During that time both failures and successes will not be counted.")
-	f.DurationVar(&cfg.PushTimeout, prefix+"push-timeout", defaultPushTimeout, "How long is execution of ingester's Push supposed to last before it is reported as timeout in a circuit breaker. This configuration is used for circuit breakers only, and timeout expirations are not reported as errors")
+	f.DurationVar(&cfg.InitialDelay, prefix+"initial-delay", 0, "How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.")
+	f.DurationVar(&cfg.PushTimeout, prefix+"push-timeout", circuitBreakerDefaultPushTimeout, "How long is execution of ingester's Push supposed to last before it is reported as timeout in a circuit breaker. This configuration is used for circuit breakers only, and timeout expirations are not reported as errors")
 }
 
+// circuitBreaker abstracts the ingester's server-side circuit breaker functionality.
+// A nil *circuitBreaker is a valid noop implementation.
 type circuitBreaker struct {
 	cfg     CircuitBreakerConfig
 	logger  log.Logger
@@ -100,8 +102,11 @@ type circuitBreaker struct {
 	testRequestDelay time.Duration
 }
 
-func newCircuitBreaker(cfg CircuitBreakerConfig, isActive bool, logger log.Logger, registerer prometheus.Registerer) *circuitBreaker {
-	active := atomic.NewBool(isActive)
+func newCircuitBreaker(cfg CircuitBreakerConfig, logger log.Logger, registerer prometheus.Registerer) *circuitBreaker {
+	if !cfg.Enabled {
+		return nil
+	}
+	active := atomic.NewBool(false)
 	cb := circuitBreaker{
 		cfg:    cfg,
 		logger: logger,
@@ -142,7 +147,7 @@ func newCircuitBreaker(cfg CircuitBreakerConfig, isActive bool, logger log.Logge
 	return &cb
 }
 
-func isFailure(err error) bool {
+func isCircuitBreakerFailure(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -169,17 +174,19 @@ func isFailure(err error) bool {
 }
 
 func (cb *circuitBreaker) isActive() bool {
-	if cb == nil {
-		return false
-	}
-	return cb.active.Load()
+	return cb != nil && cb.active.Load()
 }
 
-func (cb *circuitBreaker) setActive() {
+func (cb *circuitBreaker) activate() {
 	if cb == nil {
 		return
 	}
-	cb.active.Store(true)
+	if cb.cfg.InitialDelay == 0 {
+		cb.active.Store(true)
+	}
+	time.AfterFunc(cb.cfg.InitialDelay, func() {
+		cb.active.Store(true)
+	})
 }
 
 // tryAcquirePermit tries to acquire a permit to use the circuit breaker and returns whether a permit was acquired.
@@ -192,23 +199,10 @@ func (cb *circuitBreaker) tryAcquirePermit() (bool, error) {
 		return false, nil
 	}
 	if !cb.cb.TryAcquirePermit() {
-		cb.metrics.circuitBreakerResults.WithLabelValues(resultOpen).Inc()
+		cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultOpen).Inc()
 		return false, newCircuitBreakerOpenError(cb.cb.RemainingDelay())
 	}
 	return true, nil
-}
-
-func (cb *circuitBreaker) recordResult(err error) {
-	if !cb.isActive() {
-		return
-	}
-	if err != nil && isFailure(err) {
-		cb.cb.RecordFailure()
-		cb.metrics.circuitBreakerResults.WithLabelValues(resultError).Inc()
-	} else {
-		cb.metrics.circuitBreakerResults.WithLabelValues(resultSuccess).Inc()
-		cb.cb.RecordSuccess()
-	}
 }
 
 // finishPushRequest should be called to complete the push request executed upon a
@@ -228,4 +222,17 @@ func (cb *circuitBreaker) finishPushRequest(duration time.Duration, pushErr erro
 	}
 	cb.recordResult(pushErr)
 	return pushErr
+}
+
+func (cb *circuitBreaker) recordResult(err error) {
+	if !cb.isActive() {
+		return
+	}
+	if err != nil && isCircuitBreakerFailure(err) {
+		cb.cb.RecordFailure()
+		cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultError).Inc()
+	} else {
+		cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultSuccess).Inc()
+		cb.cb.RecordSuccess()
+	}
 }
