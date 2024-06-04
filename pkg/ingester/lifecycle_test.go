@@ -61,11 +61,22 @@ func defaultClientTestConfig() client.Config {
 	return clientConfig
 }
 
+// defaultLimitsTestConfig returns validation.Limits with default values.
+// It also sets the PastGracePeriod to testPastGracePeriod (100 years) for convenience, as many tests push samples around unix time 0.
 func defaultLimitsTestConfig() validation.Limits {
 	limits := validation.Limits{}
 	flagext.DefaultValues(&limits)
 	limits.PastGracePeriod = model.Duration(testPastGracePeriod)
 	return limits
+}
+
+// defaultLimitsWithOverrides returns *validation.Limits with default values and applies the provided overrides.
+func defaultLimitsWithOverrides(override ...func(limits *validation.Limits)) *validation.Limits {
+	limits := defaultLimitsTestConfig()
+	for _, o := range override {
+		o(&limits)
+	}
+	return &limits
 }
 
 // TestIngesterRestart tests a restarting ingester doesn't keep adding more tokens.

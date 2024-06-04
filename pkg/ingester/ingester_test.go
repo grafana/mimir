@@ -8462,14 +8462,14 @@ func TestIngesterActiveSeries(t *testing.T) {
 		"bool_is_false_flagbased": `{bool="false"}`,
 	})
 
-	tenantLimits := defaultLimitsTestConfig()
-	tenantLimits.ActiveSeriesCustomTrackersConfig = mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
-		"team_a": `{team="a"}`,
-		"team_b": `{team="b"}`,
-	})
-	tenantLimits.NativeHistogramsIngestionEnabled = true
 	activeSeriesTenantOverride := new(TenantLimitsMock)
-	activeSeriesTenantOverride.On("ByUserID", userID).Return(&tenantLimits)
+	activeSeriesTenantOverride.On("ByUserID", userID).Return(defaultLimitsWithOverrides(func(limits *validation.Limits) {
+		limits.ActiveSeriesCustomTrackersConfig = mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+			"team_a": `{team="a"}`,
+			"team_b": `{team="b"}`,
+		})
+		limits.NativeHistogramsIngestionEnabled = true
+	}))
 	activeSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
 
 	tests := map[string]struct {
@@ -8829,12 +8829,12 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 		"team_b": `{team="b"}`,
 	})
 
-	tenantLimits := defaultLimitsTestConfig()
-	tenantLimits.ActiveSeriesCustomTrackersConfig = activeSeriesTenantConfig
-	tenantLimits.NativeHistogramsIngestionEnabled = true
 	defaultActiveSeriesTenantOverride := new(TenantLimitsMock)
 	defaultActiveSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
-	defaultActiveSeriesTenantOverride.On("ByUserID", userID).Return(&tenantLimits)
+	defaultActiveSeriesTenantOverride.On("ByUserID", userID).Return(defaultLimitsWithOverrides(func(limits *validation.Limits) {
+		limits.ActiveSeriesCustomTrackersConfig = activeSeriesTenantConfig
+		limits.NativeHistogramsIngestionEnabled = true
+	}))
 
 	tests := map[string]struct {
 		test               func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
@@ -8893,12 +8893,12 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Add new runtime configs
-				tenantLimits := defaultLimitsTestConfig()
-				tenantLimits.ActiveSeriesCustomTrackersConfig = activeSeriesTenantConfig
-				tenantLimits.NativeHistogramsIngestionEnabled = true
 				activeSeriesTenantOverride := new(TenantLimitsMock)
 				activeSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
-				activeSeriesTenantOverride.On("ByUserID", userID).Return(&tenantLimits)
+				activeSeriesTenantOverride.On("ByUserID", userID).Return(defaultLimitsWithOverrides(func(limits *validation.Limits) {
+					limits.ActiveSeriesCustomTrackersConfig = activeSeriesTenantConfig
+					limits.NativeHistogramsIngestionEnabled = true
+				}))
 				limits := defaultLimitsTestConfig()
 				limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
 				limits.NativeHistogramsIngestionEnabled = true
@@ -9147,16 +9147,16 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
 				// Change runtime configs
-				tenantLimits := defaultLimitsTestConfig()
-				tenantLimits.ActiveSeriesCustomTrackersConfig = mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
-					"team_a": `{team="a"}`,
-					"team_b": `{team="b"}`,
-					"team_c": `{team="b"}`,
-					"team_d": `{team="b"}`,
-				})
-				tenantLimits.NativeHistogramsIngestionEnabled = true
 				activeSeriesTenantOverride := new(TenantLimitsMock)
-				activeSeriesTenantOverride.On("ByUserID", userID).Return(&tenantLimits)
+				activeSeriesTenantOverride.On("ByUserID", userID).Return(defaultLimitsWithOverrides(func(limits *validation.Limits) {
+					limits.ActiveSeriesCustomTrackersConfig = mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+						"team_a": `{team="a"}`,
+						"team_b": `{team="b"}`,
+						"team_c": `{team="b"}`,
+						"team_d": `{team="b"}`,
+					})
+					limits.NativeHistogramsIngestionEnabled = true
+				}))
 
 				defaultLimits := defaultLimitsTestConfig()
 				defaultLimits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
@@ -9356,9 +9356,9 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 
 	setOOOTimeWindow := func(oooTW model.Duration) {
 		tenantOverride.ExpectedCalls = nil
-		tenantLimits := defaultLimitsTestConfig()
-		tenantLimits.OutOfOrderTimeWindow = oooTW
-		tenantOverride.On("ByUserID", "test").Return(&tenantLimits)
+		tenantOverride.On("ByUserID", "test").Return(defaultLimitsWithOverrides(func(limits *validation.Limits) {
+			limits.OutOfOrderTimeWindow = oooTW
+		}))
 		// TSDB config is updated every second.
 		<-time.After(1500 * time.Millisecond)
 	}
@@ -9497,9 +9497,9 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 
 	// Set the OOO window to 30 minutes
 	limits := map[string]*validation.Limits{
-		userID: {
-			OutOfOrderTimeWindow: model.Duration(30 * time.Minute),
-		},
+		userID: defaultLimitsWithOverrides(func(limits *validation.Limits) {
+			limits.OutOfOrderTimeWindow = model.Duration(30 * time.Minute)
+		}),
 	}
 	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 	require.NoError(t, err)
@@ -9591,7 +9591,11 @@ func Test_Ingester_OutOfOrder_CompactHead_StillActive(t *testing.T) {
 	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
 
 	// Set the OOO window to 10h.
-	limits := map[string]*validation.Limits{userID: {OutOfOrderTimeWindow: model.Duration(10 * time.Hour)}}
+	limits := map[string]*validation.Limits{
+		userID: defaultLimitsWithOverrides(func(limits *validation.Limits) {
+			limits.OutOfOrderTimeWindow = model.Duration(10 * time.Hour)
+		}),
+	}
 	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 	require.NoError(t, err)
 
@@ -9663,11 +9667,11 @@ func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
 			cfg.TSDBConfigUpdatePeriod = 1 * time.Second
 
-			tenantLimits := defaultLimitsTestConfig()
-			tenantLimits.OutOfOrderTimeWindow = model.Duration(30 * time.Minute)
-			tenantLimits.OutOfOrderBlocksExternalLabelEnabled = addOOOLabel
 			override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(map[string]*validation.Limits{
-				tenant: &tenantLimits,
+				tenant: defaultLimitsWithOverrides(func(limits *validation.Limits) {
+					limits.OutOfOrderTimeWindow = model.Duration(30 * time.Minute)
+					limits.OutOfOrderBlocksExternalLabelEnabled = addOOOLabel
+				}),
 			}))
 
 			require.NoError(t, err)
@@ -9783,10 +9787,10 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 	require.NoError(t, err)
 
 	setNativeHistogramsIngestionEnabled := func(enabled bool) {
-		tenantLimits := defaultLimitsTestConfig()
-		tenantLimits.NativeHistogramsIngestionEnabled = enabled
 		tenantOverride.ExpectedCalls = nil
-		tenantOverride.On("ByUserID", userID).Return(&tenantLimits)
+		tenantOverride.On("ByUserID", userID).Return(defaultLimitsWithOverrides(func(limits *validation.Limits) {
+			limits.NativeHistogramsIngestionEnabled = enabled
+		}))
 		// TSDB config is updated every second.
 		<-time.After(1500 * time.Millisecond)
 	}
