@@ -90,7 +90,7 @@ func (i *Ingester) TenantsHandler(w http.ResponseWriter, req *http.Request) {
 		if maxMillis-nowMillis > i.limits.CreationGracePeriod(t).Milliseconds() {
 			s.Warning = "TSDB Head max timestamp too far in the future"
 		}
-		if nowMillis-minMillis > (i.limits.PastGracePeriod(t) + i.limits.OutOfOrderTimeWindow(t)).Milliseconds() {
+		if i.limits.PastGracePeriod(t) > 0 && nowMillis-minMillis > (i.limits.PastGracePeriod(t)+i.limits.OutOfOrderTimeWindow(t)).Milliseconds() {
 			s.Warning = "TSDB Head min timestamp too far in the past"
 		}
 

@@ -20,7 +20,6 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
-	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -28,10 +27,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-const (
-	userID              = "1"
-	testPastGracePeriod = 100 * 365 * 24 * time.Hour // 100 years, as many tests push samples around unix time 0 and we don't want to keep fixing this tests again and again.
-)
+const userID = "1"
 
 func defaultIngesterTestConfig(t testing.TB) Config {
 	t.Helper()
@@ -61,22 +57,10 @@ func defaultClientTestConfig() client.Config {
 	return clientConfig
 }
 
-// defaultLimitsTestConfig returns validation.Limits with default values.
-// It also sets the PastGracePeriod to testPastGracePeriod (100 years) for convenience, as many tests push samples around unix time 0.
 func defaultLimitsTestConfig() validation.Limits {
 	limits := validation.Limits{}
 	flagext.DefaultValues(&limits)
-	limits.PastGracePeriod = model.Duration(testPastGracePeriod)
 	return limits
-}
-
-// defaultLimitsWithOverrides returns *validation.Limits with default values and applies the provided overrides.
-func defaultLimitsWithOverrides(override ...func(limits *validation.Limits)) *validation.Limits {
-	limits := defaultLimitsTestConfig()
-	for _, o := range override {
-		o(&limits)
-	}
-	return &limits
 }
 
 // TestIngesterRestart tests a restarting ingester doesn't keep adding more tokens.

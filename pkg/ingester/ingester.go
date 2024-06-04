@@ -1324,8 +1324,11 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	var (
 		nativeHistogramsIngestionEnabled = i.limits.NativeHistogramsIngestionEnabled(userID)
 		maxTimestampMs                   = startAppend.Add(i.limits.CreationGracePeriod(userID)).UnixMilli()
-		minTimestampMs                   = startAppend.Add(-i.limits.PastGracePeriod(userID)).Add(-i.limits.OutOfOrderTimeWindow(userID)).UnixMilli()
+		minTimestampMs                   = int64(math.MinInt64)
 	)
+	if i.limits.PastGracePeriod(userID) > 0 {
+		minTimestampMs = startAppend.Add(-i.limits.PastGracePeriod(userID)).Add(-i.limits.OutOfOrderTimeWindow(userID)).UnixMilli()
+	}
 
 	var builder labels.ScratchBuilder
 	var nonCopiedLabels labels.Labels
