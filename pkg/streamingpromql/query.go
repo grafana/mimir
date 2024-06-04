@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"time"
 
 	"github.com/grafana/dskit/cancellation"
@@ -194,50 +195,68 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (operator.Insta
 	}
 }
 
-func (q *Query) handleFunction(e *parser.Call) (operator.InstantVectorOperator, error) {
-	if call, ok := operator.InstantVectorFunctionCalls[e.Func.Name]; ok {
-		// At the moment no instant-vector promql function takes more than one instant-vector
-		// as an argument. We can assume this will always be the Inner operator and therefore
-		// what we use for the SeriesMetadata.
-		// The instant-vector is not always the first argument, such in the case of histogram_quantile etc.
-		// so we loop over the arguments to find the vectors. This could be expanded in the
-		// future if we need to support multiple inner vectors.
-		var inner operator.InstantVectorOperator
-		for i := range e.Args {
-			if e.Args[i].Type() == "vector" {
-				var err error
-				inner, err = q.convertToInstantVectorOperator(e.Args[i])
-				if err != nil {
-					return nil, err
-				}
-				break
-			}
-		}
+type InstantVectorFunctionOperatorFactory func(pool *pooling.LimitingPool, args []operator.Operator) (operator.InstantVectorOperator, error)
 
-		return &operator.InstantVectorFunction{
-			Inner: inner,
-			Pool:  q.pool,
-			Func:  call,
-		}, nil
-	} else if e.Func.Name == "rate" {
-		// TODO: lookup function name for RangeVectorFunctionCalls
-		if len(e.Args) != 1 {
+var instantVectorFunctions = map[string]InstantVectorFunctionOperatorFactory{
+	"rate": func(pool *pooling.LimitingPool, args []operator.Operator) (operator.InstantVectorOperator, error) {
+		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
-			return nil, fmt.Errorf("expected exactly one argument for rate, got %v", len(e.Args))
+			return nil, fmt.Errorf("expected exactly one argument for rate, got %v", len(args))
 		}
 
-		inner, err := q.convertToRangeVectorOperator(e.Args[0])
-		if err != nil {
-			return nil, err
+		inner, ok := args[0].(operator.RangeVectorOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a range vector argument for rate, got %T", args[0])
 		}
 
 		return &operator.RangeVectorFunction{
 			Inner: inner,
-			Pool:  q.pool,
+			Pool:  pool,
 		}, nil
-	} else {
+	},
+	"acos":            TransformationFunctionFactory(functions.DropSeriesName, functions.Acos),
+	"histogram_count": TransformationFunctionFactory(functions.DropSeriesName, functions.HistogramCount),
+	"histogram_sum":   TransformationFunctionFactory(functions.DropSeriesName, functions.HistogramSum),
+}
+
+// TODO: add a method to register more instant vector functions (we'll need this to support adaptive metrics in GEM, for example, and it will also allow us to incrementally enable new functions as we consider them stable)
+
+func TransformationFunctionFactory(metadataFunc functions.SeriesMetadataFunction, seriesDataFunc functions.InstantVectorFunction) InstantVectorFunctionOperatorFactory {
+	return func(pool *pooling.LimitingPool, args []operator.Operator) (operator.InstantVectorOperator, error) {
+		if len(args) != 1 {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected exactly one argument for %s, got %v", name, len(args))
+		}
+
+		inner, ok := args[0].(operator.InstantVectorOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected an instant vector argument for %s, got %T", name, args[0])
+		}
+
+		return &operator.InstantVectorFunction{
+			Inner: inner,
+			Pool:  pool,
+
+			MetadataFunc:   metadataFunc,
+			SeriesDataFunc: seriesDataFunc,
+		}, nil
+	}
+}
+
+func (q *Query) handleFunction(e *parser.Call) (operator.InstantVectorOperator, error) {
+	factory, ok := instantVectorFunctions[e.Func.Name]
+	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
 	}
+
+	args := make([]operator.Operator, len(e.Args))
+	for i := range e.Args {
+		args[i] = convertToOperator(e.Args[i]) // Extract this logic from newQuery
+	}
+
+	return factory(q.pool, args)
 }
 
 func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (operator.RangeVectorOperator, error) {
