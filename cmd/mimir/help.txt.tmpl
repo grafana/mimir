@@ -84,7 +84,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.max-silence-size-bytes int
     	Maximum silence size in bytes. 0 = no limit.
   -alertmanager.max-silences-count int
-    	Maximum number of active and pending silences that a tenant can have at once. 0 = no limit.
+    	Maximum number of silences, including expired silences, that a tenant can have at once. 0 = no limit.
   -alertmanager.max-template-size-bytes int
     	Maximum size of single template in tenant's Alertmanager configuration uploaded via Alertmanager API. 0 = no limit.
   -alertmanager.max-templates-count int

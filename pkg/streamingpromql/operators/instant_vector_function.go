@@ -4,7 +4,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors
 
-package operator
+package operators
 
 import (
 	"context"
@@ -20,14 +20,14 @@ import (
 
 // InstantVectorFunction performs a histogram_count over a range vector.
 type InstantVectorFunction struct {
-	Inner InstantVectorOperator
+	Inner types.InstantVectorOperator
 	Pool  *pooling.LimitingPool
 
 	Args parser.Expressions
 	Func functionCall
 }
 
-var _ InstantVectorOperator = &InstantVectorFunction{}
+var _ types.InstantVectorOperator = &InstantVectorFunction{}
 
 func (m *InstantVectorFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	metadata, err := m.Inner.SeriesMetadata(ctx)

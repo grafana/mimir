@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package operator
+package types
 
 import (
 	"context"
 	"errors"
 	"time"
-
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 // Operator represents all operators.
@@ -16,7 +14,7 @@ type Operator interface {
 	// The returned []SeriesMetadata can be modified by the caller or returned to a pool.
 	// SeriesMetadata may return series in any order, but the same order must be used by both SeriesMetadata and NextSeries.
 	// SeriesMetadata should be called no more than once.
-	SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error)
+	SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error)
 
 	// Close frees all resources associated with this operator.
 	// Calling SeriesMetadata or NextSeries after calling Close may result in unpredictable behaviour, corruption or crashes.
@@ -32,7 +30,7 @@ type InstantVectorOperator interface {
 	// SeriesMetadata must be called exactly once before calling NextSeries.
 	// The returned InstantVectorSeriesData can be modified by the caller or returned to a pool.
 	// The returned InstantVectorSeriesData can contain no points.
-	NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error)
+	NextSeries(ctx context.Context) (InstantVectorSeriesData, error)
 }
 
 // RangeVectorOperator represents all operators that produce range vectors.
@@ -60,7 +58,7 @@ type RangeVectorOperator interface {
 	// The provided RingBuffer may be populated with points beyond the end of the expected time range, and
 	// callers should compare returned points' timestamps to the returned RangeVectorStepData.RangeEnd.
 	// Next must be called at least once before calling NextStepSamples.
-	NextStepSamples(floats *RingBuffer) (types.RangeVectorStepData, error)
+	NextStepSamples(floats *RingBuffer) (RangeVectorStepData, error)
 }
 
 var EOS = errors.New("operator stream exhausted") //nolint:revive
