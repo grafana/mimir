@@ -89,6 +89,10 @@ data:
           set $alertmanager test-oss-logical-multizone-values-mimir-alertmanager-headless.citestns.svc.cluster.local.;
           proxy_pass      http://$alertmanager:8080$request_uri;
         }
+        location = /multitenant_alertmanager/configs {
+          set $alertmanager test-oss-logical-multizone-values-mimir-alertmanager-headless.citestns.svc.cluster.local.;
+          proxy_pass      http://$alertmanager:8080$request_uri;
+        }
         location = /api/v1/alerts {
           set $alertmanager test-oss-logical-multizone-values-mimir-alertmanager-headless.citestns.svc.cluster.local.;
           proxy_pass      http://$alertmanager:8080$request_uri;

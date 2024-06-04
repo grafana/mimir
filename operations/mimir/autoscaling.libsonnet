@@ -266,71 +266,115 @@
     },
   },
 
-  // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization
-  // per replica over 5m (rolling window) and then we pick the highest value over the last 15m.
-  // We multiply by 1000 to get the result in millicores. This is due to HPA only working with ints.
-  // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
-  // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the CPU utilization
-  // of containers there are running at any given time, without suffering the PromQL lookback period.
-  //
-  // The second section of the query ensures that it only returns a result if all expected samples were
-  // present for the CPU metric over the last 15 minutes.
-  local cpuHPAQuery = |||
-    max_over_time(
-      sum(
-        sum by (pod) (rate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"}[5m]))
-        and
-        max by (pod) (up{container="%(container)s",namespace="%(namespace)s"}) > 0
-      )[15m:]
-    ) * 1000
-    and
-    count (
-      count_over_time(
-        present_over_time(
-          container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"}[1m]
-        )[15m:1m]
-      ) >= 15
-    )
-  |||,
+  local cpuHPAQuery(with_ready_trigger) = (
+    if with_ready_trigger then
+      // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization
+      // per replica over 5m (rolling window) and then we pick the 95th percentile value over the last 15m.
+      // We multiply by 1000 to get the result in millicores. This is due to HPA only working with ints.
+      //
+      // When computing the actual CPU utilization, We only take in account ready pods.
+      |||
+        quantile_over_time(0.95,
+          sum(
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"}[5m]))
+            and
+            max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"}[1m])) > 0
+          )[15m:]
+        ) * 1000
+      |||
+    else
+      // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization
+      // per replica over 5m (rolling window) and then we pick the highest value over the last 15m.
+      // We multiply by 1000 to get the result in millicores. This is due to HPA only working with ints.
+      //
+      // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
+      // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the CPU utilization
+      // of containers there are running at any given time, without suffering the PromQL lookback period.
+      |||
+        max_over_time(
+          sum(
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"}[5m]))
+            and
+            max by (pod) (up{container="%(container)s",namespace="%(namespace)s"}) > 0
+          )[15m:]
+        ) * 1000
+      |||
+  ) + (
+    // Ensures that it only returns a result if all expected samples were present for the CPU metric over
+    // the last 15 minutes.
+    |||
+      and
+      count (
+        count_over_time(
+          present_over_time(
+            container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"}[1m]
+          )[15m:1m]
+        ) >= 15
+      )
+    |||
+  ),
 
-  // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across
-  // all replicas over 15m.
-  // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
-  // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the memory utilization
-  // of containers there are running at any given time, without suffering the PromQL lookback period.
-  //
-  // The second section of the query adds pods that were terminated due to an OOM in the memory calculation.
-  //
-  // The third section of the query ensures that it only returns a result if all expected samples were
-  // present for the memory metric over the last 15 minutes.
-  local memoryHPAQuery = |||
-    max_over_time(
-      sum(
-        (
-          sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"})
+  local memoryHPAQuery(with_ready_trigger) =
+    (
+      if with_ready_trigger then
+        // To scale out relatively quickly, but scale in slower, we look at the 95th memory utilization across
+        // all replicas over 15m.
+        //
+        // When computing the actual memory utilization, We only take in account ready pods.
+        |||
+          quantile_over_time(0.95,
+            sum(
+              (
+                sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"})
+                and
+                max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"}[1m])) > 0
+              ) or vector(0)
+            )[15m:]
+          )
+        |||
+      else
+        // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across
+        // all replicas over 15m.
+        //
+        // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
+        // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the memory utilization
+        // of containers there are running at any given time, without suffering the PromQL lookback period.
+        |||
+          max_over_time(
+            sum(
+              (
+                sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"})
+                and
+                max by (pod) (up{container="%(container)s",namespace="%(namespace)s"}) > 0
+              ) or vector(0)
+            )[15m:]
+          )
+        |||
+    ) + (
+      // The first section of the query adds pods that were terminated due to an OOM in the memory calculation.
+      //
+      // The second section of the query ensures that it only returns a result if all expected samples were
+      // present for the memory metric over the last 15 minutes.
+      |||
+        +
+        sum(
+          sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="%(container)s", namespace="%(namespace)s", resource="memory"}[15m]))
           and
-          max by (pod) (up{container="%(container)s",namespace="%(namespace)s"}) > 0
-        ) or vector(0)
-      )[15m:]
-    )
-    +
-    sum(
-      sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="%(container)s", namespace="%(namespace)s", resource="memory"}[15m]))
-      and
-      max by (pod) (changes(kube_pod_container_status_restarts_total{container="%(container)s", namespace="%(namespace)s"}[15m]) > 0)
-      and
-      max by (pod) (kube_pod_container_status_last_terminated_reason{container="%(container)s", namespace="%(namespace)s", reason="OOMKilled"})
-      or vector(0)
-    )
-    and
-    count (
-      count_over_time(
-        present_over_time(
-          container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"}[1m]
-        )[15m:1m]
-      ) >= 15
-    )
-  |||,
+          max by (pod) (changes(kube_pod_container_status_restarts_total{container="%(container)s", namespace="%(namespace)s"}[15m]) > 0)
+          and
+          max by (pod) (kube_pod_container_status_last_terminated_reason{container="%(container)s", namespace="%(namespace)s", reason="OOMKilled"})
+          or vector(0)
+        )
+        and
+        count (
+          count_over_time(
+            present_over_time(
+              container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"}[1m]
+            )[15m:1m]
+          ) >= 15
+        )
+      |||
+    ),
 
   newResourceScaledObject(
     name,
@@ -341,6 +385,7 @@
     cpu_target_utilization,
     memory_target_utilization,
     with_cortex_prefix=false,
+    with_ready_trigger=false,
     weight=1,
     scale_down_period=null,
     extra_triggers=[],
@@ -356,7 +401,7 @@
           metric_name: '%s%s_cpu_hpa_%s' %
                        ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
 
-          query: metricWithWeight(cpuHPAQuery % {
+          query: metricWithWeight(cpuHPAQuery(with_ready_trigger) % {
             container: name,
             namespace: $._config.namespace,
           }, weight),
@@ -371,7 +416,7 @@
           metric_name: '%s%s_memory_hpa_%s' %
                        ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
 
-          query: memoryHPAQuery % {
+          query: memoryHPAQuery(with_ready_trigger) % {
             container: name,
             namespace: $._config.namespace,
           },
@@ -532,11 +577,59 @@
       cpu_target_utilization=$._config.autoscaling_distributor_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_distributor_memory_target_utilization,
       with_cortex_prefix=true,
-      // The write path tends to have a stable amount of traffic (it's not usually bursty) so it's
-      // fine to use a longer scale down period. This avoids scaling down too quickly because
-      // distributors were briefly using less CPU (like when circuit breaking or load shedding)
-      // and causing outages when full traffic returns.
-      scale_down_period=600,
+      with_ready_trigger=true,
+    ) + (
+      {
+        spec+: {
+          advanced: {
+            horizontalPodAutoscalerConfig: {
+              behavior: {
+                scaleUp: {
+                  // When multiple policies are specified the policy which allows the highest amount of change is the
+                  // policy which is selected by default.
+                  policies: [
+                    {
+                      // Allow to scale up at most 50% of pods every 2m. Every 2min is chosen as enough time for new
+                      // pods to be handling load and counted in the 15min lookback window.
+                      //
+                      // This policy covers the case we already have a high number of pods running and adding +50%
+                      // in the span of 2m means adding a significative number of pods.
+                      type: 'Percent',
+                      value: 50,
+                      periodSeconds: 60 * 2,
+                    },
+                    {
+                      // Allow to scale up at most 50% of pods every 2m. Every 2min is chosen as enough time for new
+                      // pods to be handling load and counted in the 15min lookback window.
+                      //
+                      // This policy covers the case we currently have a small number of pods (e.g. < 10) and limiting
+                      // the scaling by percentage may be too slow when scaling up.
+                      type: 'Pods',
+                      value: 15,
+                      periodSeconds: 60 * 2,
+                    },
+                  ],
+                  // After a scaleup we should wait at least 2 minutes to observe the effect.
+                  stabilizationWindowSeconds: 60 * 2,
+                },
+                scaleDown: {
+                  policies: [{
+                    // Allow to scale down up to 10% of pods every 2m.
+                    type: 'Percent',
+                    value: 10,
+                    periodSeconds: 120,
+                  }],
+                  // Reduce the likelihood of flapping replicas. When the metrics indicate that the target should be scaled
+                  // down, HPA looks into previously computed desired states, and uses the highest value from the last 30m.
+                  // This is particularly high for distributors due to their reasonably stable load and their long
+                  // shutdown-delay + grace period.
+                  stabilizationWindowSeconds: 60 * 30,
+                },
+              },
+            },
+          },
+        },
+      }
     ),
 
   distributor_deployment: overrideSuperIfExists(

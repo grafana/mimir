@@ -793,4 +793,4 @@ generate-otlp:
 
 .PHONY: check-generated-otlp-code
 check-generated-otlp-code: generate-otlp
-	@./tools/find-diff-or-untracked.sh $(OTLP_GOS) || (echo "Please rebuild OTLP code by running 'generate-otlp'" && false)
+	@./tools/find-diff-or-untracked.sh $(OTLP_GOS) || (echo "Please rebuild OTLP code by running 'make generate-otlp'" && false)

@@ -4,7 +4,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors
 
-package operator
+package operators
 
 import (
 	"context"
@@ -18,15 +18,15 @@ import (
 
 // RangeVectorFunction performs a rate calculation over a range vector.
 type RangeVectorFunction struct {
-	Inner RangeVectorOperator
+	Inner types.RangeVectorOperator
 	Pool  *pooling.LimitingPool
 
 	numSteps     int
 	rangeSeconds float64
-	buffer       *RingBuffer
+	buffer       *types.RingBuffer
 }
 
-var _ InstantVectorOperator = &RangeVectorFunction{}
+var _ types.InstantVectorOperator = &RangeVectorFunction{}
 
 func (m *RangeVectorFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	metadata, err := m.Inner.SeriesMetadata(ctx)
@@ -57,7 +57,7 @@ func (m *RangeVectorFunction) NextSeries(ctx context.Context) (types.InstantVect
 	}
 
 	if m.buffer == nil {
-		m.buffer = NewRingBuffer(m.Pool)
+		m.buffer = types.NewRingBuffer(m.Pool)
 	}
 
 	m.buffer.Reset()
@@ -75,7 +75,7 @@ func (m *RangeVectorFunction) NextSeries(ctx context.Context) (types.InstantVect
 		step, err := m.Inner.NextStepSamples(m.buffer)
 
 		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
-		if err == EOS {
+		if err == types.EOS {
 			return data, nil
 		} else if err != nil {
 			return types.InstantVectorSeriesData{}, err
