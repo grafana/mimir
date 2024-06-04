@@ -54,6 +54,9 @@
       policyRule.withApiGroups('apps') +
       policyRule.withResources(['statefulsets/status']) +
       policyRule.withVerbs(['update']),
+      policyRule.withApiGroups('') +
+      policyRule.withResources(['configmaps']) +
+      policyRule.withVerbs(['get', 'update', 'create']),
     ]),
 
   rollout_operator_rolebinding: if !rollout_operator_enabled then null else
