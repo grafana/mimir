@@ -1,0 +1,36 @@
+---
+kind: pipeline
+type: docker
+name: sqlds
+
+platform:
+  os: linux
+  arch: amd64
+
+services:
+  - image: mysql:8.0
+    name: "mysql"
+    environment:
+      MYSQL_USER: mysql
+      MYSQL_PASSWORD: mysql
+      MYSQL_DATABASE: mysql
+      MYSQL_ALLOW_EMPTY_PASSWORD: "true"
+
+steps:
+  - name: "test"
+    image: golang:1.21
+    commands:
+      - go test ./...
+  - name: "integraiton_tests"
+    image: golang:1.21
+    environment:
+      INTEGRATION_TESTS: "true"
+      MYSQL_URL: "mysql:mysql@tcp(mysql:3306)/mysql"
+    commands:
+      - go test ./...
+
+---
+kind: signature
+hmac: ee935b524c92f8c6eadfef904268c9a9d8ac6f0309d8a46597e5ae2ec49f1995
+
+...

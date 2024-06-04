@@ -86,7 +86,7 @@ route:
   group_interval: 10ms
   receiver: 'prod'`
 
-	cfg, err := definition.Load([]byte(cfgRaw))
+	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
 	require.NoError(t, am.ApplyConfig(user, cfg, cfgRaw))
 
@@ -170,7 +170,7 @@ route:
   group_interval: 10ms
   receiver: 'prod'`
 
-	cfg, err := definition.Load([]byte(cfgRaw))
+	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
 	require.NoError(t, am.ApplyConfig(user, cfg, cfgRaw))
 
