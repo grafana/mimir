@@ -153,23 +153,21 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		limits         map[string]*validation.Limits
 		swapShardOrder bool
-		testFunc       func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, limits map[string]*validation.Limits)
+		testFunc       func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits)))
 	}{
 		"empty ingester": {
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, _ map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
 				require.Equal(t, 0, c.ownedSeries.updateAllTenants(context.Background(), false))
 			},
 		},
 		"new user trigger": {
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUser: {
-					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
-					IngestionTenantShardSize: 0,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, _ map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionTenantShardSize = 0
+				})
+
 				c.pushUserSeries(t)
 
 				// first ingester owns all the series, even without any ownedSeries run. this is because each created series is automatically counted as "owned".
@@ -194,13 +192,12 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 			},
 		},
 		"new user trigger from WAL replay": {
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUser: {
-					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
-					IngestionTenantShardSize: 0,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, _ map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionTenantShardSize = 0
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -227,13 +224,12 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 			},
 		},
 		"shard size = 1, scale ingesters up and down": {
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUser: {
-					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
-					IngestionTenantShardSize: 1,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, _ map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionTenantShardSize = 1
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -283,13 +279,12 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 		},
 		"shard size = 1, scale ingesters up and down, series move to new ingester": {
 			swapShardOrder: true,
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUser: {
-					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
-					IngestionTenantShardSize: 1,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, _ map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionTenantShardSize = 1
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -342,13 +337,12 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 			},
 		},
 		"shard size = 0, scale ingesters up and down": {
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUser: {
-					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
-					IngestionTenantShardSize: 0,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, _ map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionTenantShardSize = 0
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -389,13 +383,12 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 			},
 		},
 		"shard size = 0, add PENDING ingester with no tokens": {
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUser: {
-					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
-					IngestionTenantShardSize: 0,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, _ map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionTenantShardSize = 0
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -421,13 +414,12 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 			},
 		},
 		"unchanged ring, shard size from 0 to ingester count": {
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUser: {
-					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
-					IngestionTenantShardSize: 0,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionTenantShardSize = 0
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -443,7 +435,9 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 
 				// now don't change the ring, but change shard size from 0 to 2, which is also our number of ingesters
 				// this will not change owned series (because we only have 2 ingesters, and both are already used), but will trigger recompute because the shard size has changed
-				limits[ownedServiceTestUser].IngestionTenantShardSize = 2
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.IngestionTenantShardSize = 2
+				})
 
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, ownedServiceTestUserSeriesLimit/2)
@@ -456,13 +450,12 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 			},
 		},
 		"unchanged ring, shard size < ingesters, shard size up and down": {
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUser: {
-					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
-					IngestionTenantShardSize: 1,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionTenantShardSize = 1
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -475,7 +468,9 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// change shard size to 2, splitting the series between ingesters
-				limits[ownedServiceTestUser].IngestionTenantShardSize = 2
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.IngestionTenantShardSize = 2
+				})
 
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
@@ -487,7 +482,9 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount/2)
 
 				// change shard size back to 1, moving the series back to the original ingester
-				limits[ownedServiceTestUser].IngestionTenantShardSize = 1
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.IngestionTenantShardSize = 1
+				})
 
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 2, ownedServiceTestUserSeriesLimit/2)
@@ -503,13 +500,12 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 		},
 		"unchanged ring, shard size < ingesters, shard size up and down, series start on other ingester": {
 			swapShardOrder: true,
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUser: {
-					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
-					IngestionTenantShardSize: 1,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionTenantShardSize = 1
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -526,7 +522,9 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, 0)
 
 				// change shard size to 2, splitting the series between ingesters
-				limits[ownedServiceTestUser].IngestionTenantShardSize = 2
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.IngestionTenantShardSize = 2
+				})
 
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
@@ -538,7 +536,9 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, 0) // active series stay reduced until more pushes come in
 
 				// change shard size back to 1, moving the series back to the original ingester
-				limits[ownedServiceTestUser].IngestionTenantShardSize = 1
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.IngestionTenantShardSize = 1
+				})
 
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 2, ownedServiceTestUserSeriesLimit/2)
@@ -551,13 +551,12 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 			},
 		},
 		"unchanged ring and shards, series limit up and down": {
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUser: {
-					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
-					IngestionTenantShardSize: 0,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionTenantShardSize = 0
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -567,7 +566,9 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// increase series limit
-				limits[ownedServiceTestUser].MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit * 2
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit * 2
+				})
 
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
@@ -579,7 +580,9 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// decrease series limit
-				limits[ownedServiceTestUser].MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+				})
 
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit*2)
@@ -592,13 +595,12 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 			},
 		},
 		"unchanged ring, series limit and shard size up and down in tandem": {
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUser: {
-					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
-					IngestionTenantShardSize: 1,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionTenantShardSize = 1
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -611,8 +613,10 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// double series limit and shard size
-				limits[ownedServiceTestUser].MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit * 2
-				limits[ownedServiceTestUser].IngestionTenantShardSize = 2
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit * 2
+					limits.IngestionTenantShardSize = 2
+				})
 
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
@@ -624,8 +628,10 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount/2)
 
 				// halve series limit and shard size
-				limits[ownedServiceTestUser].MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
-				limits[ownedServiceTestUser].IngestionTenantShardSize = 1
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionTenantShardSize = 1
+				})
 
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 2, ownedServiceTestUserSeriesLimit)
@@ -638,13 +644,12 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 			},
 		},
 		"early compaction trigger": {
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUser: {
-					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
-					IngestionTenantShardSize: 0,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, _ map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionTenantShardSize = 0
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -677,13 +682,12 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 			},
 		},
 		"previous ring check failed": {
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUser: {
-					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
-					IngestionTenantShardSize: 0,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, _ map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUser, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionTenantShardSize = 0
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -736,8 +740,18 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 			c.registerTestedIngesterIntoRing(t, c.cfg.IngesterRing.InstanceID, c.cfg.IngesterRing.InstanceAddr, c.cfg.IngesterRing.InstanceZone)
 
 			var err error
-			c.overrides, err = validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tc.limits))
+			overrides := map[string]*validation.Limits{}
+			c.overrides, err = validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(overrides))
 			require.NoError(t, err)
+			updateLimits := func(tenant string, update func(limits *validation.Limits)) {
+				override, ok := overrides[tenant]
+				if !ok {
+					defaultLimits := defaultLimitsTestConfig()
+					override = &defaultLimits
+					overrides[tenant] = override
+				}
+				update(override)
+			}
 
 			c.ing = setupIngesterWithOverrides(t, c.cfg, c.overrides, c.ingesterRing, "") // Pass ring so that limiter and oss see the same state
 
@@ -753,7 +767,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.ing.getTSDB,
 			)
 
-			tc.testFunc(t, &c, tc.limits)
+			tc.testFunc(t, &c, updateLimits)
 		})
 	}
 }
