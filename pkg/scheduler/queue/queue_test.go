@@ -111,7 +111,7 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 	slowQueueDimensionFunc := func() []string { return []string{slowConsumerQueueDimension} }
 
 	additionalQueueDimensionsEnabledCases := []bool{
-		//false,
+		false,
 		true,
 	}
 	queueDurationTotals := map[bool]map[string]float64{
@@ -187,18 +187,14 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 		for consumerIdx := 0; consumerIdx < numConsumers; consumerIdx++ {
 			consumerIdx := consumerIdx
 			queueConsumerErrGroup.Go(func() error {
-				fmt.Printf("waiting for gofunc to run for consumer: %v\n", consumerIdx)
 				returnVal := runConsumer(consumerIdx)
-				fmt.Println("finished runConsumer without panicking")
 				return returnVal
 			})
-			fmt.Println("past first suspected panic")
 		}
 
 		close(startConsumersChan)
 		err = queueConsumerErrGroup.Wait()
 		require.NoError(t, err)
-		fmt.Println("past second suspected panic\n=============")
 
 		// record total queue duration by queue dimensions and whether the queue splitting was enabled
 		for _, queueDimension := range []string{normalQueueDimension, slowConsumerQueueDimension} {
@@ -369,13 +365,11 @@ func runQueueConsumerIters(
 	start chan struct{},
 	consumeFunc consumeRequest,
 ) func(consumerIdx int) error {
-	fmt.Println("constructing returnFunc")
 	returnFunc := func(consumerIdx int) error {
 		consumerIters := queueActorIterationCount(totalIters, numConsumers, consumerIdx)
 		lastTenantIndex := FirstTenant()
 		querierID := fmt.Sprintf("consumer-%v", consumerIdx)
 		queue.SubmitRegisterQuerierConnection(querierID)
-		fmt.Println("runQueueConsumerIters submitted register querier connection")
 		defer queue.SubmitUnregisterQuerierConnection(querierID)
 
 		<-start
@@ -388,11 +382,9 @@ func runQueueConsumerIters(
 
 			lastTenantIndex = idx
 		}
-		fmt.Println("finished consumer iterations")
 
 		return nil
 	}
-	fmt.Println("finished constructing returnFunc\n=======")
 	return returnFunc
 }
 

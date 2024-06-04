@@ -27,13 +27,10 @@ type queueBroker struct {
 	tenantQueuesTree *TreeQueue
 	queueTree        *Tree
 
-	tenantQuerierAssignments tenantQuerierAssignments
+	tenantQuerierAssignments *tenantQuerierAssignments
 
 	maxTenantQueueSize               int
 	additionalQueueDimensionsEnabled bool
-	currentQuerier                   QuerierID
-
-	treeShuffleShardState *shuffleShardState
 }
 
 func newQueueBroker(maxTenantQueueSize int, additionalQueueDimensionsEnabled bool, forgetDelay time.Duration) *queueBroker {
@@ -45,33 +42,32 @@ func newQueueBroker(maxTenantQueueSize int, additionalQueueDimensionsEnabled boo
 		tenantIDOrder:      nil,
 		tenantsByID:        map[TenantID]*queueTenant{},
 		tenantQuerierIDs:   map[TenantID]map[QuerierID]struct{}{},
+		currentQuerier:     &currentQuerier,
+		tenantOrderIndex:   localQueueIndex - 1,
 	}
 
-	sss := &shuffleShardState{
-		tenantQuerierMap: tqas.tenantQuerierIDs,
-		currentQuerier:   &currentQuerier,
-	}
 	// TODO (casie): Maybe set this using a flag, so we can also change how we build queue path accordingly
-	tree := NewTree(
-		sss,                // root
+	tree, err := NewTree(
+		tqas,               // root
 		&roundRobinState{}, // tenants
 		&roundRobinState{}, // query components
 	)
+	// An error building the tree is fatal; we must panic
+	if err != nil {
+		panic(fmt.Sprintf("error creating the tree queue: %v", err))
+	}
 	qb := &queueBroker{
 		tenantQueuesTree:                 NewTreeQueue("root"),
 		queueTree:                        tree,
-		tenantQuerierAssignments:         *tqas,
+		tenantQuerierAssignments:         tqas,
 		maxTenantQueueSize:               maxTenantQueueSize,
 		additionalQueueDimensionsEnabled: additionalQueueDimensionsEnabled,
-		currentQuerier:                   currentQuerier,
-		treeShuffleShardState:            sss,
 	}
 
 	return qb
 }
 
 func (qb *queueBroker) isEmpty() bool {
-	//return qb.tenantQueuesTree.IsEmpty()
 	return qb.queueTree.rootNode.IsEmpty()
 }
 
@@ -95,7 +91,6 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 		}
 	}
 
-	//err = qb.tenantQueuesTree.EnqueueBackByPath(queuePath, request)
 	err = qb.queueTree.rootNode.enqueueBackByPath(qb.queueTree, queuePath, request)
 	return err
 }
@@ -116,7 +111,6 @@ func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQuer
 		return err
 	}
 	return qb.queueTree.rootNode.enqueueFrontByPath(qb.queueTree, queuePath, request)
-	//return qb.tenantQueuesTree.EnqueueFrontByPath(queuePath, request)
 }
 
 func (qb *queueBroker) makeQueuePath(request *tenantRequest) (QueuePath, error) {
@@ -139,25 +133,15 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 	int,
 	error,
 ) {
-	//tenant, tenantIndex, err := qb.tenantQuerierAssignments.getNextTenantForQuerier(lastTenantIndex, querierID)
 	// check if querier is registered and is not shutting down
 	if q := qb.tenantQuerierAssignments.queriersByID[querierID]; q == nil || q.shuttingDown {
-		return nil, nil, qb.treeShuffleShardState.sharedQueuePosition, ErrQuerierShuttingDown
+		return nil, nil, qb.tenantQuerierAssignments.tenantOrderIndex, ErrQuerierShuttingDown
 	}
-	//if tenant == nil || err != nil {
-	//	return nil, tenant, tenantIndex, err
-	//}
-	//
-	//queuePath := QueuePath{string(tenant.tenantID)}
-	//
-	//queueElement := qb.tenantQueuesTree.DequeueByPath(queuePath)
 
-	qb.currentQuerier = querierID
-	qb.treeShuffleShardState.sharedQueuePosition = lastTenantIndex
+	qb.tenantQuerierAssignments.currentQuerier = &querierID
+	qb.tenantQuerierAssignments.tenantOrderIndex = lastTenantIndex
 
 	queuePath, queueElement := qb.queueTree.rootNode.dequeue()
-	fmt.Println("path: ", queuePath)
-	fmt.Println("elt: ", queueElement)
 
 	var request *tenantRequest
 	var tenantID TenantID
@@ -174,12 +158,12 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 
 	// dequeue returns the full path including root, but getNode expects the path _from_ root
 	queueNodeAfterDequeue := qb.queueTree.rootNode.getNode(queuePath[1:])
-	if queueNodeAfterDequeue == nil {
+	if queueNodeAfterDequeue == nil && len(qb.tenantQuerierAssignments.tenantNodes[string(tenantID)]) == 0 {
 		// queue node was deleted due to being empty after dequeue
 		qb.tenantQuerierAssignments.removeTenant(tenantID)
 	}
 
-	return request, tenant, qb.treeShuffleShardState.sharedQueuePosition, nil
+	return request, tenant, qb.tenantQuerierAssignments.tenantOrderIndex, nil
 }
 
 func (qb *queueBroker) addQuerierConnection(querierID QuerierID) (resharded bool) {

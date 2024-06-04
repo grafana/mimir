@@ -644,6 +644,48 @@ func getTenantsByQuerier(broker *queueBroker, querierID QuerierID) []TenantID {
 	return tenantIDs
 }
 
+// getNextTenantForQuerier gets the next tenant in the tenant order assigned to a given querier.
+//
+// The next tenant for the querier is obtained by rotating through the global tenant order
+// starting just after the last tenant the querier received a request for, until a tenant
+// is found that is assigned to the given querier according to the querier shuffle sharding.
+// A newly connected querier provides lastTenantIndex of -1 in order to start at the beginning.
+func (tqa *tenantQuerierAssignments) getNextTenantForQuerier(lastTenantIndex int, querierID QuerierID) (*queueTenant, int, error) {
+	// check if querier is registered and is not shutting down
+	if q := tqa.queriersByID[querierID]; q == nil || q.shuttingDown {
+		return nil, lastTenantIndex, ErrQuerierShuttingDown
+	}
+	tenantOrderIndex := lastTenantIndex
+	for iters := 0; iters < len(tqa.tenantIDOrder); iters++ {
+		tenantOrderIndex++
+		if tenantOrderIndex >= len(tqa.tenantIDOrder) {
+			// Do not use modulo (e.g. i = (i + 1) % len(slice)) to wrap this index.
+			// Tenant list can change size between calls and the querier provides its external view
+			// of the lastTenantIndex it received, which is not updated when this list changes.
+			// If the tenant list shrinks and the querier-provided lastTenantIndex exceeds the
+			// length of the tenant list, wrapping via modulo would skip the beginning of the list.
+			tenantOrderIndex = 0
+		}
+
+		tenantID := tqa.tenantIDOrder[tenantOrderIndex]
+		if tenantID == emptyTenantID {
+			continue
+		}
+		tenant := tqa.tenantsByID[tenantID]
+
+		tenantQuerierSet := tqa.tenantQuerierIDs[tenantID]
+		if tenantQuerierSet == nil {
+			// tenant can use all queriers
+			return tenant, tenantOrderIndex, nil
+		} else if _, ok := tenantQuerierSet[querierID]; ok {
+			// tenant is assigned this querier
+			return tenant, tenantOrderIndex, nil
+		}
+	}
+
+	return nil, lastTenantIndex, nil
+}
+
 // getOrAddTenantQueue is a test utility, not intended for use by consumers of queueBroker
 func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) (*Node, error) {
 	err := qb.tenantQuerierAssignments.createOrUpdateTenant(tenantID, maxQueriers)
@@ -651,7 +693,7 @@ func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) (
 		return nil, err
 	}
 
-	node, err := qb.queueTree.rootNode.getOrAddNode(QueuePath{string(tenantID)}, qb.queueTree)
+	node, err := qb.queueTree.rootNode.getOrAddNode(qb.makeQueuePathForTests(tenantID), qb.queueTree)
 	if err != nil {
 		return nil, err
 	}
@@ -662,7 +704,6 @@ func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) (
 func (qb *queueBroker) removeTenantQueue(tenantID TenantID) bool {
 	qb.tenantQuerierAssignments.removeTenant(tenantID)
 	queuePath := QueuePath{string(tenantID)}
-	//return qb.tenantQueuesTree.deleteNode(queuePath)
 	return qb.queueTree.rootNode.deleteNode(queuePath)
 }
 
@@ -682,7 +723,7 @@ func (n *Node) deleteNode(pathFromNode QueuePath) bool {
 	}
 	if deleteNode := parentNode.getNode(QueuePath{deleteNodeName}); deleteNode != nil {
 		childDeleted := parentNode.dequeueAlgorithm.deleteChildNode(parentNode, deleteNode)
-		parentNode.dequeueAlgorithm.dequeueOps().updateState(parentNode, nil, childDeleted)
+		parentNode.dequeueAlgorithm.dequeueUpdateState(parentNode, nil, childDeleted)
 		return true
 	}
 	return false
@@ -741,9 +782,6 @@ func isConsistent(qb *queueBroker) error {
 
 	tenantQueueCount := qb.queueTree.rootNode.nodeCount() - 1
 	if tenantQueueCount != tenantCount {
-		//fmt.Printf("tenantIDOrder: %v\n", qb.tenantQuerierAssignments.tenantIDOrder)
-		//fmt.Printf("rootNode children: %v\n", qb.queueTree.rootNode.dequeueAlgorithm.getQueueOrder())
-		fmt.Println("tenant count check: ", tenantQueueCount, tenantCount)
 		return fmt.Errorf("inconsistent number of tenants list and tenant queues")
 	}
 

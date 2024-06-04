@@ -21,9 +21,9 @@ type Tree struct {
 	algosByDepth []DequeueAlgorithm
 }
 
-// Nodes with *shuffleShardState dequeueAlgorithms disregard individual
-// Nodes' queueOrder and queuePosition
-// TODO (casie): Implement maxQueueSize to mirror qb.maxTenantQueueSize?
+// Node maintains tree-queue-node specific information, such as child order, and position in queue.
+// Note that tenantQuerierAssignments largely disregards queueOrder and queuePosition, due to the
+// way shuffle-sharding must be managed globally and on a per-querier basis
 type Node struct {
 	name             string
 	localQueue       *list.List
@@ -35,43 +35,51 @@ type Node struct {
 	childrenChecked  int
 }
 
-func NewTree(dequeueAlgorithms ...DequeueAlgorithm) *Tree {
+func NewTree(dequeueAlgorithms ...DequeueAlgorithm) (*Tree, error) {
 	if len(dequeueAlgorithms) == 0 {
-		return nil
+		return nil, fmt.Errorf("cannot create a tree without defined dequeueing algorithms")
 	}
-	root, err := NewNode("root", 0, dequeueAlgorithms[0])
+	root, err := newNode("root", 0, dequeueAlgorithms[0])
 	if err != nil {
-		// TODO (casie): Make NewNode private, remove err return
-		fmt.Print(err)
+		return nil, err
 	}
 	root.depth = 0
 	return &Tree{
 		rootNode:     root,
 		algosByDepth: dequeueAlgorithms,
-	}
+	}, nil
 }
 
-func NewNode(name string, depth int, da DequeueAlgorithm) (*Node, error) {
+func (t *Tree) Dequeue() (QueuePath, any) {
+	return t.rootNode.dequeue()
+}
+
+func (t *Tree) EnqueueBackByPath(path QueuePath, v any) error {
+	return t.rootNode.enqueueBackByPath(t, path, v)
+}
+
+func (t *Tree) EnqueueFrontByPath(path QueuePath, v any) error {
+	return t.rootNode.enqueueFrontByPath(t, path, v)
+}
+
+func newNode(name string, depth int, da DequeueAlgorithm) (*Node, error) {
 	// TODO (casie): write a unit test
 	if da == nil {
 		return nil, fmt.Errorf("cannot create a node without a defined dequeueing algorithm")
 	}
 	switch da.(type) {
-	case *shuffleShardState:
-		sss := da.(*shuffleShardState)
-		sss.sharedQueuePosition = localQueueIndex - 1
-		if sss.tenantNodes == nil {
-			sss.tenantNodes = map[string][]*Node{}
-		}
-		if sss.tenantQuerierMap == nil {
-			sss.tenantQuerierMap = map[TenantID]map[QuerierID]struct{}{}
+	case *tenantQuerierAssignments:
+		tqa := da.(*tenantQuerierAssignments)
+		tqa.tenantOrderIndex = localQueueIndex - 1
+		if tqa.tenantNodes == nil {
+			tqa.tenantNodes = map[string][]*Node{}
 		}
 	}
 	return &Node{
-		name:          name,
-		localQueue:    list.New(),
-		queuePosition: localQueueIndex - 1, // start from -2 so that on first dequeue, localQueueIndex is dequeued from
-		//queueOrder:       make([]string, 0),
+		name:             name,
+		localQueue:       list.New(),
+		queuePosition:    localQueueIndex - 1, // start from -2 so that on first dequeue, localQueueIndex is dequeued from
+		queueOrder:       make([]string, 0),
 		queueMap:         make(map[string]*Node, 1),
 		depth:            depth,
 		dequeueAlgorithm: da,
@@ -132,7 +140,7 @@ func (n *Node) dequeue() (QueuePath, any) {
 	var dequeueNode *Node
 	// continue until we've found a value or checked all nodes that need checking
 	for v == nil && !checkedAllNodes {
-		dequeueNode, checkedAllNodes = n.dequeueAlgorithm.dequeueOps().getNode(n)
+		dequeueNode, checkedAllNodes = n.dequeueAlgorithm.dequeueGetNode(n)
 		var deletedNode bool
 		// dequeueing from local queue
 		if dequeueNode == n {
@@ -159,7 +167,7 @@ func (n *Node) dequeue() (QueuePath, any) {
 				deletedNode = n.dequeueAlgorithm.deleteChildNode(n, dequeueNode)
 			}
 		}
-		n.dequeueAlgorithm.dequeueOps().updateState(n, v, deletedNode)
+		n.dequeueAlgorithm.dequeueUpdateState(n, v, deletedNode)
 	}
 	return append(path, childPath...), v
 }
@@ -199,7 +207,7 @@ func (n *Node) getOrAddNode(pathFromNode QueuePath, tree *Tree) (*Node, error) {
 		if n.depth+1 >= len(tree.algosByDepth) {
 			return nil, fmt.Errorf("cannot add a node beyond max tree depth: %v", len(tree.algosByDepth))
 		}
-		childNode, err = NewNode(pathFromNode[0], n.depth+1, tree.algosByDepth[n.depth+1])
+		childNode, err = newNode(pathFromNode[0], n.depth+1, tree.algosByDepth[n.depth+1])
 		if err != nil {
 			return nil, err
 		}
