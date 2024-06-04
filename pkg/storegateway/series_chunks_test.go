@@ -62,6 +62,7 @@ func TestSeriesChunksSet(t *testing.T) {
 		for r := 0; r < numRuns; r++ {
 			set := newSeriesChunksSet(numSeries, true)
 
+			lset := labels.FromStrings(labels.MetricName, "metric")
 			// Ensure the series slice is made of all zero values. Then write something inside before releasing it again.
 			// The slice is expected to be picked from the pool, at least in some runs (there's an assertion on it at
 			// the end of the test).
@@ -69,7 +70,7 @@ func TestSeriesChunksSet(t *testing.T) {
 			for i := 0; i < numSeries; i++ {
 				require.Zero(t, set.series[i])
 
-				set.series[i].lset = labels.FromStrings(labels.MetricName, "metric")
+				set.series[i].lset = lset
 				set.series[i].chks = set.newSeriesAggrChunkSlice(numChunksPerSeries)
 			}
 

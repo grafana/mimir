@@ -68,6 +68,7 @@ import (
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"github.com/grafana/mimir/pkg/util/tracing"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -931,7 +932,7 @@ func (i *Ingester) updateLimitMetrics() {
 // GetRef() is an extra method added to TSDB to let Mimir check before calling Add()
 type extendedAppender interface {
 	storage.Appender
-	storage.GetRef
+	storage.GetRefFunc
 }
 
 type pushStats struct {
@@ -1129,7 +1130,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
 
-	err = i.pushSamplesToAppender(userID, req.Timeseries, app, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime)
+	err = i.pushSamplesToAppender(userID, db.symbolTable.Load(), req.Timeseries, app, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime)
 	if err != nil {
 		if err := app.Rollback(); err != nil {
 			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
@@ -1223,7 +1224,7 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 // pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
 // but in case of unhandled errors, appender is rolled back and such error is returned. Errors handled by updateFirstPartial
 // must be of type softError.
-func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
+func (i *Ingester) pushSamplesToAppender(userID string, st *labels.SymbolTable, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
 	stats *pushStats, updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction), activeSeries *activeseries.ActiveSeries,
 	outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
 
@@ -1326,8 +1327,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		maxTimestampMs                   = startAppend.Add(i.limits.CreationGracePeriod(userID)).UnixMilli()
 	)
 
-	var builder labels.ScratchBuilder
-	var nonCopiedLabels labels.Labels
+	builder := labels.NewScratchBuilderWithSymbolTable(st, 0)
 	for _, ts := range timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
@@ -1375,12 +1375,11 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			}
 		}
 
-		// MUST BE COPIED before being retained.
-		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, ts.Labels, &nonCopiedLabels)
-		hash := nonCopiedLabels.Hash()
+		mimirpb.FromLabelAdaptersToScratchBuilder(ts.Labels, &builder)
+		hash := builder.Hash()
 		// Look up a reference for this series. The hash passed should be the output of Labels.Hash()
 		// and NOT the stable hashing because we use the stable hashing in ingesters only for query sharding.
-		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
+		ref, copiedLabels := app.GetRefFunc(hash, builder.Equal)
 
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := stats.succeededSamplesCount
@@ -1401,8 +1400,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					continue
 				}
 			} else {
-				// Copy the label set because both TSDB and the active series tracker may retain it.
-				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+				copiedLabels = builder.Labels()
 
 				// Retain the reference in case there are multiple samples for the series.
 				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
@@ -1447,8 +1445,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 						continue
 					}
 				} else {
-					// Copy the label set because both TSDB and the active series tracker may retain it.
-					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+					copiedLabels = builder.Labels()
 
 					// Retain the reference in case there are multiple samples for the series.
 					if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
@@ -1480,7 +1477,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		}
 
 		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
-			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets)
+			activeSeries.UpdateSeries(copiedLabels, ref, startAppend, numNativeHistogramBuckets)
 		}
 
 		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
@@ -1506,7 +1503,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 						Value:  ex.Value,
 						Ts:     ex.TimestampMs,
 						HasTs:  true,
-						Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
+						Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(st, ex.Labels),
 					}
 
 					var err error
@@ -1550,6 +1547,7 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, i.logger, "Ingester.QueryExemplars")
 	defer spanlog.Finish()
+	ctx = tracing.BridgeOpenTracingToOtel(ctx)
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1996,6 +1994,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	spanlog, ctx := spanlogger.NewWithLogger(stream.Context(), i.logger, "Ingester.QueryStream")
 	defer spanlog.Finish()
+	ctx = tracing.BridgeOpenTracingToOtel(ctx)
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -2577,6 +2576,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 			localSeriesLimit: initialLocalLimit,
 		},
 	}
+	userDB.resetSymbolTable(i.logger)
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
@@ -3095,6 +3095,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 		default:
 			reason = "regular"
 			err = userDB.Compact()
+			userDB.resetSymbolTable(i.logger)
 		}
 
 		if err != nil {

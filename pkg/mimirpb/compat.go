@@ -19,10 +19,9 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/jsonutil"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 // ToWriteRequest converts matched slices of Labels, Samples, Exemplars, and Metadata into a WriteRequest
@@ -98,10 +97,44 @@ func (req *WriteRequest) AddExemplarsAt(i int, exemplars []*Exemplar) *WriteRequ
 	return req
 }
 
+func FromLabelAdaptersToMap(ls []LabelAdapter) map[string]string {
+	m := make(map[string]string, len(ls))
+	for _, la := range ls {
+		m[la.Name] = la.Value
+	}
+	return m
+}
+
 // FromLabelAdaptersToMetric converts []LabelAdapter to a model.Metric.
 // Don't do this on any performance sensitive paths.
 func FromLabelAdaptersToMetric(ls []LabelAdapter) model.Metric {
-	return util.LabelsToMetric(FromLabelAdaptersToLabels(ls))
+	m := make(model.Metric, len(ls))
+	for _, la := range ls {
+		m[model.LabelName(la.Name)] = model.LabelValue(la.Value)
+	}
+	return m
+}
+
+// FromLabelAdaptersToBuilder converts []LabelAdapter to labels.Builder.
+func FromLabelAdaptersToScratchBuilder(ls []LabelAdapter, builder *labels.ScratchBuilder) {
+	builder.Reset()
+	for _, v := range ls {
+		builder.Add(v.Name, v.Value)
+	}
+}
+
+// FromLabelAdaptersToKeyString makes a string to be used as a key to a map.
+// It's much simpler than FromLabelAdaptersToString, but not human-readable.
+func FromLabelAdaptersToKeyString(ls []LabelAdapter) string {
+	buf := make([]byte, 0, 1024)
+	b := bytes.NewBuffer(buf)
+	for _, l := range ls {
+		b.WriteByte('\xff')
+		b.WriteString(l.Name)
+		b.WriteByte('\xff')
+		b.WriteString(l.Value)
+	}
+	return b.String()
 }
 
 // FromLabelAdaptersToString formats label adapters as a metric name with labels, while preserving

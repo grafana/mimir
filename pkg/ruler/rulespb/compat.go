@@ -70,8 +70,8 @@ func FromProto(rg *RuleGroupDesc) rulefmt.RuleGroup {
 
 		newRule := rulefmt.RuleNode{
 			Expr:          exprNode,
-			Labels:        mimirpb.FromLabelAdaptersToLabels(rl.Labels).Map(),
-			Annotations:   mimirpb.FromLabelAdaptersToLabels(rl.Annotations).Map(),
+			Labels:        mimirpb.FromLabelAdaptersToMap(rl.Labels),
+			Annotations:   mimirpb.FromLabelAdaptersToMap(rl.Annotations),
 			For:           model.Duration(rl.GetFor()),
 			KeepFiringFor: model.Duration(rl.GetKeepFiringFor()),
 		}

@@ -189,9 +189,10 @@ func TestFromLabelAdaptersToLabels(t *testing.T) {
 }
 
 func TestFromLabelAdaptersToLabelsWithCopy(t *testing.T) {
+	st := labels.NewSymbolTable()
 	input := []LabelAdapter{{Name: "hello", Value: "world"}}
 	expected := labels.FromStrings("hello", "world")
-	actual := FromLabelAdaptersToLabelsWithCopy(input)
+	actual := FromLabelAdaptersToLabelsWithCopy(st, input)
 
 	assert.Equal(t, expected, actual)
 
@@ -203,13 +204,14 @@ func TestFromLabelAdaptersToLabelsWithCopy(t *testing.T) {
 }
 
 func BenchmarkFromLabelAdaptersToLabelsWithCopy(b *testing.B) {
+	st := labels.NewSymbolTable()
 	input := []LabelAdapter{
 		{Name: "hello", Value: "world"},
 		{Name: "some label", Value: "and its value"},
 		{Name: "long long long long long label name", Value: "perhaps even longer label value, but who's counting anyway?"}}
 
 	for i := 0; i < b.N; i++ {
-		FromLabelAdaptersToLabelsWithCopy(input)
+		FromLabelAdaptersToLabelsWithCopy(st, input)
 	}
 }
 
@@ -741,4 +743,54 @@ func TestCompareLabelAdapters(t *testing.T) {
 		got = CompareLabelAdapters(test.compared, labels)
 		require.Equal(t, -sign(test.expected), sign(got), "unexpected comparison result for reverse test case %d", i)
 	}
+}
+
+// The main usecase for `LabelsToKeyString` is to generate hashKeys
+// for maps. We are benchmarking that here.
+func BenchmarkSeriesMap(b *testing.B) {
+	benchmarkSeriesMap(100000, b)
+}
+
+func benchmarkSeriesMap(numSeries int, b *testing.B) {
+	series := makeSeries(numSeries)
+	sm := make(map[string]int, numSeries)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		for i, s := range series {
+			sm[FromLabelAdaptersToKeyString(s)] = i
+		}
+
+		for _, s := range series {
+			_, ok := sm[FromLabelAdaptersToKeyString(s)]
+			if !ok {
+				b.Fatal("element missing")
+			}
+		}
+
+		if len(sm) != numSeries {
+			b.Fatal("the number of series expected:", numSeries, "got:", len(sm))
+		}
+	}
+}
+
+func makeSeries(n int) [][]LabelAdapter {
+	series := make([][]LabelAdapter, 0, n)
+	for i := 0; i < n; i++ {
+		series = append(series, []LabelAdapter{
+			{Name: "label0", Value: "value0"},
+			{Name: "label1", Value: "value1"},
+			{Name: "label2", Value: "value2"},
+			{Name: "label3", Value: "value3"},
+			{Name: "label4", Value: "value4"},
+			{Name: "label5", Value: "value5"},
+			{Name: "label6", Value: "value6"},
+			{Name: "label7", Value: "value7"},
+			{Name: "label8", Value: "value8"},
+			{Name: "label9", Value: strconv.Itoa(i)},
+		})
+	}
+
+	return series
 }

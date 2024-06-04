@@ -11,6 +11,7 @@ import (
 	"math"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -93,6 +94,7 @@ type ownedSeriesState struct {
 
 type userTSDB struct {
 	db             *tsdb.DB
+	symbolTable    atomic.Pointer[labels.SymbolTable]
 	userID         string
 	activeSeries   *activeseries.ActiveSeries
 	seriesInMetric *metricCounter
@@ -629,4 +631,21 @@ func (u *userTSDB) computeOwnedSeries() int {
 		}
 	})
 	return count
+}
+
+type hackSymbolTable struct {
+	mx      sync.Mutex
+	p       unsafe.Pointer
+	nextNum int
+}
+
+func (u *userTSDB) resetSymbolTable(logger log.Logger) {
+	st := u.symbolTable.Load()
+	if st != nil {
+		x := (*hackSymbolTable)(unsafe.Pointer(st))
+		level.Info(logger).Log("msg", "resetSymbolTable", "addr", fmt.Sprintf("%p: %v", x, x), "size", st.Len())
+	}
+	st = labels.NewSymbolTable()
+	// Then use that for new series going forward.
+	u.symbolTable.Store(st)
 }

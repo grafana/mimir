@@ -11,7 +11,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	seriesset "github.com/grafana/mimir/pkg/storage/series"
@@ -20,9 +19,10 @@ import (
 // Series in the returned set are sorted alphabetically by labels.
 func partitionChunks(chunks []chunk.Chunk, mint, maxt int64) storage.SeriesSet {
 	chunksBySeries := map[string][]chunk.Chunk{}
+	var buf [1024]byte
 	for _, c := range chunks {
-		key := client.LabelsToKeyString(c.Metric)
-		chunksBySeries[key] = append(chunksBySeries[key], c)
+		key := c.Metric.Bytes(buf[:0])
+		chunksBySeries[string(key)] = append(chunksBySeries[string(key)], c)
 	}
 
 	series := make([]storage.Series, 0, len(chunksBySeries))

@@ -683,6 +683,7 @@ type loadingSeriesChunkRefsSetIterator struct {
 	shard               *sharding.ShardSelector
 	seriesHasher        seriesHasher
 	strategy            seriesIteratorStrategy
+	builder             labels.ScratchBuilder
 	minTime, maxTime    int64
 	tenantID            string
 	logger              log.Logger
@@ -842,6 +843,7 @@ func newLoadingSeriesChunkRefsSetIterator(
 		shard:               shard,
 		seriesHasher:        seriesHasher,
 		strategy:            strategy,
+		builder:             labels.NewScratchBuilder(0),
 		minTime:             minTime,
 		maxTime:             maxTime,
 		tenantID:            tenantID,
@@ -1151,15 +1153,14 @@ func (s *loadingSeriesChunkRefsSetIterator) singlePassStringify(symbolizedSet sy
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it after Next() is called again.
 	set := newSeriesChunkRefsSet(len(symbolizedSet.series), true)
 
-	labelsBuilder := labels.NewScratchBuilder(maxLabelsPerSeries)
 	for _, series := range symbolizedSet.series {
-		labelsBuilder.Reset()
+		s.builder.Reset()
 		for _, symRef := range series.lset {
-			labelsBuilder.Add(symbols[symRef.name], symbols[symRef.value])
+			s.builder.Add(symbols[symRef.name], symbols[symRef.value])
 		}
 
 		set.series = append(set.series, seriesChunkRefs{
-			lset: labelsBuilder.Labels(),
+			lset: s.builder.Labels(),
 			refs: series.refs,
 		})
 	}
@@ -1171,9 +1172,8 @@ func (s *loadingSeriesChunkRefsSetIterator) multiLookupStringify(symbolizedSet s
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it after Next() is called again.
 	set := newSeriesChunkRefsSet(len(symbolizedSet.series), true)
 
-	labelsBuilder := labels.NewScratchBuilder(16)
 	for _, series := range symbolizedSet.series {
-		lset, err := s.indexr.LookupLabelsSymbols(s.ctx, series.lset, &labelsBuilder)
+		lset, err := s.indexr.LookupLabelsSymbols(s.ctx, series.lset, &s.builder)
 		if err != nil {
 			return seriesChunkRefsSet{}, err
 		}

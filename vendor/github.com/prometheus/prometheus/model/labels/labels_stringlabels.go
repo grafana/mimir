@@ -699,3 +699,39 @@ func NewScratchBuilderWithSymbolTable(_ *SymbolTable, n int) ScratchBuilder {
 func (b *ScratchBuilder) SetSymbolTable(_ *SymbolTable) {
 	// no-op
 }
+
+// Equal returns true if the Builder would build Labels the same as passed in.
+func (b *ScratchBuilder) Equal(a Labels) bool {
+	la, lb := len(a.data), len(b.add)
+	ia, ib := 0, 0
+	for ; ia < la && ib < lb; ib++ {
+		var aName, aValue string
+		aName, ia = decodeString(a.data, ia)
+		if aName != b.add[ib].Name {
+			return false
+		}
+		aValue, ia = decodeString(a.data, ia)
+		if aValue != b.add[ib].Value {
+			return false
+		}
+	}
+	if ia != la || ib != lb {
+		return false
+	}
+	return true
+}
+
+// Hash returns a hash value for the label set.
+// Note: the result must be consistent with what Labels.Hash() would return.
+func (b *ScratchBuilder) Hash() uint64 {
+	var stackArray [2048]byte
+	var buf []byte
+	size := labelsSize(b.add)
+	if size < len(stackArray) {
+		buf = stackArray[:size]
+	} else {
+		buf = make([]byte, size)
+	}
+	marshalLabelsToSizedBuffer(b.add, buf)
+	return xxhash.Sum64(buf)
+}

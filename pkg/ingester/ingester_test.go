@@ -2960,19 +2960,22 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				require.NoError(b, err)
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
-				expectedErr := storage.ErrOutOfBounds.Error()
 
 				// Push out of bound samples.
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)) // nolint:errcheck
 
-					verifyErrorString(b, err, expectedErr)
+					verifyErrorString(b, err, "err-mimir-sample-timestamp-too-old")
 				}
 			},
 		},
 		"out-of-order samples": {
 			prepareConfig: func(*validation.Limits, *InstanceLimits) bool { return true },
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
+				// Push a single time series to set the TSDB min time.
+				req, _, _, _ := mockWriteRequest(b, labels.FromStrings(labels.MetricName, metricName, "cardinality", "0"), 0, 0)
+				_, err := ingester.Push(ctx, req)
+				require.NoError(b, err)
 				// For each series, push a single sample with a timestamp greater than next pushes.
 				for i := 0; i < numSeriesPerRequest; i++ {
 					currTimeReq := mimirpb.ToWriteRequest(
@@ -2987,13 +2990,12 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				}
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
-				expectedErr := storage.ErrOutOfOrderSample.Error()
 
 				// Push out-of-order samples.
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)) // nolint:errcheck
 
-					verifyErrorString(b, err, expectedErr)
+					verifyErrorString(b, err, "err-mimir-sample-out-of-order")
 				}
 			},
 		},
@@ -3066,7 +3068,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
-					verifyErrorString(b, err, "push rate limit reached")
+					verifyErrorString(b, err, "err-mimir-ingester-max-ingestion-rate")
 				}
 			},
 		},
@@ -3088,7 +3090,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
-					verifyErrorString(b, err, "max tenants limit reached")
+					verifyErrorString(b, err, "err-mimir-ingester-max-tenants")
 				}
 			},
 		},
@@ -3107,7 +3109,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
-					verifyErrorString(b, err, "max series limit reached")
+					verifyErrorString(b, err, "err-mimir-ingester-max-series")
 				}
 			},
 		},
@@ -3125,7 +3127,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
-					verifyErrorString(b, err, "too many inflight push requests")
+					verifyErrorString(b, err, "err-mimir-ingester-max-inflight-push-requests")
 				}
 			},
 		},
@@ -3343,6 +3345,14 @@ func Test_Ingester_LabelValues(t *testing.T) {
 	})
 }
 
+func l2m(lbls labels.Labels) model.Metric {
+	m := make(model.Metric, 16)
+	lbls.Range(func(l labels.Label) {
+		m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+	})
+	return m
+}
+
 func Test_Ingester_Query(t *testing.T) {
 	series := []series{
 		{labels.FromStrings(labels.MetricName, "test_1", "status", "200", "route", "get_user"), 1, 100000},
@@ -3371,8 +3381,8 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
-				&model.SampleStream{Metric: util.LabelsToMetric(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: l2m(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: l2m(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by != matcher": {
@@ -3382,7 +3392,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.NOT_EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
+				&model.SampleStream{Metric: l2m(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
 			},
 		},
 		"should filter series by =~ matcher": {
@@ -3392,8 +3402,8 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".*_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
-				&model.SampleStream{Metric: util.LabelsToMetric(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: l2m(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: l2m(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by !~ matcher": {
@@ -3403,7 +3413,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.REGEX_NO_MATCH, Name: model.MetricNameLabel, Value: ".*_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
+				&model.SampleStream{Metric: l2m(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
 			},
 		},
 		"should filter series by multiple matchers": {
@@ -3414,7 +3424,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.REGEX_MATCH, Name: "status", Value: "5.."},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: l2m(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by matcher and time range": {
@@ -3424,7 +3434,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: l2m(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
 			},
 		},
 	}
