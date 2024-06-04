@@ -50,6 +50,7 @@ func HistogramCount(series types.InstantVectorSeriesData, pool *pooling.Limiting
 			F: Histogram.H.Count,
 		})
 	}
+	pool.PutInstantVectorSeriesData(series)
 	return data, nil
 }
 
@@ -68,5 +69,6 @@ func HistogramSum(series types.InstantVectorSeriesData, pool *pooling.LimitingPo
 			F: Histogram.H.Sum,
 		})
 	}
+	pool.PutInstantVectorSeriesData(series)
 	return data, nil
 }
