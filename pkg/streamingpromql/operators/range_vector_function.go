@@ -9,7 +9,6 @@ package operators
 import (
 	"context"
 
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
@@ -34,9 +33,8 @@ func (m *RangeVectorFunction) SeriesMetadata(ctx context.Context) ([]types.Serie
 		return nil, err
 	}
 
-	lb := labels.NewBuilder(labels.EmptyLabels())
 	for i := range metadata {
-		metadata[i].Labels = dropMetricName(metadata[i].Labels, lb)
+		metadata[i].Labels = metadata[i].Labels.DropMetricName()
 	}
 
 	m.numSteps = m.Inner.StepCount()
