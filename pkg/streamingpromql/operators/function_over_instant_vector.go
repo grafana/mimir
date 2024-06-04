@@ -14,8 +14,8 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-// InstantVectorFunction performs a function over each series in an instant vector.
-type InstantVectorFunction struct {
+// FunctionOverInstantVector performs a function over each series in an instant vector.
+type FunctionOverInstantVector struct {
 	// At the moment no instant-vector promql function takes more than one instant-vector
 	// as an argument. We can assume this will always be the Inner operator and therefore
 	// what we use for the SeriesMetadata.
@@ -26,9 +26,9 @@ type InstantVectorFunction struct {
 	SeriesDataFunc functions.InstantVectorFunction
 }
 
-var _ types.InstantVectorOperator = &InstantVectorFunction{}
+var _ types.InstantVectorOperator = &FunctionOverInstantVector{}
 
-func (m *InstantVectorFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (m *FunctionOverInstantVector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	metadata, err := m.Inner.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
@@ -37,7 +37,7 @@ func (m *InstantVectorFunction) SeriesMetadata(ctx context.Context) ([]types.Ser
 	return m.MetadataFunc(metadata, m.Pool)
 }
 
-func (m *InstantVectorFunction) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+func (m *FunctionOverInstantVector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	series, err := m.Inner.NextSeries(ctx)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
@@ -46,6 +46,6 @@ func (m *InstantVectorFunction) NextSeries(ctx context.Context) (types.InstantVe
 	return m.SeriesDataFunc(series, m.Pool)
 }
 
-func (m *InstantVectorFunction) Close() {
+func (m *FunctionOverInstantVector) Close() {
 	m.Inner.Close()
 }

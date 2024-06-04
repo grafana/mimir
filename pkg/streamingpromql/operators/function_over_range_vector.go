@@ -15,8 +15,8 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-// RangeVectorFunction performs a rate calculation over a range vector.
-type RangeVectorFunction struct {
+// FunctionOverRangeVector performs a rate calculation over a range vector.
+type FunctionOverRangeVector struct {
 	Inner types.RangeVectorOperator
 	Pool  *pooling.LimitingPool
 
@@ -25,9 +25,9 @@ type RangeVectorFunction struct {
 	buffer       *types.RingBuffer
 }
 
-var _ types.InstantVectorOperator = &RangeVectorFunction{}
+var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
 
-func (m *RangeVectorFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	metadata, err := m.Inner.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
@@ -43,7 +43,7 @@ func (m *RangeVectorFunction) SeriesMetadata(ctx context.Context) ([]types.Serie
 	return metadata, nil
 }
 
-func (m *RangeVectorFunction) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if err := m.Inner.NextSeries(ctx); err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -112,7 +112,7 @@ func (m *RangeVectorFunction) NextSeries(ctx context.Context) (types.InstantVect
 
 // This is based on extrapolatedRate from promql/functions.go.
 // https://github.com/prometheus/prometheus/pull/13725 has a good explanation of the intended behaviour here.
-func (m *RangeVectorFunction) calculateRate(rangeStart, rangeEnd int64, firstPoint, lastPoint promql.FPoint, delta float64, count int) float64 {
+func (m *FunctionOverRangeVector) calculateRate(rangeStart, rangeEnd int64, firstPoint, lastPoint promql.FPoint, delta float64, count int) float64 {
 	durationToStart := float64(firstPoint.T-rangeStart) / 1000
 	durationToEnd := float64(rangeEnd-lastPoint.T) / 1000
 
@@ -146,7 +146,7 @@ func (m *RangeVectorFunction) calculateRate(rangeStart, rangeEnd int64, firstPoi
 	return delta * factor
 }
 
-func (m *RangeVectorFunction) Close() {
+func (m *FunctionOverRangeVector) Close() {
 	m.Inner.Close()
 
 	if m.buffer != nil {

@@ -25,7 +25,7 @@ func SimpleFunctionFactory(name string, seriesDataFunc functions.InstantVectorFu
 			return nil, fmt.Errorf("expected an instant vector argument for %s, got %T", name, args[0])
 		}
 
-		return &operators.InstantVectorFunction{
+		return &operators.FunctionOverInstantVector{
 			Inner: inner,
 			Pool:  pool,
 
@@ -41,7 +41,7 @@ func RateFunction(args []types.Operator, pool *pooling.LimitingPool) (types.Inst
 		return nil, fmt.Errorf("expected exactly one argument for rate, got %v", len(args))
 	}
 
-	return &operators.RangeVectorFunction{
+	return &operators.FunctionOverRangeVector{
 		Inner: args[0].(types.RangeVectorOperator),
 		Pool:  pool,
 	}, nil
