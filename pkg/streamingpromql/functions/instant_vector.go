@@ -35,8 +35,8 @@ func TransformationFunc(transform func(f float64) float64) InstantVectorFunction
 
 var Acos = TransformationFunc(math.Acos)
 
-func HistogramCount(series types.InstantVectorSeriesData, pool *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
-	floats, err := pool.GetFPointSlice(len(series.Histograms))
+func HistogramCount(seriesData types.InstantVectorSeriesData, pool *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
+	floats, err := pool.GetFPointSlice(len(seriesData.Histograms))
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -44,18 +44,18 @@ func HistogramCount(series types.InstantVectorSeriesData, pool *pooling.Limiting
 	data := types.InstantVectorSeriesData{
 		Floats: floats,
 	}
-	for _, Histogram := range series.Histograms {
+	for _, Histogram := range seriesData.Histograms {
 		data.Floats = append(data.Floats, promql.FPoint{
 			T: Histogram.T,
 			F: Histogram.H.Count,
 		})
 	}
-	pool.PutInstantVectorSeriesData(series)
+	pool.PutInstantVectorSeriesData(seriesData)
 	return data, nil
 }
 
-func HistogramSum(series types.InstantVectorSeriesData, pool *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
-	floats, err := pool.GetFPointSlice(len(series.Histograms))
+func HistogramSum(seriesData types.InstantVectorSeriesData, pool *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
+	floats, err := pool.GetFPointSlice(len(seriesData.Histograms))
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -63,12 +63,12 @@ func HistogramSum(series types.InstantVectorSeriesData, pool *pooling.LimitingPo
 	data := types.InstantVectorSeriesData{
 		Floats: floats,
 	}
-	for _, Histogram := range series.Histograms {
+	for _, Histogram := range seriesData.Histograms {
 		data.Floats = append(data.Floats, promql.FPoint{
 			T: Histogram.T,
 			F: Histogram.H.Sum,
 		})
 	}
-	pool.PutInstantVectorSeriesData(series)
+	pool.PutInstantVectorSeriesData(seriesData)
 	return data, nil
 }
