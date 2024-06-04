@@ -3762,6 +3762,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -distributor.otel-created-timestamp-zero-ingestion-enabled
 [otel_created_timestamp_zero_ingestion_enabled: <boolean> | default = false]
 
+# (experimental) Eventual OTel resource attributes to promote to labels.
+# CLI flag: -distributor.promote-otel-resource-attributes
+[promote_otel_resource_attributes: <string> | default = ""]
+
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
 # CLI flag: -ingest-storage.read-consistency

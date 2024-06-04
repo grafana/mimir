@@ -4765,6 +4765,17 @@
         },
         {
           "kind": "field",
+          "name": "promote_otel_resource_attributes",
+          "required": false,
+          "desc": "Eventual OTel resource attributes to promote to labels.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "distributor.promote-otel-resource-attributes",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ingest_storage_read_consistency",
           "required": false,
           "desc": "The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual.",
