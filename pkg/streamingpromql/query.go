@@ -281,6 +281,10 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		defer q.engine.activeQueryTracker.Delete(queryID)
 	}
 
+	defer func() {
+		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.pool.PeakEstimatedMemoryConsumptionBytes))
+	}()
+
 	series, err := q.root.SeriesMetadata(ctx)
 	if err != nil {
 		return &promql.Result{Err: err}
