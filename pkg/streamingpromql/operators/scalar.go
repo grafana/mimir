@@ -6,8 +6,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type Scalar struct {
@@ -16,7 +17,7 @@ type Scalar struct {
 
 var _ types.Operator = &Scalar{}
 
-func (s *Scalar) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (s *Scalar) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
 	return nil, fmt.Errorf("SeriesMetadata should not be called for Scalar")
 }
 
