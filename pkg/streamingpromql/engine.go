@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
@@ -19,7 +20,7 @@ import (
 
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
-func NewEngine(opts promql.EngineOpts, limitsProvider QueryLimitsProvider) (promql.QueryEngine, error) {
+func NewEngine(opts promql.EngineOpts, limitsProvider QueryLimitsProvider, logger log.Logger) (promql.QueryEngine, error) {
 	lookbackDelta := opts.LookbackDelta
 	if lookbackDelta == 0 {
 		lookbackDelta = defaultLookbackDelta
@@ -42,6 +43,8 @@ func NewEngine(opts promql.EngineOpts, limitsProvider QueryLimitsProvider) (prom
 		timeout:            opts.Timeout,
 		limitsProvider:     limitsProvider,
 		activeQueryTracker: opts.ActiveQueryTracker,
+
+		logger: logger,
 		estimatedPeakMemoryConsumption: promauto.With(opts.Reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                        "cortex_streaming_promql_engine_estimated_query_peak_memory_consumption",
 			Help:                        "Estimated peak memory consumption of each query (in bytes)",
@@ -51,10 +54,12 @@ func NewEngine(opts promql.EngineOpts, limitsProvider QueryLimitsProvider) (prom
 }
 
 type Engine struct {
-	lookbackDelta                  time.Duration
-	timeout                        time.Duration
-	limitsProvider                 QueryLimitsProvider
-	activeQueryTracker             promql.QueryTracker
+	lookbackDelta      time.Duration
+	timeout            time.Duration
+	limitsProvider     QueryLimitsProvider
+	activeQueryTracker promql.QueryTracker
+
+	logger                         log.Logger
 	estimatedPeakMemoryConsumption prometheus.Histogram
 }
 
