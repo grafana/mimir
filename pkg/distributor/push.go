@@ -336,7 +336,7 @@ func toGRPCHTTPStatus(ctx context.Context, pushErr error, limits *validation.Ove
 		case mimirpb.TSDB_UNAVAILABLE:
 			return codes.Unavailable, http.StatusServiceUnavailable
 		case mimirpb.CIRCUIT_BREAKER_OPEN:
-			return codes.Unavailable, http.StatusServiceUnavailable
+			return codes.Unavailable, http.StatusInternalServerError
 		case mimirpb.METHOD_NOT_ALLOWED:
 			// Return a 501 (and not 405) to explicitly signal a misconfiguration and to possibly track that amongst other 5xx errors.
 			return codes.Unimplemented, http.StatusNotImplemented
