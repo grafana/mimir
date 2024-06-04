@@ -4,7 +4,6 @@ package streamingpromql
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
@@ -82,35 +81,12 @@ func clampFunction(args []types.Operator, pool *pooling.LimitingPool) (types.Ins
 		return nil, fmt.Errorf("expected a scalar argument for clamp, got %T", args[2])
 	}
 
-	// Special cases: - Return an empty vector if min > max - Return NaN if min or max is NaN
-	if max.GetFloat() < min.GetFloat() {
-		return &operators.FunctionOverInstantVector{
-			Inner: inner,
-			Pool:  pool,
-
-			MetadataFunc: functions.DropSeriesName,
-			SeriesDataFunc: func(seriesData types.InstantVectorSeriesData, pool *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
-				pool.PutInstantVectorSeriesData(seriesData)
-				seriesData = types.InstantVectorSeriesData{
-					Floats: nil,
-				}
-				return seriesData, nil
-			},
-		}, nil
-	}
-
 	return &operators.FunctionOverInstantVector{
 		Inner: inner,
 		Pool:  pool,
 
-		MetadataFunc: functions.DropSeriesName,
-		SeriesDataFunc: func(seriesData types.InstantVectorSeriesData, pool *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
-			for i := range seriesData.Floats {
-				seriesData.Floats[i].F = math.Max(min.GetFloat(), math.Min(max.GetFloat(), seriesData.Floats[i].F))
-			}
-
-			return seriesData, nil
-		},
+		MetadataFunc:   functions.DropSeriesName,
+		SeriesDataFunc: functions.ClampFactory(min.GetFloat(), max.GetFloat()),
 	}, nil
 }
 
