@@ -80,15 +80,25 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 			return nil, fmt.Errorf("query expression produces a %s, but expression for range queries must produce an instant vector or scalar", parser.DocumentedType(expr.Type()))
 		}
 	}
+	q.root, err = q.convertToOperator(expr)
+	if err != nil {
+		return nil, err
+	}
 
+	return q, nil
+}
+
+func (q *Query) convertToOperator(expr parser.Expr) (types.Operator, error) {
+	var op types.Operator
+	var err error
 	switch expr.Type() {
 	case parser.ValueTypeMatrix:
-		q.root, err = q.convertToRangeVectorOperator(expr)
+		op, err = q.convertToRangeVectorOperator(expr)
 		if err != nil {
 			return nil, err
 		}
 	case parser.ValueTypeVector:
-		q.root, err = q.convertToInstantVectorOperator(expr)
+		op, err = q.convertToInstantVectorOperator(expr)
 		if err != nil {
 			return nil, err
 		}
@@ -96,7 +106,7 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("%s value as top-level expression", parser.DocumentedType(expr.Type())))
 	}
 
-	return q, nil
+	return op, nil
 }
 
 func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantVectorOperator, error) {
@@ -195,49 +205,21 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 }
 
 func (q *Query) handleFunction(e *parser.Call) (types.InstantVectorOperator, error) {
-	if call, ok := operators.InstantVectorFunctionCalls[e.Func.Name]; ok {
-		// At the moment no instant-vector promql function takes more than one instant-vector
-		// as an argument. We can assume this will always be the Inner operator and therefore
-		// what we use for the SeriesMetadata.
-		// The instant-vector is not always the first argument, such in the case of histogram_quantile etc.
-		// so we loop over the arguments to find the vectors. This could be expanded in the
-		// future if we need to support multiple inner vectors.
-		var inner types.InstantVectorOperator
-		for i := range e.Args {
-			if e.Args[i].Type() == "vector" {
-				var err error
-				inner, err = q.convertToInstantVectorOperator(e.Args[i])
-				if err != nil {
-					return nil, err
-				}
-				break
-			}
-		}
+	factory, ok := instantVectorFunctions[e.Func.Name]
+	if !ok {
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
+	}
 
-		return &operators.InstantVectorFunction{
-			Inner: inner,
-			Pool:  q.pool,
-			Func:  call,
-		}, nil
-	} else if e.Func.Name == "rate" {
-		// TODO: lookup function name for RangeVectorFunctionCalls
-		if len(e.Args) != 1 {
-			// Should be caught by the PromQL parser, but we check here for safety.
-			return nil, fmt.Errorf("expected exactly one argument for rate, got %v", len(e.Args))
-		}
-
-		inner, err := q.convertToRangeVectorOperator(e.Args[0])
+	args := make([]types.Operator, len(e.Args))
+	for i := range e.Args {
+		a, err := q.convertToOperator(e.Args[i])
 		if err != nil {
 			return nil, err
 		}
-
-		return &operators.RangeVectorFunction{
-			Inner: inner,
-			Pool:  q.pool,
-		}, nil
-	} else {
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
+		args[i] = a
 	}
+
+	return factory(args, q.pool)
 }
 
 func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (types.RangeVectorOperator, error) {
