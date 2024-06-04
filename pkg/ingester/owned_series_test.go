@@ -910,23 +910,21 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 	seriesToWrite, _ := generateSeriesWithTokens(ownedServiceTestUserPartitionsRing)
 
 	testCases := map[string]struct {
-		limits              map[string]*validation.Limits
 		registerPartitionID int32 // Partition that's added to the ring before test. Tested ingester will own this partition.
-		testFunc            func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, limits map[string]*validation.Limits)
+		testFunc            func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits)))
 	}{
 		"empty ingester": {
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, _ map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, _ func(string, func(limits *validation.Limits))) {
 				require.Equal(t, 0, c.ownedSeries.updateAllTenants(context.Background(), false))
 			},
 		},
 		"new user trigger": {
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUserPartitionsRing: {
-					MaxGlobalSeriesPerUser:             ownedServiceTestUserSeriesLimit,
-					IngestionPartitionsTenantShardSize: 0,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, _ map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionPartitionsTenantShardSize = 0
+				})
+
 				c.pushUserSeries(t)
 
 				// first ingester owns all the series, even without any ownedSeries run. this is because each created series is automatically counted as "owned".
@@ -951,13 +949,12 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 			},
 		},
 		"new user trigger from WAL replay": {
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUserPartitionsRing: {
-					MaxGlobalSeriesPerUser:             ownedServiceTestUserSeriesLimit,
-					IngestionPartitionsTenantShardSize: 0,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, _ map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionPartitionsTenantShardSize = 0
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -984,13 +981,12 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 		"shard size = 1, scale ingesters up and down, partition shard is unaffected": {
 			registerPartitionID: 2, // initially only partition 2 will be in the ring.
 
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUserPartitionsRing: {
-					MaxGlobalSeriesPerUser:             ownedServiceTestUserSeriesLimit,
-					IngestionPartitionsTenantShardSize: 1,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, _ map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionPartitionsTenantShardSize = 1
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -1041,13 +1037,12 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 		"shard size = 1, scale ingesters up and down, series move to new ingester": {
 			registerPartitionID: 1,
 
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUserPartitionsRing: {
-					MaxGlobalSeriesPerUser:             ownedServiceTestUserSeriesLimit,
-					IngestionPartitionsTenantShardSize: 1,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, _ map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionPartitionsTenantShardSize = 1
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -1099,13 +1094,12 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 			},
 		},
 		"shard size = 0, scale partitions up and down": {
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUserPartitionsRing: {
-					MaxGlobalSeriesPerUser:             ownedServiceTestUserSeriesLimit,
-					IngestionPartitionsTenantShardSize: 0,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, _ map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionPartitionsTenantShardSize = 0
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -1142,13 +1136,12 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 			},
 		},
 		"unchanged ring, shard size from 0 to partition count": {
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUserPartitionsRing: {
-					MaxGlobalSeriesPerUser:             ownedServiceTestUserSeriesLimit,
-					IngestionPartitionsTenantShardSize: 0,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionPartitionsTenantShardSize = 0
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -1164,7 +1157,9 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 
 				// now don't change the ring, but change shard size from 0 to 2, which is also our number of partitions.
 				// this will not change owned series (because we only have 2 partitions, and both are already used), but will trigger recompute because the shard size has changed.
-				limits[ownedServiceTestUserPartitionsRing].IngestionPartitionsTenantShardSize = 2
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.IngestionPartitionsTenantShardSize = 2
+				})
 
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[0], 0, ownedServiceTestUserSeriesLimit/2)
@@ -1179,13 +1174,12 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 		"unchanged ring, shard size < partitions, shard size up and down": {
 			registerPartitionID: 2, // This is partition in the shard when using partitions 1, 2 and shard size=1.
 
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUserPartitionsRing: {
-					MaxGlobalSeriesPerUser:             ownedServiceTestUserSeriesLimit,
-					IngestionPartitionsTenantShardSize: 1,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionPartitionsTenantShardSize = 1
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -1198,7 +1192,9 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// change shard size to 2, splitting the series between two partitions.
-				limits[ownedServiceTestUserPartitionsRing].IngestionPartitionsTenantShardSize = 2
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.IngestionPartitionsTenantShardSize = 2
+				})
 
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
@@ -1210,7 +1206,9 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, seriesSplitForPartitions1And2[2])
 
 				// change shard size back to 1, moving the series back to the original ingester
-				limits[ownedServiceTestUserPartitionsRing].IngestionPartitionsTenantShardSize = 1
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.IngestionPartitionsTenantShardSize = 1
+				})
 
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions1And2[2], 2, ownedServiceTestUserSeriesLimit/2)
@@ -1225,13 +1223,12 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 		"unchanged ring, shard size < ingesters, shard size up and down, series start on other ingester": {
 			registerPartitionID: 1, // This partition is NOT in the shard when using partitions 1, 2 and shard size=1.
 
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUserPartitionsRing: {
-					MaxGlobalSeriesPerUser:             ownedServiceTestUserSeriesLimit,
-					IngestionPartitionsTenantShardSize: 1,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionPartitionsTenantShardSize = 1
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -1248,7 +1245,9 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, 0)
 
 				// change shard size to 2, splitting the series between ingesters
-				limits[ownedServiceTestUserPartitionsRing].IngestionPartitionsTenantShardSize = 2
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.IngestionPartitionsTenantShardSize = 2
+				})
 
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
@@ -1260,7 +1259,9 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, 0)
 
 				// change shard size back to 1, moving the series back to the original partition.
-				limits[ownedServiceTestUserPartitionsRing].IngestionPartitionsTenantShardSize = 1
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.IngestionPartitionsTenantShardSize = 1
+				})
 
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions1And2[1], 2, ownedServiceTestUserSeriesLimit/2)
@@ -1277,13 +1278,12 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 			},
 		},
 		"unchanged ring and shards, series limit up and down": {
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUserPartitionsRing: {
-					MaxGlobalSeriesPerUser:             ownedServiceTestUserSeriesLimit,
-					IngestionPartitionsTenantShardSize: 0,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionPartitionsTenantShardSize = 0
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -1293,7 +1293,9 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// increase series limit
-				limits[ownedServiceTestUserPartitionsRing].MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit * 2
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit * 2
+				})
 
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
@@ -1305,7 +1307,9 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// decrease series limit
-				limits[ownedServiceTestUserPartitionsRing].MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+				})
 
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit*2)
@@ -1320,13 +1324,12 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 		"unchanged ring, series limit and shard size up and down in tandem": {
 			registerPartitionID: 1, // This is partition in shard when using partitions 0, 1 and shardSize=1.
 
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUserPartitionsRing: {
-					MaxGlobalSeriesPerUser:             ownedServiceTestUserSeriesLimit,
-					IngestionPartitionsTenantShardSize: 1,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, limits map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionPartitionsTenantShardSize = 1
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -1338,9 +1341,11 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
-				// double series limit and shard size
-				limits[ownedServiceTestUserPartitionsRing].MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit * 2
-				limits[ownedServiceTestUserPartitionsRing].IngestionPartitionsTenantShardSize = 2
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					// double series limit and shard size
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit * 2
+					limits.IngestionPartitionsTenantShardSize = 2
+				})
 
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
@@ -1352,8 +1357,10 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkActiveSeriesCount(t, seriesSplitForPartitions0And1[1])
 
 				// halve series limit and shard size
-				limits[ownedServiceTestUserPartitionsRing].MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
-				limits[ownedServiceTestUserPartitionsRing].IngestionPartitionsTenantShardSize = 1
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionPartitionsTenantShardSize = 1
+				})
 
 				// verify no change in state before owned series run
 				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[1], 2, ownedServiceTestUserSeriesLimit)
@@ -1366,13 +1373,12 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 			},
 		},
 		"early compaction trigger": {
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUserPartitionsRing: {
-					MaxGlobalSeriesPerUser:             ownedServiceTestUserSeriesLimit,
-					IngestionPartitionsTenantShardSize: 0,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, _ map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionPartitionsTenantShardSize = 0
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -1405,13 +1411,12 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 			},
 		},
 		"previous ring check failed": {
-			limits: map[string]*validation.Limits{
-				ownedServiceTestUserPartitionsRing: {
-					MaxGlobalSeriesPerUser:             ownedServiceTestUserSeriesLimit,
-					IngestionPartitionsTenantShardSize: 0,
-				},
-			},
-			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, _ map[string]*validation.Limits) {
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, updateLimits func(tenant string, update func(limits *validation.Limits))) {
+				updateLimits(ownedServiceTestUserPartitionsRing, func(limits *validation.Limits) {
+					limits.MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
+					limits.IngestionPartitionsTenantShardSize = 0
+				})
+
 				c.pushUserSeries(t)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
 				c.checkUpdateReasonForUser(t, "")
@@ -1450,13 +1455,23 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 			c.cfg.BlocksStorageConfig.TSDB.Dir = ""                                            // Don't use default value, otherwise
 
 			var err error
-			c.overrides, err = validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tc.limits))
+			overrides := map[string]*validation.Limits{}
+			c.overrides, err = validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(overrides))
 			require.NoError(t, err)
+			updateLimits := func(tenant string, update func(limits *validation.Limits)) {
+				override, ok := overrides[tenant]
+				if !ok {
+					defaultLimits := defaultLimitsTestConfig()
+					override = &defaultLimits
+					overrides[tenant] = override
+				}
+				update(override)
+			}
 
 			// createTestIngesterWithIngestStorage will register partition and ingester into the partition ring.
 			c.createIngesterAndPartitionRing(t)
 
-			tc.testFunc(t, &c, tc.limits)
+			tc.testFunc(t, &c, updateLimits)
 		})
 	}
 }
