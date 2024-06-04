@@ -5,9 +5,10 @@ package functions
 import (
 	"math"
 
+	"github.com/prometheus/prometheus/promql"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/prometheus/prometheus/promql"
 )
 
 type SeriesMetadataFunction func(seriesMetadata []types.SeriesMetadata, pool *pooling.LimitingPool) ([]types.SeriesMetadata, error)
