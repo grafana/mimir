@@ -20,11 +20,11 @@
     {
       'kubernetes.namespace': $._config.namespace,
     } +
-    if !zone_tracker then null
-    else {
-      'use-zone-tracker': true,
-      'zone-tracker.config-map-name': 'rollout-operator-zone-tracker',
-    },
+    if !zone_tracker then null else
+      {
+        'use-zone-tracker': true,
+        'zone-tracker.config-map-name': 'rollout-operator-zone-tracker',
+      },
 
   rollout_operator_node_affinity_matchers:: [],
 
