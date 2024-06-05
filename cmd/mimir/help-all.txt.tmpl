@@ -2890,7 +2890,7 @@ Usage of ./cmd/mimir/mimir:
   -validation.max-native-histogram-buckets int
     	Maximum number of buckets per native histogram sample. 0 to disable the limit.
   -validation.past-grace-period duration
-    	Controls how far into the past incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is lower than '(now - ooo window - past_grace_period)'. This configuration is enforced in the distributor and ingester. (default 1w)
+    	Controls how far into the past incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is lower than '(now - OOO window - past_grace_period)'. This configuration is enforced in the distributor and ingester. 0 to disable.
   -validation.reduce-native-histogram-over-max-buckets
     	Whether to reduce or reject native histogram samples with more buckets than the configured limit. (default true)
   -validation.separate-metrics-group-label string
