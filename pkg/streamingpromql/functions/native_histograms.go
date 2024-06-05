@@ -18,10 +18,10 @@ func HistogramCount(seriesData types.InstantVectorSeriesData, pool *pooling.Limi
 	data := types.InstantVectorSeriesData{
 		Floats: floats,
 	}
-	for _, Histogram := range seriesData.Histograms {
+	for _, histogram := range seriesData.Histograms {
 		data.Floats = append(data.Floats, promql.FPoint{
-			T: Histogram.T,
-			F: Histogram.H.Count,
+			T: histogram.T,
+			F: histogram.H.Count,
 		})
 	}
 	pool.PutInstantVectorSeriesData(seriesData)
@@ -37,10 +37,10 @@ func HistogramSum(seriesData types.InstantVectorSeriesData, pool *pooling.Limiti
 	data := types.InstantVectorSeriesData{
 		Floats: floats,
 	}
-	for _, Histogram := range seriesData.Histograms {
+	for _, histogram := range seriesData.Histograms {
 		data.Floats = append(data.Floats, promql.FPoint{
-			T: Histogram.T,
-			F: Histogram.H.Sum,
+			T: histogram.T,
+			F: histogram.H.Sum,
 		})
 	}
 	pool.PutInstantVectorSeriesData(seriesData)

@@ -196,7 +196,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			Pool:     q.pool,
 		}, nil
 	case *parser.Call:
-		return q.handleFunction(e)
+		return q.convertFunctionCallToOperator(e)
 	case *parser.BinaryExpr:
 		if e.LHS.Type() != parser.ValueTypeVector || e.RHS.Type() != parser.ValueTypeVector {
 			return nil, compat.NewNotSupportedError("binary expression with scalars")
@@ -227,7 +227,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 	}
 }
 
-func (q *Query) handleFunction(e *parser.Call) (types.InstantVectorOperator, error) {
+func (q *Query) convertFunctionCallToOperator(e *parser.Call) (types.InstantVectorOperator, error) {
 	factory, ok := instantVectorFunctions[e.Func.Name]
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
