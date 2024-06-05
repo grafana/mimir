@@ -124,6 +124,7 @@
 * [ENHANCEMENT] Add `_config.autoscaling_querier_predictive_scaling_enabled` to scale querier based on inflight queries 7 days ago. #7775
 * [ENHANCEMENT] Add support to autoscale ruler-querier replicas based on in-flight queries too (in addition to CPU and memory based scaling). #8060 #8188
 * [ENHANCEMENT] Distributor: improved distributor HPA scaling metric to only take in account ready pods. This requires the metric `kube_pod_status_ready` to be available in the data source used by KEDA to query scaling metrics (configured via `_config.autoscaling_prometheus_url`). #8250
+* [ENHANCEMENT] Add zone tracker usage whenever `rollout_operator_enabled`. #8275
 * [BUGFIX] Guard against missing samples in KEDA queries. #7691
 * [BUGFIX] Add configmaps mutability to the `rollout_operator_role`. #8228
 
