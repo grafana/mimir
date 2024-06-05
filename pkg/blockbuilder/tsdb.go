@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -32,14 +35,16 @@ type tsdbBuilder struct {
 
 	limits              *validation.Overrides
 	blocksStorageConfig mimir_tsdb.BlocksStorageConfig
+	kafkaPartition      int32 // Used to determine the directory for TSDB.
 }
 
-func newTSDBBuilder(logger log.Logger, limits *validation.Overrides, blocksStorageConfig mimir_tsdb.BlocksStorageConfig) *tsdbBuilder {
+func newTSDBBuilder(logger log.Logger, limits *validation.Overrides, partition int32, blocksStorageConfig mimir_tsdb.BlocksStorageConfig) *tsdbBuilder {
 	return &tsdbBuilder{
 		tsdbs:               make(map[string]*userTSDB),
 		logger:              logger,
 		limits:              limits,
 		blocksStorageConfig: blocksStorageConfig,
+		kafkaPartition:      partition,
 	}
 }
 
@@ -199,8 +204,19 @@ func (b *tsdbBuilder) getOrCreateTSDB(userID string) (*userTSDB, error) {
 	return db, nil
 }
 
+func (b *tsdbBuilder) tsdbDir(userID string) string {
+	return filepath.Join(b.blocksStorageConfig.TSDB.Dir, strconv.Itoa(int(b.kafkaPartition)), userID)
+}
+
 func (b *tsdbBuilder) newTSDB(userID string) (*userTSDB, error) {
-	udir := b.blocksStorageConfig.TSDB.BlocksDir(userID)
+	udir := b.tsdbDir(userID)
+	// Remove any previous TSDB dir. We don't need it.
+	if err := os.RemoveAll(udir); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(udir, os.ModePerm); err != nil {
+		return nil, err
+	}
 
 	userLogger := util_log.WithUserID(userID, b.logger)
 
@@ -239,7 +255,8 @@ func (b *tsdbBuilder) newTSDB(userID string) (*userTSDB, error) {
 }
 
 // compactBlocks compacts the blocks of all the TSDBs.
-func (b *tsdbBuilder) compactAndRemoveDBs(ctx context.Context) error {
+// It moves all the blocks produced into the shipperDir.
+func (b *tsdbBuilder) compactAndClose(ctx context.Context, shipperDir string) error {
 	b.tsdbsMu.Lock()
 	defer b.tsdbsMu.Unlock()
 
@@ -252,11 +269,31 @@ func (b *tsdbBuilder) compactAndRemoveDBs(ctx context.Context) error {
 		// So, if we choose to not truncation while compacting the in-prder head above, we should try to
 		// truncate the entire Head efficiently before closing the DB since closing the DB does not release
 		// the memory either. NOTE: this is unnecessary if it does not reduce the memory spikes of compaction.
+		var blockNames []string
+		dbDir := db.db.Dir()
+		for _, b := range db.db.Blocks() {
+			blockNames = append(blockNames, b.Meta().ULID.String())
+		}
+
 		if err := db.Close(); err != nil {
 			return err
 		}
 
 		delete(b.tsdbs, userID)
+
+		// Move all blocks to the shipper directory. This allows deleting the TSDB directory here,
+		// and hence don't mess with future compaction cycles. Also makes it easier to handle
+		// dynamically changing tenants without requiring a shipper per user.
+		for _, bn := range blockNames {
+			if err := os.Rename(filepath.Join(dbDir, bn), filepath.Join(shipperDir, bn)); err != nil {
+				return err
+			}
+		}
+
+		// Remove any remaining artifacts of this TSDB, like the head block files.
+		if err := os.RemoveAll(dbDir); err != nil {
+			return err
+		}
 	}
 
 	// Clear the map so that it can be released from the memory. Not setting to nil in case
@@ -265,15 +302,22 @@ func (b *tsdbBuilder) compactAndRemoveDBs(ctx context.Context) error {
 	return nil
 }
 
-func (b *tsdbBuilder) closeAndRemoveDBs() error {
+func (b *tsdbBuilder) close() error {
 	b.tsdbsMu.Lock()
 	defer b.tsdbsMu.Unlock()
 
 	for userID, db := range b.tsdbs {
+		dbDir := db.db.Dir()
+
 		if err := db.Close(); err != nil {
 			return err
 		}
 		delete(b.tsdbs, userID)
+
+		// Remove any artifacts of this TSDB. We don't need them anymore.
+		if err := os.RemoveAll(dbDir); err != nil {
+			return err
+		}
 	}
 
 	// Clear the map so that it can be released from the memory. Not setting to nil in case
