@@ -326,8 +326,6 @@ func testLimiter(t *testing.T, limits Limits, ops []callbackOp) {
 }
 
 func TestSilenceLimits(t *testing.T) {
-	t.Skip()
-
 	user := "test"
 
 	r := prometheus.NewPedanticRegistry()
@@ -345,12 +343,15 @@ func TestSilenceLimits(t *testing.T) {
 		Store:             prepareInMemoryAlertStore(),
 		Replicator:        &stubReplicator{},
 		ReplicationFactor: 1,
-		// Set the interval to 1s as this test can trigger multiple broadcasts
-		// creating and expiring silences.
-		PersisterConfig: PersisterConfig{Interval: time.Second},
+		// We have set this 1 minute, but we don't use it in this
+		// test as we override the broadcast function with SetBroadcast.
+		PersisterConfig: PersisterConfig{Interval: time.Minute},
 	}, r)
 	require.NoError(t, err)
 	defer am.StopAndWait()
+
+	// Override SetBroadcast as we just want to test limits.
+	am.silences.SetBroadcast(func(_ []byte) {})
 
 	// Insert sil1 should succeed without error.
 	sil1 := &silencepb.Silence{
@@ -373,8 +374,13 @@ func TestSilenceLimits(t *testing.T) {
 	require.EqualError(t, err, "exceeded maximum number of silences: 1 (limit: 1)")
 	require.Equal(t, "", id2)
 
-	// Expire sil1. This should allow sil2 to be inserted.
+	// Expire sil1 and run the GC. This should allow sil2 to be
+	// inserted.
 	require.NoError(t, am.silences.Expire(id1))
+	n, err := am.silences.GC()
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
 	id2, err = am.silences.Set(sil2)
 	require.NoError(t, err)
 	require.NotEqual(t, "", id2)
@@ -385,6 +391,9 @@ func TestSilenceLimits(t *testing.T) {
 
 	// Expire sil2.
 	require.NoError(t, am.silences.Expire(id2))
+	n, err = am.silences.GC()
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
 
 	// Insert sil3 should fail because it exceeds maximum size.
 	sil3 := &silencepb.Silence{
