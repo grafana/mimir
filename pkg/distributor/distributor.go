@@ -136,6 +136,8 @@ type Distributor struct {
 	dedupedSamples                   *prometheus.CounterVec
 	labelsHistogram                  prometheus.Histogram
 	sampleDelayHistogram             prometheus.Histogram
+	incomingSamplesPerRequest        *prometheus.HistogramVec
+	incomingExemplarsPerRequest      *prometheus.HistogramVec
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
 	hashCollisionCount               prometheus.Counter
 
@@ -264,9 +266,8 @@ const (
 )
 
 type PushMetrics struct {
-	otlpRequestCounter          *prometheus.CounterVec
-	uncompressedBodySize        *prometheus.HistogramVec
-	otlpIncomingSamplesPerBatch *prometheus.HistogramVec
+	otlpRequestCounter   *prometheus.CounterVec
+	uncompressedBodySize *prometheus.HistogramVec
 }
 
 func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
@@ -279,13 +280,6 @@ func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
 			Name:                            "cortex_distributor_uncompressed_request_body_size_bytes",
 			Help:                            "Size of uncompressed request body in bytes.",
 			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMinResetDuration: 1 * time.Hour,
-			NativeHistogramMaxBucketNumber:  100,
-		}, []string{"user"}),
-		otlpIncomingSamplesPerBatch: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:                            "cortex_distributor_otlp_samples_per_batch",
-			Help:                            "Number of samples per batch in otlp request.",
-			NativeHistogramBucketFactor:     2,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			NativeHistogramMaxBucketNumber:  100,
 		}, []string{"user"}),
@@ -304,16 +298,9 @@ func (m *PushMetrics) ObserveUncompressedBodySize(user string, size float64) {
 	}
 }
 
-func (m *PushMetrics) ObserveOtlpIncomingSamplesPerBatch(user string, count float64) {
-	if m != nil {
-		m.otlpIncomingSamplesPerBatch.WithLabelValues(user).Observe(count)
-	}
-}
-
 func (m *PushMetrics) deleteUserMetrics(user string) {
 	m.otlpRequestCounter.DeleteLabelValues(user)
 	m.uncompressedBodySize.DeleteLabelValues(user)
-	m.otlpIncomingSamplesPerBatch.DeleteLabelValues(user)
 }
 
 // New constructs a new Distributor
@@ -425,6 +412,20 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 				60 * 60 * 24, // 24h
 			},
 		}),
+		incomingSamplesPerRequest: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_samples_per_request",
+			Help:                            "Number of samples per request.",
+			NativeHistogramBucketFactor:     2,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"user"}),
+		incomingExemplarsPerRequest: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_exemplars_per_request",
+			Help:                            "Number of exemplars per request.",
+			NativeHistogramBucketFactor:     2,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"user"}),
 		latestSeenSampleTimestampPerUser: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_distributor_latest_seen_sample_timestamp_seconds",
 			Help: "Unix timestamp of latest received sample per user.",
@@ -664,6 +665,8 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.incomingSamples.DeleteLabelValues(userID)
 	d.incomingExemplars.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
+	d.incomingSamplesPerRequest.DeleteLabelValues(userID)
+	d.incomingExemplarsPerRequest.DeleteLabelValues(userID)
 	d.nonHASamples.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
 
@@ -1042,7 +1045,11 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 		var firstPartialErr error
 		var removeIndexes []int
+		totalSamples, totalExemplars := 0, 0
+
 		for tsIdx, ts := range req.Timeseries {
+			totalSamples += len(ts.Samples)
+			totalExemplars += len(ts.Exemplars)
 			if len(ts.Labels) == 0 {
 				removeIndexes = append(removeIndexes, tsIdx)
 				continue
@@ -1068,6 +1075,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			validatedSamples += len(ts.Samples) + len(ts.Histograms)
 			validatedExemplars += len(ts.Exemplars)
 		}
+
+		d.incomingSamplesPerRequest.WithLabelValues(userID).Observe(float64(totalSamples))
+		d.incomingExemplarsPerRequest.WithLabelValues(userID).Observe(float64(totalExemplars))
+
 		if len(removeIndexes) > 0 {
 			for _, removeIndex := range removeIndexes {
 				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeIndex])
