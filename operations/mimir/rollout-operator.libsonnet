@@ -17,12 +17,12 @@
     $._config.store_gateway_zone_a_autoscaling_enabled,
 
   rollout_operator_args:: {
-    'kubernetes.namespace': $._config.namespace
+    'kubernetes.namespace': $._config.namespace,
   } + (if zone_tracker then {
-    'use-zone-tracker': true,
-    'zone-tracker.config-map-name': 'rollout-operator-zone-tracker',
-  } else {}),
-  
+         'use-zone-tracker': true,
+         'zone-tracker.config-map-name': 'rollout-operator-zone-tracker',
+       } else {}),
+
   rollout_operator_node_affinity_matchers:: [],
 
   rollout_operator_container::
