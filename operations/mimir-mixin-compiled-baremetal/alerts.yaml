@@ -815,6 +815,15 @@ groups:
           labels:
             reason: consecutive-failures
             severity: critical
+        - alert: MimirCompactorHasRunOutOfDiskSpace
+          annotations:
+            message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has run out of disk space.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorhasrunoutofdiskspace
+          expr: |
+            increase(cortex_compactor_disk_out_of_space_errors_total{}[24h]) >= 1
+          labels:
+            reason: non-transient
+            severity: critical
         - alert: MimirCompactorHasNotUploadedBlocks
           annotations:
             message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not uploaded any block in the last 24 hours.
