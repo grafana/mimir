@@ -63,7 +63,7 @@ require (
 	github.com/google/go-github/v57 v57.0.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
-	github.com/grafana/alerting v0.0.0-20240604120925-792918f80d66
+	github.com/grafana/alerting v0.0.0-20240605085146-79897bf1fd82
 	github.com/grafana/regexp v0.0.0-20221122212121-6b5c0a4cb7fd
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/vault/api v1.10.0
@@ -110,11 +110,8 @@ require (
 	github.com/golang/glog v1.2.0 // indirect
 	github.com/google/flatbuffers v23.1.21+incompatible // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
-	github.com/grafana/dataplane/sdata v0.0.7 // indirect
-	github.com/grafana/grafana-aws-sdk v0.25.0 // indirect
 	github.com/grafana/grafana-plugin-sdk-go v0.201.0 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.6 // indirect
-	github.com/grafana/sqlds/v3 v3.2.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.19.0 // indirect
@@ -129,11 +126,6 @@ require (
 	github.com/mattetti/filebuffer v1.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/mitchellh/go-testing-interface v1.14.1 // indirect
-	github.com/mithrandie/csvq v1.17.10 // indirect
-	github.com/mithrandie/csvq-driver v1.6.8 // indirect
-	github.com/mithrandie/go-file/v2 v2.1.0 // indirect
-	github.com/mithrandie/go-text v1.5.4 // indirect
-	github.com/mithrandie/ternary v1.1.1 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
 	github.com/olekukonko/tablewriter v0.0.5 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
@@ -154,7 +146,6 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.25.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.25.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.1.0 // indirect
-	golang.org/x/term v0.20.0 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	gopkg.in/fsnotify/fsnotify.v1 v1.4.7 // indirect
 	k8s.io/apimachinery v0.29.3 // indirect

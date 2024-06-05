@@ -8,7 +8,6 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/sns"
-	"github.com/grafana/grafana-aws-sdk/pkg/awsds"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
 
@@ -24,7 +23,7 @@ type Notifier struct {
 	log          logging.Logger
 	tmpl         *templates.Template
 	settings     Config
-	sessionCache *awsds.SessionCache
+	sessionCache *SessionCache
 }
 
 func New(cfg Config, meta receivers.Metadata, template *templates.Template, logger logging.Logger) *Notifier {
@@ -33,7 +32,7 @@ func New(cfg Config, meta receivers.Metadata, template *templates.Template, logg
 		log:          logger,
 		tmpl:         template,
 		settings:     cfg,
-		sessionCache: awsds.NewSessionCache(),
+		sessionCache: NewSessionCache(),
 	}
 }
 
@@ -41,7 +40,7 @@ func New(cfg Config, meta receivers.Metadata, template *templates.Template, logg
 func (s *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
 	s.log.Info("sending SNS")
 
-	awsSessionConfig := &awsds.SessionConfig{
+	awsSessionConfig := &SessionConfig{
 		Settings: s.settings.AWSAuthSettings,
 	}
 

@@ -613,7 +613,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/alerting v0.0.0-20240604120925-792918f80d66
+# github.com/grafana/alerting v0.0.0-20240605085146-79897bf1fd82
 ## explicit; go 1.21
 github.com/grafana/alerting/cluster
 github.com/grafana/alerting/definition
@@ -646,10 +646,6 @@ github.com/grafana/alerting/receivers/webex
 github.com/grafana/alerting/receivers/webhook
 github.com/grafana/alerting/receivers/wecom
 github.com/grafana/alerting/templates
-# github.com/grafana/dataplane/sdata v0.0.7
-## explicit; go 1.19
-github.com/grafana/dataplane/sdata
-github.com/grafana/dataplane/sdata/timeseries
 # github.com/grafana/dskit v0.0.0-20240528015923-27d7d41066d3
 ## explicit; go 1.20
 github.com/grafana/dskit/backoff
@@ -709,26 +705,19 @@ github.com/grafana/e2e/images
 # github.com/grafana/gomemcache v0.0.0-20240229205252-cd6a66d6fb56
 ## explicit; go 1.18
 github.com/grafana/gomemcache/memcache
-# github.com/grafana/grafana-aws-sdk v0.25.0
-## explicit; go 1.21
-github.com/grafana/grafana-aws-sdk/pkg/awsds
 # github.com/grafana/grafana-plugin-sdk-go v0.201.0
 ## explicit; go 1.21
 github.com/grafana/grafana-plugin-sdk-go/backend
 github.com/grafana/grafana-plugin-sdk-go/backend/grpcplugin
 github.com/grafana/grafana-plugin-sdk-go/backend/gtime
 github.com/grafana/grafana-plugin-sdk-go/backend/httpclient
-github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt
 github.com/grafana/grafana-plugin-sdk-go/backend/log
 github.com/grafana/grafana-plugin-sdk-go/backend/proxy
-github.com/grafana/grafana-plugin-sdk-go/backend/resource/httpadapter
 github.com/grafana/grafana-plugin-sdk-go/backend/tracing
 github.com/grafana/grafana-plugin-sdk-go/backend/useragent
 github.com/grafana/grafana-plugin-sdk-go/build
 github.com/grafana/grafana-plugin-sdk-go/build/utils
 github.com/grafana/grafana-plugin-sdk-go/data
-github.com/grafana/grafana-plugin-sdk-go/data/converters
-github.com/grafana/grafana-plugin-sdk-go/data/sqlutil
 github.com/grafana/grafana-plugin-sdk-go/data/utils/jsoniter
 github.com/grafana/grafana-plugin-sdk-go/experimental/e2e
 github.com/grafana/grafana-plugin-sdk-go/experimental/e2e/certificate_authority
@@ -736,7 +725,6 @@ github.com/grafana/grafana-plugin-sdk-go/experimental/e2e/config
 github.com/grafana/grafana-plugin-sdk-go/experimental/e2e/fixture
 github.com/grafana/grafana-plugin-sdk-go/experimental/e2e/storage
 github.com/grafana/grafana-plugin-sdk-go/experimental/e2e/utils
-github.com/grafana/grafana-plugin-sdk-go/experimental/errorsource
 github.com/grafana/grafana-plugin-sdk-go/experimental/featuretoggles
 github.com/grafana/grafana-plugin-sdk-go/genproto/pluginv2
 github.com/grafana/grafana-plugin-sdk-go/internal
@@ -752,9 +740,6 @@ github.com/grafana/pyroscope-go/godeltaprof/internal/pprof
 ## explicit; go 1.21
 github.com/grafana/regexp
 github.com/grafana/regexp/syntax
-# github.com/grafana/sqlds/v3 v3.2.0
-## explicit; go 1.21
-github.com/grafana/sqlds/v3
 # github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 ## explicit; go 1.14
 github.com/grpc-ecosystem/go-grpc-middleware
@@ -953,37 +938,6 @@ github.com/mitchellh/go-wordwrap
 # github.com/mitchellh/mapstructure v1.5.0
 ## explicit; go 1.14
 github.com/mitchellh/mapstructure
-# github.com/mithrandie/csvq v1.17.10
-## explicit; go 1.17
-github.com/mithrandie/csvq/lib/constant
-github.com/mithrandie/csvq/lib/doc
-github.com/mithrandie/csvq/lib/excmd
-github.com/mithrandie/csvq/lib/file
-github.com/mithrandie/csvq/lib/json
-github.com/mithrandie/csvq/lib/option
-github.com/mithrandie/csvq/lib/parser
-github.com/mithrandie/csvq/lib/query
-github.com/mithrandie/csvq/lib/syntax
-github.com/mithrandie/csvq/lib/value
-# github.com/mithrandie/csvq-driver v1.6.8
-## explicit; go 1.17
-github.com/mithrandie/csvq-driver
-# github.com/mithrandie/go-file/v2 v2.1.0
-## explicit; go 1.17
-github.com/mithrandie/go-file/v2
-# github.com/mithrandie/go-text v1.5.4
-## explicit; go 1.16
-github.com/mithrandie/go-text
-github.com/mithrandie/go-text/color
-github.com/mithrandie/go-text/csv
-github.com/mithrandie/go-text/fixedlen
-github.com/mithrandie/go-text/json
-github.com/mithrandie/go-text/jsonl
-github.com/mithrandie/go-text/ltsv
-github.com/mithrandie/go-text/table
-# github.com/mithrandie/ternary v1.1.1
-## explicit
-github.com/mithrandie/ternary
 # github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
 ## explicit
 github.com/modern-go/concurrent
@@ -1502,11 +1456,9 @@ golang.org/x/crypto/internal/poly1305
 golang.org/x/crypto/pbkdf2
 golang.org/x/crypto/pkcs12
 golang.org/x/crypto/pkcs12/internal/rc2
-golang.org/x/crypto/ssh/terminal
 # golang.org/x/exp v0.0.0-20240416160154-fe59bbe5cc7f
 ## explicit; go 1.20
 golang.org/x/exp/constraints
-golang.org/x/exp/maps
 golang.org/x/exp/slices
 # golang.org/x/mod v0.17.0
 ## explicit; go 1.18
@@ -1554,26 +1506,16 @@ golang.org/x/sync/singleflight
 # golang.org/x/sys v0.20.0
 ## explicit; go 1.18
 golang.org/x/sys/cpu
-golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 golang.org/x/sys/windows/registry
-# golang.org/x/term v0.20.0
-## explicit; go 1.18
-golang.org/x/term
 # golang.org/x/text v0.15.0
 ## explicit; go 1.18
 golang.org/x/text/cases
-golang.org/x/text/encoding
-golang.org/x/text/encoding/internal
-golang.org/x/text/encoding/internal/identifier
-golang.org/x/text/encoding/japanese
-golang.org/x/text/encoding/unicode
 golang.org/x/text/internal
 golang.org/x/text/internal/language
 golang.org/x/text/internal/language/compact
 golang.org/x/text/internal/tag
-golang.org/x/text/internal/utf8internal
 golang.org/x/text/language
 golang.org/x/text/runes
 golang.org/x/text/secure/bidirule

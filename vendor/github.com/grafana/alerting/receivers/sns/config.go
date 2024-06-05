@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go/aws/arn"
-	"github.com/grafana/grafana-aws-sdk/pkg/awsds"
 
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
@@ -28,7 +27,7 @@ type Config struct {
 	Subject         string
 	Message         string
 	Attributes      map[string]string
-	AWSAuthSettings awsds.AWSDatasourceSettings
+	AWSAuthSettings AWSDatasourceSettings
 }
 
 func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Config, error) {
@@ -75,16 +74,16 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 		settings.APIUrl = fmt.Sprintf("https://sns.%s.amazonaws.com", settings.Sigv4.Region)
 	}
 
-	at := awsds.AuthTypeDefault
+	at := AuthTypeDefault
 	if settings.Sigv4.Profile != "" {
-		at = awsds.AuthTypeSharedCreds
+		at = AuthTypeSharedCreds
 	} else if settings.Sigv4.AccessKey != "" || settings.Sigv4.SecretKey != "" {
 		if settings.Sigv4.AccessKey == "" || settings.Sigv4.SecretKey == "" {
 			return Config{}, errors.New("must specify both access key and secret key")
 		}
 		settings.Sigv4.AccessKey = decryptFn("accessKey", settings.Sigv4.AccessKey)
 		settings.Sigv4.SecretKey = decryptFn("secretKey", settings.Sigv4.SecretKey)
-		at = awsds.AuthTypeKeys
+		at = AuthTypeKeys
 	}
 
 	return Config{
@@ -95,7 +94,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 		Subject:     settings.Subject,
 		Message:     settings.Message,
 		Attributes:  settings.Attributes,
-		AWSAuthSettings: awsds.AWSDatasourceSettings{
+		AWSAuthSettings: AWSDatasourceSettings{
 			Profile:       settings.Sigv4.Profile,
 			Region:        settings.Sigv4.Region,
 			AuthType:      at,
