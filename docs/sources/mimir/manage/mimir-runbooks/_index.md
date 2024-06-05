@@ -1703,11 +1703,13 @@ Only series with invalid samples are skipped during the ingestion. Valid samples
 This non-critical error occurs when Mimir rejects a sample because its timestamp is too far in the past compared to the wall clock.
 
 How it **works**:
+
 - The distributor or the ingester implements an lower limit on the timestamp of incoming samples, it is used to protect the system from potential abuse or mistakes.
 - The lower limit is defined by the current wall clock minus the `out_of_order_time_window` and minus the `past_grace_period` settings.
 - The samples that are too far in the past are not ingested.
 
 How to **fix** it:
+
 - Make sure that it is intended that the timestamps of the incoming samples are that old.
 - If the timestamps are correct, increase the `past_grace_period` setting, or set it to 0 to disable the limit.
 
