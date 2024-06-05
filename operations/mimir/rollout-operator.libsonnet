@@ -12,9 +12,19 @@
     $._config.cortex_compactor_concurrent_rollout_enabled ||
     $._config.ingest_storage_ingester_autoscaling_enabled,
 
-  rollout_operator_args:: {
-    'kubernetes.namespace': $._config.namespace,
-  },
+  local zone_tracker =
+    $._config.ingester_zone_a_autoscaling_enabled ||
+    $._config.store_gateway_zone_a_autoscaling_enabled,
+
+  rollout_operator_args::
+    {
+      'kubernetes.namespace': $._config.namespace,
+    } +
+    if !zone_tracker then null
+    else {
+      'use-zone-tracker': true,
+      'zone-tracker.config-map-name': 'rollout-operator-zone-tracker',
+    },
 
   rollout_operator_node_affinity_matchers:: [],
 
