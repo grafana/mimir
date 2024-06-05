@@ -8,6 +8,7 @@ package indexheader
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -198,20 +199,31 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 
 func TestReaderPool_LoadedBlocks(t *testing.T) {
 	usedAt := time.Now()
-	id, err := ulid.New(ulid.Now(), rand.Reader)
-	require.NoError(t, err)
+	minUsedAt := usedAt.Add(-time.Minute)
 
-	lb := LazyBinaryReader{
-		blockID: id,
+	id1 := ulid.MustNew(ulid.Now(), rand.Reader)
+	lb1 := LazyBinaryReader{
+		blockID: id1,
+		usedAt:  atomic.NewInt64(usedAt.Add(-5 * time.Minute).UnixNano()), // idle block
+		// we just set to make reader != nil
+		reader: &StreamBinaryReader{},
+	}
+
+	id2 := ulid.MustNew(ulid.Now(), rand.Reader)
+	lb2 := LazyBinaryReader{
+		blockID: id2,
 		usedAt:  atomic.NewInt64(usedAt.UnixNano()),
 		// we just set to make reader != nil
 		reader: &StreamBinaryReader{},
 	}
 	rp := ReaderPool{
 		lazyReaderEnabled: true,
-		lazyReaders:       map[*LazyBinaryReader]struct{}{&lb: {}},
+		lazyReaders: map[*LazyBinaryReader]struct{}{
+			&lb1: {},
+			&lb2: {},
+		},
 	}
-	require.Equal(t, map[ulid.ULID]int64{id: usedAt.UnixMilli()}, rp.LoadedBlocks())
+	require.Equal(t, map[ulid.ULID]int64{id2: usedAt.UnixMilli()}, rp.LoadedBlocks(minUsedAt.UnixMilli()))
 }
 
 func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
@@ -238,8 +250,10 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
 	require.Equal(t, float64(0), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
 
+	minUsedAt := time.Now().Add(-time.Minute)
+
 	snapshot := lazyLoadedHeadersSnapshot{
-		IndexHeaderLastUsedTime: pool.LoadedBlocks(),
+		IndexHeaderLastUsedTime: pool.LoadedBlocks(minUsedAt.UnixMilli()),
 		UserID:                  "anonymous",
 	}
 
@@ -262,9 +276,8 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	time.Sleep(idleTimeout * 2)
 	pool.closeIdleReaders()
 
-	// LoadedBlocks will update the IndexHeaderLastUsedTime map with the removal of
-	// idle blocks.
-	snapshot.IndexHeaderLastUsedTime = pool.LoadedBlocks()
+	// LoadedBlocks will update the IndexHeaderLastUsedTime map with the removal of idle blocks.
+	snapshot.IndexHeaderLastUsedTime = pool.LoadedBlocks(minUsedAt.UnixMilli())
 	err = snapshot.persist(tmpDir)
 	require.NoError(t, err)
 
@@ -272,6 +285,68 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	require.NoError(t, err)
 
 	require.JSONEq(t, `{"index_header_last_used_time":{},"user_id":"anonymous"}`, string(persistedData), "index_header_last_used_time should be cleared")
+}
+
+func TestReaderPool_PersistLazyLoadedBlock_restoredSnapshot(t *testing.T) {
+	const idleTimeout = time.Second
+	ctx, tmpDir, bkt, blockID, metrics := prepareReaderPool(t)
+
+	testNow := time.Now()
+	minUsedAt := testNow.Add(-time.Hour)
+
+	fakeBlockID := ulid.MustNew(ulid.Now(), rand.Reader)
+	restoredSnapshot := lazyLoadedHeadersSnapshot{
+		IndexHeaderLastUsedTime: map[ulid.ULID]int64{fakeBlockID: testNow.UnixMilli()},
+		UserID:                  "anonymous",
+	}
+
+	// Note that we are creating a ReaderPool that doesn't run a background cleanup task for idle
+	// Reader instances. We'll manually invoke the cleanup task when we need it as part of this test.
+	pool := newReaderPool(log.NewNopLogger(), Config{
+		LazyLoadingEnabled:         true,
+		LazyLoadingIdleTimeout:     idleTimeout,
+		EagerLoadingStartupEnabled: true,
+	}, gate.NewNoop(), metrics, &restoredSnapshot)
+	defer pool.Close()
+
+	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{}, false)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, r.Close()) }()
+
+	// Ensure it can read data.
+	labelNames, err := r.LabelNames()
+	require.NoError(t, err)
+	require.Equal(t, []string{"a"}, labelNames)
+	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
+	require.Equal(t, float64(0), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
+
+	snapshot := lazyLoadedHeadersSnapshot{
+		IndexHeaderLastUsedTime: pool.LoadedBlocks(minUsedAt.UnixMilli()),
+		UserID:                  "anonymous",
+	}
+
+	err = snapshot.persist(tmpDir)
+	require.NoError(t, err)
+
+	persistedFile := filepath.Join(tmpDir, lazyLoadedHeadersListFileName)
+	persistedData, err := os.ReadFile(persistedFile)
+	require.NoError(t, err)
+
+	expectedIndex := map[string]any{
+		fakeBlockID.String(): testNow.UnixMilli(),
+	}
+	// we know that there is only one lazyReader, hence simply set the ULID and timestamp.
+	require.Equal(t, 1, len(pool.lazyReaders), "expecting only one lazyReaders")
+	for r := range pool.lazyReaders {
+		expectedIndex[r.blockID.String()] = r.usedAt.Load() / int64(time.Millisecond)
+	}
+	expected := map[string]any{
+		"user_id":                     "anonymous",
+		"index_header_last_used_time": expectedIndex,
+	}
+	expectedData, err := json.Marshal(expected)
+	require.NoError(t, err)
+	require.JSONEq(t, string(expectedData), string(persistedData))
 }
 
 func prepareReaderPool(t *testing.T) (context.Context, string, *filesystem.Bucket, ulid.ULID, *ReaderPoolMetrics) {

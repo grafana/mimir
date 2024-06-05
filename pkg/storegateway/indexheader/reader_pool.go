@@ -128,9 +128,13 @@ func NewReaderPool(logger log.Logger, indexHeaderConfig Config, lazyLoadingGate 
 					return
 				case <-tickerIdleReader.C:
 					p.closeIdleReaders()
-				case <-lazyLoadC:
+				case t := <-lazyLoadC:
+					// minUsedAt is the threshold for how recently used should the block be to stay in the snapshot;
+					// we add an extra couple of minutes to make sure the pool closes the idle readers.
+					dur := p.lazyReaderIdleTimeout + (10 * time.Minute)
+					minUsedAt := t.Truncate(time.Minute).Add(-dur).UnixMilli()
 					snapshot := lazyLoadedHeadersSnapshot{
-						IndexHeaderLastUsedTime: p.LoadedBlocks(),
+						IndexHeaderLastUsedTime: p.LoadedBlocks(minUsedAt),
 						UserID:                  lazyLoadedSnapshotConfig.UserID,
 					}
 
@@ -217,7 +221,7 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 			return nil, lazyErr
 		}
 
-		// we only try to eager load only during initialSync
+		// we only try to eager load during initialSync
 		if initialSync && p.preShutdownLoadedBlocks != nil {
 			// we only eager load if we have preShutdownLoadedBlocks for the given block id
 			if p.preShutdownLoadedBlocks.IndexHeaderLastUsedTime[id] > 0 {
@@ -292,14 +296,30 @@ func (p *ReaderPool) onLazyReaderClosed(r *LazyBinaryReader) {
 }
 
 // LoadedBlocks returns a new map of lazy-loaded block IDs and the last time they were used in milliseconds.
-func (p *ReaderPool) LoadedBlocks() map[ulid.ULID]int64 {
+// It skips blocks, which weren't in use after minUsedAt.
+func (p *ReaderPool) LoadedBlocks(minUsedAt int64) map[ulid.ULID]int64 {
 	p.lazyReadersMx.Lock()
 	defer p.lazyReadersMx.Unlock()
 
 	blocks := make(map[ulid.ULID]int64, len(p.lazyReaders))
 	for r := range p.lazyReaders {
 		if r.reader != nil {
-			blocks[r.blockID] = r.usedAt.Load() / int64(time.Millisecond)
+			usedAt := r.usedAt.Load() / int64(time.Millisecond)
+			if usedAt > minUsedAt {
+				blocks[r.blockID] = usedAt
+			}
+		}
+	}
+
+	// Add blocks from the pre-shutdown snapshot if those are still "fresh".
+	if p.lazyReaderEnabled && p.preShutdownLoadedBlocks != nil {
+		for id, usedAt := range p.preShutdownLoadedBlocks.IndexHeaderLastUsedTime {
+			if _, ok := blocks[id]; ok {
+				continue
+			}
+			if usedAt > minUsedAt {
+				blocks[id] = usedAt
+			}
 		}
 	}
 
