@@ -1698,6 +1698,29 @@ On a per-tenant basis, you can fine tune the tolerance by configuring the `creat
 Only series with invalid samples are skipped during the ingestion. Valid samples within the same request are still ingested.
 {{< /admonition >}}
 
+### err-mimir-too-far-in-past
+
+This non-critical error occurs when Mimir rejects a sample because its timestamp is too far in the past compared to the wall clock.
+
+How it **works**:
+- The distributor or the ingester implements an lower limit on the timestamp of incoming samples, it is used to protect the system from potential abuse or mistakes.
+- The lower limit is defined by the current wall clock minus the `out_of_order_time_window` and minus the `past_grace_period` settings.
+- The samples that are too far in the past are not ingested.
+
+How to **fix** it:
+- Make sure that it is intended that the timestamps of the incoming samples are that old.
+- If the timestamps are correct, increase the `past_grace_period` setting, or set it to 0 to disable the limit.
+
+{{< admonition type="note" >}}
+Only the invalid samples are skipped during the ingestion. Valid samples within the same request are still ingested.
+{{< /admonition >}}
+
+### err-mimir-exemplar-too-far-in-past
+
+This non-critical error occurs when Mimir rejects an exemplar because its timestamp is too far in the past compared to the wall clock.
+
+See [`err-mimir-too-far-in-past`](#err-mimir-too-far-in-past) for more details and how to fix it.
+
 ### err-mimir-exemplar-labels-missing
 
 This non-critical error occurs when Mimir receives a write request that contains an exemplar without a label that identifies the related metric.
