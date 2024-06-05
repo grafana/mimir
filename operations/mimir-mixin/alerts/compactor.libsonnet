@@ -81,7 +81,7 @@
             reason: 'non-transient',
           },
           annotations: {
-            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has hit the disk space limit.' % $._config,
+            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has run out of disk space.' % $._config,
           },
         },
         {
