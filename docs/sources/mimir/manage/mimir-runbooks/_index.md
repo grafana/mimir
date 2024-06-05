@@ -641,7 +641,7 @@ How to **investigate**:
 
 ### CompactorHasRunOutOfDiskSpace
 
-This alert fires when the compactor has run out of disk space at least once. 
+This alert fires when the compactor has run out of disk space at least once.
 When this happens the compaction will fail and after some time the compactor will retry the failed compaction, but it is very likely that on each retry it will just hit the same disk space limit again and it won't be able to recover on its own.
 
 How to **investigate**:
