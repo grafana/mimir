@@ -185,7 +185,7 @@ func TestTSDBBuilder(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			expSamples = expSamples[:0]
 			expHistograms = expHistograms[:0]
-			builder := newTSDBBuilder(log.NewNopLogger(), overrides, mimir_tsdb.BlocksStorageConfig{
+			builder := newTSDBBuilder(log.NewNopLogger(), overrides, 0, mimir_tsdb.BlocksStorageConfig{
 				TSDB: mimir_tsdb.TSDBConfig{
 					Dir: t.TempDir(),
 				},
@@ -249,13 +249,13 @@ func TestTSDBBuilder(t *testing.T) {
 			// Check the samples in the DB.
 			queryDB(db.db)
 
-			dbDir := builder.blocksStorageConfig.TSDB.BlocksDir(userID)
 			// This should create the appropriate blocks and close the DB.
-			err = builder.compactAndRemoveDBs(context.Background())
+			shipperDir := t.TempDir()
+			err = builder.compactAndClose(context.Background(), shipperDir)
 			require.NoError(t, err)
 			require.Nil(t, builder.getTSDB(userID))
 
-			newDB, err := tsdb.Open(dbDir, log.NewNopLogger(), nil, nil, nil)
+			newDB, err := tsdb.Open(shipperDir, log.NewNopLogger(), nil, nil, nil)
 			require.NoError(t, err)
 
 			// One for the in-order current range. Two for the out-of-order blocks: ont for current range
@@ -279,7 +279,7 @@ func TestProcessingEmptyRequest(t *testing.T) {
 
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
-	builder := newTSDBBuilder(log.NewNopLogger(), overrides, mimir_tsdb.BlocksStorageConfig{
+	builder := newTSDBBuilder(log.NewNopLogger(), overrides, 0, mimir_tsdb.BlocksStorageConfig{
 		TSDB: mimir_tsdb.TSDBConfig{
 			Dir: t.TempDir(),
 		},
@@ -311,7 +311,7 @@ func TestProcessingEmptyRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, allProcessed)
 
-	require.NoError(t, builder.closeAndRemoveDBs())
+	require.NoError(t, builder.close())
 }
 
 func defaultLimitsTestConfig() validation.Limits {

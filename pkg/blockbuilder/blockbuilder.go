@@ -5,6 +5,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"time"
@@ -50,11 +52,23 @@ func NewBlockBuilder(
 
 	b.Service = services.NewBasicService(b.starting, b.running, b.stopping)
 
+	// TODO(codesome): add a shipping subservice responsible for shipping the blocks to the storage.
+
 	return b, nil
 }
 
 func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	const fetchMaxBytes = 100_000_000
+	// Empty any previous artifacts.
+	if err := os.RemoveAll(b.cfg.BlocksStorageConfig.TSDB.Dir); err != nil {
+		return fmt.Errorf("removing tsdb dir: %w", err)
+	}
+	if err := os.MkdirAll(b.cfg.BlocksStorageConfig.TSDB.Dir, os.ModePerm); err != nil {
+		return fmt.Errorf("creating tsdb dir: %w", err)
+	}
+	if err := os.MkdirAll(b.shipperDir(), os.ModePerm); err != nil {
+		return fmt.Errorf("creating shipper dir: %w", err)
+	}
 
 	opts := []kgo.Opt{
 		kgo.ClientID(b.cfg.Kafka.ClientID),
@@ -335,7 +349,7 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 				// So we break this into multiple block building cycles by resetting the block builder at intervals.
 				// TODO(codesome): the logic for this below is broken. Fix it. How can we determine the block ends when we are catching up?
 				if builder != nil && rec.Timestamp.After(resetBlockBuilderAt) {
-					if err := builder.compactAndRemoveDBs(ctx); err != nil {
+					if err := builder.compactAndClose(ctx, b.shipperDir()); err != nil {
 						level.Error(b.logger).Log("msg", "failed to compact and remove dbs", "part", part, "err", err)
 						// TODO(codesome): return err?
 						// TODO(codesome): add metric
@@ -343,7 +357,7 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 					builder = nil
 				}
 				if builder == nil {
-					builder = newTSDBBuilder(b.logger, b.limits, b.cfg.BlocksStorageConfig)
+					builder = newTSDBBuilder(b.logger, b.limits, part, b.cfg.BlocksStorageConfig)
 					resetBlockBuilderAt = rec.Timestamp.Truncate(consumptionItvl).Add(consumptionItvl + timeBuffer)
 
 					// TODO(codesome): verify. this can be wrong.
@@ -382,14 +396,24 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 		b.kafkaClient.AllowRebalance()
 	}
 
-	if err := builder.compactAndRemoveDBs(ctx); err != nil {
-		// TODO(codesome): add metric
-		return err
+	if builder != nil {
+		if err := builder.compactAndClose(ctx, b.shipperDir()); err != nil {
+			// TODO(codesome): add metric
+			return err
+		}
 	}
 
-	// TODO(codesome): store the lastOffset and currEnd as a metadata in the checkpoint
-	_ = lastOffset // to avoid unused error. TODO: remove this once used
-	return b.commitOffset(ctx, part, checkpointOffset)
+	if checkpointOffset > 0 {
+		// TODO(codesome): store the lastOffset and currEnd as a metadata in the checkpoint
+		// TODO(codesome): Make sure all the blocks have been shipped before committing the offset.
+		_ = lastOffset // to avoid unused error. TODO: remove this once used
+		return b.commitOffset(ctx, part, checkpointOffset)
+	}
+	return nil
+}
+
+func (b *BlockBuilder) shipperDir() string {
+	return filepath.Join(b.cfg.BlocksStorageConfig.TSDB.Dir, "shipper")
 }
 
 func (b *BlockBuilder) commitOffset(ctx context.Context, part int32, offset int64) (returnErr error) {
