@@ -5,6 +5,7 @@ package streamingpromql
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -558,4 +559,119 @@ func TestMemoryConsumptionLimit(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestActiveQueryTracker(t *testing.T) {
+	for _, shouldSucceed := range []bool{true, false} {
+		t.Run(fmt.Sprintf("successful query = %v", shouldSucceed), func(t *testing.T) {
+			opts := NewTestEngineOpts()
+			tracker := &testQueryTracker{}
+			opts.ActiveQueryTracker = tracker
+			engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
+			require.NoError(t, err)
+
+			innerStorage := promqltest.LoadedStorage(t, "")
+			t.Cleanup(func() { require.NoError(t, innerStorage.Close()) })
+
+			// Use a fake queryable as a way to check that the query is recorded as active while the query is in progress.
+			queryTrackingTestingQueryable := &activeQueryTrackerQueryable{
+				innerStorage: innerStorage,
+				tracker:      tracker,
+			}
+
+			if !shouldSucceed {
+				queryTrackingTestingQueryable.err = errors.New("something went wrong inside the query")
+			}
+
+			t.Run("range query", func(t *testing.T) {
+				expr := "some_test_range_query"
+				queryTrackingTestingQueryable.t = t
+				queryTrackingTestingQueryable.expr = expr
+
+				q, err := engine.NewRangeQuery(context.Background(), queryTrackingTestingQueryable, nil, expr, timestamp.Time(0), timestamp.Time(0).Add(time.Hour), time.Minute)
+				require.NoError(t, err)
+
+				res := q.Exec(context.Background())
+
+				if shouldSucceed {
+					require.NoError(t, res.Err)
+				} else {
+					require.EqualError(t, res.Err, "something went wrong inside the query")
+				}
+
+				tracker.assertLastTrackedQuery(t, expr, true)
+			})
+
+			t.Run("instant query", func(t *testing.T) {
+				expr := "some_test_instant_query"
+				queryTrackingTestingQueryable.t = t
+				queryTrackingTestingQueryable.expr = expr
+
+				q, err := engine.NewInstantQuery(context.Background(), queryTrackingTestingQueryable, nil, expr, timestamp.Time(0))
+				require.NoError(t, err)
+
+				res := q.Exec(context.Background())
+
+				if shouldSucceed {
+					require.NoError(t, res.Err)
+				} else {
+					require.EqualError(t, res.Err, "something went wrong inside the query")
+				}
+
+				tracker.assertLastTrackedQuery(t, expr, true)
+			})
+		})
+	}
+
+}
+
+type testQueryTracker struct {
+	queries []trackedQuery
+}
+
+type trackedQuery struct {
+	expr    string
+	deleted bool
+}
+
+func (qt *testQueryTracker) GetMaxConcurrent() int {
+	return 0
+}
+
+func (qt *testQueryTracker) Insert(_ context.Context, query string) (int, error) {
+	qt.queries = append(qt.queries, trackedQuery{
+		expr:    query,
+		deleted: false,
+	})
+
+	return len(qt.queries) - 1, nil
+}
+
+func (qt *testQueryTracker) Delete(insertIndex int) {
+	qt.queries[insertIndex].deleted = true
+}
+
+func (qt *testQueryTracker) assertLastTrackedQuery(t *testing.T, expr string, deleted bool) {
+	require.NotEmpty(t, qt.queries)
+	trackedQuery := qt.queries[len(qt.queries)-1]
+	require.Equal(t, expr, trackedQuery.expr)
+	require.Equal(t, deleted, trackedQuery.deleted)
+}
+
+type activeQueryTrackerQueryable struct {
+	t            *testing.T
+	tracker      *testQueryTracker
+	expr         string
+	innerStorage storage.Queryable
+	err          error
+}
+
+func (a *activeQueryTrackerQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	a.tracker.assertLastTrackedQuery(a.t, a.expr, false)
+
+	if a.err != nil {
+		return nil, a.err
+	}
+
+	return a.innerStorage.Querier(mint, maxt)
 }
