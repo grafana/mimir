@@ -639,7 +639,7 @@ How to **investigate**:
       - If you encounter any Compactor resource issues, add CPU/Memory as needed temporarily, then scale back later.
       - You can also optionally scale replicas and shards further to split the work up into even smaller pieces until the situation has recovered.
 
-### CompactorHasRunOutOfDiskSpace
+### MimirCompactorHasRunOutOfDiskSpace
 
 This alert fires when the compactor has run out of disk space at least once.
 When this happens the compaction will fail and after some time the compactor will retry the failed compaction, but it is very likely that on each retry it will just hit the same disk space limit again and it won't be able to recover on its own.
