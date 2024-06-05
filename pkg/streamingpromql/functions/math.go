@@ -6,4 +6,4 @@ import (
 	"math"
 )
 
-var Acos = TransformationFunc(math.Acos)
+var Acos = FloatTransformationDropHistogramsFunc(math.Acos)

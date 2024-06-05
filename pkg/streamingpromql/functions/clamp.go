@@ -25,7 +25,9 @@ func ClampFactory(min float64, max float64) InstantVectorFunction {
 		for i := range seriesData.Floats {
 			seriesData.Floats[i].F = math.Max(min, math.Min(max, seriesData.Floats[i].F))
 		}
-
+		// Clamp func ignores Histograms
+		pool.PutHPointSlice(seriesData.Histograms)
+		seriesData.Histograms = nil
 		return seriesData, nil
 	}
 }
