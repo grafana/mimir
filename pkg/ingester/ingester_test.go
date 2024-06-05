@@ -2794,6 +2794,9 @@ func TestIngester_Push(t *testing.T) {
 
 			i.updateUsageStats()
 
+			if !testData.disableActiveSeries {
+				assert.Equal(t, int64(len(testData.expectedIngested)), usagestats.GetInt(activeSeriesStatsName).Value())
+			}
 			assert.Equal(t, int64(len(testData.expectedIngested)), usagestats.GetInt(memorySeriesStatsName).Value())
 			assert.Equal(t, int64(expectedTenantsCount), usagestats.GetInt(memoryTenantsStatsName).Value())
 			assert.Equal(t, int64(expectedSamplesCount)+appendedSamplesStatsBefore, usagestats.GetCounter(appendedSamplesStatsName).Total())
