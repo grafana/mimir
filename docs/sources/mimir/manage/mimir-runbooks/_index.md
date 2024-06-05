@@ -639,6 +639,27 @@ How to **investigate**:
       - If you encounter any Compactor resource issues, add CPU/Memory as needed temporarily, then scale back later.
       - You can also optionally scale replicas and shards further to split the work up into even smaller pieces until the situation has recovered.
 
+### CompactorHasRunOutOfDiskSpace
+
+This alert fires when the compactor has run out of disk space at least once. 
+When this happens the compaction will fail and after some time the compactor will retry the failed compaction, but it is very likely that on each retry it will just hit the same disk space limit again and it won't be able to recover on its own.
+
+How to **investigate**:
+
+- Look at the disk space usage in the compactor's data volumes.
+- Look for an error with the string "no space left on device" to confirm that the compactor ran out of disk space.
+
+How to **fix** it:
+
+- The only long-term solution is to give the compactor more disk space, this can be achieved by doing one or multiple of:
+  - Horizontally scale the compactors
+  - Grow each compactor's disk
+- If the number of blocks that the compactor is failing to compact is not very significant and you want it to skip them in order to focus on more recent blocks instead, you can consider marking the affected blocks for no compaction:
+  ```
+  # in this example the object storage backend is GCS
+  ./tools/markblocks/markblocks -backend gcs -gcs.bucket-name <bucket> -mark no-compact -tenant <tenant-id> -details "focus on newer blocks"
+  ```
+
 ### MimirCompactorSkippedUnhealthyBlocks
 
 This alert fires when compactor tries to compact a block, but finds that given block is unhealthy. This indicates a bug in Prometheus TSDB library and should be investigated.
