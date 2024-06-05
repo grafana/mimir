@@ -125,6 +125,7 @@ The following features are currently experimental:
     - `-ingester.circuit-breaker.cooldown-period`
     - `-ingester.circuit-breaker.initial-delay`
     - `-ingester.circuit-breaker.push-timeout`
+    - `-ingester.circuit-breaker.read-timeout`
 - Ingester client
   - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
     - `-ingester.client.circuit-breaker.enabled`

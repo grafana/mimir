@@ -238,21 +238,22 @@ func TestCircuitBreaker_RecordResult(t *testing.T) {
 	}
 }
 
-func TestCircuitBreaker_FinishPushRequest(t *testing.T) {
+func TestCircuitBreaker_FinishRequest(t *testing.T) {
 	metricNames := []string{
 		"cortex_ingester_circuit_breaker_results_total",
 	}
+	maxRequestDuration := 2 * time.Second
 	testCases := map[string]struct {
-		pushRequestDuration time.Duration
-		isActive            bool
-		err                 error
-		expectedErr         error
-		expectedMetrics     string
+		requestDuration time.Duration
+		isActive        bool
+		err             error
+		expectedErr     error
+		expectedMetrics string
 	}{
-		"with a permit acquired, pushRequestDuration lower than PushTimeout and no input error, finishPushRequest gives success": {
-			pushRequestDuration: 1 * time.Second,
-			isActive:            true,
-			err:                 nil,
+		"with a permit acquired, requestDuration lower than maxRequestDuration and no input error, finishRequest gives success": {
+			requestDuration: 1 * time.Second,
+			isActive:        true,
+			err:             nil,
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
@@ -261,10 +262,10 @@ func TestCircuitBreaker_FinishPushRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{result="circuit_breaker_open"} 0
 			`,
 		},
-		"with circuit breaker not active, pushRequestDuration lower than PushTimeout and no input error, finishPushRequest does nothing": {
-			pushRequestDuration: 1 * time.Second,
-			isActive:            false,
-			err:                 nil,
+		"with circuit breaker not active, requestDuration lower than maxRequestDuration and no input error, finishRequest does nothing": {
+			requestDuration: 1 * time.Second,
+			isActive:        false,
+			err:             nil,
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
@@ -273,11 +274,11 @@ func TestCircuitBreaker_FinishPushRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{result="circuit_breaker_open"} 0
 			`,
 		},
-		"with circuit breaker active, pushRequestDuration higher than PushTimeout and no input error, finishPushRequest gives context deadline exceeded error": {
-			pushRequestDuration: 3 * time.Second,
-			isActive:            true,
-			err:                 nil,
-			expectedErr:         context.DeadlineExceeded,
+		"with circuit breaker active, requestDuration higher than maxRequestDuration and no input error, finishRequest gives context deadline exceeded error": {
+			requestDuration: 3 * time.Second,
+			isActive:        true,
+			err:             nil,
+			expectedErr:     context.DeadlineExceeded,
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
@@ -286,11 +287,11 @@ func TestCircuitBreaker_FinishPushRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{result="circuit_breaker_open"} 0
 			`,
 		},
-		"with circuit breaker not active, pushRequestDuration higher than PushTimeout and no input error, finishPushRequest does nothing": {
-			pushRequestDuration: 3 * time.Second,
-			isActive:            false,
-			err:                 nil,
-			expectedErr:         nil,
+		"with circuit breaker not active, requestDuration higher than maxRequestDuration and no input error, finishRequest does nothing": {
+			requestDuration: 3 * time.Second,
+			isActive:        false,
+			err:             nil,
+			expectedErr:     nil,
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
@@ -299,11 +300,11 @@ func TestCircuitBreaker_FinishPushRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{result="circuit_breaker_open"} 0
 			`,
 		},
-		"with circuit breaker active, pushRequestDuration higher than PushTimeout and an input error different from context deadline exceeded, finishPushRequest gives context deadline exceeded error": {
-			pushRequestDuration: 3 * time.Second,
-			isActive:            true,
-			err:                 newInstanceLimitReachedError("error"),
-			expectedErr:         context.DeadlineExceeded,
+		"with circuit breaker active, requestDuration higher than maxRequestDuration and an input error different from context deadline exceeded, finishRequest gives context deadline exceeded error": {
+			requestDuration: 3 * time.Second,
+			isActive:        true,
+			err:             newInstanceLimitReachedError("error"),
+			expectedErr:     context.DeadlineExceeded,
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
@@ -312,11 +313,11 @@ func TestCircuitBreaker_FinishPushRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{result="circuit_breaker_open"} 0
 			`,
 		},
-		"with circuit breaker not active, pushRequestDuration higher than PushTimeout and an input error different from context deadline exceeded, finishPushRequest does nothing": {
-			pushRequestDuration: 3 * time.Second,
-			isActive:            false,
-			err:                 newInstanceLimitReachedError("error"),
-			expectedErr:         nil,
+		"with circuit breaker not active, requestDuration higher than maxRequestDuration and an input error different from context deadline exceeded, finishRequest does nothing": {
+			requestDuration: 3 * time.Second,
+			isActive:        false,
+			err:             newInstanceLimitReachedError("error"),
+			expectedErr:     nil,
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
@@ -335,7 +336,7 @@ func TestCircuitBreaker_FinishPushRequest(t *testing.T) {
 			}
 			cb := newCircuitBreaker(cfg, log.NewNopLogger(), registry)
 			cb.active.Store(testCase.isActive)
-			err := cb.finishPushRequest(testCase.pushRequestDuration, testCase.err)
+			err := cb.finishRequest(testCase.requestDuration, maxRequestDuration, testCase.err)
 			if testCase.expectedErr == nil {
 				require.NoError(t, err)
 			} else {
@@ -674,6 +675,121 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 			ctx = context.WithValue(ctx, pushReqCtxKey, st)
 
 			i.FinishPushRequest(ctx)
+			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testCase.expectedMetrics), metricNames...))
+		})
+	}
+}
+
+func TestIngester_FinishReadRequest(t *testing.T) {
+	metricNames := []string{
+		"cortex_ingester_circuit_breaker_results_total",
+	}
+	testCases := map[string]struct {
+		readRequestDuration          time.Duration
+		acquiredCircuitBreakerPermit bool
+		err                          error
+		expectedMetrics              string
+	}{
+		"with a permit acquired, readRequestDuration lower than ReadTimeout and no input err, finishReadRequest gives success": {
+			readRequestDuration:          1 * time.Second,
+			acquiredCircuitBreakerPermit: true,
+			err:                          nil,
+			expectedMetrics: `
+				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
+				# TYPE cortex_ingester_circuit_breaker_results_total counter
+				cortex_ingester_circuit_breaker_results_total{result="success"} 1
+				cortex_ingester_circuit_breaker_results_total{result="error"} 0
+				cortex_ingester_circuit_breaker_results_total{result="circuit_breaker_open"} 0
+			`,
+		},
+		"when a permit not acquired, readRequestDuration lower than ReadTimeout and no input err, finishReadRequest does nothing": {
+			readRequestDuration:          1 * time.Second,
+			acquiredCircuitBreakerPermit: false,
+			err:                          nil,
+			expectedMetrics: `
+				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
+				# TYPE cortex_ingester_circuit_breaker_results_total counter
+				cortex_ingester_circuit_breaker_results_total{result="success"} 0
+				cortex_ingester_circuit_breaker_results_total{result="error"} 0
+				cortex_ingester_circuit_breaker_results_total{result="circuit_breaker_open"} 0
+			`,
+		},
+		"with a permit acquired, readRequestDuration higher than ReadTimeout and no input error, finishReadRequest gives context deadline exceeded error": {
+			readRequestDuration:          3 * time.Second,
+			acquiredCircuitBreakerPermit: true,
+			err:                          nil,
+			expectedMetrics: `
+				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
+				# TYPE cortex_ingester_circuit_breaker_results_total counter
+				cortex_ingester_circuit_breaker_results_total{result="success"} 0
+				cortex_ingester_circuit_breaker_results_total{result="error"} 1
+				cortex_ingester_circuit_breaker_results_total{result="circuit_breaker_open"} 0
+			`,
+		},
+		"with a permit not acquired, readRequestDuration higher than ReadTimeout and no input error, finishReadRequest does nothing": {
+			readRequestDuration:          3 * time.Second,
+			acquiredCircuitBreakerPermit: false,
+			err:                          nil,
+			expectedMetrics: `
+				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
+				# TYPE cortex_ingester_circuit_breaker_results_total counter
+				cortex_ingester_circuit_breaker_results_total{result="success"} 0
+				cortex_ingester_circuit_breaker_results_total{result="error"} 0
+				cortex_ingester_circuit_breaker_results_total{result="circuit_breaker_open"} 0
+			`,
+		},
+		"with a permit acquired, readRequestDuration higher than ReadTimeout and an input error different from context deadline exceeded, finishReadRequest gives context deadline exceeded error": {
+			readRequestDuration:          3 * time.Second,
+			acquiredCircuitBreakerPermit: true,
+			err:                          newInstanceLimitReachedError("error"),
+			expectedMetrics: `
+				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
+				# TYPE cortex_ingester_circuit_breaker_results_total counter
+				cortex_ingester_circuit_breaker_results_total{result="success"} 0
+				cortex_ingester_circuit_breaker_results_total{result="error"} 1
+				cortex_ingester_circuit_breaker_results_total{result="circuit_breaker_open"} 0
+			`,
+		},
+		"with a permit not acquired, readRequestDuration higher than ReadTimeout and an input error different from context deadline exceeded, finishReadRequest does nothing": {
+			readRequestDuration:          3 * time.Second,
+			acquiredCircuitBreakerPermit: false,
+			err:                          newInstanceLimitReachedError("error"),
+			expectedMetrics: `
+				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
+				# TYPE cortex_ingester_circuit_breaker_results_total counter
+				cortex_ingester_circuit_breaker_results_total{result="success"} 0
+				cortex_ingester_circuit_breaker_results_total{result="error"} 0
+				cortex_ingester_circuit_breaker_results_total{result="circuit_breaker_open"} 0
+			`,
+		},
+	}
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			cfg := defaultIngesterTestConfig(t)
+			cfg.CircuitBreakerConfig = CircuitBreakerConfig{
+				Enabled:     true,
+				ReadTimeout: 2 * time.Second,
+			}
+
+			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
+			require.NoError(t, err)
+
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+			// Wait until the ingester is healthy
+			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+				return i.lifecycler.HealthyInstancesCount()
+			})
+
+			st := &readRequestState{
+				requestStart:                 time.Now().Add(-testCase.readRequestDuration),
+				acquiredCircuitBreakerPermit: testCase.acquiredCircuitBreakerPermit,
+			}
+
+			err = i.finishReadRequest(st, testCase.err)
+			require.Equal(t, i.mapReadErrorToErrorWithStatus(testCase.err), err)
 			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testCase.expectedMetrics), metricNames...))
 		})
 	}

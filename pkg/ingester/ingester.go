@@ -980,6 +980,11 @@ type pushRequestState struct {
 	pushErr                      error
 }
 
+type readRequestState struct {
+	requestStart                 time.Time
+	acquiredCircuitBreakerPermit bool
+}
+
 func getPushRequestState(ctx context.Context) *pushRequestState {
 	if st, ok := ctx.Value(pushReqCtxKey).(*pushRequestState); ok {
 		return st
@@ -1623,11 +1628,10 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 }
 
 func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (resp *client.ExemplarQueryResponse, err error) {
-	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	if err := i.checkAvailableForRead(); err != nil {
-		return nil, err
-	}
-	if err := i.checkReadOverloaded(); err != nil {
+	var st *readRequestState
+	defer func() { err = i.finishReadRequest(st, err) }()
+	st, err = i.startReadRequest()
+	if err != nil {
 		return nil, err
 	}
 
@@ -1687,11 +1691,10 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 }
 
 func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesRequest) (resp *client.LabelValuesResponse, err error) {
-	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	if err := i.checkAvailableForRead(); err != nil {
-		return nil, err
-	}
-	if err := i.checkReadOverloaded(); err != nil {
+	var st *readRequestState
+	defer func() { err = i.finishReadRequest(st, err) }()
+	st, err = i.startReadRequest()
+	if err != nil {
 		return nil, err
 	}
 
@@ -1740,11 +1743,10 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 }
 
 func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (resp *client.LabelNamesResponse, err error) {
-	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	if err := i.checkAvailableForRead(); err != nil {
-		return nil, err
-	}
-	if err := i.checkReadOverloaded(); err != nil {
+	var st *readRequestState
+	defer func() { err = i.finishReadRequest(st, err) }()
+	st, err = i.startReadRequest()
+	if err != nil {
 		return nil, err
 	}
 
@@ -1787,11 +1789,10 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 
 // MetricsForLabelMatchers implements IngesterServer.
 func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest) (resp *client.MetricsForLabelMatchersResponse, err error) {
-	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	if err := i.checkAvailableForRead(); err != nil {
-		return nil, err
-	}
-	if err := i.checkReadOverloaded(); err != nil {
+	var st *readRequestState
+	defer func() { err = i.finishReadRequest(st, err) }()
+	st, err = i.startReadRequest()
+	if err != nil {
 		return nil, err
 	}
 
@@ -1864,11 +1865,10 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 }
 
 func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) (resp *client.UserStatsResponse, err error) {
-	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	if err := i.checkAvailableForRead(); err != nil {
-		return nil, err
-	}
-	if err := i.checkReadOverloaded(); err != nil {
+	var st *readRequestState
+	defer func() { err = i.finishReadRequest(st, err) }()
+	st, err = i.startReadRequest()
+	if err != nil {
 		return nil, err
 	}
 
@@ -1896,8 +1896,10 @@ func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) 
 // When using the experimental ingest storage, this function doesn't support the read consistency setting
 // because the purpose of this function is to show a snapshot of the live ingester's state.
 func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest) (resp *client.UsersStatsResponse, err error) {
-	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	if err := i.checkAvailableForRead(); err != nil {
+	var st *readRequestState
+	defer func() { err = i.finishReadRequest(st, err) }()
+	st, err = i.startReadRequest()
+	if err != nil {
 		return nil, err
 	}
 
@@ -1927,11 +1929,10 @@ func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest)
 const labelNamesAndValuesTargetSizeBytes = 1 * 1024 * 1024
 
 func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, stream client.Ingester_LabelNamesAndValuesServer) (err error) {
-	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	if err := i.checkAvailableForRead(); err != nil {
-		return err
-	}
-	if err := i.checkReadOverloaded(); err != nil {
+	var st *readRequestState
+	defer func() { err = i.finishReadRequest(st, err) }()
+	st, err = i.startReadRequest()
+	if err != nil {
 		return err
 	}
 
@@ -1982,11 +1983,10 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 const labelValuesCardinalityTargetSizeBytes = 1 * 1024 * 1024
 
 func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequest, srv client.Ingester_LabelValuesCardinalityServer) (err error) {
-	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	if err := i.checkAvailableForRead(); err != nil {
-		return err
-	}
-	if err := i.checkReadOverloaded(); err != nil {
+	var st *readRequestState
+	defer func() { err = i.finishReadRequest(st, err) }()
+	st, err = i.startReadRequest()
+	if err != nil {
 		return err
 	}
 
@@ -2069,11 +2069,10 @@ const queryStreamBatchMessageSize = 1 * 1024 * 1024
 
 // QueryStream streams metrics from a TSDB. This implements the client.IngesterServer interface
 func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) (err error) {
-	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	if err := i.checkAvailableForRead(); err != nil {
-		return err
-	}
-	if err := i.checkReadOverloaded(); err != nil {
+	var st *readRequestState
+	defer func() { err = i.finishReadRequest(st, err) }()
+	st, err = i.startReadRequest()
+	if err != nil {
 		return err
 	}
 
@@ -3787,6 +3786,36 @@ func (i *Ingester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// startReadRequest tries to start a read request and returns a readRequestState object
+// representing the state of a possibly started read request. If it wasn't possible to
+// start the read request, the causing error is returned.
+func (i *Ingester) startReadRequest() (*readRequestState, error) {
+	start := time.Now()
+	acquiredCircuitBreakerPermit, err := i.circuitBreaker.tryAcquirePermit()
+	if err != nil {
+		return nil, err
+	}
+	err = i.checkAvailableForRead()
+	if err != nil {
+		return nil, err
+	}
+	err = i.checkReadOverloaded()
+	if err != nil {
+		return nil, err
+	}
+	return &readRequestState{requestStart: start, acquiredCircuitBreakerPermit: acquiredCircuitBreakerPermit}, err
+}
+
+// finishReadRequest finishes a previously started read request, whose state is described
+// by the passed readRequestState object. If an error occurred during the read request
+// execution, finishReadRequest returns it.
+func (i *Ingester) finishReadRequest(st *readRequestState, err error) error {
+	if st != nil && st.acquiredCircuitBreakerPermit {
+		_ = i.circuitBreaker.finishReadRequest(time.Since(st.requestStart), err)
+	}
+	return i.mapReadErrorToErrorWithStatus(err)
+}
+
 // checkAvailableForRead checks whether the ingester is available for read requests,
 // and if it is not the case returns an unavailableError error.
 func (i *Ingester) checkAvailableForRead() error {
@@ -3967,8 +3996,10 @@ func (i *Ingester) purgeUserMetricsMetadata() {
 
 // MetricsMetadata returns all the metrics metadata of a user.
 func (i *Ingester) MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest) (resp *client.MetricsMetadataResponse, err error) {
-	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	if err := i.checkAvailableForRead(); err != nil {
+	var st *readRequestState
+	defer func() { err = i.finishReadRequest(st, err) }()
+	st, err = i.startReadRequest()
+	if err != nil {
 		return nil, err
 	}
 

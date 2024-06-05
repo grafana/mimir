@@ -25,11 +25,10 @@ const activeSeriesMaxSizeBytes = 1 * 1024 * 1024
 // ActiveSeries implements the ActiveSeries RPC. It returns a stream of active
 // series that match the given matchers.
 func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream client.Ingester_ActiveSeriesServer) (err error) {
-	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	if err := i.checkAvailableForRead(); err != nil {
-		return err
-	}
-	if err := i.checkReadOverloaded(); err != nil {
+	var st *readRequestState
+	defer func() { err = i.finishReadRequest(st, err) }()
+	st, err = i.startReadRequest()
+	if err != nil {
 		return err
 	}
 

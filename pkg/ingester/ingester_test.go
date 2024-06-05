@@ -228,6 +228,115 @@ func TestIngester_StartPushRequest(t *testing.T) {
 	}
 }
 
+func TestIngester_StartReadRequest(t *testing.T) {
+	type failureCause int
+	const (
+		NONE failureCause = iota
+		UNAVAILABLE
+		OVERLOADED
+	)
+
+	type testCase struct {
+		failingCause                         failureCause
+		cbOpen                               bool
+		cbInitialDelay                       time.Duration
+		verifyErr                            func(error)
+		expectedAcquiredCircuitBreakerPermit bool
+	}
+
+	utilizationLimiter := &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+
+	setupIngester := func(tc testCase) *failingIngester {
+		cfg := defaultIngesterTestConfig(t)
+		cfg.CircuitBreakerConfig = CircuitBreakerConfig{
+			Enabled:        true,
+			InitialDelay:   tc.cbInitialDelay,
+			CooldownPeriod: 10 * time.Second,
+		}
+		var (
+			failingCause    error
+			expectedState   services.State
+			additionalSetup func(cause *failingIngester)
+		)
+		switch tc.failingCause {
+		case UNAVAILABLE:
+			expectedState = services.Terminated
+			failingCause = newUnavailableError(expectedState)
+		case OVERLOADED:
+			expectedState = services.Running
+			additionalSetup = func(failingIng *failingIngester) {
+				failingIng.utilizationBasedLimiter = utilizationLimiter
+			}
+		case NONE:
+			expectedState = services.Running
+		}
+		failingIng := setupFailingIngester(t, cfg, failingCause)
+		failingIng.startWaitAndCheck(context.Background(), t)
+		require.Equal(t, expectedState, failingIng.lifecycler.State())
+		if additionalSetup != nil {
+			additionalSetup(failingIng)
+		}
+
+		if tc.cbOpen {
+			failingIng.circuitBreaker.cb.Open()
+		} else {
+			failingIng.circuitBreaker.cb.Close()
+		}
+
+		return failingIng
+	}
+
+	testCases := map[string]testCase{
+		"fail if ingester is not available for read": {
+			failingCause: UNAVAILABLE,
+			verifyErr: func(err error) {
+				require.ErrorAs(t, err, &unavailableError{})
+			},
+		},
+		"fail if ingester is overloaded": {
+			failingCause: OVERLOADED,
+			verifyErr: func(err error) {
+				require.ErrorIs(t, err, errTooBusy)
+			},
+		},
+		"fail if circuit breaker is open": {
+			failingCause: NONE,
+			cbOpen:       true,
+			verifyErr: func(err error) {
+				require.ErrorAs(t, err, &circuitBreakerOpenError{})
+			},
+		},
+		"do not fail if circuit breaker is not active": {
+			failingCause:                         NONE,
+			cbInitialDelay:                       1 * time.Minute,
+			expectedAcquiredCircuitBreakerPermit: false,
+		},
+		"do not fail if everything is ok": {
+			failingCause:                         NONE,
+			expectedAcquiredCircuitBreakerPermit: true,
+		},
+	}
+	for testName, tc := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			failingIng := setupIngester(tc)
+			defer services.StopAndAwaitTerminated(context.Background(), failingIng) //nolint:errcheck
+
+			st, err := failingIng.startReadRequest()
+
+			if err == nil {
+				require.NotNil(t, st)
+				require.False(t, st.requestStart.IsZero())
+				require.Less(t, st.requestStart, time.Now())
+				require.Equal(t, tc.expectedAcquiredCircuitBreakerPermit, st.acquiredCircuitBreakerPermit)
+			} else {
+				require.Nil(t, st)
+				require.NotNil(t, tc.verifyErr)
+				tc.verifyErr(err)
+			}
+		})
+	}
+}
+
 func TestIngester_Push(t *testing.T) {
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	metricLabelSet := mimirpb.FromLabelAdaptersToMetric(metricLabelAdapters)

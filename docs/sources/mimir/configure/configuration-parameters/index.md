@@ -1255,6 +1255,13 @@ circuit_breaker:
   # errors
   # CLI flag: -ingester.circuit-breaker.push-timeout
   [push_timeout: <duration> | default = 2s]
+
+  # (experiment) How long is execution of ingester's read-path request supposed
+  # to last before it is reported as timeout in a circuit breaker. This
+  # configuration is used for circuit breakers only, and timeout expirations are
+  # not reported as errors
+  # CLI flag: -ingester.circuit-breaker.read-timeout
+  [read_timeout: <duration> | default = 2s]
 ```
 
 ### querier
