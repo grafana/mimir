@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package operator
+package operators
 
 import (
 	"context"
@@ -90,7 +90,7 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 
 func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunkenc.Iterator, error) {
 	if s.series.Len() == 0 {
-		return nil, EOS
+		return nil, types.EOS
 	}
 
 	s.seriesIdx++

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
@@ -491,6 +492,24 @@ func (e ingesterPushGrpcDisabledError) errorCause() mimirpb.ErrorCause {
 
 // Ensure that ingesterPushGrpcDisabledError is an ingesterError.
 var _ ingesterError = ingesterPushGrpcDisabledError{}
+
+type circuitBreakerOpenError struct {
+	remainingDelay time.Duration
+}
+
+func newCircuitBreakerOpenError(remainingDelay time.Duration) circuitBreakerOpenError {
+	return circuitBreakerOpenError{remainingDelay: remainingDelay}
+}
+
+func (e circuitBreakerOpenError) Error() string {
+	return fmt.Sprintf("%s with remaining delay %s", circuitbreaker.ErrOpen.Error(), e.remainingDelay.String())
+}
+
+func (e circuitBreakerOpenError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.CIRCUIT_BREAKER_OPEN
+}
+
+var _ ingesterError = circuitBreakerOpenError{}
 
 type ingesterErrSamplers struct {
 	sampleTimestampTooOld             *log.Sampler
