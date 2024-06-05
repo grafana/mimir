@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors
 
-package operator
+package operators
 
 import (
 	"context"
@@ -16,14 +16,18 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/zeropool"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type Aggregation struct {
-	Inner    InstantVectorOperator
+	Inner    types.InstantVectorOperator
 	Start    time.Time
 	End      time.Time
 	Interval time.Duration
 	Grouping []string
+	Pool     *pooling.LimitingPool
 
 	remainingInnerSeriesToGroup []*group // One entry per series produced by Inner, value is the group for that series
 	remainingGroups             []*group // One entry per group, in the order we want to return them
@@ -47,20 +51,20 @@ type group struct {
 	present []bool
 }
 
-var _ InstantVectorOperator = &Aggregation{}
+var _ types.InstantVectorOperator = &Aggregation{}
 
 var groupPool = zeropool.New(func() *group {
 	return &group{}
 })
 
-func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
+func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	// Fetch the source series
 	innerSeries, err := a.Inner.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	defer PutSeriesMetadataSlice(innerSeries)
+	defer pooling.PutSeriesMetadataSlice(innerSeries)
 
 	if len(innerSeries) == 0 {
 		// No input series == no output series.
@@ -95,11 +99,11 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, err
 	}
 
 	// Sort the list of series we'll return, and maintain the order of the corresponding groups at the same time
-	seriesMetadata := GetSeriesMetadataSlice(len(groups))
+	seriesMetadata := pooling.GetSeriesMetadataSlice(len(groups))
 	a.remainingGroups = make([]*group, 0, len(groups))
 
 	for _, g := range groups {
-		seriesMetadata = append(seriesMetadata, SeriesMetadata{Labels: g.labels})
+		seriesMetadata = append(seriesMetadata, types.SeriesMetadata{Labels: g.labels})
 		a.remainingGroups = append(a.remainingGroups, g.group)
 	}
 
@@ -118,10 +122,10 @@ func (a *Aggregation) labelsForGroup(m labels.Labels, lb *labels.Builder) labels
 	return lb.Labels()
 }
 
-func (a *Aggregation) NextSeries(ctx context.Context) (InstantVectorSeriesData, error) {
+func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if len(a.remainingGroups) == 0 {
 		// No more groups left.
-		return InstantVectorSeriesData{}, EOS
+		return types.InstantVectorSeriesData{}, types.EOS
 	}
 
 	start := timestamp.FromTime(a.Start)
@@ -138,20 +142,31 @@ func (a *Aggregation) NextSeries(ctx context.Context) (InstantVectorSeriesData, 
 		s, err := a.Inner.NextSeries(ctx)
 
 		if err != nil {
-			if errors.Is(err, EOS) {
-				return InstantVectorSeriesData{}, fmt.Errorf("exhausted series before all groups were completed: %w", err)
+			if errors.Is(err, types.EOS) {
+				return types.InstantVectorSeriesData{}, fmt.Errorf("exhausted series before all groups were completed: %w", err)
 			}
 
-			return InstantVectorSeriesData{}, err
+			return types.InstantVectorSeriesData{}, err
 		}
 
 		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
 		a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
 
 		if thisSeriesGroup.sums == nil {
-			// First series for this group, populate it
-			thisSeriesGroup.sums = GetFloatSlice(steps)[:steps]
-			thisSeriesGroup.present = GetBoolSlice(steps)[:steps]
+			// First series for this group, populate it.
+
+			thisSeriesGroup.sums, err = a.Pool.GetFloatSlice(steps)
+			if err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+
+			thisSeriesGroup.present, err = a.Pool.GetBoolSlice(steps)
+			if err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+
+			thisSeriesGroup.sums = thisSeriesGroup.sums[:steps]
+			thisSeriesGroup.present = thisSeriesGroup.present[:steps]
 		}
 
 		for _, p := range s.Floats {
@@ -160,7 +175,7 @@ func (a *Aggregation) NextSeries(ctx context.Context) (InstantVectorSeriesData, 
 			thisSeriesGroup.present[idx] = true
 		}
 
-		PutFPointSlice(s.Floats)
+		a.Pool.PutFPointSlice(s.Floats)
 		thisSeriesGroup.remainingSeriesCount--
 	}
 
@@ -172,7 +187,10 @@ func (a *Aggregation) NextSeries(ctx context.Context) (InstantVectorSeriesData, 
 		}
 	}
 
-	points := GetFPointSlice(pointCount)
+	points, err := a.Pool.GetFPointSlice(pointCount)
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
 
 	for i, havePoint := range thisGroup.present {
 		if havePoint {
@@ -181,14 +199,14 @@ func (a *Aggregation) NextSeries(ctx context.Context) (InstantVectorSeriesData, 
 		}
 	}
 
-	PutFloatSlice(thisGroup.sums)
-	PutBoolSlice(thisGroup.present)
+	a.Pool.PutFloatSlice(thisGroup.sums)
+	a.Pool.PutBoolSlice(thisGroup.present)
 
 	thisGroup.sums = nil
 	thisGroup.present = nil
 	groupPool.Put(thisGroup)
 
-	return InstantVectorSeriesData{Floats: points}, nil
+	return types.InstantVectorSeriesData{Floats: points}, nil
 }
 
 func (a *Aggregation) Close() {
@@ -196,7 +214,7 @@ func (a *Aggregation) Close() {
 }
 
 type groupSorter struct {
-	metadata []SeriesMetadata
+	metadata []types.SeriesMetadata
 	groups   []*group
 }
 

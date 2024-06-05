@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package operator
+package operators
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 // Most of the functionality of the aggregation operator is tested through the test scripts in
@@ -84,12 +86,12 @@ func TestAggregation_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 	}
 }
 
-func labelsToSeriesMetadata(lbls []labels.Labels) []SeriesMetadata {
+func labelsToSeriesMetadata(lbls []labels.Labels) []types.SeriesMetadata {
 	if len(lbls) == 0 {
 		return nil
 	}
 
-	m := make([]SeriesMetadata, len(lbls))
+	m := make([]types.SeriesMetadata, len(lbls))
 
 	for i, l := range lbls {
 		m[i].Labels = l

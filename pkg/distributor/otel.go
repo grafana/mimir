@@ -46,7 +46,6 @@ func OTLPHandler(
 	maxRecvMsgSize int,
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
-	allowSkipLabelNameValidation bool,
 	enableOtelMetadataStorage bool,
 	limits *validation.Overrides,
 	retryCfg RetryConfig,
@@ -58,7 +57,7 @@ func OTLPHandler(
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 
-	return handler(maxRecvMsgSize, requestBufferPool, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
+	return otlpHandler(maxRecvMsgSize, requestBufferPool, sourceIPs, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
 		contentType := r.Header.Get("Content-Type")
 		contentEncoding := r.Header.Get("Content-Encoding")
 		var compression util.CompressionType

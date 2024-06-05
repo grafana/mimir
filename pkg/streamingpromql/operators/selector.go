@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package operator
+package operators
 
 import (
 	"context"
@@ -11,6 +11,9 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type Selector struct {
@@ -33,7 +36,7 @@ type Selector struct {
 	seriesIdx int
 }
 
-func (s *Selector) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error) {
+func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	if s.series != nil {
 		return nil, errors.New("should not call Selector.SeriesMetadata() multiple times")
 	}
@@ -87,7 +90,7 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error)
 
 func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunkenc.Iterator, error) {
 	if s.series.Len() == 0 {
-		return nil, EOS
+		return nil, types.EOS
 	}
 
 	s.seriesIdx++
@@ -155,13 +158,13 @@ func (l *seriesList) Len() int {
 // ToSeriesMetadata returns a SeriesMetadata value for each series added to this seriesList.
 //
 // Calling ToSeriesMetadata after calling Pop may return an incomplete list.
-func (l *seriesList) ToSeriesMetadata() []SeriesMetadata {
-	metadata := GetSeriesMetadataSlice(l.length)
+func (l *seriesList) ToSeriesMetadata() []types.SeriesMetadata {
+	metadata := pooling.GetSeriesMetadataSlice(l.length)
 	batch := l.currentSeriesBatch
 
 	for batch != nil {
 		for _, s := range batch.series {
-			metadata = append(metadata, SeriesMetadata{Labels: s.Labels()})
+			metadata = append(metadata, types.SeriesMetadata{Labels: s.Labels()})
 		}
 
 		batch = batch.next

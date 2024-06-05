@@ -1217,6 +1217,44 @@ instance_limits:
 # owned series as a result of detected change.
 # CLI flag: -ingester.owned-series-update-interval
 [owned_series_update_interval: <duration> | default = 15s]
+
+circuit_breaker:
+  # (experimental) Enable circuit breaking when making requests to ingesters
+  # CLI flag: -ingester.circuit-breaker.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Max percentage of requests that can fail over period before
+  # the circuit breaker opens
+  # CLI flag: -ingester.circuit-breaker.failure-threshold-percentage
+  [failure_threshold_percentage: <int> | default = 10]
+
+  # (experimental) How many requests must have been executed in period for the
+  # circuit breaker to be eligible to open for the rate of failures
+  # CLI flag: -ingester.circuit-breaker.failure-execution-threshold
+  [failure_execution_threshold: <int> | default = 100]
+
+  # (experimental) Moving window of time that the percentage of failed requests
+  # is computed over
+  # CLI flag: -ingester.circuit-breaker.thresholding-period
+  [thresholding_period: <duration> | default = 1m]
+
+  # (experimental) How long the circuit breaker will stay in the open state
+  # before allowing some requests
+  # CLI flag: -ingester.circuit-breaker.cooldown-period
+  [cooldown_period: <duration> | default = 10s]
+
+  # (experimental) How long the circuit breaker should wait between an
+  # activation request and becoming effectively active. During that time both
+  # failures and successes will not be counted.
+  # CLI flag: -ingester.circuit-breaker.initial-delay
+  [initial_delay: <duration> | default = 0s]
+
+  # (experiment) How long is execution of ingester's Push supposed to last
+  # before it is reported as timeout in a circuit breaker. This configuration is
+  # used for circuit breakers only, and timeout expirations are not reported as
+  # errors
+  # CLI flag: -ingester.circuit-breaker.push-timeout
+  [push_timeout: <duration> | default = 2s]
 ```
 
 ### querier
@@ -3169,6 +3207,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.max-fetched-chunk-bytes-per-query
 [max_fetched_chunk_bytes_per_query: <int> | default = 0]
 
+# (experimental) The maximum estimated memory a single query can consume at
+# once, in bytes. This limit is only enforced when Mimir's query engine is in
+# use. This limit is enforced in the querier. 0 to disable.
+# CLI flag: -querier.max-estimated-memory-consumption-per-query
+[max_estimated_memory_consumption_per_query: <int> | default = 0]
+
 # Limit how long back data (series and metadata) can be queried, up until
 # <lookback> duration ago. This limit is enforced in the query-frontend, querier
 # and ruler. If the requested time range is outside the allowed range, the
@@ -3439,6 +3483,15 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Alertmanager API. 0 = no limit.
 # CLI flag: -alertmanager.max-config-size-bytes
 [alertmanager_max_config_size_bytes: <int> | default = 0]
+
+# Maximum number of silences, including expired silences, that a tenant can have
+# at once. 0 = no limit.
+# CLI flag: -alertmanager.max-silences-count
+[alertmanager_max_silences_count: <int> | default = 0]
+
+# Maximum silence size in bytes. 0 = no limit.
+# CLI flag: -alertmanager.max-silence-size-bytes
+[alertmanager_max_silence_size_bytes: <int> | default = 0]
 
 # Maximum number of templates in tenant's Alertmanager configuration uploaded
 # via Alertmanager API. 0 = no limit.

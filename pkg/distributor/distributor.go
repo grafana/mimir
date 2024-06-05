@@ -757,22 +757,21 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 	for i := 0; i < len(ts.Exemplars); {
 		e := ts.Exemplars[i]
 		if err := validateExemplar(d.exemplarValidationMetrics, userID, ts.Labels, e); err != nil {
-			// An exemplar validation error prevents ingesting samples
-			// in the same series object. However because the current Prometheus
-			// remote write implementation only populates one or the other,
-			// there never will be any.
-			return err
+			// OTel sends empty exemplars by default which aren't useful and are discarded by TSDB, so let's just skip invalid ones and ingest the data we can instead of returning an error.
+			ts.DeleteExemplarByMovingLast(i)
+			// Don't increase index i. After moving the last exemplar to this index, we want to check it again.
+			continue
 		}
 		if !validateExemplarTimestamp(d.exemplarValidationMetrics, userID, minExemplarTS, maxExemplarTS, e) {
 			ts.DeleteExemplarByMovingLast(i)
-			// Don't increase index i. After moving last exemplar to this index, we want to check it again.
+			// Don't increase index i. After moving the last exemplar to this index, we want to check it again.
 			continue
 		}
 		// We want to check if exemplars are in order. If they are not, we will sort them and invalidate the cache.
-		if isInOrder && previousExemplarTS > ts.Exemplars[i].TimestampMs {
+		if isInOrder && previousExemplarTS > e.TimestampMs {
 			isInOrder = false
 		}
-		previousExemplarTS = ts.Exemplars[i].TimestampMs
+		previousExemplarTS = e.TimestampMs
 		i++
 	}
 	if !isInOrder {
@@ -1498,7 +1497,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 
 	batchOptions := ring.DoBatchOptions{
 		Cleanup:       batchCleanup,
-		IsClientError: isIngesterClientError,
+		IsClientError: isIngestionClientError,
 		Go:            d.doBatchPushWorkers,
 	}
 

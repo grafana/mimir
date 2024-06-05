@@ -117,12 +117,20 @@ The following features are currently experimental:
     - `-ingester.track-ingester-owned-series`
     - `-ingester.use-ingester-owned-series-for-limits`
     - `-ingester.owned-series-update-interval`
+  - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
+    - `-ingester.circuit-breaker.enabled`
+    - `-ingester.circuit-breaker.failure-threshold-percentage`
+    - `-ingester.circuit-breaker.failure-execution-threshold`
+    - `-ingester.circuit-breaker.thresholding-period`
+    - `-ingester.circuit-breaker.cooldown-period`
+    - `-ingester.circuit-breaker.initial-delay`
+    - `-ingester.circuit-breaker.push-timeout`
 - Ingester client
   - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
     - `-ingester.client.circuit-breaker.enabled`
     - `-ingester.client.circuit-breaker.failure-threshold`
     - `-ingester.client.circuit-breaker.failure-execution-threshold`
-    - `-ingester.client.circuit-breaker.period`
+    - `-ingester.client.circuit-breaker.thresholding-period`
     - `-ingester.client.circuit-breaker.cooldown-period`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
@@ -133,6 +141,7 @@ The following features are currently experimental:
   - Enable PromQL experimental functions (`-querier.promql-experimental-functions-enabled`)
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
   - Streaming PromQL engine (`-querier.promql-engine=streaming` and `-querier.enable-promql-engine-fallback`)
+  - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)

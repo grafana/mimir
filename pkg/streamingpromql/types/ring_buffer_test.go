@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package operator
+package types
 
 import (
 	"math"
@@ -11,18 +11,16 @@ import (
 )
 
 func TestRingBuffer(t *testing.T) {
-	setupRingBufferPoolFunctionsForTesting(t)
-
-	buf := &RingBuffer{}
+	buf := NewRingBuffer(poolForRingBufferTesting{})
 	shouldHaveNoPoints(t, buf)
 
 	buf.DiscardPointsBefore(1) // Should handle empty buffer.
 	shouldHaveNoPoints(t, buf)
 
-	buf.Append(promql.FPoint{T: 1, F: 100})
+	require.NoError(t, buf.Append(promql.FPoint{T: 1, F: 100}))
 	shouldHavePoints(t, buf, promql.FPoint{T: 1, F: 100})
 
-	buf.Append(promql.FPoint{T: 2, F: 200})
+	require.NoError(t, buf.Append(promql.FPoint{T: 2, F: 200}))
 	shouldHavePoints(t, buf, promql.FPoint{T: 1, F: 100}, promql.FPoint{T: 2, F: 200})
 
 	buf.DiscardPointsBefore(1)
@@ -31,22 +29,22 @@ func TestRingBuffer(t *testing.T) {
 	buf.DiscardPointsBefore(2)
 	shouldHavePoints(t, buf, promql.FPoint{T: 2, F: 200})
 
-	buf.Append(promql.FPoint{T: 3, F: 300})
+	require.NoError(t, buf.Append(promql.FPoint{T: 3, F: 300}))
 	shouldHavePoints(t, buf, promql.FPoint{T: 2, F: 200}, promql.FPoint{T: 3, F: 300})
 
 	buf.DiscardPointsBefore(4)
 	shouldHaveNoPoints(t, buf)
 
-	buf.Append(promql.FPoint{T: 4, F: 400})
-	buf.Append(promql.FPoint{T: 5, F: 500})
+	require.NoError(t, buf.Append(promql.FPoint{T: 4, F: 400}))
+	require.NoError(t, buf.Append(promql.FPoint{T: 5, F: 500}))
 	shouldHavePoints(t, buf, promql.FPoint{T: 4, F: 400}, promql.FPoint{T: 5, F: 500})
 
 	// Trigger expansion of buffer (we resize in powers of two, and the underlying slice comes from a pool that uses a factor of 2 as well).
 	// Ideally we wouldn't reach into the internals here, but this helps ensure the test is testing the correct scenario.
 	require.Len(t, buf.points, 2, "expected underlying slice to have length 2, if this assertion fails, the test setup is not as expected")
 	require.Equal(t, 2, cap(buf.points), "expected underlying slice to have capacity 2, if this assertion fails, the test setup is not as expected")
-	buf.Append(promql.FPoint{T: 6, F: 600})
-	buf.Append(promql.FPoint{T: 7, F: 700})
+	require.NoError(t, buf.Append(promql.FPoint{T: 6, F: 600}))
+	require.NoError(t, buf.Append(promql.FPoint{T: 7, F: 700}))
 	require.Greater(t, cap(buf.points), 2, "expected underlying slice to be expanded, if this assertion fails, the test setup is not as expected")
 
 	shouldHavePoints(t,
@@ -60,27 +58,25 @@ func TestRingBuffer(t *testing.T) {
 	buf.Reset()
 	shouldHaveNoPoints(t, buf)
 
-	buf.Append(promql.FPoint{T: 9, F: 900})
+	require.NoError(t, buf.Append(promql.FPoint{T: 9, F: 900}))
 	shouldHavePoints(t, buf, promql.FPoint{T: 9, F: 900})
 }
 
 func TestRingBuffer_DiscardPointsBefore_ThroughWrapAround(t *testing.T) {
-	setupRingBufferPoolFunctionsForTesting(t)
-
 	// Set up the buffer so that the first point is part-way through the underlying slice.
 	// We resize in powers of two, and the underlying slice comes from a pool that uses a factor of 2 as well.
-	buf := &RingBuffer{}
-	buf.Append(promql.FPoint{T: 1, F: 100})
-	buf.Append(promql.FPoint{T: 2, F: 200})
-	buf.Append(promql.FPoint{T: 3, F: 300})
-	buf.Append(promql.FPoint{T: 4, F: 400})
+	buf := NewRingBuffer(poolForRingBufferTesting{})
+	require.NoError(t, buf.Append(promql.FPoint{T: 1, F: 100}))
+	require.NoError(t, buf.Append(promql.FPoint{T: 2, F: 200}))
+	require.NoError(t, buf.Append(promql.FPoint{T: 3, F: 300}))
+	require.NoError(t, buf.Append(promql.FPoint{T: 4, F: 400}))
 
 	// Ideally we wouldn't reach into the internals here, but this helps ensure the test is testing the correct scenario.
 	require.Len(t, buf.points, 4, "expected underlying slice to have length 4, if this assertion fails, the test setup is not as expected")
 	require.Equal(t, 4, cap(buf.points), "expected underlying slice to have capacity 4, if this assertion fails, the test setup is not as expected")
 	buf.DiscardPointsBefore(3)
-	buf.Append(promql.FPoint{T: 5, F: 500})
-	buf.Append(promql.FPoint{T: 6, F: 600})
+	require.NoError(t, buf.Append(promql.FPoint{T: 5, F: 500}))
+	require.NoError(t, buf.Append(promql.FPoint{T: 6, F: 600}))
 
 	// Should not have expanded slice.
 	require.Len(t, buf.points, 4, "expected underlying slice to have length 4")
@@ -148,7 +144,8 @@ func shouldHavePointsAtOrBeforeTime(t *testing.T, buf *RingBuffer, ts int64, exp
 		require.Equal(t, expected, combinedPoints)
 	}
 
-	copiedPoints := buf.CopyPoints(ts)
+	copiedPoints, err := buf.CopyPoints(ts)
+	require.NoError(t, err)
 	require.Equal(t, expected, copiedPoints)
 
 	end, present := buf.LastAtOrBefore(ts)
@@ -161,27 +158,18 @@ func shouldHavePointsAtOrBeforeTime(t *testing.T, buf *RingBuffer, ts int64, exp
 	}
 }
 
-// setupRingBufferPoolFunctionsForTesting replaces the global FPoint slice pool used by RingBuffer
-// with a fake for testing.
+// poolForRingBufferTesting is a dummy pool implementation for testing RingBuffer.
 //
 // This helps ensure that the tests behave as expected: the default global pool does not guarantee that
 // slices returned have exactly the capacity requested. Instead, it only guarantees that slices have
 // capacity at least as large as requested. This makes it difficult to consistently test scenarios like
 // wraparound.
-func setupRingBufferPoolFunctionsForTesting(t *testing.T) {
-	originalGet := getFPointSliceForRingBuffer
-	originalPut := putFPointSliceForRingBuffer
+type poolForRingBufferTesting struct{}
 
-	getFPointSliceForRingBuffer = func(size int) []promql.FPoint {
-		return make([]promql.FPoint, 0, size)
-	}
+func (p poolForRingBufferTesting) GetFPointSlice(size int) ([]promql.FPoint, error) {
+	return make([]promql.FPoint, 0, size), nil
+}
 
-	putFPointSliceForRingBuffer = func(_ []promql.FPoint) {
-		// Drop slice on the floor - we don't need it.
-	}
-
-	t.Cleanup(func() {
-		getFPointSliceForRingBuffer = originalGet
-		putFPointSliceForRingBuffer = originalPut
-	})
+func (p poolForRingBufferTesting) PutFPointSlice(_ []promql.FPoint) {
+	// Drop slice on the floor - we don't need it.
 }

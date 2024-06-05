@@ -215,6 +215,8 @@ type Config struct {
 
 	// This config can be overridden in tests.
 	limitMetricsUpdatePeriod time.Duration `yaml:"-"`
+
+	CircuitBreakerConfig CircuitBreakerConfig `yaml:"circuit_breaker" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -223,6 +225,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.IngesterPartitionRing.RegisterFlags(f)
 	cfg.DefaultLimits.RegisterFlags(f)
 	cfg.ActiveSeriesMetrics.RegisterFlags(f)
+	cfg.CircuitBreakerConfig.RegisterFlags(f)
 
 	f.DurationVar(&cfg.MetadataRetainPeriod, "ingester.metadata-retain-period", 10*time.Minute, "Period at which metadata we have not seen will remain in memory before being deleted.")
 	f.DurationVar(&cfg.RateUpdatePeriod, "ingester.rate-update-period", 15*time.Second, "Period with which to update the per-tenant ingestion rates.")
@@ -349,6 +352,8 @@ type Ingester struct {
 	ingestReader              *ingest.PartitionReader
 	ingestPartitionID         int32
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
+
+	circuitBreaker *circuitBreaker
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -392,6 +397,9 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
+
+	// We create a circuit breaker, which will be activated on a successful completion of starting.
+	i.circuitBreaker = newCircuitBreaker(cfg.CircuitBreakerConfig, logger, registerer)
 
 	if registerer != nil {
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
@@ -630,7 +638,12 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	}
 
 	i.subservicesAfterIngesterRingLifecycler, err = createManagerThenStartAndAwaitHealthy(ctx, servs...)
-	return errors.Wrap(err, "failed to start ingester subservices after ingester ring lifecycler")
+	if err != nil {
+		return errors.Wrap(err, "failed to start ingester subservices after ingester ring lifecycler")
+	}
+
+	i.circuitBreaker.activate()
+	return nil
 }
 
 func (i *Ingester) stoppingForFlusher(_ error) error {
@@ -954,7 +967,17 @@ type ctxKey int
 var pushReqCtxKey ctxKey = 1
 
 type pushRequestState struct {
-	requestSize int64
+	requestSize                  int64
+	requestDuration              time.Duration
+	acquiredCircuitBreakerPermit bool
+	pushErr                      error
+}
+
+func getPushRequestState(ctx context.Context) *pushRequestState {
+	if st, ok := ctx.Value(pushReqCtxKey).(*pushRequestState); ok {
+		return st
+	}
+	return nil
 }
 
 // StartPushRequest checks if ingester can start push request, and increments relevant counters.
@@ -965,11 +988,17 @@ func (i *Ingester) StartPushRequest(ctx context.Context, reqSize int64) (context
 }
 
 func (i *Ingester) FinishPushRequest(ctx context.Context) {
-	st, ok := ctx.Value(pushReqCtxKey).(*pushRequestState)
-	if !ok {
+	st := getPushRequestState(ctx)
+	if st == nil {
 		return
 	}
-	i.finishPushRequest(st.requestSize)
+	i.inflightPushRequests.Dec()
+	if st.requestSize > 0 {
+		i.inflightPushRequestsBytes.Sub(st.requestSize)
+	}
+	if st.acquiredCircuitBreakerPermit {
+		_ = i.circuitBreaker.finishPushRequest(st.requestDuration, st.pushErr)
+	}
 }
 
 // This method can be called in two ways: 1. Ingester.PushWithCleanup, or 2. Ingester.StartPushRequest via gRPC server's method limiter.
@@ -977,18 +1006,31 @@ func (i *Ingester) FinishPushRequest(ctx context.Context) {
 // In the first case, returned errors can be inspected/logged by middleware. Ingester.PushWithCleanup will wrap the error in util_log.DoNotLogError wrapper.
 // In the second case, returned errors will not be logged, because request will not reach any middleware.
 //
-// The shouldFinish flag tells if the caller must call finish on this request. If not, there is already someone in the call stack who will do that.
-func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (_ context.Context, shouldFinish bool, err error) {
+// If startPushRequest ends with no error, the resulting context includes a *pushRequestState object
+// containing relevant information about the push request started by this method.
+// The resulting boolean flag tells if the caller must call finish on this request. If not, there is already someone in the call stack who will do that.
+func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (context.Context, bool, error) {
 	if err := i.checkAvailableForPush(); err != nil {
 		return nil, false, err
 	}
 
-	if _, ok := ctx.Value(pushReqCtxKey).(*pushRequestState); ok {
+	if st := getPushRequestState(ctx); st != nil {
 		// If state is already in context, this means we already passed through StartPushRequest for this request.
 		return ctx, false, nil
 	}
+
+	// We try to acquire a permit from the circuit breaker.
+	// If it is not possible, it is because the circuit breaker is open, and a circuitBreakerOpenError is returned.
+	// If it is possible, a permit has to be released by recording either a success or a failure with the circuit
+	// breaker. This is done by FinishPushRequest().
+	acquiredCircuitBreakerPermit, err := i.circuitBreaker.tryAcquirePermit()
+	if err != nil {
+		return nil, false, err
+	}
+
 	st := &pushRequestState{
-		requestSize: reqSize,
+		requestSize:                  reqSize,
+		acquiredCircuitBreakerPermit: acquiredCircuitBreakerPermit,
 	}
 	ctx = context.WithValue(ctx, pushReqCtxKey, st)
 
@@ -1002,66 +1044,85 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (_ conte
 		rejectEqualInflightBytes = true // if inflightBytes == limit, reject new request
 	}
 
-	finishRequestInDefer := true
-
-	defer func() {
-		if finishRequestInDefer {
-			i.finishPushRequest(reqSize)
-		}
-	}()
-
-	il := i.getInstanceLimits()
-	if il != nil {
-		if il.MaxInflightPushRequests > 0 && inflight > il.MaxInflightPushRequests {
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
-			return nil, false, errMaxInflightRequestsReached
-		}
-
-		if il.MaxInflightPushRequestsBytes > 0 {
-			if (rejectEqualInflightBytes && inflightBytes >= il.MaxInflightPushRequestsBytes) || inflightBytes > il.MaxInflightPushRequestsBytes {
-				i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes).Inc()
-				return nil, false, errMaxInflightRequestsBytesReached
-			}
-		}
-
-		if il.MaxIngestionRate > 0 {
-			if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
-				i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
-				return nil, false, errMaxIngestionRateReached
-			}
-		}
+	instanceLimitsErr := i.checkInstanceLimits(inflight, inflightBytes, rejectEqualInflightBytes)
+	if instanceLimitsErr == nil {
+		// In this case a pull request has been successfully started, and we return
+		// the context enriched with the corresponding pushRequestState object.
+		return ctx, true, nil
 	}
 
-	finishRequestInDefer = false
-	return ctx, true, nil
+	// In this case a per-instance limit has been hit, and the corresponding error has to be passed
+	// to FinishPushRequest, which finishes the push request, records the error with the circuit breaker,
+	// and gives it a possibly acquired permit back.
+	st.pushErr = instanceLimitsErr
+	i.FinishPushRequest(ctx)
+	return nil, false, instanceLimitsErr
 }
 
-func (i *Ingester) finishPushRequest(reqSize int64) {
-	i.inflightPushRequests.Dec()
-	if reqSize > 0 {
-		i.inflightPushRequestsBytes.Sub(reqSize)
+func (i *Ingester) checkInstanceLimits(inflight int64, inflightBytes int64, rejectEqualInflightBytes bool) error {
+	il := i.getInstanceLimits()
+	if il == nil {
+		return nil
 	}
+	if il.MaxInflightPushRequests > 0 && inflight > il.MaxInflightPushRequests {
+		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
+		return errMaxInflightRequestsReached
+	}
+
+	if il.MaxInflightPushRequestsBytes > 0 {
+		if (rejectEqualInflightBytes && inflightBytes >= il.MaxInflightPushRequestsBytes) || inflightBytes > il.MaxInflightPushRequestsBytes {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes).Inc()
+			return errMaxInflightRequestsBytesReached
+		}
+	}
+
+	if il.MaxIngestionRate > 0 {
+		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
+			return errMaxIngestionRateReached
+		}
+	}
+	return nil
 }
 
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
-func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanUp func()) error {
+func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanUp func()) (returnErr error) {
 	// NOTE: because we use `unsafe` in deserialisation, we must not
 	// retain anything from `req` past the exit from this function.
 	defer cleanUp()
 
+	start := time.Now()
 	// Only start/finish request here when the request comes NOT from grpc handlers (i.e., from ingest.Store).
 	// NOTE: request coming from grpc handler may end up calling start multiple times during its lifetime (e.g., when migrating to ingest storage).
 	// startPushRequest handles this.
 	if i.cfg.IngestStorageConfig.Enabled || !i.cfg.LimitInflightRequestsUsingGrpcMethodLimiter {
 		reqSize := int64(req.Size())
-		_, shouldFinish, err := i.startPushRequest(ctx, reqSize)
-		if err != nil {
-			return middleware.DoNotLogError{Err: err}
+		var (
+			shouldFinish bool
+			startPushErr error
+		)
+		// We need to replace the original context with the context returned by startPushRequest,
+		// because the latter might store a new pushRequestState in the context.
+		ctx, shouldFinish, startPushErr = i.startPushRequest(ctx, reqSize)
+		if startPushErr != nil {
+			return middleware.DoNotLogError{Err: startPushErr}
 		}
 		if shouldFinish {
-			defer i.finishPushRequest(reqSize)
+			defer func() {
+				i.FinishPushRequest(ctx)
+			}()
 		}
 	}
+
+	defer func() {
+		// We enrich the pushRequestState contained in the context with this PushWithCleanUp()
+		// call duration, and a possible error it returns. These data are needed during a
+		// successive call to FinishPushRequest().
+		if st := getPushRequestState(ctx); st != nil {
+			st.requestDuration = time.Since(start)
+			st.pushErr = returnErr
+		}
+	}()
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1129,13 +1190,12 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
 
-	err = i.pushSamplesToAppender(userID, req.Timeseries, app, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime)
-	if err != nil {
+	if pushSamplesToAppenderErr := i.pushSamplesToAppender(userID, req.Timeseries, app, startAppend, &stats, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime); pushSamplesToAppenderErr != nil {
 		if err := app.Rollback(); err != nil {
 			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
 		}
 
-		return wrapOrAnnotateWithUser(err, userID)
+		return wrapOrAnnotateWithUser(pushSamplesToAppenderErr, userID)
 	}
 
 	// At this point all samples have been added to the appender, so we can track the time it took.

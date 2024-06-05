@@ -182,7 +182,7 @@ require (
 	github.com/hashicorp/consul/api v1.28.2 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
-	github.com/hashicorp/go-hclog v1.5.0 // indirect
+	github.com/hashicorp/go-hclog v1.6.2 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/go-msgpack v1.1.5 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
@@ -248,7 +248,7 @@ require (
 	golang.org/x/tools v0.20.0 // indirect
 	google.golang.org/genproto v0.0.0-20240227224415-6ceb2ff114de // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240415180920-8c6c420018be // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240429193739-8cf5692501f6 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240429193739-8cf5692501f6
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/telebot.v3 v3.2.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340 // indirect
@@ -272,7 +272,7 @@ replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-
 replace gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 
 // We are using our modified version of the upstream GO regexp (branch remotes/origin/speedup)
-replace github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20240530134236-9ba8e5eead92
+replace github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20240531075221-3685f1377d7b
 
 // Replace goautoneg with a fork until https://github.com/munnerz/goautoneg/pull/5 is merged
 replace github.com/munnerz/goautoneg => github.com/grafana/goautoneg v0.0.0-20231010094147-47ce5e72a9ae
@@ -284,4 +284,4 @@ replace github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentraci
 replace github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 
 // Replacing prometheus/alertmanager with our fork.
-replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240524091923-8090d8837b5f
+replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240603081606-9f1bbb0feb0c

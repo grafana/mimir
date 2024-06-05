@@ -21,7 +21,9 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	"github.com/grafana/mimir/pkg/streamingpromql/operator"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators"
+	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 var errQueryCancelled = cancellation.NewErrorf("query execution cancelled")
@@ -32,17 +34,23 @@ type Query struct {
 	queryable storage.Queryable
 	opts      promql.QueryOpts
 	statement *parser.EvalStmt
-	root      operator.Operator
+	root      types.Operator
 	engine    *Engine
 	qs        string
 	cancel    context.CancelCauseFunc
+	pool      *pooling.LimitingPool
 
 	result *promql.Result
 }
 
-func newQuery(queryable storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration, engine *Engine) (*Query, error) {
+func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration, engine *Engine) (*Query, error) {
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, 0)
+	}
+
+	maxInMemorySamples, err := engine.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	expr, err := parser.ParseExpr(qs)
@@ -57,6 +65,7 @@ func newQuery(queryable storage.Queryable, opts promql.QueryOpts, qs string, sta
 		opts:      opts,
 		engine:    engine,
 		qs:        qs,
+		pool:      pooling.NewLimitingPool(maxInMemorySamples),
 		statement: &parser.EvalStmt{
 			Expr:          expr,
 			Start:         start,
@@ -90,7 +99,7 @@ func newQuery(queryable storage.Queryable, opts promql.QueryOpts, qs string, sta
 	return q, nil
 }
 
-func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (operator.InstantVectorOperator, error) {
+func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantVectorOperator, error) {
 	if expr.Type() != parser.ValueTypeVector {
 		return nil, fmt.Errorf("cannot create instant vector operator for expression that produces a %s", parser.DocumentedType(expr.Type()))
 	}
@@ -112,8 +121,9 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (operator.Insta
 			return nil, compat.NewNotSupportedError("instant vector selector with 'offset'")
 		}
 
-		return &operator.InstantVectorSelector{
-			Selector: &operator.Selector{
+		return &operators.InstantVectorSelector{
+			Pool: q.pool,
+			Selector: &operators.Selector{
 				Queryable:     q.queryable,
 				Start:         timestamp.FromTime(q.statement.Start),
 				End:           timestamp.FromTime(q.statement.End),
@@ -144,12 +154,13 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (operator.Insta
 			return nil, err
 		}
 
-		return &operator.Aggregation{
+		return &operators.Aggregation{
 			Inner:    inner,
 			Start:    q.statement.Start,
 			End:      q.statement.End,
 			Interval: interval,
 			Grouping: e.Grouping,
+			Pool:     q.pool,
 		}, nil
 	case *parser.Call:
 		if e.Func.Name != "rate" {
@@ -166,8 +177,9 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (operator.Insta
 			return nil, err
 		}
 
-		return &operator.RangeVectorFunction{
+		return &operators.RangeVectorFunction{
 			Inner: inner,
+			Pool:  q.pool,
 		}, nil
 	case *parser.BinaryExpr:
 		if e.LHS.Type() != parser.ValueTypeVector || e.RHS.Type() != parser.ValueTypeVector {
@@ -188,7 +200,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (operator.Insta
 			return nil, err
 		}
 
-		return operator.NewBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op)
+		return operators.NewBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, q.pool)
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
 		return q.convertToInstantVectorOperator(e.Expr)
@@ -199,7 +211,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (operator.Insta
 	}
 }
 
-func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (operator.RangeVectorOperator, error) {
+func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (types.RangeVectorOperator, error) {
 	if expr.Type() != parser.ValueTypeMatrix {
 		return nil, fmt.Errorf("cannot create range vector operator for expression that produces a %s", parser.DocumentedType(expr.Type()))
 	}
@@ -218,8 +230,8 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (operator.RangeVe
 			interval = time.Millisecond
 		}
 
-		return &operator.RangeVectorSelector{
-			Selector: &operator.Selector{
+		return &operators.RangeVectorSelector{
+			Selector: &operators.Selector{
 				Queryable: q.queryable,
 				Start:     timestamp.FromTime(q.statement.Start),
 				End:       timestamp.FromTime(q.statement.End),
@@ -264,11 +276,11 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	if err != nil {
 		return &promql.Result{Err: err}
 	}
-	defer operator.PutSeriesMetadataSlice(series)
+	defer pooling.PutSeriesMetadataSlice(series)
 
 	switch q.statement.Expr.Type() {
 	case parser.ValueTypeMatrix:
-		v, err := q.populateMatrixFromRangeVectorOperator(ctx, q.root.(operator.RangeVectorOperator), series)
+		v, err := q.populateMatrixFromRangeVectorOperator(ctx, q.root.(types.RangeVectorOperator), series)
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
@@ -276,14 +288,14 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		q.result = &promql.Result{Value: v}
 	case parser.ValueTypeVector:
 		if q.IsInstant() {
-			v, err := q.populateVectorFromInstantVectorOperator(ctx, q.root.(operator.InstantVectorOperator), series)
+			v, err := q.populateVectorFromInstantVectorOperator(ctx, q.root.(types.InstantVectorOperator), series)
 			if err != nil {
 				return &promql.Result{Err: err}
 			}
 
 			q.result = &promql.Result{Value: v}
 		} else {
-			v, err := q.populateMatrixFromInstantVectorOperator(ctx, q.root.(operator.InstantVectorOperator), series)
+			v, err := q.populateMatrixFromInstantVectorOperator(ctx, q.root.(types.InstantVectorOperator), series)
 			if err != nil {
 				return &promql.Result{Err: err}
 			}
@@ -298,19 +310,17 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	return q.result
 }
 
-func returnSeriesDataSlices(d operator.InstantVectorSeriesData) {
-	operator.PutFPointSlice(d.Floats)
-	operator.PutHPointSlice(d.Histograms)
-}
-
-func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o operator.InstantVectorOperator, series []operator.SeriesMetadata) (promql.Vector, error) {
+func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o types.InstantVectorOperator, series []types.SeriesMetadata) (promql.Vector, error) {
 	ts := timeMilliseconds(q.statement.Start)
-	v := operator.GetVector(len(series))
+	v, err := q.pool.GetVector(len(series))
+	if err != nil {
+		return nil, err
+	}
 
 	for i, s := range series {
 		d, err := o.NextSeries(ctx)
 		if err != nil {
-			if errors.Is(err, operator.EOS) {
+			if errors.Is(err, types.EOS) {
 				return nil, fmt.Errorf("expected %v series, but only received %v", len(series), i)
 			}
 
@@ -332,26 +342,27 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o o
 				H:      point.H,
 			})
 		} else {
-			returnSeriesDataSlices(d)
+			q.pool.PutInstantVectorSeriesData(d)
 			// A series may have no data points.
 			if len(d.Floats) == 0 && len(d.Histograms) == 0 {
 				continue
 			}
 			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v floats, %v histograms", s.Labels.String(), len(d.Floats), len(d.Histograms))
 		}
-		returnSeriesDataSlices(d)
+
+		q.pool.PutInstantVectorSeriesData(d)
 	}
 
 	return v, nil
 }
 
-func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o operator.InstantVectorOperator, series []operator.SeriesMetadata) (promql.Matrix, error) {
-	m := operator.GetMatrix(len(series))
+func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o types.InstantVectorOperator, series []types.SeriesMetadata) (promql.Matrix, error) {
+	m := pooling.GetMatrix(len(series))
 
 	for i, s := range series {
 		d, err := o.NextSeries(ctx)
 		if err != nil {
-			if errors.Is(err, operator.EOS) {
+			if errors.Is(err, types.EOS) {
 				return nil, fmt.Errorf("expected %v series, but only received %v", len(series), i)
 			}
 
@@ -359,7 +370,7 @@ func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o o
 		}
 
 		if len(d.Floats) == 0 && len(d.Histograms) == 0 {
-			returnSeriesDataSlices(d)
+			q.pool.PutInstantVectorSeriesData(d)
 			continue
 		}
 
@@ -377,15 +388,15 @@ func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o o
 	return m, nil
 }
 
-func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o operator.RangeVectorOperator, series []operator.SeriesMetadata) (promql.Matrix, error) {
-	m := operator.GetMatrix(len(series))
-	b := &operator.RingBuffer{}
+func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o types.RangeVectorOperator, series []types.SeriesMetadata) (promql.Matrix, error) {
+	m := pooling.GetMatrix(len(series))
+	b := types.NewRingBuffer(q.pool)
 	defer b.Close()
 
 	for i, s := range series {
 		err := o.NextSeries(ctx)
 		if err != nil {
-			if errors.Is(err, operator.EOS) {
+			if errors.Is(err, types.EOS) {
 				return nil, fmt.Errorf("expected %v series, but only received %v", len(series), i)
 			}
 
@@ -398,9 +409,14 @@ func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o ope
 			return nil, err
 		}
 
+		floats, err := b.CopyPoints(step.RangeEnd)
+		if err != nil {
+			return nil, err
+		}
+
 		m = append(m, promql.Series{
 			Metric: s.Labels,
-			Floats: b.CopyPoints(step.RangeEnd),
+			Floats: floats,
 		})
 	}
 
@@ -423,13 +439,13 @@ func (q *Query) Close() {
 	switch v := q.result.Value.(type) {
 	case promql.Matrix:
 		for _, s := range v {
-			operator.PutFPointSlice(s.Floats)
-			operator.PutHPointSlice(s.Histograms)
+			q.pool.PutFPointSlice(s.Floats)
+			q.pool.PutHPointSlice(s.Histograms)
 		}
 
-		operator.PutMatrix(v)
+		pooling.PutMatrix(v)
 	case promql.Vector:
-		operator.PutVector(v)
+		q.pool.PutVector(v)
 	default:
 		panic(fmt.Sprintf("unknown result value type %T", q.result.Value))
 	}

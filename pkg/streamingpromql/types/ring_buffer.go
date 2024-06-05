@@ -1,20 +1,26 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package operator
+package types
 
-import "github.com/prometheus/prometheus/promql"
+import (
+	"github.com/prometheus/prometheus/promql"
+)
 
 type RingBuffer struct {
+	pool       RingBufferPool
 	points     []promql.FPoint
 	firstIndex int // Index into 'points' of first point in this buffer.
 	size       int // Number of points in this buffer.
 }
 
-var (
-	// Overrides used only during tests.
-	getFPointSliceForRingBuffer = GetFPointSlice
-	putFPointSliceForRingBuffer = PutFPointSlice
-)
+type RingBufferPool interface {
+	GetFPointSlice(size int) ([]promql.FPoint, error)
+	PutFPointSlice(s []promql.FPoint)
+}
+
+func NewRingBuffer(pool RingBufferPool) *RingBuffer {
+	return &RingBuffer{pool: pool}
+}
 
 // DiscardPointsBefore discards all points in this buffer with timestamp less than t.
 func (b *RingBuffer) DiscardPointsBefore(t int64) {
@@ -65,17 +71,21 @@ func (b *RingBuffer) UnsafePoints(maxT int64) (head []promql.FPoint, tail []prom
 // PutFPointSlice when it is no longer needed.
 // Calling UnsafePoints is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
 // points into the slice, whereas UnsafePoints returns a view into the internal state of this buffer.
-func (b *RingBuffer) CopyPoints(maxT int64) []promql.FPoint {
+func (b *RingBuffer) CopyPoints(maxT int64) ([]promql.FPoint, error) {
 	if b.size == 0 {
-		return nil
+		return nil, nil
 	}
 
 	head, tail := b.UnsafePoints(maxT)
-	combined := getFPointSliceForRingBuffer(len(head) + len(tail))
+	combined, err := b.pool.GetFPointSlice(len(head) + len(tail))
+	if err != nil {
+		return nil, err
+	}
+
 	combined = append(combined, head...)
 	combined = append(combined, tail...)
 
-	return combined
+	return combined, nil
 }
 
 // ForEach calls f for each point in this buffer.
@@ -107,7 +117,7 @@ func (b *RingBuffer) ForEach(f func(p promql.FPoint)) {
 // Append adds p to this buffer, expanding it if required.
 // If this buffer is non-empty, p.T must be greater than or equal to the
 // timestamp of the last point in the buffer.
-func (b *RingBuffer) Append(p promql.FPoint) {
+func (b *RingBuffer) Append(p promql.FPoint) error {
 	if b.size == len(b.points) {
 		// Create a new slice, copy the elements from the current slice.
 		newSize := b.size * 2
@@ -115,13 +125,17 @@ func (b *RingBuffer) Append(p promql.FPoint) {
 			newSize = 2
 		}
 
-		newSlice := getFPointSliceForRingBuffer(newSize)
+		newSlice, err := b.pool.GetFPointSlice(newSize)
+		if err != nil {
+			return err
+		}
+
 		newSlice = newSlice[:cap(newSlice)]
 		pointsAtEnd := b.size - b.firstIndex
 		copy(newSlice, b.points[b.firstIndex:])
 		copy(newSlice[pointsAtEnd:], b.points[:b.firstIndex])
 
-		putFPointSliceForRingBuffer(b.points)
+		b.pool.PutFPointSlice(b.points)
 		b.points = newSlice
 		b.firstIndex = 0
 	}
@@ -129,6 +143,7 @@ func (b *RingBuffer) Append(p promql.FPoint) {
 	nextIndex := (b.firstIndex + b.size) % len(b.points)
 	b.points[nextIndex] = p
 	b.size++
+	return nil
 }
 
 // Reset clears the contents of this buffer.
@@ -140,7 +155,7 @@ func (b *RingBuffer) Reset() {
 // Close releases any resources associated with this buffer.
 func (b *RingBuffer) Close() {
 	b.Reset()
-	putFPointSliceForRingBuffer(b.points)
+	b.pool.PutFPointSlice(b.points)
 	b.points = nil
 }
 
