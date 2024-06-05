@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/alerting/receivers/pushover"
 	"github.com/grafana/alerting/receivers/sensugo"
 	"github.com/grafana/alerting/receivers/slack"
-	"github.com/grafana/alerting/receivers/sns"
 	"github.com/grafana/alerting/receivers/teams"
 	"github.com/grafana/alerting/receivers/telegram"
 	receiversTesting "github.com/grafana/alerting/receivers/testing"
@@ -164,9 +163,6 @@ var AllKnownConfigsForTesting = map[string]NotifierConfigTest{
 	"slack": {NotifierType: "slack",
 		Config:  slack.FullValidConfigForTesting,
 		Secrets: slack.FullValidSecretsForTesting,
-	},
-	"sns": {NotifierType: "sns",
-		Config: sns.FullValidConfigForTesting,
 	},
 	"teams": {NotifierType: "teams",
 		Config: teams.FullValidConfigForTesting,

@@ -1,7 +1,0 @@
-{
-  "name": "@grafana/sdata",
-  "private": true,
-  "scripts": {
-    "test:backend": "go test -v ./..."
-  }
-}

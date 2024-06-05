@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/alerting/receivers/pushover"
 	"github.com/grafana/alerting/receivers/sensugo"
 	"github.com/grafana/alerting/receivers/slack"
-	"github.com/grafana/alerting/receivers/sns"
 	"github.com/grafana/alerting/receivers/teams"
 	"github.com/grafana/alerting/receivers/telegram"
 	"github.com/grafana/alerting/receivers/threema"
@@ -110,9 +109,6 @@ func BuildReceiverIntegrations(
 	}
 	for i, cfg := range receiver.SensugoConfigs {
 		ci(i, cfg.Metadata, sensugo.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata)))
-	}
-	for i, cfg := range receiver.SNSConfigs {
-		ci(i, cfg.Metadata, sns.New(cfg.Settings, cfg.Metadata, tmpl, nl(cfg.Metadata)))
 	}
 	for i, cfg := range receiver.SlackConfigs {
 		ci(i, cfg.Metadata, slack.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata), version))
