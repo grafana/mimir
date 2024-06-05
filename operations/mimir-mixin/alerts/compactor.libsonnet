@@ -74,7 +74,7 @@
           // This is a non-transient condition which requires an operator to look at it even if it happens only once.
           alert: $.alertName('CompactorHasRunOutOfDiskSpace'),
           expr: |||
-            increase(cortex_compactor_disk_out_of_space_errors_total{reason!="shutdown"}[24h]) >= 1
+            increase(cortex_compactor_disk_out_of_space_errors_total{}[24h]) >= 1
           |||,
           labels: {
             severity: 'critical',
