@@ -12,7 +12,7 @@
     $._config.cortex_compactor_concurrent_rollout_enabled ||
     $._config.ingest_storage_ingester_autoscaling_enabled,
 
-  rollout_operator_args+:: {
+  rollout_operator_args:: {
     'kubernetes.namespace': $._config.namespace,
     'use-zone-tracker': true,
     'zone-tracker.config-map-name': 'rollout-operator-zone-tracker',
