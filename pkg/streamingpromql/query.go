@@ -114,9 +114,9 @@ func (q *Query) convertToOperator(expr parser.Expr) (types.Operator, error) {
 	return op, nil
 }
 
-func (q *Query) convertToScalarOperator(expr parser.Expr) (*operators.Scalar, error) {
+func (q *Query) convertToScalarOperator(expr parser.Expr) (*operators.ConstantScalar, error) {
 	if expr.Type() != parser.ValueTypeScalar {
-		return &operators.Scalar{}, fmt.Errorf("cannot create scalar operator for expression that produces a %s", parser.DocumentedType(expr.Type()))
+		return &operators.ConstantScalar{}, fmt.Errorf("cannot create scalar operator for expression that produces a %s", parser.DocumentedType(expr.Type()))
 	}
 
 	switch e := expr.(type) {
@@ -124,7 +124,7 @@ func (q *Query) convertToScalarOperator(expr parser.Expr) (*operators.Scalar, er
 		// One day, we'll do something smarter here.
 		return q.convertToScalarOperator(e.Expr)
 	case *parser.NumberLiteral:
-		return &operators.Scalar{
+		return &operators.ConstantScalar{
 			Expr: e,
 		}, nil
 	default:

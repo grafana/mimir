@@ -69,13 +69,13 @@ func clampFunction(args []types.Operator, pool *pooling.LimitingPool) (types.Ins
 		return nil, fmt.Errorf("expected an instant vector argument for clamp, got %T", args[0])
 	}
 
-	min, ok := args[1].(*operators.Scalar)
+	min, ok := args[1].(*operators.ConstantScalar)
 	if !ok {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected a scalar argument for clamp, got %T", args[1])
 	}
 
-	max, ok := args[2].(*operators.Scalar)
+	max, ok := args[2].(*operators.ConstantScalar)
 	if !ok {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected a scalar argument for clamp, got %T", args[2])

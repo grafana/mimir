@@ -11,18 +11,19 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-type Scalar struct {
+// TODO: We don't fully support Scalar's yet
+type ConstantScalar struct {
 	Expr *parser.NumberLiteral
 }
 
-var _ types.Operator = &Scalar{}
+var _ types.Operator = &ConstantScalar{}
 
-func (s *Scalar) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
-	return nil, fmt.Errorf("SeriesMetadata should not be called for Scalar")
+func (s *ConstantScalar) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
+	return nil, fmt.Errorf("SeriesMetadata should not be called for ConstantScalar")
 }
 
-func (s *Scalar) GetFloat() float64 {
+func (s *ConstantScalar) GetFloat() float64 {
 	return s.Expr.Val
 }
 
-func (s *Scalar) Close() {}
+func (s *ConstantScalar) Close() {}
