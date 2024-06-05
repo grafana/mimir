@@ -1043,6 +1043,7 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 }
 
 func (t *Mimir) initBlockBuilder() (_ services.Service, err error) {
+	t.Cfg.BlockBuilder.BlocksStorageConfig = t.Cfg.BlocksStorage
 	t.BlockBuilder, err = blockbuilder.NewBlockBuilder(t.Cfg.BlockBuilder, util_log.Logger, t.Registerer, t.Overrides)
 	if err != nil {
 		return

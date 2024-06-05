@@ -98,7 +98,6 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, cur
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
 
 		for _, s := range ts.Samples {
-			//fmt.Println("P0", s.TimestampMs)
 			if s.TimestampMs >= currEnd {
 				// We will process this sample in the next cycle.
 				allSamplesProcessed = false

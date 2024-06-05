@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -59,6 +60,16 @@ func NewBlockBuilder(
 
 func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	const fetchMaxBytes = 100_000_000
+	// Empty any previous artifacts.
+	if err := os.RemoveAll(b.cfg.BlocksStorageConfig.TSDB.Dir); err != nil {
+		return fmt.Errorf("removing tsdb dir: %w", err)
+	}
+	if err := os.MkdirAll(b.cfg.BlocksStorageConfig.TSDB.Dir, os.ModePerm); err != nil {
+		return fmt.Errorf("creating tsdb dir: %w", err)
+	}
+	if err := os.MkdirAll(b.shipperDir(), os.ModePerm); err != nil {
+		return fmt.Errorf("creating shipper dir: %w", err)
+	}
 
 	opts := []kgo.Opt{
 		kgo.ClientID(b.cfg.Kafka.ClientID),
@@ -382,15 +393,20 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 		b.kafkaClient.AllowRebalance()
 	}
 
-	if err := builder.compactAndClose(ctx, b.shipperDir()); err != nil {
-		// TODO(codesome): add metric
-		return err
+	if builder != nil {
+		if err := builder.compactAndClose(ctx, b.shipperDir()); err != nil {
+			// TODO(codesome): add metric
+			return err
+		}
 	}
 
-	// TODO(codesome): store the lastOffset and currEnd as a metadata in the checkpoint
-	// TODO(codesome): Make sure all the blocks have been shipped before committing the offset.
-	_ = lastOffset // to avoid unused error. TODO: remove this once used
-	return b.commitOffset(ctx, part, checkpointOffset)
+	if checkpointOffset > 0 {
+		// TODO(codesome): store the lastOffset and currEnd as a metadata in the checkpoint
+		// TODO(codesome): Make sure all the blocks have been shipped before committing the offset.
+		_ = lastOffset // to avoid unused error. TODO: remove this once used
+		return b.commitOffset(ctx, part, checkpointOffset)
+	}
+	return nil
 }
 
 func (b *BlockBuilder) shipperDir() string {
