@@ -84,6 +84,7 @@ func buildMetrics() map[string]interface{} {
 		"num_cpu":       runtime.NumCPU(),
 		"num_goroutine": runtime.NumGoroutine(),
 	}
+	defer cpuUsage.Set(0)
 
 	expvar.Do(func(kv expvar.KeyValue) {
 		if !strings.HasPrefix(kv.Key, statsPrefix) || kv.Key == statsPrefix+targetKey || kv.Key == statsPrefix+editionKey {
@@ -95,6 +96,8 @@ func buildMetrics() map[string]interface{} {
 		case *expvar.Int:
 			value = v.Value()
 		case *expvar.String:
+			value = v.Value()
+		case *expvar.Float:
 			value = v.Value()
 		case *Counter:
 			v.updateRate()
