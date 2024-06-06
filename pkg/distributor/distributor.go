@@ -421,7 +421,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		}, []string{"user"}),
 		incomingExemplarsPerRequest: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_distributor_exemplars_per_request",
-			Help:                            "Number of exemplars per request.",
+			Help:                            "Number of exemplars per request before deduplication and validation.",
 			NativeHistogramBucketFactor:     2,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			NativeHistogramMaxBucketNumber:  100,
