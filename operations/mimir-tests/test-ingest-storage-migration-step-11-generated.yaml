@@ -321,14 +321,6 @@ rules:
   verbs:
   - update
 - apiGroups:
-  - ""
-  resources:
-  - configmaps
-  verbs:
-  - get
-  - update
-  - create
-- apiGroups:
   - rollout-operator.grafana.com
   resources:
   - replicatemplates/scale
