@@ -70,6 +70,8 @@ receivers:
 
 receivers:
   - name: dummy`
+
+	grafanaConfig = `{"template_files":{},"alertmanager_config":{"route":{"receiver":"grafana-default-email","group_by":["grafana_folder","alertname"]},"templates":null,"receivers":[{"name":"grafana-default-email","grafana_managed_receiver_configs":[{"uid":"dde6ntuob69dtf","name":"WH","type":"webhook","disableResolveMessage":false,"settings":{"url":"http://localhost:8080","username":"test"},"secureSettings":{"password":"test"}}]}]}}`
 )
 
 func mockAlertmanagerConfig(t *testing.T) *MultitenantAlertmanagerConfig {
@@ -350,6 +352,75 @@ templates:
 	require.True(t, cfgExists)
 	require.Equal(t, simpleConfigTwo, currentConfig.RawConfig)
 
+	// Ensure that when a Grafana config is added, it is synced correctly
+	userGrafanaCfg := alertspb.GrafanaAlertConfigDesc{
+		User:               "user4",
+		RawConfig:          grafanaConfig,
+		Hash:               "test",
+		CreatedAtTimestamp: time.Now().Unix(),
+		Default:            false,
+		Promoted:           true,
+	}
+	emptyMimirConfig := alertspb.AlertConfigDesc{User: "user4"}
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
+	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{User: "user4"}))
+
+	err = am.loadAndSyncConfigs(ctx, reasonPeriodic)
+	require.NoError(t, err)
+	require.Len(t, am.alertmanagers, 4)
+
+	// The Mimir configuration was empty, so the Grafana configuration should be chosen for user 4.
+	parsed, err := parseGrafanaConfig(userGrafanaCfg)
+	require.NoError(t, err)
+	require.Equal(t, parsed, am.cfgs["user4"])
+
+	dirs = am.getPerUserDirectories()
+	user4Dir := dirs["user4"]
+	require.NotZero(t, user4Dir)
+	require.True(t, dirExists(t, user4Dir))
+
+	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
+		# TYPE cortex_alertmanager_config_last_reload_successful gauge
+		cortex_alertmanager_config_last_reload_successful{user="user1"} 1
+		cortex_alertmanager_config_last_reload_successful{user="user2"} 1
+		cortex_alertmanager_config_last_reload_successful{user="user3"} 1
+		cortex_alertmanager_config_last_reload_successful{user="user4"} 1
+	`), "cortex_alertmanager_config_last_reload_successful"))
+
+	// Ensure the config can be unpromoted.
+	userGrafanaCfg.Promoted = false
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
+
+	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+	require.NoError(t, err)
+	require.Equal(t, emptyMimirConfig, am.cfgs["user4"])
+
+	// Ensure the Grafana config is used when it's promoted again.
+	userGrafanaCfg.Promoted = true
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
+
+	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+	require.NoError(t, err)
+	require.Equal(t, parsed, am.cfgs["user4"])
+
+	// Ensure the Grafana config is ignored when it's marked as default.
+	userGrafanaCfg.Default = true
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
+
+	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+	require.NoError(t, err)
+	require.Equal(t, emptyMimirConfig, am.cfgs["user4"])
+
+	// Ensure the Grafana config is ignored when it's empty.
+	userGrafanaCfg.Default = false
+	userGrafanaCfg.RawConfig = ""
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
+
+	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+	require.NoError(t, err)
+	require.Equal(t, emptyMimirConfig, am.cfgs["user4"])
+
 	// Test Delete User, ensure config is removed and the resources are freed.
 	require.NoError(t, store.DeleteAlertConfig(ctx, "user3"))
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
@@ -371,6 +442,7 @@ templates:
 		# TYPE cortex_alertmanager_config_last_reload_successful gauge
 		cortex_alertmanager_config_last_reload_successful{user="user1"} 1
 		cortex_alertmanager_config_last_reload_successful{user="user2"} 1
+		cortex_alertmanager_config_last_reload_successful{user="user4"} 1
 	`), "cortex_alertmanager_config_last_reload_successful"))
 
 	// Ensure when a 3rd config is re-added, it is synced correctly
@@ -402,6 +474,7 @@ templates:
 		cortex_alertmanager_config_last_reload_successful{user="user1"} 1
 		cortex_alertmanager_config_last_reload_successful{user="user2"} 1
 		cortex_alertmanager_config_last_reload_successful{user="user3"} 1
+		cortex_alertmanager_config_last_reload_successful{user="user4"} 1
 	`), "cortex_alertmanager_config_last_reload_successful"))
 
 	// Removed template files should be cleaned up
@@ -2148,7 +2221,8 @@ func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 
 // prepareInMemoryAlertStore builds and returns an in-memory alert store.
 func prepareInMemoryAlertStore() alertstore.AlertStore {
-	return bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, objstore.NewInMemBucket(), nil, log.NewNopLogger())
+	cfg := bucketclient.BucketAlertStoreConfig{FetchGrafanaConfig: true}
+	return bucketclient.NewBucketAlertStore(cfg, objstore.NewInMemBucket(), nil, log.NewNopLogger())
 }
 
 func TestSafeTemplateFilepath(t *testing.T) {

@@ -682,7 +682,7 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertC
 }
 
 // computeConfig takes an AlertConfigDescs struct containing Mimir and Grafana configurations.
-// It returns the final configuration the Alertmanager will use, merging both configs if necessary.
+// It returns the final configuration the Alertmanager will use.
 func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (alertspb.AlertConfigDesc, error) {
 	var cfg alertspb.AlertConfigDesc
 	switch {
@@ -697,7 +697,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		level.Debug(am.logger).Log("msg", "grafana configuration is empty, using mimir config", "user", cfgs.Mimir.User)
 		cfg = cfgs.Mimir
 
-	// Grafana configuration.
+		// Grafana configuration.
 	case cfgs.Mimir.RawConfig == am.fallbackConfig:
 		level.Debug(am.logger).Log("msg", "mimir configuration is default, using grafana config", "user", cfgs.Mimir.User)
 		return parseGrafanaConfig(cfgs.Grafana)
@@ -706,6 +706,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		return parseGrafanaConfig(cfgs.Grafana)
 
 	// Both configurations.
+	// TODO: merge configurations.
 	default:
 		level.Debug(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", cfgs.Mimir.User)
 		return cfgs.Mimir, nil
