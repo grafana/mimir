@@ -12,6 +12,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -46,9 +47,12 @@ type group struct {
 	// Used to sort groups in the order that they'll be completed in.
 	lastSeriesIndex int
 
-	// Sum and presence for each step.
-	sums    []float64
-	present []bool
+	// Sum, presence, and histograms for each step.
+	floatSums           []float64
+	floatPresent        []bool
+	floatPointCount     int
+	histogramValues     []*histogram.FloatHistogram
+	histogramPointCount int
 }
 
 var _ types.InstantVectorOperator = &Aggregation{}
@@ -152,61 +156,99 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
 		a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
 
-		if thisSeriesGroup.sums == nil {
+		if len(s.Floats) > 0 && thisSeriesGroup.floatSums == nil {
 			// First series for this group, populate it.
 
-			thisSeriesGroup.sums, err = a.Pool.GetFloatSlice(steps)
+			thisSeriesGroup.floatSums, err = a.Pool.GetFloatSlice(steps)
 			if err != nil {
 				return types.InstantVectorSeriesData{}, err
 			}
 
-			thisSeriesGroup.present, err = a.Pool.GetBoolSlice(steps)
+			thisSeriesGroup.floatPresent, err = a.Pool.GetBoolSlice(steps)
 			if err != nil {
 				return types.InstantVectorSeriesData{}, err
 			}
+			thisSeriesGroup.floatSums = thisSeriesGroup.floatSums[:steps]
+			thisSeriesGroup.floatPresent = thisSeriesGroup.floatPresent[:steps]
+		}
 
-			thisSeriesGroup.sums = thisSeriesGroup.sums[:steps]
-			thisSeriesGroup.present = thisSeriesGroup.present[:steps]
+		if len(s.Histograms) > 0 && thisSeriesGroup.histogramValues == nil {
+			// First series for this group, populate it.
+			thisSeriesGroup.histogramValues, err = a.Pool.GetHistogramPointerSlice(steps)
+			if err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+			thisSeriesGroup.histogramValues = thisSeriesGroup.histogramValues[:steps]
 		}
 
 		for _, p := range s.Floats {
 			idx := (p.T - start) / interval
-			thisSeriesGroup.sums[idx] += p.F
-			thisSeriesGroup.present[idx] = true
+			thisSeriesGroup.floatSums[idx] += p.F
+			if !thisSeriesGroup.floatPresent[idx] {
+				thisSeriesGroup.floatPointCount += 1
+			}
+			thisSeriesGroup.floatPresent[idx] = true
 		}
 
-		a.Pool.PutFPointSlice(s.Floats)
+		for _, p := range s.Histograms {
+			idx := (p.T - start) / interval
+			if thisSeriesGroup.histogramValues[idx] == nil {
+				// We copy here because we modify the histogram through Add later on.
+				thisSeriesGroup.histogramValues[idx] = p.H.Copy()
+				thisSeriesGroup.histogramPointCount++
+			} else {
+				thisSeriesGroup.histogramValues[idx] = thisSeriesGroup.histogramValues[idx].Add(p.H)
+			}
+		}
+
+		a.Pool.PutInstantVectorSeriesData(s)
 		thisSeriesGroup.remainingSeriesCount--
 	}
 
 	// Construct the group and return it
-	pointCount := 0
-	for _, p := range thisGroup.present {
-		if p {
-			pointCount++
+	var floatPoints []promql.FPoint
+	var err error
+	if thisGroup.floatPointCount > 0 {
+		floatPoints, err = a.Pool.GetFPointSlice(thisGroup.floatPointCount)
+		if err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+
+		for i, havePoint := range thisGroup.floatPresent {
+			if havePoint {
+				t := start + int64(i)*interval
+				floatPoints = append(floatPoints, promql.FPoint{T: t, F: thisGroup.floatSums[i]})
+			}
 		}
 	}
 
-	points, err := a.Pool.GetFPointSlice(pointCount)
-	if err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
+	a.Pool.PutFloatSlice(thisGroup.floatSums)
+	a.Pool.PutBoolSlice(thisGroup.floatPresent)
+	thisGroup.floatSums = nil
+	thisGroup.floatPresent = nil
+	thisGroup.floatPointCount = 0
 
-	for i, havePoint := range thisGroup.present {
-		if havePoint {
-			t := start + int64(i)*interval
-			points = append(points, promql.FPoint{T: t, F: thisGroup.sums[i]})
+	var histogramPoints []promql.HPoint
+	if thisGroup.histogramPointCount > 0 {
+		histogramPoints, err = a.Pool.GetHPointSlice(thisGroup.histogramPointCount)
+		if err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+
+		for i, h := range thisGroup.histogramValues {
+			if h != nil {
+				t := start + int64(i)*interval
+				histogramPoints = append(histogramPoints, promql.HPoint{T: t, H: thisGroup.histogramValues[i]})
+			}
 		}
 	}
 
-	a.Pool.PutFloatSlice(thisGroup.sums)
-	a.Pool.PutBoolSlice(thisGroup.present)
+	a.Pool.PutHistogramPointerSlice(thisGroup.histogramValues)
+	thisGroup.histogramValues = nil
+	thisGroup.histogramPointCount = 0
 
-	thisGroup.sums = nil
-	thisGroup.present = nil
 	groupPool.Put(thisGroup)
-
-	return types.InstantVectorSeriesData{Floats: points}, nil
+	return types.InstantVectorSeriesData{Floats: floatPoints, Histograms: histogramPoints}, nil
 }
 
 func (a *Aggregation) Close() {

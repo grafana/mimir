@@ -6,6 +6,7 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -21,11 +22,12 @@ const (
 	// Keep in mind that float sample = timestamp + float value, so 5x this is equivalent to five timestamps and five floats.
 	nativeHistogramSampleSizeFactor = 5
 
-	FPointSize       = uint64(unsafe.Sizeof(promql.FPoint{}))
-	HPointSize       = uint64(FPointSize * nativeHistogramSampleSizeFactor)
-	VectorSampleSize = uint64(unsafe.Sizeof(promql.Sample{})) // This assumes each sample is a float sample, not a histogram.
-	Float64Size      = uint64(unsafe.Sizeof(float64(0)))
-	BoolSize         = uint64(unsafe.Sizeof(false))
+	FPointSize           = uint64(unsafe.Sizeof(promql.FPoint{}))
+	HPointSize           = uint64(FPointSize * nativeHistogramSampleSizeFactor)
+	VectorSampleSize     = uint64(unsafe.Sizeof(promql.Sample{})) // This assumes each sample is a float sample, not a histogram.
+	Float64Size          = uint64(unsafe.Sizeof(float64(0)))
+	BoolSize             = uint64(unsafe.Sizeof(false))
+	HistogramPointerSize = uint64(unsafe.Sizeof((*histogram.FloatHistogram)(nil)))
 )
 
 var (
@@ -47,6 +49,10 @@ var (
 
 	boolSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []bool {
 		return make([]bool, 0, size)
+	})
+
+	histogramSlicePool = pool.NewBucketedPool(1, maxExpectedPointsPerSeries, pointsPerSeriesBucketFactor, func(size int) []*histogram.FloatHistogram {
+		return make([]*histogram.FloatHistogram, 0, size)
 	})
 )
 
@@ -204,6 +210,31 @@ func (p *LimitingPool) GetBoolSlice(size int) ([]bool, error) {
 // PutBoolSlice returns a slice of bool to the pool and updates the current number of in-memory samples.
 func (p *LimitingPool) PutBoolSlice(s []bool) {
 	putWithElementSize(p, boolSlicePool, BoolSize, s)
+}
+
+// GetHistogramPointerSlice returns a slice of floatHistogram of length 0 and capacity greater than or equal to size.
+//
+// If the capacity of the returned slice would cause the max memory consumption limit to be exceeded, then an error is returned.
+//
+// Every element of the returned slice up to the requested size will have an empty histogram.
+//
+// Note that the capacity of the returned slice may be significantly larger than size, depending on the configuration of the underlying bucketed pool.
+func (p *LimitingPool) GetHistogramPointerSlice(size int) ([]*histogram.FloatHistogram, error) {
+	s, err := getWithElementSize(p, histogramSlicePool, size, HistogramPointerSize)
+	if err != nil {
+		return nil, err
+	}
+
+	// This is not necessary if we've just created a new slice, it'll already have all elements reset.
+	// But we do it unconditionally for simplicity.
+	clear(s[:size])
+
+	return s, nil
+}
+
+// PutHistogramPointerSlice returns a slice of floatHistogram to the pool and updates the current number of in-memory samples.
+func (p *LimitingPool) PutHistogramPointerSlice(s []*histogram.FloatHistogram) {
+	putWithElementSize(p, histogramSlicePool, HistogramPointerSize, s)
 }
 
 // PutInstantVectorSeriesData is equivalent to calling PutFPointSlice(d.Floats) and PutHPointSlice(d.Histograms).
