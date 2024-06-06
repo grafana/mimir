@@ -4,7 +4,8 @@
 set -euo pipefail
 
 # Use GNU sed on MacOS falling back to `sed` everywhere else
-SED=$(which gsed || which sed)
+SED=sed
+type gsed >/dev/null 2>&1 && SED=gsed
 
 FILES=$(find ../../../vendor/github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite -name '*.go' ! -name timeseries.go ! -name "*_test.go")
 

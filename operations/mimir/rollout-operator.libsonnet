@@ -14,6 +14,8 @@
 
   rollout_operator_args:: {
     'kubernetes.namespace': $._config.namespace,
+    'use-zone-tracker': true,
+    'zone-tracker.config-map-name': 'rollout-operator-zone-tracker',
   },
 
   rollout_operator_node_affinity_matchers:: [],
@@ -54,6 +56,9 @@
       policyRule.withApiGroups('apps') +
       policyRule.withResources(['statefulsets/status']) +
       policyRule.withVerbs(['update']),
+      policyRule.withApiGroups('') +
+      policyRule.withResources(['configmaps']) +
+      policyRule.withVerbs(['get', 'update', 'create']),
     ]),
 
   rollout_operator_rolebinding: if !rollout_operator_enabled then null else

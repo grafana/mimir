@@ -126,6 +126,12 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: `a_2000{l=~"1..."} - b_2000`,
 		},
+		{
+			Expr: `a_2000{l="1234"} - b_2000`,
+		},
+		{
+			Expr: `a_2000 - b_2000{l="1234"}`,
+		},
 		//{
 		//	Expr: "a_X and b_X{l=~'.*[0-4]$'}",
 		//},

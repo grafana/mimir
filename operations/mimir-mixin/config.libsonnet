@@ -534,15 +534,8 @@
         disk_utilization:
           |||
             max by(persistentvolumeclaim) (
-              kubelet_volume_stats_used_bytes{%(namespaceMatcher)s} /
-              kubelet_volume_stats_capacity_bytes{%(namespaceMatcher)s}
-            )
-            and
-            count by(persistentvolumeclaim) (
-              kube_persistentvolumeclaim_labels{
-                %(namespaceMatcher)s,
-                %(containerMatcher)s
-              }
+              kubelet_volume_stats_used_bytes{%(namespaceMatcher)s, %(persistentVolumeClaimMatcher)s} /
+              kubelet_volume_stats_capacity_bytes{%(namespaceMatcher)s, %(persistentVolumeClaimMatcher)s}
             )
           |||,
       },

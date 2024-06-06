@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -24,6 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 var errQueryCancelled = cancellation.NewErrorf("query execution cancelled")
@@ -282,6 +284,21 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	// The order of the deferred cancellations is important: we want to cancel with errQueryFinished first, so we must defer this cancellation last
 	// (so that it runs before the cancellation of the context with timeout created above).
 	defer cancel(errQueryFinished)
+
+	if q.engine.activeQueryTracker != nil {
+		queryID, err := q.engine.activeQueryTracker.Insert(ctx, q.qs)
+		if err != nil {
+			return &promql.Result{Err: err}
+		}
+
+		defer q.engine.activeQueryTracker.Delete(queryID)
+	}
+
+	defer func() {
+		logger := spanlogger.FromContext(ctx, q.engine.logger)
+		level.Info(logger).Log("msg", "query stats", "estimatedPeakMemoryConsumption", q.pool.PeakEstimatedMemoryConsumptionBytes)
+		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.pool.PeakEstimatedMemoryConsumptionBytes))
+	}()
 
 	series, err := q.root.SeriesMetadata(ctx)
 	if err != nil {

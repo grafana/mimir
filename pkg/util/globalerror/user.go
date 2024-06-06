@@ -72,7 +72,8 @@ const (
 	StoreConsistencyCheckFailed ID = "store-consistency-check-failed"
 	BucketIndexTooOld           ID = "bucket-index-too-old"
 
-	DistributorMaxWriteMessageSize ID = "distributor-max-write-message-size"
+	DistributorMaxWriteMessageSize         ID = "distributor-max-write-message-size"
+	DistributorMaxWriteRequestDataItemSize ID = "distributor-max-write-request-data-item-size"
 
 	// Map Prometheus TSDB native histogram validation errors to Mimir errors.
 	// E.g. histogram.ErrHistogramCountNotBigEnough -> NativeHistogramCountNotBigEnough

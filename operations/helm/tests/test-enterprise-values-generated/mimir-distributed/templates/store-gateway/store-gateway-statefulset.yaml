@@ -30,7 +30,9 @@ spec:
     type: OnDelete
   serviceName: test-enterprise-values-mimir-store-gateway-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -168,7 +170,9 @@ spec:
     type: OnDelete
   serviceName: test-enterprise-values-mimir-store-gateway-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -306,7 +310,9 @@ spec:
     type: OnDelete
   serviceName: test-enterprise-values-mimir-store-gateway-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
