@@ -164,9 +164,20 @@ func (b *BinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*bina
 	labelsFunc := b.labelsFunc()
 	outputSeriesMap := map[string]*binaryOperationOutputSeries{}
 
-	// TODO: is it better to use whichever side has fewer series for this first loop? Should result in a smaller map and therefore less work later on
-	// Would need to be careful about 'or' and 'unless' cases
-	for idx, s := range b.leftMetadata {
+	// Use the smaller side to populate the map of possible output series first.
+	// This should ensure we don't unnecessarily populate the output series map with series that will never match in most cases.
+	// (It's possible that all the series on the larger side all belong to the same group, but this is expected to be rare.)
+	// FIXME: this doesn't work as-is for 'unless'.
+	smallerSide := b.leftMetadata
+	largerSide := b.rightMetadata
+	smallerSideIsLeftSide := len(b.leftMetadata) < len(b.rightMetadata)
+
+	if !smallerSideIsLeftSide {
+		smallerSide = b.rightMetadata
+		largerSide = b.leftMetadata
+	}
+
+	for idx, s := range smallerSide {
 		groupLabels := labelsFunc(s.Labels).String()
 		series, exists := outputSeriesMap[groupLabels]
 
@@ -175,17 +186,26 @@ func (b *BinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*bina
 			outputSeriesMap[groupLabels] = series
 		}
 
-		series.leftSeriesIndices = append(series.leftSeriesIndices, idx)
+		if smallerSideIsLeftSide {
+			series.leftSeriesIndices = append(series.leftSeriesIndices, idx)
+		} else {
+			series.rightSeriesIndices = append(series.rightSeriesIndices, idx)
+		}
 	}
 
-	for idx, s := range b.rightMetadata {
+	for idx, s := range largerSide {
 		groupLabels := labelsFunc(s.Labels).String()
 
 		if series, exists := outputSeriesMap[groupLabels]; exists {
-			series.rightSeriesIndices = append(series.rightSeriesIndices, idx)
+			if smallerSideIsLeftSide {
+				// Currently iterating through right side.
+				series.rightSeriesIndices = append(series.rightSeriesIndices, idx)
+			} else {
+				series.leftSeriesIndices = append(series.leftSeriesIndices, idx)
+			}
 		}
 
-		// FIXME: if this is an 'or' operation, then we need to create the right side even if the left doesn't exist
+		// FIXME: if this is an 'or' operation, then we need to create the right side even if the left doesn't exist (or vice-versa)
 	}
 
 	// Remove series that cannot produce samples.
