@@ -714,7 +714,7 @@ func (t *timeoutTestingQueryTracker) GetMaxConcurrent() int {
 	return 0
 }
 
-func (t *timeoutTestingQueryTracker) Insert(ctx context.Context, query string) (int, error) {
+func (t *timeoutTestingQueryTracker) Insert(ctx context.Context, _ string) (int, error) {
 	select {
 	case <-ctx.Done():
 		t.sawTimeout = true
@@ -724,6 +724,6 @@ func (t *timeoutTestingQueryTracker) Insert(ctx context.Context, query string) (
 	}
 }
 
-func (t *timeoutTestingQueryTracker) Delete(insertIndex int) {
+func (t *timeoutTestingQueryTracker) Delete(_ int) {
 	panic("should not be called")
 }
