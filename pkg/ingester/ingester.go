@@ -1628,12 +1628,12 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 }
 
 func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (resp *client.ExemplarQueryResponse, err error) {
-	var st *readRequestState
-	defer func() { err = i.finishReadRequest(st, err) }()
-	st, err = i.startReadRequest()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	finishReadRequestFn, err := i.startReadRequest()
 	if err != nil {
 		return nil, err
 	}
+	defer func() { finishReadRequestFn(err) }()
 
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, i.logger, "Ingester.QueryExemplars")
 	defer spanlog.Finish()
@@ -1691,12 +1691,12 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 }
 
 func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesRequest) (resp *client.LabelValuesResponse, err error) {
-	var st *readRequestState
-	defer func() { err = i.finishReadRequest(st, err) }()
-	st, err = i.startReadRequest()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	finishReadRequestFn, err := i.startReadRequest()
 	if err != nil {
 		return nil, err
 	}
+	defer func() { finishReadRequestFn(err) }()
 
 	labelName, startTimestampMs, endTimestampMs, matchers, err := client.FromLabelValuesRequest(req)
 	if err != nil {
@@ -1743,12 +1743,12 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 }
 
 func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (resp *client.LabelNamesResponse, err error) {
-	var st *readRequestState
-	defer func() { err = i.finishReadRequest(st, err) }()
-	st, err = i.startReadRequest()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	finishReadRequestFn, err := i.startReadRequest()
 	if err != nil {
 		return nil, err
 	}
+	defer func() { finishReadRequestFn(err) }()
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1789,12 +1789,12 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 
 // MetricsForLabelMatchers implements IngesterServer.
 func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest) (resp *client.MetricsForLabelMatchersResponse, err error) {
-	var st *readRequestState
-	defer func() { err = i.finishReadRequest(st, err) }()
-	st, err = i.startReadRequest()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	finishReadRequestFn, err := i.startReadRequest()
 	if err != nil {
 		return nil, err
 	}
+	defer func() { finishReadRequestFn(err) }()
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1865,12 +1865,12 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 }
 
 func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) (resp *client.UserStatsResponse, err error) {
-	var st *readRequestState
-	defer func() { err = i.finishReadRequest(st, err) }()
-	st, err = i.startReadRequest()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	finishReadRequestFn, err := i.startReadRequest()
 	if err != nil {
 		return nil, err
 	}
+	defer func() { finishReadRequestFn(err) }()
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1896,12 +1896,12 @@ func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) 
 // When using the experimental ingest storage, this function doesn't support the read consistency setting
 // because the purpose of this function is to show a snapshot of the live ingester's state.
 func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest) (resp *client.UsersStatsResponse, err error) {
-	var st *readRequestState
-	defer func() { err = i.finishReadRequest(st, err) }()
-	st, err = i.startReadRequest()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	finishReadRequestFn, err := i.startReadRequest()
 	if err != nil {
 		return nil, err
 	}
+	defer func() { finishReadRequestFn(err) }()
 
 	i.tsdbsMtx.RLock()
 	defer i.tsdbsMtx.RUnlock()
@@ -1929,12 +1929,12 @@ func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest)
 const labelNamesAndValuesTargetSizeBytes = 1 * 1024 * 1024
 
 func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, stream client.Ingester_LabelNamesAndValuesServer) (err error) {
-	var st *readRequestState
-	defer func() { err = i.finishReadRequest(st, err) }()
-	st, err = i.startReadRequest()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	finishReadRequestFn, err := i.startReadRequest()
 	if err != nil {
 		return err
 	}
+	defer func() { finishReadRequestFn(err) }()
 
 	userID, err := tenant.TenantID(stream.Context())
 	if err != nil {
@@ -1983,12 +1983,12 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 const labelValuesCardinalityTargetSizeBytes = 1 * 1024 * 1024
 
 func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequest, srv client.Ingester_LabelValuesCardinalityServer) (err error) {
-	var st *readRequestState
-	defer func() { err = i.finishReadRequest(st, err) }()
-	st, err = i.startReadRequest()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	finishReadRequestFn, err := i.startReadRequest()
 	if err != nil {
 		return err
 	}
+	defer func() { finishReadRequestFn(err) }()
 
 	userID, err := tenant.TenantID(srv.Context())
 	if err != nil {
@@ -2069,12 +2069,12 @@ const queryStreamBatchMessageSize = 1 * 1024 * 1024
 
 // QueryStream streams metrics from a TSDB. This implements the client.IngesterServer interface
 func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) (err error) {
-	var st *readRequestState
-	defer func() { err = i.finishReadRequest(st, err) }()
-	st, err = i.startReadRequest()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	finishReadRequestFn, err := i.startReadRequest()
 	if err != nil {
 		return err
 	}
+	defer func() { finishReadRequestFn(err) }()
 
 	spanlog, ctx := spanlogger.NewWithLogger(stream.Context(), i.logger, "Ingester.QueryStream")
 	defer spanlog.Finish()
@@ -3786,10 +3786,12 @@ func (i *Ingester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// startReadRequest tries to start a read request and returns a readRequestState object
-// representing the state of a possibly started read request. If it wasn't possible to
-// start the read request, the causing error is returned.
-func (i *Ingester) startReadRequest() (*readRequestState, error) {
+// startReadRequest tries to start a read request.
+// If it was successful, startReadRequest returns a function that should be
+// called to finish the started read request once the request is completed.
+// If it wasn't successful, the causing error is returned. In this case no
+// function is returned.
+func (i *Ingester) startReadRequest() (func(error), error) {
 	start := time.Now()
 	acquiredCircuitBreakerPermit, err := i.circuitBreaker.tryAcquirePermit()
 	if err != nil {
@@ -3803,17 +3805,17 @@ func (i *Ingester) startReadRequest() (*readRequestState, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &readRequestState{requestStart: start, acquiredCircuitBreakerPermit: acquiredCircuitBreakerPermit}, err
+	return func(err error) {
+		i.finishReadRequest(start, acquiredCircuitBreakerPermit, err)
+	}, nil
 }
 
 // finishReadRequest finishes a previously started read request, whose state is described
-// by the passed readRequestState object. If an error occurred during the read request
-// execution, finishReadRequest returns it.
-func (i *Ingester) finishReadRequest(st *readRequestState, err error) error {
-	if st != nil && st.acquiredCircuitBreakerPermit {
-		_ = i.circuitBreaker.finishReadRequest(time.Since(st.requestStart), err)
+// by the passed readRequestState object.
+func (i *Ingester) finishReadRequest(startTime time.Time, acquiredCircuitBreakerPermit bool, err error) {
+	if acquiredCircuitBreakerPermit {
+		_ = i.circuitBreaker.finishReadRequest(time.Since(startTime), err)
 	}
-	return i.mapReadErrorToErrorWithStatus(err)
 }
 
 // checkAvailableForRead checks whether the ingester is available for read requests,
@@ -3996,12 +3998,12 @@ func (i *Ingester) purgeUserMetricsMetadata() {
 
 // MetricsMetadata returns all the metrics metadata of a user.
 func (i *Ingester) MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest) (resp *client.MetricsMetadataResponse, err error) {
-	var st *readRequestState
-	defer func() { err = i.finishReadRequest(st, err) }()
-	st, err = i.startReadRequest()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	finishReadRequestFn, err := i.startReadRequest()
 	if err != nil {
 		return nil, err
 	}
+	defer func() { finishReadRequestFn(err) }()
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {

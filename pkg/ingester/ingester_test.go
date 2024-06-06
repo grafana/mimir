@@ -321,15 +321,12 @@ func TestIngester_StartReadRequest(t *testing.T) {
 			failingIng := setupIngester(tc)
 			defer services.StopAndAwaitTerminated(context.Background(), failingIng) //nolint:errcheck
 
-			st, err := failingIng.startReadRequest()
+			finishFn, err := failingIng.startReadRequest()
 
 			if err == nil {
-				require.NotNil(t, st)
-				require.False(t, st.requestStart.IsZero())
-				require.Less(t, st.requestStart, time.Now())
-				require.Equal(t, tc.expectedAcquiredCircuitBreakerPermit, st.acquiredCircuitBreakerPermit)
+				require.NotNil(t, finishFn)
 			} else {
-				require.Nil(t, st)
+				require.Nil(t, finishFn)
 				require.NotNil(t, tc.verifyErr)
 				tc.verifyErr(err)
 			}

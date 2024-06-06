@@ -744,7 +744,7 @@ func TestIngester_FinishReadRequest(t *testing.T) {
 		err                          error
 		expectedMetrics              string
 	}{
-		"with a permit acquired, readRequestDuration lower than ReadTimeout and no input err, finishReadRequest gives success": {
+		"with a permit acquired, readRequestDuration lower than ReadTimeout and no input err, finishReadRequest records a success": {
 			readRequestDuration:          1 * time.Second,
 			acquiredCircuitBreakerPermit: true,
 			err:                          nil,
@@ -768,7 +768,7 @@ func TestIngester_FinishReadRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{result="circuit_breaker_open"} 0
 			`,
 		},
-		"with a permit acquired, readRequestDuration higher than ReadTimeout and no input error, finishReadRequest gives context deadline exceeded error": {
+		"with a permit acquired, readRequestDuration higher than ReadTimeout and no input error, finishReadRequest records a failure": {
 			readRequestDuration:          3 * time.Second,
 			acquiredCircuitBreakerPermit: true,
 			err:                          nil,
@@ -792,7 +792,7 @@ func TestIngester_FinishReadRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{result="circuit_breaker_open"} 0
 			`,
 		},
-		"with a permit acquired, readRequestDuration higher than ReadTimeout and an input error different from context deadline exceeded, finishReadRequest gives context deadline exceeded error": {
+		"with a permit acquired, readRequestDuration higher than ReadTimeout and an input error relevant for circuit breakers, finishReadRequest records a failure": {
 			readRequestDuration:          3 * time.Second,
 			acquiredCircuitBreakerPermit: true,
 			err:                          newInstanceLimitReachedError("error"),
@@ -804,10 +804,34 @@ func TestIngester_FinishReadRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{result="circuit_breaker_open"} 0
 			`,
 		},
-		"with a permit not acquired, readRequestDuration higher than ReadTimeout and an input error different from context deadline exceeded, finishReadRequest does nothing": {
+		"with a permit acquired, readRequestDuration higher than ReadTimeout and an input error irrelevant for circuit breakers, finishReadRequest records a failure": {
+			readRequestDuration:          3 * time.Second,
+			acquiredCircuitBreakerPermit: true,
+			err:                          context.Canceled,
+			expectedMetrics: `
+				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
+				# TYPE cortex_ingester_circuit_breaker_results_total counter
+				cortex_ingester_circuit_breaker_results_total{result="success"} 0
+				cortex_ingester_circuit_breaker_results_total{result="error"} 1
+				cortex_ingester_circuit_breaker_results_total{result="circuit_breaker_open"} 0
+			`,
+		},
+		"with a permit not acquired, readRequestDuration higher than ReadTimeout and an input error relevant for circuit breakers, finishReadRequest does nothing": {
 			readRequestDuration:          3 * time.Second,
 			acquiredCircuitBreakerPermit: false,
 			err:                          newInstanceLimitReachedError("error"),
+			expectedMetrics: `
+				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
+				# TYPE cortex_ingester_circuit_breaker_results_total counter
+				cortex_ingester_circuit_breaker_results_total{result="success"} 0
+				cortex_ingester_circuit_breaker_results_total{result="error"} 0
+				cortex_ingester_circuit_breaker_results_total{result="circuit_breaker_open"} 0
+			`,
+		},
+		"with a permit not acquired, readRequestDuration higher than ReadTimeout and an input error irrelevant for circuit breakers, finishReadRequest does nothing": {
+			readRequestDuration:          3 * time.Second,
+			acquiredCircuitBreakerPermit: false,
+			err:                          context.Canceled,
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
@@ -837,13 +861,7 @@ func TestIngester_FinishReadRequest(t *testing.T) {
 				return i.lifecycler.HealthyInstancesCount()
 			})
 
-			st := &readRequestState{
-				requestStart:                 time.Now().Add(-testCase.readRequestDuration),
-				acquiredCircuitBreakerPermit: testCase.acquiredCircuitBreakerPermit,
-			}
-
-			err = i.finishReadRequest(st, testCase.err)
-			require.Equal(t, i.mapReadErrorToErrorWithStatus(testCase.err), err)
+			i.finishReadRequest(time.Now().Add(-testCase.readRequestDuration), testCase.acquiredCircuitBreakerPermit, testCase.err)
 			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testCase.expectedMetrics), metricNames...))
 		})
 	}
