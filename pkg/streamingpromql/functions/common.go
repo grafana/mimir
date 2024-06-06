@@ -38,3 +38,7 @@ func FloatTransformationDropHistogramsFunc(transform func(f float64) float64) In
 		return floatTransformationFunc(transform)(seriesData, pool)
 	}
 }
+
+func Passthrough(seriesData types.InstantVectorSeriesData, _ *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
+	return seriesData, nil
+}

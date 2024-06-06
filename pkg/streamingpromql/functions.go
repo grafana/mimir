@@ -11,19 +11,20 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-type instantVectorFunctionOperator func(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error)
+type InstantVectorFunctionOperator func(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error)
 
-// transformationFunctionOperatorFactory creates an instantVectorFunctionOperator for functions
-// that have exactly 1 argument and drop the series name.
+// SingleInputVectorFunctionOperator creates an InstantVectorFunctionOperator for functions
+// that have exactly 1 argument (v instant-vector).
 //
 // Parameters:
 //   - name: The name of the function.
-//   - seriesDataFunc: The function to be wrapped.
+//   - metadataFunc: The function for handling metadata
+//   - seriesDataFunc: The function to handle series data
 //
 // Returns:
 //
-//	An instantVectorFunctionOperator.
-func transformationFunctionOperatorFactory(name string, seriesDataFunc functions.InstantVectorFunction) instantVectorFunctionOperator {
+//	An InstantVectorFunctionOperator.
+func SingleInputVectorFunctionOperator(name string, metadataFunc functions.SeriesMetadataFunction, seriesDataFunc functions.InstantVectorFunction) InstantVectorFunctionOperator {
 	return func(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error) {
 		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
@@ -40,10 +41,39 @@ func transformationFunctionOperatorFactory(name string, seriesDataFunc functions
 			Inner: inner,
 			Pool:  pool,
 
-			MetadataFunc:   functions.DropSeriesName,
+			MetadataFunc:   metadataFunc,
 			SeriesDataFunc: seriesDataFunc,
 		}, nil
 	}
+}
+
+// TransformationFunctionOperator creates an InstantVectorFunctionOperator for functions
+// that have exactly 1 argument (v instant-vector), and drop the series __name__ label.
+//
+// Parameters:
+//   - name: The name of the function.
+//   - seriesDataFunc: The function to handle series data
+//
+// Returns:
+//
+//	An InstantVectorFunctionOperator.
+func TransformationFunctionOperator(name string, seriesDataFunc functions.InstantVectorFunction) InstantVectorFunctionOperator {
+	return SingleInputVectorFunctionOperator(name, functions.DropSeriesName, seriesDataFunc)
+}
+
+// LabelManipulationFunctionOperator creates an InstantVectorFunctionOperator for functions
+// that have exactly 1 argument (v instant-vector), and need to manipulate the labels.
+// The values of v are passed through.
+//
+// Parameters:
+//   - name: The name of the function.
+//   - metadataFunc: The function for handling metadata
+//
+// Returns:
+//
+//	An InstantVectorFunctionOperator.
+func LabelManipulationFunctionOperator(name string, metadataFunc functions.SeriesMetadataFunction) InstantVectorFunctionOperator {
+	return SingleInputVectorFunctionOperator(name, metadataFunc, functions.Passthrough)
 }
 
 func rateFunctionOperator(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error) {
@@ -64,12 +94,21 @@ func rateFunctionOperator(args []types.Operator, pool *pooling.LimitingPool) (ty
 	}, nil
 }
 
-var _ instantVectorFunctionOperator = rateFunctionOperator
+var _ InstantVectorFunctionOperator = rateFunctionOperator
 
 // These functions return an instant-vector.
-var instantVectorFunctions = map[string]instantVectorFunctionOperator{
-	"acos":            transformationFunctionOperatorFactory("acos", functions.Acos),
-	"histogram_count": transformationFunctionOperatorFactory("histogram_count", functions.HistogramCount),
-	"histogram_sum":   transformationFunctionOperatorFactory("histogram_sum", functions.HistogramSum),
+var instantVectorFunctions = map[string]InstantVectorFunctionOperator{
+	"acos":            TransformationFunctionOperator("acos", functions.Acos),
+	"histogram_count": TransformationFunctionOperator("histogram_count", functions.HistogramCount),
+	"histogram_sum":   TransformationFunctionOperator("histogram_sum", functions.HistogramSum),
 	"rate":            rateFunctionOperator,
+}
+
+func RegisterInstantVectorFunctionOperator(functionName string, functionOperator InstantVectorFunctionOperator) error {
+	if _, exists := instantVectorFunctions[functionName]; exists {
+		return fmt.Errorf("function '%s' has already been registered", functionName)
+	}
+
+	instantVectorFunctions[functionName] = functionOperator
+	return nil
 }
