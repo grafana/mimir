@@ -81,7 +81,6 @@ func buildReport(seed ClusterSeed, reportAt time.Time, reportInterval time.Durat
 func buildMetrics() map[string]interface{} {
 	result := map[string]interface{}{
 		"memstats":      buildMemstats(),
-		"num_cpu":       runtime.NumCPU(),
 		"num_goroutine": runtime.NumGoroutine(),
 	}
 	defer cpuUsage.Set(0)
