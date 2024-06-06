@@ -1261,7 +1261,7 @@ circuit_breaker:
   # configuration is used for circuit breakers only, and timeout expirations are
   # not reported as errors
   # CLI flag: -ingester.circuit-breaker.read-timeout
-  [read_timeout: <duration> | default = 2s]
+  [read_timeout: <duration> | default = 30s]
 ```
 
 ### querier

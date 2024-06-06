@@ -25,7 +25,7 @@ const (
 	circuitBreakerResultError        = "error"
 	circuitBreakerResultOpen         = "circuit_breaker_open"
 	circuitBreakerDefaultPushTimeout = 2 * time.Second
-	circuitBreakerDefaultReadTimeout = 2 * time.Second
+	circuitBreakerDefaultReadTimeout = 30 * time.Second
 )
 
 type circuitBreakerMetrics struct {
@@ -226,29 +226,33 @@ func (cb *circuitBreaker) finishReadRequest(readDuration time.Duration, readErr 
 	return cb.finishRequest(readDuration, cb.cfg.ReadTimeout, readErr)
 }
 
-func (cb *circuitBreaker) finishRequest(actualDuration time.Duration, maximalDuration time.Duration, err error) error {
+func (cb *circuitBreaker) finishRequest(actualDuration time.Duration, maximumAllowedDuration time.Duration, err error) error {
 	if !cb.isActive() {
 		return nil
 	}
 	if cb.cfg.testModeEnabled {
 		actualDuration += cb.testRequestDelay
 	}
-	if maximalDuration < actualDuration {
-		err = context.DeadlineExceeded
+	var deadlineErr error
+	if maximumAllowedDuration < actualDuration {
+		deadlineErr = context.DeadlineExceeded
 	}
-	cb.recordResult(err)
-	return err
+	return cb.recordResult(err, deadlineErr)
 }
 
-func (cb *circuitBreaker) recordResult(err error) {
+func (cb *circuitBreaker) recordResult(errs ...error) error {
 	if !cb.isActive() {
-		return
+		return nil
 	}
-	if err != nil && isCircuitBreakerFailure(err) {
-		cb.cb.RecordFailure()
-		cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultError).Inc()
-	} else {
-		cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultSuccess).Inc()
-		cb.cb.RecordSuccess()
+
+	for _, err := range errs {
+		if err != nil && isCircuitBreakerFailure(err) {
+			cb.cb.RecordFailure()
+			cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultError).Inc()
+			return err
+		}
 	}
+	cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultSuccess).Inc()
+	cb.cb.RecordSuccess()
+	return nil
 }

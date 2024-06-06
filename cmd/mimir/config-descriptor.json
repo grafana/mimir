@@ -3230,7 +3230,7 @@
               "required": false,
               "desc": "How long is execution of ingester's read-path request supposed to last before it is reported as timeout in a circuit breaker. This configuration is used for circuit breakers only, and timeout expirations are not reported as errors",
               "fieldValue": null,
-              "fieldDefaultValue": 2000000000,
+              "fieldDefaultValue": 30000000000,
               "fieldFlag": "ingester.circuit-breaker.read-timeout",
               "fieldType": "duration",
               "fieldCategory": "experiment"
