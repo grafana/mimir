@@ -110,6 +110,7 @@ const (
 	replicationFactorStatsName             = "ingester_replication_factor"
 	ringStoreStatsName                     = "ingester_ring_store"
 	memorySeriesStatsName                  = "ingester_inmemory_series"
+	activeSeriesStatsName                  = "ingester_active_series"
 	memoryTenantsStatsName                 = "ingester_inmemory_tenants"
 	appendedSamplesStatsName               = "ingester_appended_samples"
 	appendedExemplarsStatsName             = "ingester_appended_exemplars"
@@ -138,6 +139,7 @@ var (
 	// updated in Ingester.updateUsageStats.
 	memorySeriesStats                  = usagestats.GetAndResetInt(memorySeriesStatsName)
 	memoryTenantsStats                 = usagestats.GetAndResetInt(memoryTenantsStatsName)
+	activeSeriesStats                  = usagestats.GetAndResetInt(activeSeriesStatsName)
 	tenantsWithOutOfOrderEnabledStat   = usagestats.GetAndResetInt(tenantsWithOutOfOrderEnabledStatName)
 	minOutOfOrderTimeWindowSecondsStat = usagestats.GetAndResetInt(minOutOfOrderTimeWindowSecondsStatName)
 	maxOutOfOrderTimeWindowSecondsStat = usagestats.GetAndResetInt(maxOutOfOrderTimeWindowSecondsStatName)
@@ -839,6 +841,7 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 func (i *Ingester) updateUsageStats() {
 	memoryUsersCount := int64(0)
 	memorySeriesCount := int64(0)
+	activeSeriesCount := int64(0)
 	tenantsWithOutOfOrderEnabledCount := int64(0)
 	minOutOfOrderTimeWindow := time.Duration(0)
 	maxOutOfOrderTimeWindow := time.Duration(0)
@@ -858,6 +861,9 @@ func (i *Ingester) updateUsageStats() {
 		memoryUsersCount++
 		memorySeriesCount += int64(numSeries)
 
+		activeSeries, _, _ := userDB.activeSeries.Active()
+		activeSeriesCount += int64(activeSeries)
+
 		oooWindow := i.limits.OutOfOrderTimeWindow(userID)
 		if oooWindow > 0 {
 			tenantsWithOutOfOrderEnabledCount++
@@ -873,6 +879,7 @@ func (i *Ingester) updateUsageStats() {
 
 	// Track anonymous usage stats.
 	memorySeriesStats.Set(memorySeriesCount)
+	activeSeriesStats.Set(activeSeriesCount)
 	memoryTenantsStats.Set(memoryUsersCount)
 	tenantsWithOutOfOrderEnabledStat.Set(tenantsWithOutOfOrderEnabledCount)
 	minOutOfOrderTimeWindowSecondsStat.Set(int64(minOutOfOrderTimeWindow.Seconds()))
