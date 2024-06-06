@@ -26,6 +26,7 @@ const (
 	SeriesWithDuplicateLabelNames         ID = "duplicate-label-names"
 	SeriesLabelsNotSorted                 ID = "labels-not-sorted"
 	SampleTooFarInFuture                  ID = "too-far-in-future"
+	SampleTooFarInPast                    ID = "too-far-in-past"
 	MaxSeriesPerMetric                    ID = "max-series-per-metric"
 	MaxMetadataPerMetric                  ID = "max-metadata-per-metric"
 	MaxSeriesPerUser                      ID = "max-series-per-user"
@@ -68,11 +69,13 @@ const (
 	SampleDuplicateTimestamp ID = "sample-duplicate-timestamp"
 	ExemplarSeriesMissing    ID = "exemplar-series-missing"
 	ExemplarTooFarInFuture   ID = "exemplar-too-far-in-future"
+	ExemplarTooFarInPast     ID = "exemplar-too-far-in-past"
 
 	StoreConsistencyCheckFailed ID = "store-consistency-check-failed"
 	BucketIndexTooOld           ID = "bucket-index-too-old"
 
-	DistributorMaxWriteMessageSize ID = "distributor-max-write-message-size"
+	DistributorMaxWriteMessageSize         ID = "distributor-max-write-message-size"
+	DistributorMaxWriteRequestDataItemSize ID = "distributor-max-write-request-data-item-size"
 
 	// Map Prometheus TSDB native histogram validation errors to Mimir errors.
 	// E.g. histogram.ErrHistogramCountNotBigEnough -> NativeHistogramCountNotBigEnough

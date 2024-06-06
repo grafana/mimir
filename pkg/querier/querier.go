@@ -65,9 +65,9 @@ type Config struct {
 }
 
 const (
-	queryStoreAfterFlag   = "querier.query-store-after"
-	standardPromQLEngine  = "standard"
-	streamingPromQLEngine = "streaming"
+	queryStoreAfterFlag    = "querier.query-store-after"
+	prometheusPromQLEngine = "prometheus"
+	mimirPromQLEngine      = "mimir"
 )
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -89,14 +89,14 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 256, "Number of series to buffer per ingester when streaming chunks from ingesters.")
 	f.Uint64Var(&cfg.StreamingChunksPerStoreGatewaySeriesBufferSize, "querier.streaming-chunks-per-store-gateway-buffer-size", 256, "Number of series to buffer per store-gateway when streaming chunks from store-gateways.")
 
-	f.StringVar(&cfg.PromQLEngine, "querier.promql-engine", standardPromQLEngine, fmt.Sprintf("PromQL engine to use, either '%v' or '%v'", standardPromQLEngine, streamingPromQLEngine))
+	f.StringVar(&cfg.PromQLEngine, "querier.promql-engine", prometheusPromQLEngine, fmt.Sprintf("PromQL engine to use, either '%v' or '%v'", prometheusPromQLEngine, mimirPromQLEngine))
 	f.BoolVar(&cfg.EnablePromQLEngineFallback, "querier.enable-promql-engine-fallback", true, "If set to true and the streaming engine is in use, fall back to using the Prometheus PromQL engine for any queries not supported by the streaming engine.")
 
 	cfg.EngineConfig.RegisterFlags(f)
 }
 
 func (cfg *Config) Validate() error {
-	if cfg.PromQLEngine != standardPromQLEngine && cfg.PromQLEngine != streamingPromQLEngine {
+	if cfg.PromQLEngine != prometheusPromQLEngine && cfg.PromQLEngine != mimirPromQLEngine {
 		return fmt.Errorf("unknown PromQL engine '%s'", cfg.PromQLEngine)
 	}
 
@@ -161,11 +161,11 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 	var eng promql.QueryEngine
 
 	switch cfg.PromQLEngine {
-	case standardPromQLEngine:
+	case prometheusPromQLEngine:
 		eng = promql.NewEngine(opts)
-	case streamingPromQLEngine:
+	case mimirPromQLEngine:
 		limitsProvider := &tenantQueryLimitsProvider{limits: limits}
-		streamingEngine, err := streamingpromql.NewEngine(opts, limitsProvider)
+		streamingEngine, err := streamingpromql.NewEngine(opts, limitsProvider, logger)
 		if err != nil {
 			return nil, nil, nil, err
 		}

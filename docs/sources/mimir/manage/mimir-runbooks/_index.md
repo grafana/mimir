@@ -1698,6 +1698,31 @@ On a per-tenant basis, you can fine tune the tolerance by configuring the `creat
 Only series with invalid samples are skipped during the ingestion. Valid samples within the same request are still ingested.
 {{< /admonition >}}
 
+### err-mimir-too-far-in-past
+
+This non-critical error occurs when Mimir rejects a sample because its timestamp is too far in the past compared to the wall clock.
+
+How it **works**:
+
+- The distributor or the ingester implements an lower limit on the timestamp of incoming samples, it is used to protect the system from potential abuse or mistakes.
+- The lower limit is defined by the current wall clock minus the `out_of_order_time_window` and minus the `past_grace_period` settings.
+- The samples that are too far in the past aren't ingested.
+
+How to **fix** it:
+
+- Make sure that it is intended that the timestamps of the incoming samples are that old.
+- If the timestamps are correct, increase the `past_grace_period` setting, or set it to 0 to disable the limit.
+
+{{< admonition type="note" >}}
+Only the invalid samples are skipped during the ingestion. Valid samples within the same request are still ingested.
+{{< /admonition >}}
+
+### err-mimir-exemplar-too-far-in-past
+
+This non-critical error occurs when Mimir rejects an exemplar because its timestamp is too far in the past compared to the wall clock.
+
+Refer to [`err-mimir-too-far-in-past`](#err-mimir-too-far-in-past) for more details and how to fix it.
+
 ### err-mimir-exemplar-labels-missing
 
 This non-critical error occurs when Mimir receives a write request that contains an exemplar without a label that identifies the related metric.
@@ -2009,7 +2034,7 @@ How to **fix** it:
 This error occurs when execution of a query exceeds the limit on the maximum estimated memory consumed by a single query.
 
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
-This limit only applies when Mimir's query engine is used (ie. `-querier.promql-engine=streaming`).
+This limit only applies when Mimir's query engine is used (ie. `-querier.promql-engine=mimir`).
 To configure the limit on a global basis, use the `-querier.max-estimated-memory-consumption-per-query` option.
 To configure the limit on a per-tenant basis, set the `max_estimated_memory_consumption_per_query` per-tenant override in the runtime configuration.
 
@@ -2209,6 +2234,22 @@ How it **works**:
 How to **fix** it:
 
 - Increase the allowed limit by using the `-distributor.max-recv-msg-size` option.
+
+### err-mimir-distributor-max-write-request-data-item-size
+
+This error can only be returned when the experimental ingest storage is enabled and is caused by a write request containing a timeseries or metadata entry which is larger than the allowed limit.
+
+How it **works**:
+
+- The distributor shards a write request into N partitions, where N is the tenant partitions shard size.
+- For each partition, the write request data is encoded into one or more Kafka records.
+- The maximum size of a Kafka record is hardcoded, so the per-partition write request data is automatically split into multiple Kafka records in order to ingest large write requests.
+- A single timeseries or metadata is the smallest splittable unit, which means that a single timeseries or metadata entry can't be split into multiple Kafka records.
+- If the write request contains a single timeseries or metadata entry whose size is bigger than the Kafka record size limit, then the ingestion of the write request will fail and the distributor will return a 4xx HTTP status code. The 4xx status code is used to ensure the client will not retry a request which will consistently fail.
+
+How to **fix** it:
+
+- Configure the client remote writing to Mimir to send smaller write requests.
 
 ### err-mimir-query-blocked
 

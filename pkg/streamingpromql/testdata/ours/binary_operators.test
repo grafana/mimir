@@ -43,9 +43,9 @@ load 6m
   right_side{env="dev", pod="pod-mno789"}     5    5    5    5
 
 # Matches on both sides: returns results for matching series, ignores non-matching series
-eval range from 0 to 24m step 6m left_side + right_side
-  {env="dev", pod="pod-abc123"} 1010 2020 3030 4040
-  {env="prod", pod="pod-abc123"} 101 202 303 404
+eval range from 0 to 24m step 6m left_side - right_side
+  {env="dev", pod="pod-abc123"} -990 -1980 -2970 -3960
+  {env="prod", pod="pod-abc123"} -99 -198 -297 -396
 
 # No series on either side: returns no results
 eval range from 0 to 24m step 6m left_side_that_doesnt_exist + right_side_that_doesnt_exist
@@ -74,13 +74,13 @@ load 6m
   right_side{env="prod", pod="a"} 10 20 30
   right_side{env="test", pod="b"} 40 50 60
 
-eval range from 0 to 24m step 6m left_side + on(env) right_side
-  {env="prod"} 14 25 36
-  {env="test"} 41 52 63
+eval range from 0 to 24m step 6m left_side - on(env) right_side
+  {env="prod"} -6 -15 -24
+  {env="test"} -39 -48 -57
 
-eval range from 0 to 24m step 6m left_side + ignoring(pod) right_side
-  {env="prod"} 14 25 36
-  {env="test"} 41 52 63
+eval range from 0 to 24m step 6m left_side - ignoring(pod) right_side
+  {env="prod"} -6 -15 -24
+  {env="test"} -39 -48 -57
 
 clear
 
@@ -93,15 +93,15 @@ load 6m
   right_side{env="test", pod="b", group="baz"} 40 50 60
   right_side{env="prod", pod="a", group="foo"} 70 80 90
 
-eval range from 0 to 24m step 6m left_side + on(env, pod) right_side
-  {env="prod", pod="a"} 77 88 99
-  {env="test", pod="a"} 11 22 33
-  {env="test", pod="b"} 44 55 66
+eval range from 0 to 24m step 6m left_side - on(env, pod) right_side
+  {env="prod", pod="a"} -63 -72 -81
+  {env="test", pod="a"} -9 -18 -27
+  {env="test", pod="b"} -36 -45 -54
 
-eval range from 0 to 24m step 6m left_side + ignoring(env, pod) right_side
-  {group="baz"} 47 58 69
-  {group="bar"} 14 25 36
-  {group="foo"} 71 82 93
+eval range from 0 to 24m step 6m left_side - ignoring(env, pod) right_side
+  {group="baz"} -33 -42 -51
+  {group="bar"} -6 -15 -24
+  {group="foo"} -69 -78 -87
 
 clear
 
@@ -112,8 +112,8 @@ load 6m
   right_side{env="test", foo="0"} 2 2 _ _ _ _ 2
   right_side{env="test", foo="1"} _ _ 3 3 _ _ _
 
-eval range from 0 to 42m step 6m left_side * on (env) right_side
-  {env="test"} 2 4 9 12 _ _ _
+eval range from 0 to 42m step 6m left_side - on (env) right_side
+  {env="test"} -1 0 0 1 _ _ _
 
 clear
 
@@ -142,3 +142,17 @@ eval_fail range from 0 to 42m step 6m left_side * on (env) right_side
   # TODO: expected_message found duplicate series for the match group {env="test"} on the right hand-side of the operation: [{__name__="right_side", env="test", pod="b"}, {__name__="right_side", env="test", pod="a"}];many-to-many matching not allowed: matching labels must be unique on one side
 
 clear
+
+# One-to-one matching with more series on left side than right (and vice-versa)
+# We have an optimsation that favours the smaller side, these tests ensure it behaves correctly.
+load 1m
+  single_series{env="prod"} 100 200 300
+  many_series{env="canary"} 10 20 30
+  many_series{env="prod"} 40 50 60
+  many_series{env="test"} 70 80 90
+
+eval range from 0 to 2m step 1m single_series - many_series
+  {env="prod"} 60 150 240
+
+eval range from 0 to 2m step 1m many_series - single_series
+  {env="prod"} -60 -150 -240

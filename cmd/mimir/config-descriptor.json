@@ -1913,9 +1913,9 @@
           "kind": "field",
           "name": "promql_engine",
           "required": false,
-          "desc": "PromQL engine to use, either 'standard' or 'streaming'",
+          "desc": "PromQL engine to use, either 'prometheus' or 'mimir'",
           "fieldValue": null,
-          "fieldDefaultValue": "standard",
+          "fieldDefaultValue": "prometheus",
           "fieldFlag": "querier.promql-engine",
           "fieldType": "string",
           "fieldCategory": "experimental"
@@ -3140,6 +3140,93 @@
           "fieldFlag": "ingester.owned-series-update-interval",
           "fieldType": "duration",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "block",
+          "name": "circuit_breaker",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable circuit breaking when making requests to ingesters",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.circuit-breaker.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "failure_threshold_percentage",
+              "required": false,
+              "desc": "Max percentage of requests that can fail over period before the circuit breaker opens",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "ingester.circuit-breaker.failure-threshold-percentage",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "failure_execution_threshold",
+              "required": false,
+              "desc": "How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures",
+              "fieldValue": null,
+              "fieldDefaultValue": 100,
+              "fieldFlag": "ingester.circuit-breaker.failure-execution-threshold",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "thresholding_period",
+              "required": false,
+              "desc": "Moving window of time that the percentage of failed requests is computed over",
+              "fieldValue": null,
+              "fieldDefaultValue": 60000000000,
+              "fieldFlag": "ingester.circuit-breaker.thresholding-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "cooldown_period",
+              "required": false,
+              "desc": "How long the circuit breaker will stay in the open state before allowing some requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ingester.circuit-breaker.cooldown-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_delay",
+              "required": false,
+              "desc": "How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingester.circuit-breaker.initial-delay",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "push_timeout",
+              "required": false,
+              "desc": "How long is execution of ingester's Push supposed to last before it is reported as timeout in a circuit breaker. This configuration is used for circuit breakers only, and timeout expirations are not reported as errors",
+              "fieldValue": null,
+              "fieldDefaultValue": 2000000000,
+              "fieldFlag": "ingester.circuit-breaker.push-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "experiment"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -3349,10 +3436,21 @@
           "kind": "field",
           "name": "creation_grace_period",
           "required": false,
-          "desc": "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor and ingester.",
+          "desc": "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester.",
           "fieldValue": null,
           "fieldDefaultValue": 600000000000,
           "fieldFlag": "validation.create-grace-period",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "past_grace_period",
+          "required": false,
+          "desc": "Controls how far into the past incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is lower than '(now - OOO window - past_grace_period)'. This configuration is enforced in the distributor and ingester. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "validation.past-grace-period",
           "fieldType": "duration",
           "fieldCategory": "advanced"
         },

@@ -246,6 +246,24 @@ func TestTooBusyError(t *testing.T) {
 	checkIngesterError(t, wrappedErr, mimirpb.TOO_BUSY, false)
 }
 
+func TestNewCircuitBreakerOpenError(t *testing.T) {
+	remainingDelay := 1 * time.Second
+	expectedMsg := fmt.Sprintf("circuit breaker open with remaining delay %s", remainingDelay.String())
+	err := newCircuitBreakerOpenError(remainingDelay)
+	require.Error(t, err)
+	require.EqualError(t, err, expectedMsg)
+	checkIngesterError(t, err, mimirpb.CIRCUIT_BREAKER_OPEN, false)
+
+	wrappedErr := fmt.Errorf("wrapped: %w", err)
+	require.ErrorIs(t, wrappedErr, err)
+	require.ErrorAs(t, wrappedErr, &circuitBreakerOpenError{})
+
+	wrappedWithUserErr := wrapOrAnnotateWithUser(err, userID)
+	require.ErrorIs(t, wrappedWithUserErr, err)
+	require.ErrorAs(t, wrappedWithUserErr, &circuitBreakerOpenError{})
+	checkIngesterError(t, wrappedErr, mimirpb.CIRCUIT_BREAKER_OPEN, false)
+}
+
 func TestNewErrorWithStatus(t *testing.T) {
 	errMsg := "this is an error"
 	ingesterErr := mockIngesterErr(errMsg)

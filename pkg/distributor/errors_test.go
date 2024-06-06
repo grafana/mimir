@@ -21,6 +21,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
 func TestNewReplicasNotMatchError(t *testing.T) {
@@ -167,6 +168,16 @@ func TestNewIngesterPushError(t *testing.T) {
 			checkDistributorError(t, wrappedErr, testData.expectedCause)
 		})
 	}
+}
+
+func TestPartitionPushError(t *testing.T) {
+	origErr := errors.New("the original error")
+	pushErr := newPartitionPushError(origErr, mimirpb.BAD_DATA)
+
+	assert.ErrorIs(t, pushErr, origErr)
+	assert.NotErrorIs(t, pushErr, context.Canceled)
+
+	assert.Equal(t, mimirpb.BAD_DATA, pushErr.Cause())
 }
 
 func TestNewCircuitBreakerOpenError(t *testing.T) {
@@ -489,7 +500,36 @@ func TestWrapIngesterPushError(t *testing.T) {
 	}
 }
 
-func TestIsIngesterClientError(t *testing.T) {
+func TestWrapPartitionPushError(t *testing.T) {
+	tests := map[string]struct {
+		err           error
+		expectedMsg   string
+		expectedCause mimirpb.ErrorCause
+	}{
+		"should wrap ingest.ErrWriteRequestDataItemTooLarge": {
+			err:           wrapPartitionPushError(ingest.ErrWriteRequestDataItemTooLarge, 1),
+			expectedMsg:   "failed pushing to partition 1: " + ingest.ErrWriteRequestDataItemTooLarge.Error(),
+			expectedCause: mimirpb.BAD_DATA,
+		},
+		"should wrap context.Canceled": {
+			err:           wrapPartitionPushError(context.Canceled, 1),
+			expectedMsg:   "failed pushing to partition 1: context canceled",
+			expectedCause: mimirpb.UNKNOWN_CAUSE,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, testData.expectedMsg, testData.err.Error())
+
+			partitionPushErr, ok := testData.err.(partitionPushError)
+			require.True(t, ok)
+			assert.Equal(t, testData.expectedCause, partitionPushErr.Cause())
+		})
+	}
+}
+
+func TestIsIngestionClientError(t *testing.T) {
 	testCases := map[string]struct {
 		err             error
 		expectedOutcome bool
@@ -504,6 +544,14 @@ func TestIsIngesterClientError(t *testing.T) {
 		},
 		"an ingesterPushError with other error cause is not a client error": {
 			err:             ingesterPushError{cause: mimirpb.SERVICE_UNAVAILABLE},
+			expectedOutcome: false,
+		},
+		"an partitionPushError with error cause BAD_DATA is a client error": {
+			err:             partitionPushError{cause: mimirpb.BAD_DATA},
+			expectedOutcome: true,
+		},
+		"an partitionPushError with other error cause is not a client error": {
+			err:             partitionPushError{cause: mimirpb.SERVICE_UNAVAILABLE},
 			expectedOutcome: false,
 		},
 		"an gRPC error with status code 4xx built by httpgrpc package is a client error": {
@@ -537,7 +585,7 @@ func TestIsIngesterClientError(t *testing.T) {
 	}
 	for testName, testData := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			require.Equal(t, testData.expectedOutcome, isIngesterClientError(testData.err))
+			require.Equal(t, testData.expectedOutcome, isIngestionClientError(testData.err))
 		})
 	}
 }

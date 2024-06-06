@@ -14,12 +14,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/httpgrpc/server"
@@ -186,6 +189,9 @@ func TestHandlerOTLPPush(t *testing.T) {
 		responseCode              int
 		errMessage                string
 		enableOtelMetadataStorage bool
+
+		expectedLogs        []string
+		expectedRetryHeader bool
 	}{
 		{
 			name:                      "Write samples. No compression",
@@ -227,6 +233,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			},
 			responseCode: http.StatusRequestEntityTooLarge,
 			errMessage:   "the incoming push request has been rejected because its message size of 63 bytes is larger",
+			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming push request has been rejected because its message size of 63 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-write-message-size). To adjust the related limit, configure -distributor.max-recv-msg-size, or contact your service administrator." insight=true`},
 		},
 		{
 			name:       "Write samples. Unsupported compression",
@@ -240,6 +247,20 @@ func TestHandlerOTLPPush(t *testing.T) {
 			},
 			responseCode: http.StatusUnsupportedMediaType,
 			errMessage:   "Only \"gzip\" or no compression supported",
+			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. Only \"gzip\" or no compression supported" insight=true`},
+		},
+		{
+			name:       "Rate limited request",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
+			verifyFunc: func(_ *testing.T, pushReq *Request) error {
+				return httpgrpc.Errorf(http.StatusTooManyRequests, "go slower")
+			},
+			responseCode:        http.StatusTooManyRequests,
+			errMessage:          "go slower",
+			expectedLogs:        []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=429 err="rpc error: code = Code(429) desc = go slower" insight=true`},
+			expectedRetryHeader: true,
 		},
 		{
 			name:       "Write histograms",
@@ -302,7 +323,10 @@ func TestHandlerOTLPPush(t *testing.T) {
 				t.Cleanup(pushReq.CleanUp)
 				return tt.verifyFunc(t, pushReq)
 			}
-			handler := OTLPHandler(tt.maxMsgSize, nil, nil, tt.enableOtelMetadataStorage, limits, RetryConfig{}, pusher, nil, nil, log.NewNopLogger(), true)
+
+			logs := &concurrency.SyncBuffer{}
+			retryConfig := RetryConfig{Enabled: true, BaseSeconds: 5, MaxBackoffExponent: 5}
+			handler := OTLPHandler(tt.maxMsgSize, nil, nil, tt.enableOtelMetadataStorage, limits, retryConfig, pusher, nil, nil, level.NewFilter(log.NewLogfmtLogger(logs), level.AllowInfo()), true)
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -316,6 +340,15 @@ func TestHandlerOTLPPush(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Contains(t, respStatus.GetMessage(), tt.errMessage)
 			}
+
+			var logLines []string
+			if logsStr := logs.String(); logsStr != "" {
+				logLines = strings.Split(strings.TrimSpace(logsStr), "\n")
+			}
+			assert.Equal(t, tt.expectedLogs, logLines)
+
+			retryAfter := resp.Header().Get("Retry-After")
+			assert.Equal(t, tt.expectedRetryHeader, retryAfter != "")
 		})
 	}
 }
@@ -759,18 +792,21 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 		err                  error
 		expectedHTTPStatus   int
 		expectedErrorMessage string
+		expectedLogs         []string
 	}{
 		{
 			name:                 "a generic error during request parsing gets an HTTP 400",
 			err:                  fmt.Errorf(errMsg),
 			expectedHTTPStatus:   http.StatusBadRequest,
 			expectedErrorMessage: errMsg,
+			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=400 err="rpc error: code = Code(400) desc = this is an error" insight=true`},
 		},
 		{
 			name:                 "a gRPC error with a status during request parsing gets translated into HTTP error without DoNotLogError header",
 			err:                  httpgrpc.Errorf(http.StatusRequestEntityTooLarge, errMsg),
 			expectedHTTPStatus:   http.StatusRequestEntityTooLarge,
 			expectedErrorMessage: errMsg,
+			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = this is an error" insight=true`},
 		},
 	}
 	for _, tc := range parserTestCases {
@@ -783,13 +819,21 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 				return err
 			}
 
-			h := handler(10, nil, nil, false, nil, RetryConfig{}, pushFunc, log.NewNopLogger(), parserFunc)
+			logs := &concurrency.SyncBuffer{}
+			h := handler(10, nil, nil, false, nil, RetryConfig{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
 
 			recorder := httptest.NewRecorder()
-			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}))
+			ctxWithUser := user.InjectOrgID(context.Background(), "testuser")
+			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}).WithContext(ctxWithUser))
 
 			assert.Equal(t, tc.expectedHTTPStatus, recorder.Code)
 			assert.Equal(t, fmt.Sprintf("%s\n", tc.expectedErrorMessage), recorder.Body.String())
+
+			var logLines []string
+			if logsStr := logs.String(); logsStr != "" {
+				logLines = strings.Split(strings.TrimSpace(logsStr), "\n")
+			}
+			assert.Equal(t, tc.expectedLogs, logLines)
 		})
 	}
 
@@ -799,6 +843,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 		expectedHTTPStatus          int
 		expectedErrorMessage        string
 		expectedDoNotLogErrorHeader bool
+		expectedLogs                []string
 	}{
 		{
 			name:               "no error during push gets translated into a HTTP 200",
@@ -810,6 +855,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			err:                  fmt.Errorf(errMsg),
 			expectedHTTPStatus:   http.StatusInternalServerError,
 			expectedErrorMessage: errMsg,
+			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=500 err="this is an error"`},
 		},
 		{
 			name:                        "a DoNotLogError of a generic error during push gets a HTTP 500 with DoNotLogError header",
@@ -817,12 +863,14 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			expectedHTTPStatus:          http.StatusInternalServerError,
 			expectedErrorMessage:        errMsg,
 			expectedDoNotLogErrorHeader: true,
+			expectedLogs:                []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=500 err="this is an error"`},
 		},
 		{
 			name:                 "a gRPC error with a status during push gets translated into HTTP error without DoNotLogError header",
 			err:                  httpgrpc.Errorf(http.StatusRequestEntityTooLarge, errMsg),
 			expectedHTTPStatus:   http.StatusRequestEntityTooLarge,
 			expectedErrorMessage: errMsg,
+			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = this is an error" insight=true`},
 		},
 		{
 			name:                        "a DoNotLogError of a gRPC error with a status during push gets translated into HTTP error without DoNotLogError header",
@@ -830,12 +878,21 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			expectedHTTPStatus:          http.StatusRequestEntityTooLarge,
 			expectedErrorMessage:        errMsg,
 			expectedDoNotLogErrorHeader: true,
+			expectedLogs:                []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = this is an error" insight=true`},
 		},
 		{
 			name:                 "a context.Canceled error during push gets translated into a HTTP 499",
 			err:                  context.Canceled,
 			expectedHTTPStatus:   statusClientClosedRequest,
 			expectedErrorMessage: context.Canceled.Error(),
+			expectedLogs:         []string{`level=warn user=testuser msg="push request canceled" err="context canceled"`},
+		},
+		{
+			name:                 "StatusBadRequest is logged with insight=true",
+			err:                  httpgrpc.Errorf(http.StatusBadRequest, "limits reached"),
+			expectedHTTPStatus:   http.StatusBadRequest,
+			expectedErrorMessage: "limits reached",
+			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=400 err="rpc error: code = Code(400) desc = limits reached" insight=true`},
 		},
 	}
 
@@ -852,9 +909,12 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 				}
 				return tc.err
 			}
-			h := handler(10, nil, nil, false, nil, RetryConfig{}, pushFunc, log.NewNopLogger(), parserFunc)
+
+			logs := &concurrency.SyncBuffer{}
+			h := handler(10, nil, nil, false, nil, RetryConfig{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
 			recorder := httptest.NewRecorder()
-			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}))
+			ctxWithUser := user.InjectOrgID(context.Background(), "testuser")
+			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}).WithContext(ctxWithUser))
 
 			assert.Equal(t, tc.expectedHTTPStatus, recorder.Code)
 			if tc.err != nil {
@@ -866,6 +926,12 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			} else {
 				require.Equal(t, "", header)
 			}
+
+			var logLines []string
+			if logsStr := logs.String(); logsStr != "" {
+				logLines = strings.Split(strings.TrimSpace(logsStr), "\n")
+			}
+			assert.Equal(t, tc.expectedLogs, logLines)
 		})
 	}
 }

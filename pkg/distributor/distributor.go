@@ -1020,6 +1020,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		var minExemplarTS int64
 		if earliestSampleTimestampMs != math.MaxInt64 {
 			minExemplarTS = earliestSampleTimestampMs - 5*time.Minute.Milliseconds()
+
+			if d.limits.PastGracePeriod(userID) > 0 {
+				minExemplarTS = max(minExemplarTS, now.Add(-d.limits.PastGracePeriod(userID)).Add(-d.limits.OutOfOrderTimeWindow(userID)).UnixMilli())
+			}
 		}
 
 		// Enforce the creation grace period on exemplars too.
@@ -1497,7 +1501,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 
 	batchOptions := ring.DoBatchOptions{
 		Cleanup:       batchCleanup,
-		IsClientError: isIngesterClientError,
+		IsClientError: isIngestionClientError,
 		Go:            d.doBatchPushWorkers,
 	}
 

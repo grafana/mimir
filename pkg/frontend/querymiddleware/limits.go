@@ -75,10 +75,6 @@ type Limits interface {
 	// OutOfOrderTimeWindow returns the out-of-order time window for the user.
 	OutOfOrderTimeWindow(userID string) time.Duration
 
-	// CreationGracePeriod returns the time interval to control how far into the future
-	// incoming samples are accepted compared to the wall clock.
-	CreationGracePeriod(userID string) time.Duration
-
 	// NativeHistogramsIngestionEnabled returns whether to ingest native histograms in the ingester
 	NativeHistogramsIngestionEnabled(userID string) bool
 

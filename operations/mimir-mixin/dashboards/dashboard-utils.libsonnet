@@ -493,7 +493,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_utilization % {
         namespaceMatcher: $.namespaceMatcher(),
-        containerMatcher: $.containerLabelNameMatcher(containerName),
+        persistentVolumeClaimMatcher: $.containerPersistentVolumeClaimMatcher(containerName),
         instanceLabel: $._config.per_instance_label,
         instanceName: instanceName,
         instanceDataDir: $._config.instance_data_mountpoint,
@@ -513,9 +513,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.containerDiskSpaceUtilizationPanel($._config.instance_names[componentName], $._config.container_names[componentName]),
 
   // The provided containerName should be a regexp from $._config.container_names.
-  containerLabelNameMatcher(containerName)::
-    // Check only the prefix so that a multi-zone deployment matches too.
-    'label_name=~"(%s).*"' % containerName,
+  containerPersistentVolumeClaimMatcher(containerName)::
+    'persistentvolumeclaim=~".*(%s).*"' % containerName,
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
   containerNetworkingRowByComponent(title, componentName)::

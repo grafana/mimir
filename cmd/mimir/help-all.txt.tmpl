@@ -1307,6 +1307,20 @@ Usage of ./cmd/mimir/mimir:
     	After what time a series is considered to be inactive. (default 10m0s)
   -ingester.active-series-metrics-update-period duration
     	How often to update active series metrics. (default 1m0s)
+  -ingester.circuit-breaker.cooldown-period duration
+    	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 10s)
+  -ingester.circuit-breaker.enabled
+    	[experimental] Enable circuit breaking when making requests to ingesters
+  -ingester.circuit-breaker.failure-execution-threshold uint
+    	[experimental] How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures (default 100)
+  -ingester.circuit-breaker.failure-threshold-percentage uint
+    	[experimental] Max percentage of requests that can fail over period before the circuit breaker opens (default 10)
+  -ingester.circuit-breaker.initial-delay duration
+    	[experimental] How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.
+  -ingester.circuit-breaker.push-timeout duration
+    	How long is execution of ingester's Push supposed to last before it is reported as timeout in a circuit breaker. This configuration is used for circuit breakers only, and timeout expirations are not reported as errors (default 2s)
+  -ingester.circuit-breaker.thresholding-period duration
+    	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -ingester.client.backoff-min-period duration
@@ -1770,7 +1784,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.prefer-streaming-chunks-from-store-gateways
     	[experimental] Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.
   -querier.promql-engine string
-    	[experimental] PromQL engine to use, either 'standard' or 'streaming' (default "standard")
+    	[experimental] PromQL engine to use, either 'prometheus' or 'mimir' (default "prometheus")
   -querier.promql-experimental-functions-enabled
     	[experimental] Enable experimental PromQL functions. This config option should be set on query-frontend too when query sharding is enabled.
   -querier.query-ingesters-within duration
@@ -2862,7 +2876,7 @@ Usage of ./cmd/mimir/mimir:
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
   -validation.create-grace-period duration
-    	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
+    	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
   -validation.max-label-names-per-series int
@@ -2875,6 +2889,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated. (default 1024)
   -validation.max-native-histogram-buckets int
     	Maximum number of buckets per native histogram sample. 0 to disable the limit.
+  -validation.past-grace-period duration
+    	Controls how far into the past incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is lower than '(now - OOO window - past_grace_period)'. This configuration is enforced in the distributor and ingester. 0 to disable.
   -validation.reduce-native-histogram-over-max-buckets
     	Whether to reduce or reject native histogram samples with more buckets than the configured limit. (default true)
   -validation.separate-metrics-group-label string
