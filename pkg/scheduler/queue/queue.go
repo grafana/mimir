@@ -33,8 +33,20 @@ var (
 	ErrQuerierShuttingDown = errors.New("querier has informed the scheduler it is shutting down")
 )
 
+type SchedulerRequestKey struct {
+	frontendAddr string
+	queryID      uint64
+}
+
+func NewSchedulerRequestKey(frontendAddr string, queryID uint64) SchedulerRequestKey {
+	return SchedulerRequestKey{
+		frontendAddr: frontendAddr,
+		queryID:      queryID,
+	}
+}
+
 type SchedulerRequest struct {
-	FrontendAddress           string
+	FrontendAddr              string
 	UserID                    string
 	QueryID                   uint64
 	Request                   *httpgrpc.HTTPRequest
@@ -50,10 +62,17 @@ type SchedulerRequest struct {
 	ParentSpanContext opentracing.SpanContext
 }
 
+func (sr *SchedulerRequest) Key() SchedulerRequestKey {
+	return SchedulerRequestKey{
+		frontendAddr: sr.FrontendAddr,
+		queryID:      sr.QueryID,
+	}
+}
+
 // ExpectedQueryComponentName parses the expected query component from annotations by the frontend.
-func (req *SchedulerRequest) ExpectedQueryComponentName() string {
-	if len(req.AdditionalQueueDimensions) > 0 {
-		return req.AdditionalQueueDimensions[0]
+func (sr *SchedulerRequest) ExpectedQueryComponentName() string {
+	if len(sr.AdditionalQueueDimensions) > 0 {
+		return sr.AdditionalQueueDimensions[0]
 	}
 	return ""
 }
