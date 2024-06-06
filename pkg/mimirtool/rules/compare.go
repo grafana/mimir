@@ -19,11 +19,13 @@ import (
 )
 
 var (
-	errNameDiff          = errors.New("rule groups are named differently")
-	errIntervalDiff      = errors.New("rule groups have different intervals")
-	errDiffRuleLen       = errors.New("rule groups have a different number of rules")
-	errDiffRWConfigs     = errors.New("rule groups have different remote write configs")
-	errDiffSourceTenants = errors.New("rule groups have different source tenants")
+	errNameDiff            = errors.New("rule groups are named differently")
+	errIntervalDiff        = errors.New("rule groups have different intervals")
+	errDiffRuleLen         = errors.New("rule groups have a different number of rules")
+	errDiffRWConfigs       = errors.New("rule groups have different remote write configs")
+	errDiffSourceTenants   = errors.New("rule groups have different source tenants")
+	errDiffEvaluationDelay = errors.New("rule groups have different evaluation delay")
+	errDiffQueryOffset     = errors.New("rule groups have different query offset")
 )
 
 // NamespaceState is used to denote the difference between the staged namespace
@@ -130,6 +132,14 @@ func CompareGroups(groupOne, groupTwo rwrulefmt.RuleGroup) error {
 
 	if len(groupOne.RWConfigs) != len(groupTwo.RWConfigs) {
 		return errDiffRWConfigs
+	}
+
+	if ((groupOne.EvaluationDelay == nil) != (groupTwo.EvaluationDelay == nil)) || (groupOne.EvaluationDelay != nil && groupTwo.EvaluationDelay != nil && *groupOne.EvaluationDelay != *groupTwo.EvaluationDelay) {
+		return errDiffEvaluationDelay
+	}
+
+	if ((groupOne.QueryOffset == nil) != (groupTwo.QueryOffset == nil)) || (groupOne.QueryOffset != nil && groupTwo.QueryOffset != nil && *groupOne.QueryOffset != *groupTwo.QueryOffset) {
+		return errDiffQueryOffset
 	}
 
 	for i := range groupOne.RWConfigs {
