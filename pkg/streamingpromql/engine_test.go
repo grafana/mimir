@@ -695,9 +695,10 @@ func TestActiveQueryTracker_WaitingForTrackerIncludesQueryTimeout(t *testing.T) 
 			require.NoError(t, err)
 			defer q.Close()
 
+			res := q.Exec(context.Background())
+
 			require.True(t, tracker.sawTimeout, "query tracker was not called with a context that timed out")
 
-			res := q.Exec(context.Background())
 			require.Error(t, res.Err)
 			require.ErrorIs(t, res.Err, context.DeadlineExceeded)
 			require.EqualError(t, res.Err, "context deadline exceeded: query timed out")
