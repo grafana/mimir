@@ -177,7 +177,7 @@ func handler(
 				msg = err.Error()
 			}
 			if code != 202 {
-				msgs := []interface{}{"msg", "failed to ingest data from Prometheus remote-write request", "httpCode", code, "err", err}
+				msgs := []interface{}{"msg", "detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)", "httpCode", code, "err", err}
 				if code/100 == 4 {
 					msgs = append(msgs, "insight", true)
 				}
@@ -250,7 +250,7 @@ func otlpHandler(
 				errorMsg = err.Error()
 			}
 			if httpCode != 202 {
-				msgs := []interface{}{"msg", "failed to ingest data from OTLP metrics request", "httpCode", httpCode, "err", err}
+				msgs := []interface{}{"msg", "detected an error while ingesting OTLP metrics request (the request may have been partially ingested)", "httpCode", httpCode, "err", err}
 				if httpCode/100 == 4 {
 					msgs = append(msgs, "insight", true)
 				}

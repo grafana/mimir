@@ -233,7 +233,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			},
 			responseCode: http.StatusRequestEntityTooLarge,
 			errMessage:   "the incoming push request has been rejected because its message size of 63 bytes is larger",
-			expectedLogs: []string{`level=error user=test msg="failed to ingest data from OTLP metrics request" httpCode=413 err="rpc error: code = Code(413) desc = the incoming push request has been rejected because its message size of 63 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-write-message-size). To adjust the related limit, configure -distributor.max-recv-msg-size, or contact your service administrator." insight=true`},
+			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming push request has been rejected because its message size of 63 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-write-message-size). To adjust the related limit, configure -distributor.max-recv-msg-size, or contact your service administrator." insight=true`},
 		},
 		{
 			name:       "Write samples. Unsupported compression",
@@ -247,7 +247,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			},
 			responseCode: http.StatusUnsupportedMediaType,
 			errMessage:   "Only \"gzip\" or no compression supported",
-			expectedLogs: []string{`level=error user=test msg="failed to ingest data from OTLP metrics request" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. Only \"gzip\" or no compression supported" insight=true`},
+			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. Only \"gzip\" or no compression supported" insight=true`},
 		},
 		{
 			name:       "Rate limited request",
@@ -259,7 +259,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			},
 			responseCode:        http.StatusTooManyRequests,
 			errMessage:          "go slower",
-			expectedLogs:        []string{`level=error user=test msg="failed to ingest data from OTLP metrics request" httpCode=429 err="rpc error: code = Code(429) desc = go slower" insight=true`},
+			expectedLogs:        []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=429 err="rpc error: code = Code(429) desc = go slower" insight=true`},
 			expectedRetryHeader: true,
 		},
 		{
@@ -799,14 +799,14 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			err:                  fmt.Errorf(errMsg),
 			expectedHTTPStatus:   http.StatusBadRequest,
 			expectedErrorMessage: errMsg,
-			expectedLogs:         []string{`level=error user=testuser msg="failed to ingest data from Prometheus remote-write request" httpCode=400 err="rpc error: code = Code(400) desc = this is an error" insight=true`},
+			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=400 err="rpc error: code = Code(400) desc = this is an error" insight=true`},
 		},
 		{
 			name:                 "a gRPC error with a status during request parsing gets translated into HTTP error without DoNotLogError header",
 			err:                  httpgrpc.Errorf(http.StatusRequestEntityTooLarge, errMsg),
 			expectedHTTPStatus:   http.StatusRequestEntityTooLarge,
 			expectedErrorMessage: errMsg,
-			expectedLogs:         []string{`level=error user=testuser msg="failed to ingest data from Prometheus remote-write request" httpCode=413 err="rpc error: code = Code(413) desc = this is an error" insight=true`},
+			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = this is an error" insight=true`},
 		},
 	}
 	for _, tc := range parserTestCases {
@@ -855,7 +855,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			err:                  fmt.Errorf(errMsg),
 			expectedHTTPStatus:   http.StatusInternalServerError,
 			expectedErrorMessage: errMsg,
-			expectedLogs:         []string{`level=error user=testuser msg="failed to ingest data from Prometheus remote-write request" httpCode=500 err="this is an error"`},
+			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=500 err="this is an error"`},
 		},
 		{
 			name:                        "a DoNotLogError of a generic error during push gets a HTTP 500 with DoNotLogError header",
@@ -863,14 +863,14 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			expectedHTTPStatus:          http.StatusInternalServerError,
 			expectedErrorMessage:        errMsg,
 			expectedDoNotLogErrorHeader: true,
-			expectedLogs:                []string{`level=error user=testuser msg="failed to ingest data from Prometheus remote-write request" httpCode=500 err="this is an error"`},
+			expectedLogs:                []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=500 err="this is an error"`},
 		},
 		{
 			name:                 "a gRPC error with a status during push gets translated into HTTP error without DoNotLogError header",
 			err:                  httpgrpc.Errorf(http.StatusRequestEntityTooLarge, errMsg),
 			expectedHTTPStatus:   http.StatusRequestEntityTooLarge,
 			expectedErrorMessage: errMsg,
-			expectedLogs:         []string{`level=error user=testuser msg="failed to ingest data from Prometheus remote-write request" httpCode=413 err="rpc error: code = Code(413) desc = this is an error" insight=true`},
+			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = this is an error" insight=true`},
 		},
 		{
 			name:                        "a DoNotLogError of a gRPC error with a status during push gets translated into HTTP error without DoNotLogError header",
@@ -878,7 +878,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			expectedHTTPStatus:          http.StatusRequestEntityTooLarge,
 			expectedErrorMessage:        errMsg,
 			expectedDoNotLogErrorHeader: true,
-			expectedLogs:                []string{`level=error user=testuser msg="failed to ingest data from Prometheus remote-write request" httpCode=413 err="rpc error: code = Code(413) desc = this is an error" insight=true`},
+			expectedLogs:                []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = this is an error" insight=true`},
 		},
 		{
 			name:                 "a context.Canceled error during push gets translated into a HTTP 499",
@@ -892,7 +892,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			err:                  httpgrpc.Errorf(http.StatusBadRequest, "limits reached"),
 			expectedHTTPStatus:   http.StatusBadRequest,
 			expectedErrorMessage: "limits reached",
-			expectedLogs:         []string{`level=error user=testuser msg="failed to ingest data from Prometheus remote-write request" httpCode=400 err="rpc error: code = Code(400) desc = limits reached" insight=true`},
+			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=400 err="rpc error: code = Code(400) desc = limits reached" insight=true`},
 		},
 	}
 
