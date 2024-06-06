@@ -14,7 +14,6 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -367,7 +366,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(userID, am.cfg.Limits))
 
-	integrationsMap, err := buildIntegrationsMap(userID, conf.Receivers, tmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
+	integrationsMap, err := buildIntegrationsMap(conf.Receivers, tmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
 		if am.cfg.Limits != nil {
 			rl := &tenantRateLimits{
 				tenant:      userID,
@@ -461,7 +460,7 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func buildIntegrationsMap(userID string, nc []*definition.PostableApiReceiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]*notify.Integration, error) {
+func buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]*notify.Integration, error) {
 	loggerFactory := newLoggerFactory(logger)
 	whFn := func(n alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
 		return NewSender(logger), nil
@@ -481,14 +480,21 @@ func buildIntegrationsMap(userID string, nc []*definition.PostableApiReceiver, t
 				return nil, err
 			}
 
-			orgID, err := strconv.ParseInt(userID, 10, 64)
-			if err != nil {
-				orgID = 0
-			}
-			integrations, err := alertingNotify.BuildReceiverIntegrations(rCfg, tmpl, &images.UnavailableProvider{}, loggerFactory, whFn, emailFn, orgID, version.Version)
+			integrations, err := alertingNotify.BuildReceiverIntegrations(
+				rCfg,
+				tmpl,
+				&images.UnavailableProvider{}, // TODO: include images in notifications
+				loggerFactory,
+				whFn,
+				emailFn,
+				1, // orgID is always 1.
+				version.Version,
+			)
 			if err != nil {
 				return nil, err
 			}
+
+			// TODO: use the nfstatus.Integration wrapper for all integrations.
 			upstreamIntegrations := make([]*notify.Integration, 0, len(integrations))
 			for _, integration := range integrations {
 				upstreamIntegrations = append(upstreamIntegrations, integration.Integration())
