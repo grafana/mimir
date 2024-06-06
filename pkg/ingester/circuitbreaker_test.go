@@ -19,7 +19,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -879,4 +881,33 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
 			assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 		})
 	}
+}
+
+type mockedCircuitBreaker struct {
+	circuitbreaker.CircuitBreaker[any]
+	mock.Mock
+
+	acquiredPermitCount *atomic.Int64
+	recordSuccessCount  *atomic.Int64
+	recordFailureCount  *atomic.Int64
+}
+
+func (cb mockedCircuitBreaker) TryAcquirePermit() bool {
+	result := cb.CircuitBreaker.TryAcquirePermit()
+	if result {
+		cb.acquiredPermitCount.Inc()
+	}
+	return result
+}
+
+func (cb mockedCircuitBreaker) RecordSuccess() {
+	cb.CircuitBreaker.RecordSuccess()
+	cb.recordSuccessCount.Inc()
+	cb.acquiredPermitCount.Dec()
+}
+
+func (cb mockedCircuitBreaker) RecordFailure() {
+	cb.CircuitBreaker.RecordSuccess()
+	cb.recordFailureCount.Inc()
+	cb.acquiredPermitCount.Dec()
 }

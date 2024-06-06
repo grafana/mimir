@@ -3788,6 +3788,12 @@ func (i *Ingester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
 // function is returned.
 func (i *Ingester) startReadRequest() (func(error), error) {
 	start := time.Now()
+
+	// We try to acquire a permit from the circuit breaker.
+	// If it is not possible, it is because the circuit breaker is open, and a circuitBreakerOpenError is returned.
+	// If it is possible, a permit has to be released by recording either a success or a failure with the circuit
+	// breaker, by calling circuitBreaker.finishReadRequest(). This has to be done even if a failure happens withing
+	// startReadRequest.
 	acquiredCircuitBreakerPermit, err := i.circuitBreaker.tryAcquirePermit()
 	if err != nil {
 		return nil, err

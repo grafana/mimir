@@ -250,7 +250,7 @@ func (cb *circuitBreaker) recordResult(errs ...error) error {
 			return err
 		}
 	}
-	cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultSuccess).Inc()
 	cb.cb.RecordSuccess()
+	cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultSuccess).Inc()
 	return nil
 }
