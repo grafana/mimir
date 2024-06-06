@@ -1721,7 +1721,7 @@ Only the invalid samples are skipped during the ingestion. Valid samples within 
 
 This non-critical error occurs when Mimir rejects an exemplar because its timestamp is too far in the past compared to the wall clock.
 
-See [`err-mimir-too-far-in-past`](#err-mimir-too-far-in-past) for more details and how to fix it.
+Refer to [`err-mimir-too-far-in-past`](#err-mimir-too-far-in-past) for more details and how to fix it.
 
 ### err-mimir-exemplar-labels-missing
 
