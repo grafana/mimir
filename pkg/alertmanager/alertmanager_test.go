@@ -343,9 +343,9 @@ func TestSilenceLimits(t *testing.T) {
 		Store:             prepareInMemoryAlertStore(),
 		Replicator:        &stubReplicator{},
 		ReplicationFactor: 1,
-		// We have set this 1 minute, but we don't use it in this
+		// We have set this to 1 hour, but we don't use it in this
 		// test as we override the broadcast function with SetBroadcast.
-		PersisterConfig: PersisterConfig{Interval: time.Minute},
+		PersisterConfig: PersisterConfig{Interval: time.Hour},
 	}, r)
 	require.NoError(t, err)
 	defer am.StopAndWait()
