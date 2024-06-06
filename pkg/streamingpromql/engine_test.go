@@ -669,3 +669,61 @@ func (a *activeQueryTrackerQueryable) Querier(mint, maxt int64) (storage.Querier
 
 	return a.innerStorage.Querier(mint, maxt)
 }
+
+func TestActiveQueryTracker_WaitingForTrackerIncludesQueryTimeout(t *testing.T) {
+	tracker := &timeoutTestingQueryTracker{}
+	opts := NewTestEngineOpts()
+	opts.Timeout = 10 * time.Millisecond
+	opts.ActiveQueryTracker = tracker
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
+	require.NoError(t, err)
+
+	queryTypes := map[string]func() (promql.Query, error){
+		"range": func() (promql.Query, error) {
+			return engine.NewRangeQuery(context.Background(), nil, nil, "some_test_query", timestamp.Time(0), timestamp.Time(0).Add(time.Hour), time.Minute)
+		},
+		"instant": func() (promql.Query, error) {
+			return engine.NewInstantQuery(context.Background(), nil, nil, "some_test_query", timestamp.Time(0))
+		},
+	}
+
+	for queryType, createQuery := range queryTypes {
+		t.Run(queryType+" query", func(t *testing.T) {
+			tracker.sawTimeout = false
+
+			q, err := createQuery()
+			require.NoError(t, err)
+			defer q.Close()
+
+			require.True(t, tracker.sawTimeout, "query tracker was not called with a context that timed out")
+
+			res := q.Exec(context.Background())
+			require.Error(t, res.Err)
+			require.ErrorIs(t, res.Err, context.DeadlineExceeded)
+			require.EqualError(t, res.Err, "context deadline exceeded: query timed out")
+			require.Nil(t, res.Value)
+		})
+	}
+}
+
+type timeoutTestingQueryTracker struct {
+	sawTimeout bool
+}
+
+func (t *timeoutTestingQueryTracker) GetMaxConcurrent() int {
+	return 0
+}
+
+func (t *timeoutTestingQueryTracker) Insert(ctx context.Context, query string) (int, error) {
+	select {
+	case <-ctx.Done():
+		t.sawTimeout = true
+		return 0, context.Cause(ctx)
+	case <-time.After(time.Second):
+		return 0, errors.New("gave up waiting for query to time out")
+	}
+}
+
+func (t *timeoutTestingQueryTracker) Delete(insertIndex int) {
+	panic("should not be called")
+}
