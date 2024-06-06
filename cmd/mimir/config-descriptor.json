@@ -1913,9 +1913,9 @@
           "kind": "field",
           "name": "promql_engine",
           "required": false,
-          "desc": "PromQL engine to use, either 'standard' or 'streaming'",
+          "desc": "PromQL engine to use, either 'prometheus' or 'mimir'",
           "fieldValue": null,
-          "fieldDefaultValue": "standard",
+          "fieldDefaultValue": "prometheus",
           "fieldFlag": "querier.promql-engine",
           "fieldType": "string",
           "fieldCategory": "experimental"

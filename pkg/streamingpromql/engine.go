@@ -46,7 +46,7 @@ func NewEngine(opts promql.EngineOpts, limitsProvider QueryLimitsProvider, logge
 
 		logger: logger,
 		estimatedPeakMemoryConsumption: promauto.With(opts.Reg).NewHistogram(prometheus.HistogramOpts{
-			Name:                        "cortex_streaming_promql_engine_estimated_query_peak_memory_consumption",
+			Name:                        "cortex_mimir_query_engine_estimated_query_peak_memory_consumption",
 			Help:                        "Estimated peak memory consumption of each query (in bytes)",
 			NativeHistogramBucketFactor: 1.1,
 		}),
