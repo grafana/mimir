@@ -564,7 +564,7 @@ func TestMemoryConsumptionLimit(t *testing.T) {
 	}
 
 	assertEstimatedPeakMemoryConsumption := func(t *testing.T, reg *prometheus.Registry, span opentracing.Span, expectedMemoryConsumptionEstimate uint64) {
-		peakMemoryConsumptionHistogram := getHistogram(t, reg, "cortex_streaming_promql_engine_estimated_query_peak_memory_consumption")
+		peakMemoryConsumptionHistogram := getHistogram(t, reg, "cortex_mimir_query_engine_estimated_query_peak_memory_consumption")
 		require.Equal(t, float64(expectedMemoryConsumptionEstimate), peakMemoryConsumptionHistogram.GetSampleSum())
 
 		jaegerSpan, ok := span.(*jaeger.Span)
