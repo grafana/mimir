@@ -26,12 +26,11 @@ const activeSeriesMaxSizeBytes = 1 * 1024 * 1024
 // series that match the given matchers.
 func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream client.Ingester_ActiveSeriesServer) (err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	if err := i.checkAvailableForRead(); err != nil {
+	finishReadRequest, err := i.startReadRequest()
+	if err != nil {
 		return err
 	}
-	if err := i.checkReadOverloaded(); err != nil {
-		return err
-	}
+	defer func() { finishReadRequest(err) }()
 
 	spanlog, ctx := spanlogger.NewWithLogger(stream.Context(), i.logger, "Ingester.ActiveSeries")
 	defer spanlog.Finish()

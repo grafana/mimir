@@ -25,6 +25,7 @@ const (
 	circuitBreakerResultError        = "error"
 	circuitBreakerResultOpen         = "circuit_breaker_open"
 	circuitBreakerDefaultPushTimeout = 2 * time.Second
+	circuitBreakerDefaultReadTimeout = 30 * time.Second
 )
 
 type circuitBreakerMetrics struct {
@@ -75,6 +76,7 @@ type CircuitBreakerConfig struct {
 	CooldownPeriod             time.Duration `yaml:"cooldown_period" category:"experimental"`
 	InitialDelay               time.Duration `yaml:"initial_delay" category:"experimental"`
 	PushTimeout                time.Duration `yaml:"push_timeout" category:"experiment"`
+	ReadTimeout                time.Duration `yaml:"read_timeout" category:"experiment"`
 	testModeEnabled            bool          `yaml:"-"`
 }
 
@@ -86,7 +88,8 @@ func (cfg *CircuitBreakerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.ThresholdingPeriod, prefix+"thresholding-period", time.Minute, "Moving window of time that the percentage of failed requests is computed over")
 	f.DurationVar(&cfg.CooldownPeriod, prefix+"cooldown-period", 10*time.Second, "How long the circuit breaker will stay in the open state before allowing some requests")
 	f.DurationVar(&cfg.InitialDelay, prefix+"initial-delay", 0, "How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.")
-	f.DurationVar(&cfg.PushTimeout, prefix+"push-timeout", circuitBreakerDefaultPushTimeout, "How long is execution of ingester's Push supposed to last before it is reported as timeout in a circuit breaker. This configuration is used for circuit breakers only, and timeout expirations are not reported as errors")
+	f.DurationVar(&cfg.PushTimeout, prefix+"push-timeout", circuitBreakerDefaultPushTimeout, "The maximum length of time an ingester's Push request can last before it triggers a circuit breaker. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors.")
+	f.DurationVar(&cfg.ReadTimeout, prefix+"read-timeout", circuitBreakerDefaultReadTimeout, "The maximum length of time an ingester's read-path request can last before it triggers a circuit breaker. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors.")
 }
 
 // circuitBreaker abstracts the ingester's server-side circuit breaker functionality.
@@ -207,32 +210,47 @@ func (cb *circuitBreaker) tryAcquirePermit() (bool, error) {
 
 // finishPushRequest should be called to complete the push request executed upon a
 // successfully acquired circuit breaker permit.
-// It records the result of the push request with the circuit breaker. Push requests
-// that lasted longer than the configured timeout are treated as a failure.
+func (cb *circuitBreaker) finishPushRequest(duration time.Duration, pushErr error) {
+	_ = cb.finishRequest(duration, cb.cfg.PushTimeout, pushErr)
+}
+
+// finishReadRequest should be called to complete the read request executed upon a
+// successfully acquired circuit breaker permit.
+func (cb *circuitBreaker) finishReadRequest(readDuration time.Duration, readErr error) {
+	_ = cb.finishRequest(readDuration, cb.cfg.ReadTimeout, readErr)
+}
+
+// finishRequest completes a request executed upon a successfully acquired circuit breaker permit.
+// It records the result of the request with the circuit breaker. Requests that lasted longer than
+// the given maximumAllowedDuration are treated as a failure.
 // The returned error is only used for testing purposes.
-func (cb *circuitBreaker) finishPushRequest(duration time.Duration, pushErr error) error {
+func (cb *circuitBreaker) finishRequest(actualDuration time.Duration, maximumAllowedDuration time.Duration, err error) error {
 	if !cb.isActive() {
 		return nil
 	}
 	if cb.cfg.testModeEnabled {
-		duration += cb.testRequestDelay
+		actualDuration += cb.testRequestDelay
 	}
-	if cb.cfg.PushTimeout < duration {
-		pushErr = context.DeadlineExceeded
+	var deadlineErr error
+	if maximumAllowedDuration < actualDuration {
+		deadlineErr = context.DeadlineExceeded
 	}
-	cb.recordResult(pushErr)
-	return pushErr
+	return cb.recordResult(err, deadlineErr)
 }
 
-func (cb *circuitBreaker) recordResult(err error) {
+func (cb *circuitBreaker) recordResult(errs ...error) error {
 	if !cb.isActive() {
-		return
+		return nil
 	}
-	if err != nil && isCircuitBreakerFailure(err) {
-		cb.cb.RecordFailure()
-		cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultError).Inc()
-	} else {
-		cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultSuccess).Inc()
-		cb.cb.RecordSuccess()
+
+	for _, err := range errs {
+		if err != nil && isCircuitBreakerFailure(err) {
+			cb.cb.RecordFailure()
+			cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultError).Inc()
+			return err
+		}
 	}
+	cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultSuccess).Inc()
+	cb.cb.RecordSuccess()
+	return nil
 }
