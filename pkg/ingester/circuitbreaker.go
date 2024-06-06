@@ -212,18 +212,16 @@ func (cb *circuitBreaker) tryAcquirePermit() (bool, error) {
 // successfully acquired circuit breaker permit.
 // It records the result of the push request with the circuit breaker. Push requests
 // that lasted longer than the configured timeout are treated as a failure.
-// The returned error is only used for testing purposes.
-func (cb *circuitBreaker) finishPushRequest(duration time.Duration, pushErr error) error {
-	return cb.finishRequest(duration, cb.cfg.PushTimeout, pushErr)
+func (cb *circuitBreaker) finishPushRequest(duration time.Duration, pushErr error) {
+	_ = cb.finishRequest(duration, cb.cfg.PushTimeout, pushErr)
 }
 
 // finishReadRequest should be called to complete the read request executed upon a
 // successfully acquired circuit breaker permit.
 // It records the result of the push request with the circuit breaker. Read requests
 // that lasted longer than the configured timeout are treated as a failure.
-// The returned error is only used for testing purposes.
-func (cb *circuitBreaker) finishReadRequest(readDuration time.Duration, readErr error) error {
-	return cb.finishRequest(readDuration, cb.cfg.ReadTimeout, readErr)
+func (cb *circuitBreaker) finishReadRequest(readDuration time.Duration, readErr error) {
+	_ = cb.finishRequest(readDuration, cb.cfg.ReadTimeout, readErr)
 }
 
 func (cb *circuitBreaker) finishRequest(actualDuration time.Duration, maximumAllowedDuration time.Duration, err error) error {

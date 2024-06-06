@@ -980,11 +980,6 @@ type pushRequestState struct {
 	pushErr                      error
 }
 
-type readRequestState struct {
-	requestStart                 time.Time
-	acquiredCircuitBreakerPermit bool
-}
-
 func getPushRequestState(ctx context.Context) *pushRequestState {
 	if st, ok := ctx.Value(pushReqCtxKey).(*pushRequestState); ok {
 		return st
@@ -1009,7 +1004,7 @@ func (i *Ingester) FinishPushRequest(ctx context.Context) {
 		i.inflightPushRequestsBytes.Sub(st.requestSize)
 	}
 	if st.acquiredCircuitBreakerPermit {
-		_ = i.circuitBreaker.finishPushRequest(st.requestDuration, st.pushErr)
+		i.circuitBreaker.finishPushRequest(st.requestDuration, st.pushErr)
 	}
 }
 
@@ -3814,7 +3809,7 @@ func (i *Ingester) startReadRequest() (func(error), error) {
 // by the passed readRequestState object.
 func (i *Ingester) finishReadRequest(startTime time.Time, acquiredCircuitBreakerPermit bool, err error) {
 	if acquiredCircuitBreakerPermit {
-		_ = i.circuitBreaker.finishReadRequest(time.Since(startTime), err)
+		i.circuitBreaker.finishReadRequest(time.Since(startTime), err)
 	}
 }
 
