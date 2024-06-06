@@ -1249,17 +1249,15 @@ circuit_breaker:
   # CLI flag: -ingester.circuit-breaker.initial-delay
   [initial_delay: <duration> | default = 0s]
 
-  # (experiment) How long is execution of ingester's Push supposed to last
-  # before it is reported as timeout in a circuit breaker. This configuration is
-  # used for circuit breakers only, and timeout expirations are not reported as
-  # errors
+  # (experiment) The maximum length of time an ingester's Push request can last
+  # before it triggers a circuit breaker. This configuration is used for circuit
+  # breakers only, and its timeouts aren't reported as errors.
   # CLI flag: -ingester.circuit-breaker.push-timeout
   [push_timeout: <duration> | default = 2s]
 
-  # (experiment) How long is execution of ingester's read-path request supposed
-  # to last before it is reported as timeout in a circuit breaker. This
-  # configuration is used for circuit breakers only, and timeout expirations are
-  # not reported as errors
+  # (experiment) The maximum length of time an ingester's read-path request can
+  # last before it triggers a circuit breaker. This configuration is used for
+  # circuit breakers only, and its timeouts aren't reported as errors.
   # CLI flag: -ingester.circuit-breaker.read-timeout
   [read_timeout: <duration> | default = 30s]
 ```
