@@ -4,7 +4,6 @@ package ingest
 
 import (
 	"bytes"
-	"container/list"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -12,7 +11,6 @@ import (
 	"io"
 	"math"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -75,15 +73,12 @@ type PartitionReader struct {
 	consumer recordConsumer
 	metrics  readerMetrics
 
-	fetcher   *concurrentFetcher
 	committer *partitionCommitter
 
 	// consumedOffsetWatcher is used to wait until a given offset has been consumed.
 	// This gets initialised with -1 which means nothing has been consumed from the partition yet.
 	consumedOffsetWatcher *partitionOffsetWatcher
 	offsetReader          *partitionOffsetReader
-
-	startOffset int64
 
 	logger log.Logger
 	reg    prometheus.Registerer
@@ -126,7 +121,6 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 	if err != nil {
 		return err
 	}
-	r.startOffset = startOffset
 	// Initialise the last consumed offset only if we've got an actual offset from the consumer group.
 	if lastConsumedOffset >= 0 {
 		r.consumedOffsetWatcher.Notify(lastConsumedOffset)
@@ -149,15 +143,10 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 		return errors.Wrap(err, "starting service manager")
 	}
 
-	r.fetcher, err = newConcurrentFetcher(ctx, r.client, r.logger, r.reg, r.kafkaCfg.Topic, r.partitionID, startOffset, 1)
-	if err != nil {
-		return errors.Wrap(err, "creating fetcher")
-	}
-
 	// Enforce the max consumer lag (if enabled).
 	if maxLag := r.kafkaCfg.MaxConsumerLagAtStartup; maxLag > 0 {
 		if r.kafkaCfg.ConsumeFromPositionAtStartup != consumeFromEnd {
-			if err := r.processNextFetchesUntilMaxLagHonored(ctx, maxLag); err != nil {
+			if err := r.processNextFetchesUntilMaxLagHonored(ctx, startOffset, maxLag); err != nil {
 				return err
 			}
 		} else {
@@ -190,14 +179,14 @@ func (r *PartitionReader) stopDependencies() error {
 
 func (r *PartitionReader) run(ctx context.Context) error {
 	for ctx.Err() == nil {
-		r.processNextFetches(ctx, r.metrics.receiveDelayWhenRunning)
+		fetches := r.pollFetches(ctx)
+		r.processFetches(ctx, fetches, r.metrics.receiveDelayWhenRunning)
 	}
 
 	return nil
 }
 
-func (r *PartitionReader) processNextFetches(ctx context.Context, delayObserver prometheus.Observer) {
-	fetches := r.pollFetches(ctx)
+func (r *PartitionReader) processFetches(ctx context.Context, fetches kgo.Fetches, delayObserver prometheus.Observer) {
 	r.recordFetchesMetrics(fetches, delayObserver)
 	r.logFetchErrors(fetches)
 	fetches = filterOutErrFetches(fetches)
@@ -210,14 +199,27 @@ func (r *PartitionReader) processNextFetches(ctx context.Context, delayObserver 
 	r.notifyLastConsumedOffset(fetches)
 }
 
-func (r *PartitionReader) processNextFetchesUntilMaxLagHonored(ctx context.Context, maxLag time.Duration) error {
+func (r *PartitionReader) processNextFetchesUntilMaxLagHonored(ctx context.Context, startOffset int64, maxLag time.Duration) error {
 	level.Info(r.logger).Log("msg", "partition reader is starting to consume partition until max consumer lag is honored", "max_lag", maxLag)
+
+	// clean-up resources spun up from this function
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(fmt.Errorf("partition reader stopped consuming partition until max consumer lag is honored"))
 
 	boff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 250 * time.Millisecond,
 		MaxBackoff: 2 * time.Second,
 		MaxRetries: 0, // retry forever
 	})
+
+	fetcher, err := newConcurrentFetchers(ctx, r.client, r.logger, r.reg, r.kafkaCfg.Topic, r.partitionID, startOffset, 2)
+	if err != nil {
+		return errors.Wrap(err, "creating fetcher")
+	}
+
+	defer func() {
+		r.setPollingStartOffset(r.consumedOffsetWatcher.LastConsumedOffset() + 1)
+	}()
 
 	for boff.Ongoing() {
 		// Send a direct request to the Kafka backend to fetch the partition start offset.
@@ -257,8 +259,8 @@ func (r *PartitionReader) processNextFetchesUntilMaxLagHonored(ctx context.Conte
 			if lastProducedOffset <= lastConsumedOffset {
 				break
 			}
-
-			r.processNextFetches(ctx, r.metrics.receiveDelayWhenStarting)
+			fetches := fetcher.pollFetches(ctx)
+			r.processFetches(ctx, fetches, r.metrics.receiveDelayWhenStarting)
 		}
 
 		if boff.Err() != nil {
@@ -606,17 +608,25 @@ func (r *PartitionReader) pollFetches(ctx context.Context) (result kgo.Fetches) 
 	}(time.Now())
 
 	// TODO dimitarvdimitrov consider using franz-go during stable state
-	//return r.client.PollFetches(ctx)
-	return r.fetcher.pollFetches(ctx)
+	return r.client.PollFetches(ctx)
+	//return r.fetcher.pollFetches(ctx)
+}
+
+func (r *PartitionReader) setPollingStartOffset(offset int64) {
+	r.client.SetOffsets(map[string]map[int32]kgo.EpochOffset{
+		r.kafkaCfg.Topic: {r.partitionID: kgo.NewOffset().At(offset).EpochOffset()},
+	})
 }
 
 type fetchWant struct {
 	startOffset int64 // inclusive
 	endOffset   int64 // exclusive
+	// result should be closed when there are no more fetches for this partition. It is ok to send multiple times on the channel.
+	result chan kgo.FetchPartition
 	// TODO dimitarvdimitrov consider including expected bytes here so we can tell kafka to not send a ton of bytes back. We can estimate those.
 }
 
-type concurrentFetcher struct {
+type concurrentFetchers struct {
 	client      *kgo.Client
 	logger      log.Logger
 	partitionID int32
@@ -628,116 +638,18 @@ type concurrentFetcher struct {
 	fetchesCompressedBytes prometheus.Counter
 
 	// TODO dimitarvdimitrov do we need to take care of tracking highwatermark?
-	fetches orderedFetches
+	orderedFetches chan kgo.FetchPartition
 }
 
-// TODO dimitarvdimitrov unit tests
-type orderedFetches struct {
-	nextOrdered int64
-
-	waiter              chan chan struct{}
-	completedFetches    list.List
-	completedFetchesMtx sync.Mutex
-}
-
-// TODO dimitarvdimitrov add ctx arg and respect it
-func (f *orderedFetches) Next() kgo.Fetch {
-	if f.nextOrdered >= f.firstAvailable() {
-		return f.pop()
-	}
-	wait := make(chan struct{})
-	f.waiter <- wait
-	if f.nextOrdered >= f.firstAvailable() {
-		// It's possible that while we were preparing the wait channel, the next fetch has already been completed.
-		// In this case we don't want to wait for the next fetch, so we clean up our wait chan and return.
-		select {
-		case <-f.waiter:
-		default:
-			// In case the fetcher already took our wait from waiter.
-		}
-		return f.pop()
-	}
-	<-wait
-	if f.nextOrdered < f.firstAvailable() {
-		// It's possible that we got a batch that's too far ahead and there's a gap between nextOrdered and the first records of that batch.
-		// In this case we just try again.
-		return f.Next()
-	}
-	return f.pop()
-}
-
-func (f *orderedFetches) pop() kgo.Fetch {
-	f.completedFetchesMtx.Lock()
-	defer f.completedFetchesMtx.Unlock()
-
-	frontElem := f.completedFetches.Front()
-	f.completedFetches.Remove(frontElem)
-
-	current := frontElem.Value.(kgo.Fetch)
-	part := current.Topics[0].Partitions[0]
-	// The next ordered record will come after the last record in this fetch.
-	f.nextOrdered = part.Records[len(part.Records)-1].Offset + 1
-
-	if part.Records[len(part.Records)-1].Offset < f.nextOrdered {
-		// All the records in this fetch have already been returned. So we return an empty fetch and let the client call us again.
-		// We do not try to pop again because there's no guarantee that there is a next fetch.
-		return kgo.Fetch{}
-	}
-	// Truncate the prefix from current which has already been returned
-	firstOffset := part.Records[0].Offset
-	current.Topics[0].Partitions[0].Records = part.Records[f.nextOrdered-firstOffset:]
-	return current
-}
-
-func (f *orderedFetches) Complete(fetch kgo.Fetch) {
-	if len(fetch.Topics) == 0 || len(fetch.Topics[0].Partitions) == 0 || len(fetch.Topics[0].Partitions[0].Records) == 0 {
-		return
-	}
-	if len(fetch.Topics) > 1 || len(fetch.Topics[0].Partitions) > 1 {
-		panic("fetches with multiple topics/partitions are not supported")
-	}
-
-	firstOffset := fetch.Topics[0].Partitions[0].Records[0].Offset
-
-	f.completedFetchesMtx.Lock()
-	defer f.completedFetchesMtx.Unlock()
-	defer func() {
-		select {
-		case wait := <-f.waiter:
-			close(wait)
-		default:
-		}
-	}()
-
-	// Keep the fetches ordered by their smallest offset.
-	for elem := f.completedFetches.Front(); elem != nil; elem = elem.Next() {
-		part := elem.Value.(kgo.Fetch).Topics[0].Partitions[0]
-		if firstOffset < part.Records[0].Offset {
-			f.completedFetches.InsertBefore(fetch, elem)
-			return
-		}
-	}
-	f.completedFetches.PushBack(fetch)
-}
-
-func (f *orderedFetches) firstAvailable() int64 {
-	f.completedFetchesMtx.Lock()
-	defer f.completedFetchesMtx.Unlock()
-
-	if f.completedFetches.Len() == 0 {
-		return -1
-	}
-	return f.completedFetches.Front().Value.(kgo.Fetch).Topics[0].Partitions[0].Records[0].Offset
-}
-
-// newConcurrentFetcher creates a new concurrentFetcher. startOffset can be kafkaOffsetStart, kafkaOffsetEnd or a specific offset.
-func newConcurrentFetcher(ctx context.Context, client *kgo.Client, logger log.Logger, reg prometheus.Registerer, topic string, partition int32, startOffset int64, concurrency int) (*concurrentFetcher, error) {
-	f := &concurrentFetcher{
-		client:      client,
-		logger:      logger,
-		concurrency: concurrency,
-		topicName:   topic,
-		partitionID: partition,
+// newConcurrentFetchers creates a new concurrentFetchers. startOffset can be kafkaOffsetStart, kafkaOffsetEnd or a specific offset.
+func newConcurrentFetchers(ctx context.Context, client *kgo.Client, logger log.Logger, reg prometheus.Registerer, topic string, partition int32, startOffset int64, concurrency int) (*concurrentFetchers, error) {
+	f := &concurrentFetchers{
+		client:         client,
+		logger:         logger,
+		concurrency:    concurrency,
+		topicName:      topic,
+		partitionID:    partition,
+		orderedFetches: make(chan kgo.FetchPartition, 1),
 		fetchesCompressedBytes: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_fetches_compressed_bytes_total",
 			Help: "Total number of compressed bytes fetched from Kafka by the consumer.",
@@ -747,11 +659,9 @@ func newConcurrentFetcher(ctx context.Context, client *kgo.Client, logger log.Lo
 	var err error
 	switch startOffset {
 	case kafkaOffsetStart:
-		f.nextFetchOffset, err = f.getStartOffset(ctx)
+		startOffset, err = f.getStartOffset(ctx)
 	case kafkaOffsetEnd:
-		f.nextFetchOffset, err = f.getEndOffset(ctx)
-	default:
-		f.nextFetchOffset = startOffset
+		startOffset, err = f.getEndOffset(ctx)
 	}
 	if err != nil {
 		return nil, err
@@ -763,25 +673,30 @@ func newConcurrentFetcher(ctx context.Context, client *kgo.Client, logger log.Lo
 	}
 	f.topicID = topics[topic].ID
 
-	go f.runFetchers(ctx)
+	go f.runFetchers(ctx, startOffset)
 
 	return f, nil
 }
 
-func (r *concurrentFetcher) pollFetches(ctx context.Context) kgo.Fetches {
-	for ctx.Err() != nil {
-		f := r.fetches.Next()
-		if len(f.Topics) == 0 || len(f.Topics[0].Partitions) == 0 {
-			continue
-		}
-		return kgo.Fetches{f}
+func (r *concurrentFetchers) pollFetches(ctx context.Context) kgo.Fetches {
+	select {
+	case <-ctx.Done():
+		return kgo.Fetches{}
+	case f := <-r.orderedFetches:
+		r.logger.Log("msg", "received ordered fetch", "num_records", len(f.Records))
+		return kgo.Fetches{{
+			Topics: []kgo.FetchTopic{
+				{
+					Topic:      r.topicName,
+					Partitions: []kgo.FetchPartition{f},
+				},
+			},
+		}}
 	}
-	return kgo.Fetches{}
 }
 
-func (r *concurrentFetcher) fetchSingle(ctx context.Context, w fetchWant) kgo.Fetch {
-	// TODO dimitarvdimitrov continue here - should account for having to fetch multiple times in case the returned bytes weren't enough to satisfy w fetchWant
-	level.Debug(r.logger).Log("msg", "fetching", "offset", r.nextFetchOffset, "partition", r.partitionID, "topic", r.topicName)
+func (r *concurrentFetchers) fetchSingle(ctx context.Context, w fetchWant) kgo.FetchPartition {
+	level.Debug(r.logger).Log("msg", "fetching", "offset", w.startOffset, "partition", r.partitionID, "topic", r.topicName)
 	req := kmsg.NewFetchRequest()
 	req.Topics = []kmsg.FetchRequestTopic{{
 		Topic:   r.topicName,
@@ -789,7 +704,7 @@ func (r *concurrentFetcher) fetchSingle(ctx context.Context, w fetchWant) kgo.Fe
 		Partitions: []kmsg.FetchRequestTopicPartition{{
 			Partition:          r.partitionID,
 			FetchOffset:        w.startOffset,
-			CurrentLeaderEpoch: 0, // works for cases with a fresh kafka (like unit tests); needs fixing
+			CurrentLeaderEpoch: 0, // TODO dimitarvdimitrov works for cases with a fresh kafka (like unit tests); needs fixing
 			LastFetchedEpoch:   -1,
 			LogStartOffset:     -1,
 			PartitionMaxBytes:  100_000_000,
@@ -801,53 +716,32 @@ func (r *concurrentFetcher) fetchSingle(ctx context.Context, w fetchWant) kgo.Fe
 	req.MaxBytes = 100_000_000
 
 	req.SessionEpoch = 0
-	fetch := kgo.Fetch{
-		Topics: []kgo.FetchTopic{
-			{
-				Topic:      r.topicName,
-				Partitions: []kgo.FetchPartition{},
-			},
-		},
-	}
 
 	resp, err := req.RequestWith(ctx, r.client)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return kgo.Fetch{}
+			return kgo.FetchPartition{}
 		}
-		fetch.Topics[0].Partitions = append(fetch.Topics[0].Partitions, kgo.FetchPartition{
+		return kgo.FetchPartition{
 			Err: fmt.Errorf("fetching from kafka: %w", err),
-		})
-		return fetch
+		}
 	}
 
 	r.fetchesCompressedBytes.Add(float64(len(resp.Topics[0].Partitions[0].RecordBatches))) // TODO dimitarvdimitrov this doesn't include overhead in the response - investigate
 	partition := processRespPartition(&resp.Topics[0].Partitions[0], r.topicName)
-	level.Info(r.logger).Log("msg", "fetched records", "error_code", resp.ErrorCode, "num_records", len(partition.Records), "num_topics", len(resp.Topics), "num_partitions", len(resp.Topics[0].Partitions))
-	fetch.Topics[0].Partitions = append(fetch.Topics[0].Partitions, partition)
-	if len(partition.Records) > 0 {
-		r.nextFetchOffset = partition.Records[len(partition.Records)-1].Offset + 1
-	}
-
-	if errors.Is(fetch.Topics[0].Partitions[0].Err, kerr.OffsetOutOfRange) {
-		previousOffset := r.nextFetchOffset
-		r.nextFetchOffset, err = r.getStartOffset(ctx)
-		if err != nil {
-			fetch.Topics[0].Partitions[0].Err = fmt.Errorf("find topic id list start offset: %w", err)
-			return fetch
-		}
-		// TODO dimitarvdimitrov this is grossly simplified;
-		// 		See https://github.com/grafana/backend-enterprise/blob/db159a2fc8f7f93d93d3ff32424e29068b13dc49/vendor/github.com/twmb/franz-go/pkg/kgo/source.go#L1062-L1086
-		//		for how franz-go implements it.
-		level.Warn(r.logger).Log("msg", "offset out of range: the ingester is consuming too slowly or the data was truncated while we were reading it; resetting to earliest offset", "failed_offset", previousOffset, "new_offset", r.nextFetchOffset, "err", err)
-		return r.fetchSingle(ctx, w)
-	}
-	return fetch
+	level.Info(r.logger).Log(
+		"msg", "fetched records",
+		"error_code", resp.ErrorCode,
+		"num_records", len(partition.Records),
+		"num_topics", len(resp.Topics),
+		"num_partitions", len(resp.Topics[0].Partitions),
+	)
+	return partition
 }
 
 // getStartOffset does roughly what franz-go does - issues a ListOffsets request to Kafka to get the start offset.
 // Check how listOffsetsForBrokerLoad is implemented in franz-go for more details.
-func (r *concurrentFetcher) getStartOffset(ctx context.Context) (int64, error) {
+func (r *concurrentFetchers) getStartOffset(ctx context.Context) (int64, error) {
 	client := kadm.NewClient(r.client)
 	offsets, err := client.ListStartOffsets(ctx, r.topicName)
 	if err != nil {
@@ -858,7 +752,7 @@ func (r *concurrentFetcher) getStartOffset(ctx context.Context) (int64, error) {
 
 // getEndOffset does roughly what franz-go does - issues a ListOffsets request to Kafka to get the end offset.
 // Check how listOffsetsForBrokerLoad is implemented in franz-go for more details.
-func (r *concurrentFetcher) getEndOffset(ctx context.Context) (int64, error) {
+func (r *concurrentFetchers) getEndOffset(ctx context.Context) (int64, error) {
 	client := kadm.NewClient(r.client)
 	offsets, err := client.ListEndOffsets(ctx, r.topicName)
 	if err != nil {
@@ -867,32 +761,73 @@ func (r *concurrentFetcher) getEndOffset(ctx context.Context) (int64, error) {
 	return offsets[r.topicName][r.partitionID].Offset, nil
 }
 
-// TODO dimitarvdimitrov rename receiver to f
-func (r *concurrentFetcher) runFetchers(ctx context.Context) {
+func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64) {
 	wants := make(chan fetchWant)
 	defer close(wants)
 
-	results := make(chan kgo.Fetch)
+	results := make(chan chan kgo.FetchPartition, r.concurrency)
 	for i := 0; i < r.concurrency; i++ {
 		go func() {
+			r.logger.Log("msg", "starting fetcher")
 			for w := range wants {
-				f := r.fetchSingle(ctx, w)
-				// TODO dimitarvdimitrov continue here - what happens if w hasn't been fulfilled or if f contains an error
+				boff := backoff.New(ctx, backoff.Config{
+					MinBackoff: 250 * time.Millisecond,
+					MaxBackoff: 2 * time.Second,
+					MaxRetries: 0, // retry forever
+				})
+				r.logger.Log("msg", "starting to fetch", "start_offset", w.startOffset, "end_offset", w.endOffset)
+				for boff.Ongoing() && w.endOffset > w.startOffset {
+					f := r.fetchSingle(ctx, w)
+					if len(f.Records) == 0 {
+						continue
+					}
+					lastOffset := f.Records[len(f.Records)-1].Offset
+					w.startOffset = lastOffset + 1
+					select {
+					case w.result <- f:
+					case <-ctx.Done():
+					}
+				}
+				close(w.result)
 			}
 		}()
 	}
 
-	const recordsPerFetch = 128
-	fetchFromOffset := int64(0)
+	var (
+		nextFetch  = fetchWantFrom(startOffset)
+		nextResult = nextFetch.result
+	)
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case f := <-results:
-			r.fetches.Complete(f)
-		case wants <- fetchWant{startOffset: fetchFromOffset, endOffset: fetchFromOffset + recordsPerFetch}:
-			fetchFromOffset += recordsPerFetch
+		case wants <- nextFetch:
+			results <- nextFetch.result
+			nextFetch = nextFetchWant(nextFetch)
+		case result, exhausted := <-nextResult:
+			select {
+			case r.orderedFetches <- result:
+			case <-ctx.Done():
+				return
+			}
+			if exhausted {
+				nextResult = <-results
+			}
 		}
+	}
+}
+
+func nextFetchWant(fetch fetchWant) fetchWant {
+	return fetchWantFrom(fetch.endOffset)
+}
+
+func fetchWantFrom(offset int64) fetchWant {
+	const recordsPerFetch = 128
+	return fetchWant{
+		startOffset: offset,
+		endOffset:   offset + recordsPerFetch,
+		result:      make(chan kgo.FetchPartition),
 	}
 }
 
