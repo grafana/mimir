@@ -283,7 +283,7 @@ func TestFromProto_ZeroEvaluationDelayOrQueryOffsetIsIgnored(t *testing.T) {
 	tests := map[string]struct {
 		input string
 	}{
-		"zero evaludation delay": {
+		"zero evaluation delay": {
 			input: `
 name: testrules
 evaluation_delay: 0s
