@@ -1,5 +1,10 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package queue
 
+// DequeueAlgorithm represents the set of operations specific to different approaches to dequeueing. It is applied
+// at the layer-level -- every Node at the same depth in a Tree shares the same DequeueAlgorithm, including state
+// that may be stored in a struct that implements DequeueAlgorithm.
 type DequeueAlgorithm interface {
 	addChildNode(*Node, *Node)
 	deleteChildNode(*Node, *Node) bool
@@ -7,22 +12,23 @@ type DequeueAlgorithm interface {
 	dequeueUpdateState(*Node, any, bool)
 }
 
-type dequeueGetNodeFunc func(*Node) (*Node, bool)
-type dequeueUpdateStateFunc func(*Node, any, bool)
-
-type dequeueOps struct {
-	getNode     dequeueGetNodeFunc
-	updateState dequeueUpdateStateFunc
-}
-
+// roundRobinState is the simplest type of DequeueAlgorithm; nodes which use this DequeueAlgorithm and are at
+// the same depth in a Tree do not share any state. When children are added to these nodes, they are placed at
+// the "end" of the order from the perspective of the node's current queuePosition (e.g., if queuePosition is 3,
+// a new child will be placed at index 2). Children are dequeued from using a simple round-robin ordering;
+// queuePosition is incremented on every dequeue.
 type roundRobinState struct {
 }
 
+// addChildNode creates a new child Node and adds it to the "end" of the parent's queueOrder from the perspective
+// of the parent's queuePosition. Thus, If queuePosition is localQueueIndex, the new child is added to the end of
+// queueOrder. Otherwise, the new child is added at queuePosition - 1, and queuePosition is incremented to keep
+// it pointed to the same child.
 func (rrs *roundRobinState) addChildNode(parent, child *Node) {
 	// add childNode to n.queueMap
 	parent.queueMap[child.Name()] = child
 
-	// add childNode to n.queueOrder before the current position, update n.queuePosition to current element
+	// add childNode to n.queueOrder before the next-to-dequeue position, update n.queuePosition to current element
 	if parent.queuePosition <= localQueueIndex {
 		parent.queueOrder = append(parent.queueOrder, child.Name())
 	} else {
@@ -31,6 +37,8 @@ func (rrs *roundRobinState) addChildNode(parent, child *Node) {
 	}
 }
 
+// deleteChildNode removes a child node from a parent's children, and returns whether a child was found in the
+// parent's queueOrder. This allows us to adjust the parent's queuePosition if necessary.
 func (rrs *roundRobinState) deleteChildNode(parent, child *Node) bool {
 	var childFound bool
 	childName := child.Name()
@@ -44,13 +52,9 @@ func (rrs *roundRobinState) deleteChildNode(parent, child *Node) bool {
 	return childFound
 }
 
+// dequeueGetNode returns the node at the node's queuePosition. queuePosition represents the position of
+// the next node to dequeue from, and is incremented in dequeueUpdateState.
 func (rrs *roundRobinState) dequeueGetNode(n *Node) (*Node, bool) {
-	// advance the queue position for this dequeue
-	n.queuePosition++
-	if n.queuePosition >= len(n.queueOrder) {
-		n.queuePosition = localQueueIndex
-	}
-
 	checkedAllNodes := n.childrenChecked == len(n.queueOrder)+1
 	if n.queuePosition == localQueueIndex {
 		return n, checkedAllNodes
@@ -63,19 +67,19 @@ func (rrs *roundRobinState) dequeueGetNode(n *Node) (*Node, bool) {
 	return nil, checkedAllNodes
 }
 
+// dequeueUpdateState increments queuePosition based on whether a child node was deleted during dequeue,
+// and updates childrenChecked to reflect the number of children checked so that the dequeueGetNode operation
+// will stop once it has checked all possible nodes.
 func (rrs *roundRobinState) dequeueUpdateState(n *Node, v any, deletedNode bool) {
 	if v != nil {
 		n.childrenChecked = 0
 	} else {
 		n.childrenChecked++
 	}
-	if deletedNode {
-		n.queuePosition--
-		// if we try to go beyond something that would increment to
-		// the localQueueIndex or in queueOrder, we should wrap around to the
-		// back of queueOrder.
-		if n.queuePosition < localQueueIndex-1 {
-			n.queuePosition = len(n.queueOrder) - 1
-		}
+	if !deletedNode {
+		n.queuePosition++
+	}
+	if n.queuePosition >= len(n.queueOrder) {
+		n.queuePosition = localQueueIndex
 	}
 }

@@ -28,6 +28,7 @@ func (qb *queueBroker) enqueueObjectsForTests(tenantID TenantID, numObjects int)
 			tenantID: tenantID,
 			req:      fmt.Sprintf("%v: object-%v", tenantID, i),
 		})
+		fmt.Println(i)
 		if err != nil {
 			return err
 		}
@@ -223,7 +224,7 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	// assert equal distribution of queue items between tenant node and 3 subnodes
 	for _, v := range additionalQueueDimensions {
 		queuePath := append(QueuePath{"tenant-1"}, v...)
-		assert.Equal(t, maxTenantQueueSize/len(additionalQueueDimensions), qb.queueTree.rootNode.getNode(queuePath).getLocalQueue().Len())
+		assert.Equal(t, maxTenantQueueSize/len(additionalQueueDimensions), qb.queueTree.GetNode(queuePath).getLocalQueue().Len())
 	}
 
 	// assert error received when hitting a tenant's enqueue limit,

@@ -24,8 +24,7 @@ type tenantRequest struct {
 // queueBroker encapsulates access to tenant queues for pending requests
 // and maintains consistency with the tenant-querier assignments
 type queueBroker struct {
-	tenantQueuesTree *TreeQueue
-	queueTree        *Tree
+	queueTree *Tree
 
 	tenantQuerierAssignments *tenantQuerierAssignments
 
@@ -57,7 +56,6 @@ func newQueueBroker(maxTenantQueueSize int, additionalQueueDimensionsEnabled boo
 		panic(fmt.Sprintf("error creating the tree queue: %v", err))
 	}
 	qb := &queueBroker{
-		tenantQueuesTree:                 NewTreeQueue("root"),
 		queueTree:                        tree,
 		tenantQuerierAssignments:         tqas,
 		maxTenantQueueSize:               maxTenantQueueSize,
@@ -68,7 +66,7 @@ func newQueueBroker(maxTenantQueueSize int, additionalQueueDimensionsEnabled boo
 }
 
 func (qb *queueBroker) isEmpty() bool {
-	return qb.queueTree.rootNode.IsEmpty()
+	return qb.queueTree.IsEmpty()
 }
 
 // enqueueRequestBack is the standard interface to enqueue requests for dispatch to queriers.
@@ -141,7 +139,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 	qb.tenantQuerierAssignments.currentQuerier = &querierID
 	qb.tenantQuerierAssignments.tenantOrderIndex = lastTenantIndex
 
-	queuePath, queueElement := qb.queueTree.rootNode.dequeue()
+	queuePath, queueElement := qb.queueTree.Dequeue()
 
 	var request *tenantRequest
 	var tenantID TenantID
@@ -157,7 +155,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 	}
 
 	// dequeue returns the full path including root, but getNode expects the path _from_ root
-	queueNodeAfterDequeue := qb.queueTree.rootNode.getNode(queuePath[1:])
+	queueNodeAfterDequeue := qb.queueTree.rootNode.getNode(queuePath)
 	if queueNodeAfterDequeue == nil && len(qb.tenantQuerierAssignments.tenantNodes[string(tenantID)]) == 0 {
 		// queue node was deleted due to being empty after dequeue
 		qb.tenantQuerierAssignments.removeTenant(tenantID)
