@@ -11,9 +11,9 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-type instantVectorFunctionOperatorFactories func(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error)
+type instantVectorFunctionOperator func(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error)
 
-// transformationFunctionOperatorFactory creates an InstantVectorFunctionOperatorFactory for functions
+// transformationFunctionOperatorFactory creates an instantVectorFunctionOperator for functions
 // that have exactly 1 argument and drop the series name.
 //
 // Parameters:
@@ -22,8 +22,8 @@ type instantVectorFunctionOperatorFactories func(args []types.Operator, pool *po
 //
 // Returns:
 //
-//	An InstantVectorFunctionOperatorFactory.
-func transformationFunctionOperatorFactory(name string, seriesDataFunc functions.InstantVectorFunction) instantVectorFunctionOperatorFactories {
+//	An instantVectorFunctionOperator.
+func transformationFunctionOperatorFactory(name string, seriesDataFunc functions.InstantVectorFunction) instantVectorFunctionOperator {
 	return func(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error) {
 		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
@@ -64,10 +64,10 @@ func rateFunctionOperator(args []types.Operator, pool *pooling.LimitingPool) (ty
 	}, nil
 }
 
-var _ instantVectorFunctionOperatorFactories = rateFunctionOperator
+var _ instantVectorFunctionOperator = rateFunctionOperator
 
 // These functions return an instant-vector.
-var instantVectorFunctions = map[string]instantVectorFunctionOperatorFactories{
+var instantVectorFunctions = map[string]instantVectorFunctionOperator{
 	"acos":            transformationFunctionOperatorFactory("acos", functions.Acos),
 	"histogram_count": transformationFunctionOperatorFactory("histogram_count", functions.HistogramCount),
 	"histogram_sum":   transformationFunctionOperatorFactory("histogram_sum", functions.HistogramSum),
