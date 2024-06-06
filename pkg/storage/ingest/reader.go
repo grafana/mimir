@@ -805,14 +805,15 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 		case wants <- nextFetch:
 			results <- nextFetch.result
 			nextFetch = nextFetchWant(nextFetch)
-		case result, exhausted := <-nextResult:
+		case result, moreLeft := <-nextResult:
+			if !moreLeft {
+				nextResult = <-results
+				continue
+			}
 			select {
 			case r.orderedFetches <- result:
 			case <-ctx.Done():
 				return
-			}
-			if exhausted {
-				nextResult = <-results
 			}
 		}
 	}
