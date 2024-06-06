@@ -1272,7 +1272,7 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 		// We do need to wait for any overlapping appenders that started previously to finish.
 		db.head.WaitForAppendersOverlapping(rh.MaxTime())
 
-		if err := db.compactHead(rh); err != nil {
+		if err := db.compactHead(rh, true); err != nil {
 			return fmt.Errorf("compact head: %w", err)
 		}
 		// Consider only successful compactions for WAL truncation.
@@ -1309,12 +1309,24 @@ func (db *DB) CompactHead(head *RangeHead) error {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
-	if err := db.compactHead(head); err != nil {
+	if err := db.compactHead(head, true); err != nil {
 		return fmt.Errorf("compact head: %w", err)
 	}
 
 	if err := db.head.truncateWAL(head.BlockMaxTime()); err != nil {
 		return fmt.Errorf("WAL truncation: %w", err)
+	}
+	return nil
+}
+
+// CompactHeadWithoutTruncation compacts the given RangeHead but does not truncate the
+// in-memory data and the WAL related to this compaction.
+func (db *DB) CompactHeadWithoutTruncation(head *RangeHead) error {
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
+
+	if err := db.compactHead(head, false); err != nil {
+		return fmt.Errorf("compact head without truncation: %w", err)
 	}
 	return nil
 }
@@ -1423,7 +1435,7 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 
 // compactHead compacts the given RangeHead.
 // The compaction mutex should be held before calling this method.
-func (db *DB) compactHead(head *RangeHead) error {
+func (db *DB) compactHead(head *RangeHead, truncateMemory bool) error {
 	uid, err := db.compactor.Write(db.dir, head, head.MinTime(), head.BlockMaxTime(), nil)
 	if err != nil {
 		return fmt.Errorf("persist head block: %w", err)
@@ -1437,6 +1449,9 @@ func (db *DB) compactHead(head *RangeHead) error {
 			).Err()
 		}
 		return fmt.Errorf("reloadBlocks blocks: %w", err)
+	}
+	if !truncateMemory {
+		return nil
 	}
 	if err = db.head.truncateMemory(head.BlockMaxTime()); err != nil {
 		return fmt.Errorf("head memory truncate: %w", err)

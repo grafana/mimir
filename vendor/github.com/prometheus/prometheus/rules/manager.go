@@ -359,6 +359,7 @@ func (m *Manager) LoadGroups(
 						return (*time.Duration)(rg.QueryOffset)
 					}
 
+					//nolint:staticcheck // We want to intentionally access a deprecated field
 					if rg.EvaluationDelay != nil {
 						return (*time.Duration)(rg.EvaluationDelay)
 					}
