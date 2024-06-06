@@ -1706,7 +1706,7 @@ How it **works**:
 
 - The distributor or the ingester implements an lower limit on the timestamp of incoming samples, it is used to protect the system from potential abuse or mistakes.
 - The lower limit is defined by the current wall clock minus the `out_of_order_time_window` and minus the `past_grace_period` settings.
-- The samples that are too far in the past are not ingested.
+- The samples that are too far in the past aren't ingested.
 
 How to **fix** it:
 
