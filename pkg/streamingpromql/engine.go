@@ -36,16 +36,18 @@ func NewEngine(opts promql.EngineOpts, limitsProvider QueryLimitsProvider) (prom
 	}
 
 	return &Engine{
-		lookbackDelta:  lookbackDelta,
-		timeout:        opts.Timeout,
-		limitsProvider: limitsProvider,
+		lookbackDelta:      lookbackDelta,
+		timeout:            opts.Timeout,
+		limitsProvider:     limitsProvider,
+		activeQueryTracker: opts.ActiveQueryTracker,
 	}, nil
 }
 
 type Engine struct {
-	lookbackDelta  time.Duration
-	timeout        time.Duration
-	limitsProvider QueryLimitsProvider
+	lookbackDelta      time.Duration
+	timeout            time.Duration
+	limitsProvider     QueryLimitsProvider
+	activeQueryTracker promql.QueryTracker
 }
 
 func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
