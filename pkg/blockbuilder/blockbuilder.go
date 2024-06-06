@@ -313,10 +313,10 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 	var (
 		consumptionItvl     = time.Hour        // TODO(codesome): get this from config
 		timeBuffer          = 15 * time.Minute // TODO(codesome): get this from config
-		checkpointOffset    = int64(-1)
+		checkpointRecord    *kgo.Record
 		resetBlockBuilderAt time.Time
 		builder             *tsdbBuilder
-		currEnd, lastEnd    int64
+		currEnd, lastEnd    int64 // TODO(codesome): get this from kafka commit
 		done                bool
 	)
 	for !done {
@@ -369,10 +369,10 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 				// I.e. kafka client consumes the log in one direction, thus skipped records will be skipped until either
 				// 1. we manually set the offset of the kafka client on every cycle (ref. kgo#Client.SetOffsets)
 				// 2. process was restarted, the client fetched last commited offset for the group+partition and started consuming from this (old) offset
-				recordProcessedBefore := false // TODO(codesome): get this from checkpoint
+				recordProcessedBefore := false // TODO(codesome): get this from kafka commit
 				allSamplesProcessed, err := builder.process(ctx, rec, lastEnd, currEnd, recordProcessedBefore)
-				if !allSamplesProcessed && checkpointOffset < 0 {
-					checkpointOffset = rec.Offset
+				if !allSamplesProcessed && checkpointRecord == nil {
+					checkpointRecord = rec
 				}
 				if err != nil {
 					level.Error(b.logger).Log("msg", "failed to process record", "part", part, "key", string(rec.Key), "err", err)
@@ -403,11 +403,10 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 		}
 	}
 
-	if checkpointOffset > 0 {
+	if checkpointRecord != nil {
 		// TODO(codesome): store the lastOffset and currEnd as a metadata in the checkpoint
 		// TODO(codesome): Make sure all the blocks have been shipped before committing the offset.
-		_ = lastOffset // to avoid unused error. TODO: remove this once used
-		return b.commitOffset(ctx, part, checkpointOffset)
+		return b.commit(ctx, checkpointRecord, lastOffset, currEnd)
 	}
 	return nil
 }
@@ -416,16 +415,22 @@ func (b *BlockBuilder) shipperDir() string {
 	return filepath.Join(b.cfg.BlocksStorageConfig.TSDB.Dir, "shipper")
 }
 
-func (b *BlockBuilder) commitOffset(ctx context.Context, part int32, offset int64) (returnErr error) {
+func (b *BlockBuilder) commit(ctx context.Context, rec *kgo.Record, lastOffset, currEnd int64) (returnErr error) {
 	defer func() {
 		if returnErr != nil {
-			level.Error(b.logger).Log("msg", "failed to commit offset to Kafka", "err", returnErr, "partition", part, "offset", offset)
+			level.Error(b.logger).Log("msg", "failed to commit offset to Kafka", "err", returnErr, "partition", rec.Partition, "offset", rec.Offset)
 			// TODO(codesome): add metric
 		}
 	}()
 
 	toCommit := kadm.Offsets{}
-	toCommit.AddOffset(b.cfg.Kafka.Topic, part, offset, -1)
+	toCommit.Add(kadm.Offset{
+		Topic:       rec.Topic,
+		Partition:   rec.Partition,
+		At:          rec.Offset,
+		LeaderEpoch: -1,
+		Metadata:    marshallCommitMeta(lastOffset, currEnd),
+	})
 
 	committed, err := kadm.NewClient(b.kafkaClient).CommitOffsets(ctx, b.cfg.Kafka.ConsumerGroup, toCommit)
 	if err != nil {
@@ -434,12 +439,39 @@ func (b *BlockBuilder) commitOffset(ctx context.Context, part int32, offset int6
 		return committed.Error()
 	}
 
-	committedOffset, _ := committed.Lookup(b.cfg.Kafka.Topic, part)
+	committedOffset, _ := committed.Lookup(b.cfg.Kafka.Topic, rec.Partition)
 	level.Debug(b.logger).Log("msg", "offset successfully committed to Kafka", "offset", committedOffset.At)
 	// TODO(codesome): add this metric
 	// r.lastCommittedOffset.Set(float64(committedOffset.At))
 
 	return nil
+}
+
+const (
+	kafkaCommitMetaV1 = 1
+)
+
+func marshallCommitMeta(lastOffset, currEnd int64) string {
+	return fmt.Sprintf("%d,%d,%d", kafkaCommitMetaV1, lastOffset, currEnd)
+}
+
+func unmarshallCommitMeta(meta string) (lastOffset, currEnd int64, err error) {
+	var (
+		version int
+		s       string
+	)
+	_, err = fmt.Sscanf(meta, "%d,%s", &version, &s)
+	if err != nil {
+		return
+	}
+
+	switch version {
+	case kafkaCommitMetaV1:
+		_, err = fmt.Sscanf(s, "%d,%d", &lastOffset, &currEnd)
+	default:
+		err = fmt.Errorf("unsupported commit meta version %d", version)
+	}
+	return
 }
 
 type Config struct {
