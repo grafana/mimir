@@ -248,20 +248,27 @@ func (b *tsdbBuilder) newTSDB(userID string) (*userTSDB, error) {
 		return nil, err
 	}
 
+	db.DisableCompactions()
+
 	udb.db = db
 
 	return udb, nil
 }
 
 // compactBlocks compacts the blocks of all the TSDBs.
-// It moves all the blocks produced into the shipperDir.
-func (b *tsdbBuilder) compactAndClose(ctx context.Context, shipperDir string) error {
+// It moves all the blocks produced into the shipperRootDir.
+func (b *tsdbBuilder) compactAndClose(ctx context.Context, shipperDir string) ([]string, error) {
 	b.tsdbsMu.Lock()
 	defer b.tsdbsMu.Unlock()
 
+	var userIDs []string
 	for userID, db := range b.tsdbs {
 		if err := db.compactEverything(ctx); err != nil {
-			return err
+			return nil, err
+		}
+
+		if err := os.MkdirAll(filepath.Join(shipperDir, userID), os.ModePerm); err != nil {
+			return nil, err
 		}
 
 		// TODO(codesome): the delete() on the map does not release the memory until after the map is reset.
@@ -275,30 +282,35 @@ func (b *tsdbBuilder) compactAndClose(ctx context.Context, shipperDir string) er
 		}
 
 		if err := db.Close(); err != nil {
-			return err
+			return nil, err
 		}
 
 		delete(b.tsdbs, userID)
+
+		if len(blockNames) == 0 {
+			continue
+		}
+
+		userIDs = append(userIDs, userID)
 
 		// Move all blocks to the shipper directory. This allows deleting the TSDB directory here,
 		// and hence don't mess with future compaction cycles. Also makes it easier to handle
 		// dynamically changing tenants without requiring a shipper per user.
 		for _, bn := range blockNames {
-			if err := os.Rename(filepath.Join(dbDir, bn), filepath.Join(shipperDir, bn)); err != nil {
-				return err
+			if err := os.Rename(filepath.Join(dbDir, bn), filepath.Join(shipperDir, userID, bn)); err != nil {
+				return nil, err
 			}
 		}
 
 		// Remove any remaining artifacts of this TSDB, like the head block files.
 		if err := os.RemoveAll(dbDir); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	// Clear the map so that it can be released from the memory. Not setting to nil in case
-	// we want to reuse the tsdbBuilder.
-	b.tsdbs = make(map[string]*userTSDB)
-	return nil
+	// Clear the map so that it can be released from the memory.
+	b.tsdbs = nil
+	return userIDs, nil
 }
 
 func (b *tsdbBuilder) close() error {

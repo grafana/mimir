@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"sync"
 	"time"
@@ -16,10 +15,13 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/thanos-io/objstore"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/plugin/kprom"
 
+	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -32,23 +34,38 @@ type BlockBuilder struct {
 	register    prometheus.Registerer
 	limits      *validation.Overrides
 	kafkaClient *kgo.Client
+	bucket      objstore.Bucket
 
 	assignmentMu sync.Mutex
 	assignment   map[string][]int32
+
+	// One shipper per tenant, shared across all partitions.
+	shipperMetrics  *ingester.ShipperMetrics
+	shippers        map[string]shipper
+	shipperMtx      sync.RWMutex
+	shippingService services.Service
 }
 
-func NewBlockBuilder(
+func New(
 	cfg Config,
 	logger log.Logger,
 	reg prometheus.Registerer,
 	limits *validation.Overrides,
 ) (_ *BlockBuilder, err error) {
 	b := &BlockBuilder{
-		cfg:      cfg,
-		logger:   logger,
-		register: reg,
-		limits:   limits,
+		cfg:            cfg,
+		logger:         logger,
+		register:       reg,
+		limits:         limits,
+		shipperMetrics: ingester.NewShipperMetrics(reg, "blockbuilder"),
+		shippers:       map[string]shipper{},
 	}
+
+	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorageConfig.Bucket, "ingester", logger, reg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create the bucket client: %w", err)
+	}
+	b.bucket = bucketClient
 
 	b.Service = services.NewBasicService(b.starting, b.running, b.stopping)
 
@@ -66,7 +83,7 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	if err := os.MkdirAll(b.cfg.BlocksStorageConfig.TSDB.Dir, os.ModePerm); err != nil {
 		return fmt.Errorf("creating tsdb dir: %w", err)
 	}
-	if err := os.MkdirAll(b.shipperDir(), os.ModePerm); err != nil {
+	if err := os.MkdirAll(b.shipperRootDir(), os.ModePerm); err != nil {
 		return fmt.Errorf("creating shipper dir: %w", err)
 	}
 
@@ -117,7 +134,8 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 		return err
 	}
 
-	return nil
+	b.shippingService = services.NewBasicService(nil, b.shipBlocksLoop, nil)
+	return b.shippingService.StartAsync(ctx)
 }
 
 func (b *BlockBuilder) handlePartitionsAssigned(_ context.Context, _ *kgo.Client, assignment map[string][]int32) {
@@ -179,6 +197,9 @@ func (b *BlockBuilder) stopping(_ error) error {
 	if b.kafkaClient != nil {
 		b.kafkaClient.Close()
 	}
+
+	// TODO(codesome): ship all the blocks before stopping the service
+
 	return nil
 }
 
@@ -349,11 +370,13 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 				// So we break this into multiple block building cycles by resetting the block builder at intervals.
 				// TODO(codesome): the logic for this below is broken. Fix it. How can we determine the block ends when we are catching up?
 				if builder != nil && rec.Timestamp.After(resetBlockBuilderAt) {
-					if err := builder.compactAndClose(ctx, b.shipperDir()); err != nil {
+					userIDs, err := builder.compactAndClose(ctx, b.shipperRootDir())
+					if err != nil {
 						level.Error(b.logger).Log("msg", "failed to compact and remove dbs", "part", part, "err", err)
 						// TODO(codesome): return err?
 						// TODO(codesome): add metric
 					}
+					b.addShippers(userIDs)
 					builder = nil
 				}
 				if builder == nil {
@@ -397,23 +420,21 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 	}
 
 	if builder != nil {
-		if err := builder.compactAndClose(ctx, b.shipperDir()); err != nil {
+		userIDs, err := builder.compactAndClose(ctx, b.shipperRootDir())
+		if err != nil {
 			// TODO(codesome): add metric
 			return err
 		}
+		b.addShippers(userIDs)
 	}
 
 	if checkpointOffset > 0 {
 		// TODO(codesome): store the lastOffset and currEnd as a metadata in the checkpoint
-		// TODO(codesome): Make sure all the blocks have been shipped before committing the offset.
+		// TODO(codesome): Make sure all the blocks have been shipped before committing the offset because BB is stateless.
 		_ = lastOffset // to avoid unused error. TODO: remove this once used
 		return b.commitOffset(ctx, part, checkpointOffset)
 	}
 	return nil
-}
-
-func (b *BlockBuilder) shipperDir() string {
-	return filepath.Join(b.cfg.BlocksStorageConfig.TSDB.Dir, "shipper")
 }
 
 func (b *BlockBuilder) commitOffset(ctx context.Context, part int32, offset int64) (returnErr error) {

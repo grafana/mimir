@@ -251,7 +251,7 @@ func TestTSDBBuilder(t *testing.T) {
 
 			// This should create the appropriate blocks and close the DB.
 			shipperDir := t.TempDir()
-			err = builder.compactAndClose(context.Background(), shipperDir)
+			_, err = builder.compactAndClose(context.Background(), shipperDir)
 			require.NoError(t, err)
 			require.Nil(t, builder.getTSDB(userID))
 
