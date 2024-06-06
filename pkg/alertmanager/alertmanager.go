@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/alerting/definition"
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/api"
@@ -317,7 +318,7 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg string) error {
+func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiAlertingConfig, rawCfg string) error {
 	templateFiles := make([]string, len(conf.Templates))
 	for i, t := range conf.Templates {
 		templateFilepath, err := safeTemplateFilepath(filepath.Join(am.cfg.TenantDataDir, templatesDir), t)
@@ -334,7 +335,8 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 	}
 	tmpl.ExternalURL = am.cfg.ExternalURL
 
-	am.api.Update(conf, func(_ model.LabelSet) {})
+	cfg := definition.GrafanaToUpstreamConfig(conf)
+	am.api.Update(&cfg, func(_ model.LabelSet) {})
 
 	// Ensure inhibitor is set before being called
 	if am.inhibitor != nil {
@@ -360,7 +362,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(userID, am.cfg.Limits))
 
-	integrationsMap, err := buildIntegrationsMap(conf.Receivers, tmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
+	integrationsMap, err := buildIntegrationsMap(cfg.Receivers, tmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
 		if am.cfg.Limits != nil {
 			rl := &tenantRateLimits{
 				tenant:      userID,
@@ -398,7 +400,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 	am.lastPipeline = pipeline
 	am.dispatcher = dispatch.NewDispatcher(
 		am.alerts,
-		dispatch.NewRoute(conf.Route, nil),
+		dispatch.NewRoute(cfg.Route, nil),
 		pipeline,
 		am.marker,
 		timeoutFunc,
@@ -455,8 +457,8 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a
 // list of receiver config.
-func buildIntegrationsMap(nc []config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]notify.Integration, error) {
-	integrationsMap := make(map[string][]notify.Integration, len(nc))
+func buildIntegrationsMap(nc []config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]*notify.Integration, error) {
+	integrationsMap := make(map[string][]*notify.Integration, len(nc))
 	for _, rcv := range nc {
 		integrations, err := buildReceiverIntegrations(rcv, tmpl, firewallDialer, logger, notifierWrapper)
 		if err != nil {
@@ -470,10 +472,10 @@ func buildIntegrationsMap(nc []config.Receiver, tmpl *template.Template, firewal
 // buildReceiverIntegrations builds a list of integration notifiers off of a
 // receiver config.
 // Taken from https://github.com/prometheus/alertmanager/blob/94d875f1227b29abece661db1a68c001122d1da5/cmd/alertmanager/main.go#L112-L159.
-func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]notify.Integration, error) {
+func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, wrapper func(string, notify.Notifier) notify.Notifier) ([]*notify.Integration, error) {
 	var (
 		errs         types.MultiError
-		integrations []notify.Integration
+		integrations []*notify.Integration
 		add          = func(name string, i int, rs notify.ResolvedSender, f func(l log.Logger) (notify.Notifier, error)) {
 			n, err := f(log.With(logger, "integration", name))
 			if err != nil {

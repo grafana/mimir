@@ -1784,7 +1784,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.prefer-streaming-chunks-from-store-gateways
     	[experimental] Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.
   -querier.promql-engine string
-    	[experimental] PromQL engine to use, either 'standard' or 'streaming' (default "standard")
+    	[experimental] PromQL engine to use, either 'prometheus' or 'mimir' (default "prometheus")
   -querier.promql-experimental-functions-enabled
     	[experimental] Enable experimental PromQL functions. This config option should be set on query-frontend too when query sharding is enabled.
   -querier.query-ingesters-within duration
@@ -2876,7 +2876,7 @@ Usage of ./cmd/mimir/mimir:
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
   -validation.create-grace-period duration
-    	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
+    	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
   -validation.max-label-names-per-series int
@@ -2889,6 +2889,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated. (default 1024)
   -validation.max-native-histogram-buckets int
     	Maximum number of buckets per native histogram sample. 0 to disable the limit.
+  -validation.past-grace-period duration
+    	Controls how far into the past incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is lower than '(now - OOO window - past_grace_period)'. This configuration is enforced in the distributor and ingester. 0 to disable.
   -validation.reduce-native-histogram-over-max-buckets
     	Whether to reduce or reject native histogram samples with more buckets than the configured limit. (default true)
   -validation.separate-metrics-group-label string
