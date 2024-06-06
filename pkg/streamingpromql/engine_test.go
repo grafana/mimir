@@ -583,57 +583,42 @@ func TestActiveQueryTracker(t *testing.T) {
 				queryTrackingTestingQueryable.err = errors.New("something went wrong inside the query")
 			}
 
-			t.Run("range query", func(t *testing.T) {
-				expr := "some_test_range_query"
-				queryTrackingTestingQueryable.activeQueryAtQueryTime = trackedQuery{}
+			queryTypes := map[string]func(expr string) (promql.Query, error){
+				"range": func(expr string) (promql.Query, error) {
+					return engine.NewRangeQuery(context.Background(), queryTrackingTestingQueryable, nil, expr, timestamp.Time(0), timestamp.Time(0).Add(time.Hour), time.Minute)
+				},
+				"instant": func(expr string) (promql.Query, error) {
+					return engine.NewInstantQuery(context.Background(), queryTrackingTestingQueryable, nil, expr, timestamp.Time(0))
+				},
+			}
 
-				q, err := engine.NewRangeQuery(context.Background(), queryTrackingTestingQueryable, nil, expr, timestamp.Time(0), timestamp.Time(0).Add(time.Hour), time.Minute)
-				require.NoError(t, err)
+			for queryType, createQuery := range queryTypes {
+				t.Run(queryType+" query", func(t *testing.T) {
+					expr := "test_" + queryType + "_query"
+					queryTrackingTestingQueryable.activeQueryAtQueryTime = trackedQuery{}
 
-				res := q.Exec(context.Background())
+					q, err := createQuery(expr)
+					require.NoError(t, err)
 
-				if shouldSucceed {
-					require.NoError(t, res.Err)
-				} else {
-					require.EqualError(t, res.Err, "something went wrong inside the query")
-				}
+					res := q.Exec(context.Background())
 
-				// Check that the query was active in the query tracker while the query was executing.
-				require.Equal(t, expr, queryTrackingTestingQueryable.activeQueryAtQueryTime.expr)
-				require.False(t, queryTrackingTestingQueryable.activeQueryAtQueryTime.deleted)
+					if shouldSucceed {
+						require.NoError(t, res.Err)
+					} else {
+						require.EqualError(t, res.Err, "something went wrong inside the query")
+					}
 
-				// Check that the query has now been marked as deleted in the query tracker.
-				require.NotEmpty(t, tracker.queries)
-				trackedQuery := tracker.queries[len(tracker.queries)-1]
-				require.Equal(t, expr, trackedQuery.expr)
-				require.Equal(t, true, trackedQuery.deleted)
-			})
+					// Check that the query was active in the query tracker while the query was executing.
+					require.Equal(t, expr, queryTrackingTestingQueryable.activeQueryAtQueryTime.expr)
+					require.False(t, queryTrackingTestingQueryable.activeQueryAtQueryTime.deleted)
 
-			t.Run("instant query", func(t *testing.T) {
-				expr := "some_test_instant_query"
-				queryTrackingTestingQueryable.activeQueryAtQueryTime = trackedQuery{}
-
-				q, err := engine.NewInstantQuery(context.Background(), queryTrackingTestingQueryable, nil, expr, timestamp.Time(0))
-				require.NoError(t, err)
-
-				res := q.Exec(context.Background())
-
-				if shouldSucceed {
-					require.NoError(t, res.Err)
-				} else {
-					require.EqualError(t, res.Err, "something went wrong inside the query")
-				}
-
-				// Check that the query was active in the query tracker while the query was executing.
-				require.Equal(t, expr, queryTrackingTestingQueryable.activeQueryAtQueryTime.expr)
-				require.False(t, queryTrackingTestingQueryable.activeQueryAtQueryTime.deleted)
-
-				// Check that the query has now been marked as deleted in the query tracker.
-				require.NotEmpty(t, tracker.queries)
-				trackedQuery := tracker.queries[len(tracker.queries)-1]
-				require.Equal(t, expr, trackedQuery.expr)
-				require.Equal(t, true, trackedQuery.deleted)
-			})
+					// Check that the query has now been marked as deleted in the query tracker.
+					require.NotEmpty(t, tracker.queries)
+					trackedQuery := tracker.queries[len(tracker.queries)-1]
+					require.Equal(t, expr, trackedQuery.expr)
+					require.Equal(t, true, trackedQuery.deleted)
+				})
+			}
 		})
 	}
 
