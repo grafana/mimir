@@ -1379,9 +1379,9 @@ store_gateway_client:
 # CLI flag: -querier.minimize-ingester-requests-hedging-delay
 [minimize_ingester_requests_hedging_delay: <duration> | default = 3s]
 
-# (experimental) PromQL engine to use, either 'standard' or 'streaming'
+# (experimental) PromQL engine to use, either 'prometheus' or 'mimir'
 # CLI flag: -querier.promql-engine
-[promql_engine: <string> | default = "standard"]
+[promql_engine: <string> | default = "prometheus"]
 
 # (experimental) If set to true and the streaming engine is in use, fall back to
 # using the Prometheus PromQL engine for any queries not supported by the
