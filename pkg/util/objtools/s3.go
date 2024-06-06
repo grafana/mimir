@@ -169,8 +169,6 @@ func (bkt *s3Bucket) RestoreVersion(ctx context.Context, objectName string, vers
 func (bkt *s3Bucket) Upload(ctx context.Context, objectName string, reader io.Reader, contentLength int64) error {
 	opts := minio.PutObjectOptions{
 		PartSize: bkt.partSize,
-		// Refer to https://github.com/thanos-io/objstore/blob/71ef2d0cf7c4b42a6b25bc019de41bf0acecd30c/providers/s3/s3.go#L513-L516
-		NumThreads: 4,
 	}
 	_, err := bkt.client.PutObject(ctx, bkt.bucketName, objectName, reader, contentLength, opts)
 	return err
