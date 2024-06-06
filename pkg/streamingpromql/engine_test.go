@@ -12,6 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/opentracing/opentracing-go"
+	otlog "github.com/opentracing/opentracing-go/log"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -19,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
+	"github.com/uber/jaeger-client-go"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
@@ -27,7 +33,7 @@ import (
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
 	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), log.NewNopLogger())
 	require.NoError(t, err)
 	ctx := context.Background()
 
@@ -87,7 +93,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 
 func TestNewRangeQuery_InvalidQueryTime(t *testing.T) {
 	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), log.NewNopLogger())
 	require.NoError(t, err)
 	ctx := context.Background()
 
@@ -101,7 +107,7 @@ func TestNewRangeQuery_InvalidQueryTime(t *testing.T) {
 
 func TestNewRangeQuery_InvalidExpressionTypes(t *testing.T) {
 	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), log.NewNopLogger())
 	require.NoError(t, err)
 	ctx := context.Background()
 
@@ -117,7 +123,7 @@ func TestNewRangeQuery_InvalidExpressionTypes(t *testing.T) {
 // Once the streaming engine supports all PromQL features exercised by Prometheus' test cases, we can remove these files and instead call promql.RunBuiltinTests here instead.
 func TestUpstreamTestCases(t *testing.T) {
 	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), log.NewNopLogger())
 	require.NoError(t, err)
 
 	testdataFS := os.DirFS("./testdata")
@@ -140,7 +146,7 @@ func TestUpstreamTestCases(t *testing.T) {
 
 func TestOurTestCases(t *testing.T) {
 	opts := NewTestEngineOpts()
-	streamingEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
+	streamingEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), log.NewNopLogger())
 	require.NoError(t, err)
 
 	prometheusEngine := promql.NewEngine(opts)
@@ -178,7 +184,7 @@ func TestOurTestCases(t *testing.T) {
 // So instead, we test these few cases here instead.
 func TestRangeVectorSelectors(t *testing.T) {
 	opts := NewTestEngineOpts()
-	streamingEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
+	streamingEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), log.NewNopLogger())
 	require.NoError(t, err)
 
 	prometheusEngine := promql.NewEngine(opts)
@@ -291,7 +297,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 
 func TestQueryCancellation(t *testing.T) {
 	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), log.NewNopLogger())
 	require.NoError(t, err)
 
 	// Simulate the query being cancelled by another goroutine by waiting for the Select() call to be made,
@@ -319,7 +325,7 @@ func TestQueryCancellation(t *testing.T) {
 func TestQueryTimeout(t *testing.T) {
 	opts := NewTestEngineOpts()
 	opts.Timeout = 20 * time.Millisecond
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), log.NewNopLogger())
 	require.NoError(t, err)
 
 	// Simulate the query doing some work and check that the query context has been cancelled.
@@ -385,7 +391,7 @@ func (w cancellationQuerier) waitForCancellation(ctx context.Context) error {
 
 func TestQueryContextCancelledOnceQueryFinished(t *testing.T) {
 	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), log.NewNopLogger())
 	require.NoError(t, err)
 
 	storage := promqltest.LoadedStorage(t, `
@@ -464,25 +470,39 @@ func TestMemoryConsumptionLimit(t *testing.T) {
 	`)
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
-	ctx := context.Background()
-
 	testCases := map[string]struct {
-		expr              string
-		rangeQueryLimit   uint64
-		instantQueryLimit uint64
-		shouldSucceed     bool
+		expr                     string
+		rangeQueryExpectedPeak   uint64
+		rangeQueryLimit          uint64
+		instantQueryExpectedPeak uint64
+		instantQueryLimit        uint64
+		shouldSucceed            bool
 	}{
 		"limit disabled": {
-			expr:              "some_metric",
-			rangeQueryLimit:   0,
-			instantQueryLimit: 0,
-			shouldSucceed:     true,
+			expr:          "some_metric",
+			shouldSucceed: true,
+
+			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool, and we have five series.
+			rangeQueryExpectedPeak: 5 * 8 * pooling.FPointSize,
+			rangeQueryLimit:        0,
+
+			// At peak, we'll hold all the output samples plus one series, which has one sample.
+			// The output contains five samples, which will be rounded up to 8 (the nearest power of two).
+			instantQueryExpectedPeak: pooling.FPointSize + 8*pooling.VectorSampleSize,
+			instantQueryLimit:        0,
 		},
 		"limit enabled, but query does not exceed limit": {
-			expr:              "some_metric",
-			rangeQueryLimit:   1000,
-			instantQueryLimit: 1000,
-			shouldSucceed:     true,
+			expr:          "some_metric",
+			shouldSucceed: true,
+
+			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool, and we have five series.
+			rangeQueryExpectedPeak: 5 * 8 * pooling.FPointSize,
+			rangeQueryLimit:        1000,
+
+			// At peak, we'll hold all the output samples plus one series, which has one sample.
+			// The output contains five samples, which will be rounded up to 8 (the nearest power of two).
+			instantQueryExpectedPeak: pooling.FPointSize + 8*pooling.VectorSampleSize,
+			instantQueryLimit:        1000,
 		},
 		"limit enabled, and query exceeds limit": {
 			expr:          "some_metric",
@@ -491,6 +511,10 @@ func TestMemoryConsumptionLimit(t *testing.T) {
 			// Allow only a single sample.
 			rangeQueryLimit:   pooling.FPointSize,
 			instantQueryLimit: pooling.FPointSize,
+
+			// The query never successfully allocates anything.
+			rangeQueryExpectedPeak:   0,
+			instantQueryExpectedPeak: 0,
 		},
 		"limit enabled, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is under limit": {
 			expr:          "sum(some_metric)",
@@ -498,11 +522,13 @@ func TestMemoryConsumptionLimit(t *testing.T) {
 
 			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
 			// At peak we'll hold in memory: the running total for the sum() (a float and a bool at each step, with the number of steps rounded to the nearest power of 2), and the next series from the selector.
-			rangeQueryLimit: 8*(pooling.Float64Size+pooling.BoolSize) + 8*pooling.FPointSize,
+			rangeQueryExpectedPeak: 8*(pooling.Float64Size+pooling.BoolSize) + 8*pooling.FPointSize,
+			rangeQueryLimit:        8*(pooling.Float64Size+pooling.BoolSize) + 8*pooling.FPointSize,
 
 			// Each series has one sample, which is already a power of two.
 			// At peak we'll hold in memory: the running total for the sum() (a float and a bool), the next series from the selector, and the output sample.
-			instantQueryLimit: pooling.Float64Size + pooling.BoolSize + pooling.FPointSize + pooling.VectorSampleSize,
+			instantQueryExpectedPeak: pooling.Float64Size + pooling.BoolSize + pooling.FPointSize + pooling.VectorSampleSize,
+			instantQueryLimit:        pooling.Float64Size + pooling.BoolSize + pooling.FPointSize + pooling.VectorSampleSize,
 		},
 		"limit enabled, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is over limit": {
 			expr:          "sum(some_metric)",
@@ -510,43 +536,71 @@ func TestMemoryConsumptionLimit(t *testing.T) {
 
 			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
 			// At peak we'll hold in memory: the running total for the sum() (a float and a bool at each step, with the number of steps rounded to the nearest power of 2), and the next series from the selector.
-			rangeQueryLimit: 8*(pooling.Float64Size+pooling.BoolSize) + 8*pooling.FPointSize - 1,
+			// The last thing to be allocated is the bool slice for the running total, so that won't contribute to the peak before the query is aborted.
+			rangeQueryExpectedPeak: 8*pooling.Float64Size + 8*pooling.FPointSize,
+			rangeQueryLimit:        8*(pooling.Float64Size+pooling.BoolSize) + 8*pooling.FPointSize - 1,
 
 			// Each series has one sample, which is already a power of two.
 			// At peak we'll hold in memory: the running total for the sum() (a float and a bool), the next series from the selector, and the output sample.
-			instantQueryLimit: pooling.Float64Size + pooling.BoolSize + pooling.FPointSize + pooling.VectorSampleSize - 1,
+			// The last thing to be allocated is the bool slice for the running total, so that won't contribute to the peak before the query is aborted.
+			instantQueryExpectedPeak: pooling.Float64Size + pooling.FPointSize + pooling.VectorSampleSize,
+			instantQueryLimit:        pooling.Float64Size + pooling.BoolSize + pooling.FPointSize + pooling.VectorSampleSize - 1,
 		},
 	}
 
+	createEngine := func(t *testing.T, limit uint64) (promql.QueryEngine, *prometheus.Registry, opentracing.Span, context.Context) {
+		reg := prometheus.NewPedanticRegistry()
+		opts := NewTestEngineOpts()
+		opts.Reg = reg
+
+		engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(limit), log.NewNopLogger())
+		require.NoError(t, err)
+
+		tracer, closer := jaeger.NewTracer("test", jaeger.NewConstSampler(true), jaeger.NewNullReporter())
+		t.Cleanup(func() { _ = closer.Close() })
+		span, ctx := opentracing.StartSpanFromContextWithTracer(context.Background(), tracer, "query")
+
+		return engine, reg, span, ctx
+	}
+
+	assertEstimatedPeakMemoryConsumption := func(t *testing.T, reg *prometheus.Registry, span opentracing.Span, expectedMemoryConsumptionEstimate uint64) {
+		peakMemoryConsumptionHistogram := getHistogram(t, reg, "cortex_streaming_promql_engine_estimated_query_peak_memory_consumption")
+		require.Equal(t, float64(expectedMemoryConsumptionEstimate), peakMemoryConsumptionHistogram.GetSampleSum())
+
+		jaegerSpan, ok := span.(*jaeger.Span)
+		require.True(t, ok)
+		require.Len(t, jaegerSpan.Logs(), 1)
+		traceLog := jaegerSpan.Logs()[0]
+		expectedFields := []otlog.Field{
+			otlog.String("level", "info"),
+			otlog.String("msg", "query stats"),
+			otlog.Uint64("estimatedPeakMemoryConsumption", expectedMemoryConsumptionEstimate),
+		}
+		require.Equal(t, expectedFields, traceLog.Fields)
+	}
+
+	start := timestamp.Time(0)
+
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			queryTypes := map[string]func() (promql.Query, error){
-				"range query": func() (promql.Query, error) {
-					opts := NewTestEngineOpts()
-					engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(testCase.rangeQueryLimit))
-					if err != nil {
-						return nil, err
-					}
-
-					start := timestamp.Time(0)
-					return engine.NewRangeQuery(ctx, storage, nil, testCase.expr, start, start.Add(4*time.Minute), time.Minute)
+			queryTypes := map[string]func(t *testing.T) (promql.Query, *prometheus.Registry, opentracing.Span, context.Context, uint64){
+				"range query": func(t *testing.T) (promql.Query, *prometheus.Registry, opentracing.Span, context.Context, uint64) {
+					engine, reg, span, ctx := createEngine(t, testCase.rangeQueryLimit)
+					q, err := engine.NewRangeQuery(ctx, storage, nil, testCase.expr, start, start.Add(4*time.Minute), time.Minute)
+					require.NoError(t, err)
+					return q, reg, span, ctx, testCase.rangeQueryExpectedPeak
 				},
-				"instant query": func() (promql.Query, error) {
-					opts := NewTestEngineOpts()
-					engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(testCase.instantQueryLimit))
-					if err != nil {
-						return nil, err
-					}
-
-					start := timestamp.Time(0)
-					return engine.NewInstantQuery(ctx, storage, nil, testCase.expr, start)
+				"instant query": func(t *testing.T) (promql.Query, *prometheus.Registry, opentracing.Span, context.Context, uint64) {
+					engine, reg, span, ctx := createEngine(t, testCase.instantQueryLimit)
+					q, err := engine.NewInstantQuery(ctx, storage, nil, testCase.expr, start)
+					require.NoError(t, err)
+					return q, reg, span, ctx, testCase.instantQueryExpectedPeak
 				},
 			}
 
 			for queryType, createQuery := range queryTypes {
 				t.Run(queryType, func(t *testing.T) {
-					q, err := createQuery()
-					require.NoError(t, err)
+					q, reg, span, ctx, expectedPeakMemoryConsumption := createQuery(t)
 					t.Cleanup(q.Close)
 
 					res := q.Exec(ctx)
@@ -556,10 +610,28 @@ func TestMemoryConsumptionLimit(t *testing.T) {
 					} else {
 						require.ErrorContains(t, res.Err, globalerror.MaxEstimatedMemoryConsumptionPerQuery.Error())
 					}
+
+					assertEstimatedPeakMemoryConsumption(t, reg, span, expectedPeakMemoryConsumption)
 				})
 			}
 		})
 	}
+}
+
+func getHistogram(t *testing.T, reg *prometheus.Registry, name string) *dto.Histogram {
+	metrics, err := reg.Gather()
+	require.NoError(t, err)
+
+	for _, m := range metrics {
+		if m.GetName() == name {
+			require.Len(t, m.Metric, 1)
+
+			return m.Metric[0].Histogram
+		}
+	}
+
+	require.Fail(t, "expected to find a metric with name "+name)
+	return nil
 }
 
 func TestActiveQueryTracker(t *testing.T) {
@@ -568,7 +640,7 @@ func TestActiveQueryTracker(t *testing.T) {
 			opts := NewTestEngineOpts()
 			tracker := &testQueryTracker{}
 			opts.ActiveQueryTracker = tracker
-			engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
+			engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), log.NewNopLogger())
 			require.NoError(t, err)
 
 			innerStorage := promqltest.LoadedStorage(t, "")
@@ -675,7 +747,7 @@ func TestActiveQueryTracker_WaitingForTrackerIncludesQueryTimeout(t *testing.T) 
 	opts := NewTestEngineOpts()
 	opts.Timeout = 10 * time.Millisecond
 	opts.ActiveQueryTracker = tracker
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0))
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), log.NewNopLogger())
 	require.NoError(t, err)
 
 	queryTypes := map[string]func() (promql.Query, error){

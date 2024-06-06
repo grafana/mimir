@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -24,6 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 var errQueryCancelled = cancellation.NewErrorf("query execution cancelled")
@@ -280,6 +282,12 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 
 		defer q.engine.activeQueryTracker.Delete(queryID)
 	}
+
+	defer func() {
+		logger := spanlogger.FromContext(ctx, q.engine.logger)
+		level.Info(logger).Log("msg", "query stats", "estimatedPeakMemoryConsumption", q.pool.PeakEstimatedMemoryConsumptionBytes)
+		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.pool.PeakEstimatedMemoryConsumptionBytes))
+	}()
 
 	series, err := q.root.SeriesMetadata(ctx)
 	if err != nil {
