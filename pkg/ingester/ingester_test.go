@@ -322,13 +322,14 @@ func TestIngester_StartReadRequest(t *testing.T) {
 			defer services.StopAndAwaitTerminated(context.Background(), failingIng) //nolint:errcheck
 
 			finish, err := failingIng.startReadRequest()
-			require.NotNil(t, finish)
 
 			if err == nil {
+				require.NotNil(t, finish)
 				require.NotNil(t, finish)
 			} else {
 				require.NotNil(t, tc.verifyErr)
 				tc.verifyErr(err)
+				require.Nil(t, finish)
 			}
 		})
 	}
