@@ -212,7 +212,7 @@ func (r *PartitionReader) processNextFetchesUntilMaxLagHonored(ctx context.Conte
 		MaxRetries: 0, // retry forever
 	})
 
-	fetcher, err := newConcurrentFetchers(ctx, r.client, r.logger, r.reg, r.kafkaCfg.Topic, r.partitionID, startOffset, 2)
+	fetcher, err := newConcurrentFetchers(ctx, r.client, r.logger, r.reg, r.kafkaCfg.Topic, r.partitionID, startOffset, r.kafkaCfg.ReplayConcurrency)
 	if err != nil {
 		return errors.Wrap(err, "creating fetcher")
 	}
