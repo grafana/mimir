@@ -3787,12 +3787,8 @@ func (i *Ingester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
 // If it wasn't successful, the causing error is returned. In this case no
 // function is returned.
 func (i *Ingester) startReadRequest() (func(error), error) {
-	var (
-		start                        = time.Now()
-		err                          error
-		acquiredCircuitBreakerPermit bool
-	)
-	acquiredCircuitBreakerPermit, err = i.circuitBreaker.tryAcquirePermit()
+	start := time.Now()
+	acquiredCircuitBreakerPermit, err := i.circuitBreaker.tryAcquirePermit()
 	if err != nil {
 		return nil, err
 	}
