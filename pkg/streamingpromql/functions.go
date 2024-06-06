@@ -57,45 +57,9 @@ func rateFunction(args []types.Operator, pool *pooling.LimitingPool) (types.Inst
 
 var _ InstantVectorFunctionOperatorFactory = rateFunction
 
-func clampFunction(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error) {
-	if len(args) != 3 {
-		// Should be caught by the PromQL parser, but we check here for safety.
-		return nil, fmt.Errorf("expected exactly 3 arguments for rate, got %v", len(args))
-	}
-
-	inner, ok := args[0].(types.InstantVectorOperator)
-	if !ok {
-		// Should be caught by the PromQL parser, but we check here for safety.
-		return nil, fmt.Errorf("expected an instant vector argument for clamp, got %T", args[0])
-	}
-
-	min, ok := args[1].(*operators.ConstantScalar)
-	if !ok {
-		// Should be caught by the PromQL parser, but we check here for safety.
-		return nil, fmt.Errorf("expected a scalar argument for clamp, got %T", args[1])
-	}
-
-	max, ok := args[2].(*operators.ConstantScalar)
-	if !ok {
-		// Should be caught by the PromQL parser, but we check here for safety.
-		return nil, fmt.Errorf("expected a scalar argument for clamp, got %T", args[2])
-	}
-
-	return &operators.FunctionOverInstantVector{
-		Inner: inner,
-		Pool:  pool,
-
-		MetadataFunc:   functions.DropSeriesName,
-		SeriesDataFunc: functions.ClampFactory(min.GetFloat(), max.GetFloat()),
-	}, nil
-}
-
-var _ InstantVectorFunctionOperatorFactory = clampFunction
-
 // These functions return an instant-vector.
 var instantVectorFunctions = map[string]InstantVectorFunctionOperatorFactory{
 	"acos":            SimpleFunctionFactory("acos", functions.Acos),
-	"clamp":           clampFunction,
 	"histogram_count": SimpleFunctionFactory("histogram_count", functions.HistogramCount),
 	"histogram_sum":   SimpleFunctionFactory("histogram_sum", functions.HistogramSum),
 	"rate":            rateFunction,

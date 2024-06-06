@@ -33,24 +33,22 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"metric{} < other_metric{}":                    "binary expression with '<'",
-		"metric{} or other_metric{}":                   "binary expression with many-to-many matching",
+		"1 + 2":                      "scalar value as top-level expression",
+		"1 + metric{}":               "binary expression with scalars",
+		"metric{} + 1":               "binary expression with scalars",
+		"metric{} < other_metric{}":  "binary expression with '<'",
+		"metric{} or other_metric{}": "binary expression with many-to-many matching",
 		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
 		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
-		"metric{} offset 2h":                           "instant vector selector with 'offset'",
-		"avg(metric{})":                                "'avg' aggregation",
-		"sum without(l) (metric{})":                    "grouping with 'without'",
-		"rate(metric{}[5m] offset 2h)":                 "range vector selector with 'offset'",
-		"rate(metric{}[5m:1m])":                        "PromQL expression type *parser.SubqueryExpr",
-		"avg_over_time(metric{}[5m])":                  "'avg_over_time' function",
-		"-sum(metric{})":                               "PromQL expression type *parser.UnaryExpr",
+		"1":                            "scalar value as top-level expression",
+		"metric{} offset 2h":           "instant vector selector with 'offset'",
+		"avg(metric{})":                "'avg' aggregation",
+		"sum without(l) (metric{})":    "grouping with 'without'",
+		"rate(metric{}[5m] offset 2h)": "range vector selector with 'offset'",
+		"rate(metric{}[5m:1m])":        "PromQL expression type *parser.SubqueryExpr",
+		"avg_over_time(metric{}[5m])":  "'avg_over_time' function",
+		"-sum(metric{})":               "PromQL expression type *parser.UnaryExpr",
 	}
-
-	// TODO: Verify the following expressions return correct results
-	//"1 + 2":                      "scalar value as top-level expression",
-	//"1 + metric{}":               "binary expression with scalars",
-	//"metric{} + 1":               "binary expression with scalars",
-	//"1":                            "scalar value as top-level expression",
 
 	for expression, expectedError := range unsupportedExpressions {
 		t.Run(expression, func(t *testing.T) {
