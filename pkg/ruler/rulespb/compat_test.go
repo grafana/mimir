@@ -311,6 +311,7 @@ rules:
 			desc := ToProto("user", "namespace", rg)
 			newRg := FromProto(desc)
 
+			//nolint:staticcheck // We want to intentionally access a deprecated field
 			assert.Nil(t, newRg.EvaluationDelay)
 			assert.Nil(t, newRg.QueryOffset)
 		})

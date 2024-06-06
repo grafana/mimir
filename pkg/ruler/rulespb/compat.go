@@ -36,6 +36,7 @@ func ToProto(user string, namespace string, rl rulefmt.RuleGroup) *RuleGroupDesc
 	if rl.QueryOffset != nil && *rl.QueryOffset > 0 {
 		rg.QueryOffset = time.Duration(*rl.QueryOffset)
 	}
+	//nolint:staticcheck // We want to intentionally access a deprecated field
 	if rl.EvaluationDelay != nil && *rl.EvaluationDelay > 0 {
 		rg.EvaluationDelay = time.Duration(*rl.EvaluationDelay)
 	}
@@ -75,6 +76,7 @@ func FromProto(rg *RuleGroupDesc) rulefmt.RuleGroup {
 	if rg.QueryOffset > 0 {
 		formattedRuleGroup.QueryOffset = pointerOf[model.Duration](model.Duration(rg.QueryOffset))
 	}
+	//nolint:staticcheck // We want to intentionally access a deprecated field
 	if rg.EvaluationDelay > 0 {
 		formattedRuleGroup.EvaluationDelay = pointerOf[model.Duration](model.Duration(rg.EvaluationDelay))
 	}

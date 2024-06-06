@@ -413,6 +413,7 @@ func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup) []err
 			"but rules federation is disabled; please contact your service administrator to have it enabled", g.Name))
 	}
 
+	//nolint:staticcheck // We want to intentionally access a deprecated field
 	if g.EvaluationDelay != nil && g.QueryOffset != nil && *g.EvaluationDelay != *g.QueryOffset {
 		errs = append(errs, fmt.Errorf("invalid rules configuration: rule group '%s' has both query_offset and (deprecated) evaluation_delay set, but to different values; please remove the deprecated evaluation_delay and use query_offset instead", g.Name))
 	}
