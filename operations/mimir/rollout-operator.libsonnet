@@ -14,8 +14,6 @@
 
   rollout_operator_args:: {
     'kubernetes.namespace': $._config.namespace,
-    'use-zone-tracker': true,
-    'zone-tracker.config-map-name': 'rollout-operator-zone-tracker',
   },
 
   rollout_operator_node_affinity_matchers:: [],
