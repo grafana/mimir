@@ -63,7 +63,7 @@ type Scheduler struct {
 	inflightRequestsMu sync.Mutex
 	// schedulerInflightRequests tracks requests from the time they are received to be enqueued by the scheduler
 	// to the time they are completed by the querier or failed due to cancel, timeout, or disconnect.
-	schedulerInflightRequests map[queue.SchedulerRequestKey]*queue.SchedulerRequest
+	schedulerInflightRequests map[queue.RequestKey]*queue.SchedulerRequest
 
 	// The ring is used to let other components discover query-scheduler replicas.
 	// The ring is optional.
@@ -123,7 +123,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		log:    log,
 		limits: limits,
 
-		schedulerInflightRequests: map[queue.SchedulerRequestKey]*queue.SchedulerRequest{},
+		schedulerInflightRequests: map[queue.RequestKey]*queue.SchedulerRequest{},
 		connectedFrontends:        map[string]*connectedFrontend{},
 		subservicesWatcher:        services.NewFailureWatcher(),
 	}
@@ -275,7 +275,10 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 
 			enqueueSpan.Finish()
 		case schedulerpb.CANCEL:
-			s.cancelRequestAndRemoveFromPending(queue.NewSchedulerRequestKey(frontendAddress, msg.QueryID), "frontend cancelled query")
+			requestKey := queue.NewSchedulerRequestKey(frontendAddress, msg.QueryID)
+			schedulerReq := s.cancelRequestAndRemoveFromPending(requestKey, "frontend cancelled query")
+			// we may not have reached SubmitRequestSent for this query, but RequestQueue will handle this case
+			s.requestQueue.SubmitRequestCompleted(schedulerReq)
 			resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 
 		default:
@@ -381,7 +384,7 @@ func (s *Scheduler) addRequestToPending(req *queue.SchedulerRequest) {
 }
 
 // This method doesn't do removal from the queue.
-func (s *Scheduler) cancelRequestAndRemoveFromPending(key queue.SchedulerRequestKey, reason string) {
+func (s *Scheduler) cancelRequestAndRemoveFromPending(key queue.RequestKey, reason string) *queue.SchedulerRequest {
 	s.inflightRequestsMu.Lock()
 	defer s.inflightRequestsMu.Unlock()
 
@@ -391,6 +394,7 @@ func (s *Scheduler) cancelRequestAndRemoveFromPending(key queue.SchedulerRequest
 	}
 
 	delete(s.schedulerInflightRequests, key)
+	return req
 }
 
 // QuerierLoop is started by querier to receive queries from scheduler.
@@ -443,9 +447,9 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		*/
 
 		if schedulerReq.Ctx.Err() != nil {
-			// Remove from pending requests.
+			// remove from pending requests;
+			// no need to SubmitRequestCompleted to RequestQueue as we had not yet SubmitRequestSent
 			s.cancelRequestAndRemoveFromPending(schedulerReq.Key(), "request cancelled")
-
 			lastUserIndex = lastUserIndex.ReuseLastTenant()
 			continue
 		}
@@ -466,11 +470,9 @@ func (s *Scheduler) NotifyQuerierShutdown(_ context.Context, req *schedulerpb.No
 }
 
 func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, req *queue.SchedulerRequest, queueTime time.Duration) error {
-	// Make sure to cancel request at the end to clean up resources.
+	s.requestQueue.SubmitRequestSent(req)
+	defer s.requestQueue.SubmitRequestCompleted(req)
 	defer s.cancelRequestAndRemoveFromPending(req.Key(), "request complete")
-
-	queryComponentName := req.ExpectedQueryComponentName()
-	defer s.requestQueue.QueryComponentUtilization.DecrementForComponentName(queryComponentName)
 
 	// Handle the stream sending & receiving on a goroutine so we can
 	// monitor the contexts in a select and cancel things appropriately.
