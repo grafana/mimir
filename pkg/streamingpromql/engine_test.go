@@ -146,7 +146,7 @@ func TestUpstreamTestCases(t *testing.T) {
 
 func TestOurTestCases(t *testing.T) {
 	opts := NewTestEngineOpts()
-	streamingEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), log.NewNopLogger())
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), log.NewNopLogger())
 	require.NoError(t, err)
 
 	prometheusEngine := promql.NewEngine(opts)
@@ -166,8 +166,8 @@ func TestOurTestCases(t *testing.T) {
 
 			testScript := string(b)
 
-			t.Run("streaming engine", func(t *testing.T) {
-				promqltest.RunTest(t, testScript, streamingEngine)
+			t.Run("Mimir's engine", func(t *testing.T) {
+				promqltest.RunTest(t, testScript, mimirEngine)
 			})
 
 			// Run the tests against Prometheus' engine to ensure our test cases are valid.
@@ -184,7 +184,7 @@ func TestOurTestCases(t *testing.T) {
 // So instead, we test these few cases here instead.
 func TestRangeVectorSelectors(t *testing.T) {
 	opts := NewTestEngineOpts()
-	streamingEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), log.NewNopLogger())
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), log.NewNopLogger())
 	require.NoError(t, err)
 
 	prometheusEngine := promql.NewEngine(opts)
@@ -283,8 +283,8 @@ func TestRangeVectorSelectors(t *testing.T) {
 				require.Equal(t, expected, res)
 			}
 
-			t.Run("streaming engine", func(t *testing.T) {
-				runTest(t, streamingEngine, testCase.expr, testCase.ts, testCase.expected)
+			t.Run("Mimir's engine", func(t *testing.T) {
+				runTest(t, mimirEngine, testCase.expr, testCase.ts, testCase.expected)
 			})
 
 			// Run the tests against Prometheus' engine to ensure our test cases are valid.

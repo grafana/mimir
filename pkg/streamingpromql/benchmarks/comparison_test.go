@@ -44,19 +44,19 @@ func BenchmarkQuery(b *testing.B) {
 
 	opts := streamingpromql.NewTestEngineOpts()
 	prometheusEngine := promql.NewEngine(opts)
-	streamingEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), log.NewNopLogger())
+	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), log.NewNopLogger())
 	require.NoError(b, err)
 
 	// Important: the names below must remain in sync with the names used in tools/benchmark-query-engine.
 	engines := map[string]promql.QueryEngine{
 		"Prometheus": prometheusEngine,
-		"streaming":  streamingEngine,
+		"Mimir":      mimirEngine,
 	}
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
 
 	// Don't compare results when we're running under tools/benchmark-query-engine, as that will skew peak memory utilisation.
-	skipCompareResults := os.Getenv("STREAMING_PROMQL_ENGINE_BENCHMARK_SKIP_COMPARE_RESULTS") == "true"
+	skipCompareResults := os.Getenv("MIMIR_PROMQL_ENGINE_BENCHMARK_SKIP_COMPARE_RESULTS") == "true"
 
 	for _, c := range cases {
 		start := time.Unix(int64((NumIntervals-c.Steps)*intervalSeconds), 0)
@@ -66,12 +66,12 @@ func BenchmarkQuery(b *testing.B) {
 			if !skipCompareResults {
 				// Check both engines produce the same result before running the benchmark.
 				prometheusResult, prometheusClose := c.Run(ctx, b, start, end, interval, prometheusEngine, q)
-				streamingResult, streamingClose := c.Run(ctx, b, start, end, interval, streamingEngine, q)
+				mimirResult, mimirClose := c.Run(ctx, b, start, end, interval, mimirEngine, q)
 
-				requireEqualResults(b, prometheusResult, streamingResult)
+				requireEqualResults(b, prometheusResult, mimirResult)
 
 				prometheusClose()
-				streamingClose()
+				mimirClose()
 			}
 
 			for name, engine := range engines {
@@ -96,7 +96,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 
 	opts := streamingpromql.NewTestEngineOpts()
 	prometheusEngine := promql.NewEngine(opts)
-	streamingEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), log.NewNopLogger())
+	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), log.NewNopLogger())
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
@@ -107,12 +107,12 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 			end := time.Unix(int64(NumIntervals*intervalSeconds), 0)
 
 			prometheusResult, prometheusClose := c.Run(ctx, t, start, end, interval, prometheusEngine, q)
-			streamingResult, streamingClose := c.Run(ctx, t, start, end, interval, streamingEngine, q)
+			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, q)
 
-			requireEqualResults(t, prometheusResult, streamingResult)
+			requireEqualResults(t, prometheusResult, mimirResult)
 
 			prometheusClose()
-			streamingClose()
+			mimirClose()
 		})
 	}
 }
@@ -123,11 +123,11 @@ func TestBenchmarkSetup(t *testing.T) {
 	q := createBenchmarkQueryable(t, []int{1})
 
 	opts := streamingpromql.NewTestEngineOpts()
-	streamingEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), log.NewNopLogger())
+	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), log.NewNopLogger())
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
-	query, err := streamingEngine.NewRangeQuery(ctx, q, nil, "a_1", time.Unix(0, 0), time.Unix(int64(15*intervalSeconds), 0), interval)
+	query, err := mimirEngine.NewRangeQuery(ctx, q, nil, "a_1", time.Unix(0, 0), time.Unix(int64(15*intervalSeconds), 0), interval)
 	require.NoError(t, err)
 
 	t.Cleanup(query.Close)
@@ -165,7 +165,7 @@ func TestBenchmarkSetup(t *testing.T) {
 	require.Equal(t, expectedPoints, series.Floats)
 
 	// Check native histograms are set up correctly
-	query, err = streamingEngine.NewRangeQuery(ctx, q, nil, "nh_1", time.Unix(0, 0), time.Unix(int64(15*intervalSeconds), 0), interval)
+	query, err = mimirEngine.NewRangeQuery(ctx, q, nil, "nh_1", time.Unix(0, 0), time.Unix(int64(15*intervalSeconds), 0), interval)
 	require.NoError(t, err)
 
 	t.Cleanup(query.Close)
@@ -253,7 +253,7 @@ func requireEqualResults(t testing.TB, expected, actual *promql.Result) {
 }
 
 func createBenchmarkQueryable(t testing.TB, metricSizes []int) storage.Queryable {
-	addr := os.Getenv("STREAMING_PROMQL_ENGINE_BENCHMARK_INGESTER_ADDR")
+	addr := os.Getenv("MIMIR_PROMQL_ENGINE_BENCHMARK_INGESTER_ADDR")
 
 	if addr == "" {
 		var err error
