@@ -177,7 +177,11 @@ func handler(
 				msg = err.Error()
 			}
 			if code != 202 {
-				level.Error(logger).Log("msg", "push error", "err", err)
+				msgs := []interface{}{"msg", "push error", "httpCode", code, "err", err}
+				if code/100 == 4 {
+					msgs = append(msgs, "insight", true)
+				}
+				level.Error(logger).Log(msgs...)
 			}
 			addHeaders(w, err, r, code, retryCfg)
 			http.Error(w, msg, code)
@@ -233,19 +237,27 @@ func otlpHandler(
 			var (
 				httpCode int
 				grpcCode codes.Code
+				errorMsg string
 			)
 			if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 				// here the error would always be nil, since it is already checked in httpgrpc.HTTPResponseFromError
 				s, _ := grpcutil.ErrorToStatus(err)
-				writeErrorToHTTPResponseBody(w, int(resp.Code), s.Code(), string(resp.Body), logger)
+				httpCode = int(resp.Code)
+				grpcCode = s.Code() // this will be the same as httpCode.
+				errorMsg = string(resp.Body)
 			} else {
 				grpcCode, httpCode = toGRPCHTTPStatus(ctx, err, limits)
-				writeErrorToHTTPResponseBody(w, httpCode, grpcCode, err.Error(), logger)
+				errorMsg = err.Error()
 			}
 			if httpCode != 202 {
-				level.Error(logger).Log("msg", "push error", "err", err)
+				msgs := []interface{}{"msg", "push error", "httpCode", httpCode, "err", err}
+				if httpCode/100 == 4 {
+					msgs = append(msgs, "insight", true)
+				}
+				level.Error(logger).Log(msgs...)
 			}
 			addHeaders(w, err, r, httpCode, retryCfg)
+			writeErrorToHTTPResponseBody(w, httpCode, grpcCode, errorMsg, logger)
 		}
 	})
 }
@@ -253,8 +265,6 @@ func otlpHandler(
 // writeErrorToHTTPResponseBody converts the given error into a grpc status and marshals it into a byte slice, in order to be written to the response body.
 // See doc https://opentelemetry.io/docs/specs/otlp/#failures-1
 func writeErrorToHTTPResponseBody(w http.ResponseWriter, httpCode int, grpcCode codes.Code, msg string, logger log.Logger) {
-	// writeResponseFailedError would be returned when writeErrorToHTTPResponseBody fails to write the error to the response body.
-	writeResponseFailedBody, _ := proto.Marshal(grpcstatus.New(codes.Internal, "write error to response failed").Proto())
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(httpCode)
@@ -262,13 +272,14 @@ func writeErrorToHTTPResponseBody(w http.ResponseWriter, httpCode int, grpcCode 
 	respBytes, err := proto.Marshal(grpcstatus.New(grpcCode, msg).Proto())
 	if err != nil {
 		level.Error(logger).Log("msg", "otlp response marshal failed", "err", err)
+		writeResponseFailedBody, _ := proto.Marshal(grpcstatus.New(codes.Internal, "failed to marshal OTLP response").Proto())
 		_, _ = w.Write(writeResponseFailedBody)
 		return
 	}
+
 	_, err = w.Write(respBytes)
 	if err != nil {
 		level.Error(logger).Log("msg", "write error to otlp response failed", "err", err)
-		_, _ = w.Write(writeResponseFailedBody)
 	}
 }
 
