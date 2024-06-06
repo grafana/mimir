@@ -135,12 +135,6 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	// Having a nil global config causes panics in the Alertmanager codebase.
-	if c.Global == nil {
-		c.Global = &config.GlobalConfig{}
-		*c.Global = config.DefaultGlobalConfig()
-	}
-
 	if c.Route == nil {
 		return fmt.Errorf("no routes provided")
 	}

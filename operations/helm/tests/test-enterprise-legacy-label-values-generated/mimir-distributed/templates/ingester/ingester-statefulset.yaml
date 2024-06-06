@@ -27,7 +27,9 @@ spec:
     type: OnDelete
   serviceName: test-enterprise-legacy-label-values-enterprise-metrics-ingester
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -156,7 +158,9 @@ spec:
     type: OnDelete
   serviceName: test-enterprise-legacy-label-values-enterprise-metrics-ingester
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -285,7 +289,9 @@ spec:
     type: OnDelete
   serviceName: test-enterprise-legacy-label-values-enterprise-metrics-ingester
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:

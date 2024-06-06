@@ -63,7 +63,7 @@ require (
 	github.com/google/go-github/v57 v57.0.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
-	github.com/grafana/alerting v0.0.0-20240527194945-e545a06ed7d0
+	github.com/grafana/alerting v0.0.0-20240605124151-5d695b88086a
 	github.com/grafana/regexp v0.0.0-20221122212121-6b5c0a4cb7fd
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/vault/api v1.10.0
@@ -111,6 +111,7 @@ require (
 	github.com/pires/go-proxyproto v0.7.0 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.49.0 // indirect
+	gopkg.in/telebot.v3 v3.2.1 // indirect
 	k8s.io/apimachinery v0.29.3 // indirect
 	k8s.io/client-go v0.29.3 // indirect
 	k8s.io/klog/v2 v2.120.1 // indirect
@@ -250,7 +251,6 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20240415180920-8c6c420018be // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240429193739-8cf5692501f6
 	gopkg.in/ini.v1 v1.67.0 // indirect
-	gopkg.in/telebot.v3 v3.2.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340 // indirect
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
@@ -284,4 +284,4 @@ replace github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentraci
 replace github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 
 // Replacing prometheus/alertmanager with our fork.
-replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240603083939-5121fbc59b84
+replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240605141526-70d9d63f74fc

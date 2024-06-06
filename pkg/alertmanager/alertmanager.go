@@ -489,7 +489,11 @@ func buildIntegrationsMap(userID string, nc []*definition.PostableApiReceiver, t
 			if err != nil {
 				return nil, err
 			}
-			integrationsMap[rcv.Name] = integrations
+			upstreamIntegrations := make([]*notify.Integration, 0, len(integrations))
+			for _, integration := range integrations {
+				upstreamIntegrations = append(upstreamIntegrations, integration.Integration())
+			}
+			integrationsMap[rcv.Name] = upstreamIntegrations
 		} else {
 			integrations, err := buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, logger, notifierWrapper)
 			if err != nil {

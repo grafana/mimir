@@ -4,6 +4,7 @@ package ingest
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"strconv"
 	"sync"
@@ -14,11 +15,13 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/plugin/kprom"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
 const (
@@ -37,6 +40,15 @@ const (
 	// in the worst case scenario, which is expected to be way above the actual one.
 	maxProducerRecordDataBytesLimit = producerBatchMaxBytes - 16384
 	minProducerRecordDataBytesLimit = 1024 * 1024
+)
+
+var (
+	// ErrWriteRequestDataItemTooLarge is the error returned when a split WriteRequest failed to be written to
+	// a partition because it's larger than the max allowed record size. The size reported here is always
+	// maxProducerRecordDataBytesLimit, regardless of the configured max record data size, because the ingestion
+	// fails only if bigger than the upper limit.
+	ErrWriteRequestDataItemTooLarge = errors.New(globalerror.DistributorMaxWriteRequestDataItemSize.Message(
+		fmt.Sprintf("the write request contains a timeseries or metadata item which is larger that the maximum allowed size of %d bytes", maxProducerRecordDataBytesLimit)))
 )
 
 // Writer is responsible to write incoming data to the ingest storage.
@@ -128,7 +140,7 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 	}
 
 	// Create records out of the write request.
-	records, recordsSizeBytes, err := marshalWriteRequestToRecords(partitionID, userID, req, w.kafkaCfg.ProducerMaxRecordSizeBytes)
+	records, err := marshalWriteRequestToRecords(partitionID, userID, req, w.kafkaCfg.ProducerMaxRecordSizeBytes)
 	if err != nil {
 		return err
 	}
@@ -144,26 +156,33 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 	// visibility over this metric if records are rejected by Kafka because of MESSAGE_TOO_LARGE).
 	w.recordsPerRequest.Observe(float64(len(records)))
 
-	err = w.produceSync(ctx, writer, records)
-	if err != nil {
-		return err
+	res := w.produceSync(ctx, writer, records)
+
+	// Track latency only for successfully written records.
+	if count, sizeBytes := successfulProduceRecordsStats(res); count > 0 {
+		w.writeLatency.Observe(time.Since(startTime).Seconds())
+		w.writeBytesTotal.Add(float64(sizeBytes))
 	}
 
-	// Track latency and payload size only for successful requests.
-	w.writeLatency.Observe(time.Since(startTime).Seconds())
-	w.writeBytesTotal.Add(float64(recordsSizeBytes))
+	if err := res.FirstErr(); err != nil {
+		if errors.Is(err, kerr.MessageTooLarge) {
+			return ErrWriteRequestDataItemTooLarge
+		}
+
+		return err
+	}
 
 	return nil
 }
 
 // produceSync produces records to Kafka and returns once all records have been successfully committed,
 // or an error occurred.
-func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, records []*kgo.Record) error {
+func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, records []*kgo.Record) kgo.ProduceResults {
 	var (
-		remaining  = atomic.NewInt64(int64(len(records)))
-		done       = make(chan struct{})
-		firstErrMx sync.Mutex
-		firstErr   error
+		remaining = atomic.NewInt64(int64(len(records)))
+		done      = make(chan struct{})
+		resMx     sync.Mutex
+		res       kgo.ProduceResults
 	)
 
 	for _, record := range records {
@@ -171,18 +190,14 @@ func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, records []
 		// canceled. It's important to note that cancelling the context passed to Produce() doesn't actually
 		// prevent the data to be sent over the wire (because it's never removed from the buffer) but in some
 		// cases may cause all requests to fail with context cancelled.
-		client.Produce(context.WithoutCancel(ctx), record, func(_ *kgo.Record, err error) {
-			if err != nil {
-				// Keep track of the first error. In case of error we'll wait for all responses anyway
-				// before returning from this function. It allows us to keep code easier, given we don't
-				// expect this function to be frequently called with multiple records.
-				firstErrMx.Lock()
-				if firstErr == nil {
-					firstErr = err
-				}
-				firstErrMx.Unlock()
-			}
+		client.Produce(context.WithoutCancel(ctx), record, func(r *kgo.Record, err error) {
+			resMx.Lock()
+			res = append(res, kgo.ProduceResult{Record: r, Err: err})
+			resMx.Unlock()
 
+			// In case of error we'll wait for all responses anyway before returning from produceSync().
+			// It allows us to keep code easier, given we don't expect this function to be frequently
+			// called with multiple records.
 			if remaining.Dec() == 0 {
 				close(done)
 			}
@@ -192,9 +207,10 @@ func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, records []
 	// Wait for a response or until the context has done.
 	select {
 	case <-ctx.Done():
-		return context.Cause(ctx)
+		return kgo.ProduceResults{{Err: context.Cause(ctx)}}
 	case <-done:
-		return firstErr
+		// Once we're done, it's guaranteed that no more results will be appended, so we can safely return it.
+		return res
 	}
 }
 
@@ -287,37 +303,35 @@ func (w *Writer) newKafkaWriter(clientID int) (*kgo.Client, error) {
 // have their data size limited to maxSize. The reason is that the WriteRequest is split
 // by each individual Timeseries and Metadata: if a single Timeseries or Metadata is bigger than
 // maxSize, than the resulting record will be bigger than the limit as well.
-func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, int, error) {
+func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
 	reqSize := req.Size()
 
 	if reqSize <= maxSize {
 		// No need to split the request. We can take a fast path.
 		rec, err := marshalWriteRequestToRecord(partitionID, tenantID, req, reqSize)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 
-		return []*kgo.Record{rec}, len(rec.Value), nil
+		return []*kgo.Record{rec}, nil
 	}
 
 	return marshalWriteRequestsToRecords(partitionID, tenantID, mimirpb.SplitWriteRequestByMaxMarshalSize(req, reqSize, maxSize))
 }
 
-func marshalWriteRequestsToRecords(partitionID int32, tenantID string, reqs []*mimirpb.WriteRequest) ([]*kgo.Record, int, error) {
+func marshalWriteRequestsToRecords(partitionID int32, tenantID string, reqs []*mimirpb.WriteRequest) ([]*kgo.Record, error) {
 	records := make([]*kgo.Record, 0, len(reqs))
-	recordsDataSizeBytes := 0
 
 	for _, req := range reqs {
 		rec, err := marshalWriteRequestToRecord(partitionID, tenantID, req, req.Size())
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 
 		records = append(records, rec)
-		recordsDataSizeBytes += len(rec.Value)
 	}
 
-	return records, recordsDataSizeBytes, nil
+	return records, nil
 }
 
 func marshalWriteRequestToRecord(partitionID int32, tenantID string, req *mimirpb.WriteRequest, reqSize int) (*kgo.Record, error) {
@@ -334,4 +348,15 @@ func marshalWriteRequestToRecord(partitionID int32, tenantID string, req *mimirp
 		Value:     data,
 		Partition: partitionID,
 	}, nil
+}
+
+func successfulProduceRecordsStats(results kgo.ProduceResults) (count, sizeBytes int) {
+	for _, res := range results {
+		if res.Err == nil && res.Record != nil {
+			count++
+			sizeBytes += len(res.Record.Value)
+		}
+	}
+
+	return
 }
