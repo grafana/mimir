@@ -136,6 +136,8 @@ type Distributor struct {
 	dedupedSamples                   *prometheus.CounterVec
 	labelsHistogram                  prometheus.Histogram
 	sampleDelayHistogram             prometheus.Histogram
+	incomingSamplesPerRequest        *prometheus.HistogramVec
+	incomingExemplarsPerRequest      *prometheus.HistogramVec
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
 	hashCollisionCount               prometheus.Counter
 
@@ -410,6 +412,20 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 				60 * 60 * 24, // 24h
 			},
 		}),
+		incomingSamplesPerRequest: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_samples_per_request",
+			Help:                            "Number of samples per request before deduplication and validation.",
+			NativeHistogramBucketFactor:     2,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"user"}),
+		incomingExemplarsPerRequest: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_exemplars_per_request",
+			Help:                            "Number of exemplars per request before deduplication and validation.",
+			NativeHistogramBucketFactor:     2,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"user"}),
 		latestSeenSampleTimestampPerUser: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_distributor_latest_seen_sample_timestamp_seconds",
 			Help: "Unix timestamp of latest received sample per user.",
@@ -649,6 +665,8 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.incomingSamples.DeleteLabelValues(userID)
 	d.incomingExemplars.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
+	d.incomingSamplesPerRequest.DeleteLabelValues(userID)
+	d.incomingExemplarsPerRequest.DeleteLabelValues(userID)
 	d.nonHASamples.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
 
@@ -1031,7 +1049,11 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 		var firstPartialErr error
 		var removeIndexes []int
+		totalSamples, totalExemplars := 0, 0
+
 		for tsIdx, ts := range req.Timeseries {
+			totalSamples += len(ts.Samples)
+			totalExemplars += len(ts.Exemplars)
 			if len(ts.Labels) == 0 {
 				removeIndexes = append(removeIndexes, tsIdx)
 				continue
@@ -1057,6 +1079,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			validatedSamples += len(ts.Samples) + len(ts.Histograms)
 			validatedExemplars += len(ts.Exemplars)
 		}
+
+		d.incomingSamplesPerRequest.WithLabelValues(userID).Observe(float64(totalSamples))
+		d.incomingExemplarsPerRequest.WithLabelValues(userID).Observe(float64(totalExemplars))
+
 		if len(removeIndexes) > 0 {
 			for _, removeIndex := range removeIndexes {
 				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeIndex])
