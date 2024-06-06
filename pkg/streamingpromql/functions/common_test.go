@@ -32,7 +32,7 @@ func TestDropSeriesName(t *testing.T) {
 
 func TestFloatTransformationFunc(t *testing.T) {
 	transform := func(f float64) float64 { return f * 2 }
-	transformFunc := FloatTransformationFunc(transform)
+	transformFunc := floatTransformationFunc(transform)
 
 	seriesData := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{

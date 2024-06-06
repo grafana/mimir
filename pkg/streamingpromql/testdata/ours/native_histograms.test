@@ -30,25 +30,23 @@ load 1m
 eval range from 0 to 5m step 1m mixed_metric
 	{__name__="mixed_metric"} 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} {{count:6 sum:8 buckets:[1 4 1]}}
 
-eval range from 0 to 4m step 1m histogram_count(mixed_metric)
-{} _ _ _ 4 6
+eval instant at 3m histogram_count(mixed_metric)
+	{} 4
 
-eval range from 0 to 4m step 1m histogram_sum(mixed_metric)
-{} _ _ _ 5 8
+eval instant at 4m histogram_sum(mixed_metric)
+	{} 8
+
+eval range from 0 to 5m step 1m histogram_count(mixed_metric)
+{} _ _ _ 4 6 6
+
+eval range from 0 to 5m step 1m histogram_sum(mixed_metric)
+{} _ _ _ 5 8 8
 
 # histogram_count ignores any float values
 eval instant at 2m histogram_count(mixed_metric)
 
-# histogram_count ignores any float values
-eval instant at 3m histogram_count(mixed_metric)
-	{} 4
-
 # histogram_sum ignores any float values
 eval instant at 2m histogram_sum(mixed_metric)
-
-# histogram_sum ignores any float values
-eval instant at 4m histogram_sum(mixed_metric)
-	{} 8
 
 clear
 

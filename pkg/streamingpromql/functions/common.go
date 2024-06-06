@@ -19,7 +19,8 @@ func DropSeriesName(seriesMetadata []types.SeriesMetadata, _ *pooling.LimitingPo
 
 type InstantVectorFunction func(seriesData types.InstantVectorSeriesData, pool *pooling.LimitingPool) (types.InstantVectorSeriesData, error)
 
-func FloatTransformationFunc(transform func(f float64) float64) InstantVectorFunction {
+// floatTransformationFunc is not needed elsewhere, so it is not exported yet
+func floatTransformationFunc(transform func(f float64) float64) InstantVectorFunction {
 	return func(seriesData types.InstantVectorSeriesData, pool *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
 		for i := range seriesData.Floats {
 			seriesData.Floats[i].F = transform(seriesData.Floats[i].F)
@@ -34,6 +35,6 @@ func FloatTransformationDropHistogramsFunc(transform func(f float64) float64) In
 		// https://prometheus.io/docs/prometheus/latest/querying/functions
 		pool.PutHPointSlice(seriesData.Histograms)
 		seriesData.Histograms = nil
-		return FloatTransformationFunc(transform)(seriesData, pool)
+		return floatTransformationFunc(transform)(seriesData, pool)
 	}
 }

@@ -11,10 +11,19 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-type InstantVectorFunctionOperatorFactory func(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error)
+type instantVectorFunctionOperatorFactories func(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error)
 
-func SimpleFunctionFactory(name string, seriesDataFunc functions.InstantVectorFunction) InstantVectorFunctionOperatorFactory {
-	// Simple Function Factory is for functions that have exactly 1 argument and drop the series name.
+// transformationFunctionOperatorFactory creates an InstantVectorFunctionOperatorFactory for functions
+// that have exactly 1 argument and drop the series name.
+//
+// Parameters:
+//   - name: The name of the function.
+//   - seriesDataFunc: The function to be wrapped.
+//
+// Returns:
+//
+//	An InstantVectorFunctionOperatorFactory.
+func transformationFunctionOperatorFactory(name string, seriesDataFunc functions.InstantVectorFunction) instantVectorFunctionOperatorFactories {
 	return func(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error) {
 		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
@@ -37,7 +46,7 @@ func SimpleFunctionFactory(name string, seriesDataFunc functions.InstantVectorFu
 	}
 }
 
-func rateFunction(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error) {
+func rateFunctionOperator(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error) {
 	if len(args) != 1 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 1 argument for rate, got %v", len(args))
@@ -55,12 +64,12 @@ func rateFunction(args []types.Operator, pool *pooling.LimitingPool) (types.Inst
 	}, nil
 }
 
-var _ InstantVectorFunctionOperatorFactory = rateFunction
+var _ instantVectorFunctionOperatorFactories = rateFunctionOperator
 
 // These functions return an instant-vector.
-var instantVectorFunctions = map[string]InstantVectorFunctionOperatorFactory{
-	"acos":            SimpleFunctionFactory("acos", functions.Acos),
-	"histogram_count": SimpleFunctionFactory("histogram_count", functions.HistogramCount),
-	"histogram_sum":   SimpleFunctionFactory("histogram_sum", functions.HistogramSum),
-	"rate":            rateFunction,
+var instantVectorFunctions = map[string]instantVectorFunctionOperatorFactories{
+	"acos":            transformationFunctionOperatorFactory("acos", functions.Acos),
+	"histogram_count": transformationFunctionOperatorFactory("histogram_count", functions.HistogramCount),
+	"histogram_sum":   transformationFunctionOperatorFactory("histogram_sum", functions.HistogramSum),
+	"rate":            rateFunctionOperator,
 }
