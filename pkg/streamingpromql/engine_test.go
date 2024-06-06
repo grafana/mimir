@@ -520,43 +520,44 @@ func TestMemoryConsumptionLimit(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			t.Run("range query", func(t *testing.T) {
-				opts := NewTestEngineOpts()
-				engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(testCase.rangeQueryLimit))
-				require.NoError(t, err)
+			queryTypes := map[string]func() (promql.Query, error){
+				"range query": func() (promql.Query, error) {
+					opts := NewTestEngineOpts()
+					engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(testCase.rangeQueryLimit))
+					if err != nil {
+						return nil, err
+					}
 
-				start := timestamp.Time(0)
-				q, err := engine.NewRangeQuery(ctx, storage, nil, testCase.expr, start, start.Add(4*time.Minute), time.Minute)
-				require.NoError(t, err)
-				defer q.Close()
+					start := timestamp.Time(0)
+					return engine.NewRangeQuery(ctx, storage, nil, testCase.expr, start, start.Add(4*time.Minute), time.Minute)
+				},
+				"instant query": func() (promql.Query, error) {
+					opts := NewTestEngineOpts()
+					engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(testCase.instantQueryLimit))
+					if err != nil {
+						return nil, err
+					}
 
-				res := q.Exec(ctx)
+					start := timestamp.Time(0)
+					return engine.NewInstantQuery(ctx, storage, nil, testCase.expr, start)
+				},
+			}
 
-				if testCase.shouldSucceed {
-					require.NoError(t, res.Err)
-				} else {
-					require.ErrorContains(t, res.Err, globalerror.MaxEstimatedMemoryConsumptionPerQuery.Error())
-				}
-			})
+			for queryType, createQuery := range queryTypes {
+				t.Run(queryType, func(t *testing.T) {
+					q, err := createQuery()
+					require.NoError(t, err)
+					t.Cleanup(q.Close)
 
-			t.Run("instant query", func(t *testing.T) {
-				opts := NewTestEngineOpts()
-				engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(testCase.instantQueryLimit))
-				require.NoError(t, err)
+					res := q.Exec(ctx)
 
-				start := timestamp.Time(0)
-				q, err := engine.NewInstantQuery(ctx, storage, nil, testCase.expr, start)
-				require.NoError(t, err)
-				defer q.Close()
-
-				res := q.Exec(ctx)
-
-				if testCase.shouldSucceed {
-					require.NoError(t, res.Err)
-				} else {
-					require.ErrorContains(t, res.Err, globalerror.MaxEstimatedMemoryConsumptionPerQuery.Error())
-				}
-			})
+					if testCase.shouldSucceed {
+						require.NoError(t, res.Err)
+					} else {
+						require.ErrorContains(t, res.Err, globalerror.MaxEstimatedMemoryConsumptionPerQuery.Error())
+					}
+				})
+			}
 		})
 	}
 }
@@ -599,6 +600,7 @@ func TestActiveQueryTracker(t *testing.T) {
 
 					q, err := createQuery(expr)
 					require.NoError(t, err)
+					defer q.Close()
 
 					res := q.Exec(context.Background())
 
@@ -621,7 +623,6 @@ func TestActiveQueryTracker(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 type testQueryTracker struct {
