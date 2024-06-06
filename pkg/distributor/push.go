@@ -177,6 +177,7 @@ func handler(
 				msg = err.Error()
 			}
 			if code != 202 {
+				// This error message is consistent with error message in OTLP handler, and ingester's ingest-storage pushToStorage method.
 				msgs := []interface{}{"msg", "detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)", "httpCode", code, "err", err}
 				if code/100 == 4 {
 					msgs = append(msgs, "insight", true)
@@ -250,6 +251,7 @@ func otlpHandler(
 				errorMsg = err.Error()
 			}
 			if httpCode != 202 {
+				// This error message is consistent with error message in Prometheus remote-write handler, and ingester's ingest-storage pushToStorage method.
 				msgs := []interface{}{"msg", "detected an error while ingesting OTLP metrics request (the request may have been partially ingested)", "httpCode", httpCode, "err", err}
 				if httpCode/100 == 4 {
 					msgs = append(msgs, "insight", true)
