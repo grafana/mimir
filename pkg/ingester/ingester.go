@@ -3796,24 +3796,22 @@ func (i *Ingester) startReadRequest() (func(error), error) {
 	if err != nil {
 		return nil, err
 	}
-	// In case of error we need to ensure that the acquired permit is returned.
-	defer func() {
-		i.circuitBreaker.finishReadRequest(time.Since(start), err)
-	}()
 
-	err = i.checkAvailableForRead()
-	if err != nil {
-		return nil, err
-	}
-	err = i.checkReadOverloaded()
-	if err != nil {
-		return nil, err
-	}
-	return func(err error) {
+	finishReadRequest := func(err error) {
 		if acquiredCircuitBreakerPermit {
 			i.circuitBreaker.finishReadRequest(time.Since(start), err)
 		}
-	}, nil
+	}
+
+	if err = i.checkAvailableForRead(); err != nil {
+		finishReadRequest(err)
+		return nil, err
+	}
+	if err = i.checkReadOverloaded(); err != nil {
+		finishReadRequest(err)
+		return nil, err
+	}
+	return finishReadRequest, nil
 }
 
 // checkAvailableForRead checks whether the ingester is available for read requests,
