@@ -585,8 +585,7 @@ func TestActiveQueryTracker(t *testing.T) {
 
 			t.Run("range query", func(t *testing.T) {
 				expr := "some_test_range_query"
-				queryTrackingTestingQueryable.t = t
-				queryTrackingTestingQueryable.expr = expr
+				queryTrackingTestingQueryable.activeQueryAtQueryTime = trackedQuery{}
 
 				q, err := engine.NewRangeQuery(context.Background(), queryTrackingTestingQueryable, nil, expr, timestamp.Time(0), timestamp.Time(0).Add(time.Hour), time.Minute)
 				require.NoError(t, err)
@@ -599,13 +598,20 @@ func TestActiveQueryTracker(t *testing.T) {
 					require.EqualError(t, res.Err, "something went wrong inside the query")
 				}
 
-				tracker.assertLastTrackedQuery(t, expr, true)
+				// Check that the query was active in the query tracker while the query was executing.
+				require.Equal(t, expr, queryTrackingTestingQueryable.activeQueryAtQueryTime.expr)
+				require.False(t, queryTrackingTestingQueryable.activeQueryAtQueryTime.deleted)
+
+				// Check that the query has now been marked as deleted in the query tracker.
+				require.NotEmpty(t, tracker.queries)
+				trackedQuery := tracker.queries[len(tracker.queries)-1]
+				require.Equal(t, expr, trackedQuery.expr)
+				require.Equal(t, true, trackedQuery.deleted)
 			})
 
 			t.Run("instant query", func(t *testing.T) {
 				expr := "some_test_instant_query"
-				queryTrackingTestingQueryable.t = t
-				queryTrackingTestingQueryable.expr = expr
+				queryTrackingTestingQueryable.activeQueryAtQueryTime = trackedQuery{}
 
 				q, err := engine.NewInstantQuery(context.Background(), queryTrackingTestingQueryable, nil, expr, timestamp.Time(0))
 				require.NoError(t, err)
@@ -618,7 +624,15 @@ func TestActiveQueryTracker(t *testing.T) {
 					require.EqualError(t, res.Err, "something went wrong inside the query")
 				}
 
-				tracker.assertLastTrackedQuery(t, expr, true)
+				// Check that the query was active in the query tracker while the query was executing.
+				require.Equal(t, expr, queryTrackingTestingQueryable.activeQueryAtQueryTime.expr)
+				require.False(t, queryTrackingTestingQueryable.activeQueryAtQueryTime.deleted)
+
+				// Check that the query has now been marked as deleted in the query tracker.
+				require.NotEmpty(t, tracker.queries)
+				trackedQuery := tracker.queries[len(tracker.queries)-1]
+				require.Equal(t, expr, trackedQuery.expr)
+				require.Equal(t, true, trackedQuery.deleted)
 			})
 		})
 	}
@@ -651,23 +665,17 @@ func (qt *testQueryTracker) Delete(insertIndex int) {
 	qt.queries[insertIndex].deleted = true
 }
 
-func (qt *testQueryTracker) assertLastTrackedQuery(t *testing.T, expr string, deleted bool) {
-	require.NotEmpty(t, qt.queries)
-	trackedQuery := qt.queries[len(qt.queries)-1]
-	require.Equal(t, expr, trackedQuery.expr)
-	require.Equal(t, deleted, trackedQuery.deleted)
-}
-
 type activeQueryTrackerQueryable struct {
-	t            *testing.T
-	tracker      *testQueryTracker
-	expr         string
+	tracker *testQueryTracker
+
+	activeQueryAtQueryTime trackedQuery
+
 	innerStorage storage.Queryable
 	err          error
 }
 
 func (a *activeQueryTrackerQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
-	a.tracker.assertLastTrackedQuery(a.t, a.expr, false)
+	a.activeQueryAtQueryTime = a.tracker.queries[len(a.tracker.queries)-1]
 
 	if a.err != nil {
 		return nil, a.err
