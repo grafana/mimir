@@ -3073,10 +3073,17 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (advanced) Controls how far into the future incoming samples and exemplars are
 # accepted compared to the wall clock. Any sample or exemplar will be rejected
-# if its timestamp is greater than '(now + grace_period)'. This configuration is
-# enforced in the distributor and ingester.
+# if its timestamp is greater than '(now + creation_grace_period)'. This
+# configuration is enforced in the distributor and ingester.
 # CLI flag: -validation.create-grace-period
 [creation_grace_period: <duration> | default = 10m]
+
+# (advanced) Controls how far into the past incoming samples and exemplars are
+# accepted compared to the wall clock. Any sample or exemplar will be rejected
+# if its timestamp is lower than '(now - OOO window - past_grace_period)'. This
+# configuration is enforced in the distributor and ingester. 0 to disable.
+# CLI flag: -validation.past-grace-period
+[past_grace_period: <duration> | default = 0s]
 
 # (advanced) Enforce every metadata has a metric name.
 # CLI flag: -validation.enforce-metadata-metric-name

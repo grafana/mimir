@@ -3436,10 +3436,21 @@
           "kind": "field",
           "name": "creation_grace_period",
           "required": false,
-          "desc": "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor and ingester.",
+          "desc": "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester.",
           "fieldValue": null,
           "fieldDefaultValue": 600000000000,
           "fieldFlag": "validation.create-grace-period",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "past_grace_period",
+          "required": false,
+          "desc": "Controls how far into the past incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is lower than '(now - OOO window - past_grace_period)'. This configuration is enforced in the distributor and ingester. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "validation.past-grace-period",
           "fieldType": "duration",
           "fieldCategory": "advanced"
         },
