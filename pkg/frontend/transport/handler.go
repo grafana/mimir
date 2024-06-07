@@ -41,6 +41,7 @@ const (
 	// StatusClientClosedRequest is the status code for when a client request cancellation of an http request
 	StatusClientClosedRequest = 499
 	ServiceTimingHeaderName   = "Server-Timing"
+	MimirQueryStatsHeaderName = "X-Mimir-Query-Stats"
 )
 
 var (
@@ -234,6 +235,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if f.cfg.QueryStatsEnabled {
 		writeServiceTimingHeader(queryResponseTime, hs, queryDetails.QuerierStats)
+		writeStatsHeader(hs, queryDetails.QuerierStats)
 	}
 
 	w.WriteHeader(resp.StatusCode)
@@ -447,6 +449,12 @@ func writeServiceTimingHeader(queryResponseTime time.Duration, headers http.Head
 		parts = append(parts, statsValue("querier_wall_time", stats.LoadWallTime()))
 		parts = append(parts, statsValue("response_time", queryResponseTime))
 		headers.Set(ServiceTimingHeaderName, strings.Join(parts, ", "))
+	}
+}
+
+func writeStatsHeader(headers http.Header, stats *querier_stats.Stats) {
+	if stats != nil {
+		headers.Set(MimirQueryStatsHeaderName, fmt.Sprintf("fetched_chunk_bytes=%d", stats.GetFetchedChunkBytes()))
 	}
 }
 
