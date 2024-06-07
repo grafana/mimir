@@ -34,7 +34,7 @@ require (
 	github.com/prometheus/alertmanager v0.27.0
 	github.com/prometheus/client_golang v1.19.1
 	github.com/prometheus/client_model v0.6.1
-	github.com/prometheus/common v0.54.0
+	github.com/prometheus/common v0.54.1-0.20240607102757-92fc65e59ca5
 	github.com/prometheus/prometheus v1.99.0
 	github.com/segmentio/fasthash v1.0.3
 	github.com/sirupsen/logrus v1.9.3
@@ -255,10 +255,6 @@ require (
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
-
-// Using a fork until the following is merged:
-// - https://github.com/prometheus/common/pull/650
-replace github.com/prometheus/common => github.com/pracucci/prometheus-common v0.54.1-0.20240607092730-43e45c34b388
 
 // Using a fork of Prometheus with Mimir-specific changes.
 replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240607080100-fce8e33d8a64
