@@ -254,7 +254,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					On:             true,
 					MatchingLabels: []string{"env"},
 				},
-				Pool: pooling.NewLimitingPool(0),
+				Pool: pooling.NewLimitingPool(0, nil),
 			}
 
 			result, err := o.mergeOneSide(testCase.input, testCase.sourceSeriesIndices, testCase.sourceSeriesMetadata, "right")
@@ -526,7 +526,7 @@ func TestBinaryOperationSeriesBuffer(t *testing.T) {
 	}
 
 	seriesUsed := []bool{true, false, true, true, true}
-	buffer := newBinaryOperationSeriesBuffer(inner, seriesUsed, pooling.NewLimitingPool(0))
+	buffer := newBinaryOperationSeriesBuffer(inner, seriesUsed, pooling.NewLimitingPool(0, nil))
 	ctx := context.Background()
 
 	// Read first series.

@@ -165,7 +165,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 		eng = promql.NewEngine(opts)
 	case mimirPromQLEngine:
 		limitsProvider := &tenantQueryLimitsProvider{limits: limits}
-		streamingEngine, err := streamingpromql.NewEngine(opts, limitsProvider, logger)
+		streamingEngine, err := streamingpromql.NewEngine(opts, limitsProvider, queryMetrics, logger)
 		if err != nil {
 			return nil, nil, nil, err
 		}

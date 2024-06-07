@@ -67,7 +67,7 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 		opts:      opts,
 		engine:    engine,
 		qs:        qs,
-		pool:      pooling.NewLimitingPool(maxInMemorySamples),
+		pool:      pooling.NewLimitingPool(maxInMemorySamples, engine.queriesRejectedDueToPeakMemoryConsumption),
 		statement: &parser.EvalStmt{
 			Expr:          expr,
 			Start:         start,
