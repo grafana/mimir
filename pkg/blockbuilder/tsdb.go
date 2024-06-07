@@ -265,6 +265,9 @@ func (b *tsdbBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser
 	defer b.tsdbsMu.Unlock()
 
 	eg, ctx := errgroup.WithContext(ctx)
+	if b.blocksStorageConfig.TSDB.ShipConcurrency > 0 {
+		eg.SetLimit(b.blocksStorageConfig.TSDB.ShipConcurrency)
+	}
 	for userID, db := range b.tsdbs {
 		if err := db.compactEverything(ctx); err != nil {
 			return err
