@@ -11,6 +11,7 @@ import (
 	"io"
 	"math"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -212,14 +213,14 @@ func (r *PartitionReader) processNextFetchesUntilMaxLagHonored(ctx context.Conte
 		MaxRetries: 0, // retry forever
 	})
 
-	fetcher, err := newConcurrentFetchers(ctx, r.client, r.logger, r.reg, r.kafkaCfg.Topic, r.partitionID, startOffset, r.kafkaCfg.ReplayConcurrency, &r.metrics)
+	fetcher, err := newConcurrentFetchers(ctx, r.client, r.logger, r.reg, r.kafkaCfg.Topic, r.partitionID, startOffset, 9, &r.metrics)
 	if err != nil {
 		return errors.Wrap(err, "creating fetcher")
 	}
 
-	defer func() {
-		r.setPollingStartOffset(r.consumedOffsetWatcher.LastConsumedOffset() + 1)
-	}()
+	//defer func() {
+	//	r.setPollingStartOffset(r.consumedOffsetWatcher.LastConsumedOffset())
+	//}()
 
 	for boff.Ongoing() {
 		// Send a direct request to the Kafka backend to fetch the partition start offset.
@@ -605,17 +606,32 @@ func (r *PartitionReader) pollFetches(ctx context.Context) (result kgo.Fetches) 
 		result.EachRecord(func(record *kgo.Record) {
 			r.metrics.fetchedBytes.Add(float64(len(record.Value))) // TODO dimitarvdimitrov make sure we're not conflicting with the actual client; perhaps disable metrics there and just use our own
 		})
+		level.Info(r.logger).Log("msg", "PartitionReader.pollFetches done", "num_records", result.NumRecords())
 	}(time.Now())
 
+	level.Info(r.logger).Log("msg", "PartitionReader.pollFetches")
 	// TODO dimitarvdimitrov consider using franz-go during stable state
-	return r.client.PollFetches(ctx)
+	f := r.client.PollFetches(ctx)
+	for fIdx, fetch := range f {
+		for tIdx, topic := range fetch.Topics {
+			for pIdx, partition := range topic.Partitions {
+				afterConsumed := len(partition.Records)
+				for i, record := range partition.Records {
+					if record.Offset > r.consumedOffsetWatcher.LastConsumedOffset() {
+						afterConsumed = i
+						break
+					}
+				}
+				f[fIdx].Topics[tIdx].Partitions[pIdx].Records = partition.Records[afterConsumed:]
+			}
+		}
+	}
+	return f
 	//return r.fetcher.pollFetches(ctx)
 }
 
 func (r *PartitionReader) setPollingStartOffset(offset int64) {
-	r.client.SetOffsets(map[string]map[int32]kgo.EpochOffset{
-		r.kafkaCfg.Topic: {r.partitionID: kgo.NewOffset().At(offset).EpochOffset()},
-	})
+	r.consumedOffsetWatcher.Notify(offset)
 }
 
 type fetchWant struct {
@@ -776,19 +792,31 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 
 	defer level.Info(r.logger).Log("msg", "done running fetchers")
 	results := make(chan chan kgo.FetchPartition, r.concurrency+1)
+	wg := sync.WaitGroup{}
+	wg.Add(r.concurrency)
+	defer wg.Wait()
 	for i := 0; i < r.concurrency; i++ {
+		logger := log.With(r.logger, "fetcher", i)
 		go func() {
-			level.Info(r.logger).Log("msg", "starting fetcher")
-			defer level.Info(r.logger).Log("msg", "done with fetcher")
+			defer wg.Done()
+			level.Info(logger).Log("msg", "starting fetcher")
+			defer level.Info(logger).Log("msg", "done with fetcher")
 			for w := range wants {
 				boff := backoff.New(ctx, backoff.Config{
 					MinBackoff: 250 * time.Millisecond,
 					MaxBackoff: 2 * time.Second,
 					MaxRetries: 0, // retry forever
 				})
-				level.Info(r.logger).Log("msg", "starting to fetch", "start_offset", w.startOffset, "end_offset", w.endOffset)
+				level.Info(logger).Log("msg", "starting to fetch", "start_offset", w.startOffset, "end_offset", w.endOffset)
 				for boff.Ongoing() && w.endOffset > w.startOffset {
 					f := r.fetchSingle(ctx, w)
+					if f.Err != nil {
+						level.Info(logger).Log("msg", "fetcher got en error", "err", f.Err, "num_records", len(f.Records))
+					}
+					//if errors.Is(f.Err, kerr.OffsetOutOfRange) {
+					//	w.startOffset++
+					//	continue
+					//}
 					if len(f.Records) == 0 {
 						boff.Wait()
 						continue
@@ -796,7 +824,7 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 					boff.Reset()
 					lastOffset := f.Records[len(f.Records)-1].Offset
 					w.startOffset = lastOffset + 1
-					level.Info(r.logger).Log("msg", "received records", "new_start_offset", w.startOffset, "new_end_offset", w.endOffset)
+					level.Info(logger).Log("msg", "received records", "new_start_offset", w.startOffset, "new_end_offset", w.endOffset)
 					select {
 					case w.result <- f:
 					case <-ctx.Done():
