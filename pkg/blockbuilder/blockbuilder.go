@@ -20,9 +20,9 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/plugin/kprom"
 
-	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -38,12 +38,6 @@ type BlockBuilder struct {
 
 	assignmentMu sync.Mutex
 	assignment   map[string][]int32
-
-	// One shipper per tenant, shared across all partitions.
-	shipperMetrics  *ingester.ShipperMetrics
-	shippers        map[string]shipper
-	shipperMtx      sync.RWMutex
-	shippingService services.Service
 }
 
 func New(
@@ -53,12 +47,10 @@ func New(
 	limits *validation.Overrides,
 ) (_ *BlockBuilder, err error) {
 	b := &BlockBuilder{
-		cfg:            cfg,
-		logger:         logger,
-		register:       reg,
-		limits:         limits,
-		shipperMetrics: ingester.NewShipperMetrics(reg, "blockbuilder"),
-		shippers:       map[string]shipper{},
+		cfg:      cfg,
+		logger:   logger,
+		register: reg,
+		limits:   limits,
 	}
 
 	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorageConfig.Bucket, "ingester", logger, reg)
@@ -82,9 +74,6 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	}
 	if err := os.MkdirAll(b.cfg.BlocksStorageConfig.TSDB.Dir, os.ModePerm); err != nil {
 		return fmt.Errorf("creating tsdb dir: %w", err)
-	}
-	if err := os.MkdirAll(b.shipperRootDir(), os.ModePerm); err != nil {
-		return fmt.Errorf("creating shipper dir: %w", err)
 	}
 
 	opts := []kgo.Opt{
@@ -130,12 +119,7 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	}
 
 	level.Info(b.logger).Log("msg", "waiting until kafka brokers are reachable")
-	if err := b.waitKafka(ctx); err != nil {
-		return err
-	}
-
-	b.shippingService = services.NewBasicService(nil, b.shipBlocksLoop, nil)
-	return b.shippingService.StartAsync(ctx)
+	return b.waitKafka(ctx)
 }
 
 func (b *BlockBuilder) handlePartitionsAssigned(_ context.Context, _ *kgo.Client, assignment map[string][]int32) {
@@ -370,13 +354,11 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 				// So we break this into multiple block building cycles by resetting the block builder at intervals.
 				// TODO(codesome): the logic for this below is broken. Fix it. How can we determine the block ends when we are catching up?
 				if builder != nil && rec.Timestamp.After(resetBlockBuilderAt) {
-					userIDs, err := builder.compactAndClose(ctx, b.shipperRootDir())
-					if err != nil {
+					if err := builder.compactAndUpload(ctx, b.blockUploaderForUser); err != nil {
 						level.Error(b.logger).Log("msg", "failed to compact and remove dbs", "part", part, "err", err)
 						// TODO(codesome): return err?
 						// TODO(codesome): add metric
 					}
-					b.addShippers(userIDs)
 					builder = nil
 				}
 				if builder == nil {
@@ -420,12 +402,10 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 	}
 
 	if builder != nil {
-		userIDs, err := builder.compactAndClose(ctx, b.shipperRootDir())
-		if err != nil {
+		if err := builder.compactAndUpload(ctx, b.blockUploaderForUser); err != nil {
 			// TODO(codesome): add metric
 			return err
 		}
-		b.addShippers(userIDs)
 	}
 
 	if checkpointOffset > 0 {
@@ -435,6 +415,26 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, part int32, mark t
 		return b.commitOffset(ctx, part, checkpointOffset)
 	}
 	return nil
+}
+
+func (b *BlockBuilder) blockUploaderForUser(ctx context.Context, userID string) blockUploader {
+	buc := bucket.NewUserBucketClient(userID, b.bucket, b.limits)
+	return func(blockDir string) error {
+		meta, err := block.ReadMetaFromDir(blockDir)
+		if err != nil {
+			return err
+		}
+		meta.Thanos.Source = block.BlockBuilderSource
+		meta.Thanos.SegmentFiles = block.GetSegmentFiles(blockDir)
+
+		if meta.Compaction.FromOutOfOrder() && b.limits.OutOfOrderBlocksExternalLabelEnabled(userID) {
+			// At this point the OOO data was already ingested and compacted, so there's no point in checking for the OOO feature flag
+			meta.Thanos.Labels[mimir_tsdb.OutOfOrderExternalLabel] = mimir_tsdb.OutOfOrderExternalLabelValue
+		}
+
+		// Upload block with custom metadata.
+		return block.Upload(ctx, b.logger, buc, blockDir, meta)
+	}
 }
 
 func (b *BlockBuilder) commitOffset(ctx context.Context, part int32, offset int64) (returnErr error) {

@@ -38,6 +38,8 @@ type tsdbBuilder struct {
 	kafkaPartition      int32 // Used to determine the directory for TSDB.
 }
 
+type blockUploader func(blockDir string) error
+
 func newTSDBBuilder(logger log.Logger, limits *validation.Overrides, partition int32, blocksStorageConfig mimir_tsdb.BlocksStorageConfig) *tsdbBuilder {
 	return &tsdbBuilder{
 		tsdbs:               make(map[string]*userTSDB),
@@ -255,20 +257,15 @@ func (b *tsdbBuilder) newTSDB(userID string) (*userTSDB, error) {
 	return udb, nil
 }
 
-// compactBlocks compacts the blocks of all the TSDBs.
-// It moves all the blocks produced into the shipperRootDir.
-func (b *tsdbBuilder) compactAndClose(ctx context.Context, shipperDir string) ([]string, error) {
+// compactAndUpload compacts the blocks of all the TSDBs
+// and uploads them.
+func (b *tsdbBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser func(context.Context, string) blockUploader) error {
 	b.tsdbsMu.Lock()
 	defer b.tsdbsMu.Unlock()
 
-	var userIDs []string
 	for userID, db := range b.tsdbs {
 		if err := db.compactEverything(ctx); err != nil {
-			return nil, err
-		}
-
-		if err := os.MkdirAll(filepath.Join(shipperDir, userID), os.ModePerm); err != nil {
-			return nil, err
+			return err
 		}
 
 		// TODO(codesome): the delete() on the map does not release the memory until after the map is reset.
@@ -282,7 +279,7 @@ func (b *tsdbBuilder) compactAndClose(ctx context.Context, shipperDir string) ([
 		}
 
 		if err := db.Close(); err != nil {
-			return nil, err
+			return err
 		}
 
 		delete(b.tsdbs, userID)
@@ -291,41 +288,14 @@ func (b *tsdbBuilder) compactAndClose(ctx context.Context, shipperDir string) ([
 			continue
 		}
 
-		userIDs = append(userIDs, userID)
-
-		// Move all blocks to the shipper directory. This allows deleting the TSDB directory here,
-		// and hence don't mess with future compaction cycles. Also makes it easier to handle
-		// dynamically changing tenants without requiring a shipper per user.
+		uploader := blockUploaderForUser(ctx, userID)
 		for _, bn := range blockNames {
-			if err := os.Rename(filepath.Join(dbDir, bn), filepath.Join(shipperDir, userID, bn)); err != nil {
-				return nil, err
+			if err := uploader(filepath.Join(dbDir, bn)); err != nil {
+				return err
 			}
 		}
 
-		// Remove any remaining artifacts of this TSDB, like the head block files.
-		if err := os.RemoveAll(dbDir); err != nil {
-			return nil, err
-		}
-	}
-
-	// Clear the map so that it can be released from the memory.
-	b.tsdbs = nil
-	return userIDs, nil
-}
-
-func (b *tsdbBuilder) close() error {
-	b.tsdbsMu.Lock()
-	defer b.tsdbsMu.Unlock()
-
-	for userID, db := range b.tsdbs {
-		dbDir := db.db.Dir()
-
-		if err := db.Close(); err != nil {
-			return err
-		}
-		delete(b.tsdbs, userID)
-
-		// Remove any artifacts of this TSDB. We don't need them anymore.
+		// Clear the DB from the disk. Don't need it anymore.
 		if err := os.RemoveAll(dbDir); err != nil {
 			return err
 		}
