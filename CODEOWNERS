@@ -26,8 +26,8 @@
 CHANGELOG.md
 
 # Dependencies
-go.mod @grafana/mimir-maintainers @grafanabot
-go.sum @grafana/mimir-maintainers @grafanabot
-/vendor/ @grafana/mimir-maintainers @grafanabot
+go.mod @stevesg @grafana/mimir-maintainers @grafanabot
+go.sum @stevesg @grafana/mimir-maintainers @grafanabot
+/vendor/ @stevesg @grafana/mimir-maintainers @grafanabot
 /vendor/github.com/prometheus/alertmanager @grafana/mimir-ruler-and-alertmanager-maintainers @grafana/mimir-maintainers @grafanabot
 /vendor/github.com/grafana/alerting @grafana/mimir-ruler-and-alertmanager-maintainers @grafana/mimir-maintainers @grafanabot
