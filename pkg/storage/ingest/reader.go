@@ -213,7 +213,7 @@ func (r *PartitionReader) processNextFetchesUntilMaxLagHonored(ctx context.Conte
 		MaxRetries: 0, // retry forever
 	})
 
-	fetcher, err := newConcurrentFetchers(ctx, r.client, r.logger, r.reg, r.kafkaCfg.Topic, r.partitionID, startOffset, 9, &r.metrics)
+	fetcher, err := newConcurrentFetchers(ctx, r.client, r.logger, r.reg, r.kafkaCfg.Topic, r.partitionID, startOffset, r.kafkaCfg.ReplayConcurrency, &r.metrics)
 	if err != nil {
 		return errors.Wrap(err, "creating fetcher")
 	}
@@ -787,14 +787,14 @@ func (r *concurrentFetchers) getEndOffset(ctx context.Context) (int64, error) {
 }
 
 func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64) {
-	wants := make(chan fetchWant)
-	defer close(wants)
 
 	defer level.Info(r.logger).Log("msg", "done running fetchers")
-	results := make(chan chan kgo.FetchPartition, r.concurrency+1)
+	results := make(chan chan kgo.FetchPartition, r.concurrency+2)
 	wg := sync.WaitGroup{}
 	wg.Add(r.concurrency)
 	defer wg.Wait()
+	wants := make(chan fetchWant)
+	defer close(wants)
 	for i := 0; i < r.concurrency; i++ {
 		logger := log.With(r.logger, "fetcher", i)
 		go func() {
@@ -837,23 +837,32 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 
 	var (
 		nextFetch  = fetchWantFrom(startOffset)
-		nextResult = nextFetch.result
+		nextResult chan kgo.FetchPartition
 	)
+	r.logger.Log("msg", "results", "cap", cap(results), "len", len(results))
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case wants <- nextFetch:
-			results <- nextFetch.result
+			select {
+			case results <- nextFetch.result:
+				r.logger.Log("msg", "wrote to results")
+			default:
+				panic("deadlock")
+			}
+
 			if nextResult == nil {
 				nextResult = <-results
+				r.logger.Log("msg", "took from results")
 			}
 			nextFetch = nextFetchWant(nextFetch)
 		case result, moreLeft := <-nextResult:
 			if !moreLeft {
 				if len(results) > 0 {
 					nextResult = <-results
+					r.logger.Log("msg", "took from results")
 				} else {
 					nextResult = nil
 				}
@@ -877,7 +886,7 @@ func fetchWantFrom(offset int64) fetchWant {
 	return fetchWant{
 		startOffset: offset,
 		endOffset:   offset + recordsPerFetch,
-		result:      make(chan kgo.FetchPartition),
+		result:      make(chan kgo.FetchPartition, 1),
 	}
 }
 
