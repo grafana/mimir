@@ -40,9 +40,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 package goautoneg
 
 import (
-	"sort"
 	"strconv"
 	"strings"
+
+	"golang.org/x/exp/slices"
 )
 
 // Structure to represent a clause in an HTTP Accept Header
@@ -54,28 +55,6 @@ type Accept struct {
 
 // acceptSlice is defined to implement sort interface.
 type acceptSlice []Accept
-
-func (slice acceptSlice) Len() int {
-	return len(slice)
-}
-
-func (slice acceptSlice) Less(i, j int) bool {
-	ai, aj := slice[i], slice[j]
-	if ai.Q > aj.Q {
-		return true
-	}
-	if ai.Type != "*" && aj.Type == "*" {
-		return true
-	}
-	if ai.SubType != "*" && aj.SubType == "*" {
-		return true
-	}
-	return false
-}
-
-func (slice acceptSlice) Swap(i, j int) {
-	slice[i], slice[j] = slice[j], slice[i]
-}
 
 func stringTrimSpaceCutset(r rune) bool {
 	return r == ' '
@@ -158,7 +137,19 @@ func ParseAccept(header string) acceptSlice {
 		accept = append(accept, a)
 	}
 
-	sort.Sort(accept)
+	slices.SortFunc(accept, func(a, b Accept) int {
+		if a.Q > b.Q {
+			return -1
+		}
+		if a.Type != "*" && b.Type == "*" {
+			return -1
+		}
+		if a.SubType != "*" && b.SubType == "*" {
+			return -1
+		}
+		return 1
+	})
+
 	return accept
 }
 
