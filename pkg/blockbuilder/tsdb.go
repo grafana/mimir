@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -263,6 +264,7 @@ func (b *tsdbBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser
 	b.tsdbsMu.Lock()
 	defer b.tsdbsMu.Unlock()
 
+	eg, ctx := errgroup.WithContext(ctx)
 	for userID, db := range b.tsdbs {
 		if err := db.compactEverything(ctx); err != nil {
 			return err
@@ -273,38 +275,36 @@ func (b *tsdbBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser
 		// truncate the entire Head efficiently before closing the DB since closing the DB does not release
 		// the memory either. NOTE: this is unnecessary if it does not reduce the memory spikes of compaction.
 		var blockNames []string
-		dbDir := db.db.Dir()
 		for _, b := range db.db.Blocks() {
 			blockNames = append(blockNames, b.Meta().ULID.String())
 		}
 
+		dbDir := db.db.Dir()
 		if err := db.Close(); err != nil {
 			return err
 		}
 
 		delete(b.tsdbs, userID)
 
-		if len(blockNames) == 0 {
-			continue
-		}
-
-		uploader := blockUploaderForUser(ctx, userID)
-		for _, bn := range blockNames {
-			if err := uploader(filepath.Join(dbDir, bn)); err != nil {
-				return err
+		eg.Go(func() error {
+			uploader := blockUploaderForUser(ctx, userID)
+			for _, bn := range blockNames {
+				if err := uploader(filepath.Join(dbDir, bn)); err != nil {
+					return err
+				}
 			}
-		}
 
-		// Clear the DB from the disk. Don't need it anymore.
-		if err := os.RemoveAll(dbDir); err != nil {
-			return err
-		}
+			// Clear the DB from the disk. Don't need it anymore.
+			return os.RemoveAll(dbDir)
+		})
 	}
+
+	err := eg.Wait()
 
 	// Clear the map so that it can be released from the memory. Not setting to nil in case
 	// we want to reuse the tsdbBuilder.
 	b.tsdbs = make(map[string]*userTSDB)
-	return nil
+	return err
 }
 
 type extendedAppender interface {

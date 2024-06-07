@@ -424,6 +424,12 @@ func (b *BlockBuilder) blockUploaderForUser(ctx context.Context, userID string) 
 		if err != nil {
 			return err
 		}
+
+		if meta.Stats.NumSamples == 0 {
+			// No need to upload empty block.
+			return nil
+		}
+
 		meta.Thanos.Source = block.BlockBuilderSource
 		meta.Thanos.SegmentFiles = block.GetSegmentFiles(blockDir)
 
