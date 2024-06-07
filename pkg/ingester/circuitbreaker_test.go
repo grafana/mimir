@@ -172,7 +172,11 @@ func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			registry := prometheus.NewRegistry()
-			cfg := CircuitBreakerConfig{Enabled: true, CooldownPeriod: 10 * time.Second}
+			cfg := CircuitBreakerConfig{
+				Enabled:         true,
+				CooldownPeriod:  10 * time.Second,
+				testModeEnabled: true,
+			}
 			cb := newCircuitBreaker(cfg, log.NewNopLogger(), registry)
 			testCase.circuitBreakerSetup(cb)
 			status, err := cb.tryAcquirePermit()

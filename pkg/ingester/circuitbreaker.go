@@ -121,7 +121,6 @@ func newCircuitBreaker(cfg CircuitBreakerConfig, logger log.Logger, registerer p
 	}
 
 	cbBuilder := circuitbreaker.Builder[any]().
-		WithFailureThreshold(cfg.FailureThresholdPercentage).
 		WithDelay(cfg.CooldownPeriod).
 		OnClose(func(event circuitbreaker.StateChangedEvent) {
 			circuitBreakerTransitionsCounterFn(cb.metrics, circuitbreaker.ClosedState).Inc()
@@ -250,7 +249,7 @@ func (cb *circuitBreaker) recordResult(errs ...error) error {
 			return err
 		}
 	}
-	cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultSuccess).Inc()
 	cb.cb.RecordSuccess()
+	cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultSuccess).Inc()
 	return nil
 }
