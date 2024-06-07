@@ -81,15 +81,16 @@ type BucketStoreStats struct {
 // This makes them smaller, but takes extra CPU and memory.
 // When used with in-memory cache, memory usage should decrease overall, thanks to postings being smaller.
 type BucketStore struct {
-	userID          string
-	logger          log.Logger
-	metrics         *BucketStoreMetrics
-	bkt             objstore.InstrumentedBucketReader
-	fetcher         block.MetadataFetcher
-	dir             string
-	indexCache      indexcache.IndexCache
-	indexReaderPool *indexheader.ReaderPool
-	seriesHashCache *hashcache.SeriesHashCache
+	userID                  string
+	logger                  log.Logger
+	metrics                 *BucketStoreMetrics
+	bkt                     objstore.InstrumentedBucketReader
+	fetcher                 block.MetadataFetcher
+	dir                     string
+	indexCache              indexcache.IndexCache
+	indexReaderPool         *indexheader.ReaderPool
+	indexHeadersSnapshotter *indexheader.Snapshotter
+	seriesHashCache         *hashcache.SeriesHashCache
 
 	// Sets of blocks that have the same labels. They are indexed by a hash over their label set.
 	blocksMx sync.RWMutex
@@ -238,12 +239,15 @@ func NewBucketStore(
 		option(s)
 	}
 
-	lazyLoadedSnapshotConfig := indexheader.LazyLoadedHeadersSnapshotConfig{
-		Path:   dir,
-		UserID: userID,
+	snapConfig := indexheader.SnapshotterConfig{
+		Enabled: bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled,
+		Path:    dir,
+		UserID:  userID,
 	}
-	// Depend on the options
-	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics, lazyLoadedSnapshotConfig)
+	s.indexHeadersSnapshotter = indexheader.NewSnapshotter(s.logger, snapConfig)
+
+	lazyLoadedBlocks := s.indexHeadersSnapshotter.RestoreLoadedBlocks()
+	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics, lazyLoadedBlocks)
 
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create dir")
@@ -257,6 +261,7 @@ func (s *BucketStore) RemoveBlocksAndClose() error {
 	err := s.removeAllBlocks()
 
 	// Release other resources even if it failed to close some blocks.
+	s.indexHeadersSnapshotter.Stop()
 	s.indexReaderPool.Close()
 
 	return err
@@ -359,6 +364,10 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 func (s *BucketStore) InitialSync(ctx context.Context) error {
 	if err := s.syncBlocks(ctx, true); err != nil {
 		return errors.Wrap(err, "sync block")
+	}
+
+	if err := s.indexHeadersSnapshotter.Start(ctx, s.indexReaderPool); err != nil {
+		return errors.Wrap(err, "start index headers snapshotter")
 	}
 
 	fis, err := os.ReadDir(s.dir)
