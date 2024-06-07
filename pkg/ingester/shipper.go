@@ -8,7 +8,6 @@ package ingester
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -30,26 +29,26 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-// ShipperMetrics holds the Shipper metrics. Mimir runs 1 Shipper for each tenant but
+// shipperMetrics holds the shipper metrics. Mimir runs 1 shipper for each tenant but
 // the metrics instance is shared across all tenants.
-type ShipperMetrics struct {
+type shipperMetrics struct {
 	uploads                  prometheus.Counter
 	uploadFailures           prometheus.Counter
 	lastSuccessfulUploadTime prometheus.Gauge
 }
 
-func NewShipperMetrics(reg prometheus.Registerer, component string) *ShipperMetrics {
-	return &ShipperMetrics{
+func newShipperMetrics(reg prometheus.Registerer) *shipperMetrics {
+	return &shipperMetrics{
 		uploads: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: fmt.Sprintf("cortex_%s_shipper_uploads_total", component),
+			Name: "cortex_ingester_shipper_uploads_total",
 			Help: "Total number of uploaded TSDB blocks",
 		}),
 		uploadFailures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: fmt.Sprintf("cortex_%s_shipper_upload_failures_total", component),
+			Name: "cortex_ingester_shipper_upload_failures_total",
 			Help: "Total number of TSDB block upload failures",
 		}),
 		lastSuccessfulUploadTime: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name: fmt.Sprintf("cortex_%s_shipper_last_successful_upload_timestamp_seconds", component),
+			Name: "cortex_ingester_shipper_last_successful_upload_timestamp_seconds",
 			Help: "Unix timestamp (in seconds) of the last successful TSDB block uploaded to the object storage.",
 		}),
 	}
@@ -59,36 +58,36 @@ type ShipperConfigProvider interface {
 	OutOfOrderBlocksExternalLabelEnabled(userID string) bool
 }
 
-// Shipper watches a directory for matching files and directories and uploads
+// shipper watches a directory for matching files and directories and uploads
 // them to a remote data store.
-// Shipper implements BlocksUploader interface.
-type Shipper struct {
+// shipper implements BlocksUploader interface.
+type shipper struct {
 	logger      log.Logger
 	cfgProvider ShipperConfigProvider
 	userID      string
 	dir         string
-	metrics     *ShipperMetrics
+	metrics     *shipperMetrics
 	bucket      objstore.Bucket
 	source      block.SourceType
 }
 
-// NewShipper creates a new uploader that detects new TSDB blocks in dir and uploads them to
+// newShipper creates a new uploader that detects new TSDB blocks in dir and uploads them to
 // remote if necessary. It attaches the Thanos metadata section in each meta JSON file.
 // If uploadCompacted is enabled, it also uploads compacted blocks which are already in filesystem.
-func NewShipper(
+func newShipper(
 	logger log.Logger,
 	cfgProvider ShipperConfigProvider,
 	userID string,
-	metrics *ShipperMetrics,
+	metrics *shipperMetrics,
 	dir string,
 	bucket objstore.Bucket,
 	source block.SourceType,
-) *Shipper {
+) *shipper {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
-	return &Shipper{
+	return &shipper{
 		logger:      logger,
 		cfgProvider: cfgProvider,
 		userID:      userID,
@@ -103,8 +102,8 @@ func NewShipper(
 // to the object bucket once.
 //
 // It is not concurrency-safe, however it is compactor-safe (running concurrently with compactor is ok).
-func (s *Shipper) Sync(ctx context.Context) (shipped int, err error) {
-	shippedBlocks, err := ReadShippedBlocks(s.dir)
+func (s *shipper) Sync(ctx context.Context) (shipped int, err error) {
+	shippedBlocks, err := readShippedBlocks(s.dir)
 	if err != nil {
 		// If we encounter any error, proceed with an new list of shipped blocks.
 		// The meta file will be overridden later. Note that the meta file is only
@@ -116,7 +115,7 @@ func (s *Shipper) Sync(ctx context.Context) (shipped int, err error) {
 		shippedBlocks = map[ulid.ULID]time.Time{}
 	}
 
-	meta := ShipperMeta{Version: ShipperMetaVersion1, Shipped: map[ulid.ULID]model.Time{}}
+	meta := shipperMeta{Version: shipperMetaVersion1, Shipped: map[ulid.ULID]model.Time{}}
 	var uploadErrs int
 
 	metas, err := s.blockMetasFromOldest()
@@ -149,7 +148,7 @@ func (s *Shipper) Sync(ctx context.Context) (shipped int, err error) {
 		}
 		if ok {
 			// We decide to be conservative here and assume it was just recently uploaded.
-			// It would be very rare to have blocks uploaded but not tracked in the Shipper meta file.
+			// It would be very rare to have blocks uploaded but not tracked in the shipper meta file.
 			// This could happen if process crashed while uploading the block.
 			meta.Shipped[m.ULID] = model.Now()
 			shipped++ // the last upload must have failed, report the block as if it was shipped successfully now
@@ -172,7 +171,7 @@ func (s *Shipper) Sync(ctx context.Context) (shipped int, err error) {
 		s.metrics.lastSuccessfulUploadTime.SetToCurrentTime()
 	}
 
-	if err := WriteShipperMetaFile(s.logger, s.dir, meta); err != nil {
+	if err := writeShipperMetaFile(s.logger, s.dir, meta); err != nil {
 		level.Warn(s.logger).Log("msg", "updating meta file failed", "err", err)
 	}
 
@@ -187,7 +186,7 @@ func (s *Shipper) Sync(ctx context.Context) (shipped int, err error) {
 // upload method uploads the block to blocks storage. Block is uploaded with updated meta.json file with extra details.
 // This updated version of meta.json is however not persisted locally on the disk, to avoid race condition when TSDB
 // library could actually unload the block if it found meta.json file missing.
-func (s *Shipper) upload(ctx context.Context, meta *block.Meta) error {
+func (s *shipper) upload(ctx context.Context, meta *block.Meta) error {
 	blockDir := filepath.Join(s.dir, meta.ULID.String())
 
 	meta.Thanos.Source = s.source
@@ -204,7 +203,7 @@ func (s *Shipper) upload(ctx context.Context, meta *block.Meta) error {
 
 // blockMetasFromOldest returns the block meta of each block found in dir
 // sorted by minTime asc.
-func (s *Shipper) blockMetasFromOldest() (metas []*block.Meta, _ error) {
+func (s *shipper) blockMetasFromOldest() (metas []*block.Meta, _ error) {
 	fis, err := os.ReadDir(s.dir)
 	if err != nil {
 		return nil, errors.Wrap(err, "read dir")
@@ -238,13 +237,12 @@ func (s *Shipper) blockMetasFromOldest() (metas []*block.Meta, _ error) {
 	return metas, nil
 }
 
-// ReadShippedBlocks returns all the shipped blocks in this directory with their shipped time.
-func ReadShippedBlocks(dir string) (map[ulid.ULID]time.Time, error) {
+func readShippedBlocks(dir string) (map[ulid.ULID]time.Time, error) {
 	meta, err := readShipperMetaFile(dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			// If the meta file doesn't exist it means the Shipper hasn't run yet.
-			meta = ShipperMeta{}
+			// If the meta file doesn't exist it means the shipper hasn't run yet.
+			meta = shipperMeta{}
 		} else {
 			return nil, err
 		}
@@ -257,23 +255,23 @@ func ReadShippedBlocks(dir string) (map[ulid.ULID]time.Time, error) {
 	return shippedBlocks, nil
 }
 
-// ShipperMeta defines the format mimir.Shipper.json file that the Shipper places in the data directory.
-type ShipperMeta struct {
+// shipperMeta defines the format mimir.shipper.json file that the shipper places in the data directory.
+type shipperMeta struct {
 	Version int                      `json:"version"`
 	Shipped map[ulid.ULID]model.Time `json:"shipped"`
 }
 
 const (
-	// ShipperMetaFilename is the known JSON filename for meta information.
-	ShipperMetaFilename = "mimir.Shipper.json"
+	// shipperMetaFilename is the known JSON filename for meta information.
+	shipperMetaFilename = "mimir.shipper.json"
 
-	// ShipperMetaVersion1 represents 1 version of meta.
-	ShipperMetaVersion1 = 1
+	// shipperMetaVersion1 represents 1 version of meta.
+	shipperMetaVersion1 = 1
 )
 
-// WriteShipperMetaFile writes the given meta into <dir>/mimir.Shipper.json.
-func WriteShipperMetaFile(logger log.Logger, dir string, meta ShipperMeta) error {
-	path := filepath.Join(dir, ShipperMetaFilename)
+// writeShipperMetaFile writes the given meta into <dir>/mimir.shipper.json.
+func writeShipperMetaFile(logger log.Logger, dir string, meta shipperMeta) error {
+	path := filepath.Join(dir, shipperMetaFilename)
 	tmp := path + ".tmp"
 
 	f, err := os.Create(tmp)
@@ -300,20 +298,20 @@ func WriteShipperMetaFile(logger log.Logger, dir string, meta ShipperMeta) error
 	return nil
 }
 
-// readShipperMetaFile reads the given meta from <dir>/mimir.Shipper.json.
-func readShipperMetaFile(dir string) (ShipperMeta, error) {
-	fpath := filepath.Join(dir, filepath.Clean(ShipperMetaFilename))
+// readShipperMetaFile reads the given meta from <dir>/mimir.shipper.json.
+func readShipperMetaFile(dir string) (shipperMeta, error) {
+	fpath := filepath.Join(dir, filepath.Clean(shipperMetaFilename))
 	b, err := os.ReadFile(fpath)
 	if err != nil {
-		return ShipperMeta{}, errors.Wrapf(err, "failed to read %s", fpath)
+		return shipperMeta{}, errors.Wrapf(err, "failed to read %s", fpath)
 	}
 
-	var m ShipperMeta
+	var m shipperMeta
 	if err := json.Unmarshal(b, &m); err != nil {
-		return ShipperMeta{}, errors.Wrapf(err, "failed to parse %s as JSON: %q", fpath, string(b))
+		return shipperMeta{}, errors.Wrapf(err, "failed to parse %s as JSON: %q", fpath, string(b))
 	}
-	if m.Version != ShipperMetaVersion1 {
-		return ShipperMeta{}, errors.Errorf("unexpected meta file version %d", m.Version)
+	if m.Version != shipperMetaVersion1 {
+		return shipperMeta{}, errors.Errorf("unexpected meta file version %d", m.Version)
 	}
 
 	return m, nil

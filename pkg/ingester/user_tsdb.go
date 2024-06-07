@@ -369,7 +369,7 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 	result := map[ulid.ULID]struct{}{}
 	deadline := time.Now().Add(-u.blockMinRetention)
 
-	// The Shipper enabled case goes first because its common in the way we run the ingesters
+	// The shipper enabled case goes first because its common in the way we run the ingesters
 	if u.shipper != nil {
 		shippedBlocks := u.getCachedShippedBlocks()
 
@@ -392,9 +392,9 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 	return result
 }
 
-// updateCachedShippedBlocks reads the Shipper meta file and updates the cached shipped blocks.
+// updateCachedShippedBlocks reads the shipper meta file and updates the cached shipped blocks.
 func (u *userTSDB) updateCachedShippedBlocks() error {
-	shippedBlocks, err := ReadShippedBlocks(u.db.Dir())
+	shippedBlocks, err := readShippedBlocks(u.db.Dir())
 	if err != nil {
 		return err
 	}

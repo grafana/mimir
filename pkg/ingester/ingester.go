@@ -307,11 +307,11 @@ type Ingester struct {
 
 	bucket objstore.Bucket
 
-	// Value used by Shipper as external label.
+	// Value used by shipper as external label.
 	shipperIngesterID string
 
 	// Metrics shared across all per-tenant shippers.
-	shipperMetrics *ShipperMetrics
+	shipperMetrics *shipperMetrics
 
 	subservicesForPartitionReplay          *services.Manager
 	subservicesAfterIngesterRingLifecycler *services.Manager
@@ -374,7 +374,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		usersMetadata:       make(map[string]*userMetricsMetadata),
 		bucket:              bucketClient,
 		tsdbMetrics:         newTSDBMetrics(registerer, logger),
-		shipperMetrics:      NewShipperMetrics(registerer, "ingester"),
+		shipperMetrics:      newShipperMetrics(registerer),
 		forceCompactTrigger: make(chan requestWithUsersAndCallback),
 		shipTrigger:         make(chan requestWithUsersAndCallback),
 		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
@@ -527,7 +527,7 @@ func (i *Ingester) startingForFlusher(ctx context.Context) error {
 		return errors.Wrap(err, "opening existing TSDBs")
 	}
 
-	// Don't start any sub-services (lifecycler, compaction, Shipper) at all.
+	// Don't start any sub-services (lifecycler, compaction, shipper) at all.
 	return nil
 }
 
@@ -2527,7 +2527,7 @@ func (i *Ingester) getOrCreateTSDB(userID string) (*userTSDB, error) {
 		}
 	}
 
-	// Create the database and a Shipper for a user
+	// Create the database and a shipper for a user
 	db, err := i.createTSDB(userID, 0)
 	if err != nil {
 		return nil, err
@@ -2651,9 +2651,9 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 	userDB.setLastUpdate(lastUpdateTime)
 
-	// Create a new Shipper for this database
+	// Create a new shipper for this database
 	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
-		userDB.shipper = NewShipper(
+		userDB.shipper = newShipper(
 			userLogger,
 			i.limits,
 			userID,
@@ -2663,9 +2663,9 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 			block.ReceiveSource,
 		)
 
-		// Initialise the Shipper blocks cache.
+		// Initialise the shipper blocks cache.
 		if err := userDB.updateCachedShippedBlocks(); err != nil {
-			level.Error(userLogger).Log("msg", "failed to update cached shipped blocks after Shipper initialisation", "err", err)
+			level.Error(userLogger).Log("msg", "failed to update cached shipped blocks after shipper initialisation", "err", err)
 		}
 	}
 
@@ -2946,7 +2946,7 @@ func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowedTenants)
 
 			deletionMarkExists, err := mimir_tsdb.TenantDeletionMarkExists(ctx, i.bucket, userID)
 			if err != nil {
-				// If we cannot check for deletion mark, we continue anyway, even though in production Shipper will likely fail too.
+				// If we cannot check for deletion mark, we continue anyway, even though in production shipper will likely fail too.
 				// This however simplifies unit tests, where tenant deletion check is enabled by default, but tests don't setup bucket.
 				level.Warn(i.logger).Log("msg", "failed to check for tenant deletion mark before shipping blocks", "user", userID, "err", err)
 			} else if deletionMarkExists {
@@ -2957,29 +2957,29 @@ func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowedTenants)
 			}
 		}
 
-		// Run the Shipper's Sync() to upload unshipped blocks. Make sure the TSDB state is active, in order to
+		// Run the shipper's Sync() to upload unshipped blocks. Make sure the TSDB state is active, in order to
 		// avoid any race condition with closing idle TSDBs.
 		if ok, s := userDB.changeState(active, activeShipping); !ok {
-			level.Info(i.logger).Log("msg", "Shipper skipped because the TSDB is not active", "user", userID, "state", s.String())
+			level.Info(i.logger).Log("msg", "shipper skipped because the TSDB is not active", "user", userID, "state", s.String())
 			return nil
 		}
 		defer userDB.changeState(activeShipping, active)
 
 		uploaded, err := userDB.shipper.Sync(ctx)
 		if err != nil {
-			level.Warn(i.logger).Log("msg", "Shipper failed to synchronize TSDB blocks with the storage", "user", userID, "uploaded", uploaded, "err", err)
+			level.Warn(i.logger).Log("msg", "shipper failed to synchronize TSDB blocks with the storage", "user", userID, "uploaded", uploaded, "err", err)
 		} else {
-			level.Debug(i.logger).Log("msg", "Shipper successfully synchronized TSDB blocks with storage", "user", userID, "uploaded", uploaded)
+			level.Debug(i.logger).Log("msg", "shipper successfully synchronized TSDB blocks with storage", "user", userID, "uploaded", uploaded)
 		}
 
-		// The Shipper meta file could be updated even if the Sync() returned an error,
+		// The shipper meta file could be updated even if the Sync() returned an error,
 		// so it's safer to update it each time at least a block has been uploaded.
-		// Moreover, the Shipper meta file could be updated even if no blocks are uploaded
+		// Moreover, the shipper meta file could be updated even if no blocks are uploaded
 		// (eg. blocks removed due to retention) but doesn't cause any harm not updating
 		// the cached list of blocks in such case, so we're not handling it.
 		if uploaded > 0 {
 			if err := userDB.updateCachedShippedBlocks(); err != nil {
-				level.Error(i.logger).Log("msg", "failed to update cached shipped blocks after Shipper synchronisation", "user", userID, "err", err)
+				level.Error(i.logger).Log("msg", "failed to update cached shipped blocks after shipper synchronisation", "user", userID, "err", err)
 			}
 		}
 

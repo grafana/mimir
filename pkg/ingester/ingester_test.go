@@ -5591,7 +5591,7 @@ func TestIngester_shipBlocks(t *testing.T) {
 		return i.lifecycler.HealthyInstancesCount()
 	})
 
-	// Create the TSDB for 3 users and then replace the Shipper with the mocked one
+	// Create the TSDB for 3 users and then replace the shipper with the mocked one
 	mocks := []*uploaderMock{}
 	for _, userID := range []string{"user-1", "user-2", "user-3"} {
 		userDB, err := i.getOrCreateTSDB(userID)
@@ -5605,7 +5605,7 @@ func TestIngester_shipBlocks(t *testing.T) {
 		userDB.shipper = m
 	}
 
-	// Ship blocks and assert on the mocked Shipper
+	// Ship blocks and assert on the mocked shipper
 	i.shipBlocks(ctx, nil)
 
 	for _, m := range mocks {
@@ -5723,16 +5723,16 @@ func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInP
 		return i.lifecycler.HealthyInstancesCount()
 	})
 
-	// Mock the Shipper to slow down Sync() execution.
+	// Mock the shipper to slow down Sync() execution.
 	s := mockUserShipper(t, i)
 	s.On("Sync", mock.Anything).Run(func(mock.Arguments) {
 		time.Sleep(3 * time.Second)
 	}).Return(0, nil)
 
-	// Mock the Shipper meta (no blocks).
+	// Mock the shipper meta (no blocks).
 	db := i.getTSDB(userID)
-	require.NoError(t, WriteShipperMetaFile(log.NewNopLogger(), db.db.Dir(), ShipperMeta{
-		Version: ShipperMetaVersion1,
+	require.NoError(t, writeShipperMetaFile(log.NewNopLogger(), db.db.Dir(), shipperMeta{
+		Version: shipperMetaVersion1,
 	}))
 
 	// Run blocks shipping in a separate go routine.
@@ -6229,7 +6229,7 @@ func TestIngester_flushing(t *testing.T) {
 				return i.lifecycler.HealthyInstancesCount()
 			})
 
-			// mock user's Shipper
+			// mock user's shipper
 			tc.action(t, i, reg)
 		})
 	}
@@ -6804,8 +6804,8 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	`, oldBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
 
 	// Saying that we have shipped the second block, so only that should get deleted.
-	require.Nil(t, WriteShipperMetaFile(nil, db.db.Dir(), ShipperMeta{
-		Version: ShipperMetaVersion1,
+	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), shipperMeta{
+		Version: shipperMetaVersion1,
 		Shipped: map[ulid.ULID]model.Time{oldBlocks[1].Meta().ULID: model.TimeFromUnixNano(time.Now().UnixNano())},
 	}))
 	require.NoError(t, db.updateCachedShippedBlocks())
@@ -6832,8 +6832,8 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	`, newBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
 
 	// Shipping 2 more blocks, hence all the blocks from first round.
-	require.Nil(t, WriteShipperMetaFile(nil, db.db.Dir(), ShipperMeta{
-		Version: ShipperMetaVersion1,
+	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), shipperMeta{
+		Version: shipperMetaVersion1,
 		Shipped: map[ulid.ULID]model.Time{
 			oldBlocks[1].Meta().ULID: model.TimeFromUnixNano(time.Now().UnixNano()),
 			newBlocks[0].Meta().ULID: model.TimeFromUnixNano(time.Now().UnixNano()),
@@ -6917,8 +6917,8 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 	`, oldBlocks[0].Meta().ULID.Time()/1000)), "cortex_ingester_oldest_unshipped_block_timestamp_seconds"))
 
 	// Lets say that the first block was shipped 2 hours ago and the second block only 30 minutes ago.
-	require.Nil(t, WriteShipperMetaFile(nil, db.db.Dir(), ShipperMeta{
-		Version: ShipperMetaVersion1,
+	require.Nil(t, writeShipperMetaFile(nil, db.db.Dir(), shipperMeta{
+		Version: shipperMetaVersion1,
 		Shipped: map[ulid.ULID]model.Time{
 			oldBlocks[0].Meta().ULID: model.TimeFromUnixNano(time.Now().Add(-2 * time.Hour).UnixNano()),
 			oldBlocks[1].Meta().ULID: model.TimeFromUnixNano(time.Now().Add(-30 * time.Minute).UnixNano()),

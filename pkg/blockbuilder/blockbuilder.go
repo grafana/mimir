@@ -182,7 +182,7 @@ func (b *BlockBuilder) stopping(_ error) error {
 		b.kafkaClient.Close()
 	}
 
-	// TODO(codesome): ship all the blocks before stopping the service
+	// TODO(codesome): wait for any active consume cycle or abort it.
 
 	return nil
 }

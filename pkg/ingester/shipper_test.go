@@ -51,11 +51,11 @@ func TestShipper(t *testing.T) {
 	logger := log.NewLogfmtLogger(logs)
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
-	s := NewShipper(logger, overrides, "", NewShipperMetrics(nil, "ingester"), blocksDir, bkt, block.TestSource)
+	s := newShipper(logger, overrides, "", newShipperMetrics(nil), blocksDir, bkt, block.TestSource)
 
-	t.Run("no Shipper file yet", func(t *testing.T) {
-		// No Shipper file = nothing is reported as shipped.
-		shipped, err := ReadShippedBlocks(blocksDir)
+	t.Run("no shipper file yet", func(t *testing.T) {
+		// No shipper file = nothing is reported as shipped.
+		shipped, err := readShippedBlocks(blocksDir)
 		require.NoError(t, err)
 		require.Empty(t, shipped)
 	})
@@ -79,7 +79,7 @@ func TestShipper(t *testing.T) {
 			Thanos: block.ThanosMeta{Labels: map[string]string{"a": "b"}},
 		})
 
-		// Let Shipper sync the blocks.
+		// Let shipper sync the blocks.
 		uploaded, err := s.Sync(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, 1, uploaded)
@@ -87,8 +87,8 @@ func TestShipper(t *testing.T) {
 		// Verify that the lastSuccessfulUploadTime was updated to within the last 2 seconds.
 		require.WithinDuration(t, time.Now(), time.UnixMilli(int64(testutil.ToFloat64(s.metrics.lastSuccessfulUploadTime)*1000)), 2*time.Second)
 
-		// Verify that Shipper has created a file for itself.
-		shipped, err := ReadShippedBlocks(blocksDir)
+		// Verify that shipper has created a file for itself.
+		shipped, err := readShippedBlocks(blocksDir)
 		require.NoError(t, err)
 		require.Len(t, shipped, 1)
 		require.Contains(t, shipped, id1)
@@ -122,8 +122,8 @@ func TestShipper(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 1, uploaded)
 
-		// Check content of Shipper file
-		shipped, err := ReadShippedBlocks(blocksDir)
+		// Check content of shipper file
+		shipped, err := readShippedBlocks(blocksDir)
 		require.NoError(t, err)
 		require.Len(t, shipped, 2)
 		require.Contains(t, shipped, id1)
@@ -193,7 +193,7 @@ func TestShipper_DeceivingUploadErrors(t *testing.T) {
 	logger := log.NewLogfmtLogger(os.Stderr)
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
-	s := NewShipper(logger, overrides, "", NewShipperMetrics(nil, "ingester"), blocksDir, bkt, block.TestSource)
+	s := newShipper(logger, overrides, "", newShipperMetrics(nil), blocksDir, bkt, block.TestSource)
 
 	// Create and upload a block
 	id1 := ulid.MustNew(1, nil)
@@ -210,12 +210,12 @@ func TestShipper_DeceivingUploadErrors(t *testing.T) {
 		Thanos: block.ThanosMeta{Labels: map[string]string{"a": "b"}},
 	})
 
-	// Let Shipper sync the blocks, expecting the meta.json upload to fail.
+	// Let shipper sync the blocks, expecting the meta.json upload to fail.
 	uploaded, err := s.Sync(context.Background())
 	require.Error(t, err)
 	require.Equal(t, 0, uploaded)
 
-	// Sync again. This time the Shipper should find the meta.json existing in the bucket and
+	// Sync again. This time the shipper should find the meta.json existing in the bucket and
 	// should report an uploaded block without retrying to upload the whole block again.
 	uploaded, err = s.Sync(context.Background())
 	require.NoError(t, err)
@@ -259,7 +259,7 @@ func TestIterBlockMetas(t *testing.T) {
 	}.WriteToDir(log.NewNopLogger(), path.Join(dir, id3.String())))
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
-	shipper := NewShipper(nil, overrides, "", NewShipperMetrics(nil, "ingester"), dir, nil, block.TestSource)
+	shipper := newShipper(nil, overrides, "", newShipperMetrics(nil), dir, nil, block.TestSource)
 	metas, err := shipper.blockMetasFromOldest()
 	require.NoError(t, err)
 	require.Equal(t, sort.SliceIsSorted(metas, func(i, j int) bool {
@@ -273,14 +273,14 @@ func TestShipperAddsSegmentFiles(t *testing.T) {
 	inmemory := objstore.NewInMemBucket()
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
-	s := NewShipper(nil, overrides, "", NewShipperMetrics(nil, "ingester"), dir, inmemory, block.TestSource)
+	s := newShipper(nil, overrides, "", newShipperMetrics(nil), dir, inmemory, block.TestSource)
 
 	id := ulid.MustNew(1, nil)
 	blockDir := path.Join(dir, id.String())
 	chunksDir := path.Join(blockDir, block.ChunksDirname)
 	require.NoError(t, os.MkdirAll(chunksDir, os.ModePerm))
 
-	// Prepare minimal "block" for Shipper (meta.json, index, one segment file).
+	// Prepare minimal "block" for shipper (meta.json, index, one segment file).
 	require.NoError(t, block.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    id,
@@ -288,7 +288,7 @@ func TestShipperAddsSegmentFiles(t *testing.T) {
 			MinTime: 1000,
 			Version: 1,
 			Stats: tsdb.BlockStats{
-				NumSamples: 1000, // Not really, but Shipper needs nonzero value.
+				NumSamples: 1000, // Not really, but shipper needs nonzero value.
 			},
 		},
 	}.WriteToDir(log.NewNopLogger(), path.Join(dir, id.String())))
@@ -417,11 +417,11 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 			}
 			overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tenantLimits))
 			require.NoError(t, err)
-			s := NewShipper(logger, overrides, "", NewShipperMetrics(nil, "ingester"), blocksDir, bkt, block.TestSource)
+			s := newShipper(logger, overrides, "", newShipperMetrics(nil), blocksDir, bkt, block.TestSource)
 
 			createBlock(t, blocksDir, tc.meta.ULID, tc.meta)
 
-			// Let Shipper sync the blocks.
+			// Let shipper sync the blocks.
 			uploaded, err := s.Sync(context.Background())
 			require.NoError(t, err)
 			require.Equal(t, 1, uploaded)
