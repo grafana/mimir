@@ -528,11 +528,12 @@ func shardVectorSelector(curshard, shards int, selector *parser.VectorSelector) 
 		return nil, err
 	}
 	return &parser.VectorSelector{
-		Name:           selector.Name,
-		Offset:         selector.Offset,
-		OriginalOffset: selector.OriginalOffset,
-		Timestamp:      copyTimestamp(selector.Timestamp),
-		StartOrEnd:     selector.StartOrEnd,
+		Name:                 selector.Name,
+		Offset:               selector.Offset,
+		OriginalOffset:       selector.OriginalOffset,
+		Timestamp:            copyTimestamp(selector.Timestamp),
+		SkipHistogramBuckets: selector.SkipHistogramBuckets,
+		StartOrEnd:           selector.StartOrEnd,
 		LabelMatchers: append(
 			[]*labels.Matcher{shardMatcher},
 			selector.LabelMatchers...,
