@@ -32,7 +32,12 @@ type queueBroker struct {
 	additionalQueueDimensionsEnabled bool
 }
 
-func newQueueBroker(maxTenantQueueSize int, additionalQueueDimensionsEnabled bool, forgetDelay time.Duration) *queueBroker {
+func newQueueBroker(
+	maxTenantQueueSize int,
+	additionalQueueDimensionsEnabled bool,
+	prioritizeQueryComponents bool,
+	forgetDelay time.Duration,
+) *queueBroker {
 	currentQuerier := QuerierID("")
 	tqas := &tenantQuerierAssignments{
 		queriersByID:       map[QuerierID]*querierConn{},
@@ -45,12 +50,22 @@ func newQueueBroker(maxTenantQueueSize int, additionalQueueDimensionsEnabled boo
 		tenantOrderIndex:   localQueueIndex - 1,
 	}
 
-	// TODO (casie): Maybe set this using a flag, so we can also change how we build queue path accordingly
+	// If prioritizeQueryComponents is true, the queueTree will be created
+	// with query components at one level above tenants; if it is false,
+	// tenant nodes will each maintain their own query component subtree.
 	tree, err := NewTree(
 		tqas,               // root
-		&roundRobinState{}, // tenants
+		&roundRobinState{}, // tenant queues
 		&roundRobinState{}, // query components
 	)
+	if prioritizeQueryComponents {
+		tree, err = NewTree(
+			&roundRobinState{}, // root
+			tqas,               // query components
+			&roundRobinState{}, // tenant queues
+		)
+	}
+
 	// An error building the tree is fatal; we must panic
 	if err != nil {
 		panic(fmt.Sprintf("error creating the tree queue: %v", err))
@@ -89,7 +104,7 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 		}
 	}
 
-	err = qb.queueTree.rootNode.enqueueBackByPath(qb.queueTree, queuePath, request)
+	err = qb.queueTree.EnqueueBackByPath(queuePath, request)
 	return err
 }
 
@@ -108,7 +123,7 @@ func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQuer
 	if err != nil {
 		return err
 	}
-	return qb.queueTree.rootNode.enqueueFrontByPath(qb.queueTree, queuePath, request)
+	return qb.queueTree.EnqueueFrontByPath(queuePath, request)
 }
 
 func (qb *queueBroker) makeQueuePath(request *tenantRequest) (QueuePath, error) {

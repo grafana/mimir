@@ -95,6 +95,7 @@ type connectedFrontend struct {
 type Config struct {
 	MaxOutstandingPerTenant               int           `yaml:"max_outstanding_requests_per_tenant"`
 	AdditionalQueryQueueDimensionsEnabled bool          `yaml:"additional_query_queue_dimensions_enabled" category:"experimental"`
+	PrioritizeQueryComponentsEnabled      bool          `yaml:"prioritize_query_components_enabled" category:"experimental"`
 	QuerierForgetDelay                    time.Duration `yaml:"querier_forget_delay" category:"experimental"`
 
 	GRPCClientConfig grpcclient.Config         `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
@@ -160,6 +161,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		s.log,
 		cfg.MaxOutstandingPerTenant,
 		cfg.AdditionalQueryQueueDimensionsEnabled,
+		cfg.PrioritizeQueryComponentsEnabled,
 		cfg.QuerierForgetDelay,
 		s.queueLength,
 		s.discardedRequests,

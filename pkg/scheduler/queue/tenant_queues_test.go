@@ -24,11 +24,10 @@ import (
 
 func (qb *queueBroker) enqueueObjectsForTests(tenantID TenantID, numObjects int) error {
 	for i := 0; i < numObjects; i++ {
-		err := qb.queueTree.rootNode.enqueueBackByPath(qb.queueTree, QueuePath{string(tenantID)}, &tenantRequest{
+		err := qb.queueTree.EnqueueBackByPath(QueuePath{string(tenantID)}, &tenantRequest{
 			tenantID: tenantID,
 			req:      fmt.Sprintf("%v: object-%v", tenantID, i),
 		})
-		fmt.Println(i)
 		if err != nil {
 			return err
 		}
@@ -63,7 +62,7 @@ func assertExpectedValuesOnDequeue(t *testing.T, qb *queueBroker, lastTenantInde
 }
 
 func TestQueues(t *testing.T) {
-	qb := newQueueBroker(0, true, 0)
+	qb := newQueueBroker(0, true, false, 0)
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 
@@ -194,7 +193,7 @@ func TestQueues(t *testing.T) {
 
 func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	maxTenantQueueSize := 100
-	qb := newQueueBroker(maxTenantQueueSize, true, 0)
+	qb := newQueueBroker(maxTenantQueueSize, true, false, 0)
 	additionalQueueDimensions := map[int][]string{
 		0: nil,
 		1: {"ingester"},
@@ -255,7 +254,7 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 }
 
 func TestQueuesOnTerminatingQuerier(t *testing.T) {
-	qb := newQueueBroker(0, true, 0)
+	qb := newQueueBroker(0, true, false, 0)
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 
@@ -326,7 +325,7 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 }
 
 func TestQueuesWithQueriers(t *testing.T) {
-	qb := newQueueBroker(0, true, 0)
+	qb := newQueueBroker(0, true, false, 0)
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 
@@ -402,7 +401,7 @@ func TestQueuesConsistency(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			qb := newQueueBroker(0, true, testData.forgetDelay)
+			qb := newQueueBroker(0, true, false, testData.forgetDelay)
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
@@ -453,7 +452,7 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	)
 
 	now := time.Now()
-	qb := newQueueBroker(0, true, forgetDelay)
+	qb := newQueueBroker(0, true, false, forgetDelay)
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 
@@ -550,7 +549,7 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 	)
 
 	now := time.Now()
-	qb := newQueueBroker(0, true, forgetDelay)
+	qb := newQueueBroker(0, true, false, forgetDelay)
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 
