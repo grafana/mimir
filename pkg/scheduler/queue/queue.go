@@ -355,7 +355,7 @@ func (q *RequestQueue) trySendNextRequestForQuerier(waitingConn *waitingQuerierC
 			queryComponentName := schedulerRequest.ExpectedQueryComponentName()
 			exceedsThreshold, queryComponent := q.QueryComponentUtilization.ExceedsThresholdForComponentName(
 				queryComponentName,
-				q.connectedQuerierWorkers.Load(),
+				int(q.connectedQuerierWorkers.Load()),
 				q.queueBroker.tenantQueuesTree.ItemCount(),
 				q.waitingQuerierConnsToDispatch.Len(),
 			)
@@ -472,7 +472,6 @@ func (q *RequestQueue) GetConnectedQuerierWorkersMetric() float64 {
 
 func (q *RequestQueue) forgetDisconnectedQueriers(_ context.Context) error {
 	q.submitQuerierOperation("", forgetDisconnected)
-
 	return nil
 }
 
