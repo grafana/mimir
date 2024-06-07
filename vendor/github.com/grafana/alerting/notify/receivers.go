@@ -32,6 +32,7 @@ import (
 	"github.com/grafana/alerting/receivers/pushover"
 	"github.com/grafana/alerting/receivers/sensugo"
 	"github.com/grafana/alerting/receivers/slack"
+	"github.com/grafana/alerting/receivers/sns"
 	"github.com/grafana/alerting/receivers/teams"
 	"github.com/grafana/alerting/receivers/telegram"
 	"github.com/grafana/alerting/receivers/threema"
@@ -347,6 +348,7 @@ type GrafanaReceiverConfig struct {
 	PushoverConfigs     []*NotifierConfig[pushover.Config]
 	SensugoConfigs      []*NotifierConfig[sensugo.Config]
 	SlackConfigs        []*NotifierConfig[slack.Config]
+	SNSConfigs          []*NotifierConfig[sns.Config]
 	TeamsConfigs        []*NotifierConfig[teams.Config]
 	TelegramConfigs     []*NotifierConfig[telegram.Config]
 	ThreemaConfigs      []*NotifierConfig[threema.Config]
@@ -485,6 +487,12 @@ func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver 
 			return err
 		}
 		result.SlackConfigs = append(result.SlackConfigs, newNotifierConfig(receiver, cfg))
+	case "sns":
+		cfg, err := sns.NewConfig(receiver.Settings, decryptFn)
+		if err != nil {
+			return err
+		}
+		result.SNSConfigs = append(result.SNSConfigs, newNotifierConfig(receiver, cfg))
 	case "teams":
 		cfg, err := teams.NewConfig(receiver.Settings)
 		if err != nil {

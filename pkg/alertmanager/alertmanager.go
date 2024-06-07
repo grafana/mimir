@@ -491,7 +491,7 @@ func buildGrafanaReceiverIntegrations(rcv *definition.PostableApiReceiver, tmpl 
 
 	// The decrypt functions and the context are used to decrypt the configuration.
 	// We don't need to decrypt anything, so we can pass a no-op decrypt func and a context.Background().
-	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), definition.PostableAPIReceiverToAPIReceiver(rcv), alertingNotify.NoopDecrypt)
+	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), alertingNotify.NoopDecrypt)
 	if err != nil {
 		return nil, err
 	}
