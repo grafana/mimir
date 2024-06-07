@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/mitchellh/colorstring"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	yaml "gopkg.in/yaml.v3"
 
@@ -134,11 +135,12 @@ func CompareGroups(groupOne, groupTwo rwrulefmt.RuleGroup) error {
 		return errDiffRWConfigs
 	}
 
-	if ((groupOne.EvaluationDelay == nil) != (groupTwo.EvaluationDelay == nil)) || (groupOne.EvaluationDelay != nil && groupTwo.EvaluationDelay != nil && *groupOne.EvaluationDelay != *groupTwo.EvaluationDelay) {
+	//nolint:staticcheck // We want to intentionally access a deprecated field
+	if getEvaluationDelayOrQueryOffsetValue(groupOne.EvaluationDelay) != getEvaluationDelayOrQueryOffsetValue(groupTwo.EvaluationDelay) {
 		return errDiffEvaluationDelay
 	}
 
-	if ((groupOne.QueryOffset == nil) != (groupTwo.QueryOffset == nil)) || (groupOne.QueryOffset != nil && groupTwo.QueryOffset != nil && *groupOne.QueryOffset != *groupTwo.QueryOffset) {
+	if getEvaluationDelayOrQueryOffsetValue(groupOne.QueryOffset) != getEvaluationDelayOrQueryOffsetValue(groupTwo.QueryOffset) {
 		return errDiffQueryOffset
 	}
 
@@ -329,4 +331,14 @@ func PrintComparisonResult(results []NamespaceChange, verbose bool) error {
 	fmt.Println()
 	fmt.Printf("Diff Summary: %v Groups Created, %v Groups Updated, %v Groups Deleted\n", created, updated, deleted)
 	return nil
+}
+
+func getEvaluationDelayOrQueryOffsetValue(value *model.Duration) model.Duration {
+	if value == nil {
+		// Mimir ruler considers a value of 0 as if the EvaluationDelay has not been set (nil),
+		// so when we compare the configured value we consider nil as 0.
+		return 0
+	}
+
+	return *value
 }

@@ -390,6 +390,22 @@ func TestCompareGroups(t *testing.T) {
 			},
 		},
 		{
+			name: "evaluation delay is set only in one rule group but with zero value (in Mimir ruler we treat it as not being set)",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:  "example_group",
+					Rules: []rulefmt.RuleNode{ruleOne},
+				},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:            "example_group",
+					EvaluationDelay: pointerOf[model.Duration](model.Duration(0)),
+					Rules:           []rulefmt.RuleNode{ruleOne},
+				},
+			},
+		},
+		{
 			name: "query offset is set only in one of the two rule groups",
 			groupOne: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
@@ -437,6 +453,22 @@ func TestCompareGroups(t *testing.T) {
 				RuleGroup: rulefmt.RuleGroup{
 					Name:        "example_group",
 					QueryOffset: pointerOf[model.Duration](model.Duration(5 * time.Minute)),
+					Rules:       []rulefmt.RuleNode{ruleOne},
+				},
+			},
+		},
+		{
+			name: "query offset is set only in one rule group but with zero value (in Mimir ruler we treat it as not being set)",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:  "example_group",
+					Rules: []rulefmt.RuleNode{ruleOne},
+				},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:        "example_group",
+					QueryOffset: pointerOf[model.Duration](model.Duration(0)),
 					Rules:       []rulefmt.RuleNode{ruleOne},
 				},
 			},
