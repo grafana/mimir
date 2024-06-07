@@ -10,7 +10,7 @@ ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
 RUN apt-get update && apt-get install -y curl python3-requests python3-yaml file jq zip unzip protobuf-compiler libprotobuf-dev shellcheck libpcap-dev $SKOPEO_DEPS && \
-	rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 RUN go install golang.org/x/tools/cmd/goimports@3fce476f0a782aeb5034d592c189e63be4ba6c9e
 RUN curl -sL https://deb.nodesource.com/setup_20.x | bash -
 RUN apt-get install -y nodejs && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
@@ -20,27 +20,27 @@ RUN npm install -g prettier@2.3.2
 ENV SHFMT_VERSION=3.2.4
 RUN GOARCH=$(go env GOARCH) && \
 	if [ "$GOARCH" = "amd64" ]; then \
-	DIGEST=3f5a47f8fec27fae3e06d611559a2063f5d27e4b9501171dde9959b8c60a3538; \
-	elif [ "$GOARCH" = "arm64" ]; then \
-	DIGEST=6474d9cc08a1c9fe2ef4be7a004951998e3067d46cf55a011ddd5ff7bfab3de6; \
-	fi && \
-	URL=https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_${GOARCH}; \
-	curl -fsSLo shfmt "${URL}" && \
+    	DIGEST=3f5a47f8fec27fae3e06d611559a2063f5d27e4b9501171dde9959b8c60a3538; \
+    elif [ "$GOARCH" = "arm64" ]; then \
+    	DIGEST=6474d9cc08a1c9fe2ef4be7a004951998e3067d46cf55a011ddd5ff7bfab3de6; \
+    fi && \
+    URL=https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_${GOARCH}; \
+    curl -fsSLo shfmt "${URL}" && \
 	echo "$DIGEST shfmt" | sha256sum -c && \
 	chmod +x shfmt && \
 	mv shfmt /usr/bin
 
 ENV TANKA_VERSION=0.26.0
 RUN GOARCH=$(go env GOARCH) && \
-	curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/v${TANKA_VERSION}/tk-linux-${GOARCH}" && \
-	chmod a+x /usr/bin/tk
+    curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/v${TANKA_VERSION}/tk-linux-${GOARCH}" && \
+    chmod a+x /usr/bin/tk
 
 RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v1.54.1
 
 ENV SKOPEO_VERSION=v1.10.0
 RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers/skopeo /go/src/github.com/containers/skopeo && \
-	DISABLE_DOCS=1 make -C /go/src/github.com/containers/skopeo install && \
-	rm -rf /go/pkg /go/src /root/.cache
+    DISABLE_DOCS=1 make -C /go/src/github.com/containers/skopeo install && \
+    rm -rf /go/pkg /go/src /root/.cache
 
 RUN GO111MODULE=on \
 	go install github.com/client9/misspell/cmd/misspell@v0.3.4 && \
@@ -68,5 +68,5 @@ ENTRYPOINT ["/build.sh"]
 
 ARG revision
 LABEL org.opencontainers.image.title="mimir-build-image" \
-	org.opencontainers.image.source="https://github.com/grafana/mimir/tree/main/mimir-build-image" \
-	org.opencontainers.image.revision="${revision}"
+      org.opencontainers.image.source="https://github.com/grafana/mimir/tree/main/mimir-build-image" \
+      org.opencontainers.image.revision="${revision}"
