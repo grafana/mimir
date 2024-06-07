@@ -256,6 +256,9 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
+// Using a fork of Prometheus common until https://github.com/prometheus/common/pull/651 is merged.
+replace github.com/prometheus/common => github.com/pracucci/prometheus-common v0.54.1-0.20240607143336-d310c4aff49a
+
 // Using a fork of Prometheus with Mimir-specific changes.
 replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240607080100-fce8e33d8a64
 
