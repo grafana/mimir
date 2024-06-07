@@ -7,7 +7,6 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/atomic"
 )
 
 type QueryComponent string
@@ -53,9 +52,9 @@ type QueryComponentUtilization struct {
 	// for queries to the less-loaded query component when the query queue becomes backlogged.
 	targetReservedCapacity float64
 
-	ingesterInflightRequests     *atomic.Int64
-	storeGatewayInflightRequests *atomic.Int64
-	querierInflightRequestsTotal *atomic.Int64
+	ingesterInflightRequests     int
+	storeGatewayInflightRequests int
+	querierInflightRequestsTotal int
 
 	querierInflightRequestsGauge *prometheus.GaugeVec
 }
@@ -84,9 +83,9 @@ func NewQueryComponentUtilization(
 	return &QueryComponentUtilization{
 		targetReservedCapacity: targetReservedCapacity,
 
-		ingesterInflightRequests:     atomic.NewInt64(0),
-		storeGatewayInflightRequests: atomic.NewInt64(0),
-		querierInflightRequestsTotal: atomic.NewInt64(0),
+		ingesterInflightRequests:     0,
+		storeGatewayInflightRequests: 0,
+		querierInflightRequestsTotal: 0,
 
 		querierInflightRequestsGauge: querierInflightRequests,
 	}, nil
@@ -113,7 +112,7 @@ func NewQueryComponentUtilization(
 // As the inflight queries complete or fail, the component's utilization will naturally decrease.
 // This method will continue to indicate to skip queries for the component until it is back under the threshold.
 func (qcl *QueryComponentUtilization) ExceedsThresholdForComponentName(
-	name string, connectedWorkers int64, queueLen, waitingWorkers int,
+	name string, connectedWorkers, queueLen, waitingWorkers int,
 ) (bool, QueryComponent) {
 	if waitingWorkers > queueLen {
 		// excess querier-worker capacity; no need to reserve any for now
@@ -125,10 +124,10 @@ func (qcl *QueryComponentUtilization) ExceedsThresholdForComponentName(
 	}
 
 	// allow the functionality to be turned off via setting targetReservedCapacity to 0
-	minReservedConnections := int64(0)
+	minReservedConnections := 0
 	if qcl.targetReservedCapacity > 0 {
 		// reserve at least one connection in case (connected workers) * (reserved capacity) is less than one
-		minReservedConnections = int64(
+		minReservedConnections = int(
 			math.Ceil(
 				math.Max(qcl.targetReservedCapacity*float64(connectedWorkers), 1),
 			),
@@ -137,12 +136,12 @@ func (qcl *QueryComponentUtilization) ExceedsThresholdForComponentName(
 
 	isIngester, isStoreGateway := queryComponentFlags(name)
 	if isIngester {
-		if connectedWorkers-(qcl.ingesterInflightRequests.Load()) <= minReservedConnections {
+		if connectedWorkers-(qcl.ingesterInflightRequests) <= minReservedConnections {
 			return true, Ingester
 		}
 	}
 	if isStoreGateway {
-		if connectedWorkers-(qcl.storeGatewayInflightRequests.Load()) <= minReservedConnections {
+		if connectedWorkers-(qcl.storeGatewayInflightRequests) <= minReservedConnections {
 			return true, StoreGateway
 		}
 	}
@@ -159,16 +158,28 @@ func (qcl *QueryComponentUtilization) DecrementForComponentName(expectedQueryCom
 	qcl.updateForComponentName(expectedQueryComponent, -1)
 }
 
-func (qcl *QueryComponentUtilization) updateForComponentName(expectedQueryComponent string, increment int64) {
+func (qcl *QueryComponentUtilization) updateForComponentName(expectedQueryComponent string, increment int) {
 	isIngester, isStoreGateway := queryComponentFlags(expectedQueryComponent)
 
 	if isIngester {
-		qcl.ingesterInflightRequests.Add(increment)
+		qcl.ingesterInflightRequests += increment
 		qcl.querierInflightRequestsGauge.WithLabelValues(string(Ingester)).Add(float64(increment))
 	}
 	if isStoreGateway {
-		qcl.storeGatewayInflightRequests.Add(increment)
+		qcl.storeGatewayInflightRequests += increment
 		qcl.querierInflightRequestsGauge.WithLabelValues(string(StoreGateway)).Add(float64(increment))
 	}
-	qcl.querierInflightRequestsTotal.Add(increment)
+	qcl.querierInflightRequestsTotal += increment
+}
+
+// GetForComponent is a test-only util
+func (qcl *QueryComponentUtilization) GetForComponent(component QueryComponent) int {
+	switch component {
+	case Ingester:
+		return qcl.ingesterInflightRequests
+	case StoreGateway:
+		return qcl.storeGatewayInflightRequests
+	default:
+		return 0
+	}
 }

@@ -59,9 +59,9 @@ func randAdditionalQueueDimension(allowEmpty bool) []string {
 // used by the queue mechanics, in order get a more meaningful % delta between competing queue implementations.
 func makeSchedulerRequest(tenantID string, additionalQueueDimensions []string) *SchedulerRequest {
 	return &SchedulerRequest{
-		Ctx:             context.Background(),
-		FrontendAddress: "http://query-frontend:8007",
-		UserID:          tenantID,
+		Ctx:          context.Background(),
+		FrontendAddr: "http://query-frontend:8007",
+		UserID:       tenantID,
 		Request: &httpgrpc.HTTPRequest{
 			Method: "GET",
 			Headers: []*httpgrpc.Header{
