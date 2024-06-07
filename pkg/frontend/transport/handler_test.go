@@ -95,6 +95,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 		expectedActivity        string
 		expectedReadConsistency string
 		assertHeaders           func(t *testing.T, headers http.Header)
+		expectedExtraStatsHeader string
 	}{
 		{
 			name: "handler with stats enabled, POST request with params",
@@ -118,6 +119,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			expectedMetrics:         5,
 			expectedActivity:        "user:12345 UA:test-user-agent req:POST /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: "",
+			expectedExtraStatsHeader: "fetched_chunk_bytes=0",
 		},
 		{
 			name: "handler with stats enabled, GET request with params",
@@ -136,6 +138,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			expectedMetrics:         5,
 			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: "",
+			expectedExtraStatsHeader: "fetched_chunk_bytes=0",
 		},
 		{
 			name: "handler with stats enabled, GET request with params and read consistency specified",
@@ -154,6 +157,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			expectedMetrics:         5,
 			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: api.ReadConsistencyStrong,
+			expectedExtraStatsHeader: "fetched_chunk_bytes=0",
 		},
 		{
 			name: "handler with stats enabled, GET request without params",
@@ -169,6 +173,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			expectedMetrics:         5,
 			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query (no params)",
 			expectedReadConsistency: "",
+			expectedExtraStatsHeader: "fetched_chunk_bytes=0",
 		},
 		{
 			name: "handler with stats disabled, GET request with params",
@@ -341,6 +346,12 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			handler.ServeHTTP(resp, req)
 			responseData, _ := io.ReadAll(resp.Body)
 			require.Equal(t, tt.expectedStatusCode, resp.Code)
+
+			if tt.expectedExtraStatsHeader == "" {
+				assert.NotContains(t, resp.Header(), "X-Mimir-Query-Stats")
+			} else {
+				assert.Equal(t, tt.expectedExtraStatsHeader, resp.Header().Get("X-Mimir-Query-Stats"))
+			}
 
 			count, err := promtest.GatherAndCount(
 				reg,
