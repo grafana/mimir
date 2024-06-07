@@ -258,7 +258,7 @@ require (
 
 // Using a fork until the following is merged:
 // - https://github.com/prometheus/common/pull/650
-replace github.com/prometheus/common => github.com/pracucci/prometheus-common v0.20.1-0.20240607092730-43e45c34b388
+replace github.com/prometheus/common => github.com/pracucci/prometheus-common v0.54.1-0.20240607092730-43e45c34b388
 
 // Using a fork of Prometheus with Mimir-specific changes.
 replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240607080100-fce8e33d8a64
