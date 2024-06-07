@@ -15,6 +15,7 @@
 * [CHANGE] Clamp [`GOMAXPROCS`](https://pkg.go.dev/runtime#GOMAXPROCS) to [`runtime.NumCPU`](https://pkg.go.dev/runtime#NumCPU). #8201
 * [CHANGE] Added new metric `cortex_compactor_disk_out_of_space_errors_total` which counts how many times a compaction failed due to the compactor being out of disk. #8237
 * [CHANGE] Anonymous usage statistics tracking: report active series in addition to in-memory series. #8279
+* [CHANGE] Ruler: `evaluation_delay` field in the rule group configuration has been deprecated. Please use `query_offset` instead (it has the same exact meaning and behaviour). #8295
 * [FEATURE] Continuous-test: now runable as a module with `mimir -target=continuous-test`. #7747
 * [FEATURE] Store-gateway: Allow specific tenants to be enabled or disabled via `-store-gateway.enabled-tenants` or `-store-gateway.disabled-tenants` CLI flags or their corresponding YAML settings. #7653
 * [FEATURE] New `-<prefix>.s3.bucket-lookup-type` flag configures lookup style type, used to access bucket in s3 compatible providers. #7684
@@ -86,6 +87,7 @@
 * [BUGFIX] Store-gateway: Allow long-running index scans to be interrupted. #8154
 * [BUGFIX] Query-frontend: fix splitting of queries using `@ start()` and `@end()` modifiers on a subquery. Previously the `start()` and `end()` would be evaluated using the start end end of the split query instead of the original query. #8162
 * [BUGFIX] Distributor: Don't discard time series with invalid exemplars, just drop affected exemplars. #8224
+* [BUGFIX] Ingester: fixed in-memory series count when replaying a corrupted WAL. #8295
 
 ### Mixin
 

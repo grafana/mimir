@@ -212,3 +212,8 @@ The following features or configuration parameters are currently deprecated and 
   - `-ingester.client.report-grpc-codes-in-instrumentation-label-enabled`
 - Mimirtool
   - the flag `--rule-files`
+
+The following features or configuration parameters are currently deprecated and will be **removed in a future release (to be announced)**:
+
+- Rule group configuration file
+  - `evaluation_delay` field: use `query_offset` instead
