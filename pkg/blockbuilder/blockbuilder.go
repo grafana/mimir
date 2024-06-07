@@ -38,6 +38,12 @@ type BlockBuilder struct {
 
 	assignmentMu sync.Mutex
 	assignment   map[string][]int32
+
+	// forceConsumeC is only used for testing at the moment.
+	// Since the block builder consumes kafka in cycles based on wall clock, it
+	// is hard to test it deterministically. This ticker can be used to trigger
+	// a consumption of kafka partitions at a specific time.
+	forceConsumeC chan time.Time
 }
 
 func New(
@@ -47,10 +53,11 @@ func New(
 	limits *validation.Overrides,
 ) (_ *BlockBuilder, err error) {
 	b := &BlockBuilder{
-		cfg:      cfg,
-		logger:   logger,
-		register: reg,
-		limits:   limits,
+		cfg:           cfg,
+		logger:        logger,
+		register:      reg,
+		limits:        limits,
+		forceConsumeC: make(chan time.Time),
 	}
 
 	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorageConfig.Bucket, "ingester", logger, reg)
@@ -190,7 +197,7 @@ func (b *BlockBuilder) stopping(_ error) error {
 func (b *BlockBuilder) running(ctx context.Context) error {
 	// Do initial consumption on start using current time as the point up to which we are consuming.
 	// To avoid small blocks at startup, we consume until the last hour boundary + buffer.
-	consumptionItvl := time.Hour
+	consumptionItvl := 1 * time.Hour // Note: This has moved to a config in another PR
 	timeBuffer := 15 * time.Minute
 	mark := time.Now().Truncate(consumptionItvl).Add(timeBuffer)
 	if mark.After(time.Now()) {
@@ -219,9 +226,20 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 				// TODO(codesome): track "-waitTime", which is the time we ran over. Or something better that lets us alert
 				// if it goes beyond a certain point consistently.
 			}
+		case mark := <-b.forceConsumeC:
+			_ = b.nextConsumeCycle(ctx, mark)
 		case <-ctx.Done():
 			return nil
 		}
+	}
+}
+
+func (b *BlockBuilder) triggerForceConsume(t time.Time) bool {
+	select {
+	case b.forceConsumeC <- t:
+		return true
+	default:
+		return false
 	}
 }
 

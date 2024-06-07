@@ -26,6 +26,41 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+func createWriteRequest(t *testing.T, samples []mimirpb.Sample, histograms []mimirpb.Histogram) []byte {
+	req := mimirpb.WriteRequest{}
+
+	var seriesValue string
+	if len(histograms) > 0 {
+		seriesValue = "histogram"
+	} else {
+		seriesValue = "float"
+	}
+	req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{
+		TimeSeries: &mimirpb.TimeSeries{
+			Labels: []mimirpb.LabelAdapter{
+				{Name: "foo", Value: seriesValue},
+			},
+			Samples:    samples,
+			Histograms: histograms,
+		},
+	})
+
+	data, err := req.Marshal()
+	require.NoError(t, err)
+
+	return data
+}
+
+func floatSample(ts int64) []mimirpb.Sample {
+	return []mimirpb.Sample{{TimestampMs: ts, Value: float64(ts)}}
+}
+
+func histogramSample(ts int64) []mimirpb.Histogram {
+	return []mimirpb.Histogram{
+		mimirpb.FromHistogramToHistogramProto(ts, test.GenerateTestHistogram(int(ts))),
+	}
+}
+
 func TestTSDBBuilder(t *testing.T) {
 	limits := defaultLimitsTestConfig()
 	limits.OutOfOrderTimeWindow = 2 * model.Duration(time.Hour)
@@ -40,42 +75,24 @@ func TestTSDBBuilder(t *testing.T) {
 
 	// val is int64 to make calling this function concise.
 	createRequest := func(ts int64, accepted, isHistogram bool) *kgo.Record {
-		var rec kgo.Record
-		rec.Key = []byte(userID)
-
-		req := mimirpb.WriteRequest{}
-
 		var samples []mimirpb.Sample
 		var histograms []mimirpb.Histogram
-		var seriesValue string
 		if isHistogram {
-			seriesValue = "histogram"
-			histograms = []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(ts, test.GenerateTestHistogram(int(ts)))}
+			histograms = histogramSample(ts)
 			if accepted {
 				histograms[0].ResetHint = 0
 				expHistograms = append(expHistograms, histograms[0])
 			}
 		} else {
-			seriesValue = "float"
-			samples = []mimirpb.Sample{{TimestampMs: ts, Value: float64(ts)}}
+			samples = floatSample(ts)
 			if accepted {
 				expSamples = append(expSamples, samples[0])
 			}
 		}
-		req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{
-			TimeSeries: &mimirpb.TimeSeries{
-				Labels: []mimirpb.LabelAdapter{
-					{Name: "foo", Value: seriesValue},
-				},
-				Samples:    samples,
-				Histograms: histograms,
-			},
-		})
 
-		data, err := req.Marshal()
-		require.NoError(t, err)
-		rec.Value = data
-
+		var rec kgo.Record
+		rec.Key = []byte(userID)
+		rec.Value = createWriteRequest(t, samples, histograms)
 		return &rec
 	}
 	addFloatSample := func(builder *tsdbBuilder, ts int64, lastEnd, currEnd int64, recordProcessedBefore, accepted bool) {
