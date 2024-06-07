@@ -38,6 +38,7 @@ func setupGrpc(t testing.TB) (*mockServer, *grpc.ClientConn) {
 		_ = server.Serve(l)
 	}()
 
+	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	c, err := grpc.Dial(l.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	t.Cleanup(func() {
