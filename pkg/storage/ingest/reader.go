@@ -212,7 +212,7 @@ func (r *PartitionReader) processNextFetchesUntilMaxLagHonored(ctx context.Conte
 		MaxRetries: 0, // retry forever
 	})
 
-	fetcher, err := newConcurrentFetchers(ctx, r.client, r.logger, r.reg, r.kafkaCfg.Topic, r.partitionID, startOffset, r.kafkaCfg.ReplayConcurrency)
+	fetcher, err := newConcurrentFetchers(ctx, r.client, r.logger, r.reg, r.kafkaCfg.Topic, r.partitionID, startOffset, r.kafkaCfg.ReplayConcurrency, &r.metrics)
 	if err != nil {
 		return errors.Wrap(err, "creating fetcher")
 	}
@@ -632,6 +632,7 @@ type concurrentFetchers struct {
 	partitionID int32
 	topicID     [16]byte
 	topicName   string
+	metrics     *readerMetrics
 
 	concurrency            int
 	nextFetchOffset        int64
@@ -642,13 +643,14 @@ type concurrentFetchers struct {
 }
 
 // newConcurrentFetchers creates a new concurrentFetchers. startOffset can be kafkaOffsetStart, kafkaOffsetEnd or a specific offset.
-func newConcurrentFetchers(ctx context.Context, client *kgo.Client, logger log.Logger, reg prometheus.Registerer, topic string, partition int32, startOffset int64, concurrency int) (*concurrentFetchers, error) {
+func newConcurrentFetchers(ctx context.Context, client *kgo.Client, logger log.Logger, reg prometheus.Registerer, topic string, partition int32, startOffset int64, concurrency int, metrics *readerMetrics) (*concurrentFetchers, error) {
 	f := &concurrentFetchers{
 		client:         client,
 		logger:         logger,
 		concurrency:    concurrency,
 		topicName:      topic,
 		partitionID:    partition,
+		metrics:        metrics,
 		orderedFetches: make(chan kgo.FetchPartition, 1),
 		fetchesCompressedBytes: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_fetches_compressed_bytes_total",
@@ -678,7 +680,14 @@ func newConcurrentFetchers(ctx context.Context, client *kgo.Client, logger log.L
 	return f, nil
 }
 
-func (r *concurrentFetchers) pollFetches(ctx context.Context) kgo.Fetches {
+func (r *concurrentFetchers) pollFetches(ctx context.Context) (result kgo.Fetches) {
+	defer func(start time.Time) {
+		r.metrics.fetchWaitDuration.Observe(time.Since(start).Seconds())
+		result.EachRecord(func(record *kgo.Record) {
+			r.metrics.fetchedBytes.Add(float64(len(record.Value))) // TODO dimitarvdimitrov make sure we're not conflicting with the actual client; perhaps disable metrics there and just use our own
+		})
+	}(time.Now())
+
 	select {
 	case <-ctx.Done():
 		return kgo.Fetches{}
@@ -765,24 +774,29 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 	wants := make(chan fetchWant)
 	defer close(wants)
 
-	results := make(chan chan kgo.FetchPartition, r.concurrency)
+	defer level.Info(r.logger).Log("msg", "done running fetchers")
+	results := make(chan chan kgo.FetchPartition, r.concurrency+1)
 	for i := 0; i < r.concurrency; i++ {
 		go func() {
-			r.logger.Log("msg", "starting fetcher")
+			level.Info(r.logger).Log("msg", "starting fetcher")
+			defer level.Info(r.logger).Log("msg", "done with fetcher")
 			for w := range wants {
 				boff := backoff.New(ctx, backoff.Config{
 					MinBackoff: 250 * time.Millisecond,
 					MaxBackoff: 2 * time.Second,
 					MaxRetries: 0, // retry forever
 				})
-				r.logger.Log("msg", "starting to fetch", "start_offset", w.startOffset, "end_offset", w.endOffset)
+				level.Info(r.logger).Log("msg", "starting to fetch", "start_offset", w.startOffset, "end_offset", w.endOffset)
 				for boff.Ongoing() && w.endOffset > w.startOffset {
 					f := r.fetchSingle(ctx, w)
 					if len(f.Records) == 0 {
+						boff.Wait()
 						continue
 					}
+					boff.Reset()
 					lastOffset := f.Records[len(f.Records)-1].Offset
 					w.startOffset = lastOffset + 1
+					level.Info(r.logger).Log("msg", "received records", "new_start_offset", w.startOffset, "new_end_offset", w.endOffset)
 					select {
 					case w.result <- f:
 					case <-ctx.Done():
@@ -804,10 +818,17 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 			return
 		case wants <- nextFetch:
 			results <- nextFetch.result
+			if nextResult == nil {
+				nextResult = <-results
+			}
 			nextFetch = nextFetchWant(nextFetch)
 		case result, moreLeft := <-nextResult:
 			if !moreLeft {
-				nextResult = <-results
+				if len(results) > 0 {
+					nextResult = <-results
+				} else {
+					nextResult = nil
+				}
 				continue
 			}
 			select {
