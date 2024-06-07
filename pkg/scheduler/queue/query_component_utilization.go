@@ -172,7 +172,7 @@ func (qcl *QueryComponentUtilization) updateForComponentName(expectedQueryCompon
 	qcl.querierInflightRequestsTotal += increment
 }
 
-// test-only util
+// GetForComponent is a test-only util
 func (qcl *QueryComponentUtilization) GetForComponent(component QueryComponent) int {
 	switch component {
 	case Ingester:

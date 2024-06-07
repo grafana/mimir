@@ -597,6 +597,10 @@ func verifyNoPendingRequestsLeft(t *testing.T, scheduler *Scheduler) {
 }
 
 func verifyQueryComponentUtilizationLeft(t *testing.T, scheduler *Scheduler) {
+	scheduler.StopAsync()
+	test.Poll(t, 2*time.Second, services.Terminated, func() interface{} {
+		return scheduler.State()
+	})
 	require.Zero(t, scheduler.requestQueue.QueryComponentUtilization.GetForComponent(queue.Ingester))
 	require.Zero(t, scheduler.requestQueue.QueryComponentUtilization.GetForComponent(queue.StoreGateway))
 }
