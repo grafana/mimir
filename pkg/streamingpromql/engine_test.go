@@ -462,7 +462,7 @@ func (q *contextCapturingQuerier) Close() error {
 	return q.inner.Close()
 }
 
-func TestMemoryConsumptionLimit(t *testing.T) {
+func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			some_metric{idx="1"} 0+1x5
@@ -621,6 +621,55 @@ func TestMemoryConsumptionLimit(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			some_metric{idx="1"} 0+1x5
+			some_metric{idx="2"} 0+1x5
+			some_metric{idx="3"} 0+1x5
+			some_metric{idx="4"} 0+1x5
+			some_metric{idx="5"} 0+1x5
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	reg := prometheus.NewPedanticRegistry()
+	opts := NewTestEngineOpts()
+	opts.Reg = reg
+
+	limit := 3 * 8 * pooling.FPointSize // Allow up to three series with five points (which will be rounded up to 8, the nearest power of 2)
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(limit), stats.NewQueryMetrics(reg), log.NewNopLogger())
+	require.NoError(t, err)
+
+	runQuery := func(expr string, shouldSucceed bool) {
+		q, err := engine.NewRangeQuery(context.Background(), storage, nil, expr, timestamp.Time(0), timestamp.Time(0).Add(4*time.Minute), time.Minute)
+		require.NoError(t, err)
+		defer q.Close()
+
+		res := q.Exec(context.Background())
+
+		if shouldSucceed {
+			require.NoError(t, res.Err)
+		} else {
+			require.ErrorContains(t, res.Err, globalerror.MaxEstimatedMemoryConsumptionPerQuery.Error())
+		}
+	}
+
+	runQuery(`some_metric{idx=~"1"}`, true)
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(rejectedMetrics(0)), "cortex_querier_queries_rejected_total"))
+
+	runQuery(`some_metric{idx=~"1|2|3"}`, true)
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(rejectedMetrics(0)), "cortex_querier_queries_rejected_total"))
+
+	runQuery(`some_metric{idx=~"1|2|3|4"}`, false)
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(rejectedMetrics(1)), "cortex_querier_queries_rejected_total"))
+
+	runQuery(`some_metric{idx=~"1|2|3|4"}`, false)
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(rejectedMetrics(2)), "cortex_querier_queries_rejected_total"))
+
+	runQuery(`some_metric{idx=~"1|2|3"}`, true)
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(rejectedMetrics(2)), "cortex_querier_queries_rejected_total"))
 }
 
 func rejectedMetrics(rejectedDueToMemoryConsumption int) string {
