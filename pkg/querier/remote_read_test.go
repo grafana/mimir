@@ -697,7 +697,7 @@ func TestIsOffendingRequest(t *testing.T) {
 						EndTimestampMs:   2,
 						Matchers: []*client.LabelMatcher{
 							{Type: client.EQUAL, Name: "label1", Value: "value1"},
-							{Type: client.REGEX_MATCH, Name: "label2", Value: fmt.Sprintf("*(%s).*", strings.Repeat("123456789123456789|", 100))},
+							{Type: client.REGEX_MATCH, Name: "label2", Value: fmt.Sprintf("*(%s).*", strings.Repeat("123456789123456789|", 257))},
 						},
 					},
 				},
@@ -722,42 +722,42 @@ func TestIsOffendingMatcher(t *testing.T) {
 			matcher: &client.LabelMatcher{
 				Type:  client.REGEX_MATCH,
 				Name:  "test",
-				Value: fmt.Sprintf("*(%s).*", strings.Repeat("123456789123456789|", 90)),
+				Value: fmt.Sprintf("*(%s).*", strings.Repeat("123456789123456789|", 255)),
 			},
-			expected: false, // Not offending because it doesn't have at least 99 alternations.
+			expected: false, // Not offending because it doesn't have at least 257 alternations.
 		}, {
 			matcher: &client.LabelMatcher{
 				Type:  client.REGEX_MATCH,
 				Name:  "test",
-				Value: fmt.Sprintf("*(%s).*", strings.Repeat("123456789123456789|", 100)),
+				Value: fmt.Sprintf("*(%s).*", strings.Repeat("123456789123456789|", 257)),
 			},
 			expected: true,
 		}, {
 			matcher: &client.LabelMatcher{
 				Type:  client.REGEX_NO_MATCH,
 				Name:  "test",
-				Value: fmt.Sprintf("*(%s).*", strings.Repeat("123456789123456789|", 100)),
+				Value: fmt.Sprintf("*(%s).*", strings.Repeat("123456789123456789|", 257)),
 			},
 			expected: true,
 		}, {
 			matcher: &client.LabelMatcher{
 				Type:  client.EQUAL,
 				Name:  "test",
-				Value: fmt.Sprintf("*(%s).*", strings.Repeat("123456789123456789|", 100)),
+				Value: fmt.Sprintf("*(%s).*", strings.Repeat("123456789123456789|", 257)),
 			},
 			expected: false, // Not offending because it's not a regexp.,
 		}, {
 			matcher: &client.LabelMatcher{
 				Type:  client.REGEX_MATCH,
 				Name:  "test",
-				Value: fmt.Sprintf("*(%s).*", strings.Repeat("a123456789123456789b|", 90)),
+				Value: fmt.Sprintf("*(%s).*", strings.Repeat("a123456789123456789b|", 255)),
 			},
 			expected: false, // Not offending because alternations are not just numbers, but strings too.
 		}, {
 			matcher: &client.LabelMatcher{
 				Type:  client.REGEX_MATCH,
 				Name:  "test",
-				Value: fmt.Sprintf("*(%s).*", strings.Repeat("a123456789123456789b|", 100)),
+				Value: fmt.Sprintf("*(%s).*", strings.Repeat("a123456789123456789b|", 257)),
 			},
 			expected: false, // Not offending because alternations are not just numbers, but strings too.
 		},
