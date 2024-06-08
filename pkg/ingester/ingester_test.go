@@ -84,8 +84,7 @@ func TestIngester_StartPushRequest(t *testing.T) {
 	const reqSize = 10
 	instanceLimits := &InstanceLimits{}
 	pushReqState := &pushRequestState{
-		requestSize:                  10,
-		acquiredCircuitBreakerPermit: true,
+		requestSize: 10,
 	}
 	ctx := context.Background()
 	ctxWithPushReqState := context.WithValue(ctx, pushReqCtxKey, pushReqState)
@@ -105,7 +104,7 @@ func TestIngester_StartPushRequest(t *testing.T) {
 
 	setupIngester := func(tc testCase) *failingIngester {
 		cfg := defaultIngesterTestConfig(t)
-		cfg.CircuitBreakerConfig = CircuitBreakerConfig{
+		cfg.PushCircuitBreakerConfig = CircuitBreakerConfig{
 			Enabled:        true,
 			InitialDelay:   tc.cbInitialDelay,
 			CooldownPeriod: 10 * time.Second,
@@ -128,9 +127,9 @@ func TestIngester_StartPushRequest(t *testing.T) {
 		require.Equal(t, expectedState, failingIng.lifecycler.State())
 
 		if tc.cbOpen {
-			failingIng.circuitBreaker.cb.Open()
+			failingIng.circuitBreaker.pushCircuitBreaker.cb.Open()
 		} else {
-			failingIng.circuitBreaker.cb.Close()
+			failingIng.circuitBreaker.pushCircuitBreaker.cb.Close()
 		}
 
 		if tc.instanceLimitReached {
@@ -248,7 +247,7 @@ func TestIngester_StartReadRequest(t *testing.T) {
 
 	setupIngester := func(tc testCase) *failingIngester {
 		cfg := defaultIngesterTestConfig(t)
-		cfg.CircuitBreakerConfig = CircuitBreakerConfig{
+		cfg.ReadCircuitBreakerConfig = CircuitBreakerConfig{
 			Enabled:        true,
 			InitialDelay:   tc.cbInitialDelay,
 			CooldownPeriod: 10 * time.Second,
@@ -278,9 +277,9 @@ func TestIngester_StartReadRequest(t *testing.T) {
 		}
 
 		if tc.cbOpen {
-			failingIng.circuitBreaker.cb.Open()
+			failingIng.circuitBreaker.readCircuitBreaker.cb.Open()
 		} else {
-			failingIng.circuitBreaker.cb.Close()
+			failingIng.circuitBreaker.readCircuitBreaker.cb.Close()
 		}
 
 		return failingIng

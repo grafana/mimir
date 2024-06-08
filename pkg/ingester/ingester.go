@@ -219,7 +219,8 @@ type Config struct {
 	// This config can be overridden in tests.
 	limitMetricsUpdatePeriod time.Duration `yaml:"-"`
 
-	CircuitBreakerConfig CircuitBreakerConfig `yaml:"circuit_breaker" category:"experimental"`
+	PushCircuitBreakerConfig CircuitBreakerConfig `yaml:"push_circuit_breaker_config"`
+	ReadCircuitBreakerConfig CircuitBreakerConfig `yaml:"read_circuit_breaker_config"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -228,7 +229,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.IngesterPartitionRing.RegisterFlags(f)
 	cfg.DefaultLimits.RegisterFlags(f)
 	cfg.ActiveSeriesMetrics.RegisterFlags(f)
-	cfg.CircuitBreakerConfig.RegisterFlags(f)
+	cfg.PushCircuitBreakerConfig.RegisterFlagsWithPrefix("ingester.push.circuit-breaker.", f, circuitBreakerDefaultPushTimeout)
+	cfg.PushCircuitBreakerConfig.RegisterFlagsWithPrefix("ingester.read.circuit-breaker.", f, circuitBreakerDefaultReadTimeout)
 
 	f.DurationVar(&cfg.MetadataRetainPeriod, "ingester.metadata-retain-period", 10*time.Minute, "Period at which metadata we have not seen will remain in memory before being deleted.")
 	f.DurationVar(&cfg.RateUpdatePeriod, "ingester.rate-update-period", 15*time.Second, "Period with which to update the per-tenant ingestion rates.")
@@ -356,7 +358,7 @@ type Ingester struct {
 	ingestPartitionID         int32
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
 
-	circuitBreaker *circuitBreaker
+	circuitBreaker *prCircuitBreaker
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -402,7 +404,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.activeGroups = activeGroupsCleanupService
 
 	// We create a circuit breaker, which will be activated on a successful completion of starting.
-	i.circuitBreaker = newCircuitBreaker(cfg.CircuitBreakerConfig, logger, registerer)
+	i.circuitBreaker = newPRCircuitBreaker(cfg.PushCircuitBreakerConfig, cfg.ReadCircuitBreakerConfig, logger, registerer)
 
 	if registerer != nil {
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
@@ -975,10 +977,10 @@ type ctxKey int
 var pushReqCtxKey ctxKey = 1
 
 type pushRequestState struct {
-	requestSize                  int64
-	requestDuration              time.Duration
-	acquiredCircuitBreakerPermit bool
-	pushErr                      error
+	requestSize     int64
+	requestDuration time.Duration
+	requestFinish   func(time.Duration, error)
+	pushErr         error
 }
 
 func getPushRequestState(ctx context.Context) *pushRequestState {
@@ -1004,8 +1006,8 @@ func (i *Ingester) FinishPushRequest(ctx context.Context) {
 	if st.requestSize > 0 {
 		i.inflightPushRequestsBytes.Sub(st.requestSize)
 	}
-	if st.acquiredCircuitBreakerPermit {
-		i.circuitBreaker.finishPushRequest(st.requestDuration, st.pushErr)
+	if st.requestFinish != nil {
+		st.requestFinish(st.requestDuration, st.pushErr)
 	}
 }
 
@@ -1027,18 +1029,17 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (context
 		return ctx, false, nil
 	}
 
-	// We try to acquire a permit from the circuit breaker.
+	// We try to acquire a push permit from the circuit breaker.
 	// If it is not possible, it is because the circuit breaker is open, and a circuitBreakerOpenError is returned.
 	// If it is possible, a permit has to be released by recording either a success or a failure with the circuit
 	// breaker. This is done by FinishPushRequest().
-	acquiredCircuitBreakerPermit, err := i.circuitBreaker.tryAcquirePermit()
+	finish, err := i.circuitBreaker.tryPushAcquirePermit()
 	if err != nil {
 		return nil, false, err
 	}
-
 	st := &pushRequestState{
-		requestSize:                  reqSize,
-		acquiredCircuitBreakerPermit: acquiredCircuitBreakerPermit,
+		requestSize:   reqSize,
+		requestFinish: finish,
 	}
 	ctx = context.WithValue(ctx, pushReqCtxKey, st)
 
@@ -3791,14 +3792,14 @@ func (i *Ingester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
 // function is returned.
 func (i *Ingester) startReadRequest() (func(error), error) {
 	start := time.Now()
-	acquiredCircuitBreakerPermit, err := i.circuitBreaker.tryAcquirePermit()
+	finish, err := i.circuitBreaker.tryReadAcquirePermit()
 	if err != nil {
 		return nil, err
 	}
 
 	finishReadRequest := func(err error) {
-		if acquiredCircuitBreakerPermit {
-			i.circuitBreaker.finishReadRequest(time.Since(start), err)
+		if finish != nil {
+			finish(time.Since(start), err)
 		}
 	}
 
