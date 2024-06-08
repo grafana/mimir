@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -54,6 +55,12 @@ func remoteReadHandler(q storage.SampleAndChunkQueryable, maxBytesInFrame int, l
 		if _, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), MaxRemoteReadQuerySize, nil, &req, util.RawSnappy); err != nil {
 			level.Error(logger).Log("msg", "failed to parse proto", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// HACK: block an offending query.
+		if isOffendingRequest(req) {
+			http.Error(w, "the request has been blocked because it has been detecting having a pattern putting a very high pressure on the system (please reach out to Grafana Labs)", http.StatusBadRequest)
 			return
 		}
 
@@ -339,4 +346,41 @@ func initializedFrameBytesRemaining(maxBytesInFrame int, lbls []mimirpb.LabelAda
 		frameBytesLeft -= lbl.Size()
 	}
 	return frameBytesLeft
+}
+
+func isOffendingRequest(req client.ReadRequest) bool {
+	for _, query := range req.Queries {
+		if isOffendingQuery(query) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isOffendingQuery(query *client.QueryRequest) bool {
+	for _, matcher := range query.Matchers {
+		if isOffendingMatcher(matcher) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// Consider the regexp offending if it's an alternation of more than 100 numbers.
+var offendingRegexPattern = regexp.MustCompile(`(?:\d+\|){99}`)
+
+func isOffendingMatcher(matcher *client.LabelMatcher) bool {
+	// Only regexp matchers are critical.
+	if matcher.Type != client.REGEX_MATCH && matcher.Type != client.REGEX_NO_MATCH {
+		return false
+	}
+
+	// Only very long regexp matchers are critical.
+	if len(matcher.Value) < 1024 {
+		return false
+	}
+
+	return offendingRegexPattern.MatchString(matcher.Value)
 }

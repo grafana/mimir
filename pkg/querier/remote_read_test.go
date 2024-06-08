@@ -8,9 +8,11 @@ package querier
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +27,7 @@ import (
 	prom_remote "github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -586,4 +589,183 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestIsOffendingRequest(t *testing.T) {
+	tests := []struct {
+		req      client.ReadRequest
+		expected bool
+	}{
+		{
+			req:      client.ReadRequest{},
+			expected: false,
+		}, {
+			req: client.ReadRequest{
+				Queries: []*client.QueryRequest{},
+			},
+			expected: false,
+		}, {
+			req: client.ReadRequest{
+				Queries: []*client.QueryRequest{
+					{
+						StartTimestampMs: 1,
+						EndTimestampMs:   2,
+						Matchers:         nil,
+					},
+				},
+			},
+			expected: false,
+		}, {
+			req: client.ReadRequest{
+				Queries: []*client.QueryRequest{
+					{
+						StartTimestampMs: 1,
+						EndTimestampMs:   2,
+						Matchers:         []*client.LabelMatcher{},
+					},
+				},
+			},
+			expected: false,
+		}, {
+			req: client.ReadRequest{
+				Queries: []*client.QueryRequest{
+					{
+						StartTimestampMs: 1,
+						EndTimestampMs:   2,
+						Matchers: []*client.LabelMatcher{
+							{Type: client.EQUAL, Name: "label1", Value: "value1"},
+							{Type: client.REGEX_MATCH, Name: "label2", Value: ".*value2.*"},
+						},
+					},
+				},
+			},
+			expected: false,
+		}, {
+			req: client.ReadRequest{
+				Queries: []*client.QueryRequest{
+					{
+						StartTimestampMs: 1,
+						EndTimestampMs:   2,
+						Matchers: []*client.LabelMatcher{
+							{Type: client.EQUAL, Name: "label1", Value: "value1"},
+							{Type: client.REGEX_MATCH, Name: "label2", Value: ".*value2.*"},
+						},
+					}, {
+						StartTimestampMs: 1,
+						EndTimestampMs:   2,
+						Matchers: []*client.LabelMatcher{
+							{Type: client.EQUAL, Name: "label1", Value: "value1"},
+							{Type: client.REGEX_MATCH, Name: "label2", Value: ".*value2.*"},
+						},
+					},
+				},
+			},
+			expected: false,
+		}, {
+			req: client.ReadRequest{
+				Queries: []*client.QueryRequest{
+					{
+						StartTimestampMs: 1,
+						EndTimestampMs:   2,
+						Matchers: []*client.LabelMatcher{
+							{Type: client.EQUAL, Name: "label1", Value: "value1"},
+							{Type: client.REGEX_MATCH, Name: "label2", Value: ".*value2.*"},
+						},
+					}, {
+						StartTimestampMs: 1,
+						EndTimestampMs:   2,
+						Matchers: []*client.LabelMatcher{
+							{Type: client.EQUAL, Name: "label1", Value: fmt.Sprintf("*(%s).*", strings.Repeat("123456789123456789|", 100))},
+							{Type: client.REGEX_MATCH, Name: "label2", Value: ".*value2.*"},
+						},
+					},
+				},
+			},
+			expected: false,
+		}, {
+			req: client.ReadRequest{
+				Queries: []*client.QueryRequest{
+					{
+						StartTimestampMs: 1,
+						EndTimestampMs:   2,
+						Matchers: []*client.LabelMatcher{
+							{Type: client.EQUAL, Name: "label1", Value: "value1"},
+							{Type: client.REGEX_MATCH, Name: "label2", Value: ".*value2.*"},
+						},
+					}, {
+						StartTimestampMs: 1,
+						EndTimestampMs:   2,
+						Matchers: []*client.LabelMatcher{
+							{Type: client.EQUAL, Name: "label1", Value: "value1"},
+							{Type: client.REGEX_MATCH, Name: "label2", Value: fmt.Sprintf("*(%s).*", strings.Repeat("123456789123456789|", 100))},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+	}
+
+	for idx, testData := range tests {
+		t.Run(fmt.Sprintf("#%d", idx), func(t *testing.T) {
+			assert.Equal(t, testData.expected, isOffendingRequest(testData.req))
+		})
+	}
+}
+
+func TestIsOffendingMatcher(t *testing.T) {
+	tests := []struct {
+		matcher  *client.LabelMatcher
+		expected bool
+	}{
+		{
+			matcher: &client.LabelMatcher{
+				Type:  client.REGEX_MATCH,
+				Name:  "test",
+				Value: fmt.Sprintf("*(%s).*", strings.Repeat("123456789123456789|", 90)),
+			},
+			expected: false, // Not offending because it doesn't have at least 99 alternations.
+		}, {
+			matcher: &client.LabelMatcher{
+				Type:  client.REGEX_MATCH,
+				Name:  "test",
+				Value: fmt.Sprintf("*(%s).*", strings.Repeat("123456789123456789|", 100)),
+			},
+			expected: true,
+		}, {
+			matcher: &client.LabelMatcher{
+				Type:  client.REGEX_NO_MATCH,
+				Name:  "test",
+				Value: fmt.Sprintf("*(%s).*", strings.Repeat("123456789123456789|", 100)),
+			},
+			expected: true,
+		}, {
+			matcher: &client.LabelMatcher{
+				Type:  client.EQUAL,
+				Name:  "test",
+				Value: fmt.Sprintf("*(%s).*", strings.Repeat("123456789123456789|", 100)),
+			},
+			expected: false, // Not offending because it's not a regexp.,
+		}, {
+			matcher: &client.LabelMatcher{
+				Type:  client.REGEX_MATCH,
+				Name:  "test",
+				Value: fmt.Sprintf("*(%s).*", strings.Repeat("a123456789123456789b|", 90)),
+			},
+			expected: false, // Not offending because alternations are not just numbers, but strings too.
+		}, {
+			matcher: &client.LabelMatcher{
+				Type:  client.REGEX_MATCH,
+				Name:  "test",
+				Value: fmt.Sprintf("*(%s).*", strings.Repeat("a123456789123456789b|", 100)),
+			},
+			expected: false, // Not offending because alternations are not just numbers, but strings too.
+		},
+	}
+
+	for idx, testData := range tests {
+		t.Run(fmt.Sprintf("#%d", idx), func(t *testing.T) {
+			assert.Equal(t, testData.expected, isOffendingMatcher(testData.matcher))
+		})
+	}
 }
