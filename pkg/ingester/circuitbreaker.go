@@ -81,7 +81,6 @@ type CircuitBreakerConfig struct {
 	CooldownPeriod             time.Duration `yaml:"cooldown_period" category:"experimental"`
 	InitialDelay               time.Duration `yaml:"initial_delay" category:"experimental"`
 	RequestTimeout             time.Duration `yaml:"request_timeout" category:"experiment"`
-	ReadTimeout                time.Duration `yaml:"read_timeout" category:"experiment"`
 	testModeEnabled            bool          `yaml:"-"`
 }
 
