@@ -368,8 +368,8 @@ func isOffendingQuery(query *client.QueryRequest) bool {
 	return false
 }
 
-// Consider the regexp offending if it's an alternation of more than 100 numbers.
-var offendingRegexPattern = regexp.MustCompile(`(?:\d+\|){99}`)
+// Consider the regexp offending if it's an alternation of more than 256 numbers (because up to 256 are optimised by FastRegexMatcher).
+var offendingRegexPattern = regexp.MustCompile(`(?:\d+\|){256}`)
 
 func isOffendingMatcher(matcher *client.LabelMatcher) bool {
 	// Only regexp matchers are critical.
@@ -378,7 +378,7 @@ func isOffendingMatcher(matcher *client.LabelMatcher) bool {
 	}
 
 	// Only very long regexp matchers are critical.
-	if len(matcher.Value) < 1024 {
+	if len(matcher.Value) < 4096 {
 		return false
 	}
 
