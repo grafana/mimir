@@ -229,8 +229,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.IngesterPartitionRing.RegisterFlags(f)
 	cfg.DefaultLimits.RegisterFlags(f)
 	cfg.ActiveSeriesMetrics.RegisterFlags(f)
-	cfg.PushCircuitBreakerConfig.RegisterFlagsWithPrefix("ingester.push.circuit-breaker.", f, circuitBreakerDefaultPushTimeout)
-	cfg.PushCircuitBreakerConfig.RegisterFlagsWithPrefix("ingester.read.circuit-breaker.", f, circuitBreakerDefaultReadTimeout)
+	cfg.PushCircuitBreakerConfig.RegisterFlagsWithPrefix("ingester.push-circuit-breaker.", f, circuitBreakerDefaultPushTimeout)
+	cfg.PushCircuitBreakerConfig.RegisterFlagsWithPrefix("ingester.read-circuit-breaker.", f, circuitBreakerDefaultReadTimeout)
 
 	f.DurationVar(&cfg.MetadataRetainPeriod, "ingester.metadata-retain-period", 10*time.Minute, "Period at which metadata we have not seen will remain in memory before being deleted.")
 	f.DurationVar(&cfg.RateUpdatePeriod, "ingester.rate-update-period", 15*time.Second, "Period with which to update the per-tenant ingestion rates.")
