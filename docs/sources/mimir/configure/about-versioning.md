@@ -118,13 +118,20 @@ The following features are currently experimental:
     - `-ingester.use-ingester-owned-series-for-limits`
     - `-ingester.owned-series-update-interval`
   - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
-    - `-ingester.circuit-breaker.enabled`
-    - `-ingester.circuit-breaker.failure-threshold-percentage`
-    - `-ingester.circuit-breaker.failure-execution-threshold`
-    - `-ingester.circuit-breaker.thresholding-period`
-    - `-ingester.circuit-breaker.cooldown-period`
-    - `-ingester.circuit-breaker.initial-delay`
-    - `-ingester.circuit-breaker.push-timeout`
+    - `-ingester.push-circuit-breaker.circuit-breaker.enabled`
+    - `-ingester.push-circuit-breaker.failure-threshold-percentage`
+    - `-ingester.push-circuit-breaker.failure-execution-threshold`
+    - `-ingester.push-circuit-breaker.thresholding-period`
+    - `-ingester.push-circuit-breaker.cooldown-period`
+    - `-ingester.push-circuit-breaker.initial-delay`
+    - `-ingester.push-circuit-breaker.request-timeout`
+    - `-ingester.read-circuit-breaker.circuit-breaker.enabled`
+    - `-ingester.read-circuit-breaker.failure-threshold-percentage`
+    - `-ingester.read-circuit-breaker.failure-execution-threshold`
+    - `-ingester.read-circuit-breaker.thresholding-period`
+    - `-ingester.read-circuit-breaker.cooldown-period`
+    - `-ingester.read-circuit-breaker.initial-delay`
+    - `-ingester.read-circuit-breaker.request-timeout`
 - Ingester client
   - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
     - `-ingester.client.circuit-breaker.enabled`
