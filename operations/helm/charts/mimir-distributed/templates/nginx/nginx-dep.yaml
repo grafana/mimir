@@ -104,7 +104,7 @@ spec:
         {{- end }}
       {{- with .Values.nginx.affinity }}
       affinity:
-        {{- tpl . $ | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "nginx") | nindent 6 }}
       {{- with .Values.nginx.nodeSelector }}
