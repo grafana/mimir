@@ -208,6 +208,9 @@ type Config struct {
 	UpdateIngesterOwnedSeries       bool          `yaml:"track_ingester_owned_series" category:"experimental"`
 	OwnedSeriesUpdateInterval       time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
 
+	PushCircuitBreaker CircuitBreakerConfig `yaml:"push_circuit_breaker"`
+	ReadCircuitBreaker CircuitBreakerConfig `yaml:"read_circuit_breaker"`
+
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
 	// This config is dynamically injected because defined outside the ingester config.
@@ -215,9 +218,6 @@ type Config struct {
 
 	// This config can be overridden in tests.
 	limitMetricsUpdatePeriod time.Duration `yaml:"-"`
-
-	PushCircuitBreakerConfig CircuitBreakerConfig `yaml:"push_circuit_breaker_config"`
-	ReadCircuitBreakerConfig CircuitBreakerConfig `yaml:"read_circuit_breaker_config"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -226,8 +226,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.IngesterPartitionRing.RegisterFlags(f)
 	cfg.DefaultLimits.RegisterFlags(f)
 	cfg.ActiveSeriesMetrics.RegisterFlags(f)
-	cfg.PushCircuitBreakerConfig.RegisterFlagsWithPrefix("ingester.push-circuit-breaker.", f, circuitBreakerDefaultPushTimeout)
-	cfg.PushCircuitBreakerConfig.RegisterFlagsWithPrefix("ingester.read-circuit-breaker.", f, circuitBreakerDefaultReadTimeout)
+	cfg.PushCircuitBreaker.RegisterFlagsWithPrefix("ingester.push-circuit-breaker.", f, circuitBreakerDefaultPushTimeout)
+	cfg.ReadCircuitBreaker.RegisterFlagsWithPrefix("ingester.read-circuit-breaker.", f, circuitBreakerDefaultReadTimeout)
 
 	f.DurationVar(&cfg.MetadataRetainPeriod, "ingester.metadata-retain-period", 10*time.Minute, "Period at which metadata we have not seen will remain in memory before being deleted.")
 	f.DurationVar(&cfg.RateUpdatePeriod, "ingester.rate-update-period", 15*time.Second, "Period with which to update the per-tenant ingestion rates.")
@@ -401,7 +401,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.activeGroups = activeGroupsCleanupService
 
 	// We create a circuit breaker, which will be activated on a successful completion of starting.
-	i.circuitBreaker = newPRCircuitBreaker(cfg.PushCircuitBreakerConfig, cfg.ReadCircuitBreakerConfig, logger, registerer)
+	i.circuitBreaker = newPRCircuitBreaker(i.cfg.PushCircuitBreaker, i.cfg.ReadCircuitBreaker, logger, registerer)
 
 	if registerer != nil {
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{

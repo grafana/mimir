@@ -1218,7 +1218,44 @@ instance_limits:
 # CLI flag: -ingester.owned-series-update-interval
 [owned_series_update_interval: <duration> | default = 15s]
 
-push_circuit_breaker_config:
+push_circuit_breaker:
+  # (experimental) Enable circuit breaking when making requests to ingesters
+  # CLI flag: -ingester.push-circuit-breaker.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Max percentage of requests that can fail over period before
+  # the circuit breaker opens
+  # CLI flag: -ingester.push-circuit-breaker.failure-threshold-percentage
+  [failure_threshold_percentage: <int> | default = 10]
+
+  # (experimental) How many requests must have been executed in period for the
+  # circuit breaker to be eligible to open for the rate of failures
+  # CLI flag: -ingester.push-circuit-breaker.failure-execution-threshold
+  [failure_execution_threshold: <int> | default = 100]
+
+  # (experimental) Moving window of time that the percentage of failed requests
+  # is computed over
+  # CLI flag: -ingester.push-circuit-breaker.thresholding-period
+  [thresholding_period: <duration> | default = 1m]
+
+  # (experimental) How long the circuit breaker will stay in the open state
+  # before allowing some requests
+  # CLI flag: -ingester.push-circuit-breaker.cooldown-period
+  [cooldown_period: <duration> | default = 10s]
+
+  # (experimental) How long the circuit breaker should wait between an
+  # activation request and becoming effectively active. During that time both
+  # failures and successes will not be counted.
+  # CLI flag: -ingester.push-circuit-breaker.initial-delay
+  [initial_delay: <duration> | default = 0s]
+
+  # (experiment) The maximum duration of an ingester's request before it
+  # triggers a circuit breaker. This configuration is used for circuit breakers
+  # only, and its timeouts aren't reported as errors.
+  # CLI flag: -ingester.push-circuit-breaker.request-timeout
+  [request_timeout: <duration> | default = 2s]
+
+read_circuit_breaker:
   # (experimental) Enable circuit breaking when making requests to ingesters
   # CLI flag: -ingester.read-circuit-breaker.enabled
   [enabled: <boolean> | default = false]
@@ -1254,28 +1291,6 @@ push_circuit_breaker_config:
   # only, and its timeouts aren't reported as errors.
   # CLI flag: -ingester.read-circuit-breaker.request-timeout
   [request_timeout: <duration> | default = 30s]
-
-read_circuit_breaker_config:
-  # (experimental)
-  [enabled: <boolean> | default = ]
-
-  # (experimental)
-  [failure_threshold_percentage: <int> | default = ]
-
-  # (experimental)
-  [failure_execution_threshold: <int> | default = ]
-
-  # (experimental)
-  [thresholding_period: <duration> | default = ]
-
-  # (experimental)
-  [cooldown_period: <duration> | default = ]
-
-  # (experimental)
-  [initial_delay: <duration> | default = ]
-
-  # (experiment)
-  [request_timeout: <duration> | default = ]
 ```
 
 ### querier
