@@ -842,10 +842,10 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
 				mimirpb.API,
 			)
 			ctx, err = i.StartPushRequest(ctx, int64(req.Size()))
-			err = i.PushToStorage(ctx, req)
-			i.FinishPushRequest(ctx)
-
 			require.NoError(t, err)
+			err = i.PushToStorage(ctx, req)
+			require.NoError(t, err)
+			i.FinishPushRequest(ctx)
 
 			count := 0
 
