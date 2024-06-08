@@ -105,7 +105,7 @@ func TestIngester_StartPushRequest(t *testing.T) {
 
 	setupIngester := func(tc testCase) *failingIngester {
 		cfg := defaultIngesterTestConfig(t)
-		cfg.PushCircuitBreakerConfig = CircuitBreakerConfig{
+		cfg.PushCircuitBreaker = CircuitBreakerConfig{
 			Enabled:        true,
 			InitialDelay:   tc.cbInitialDelay,
 			CooldownPeriod: 10 * time.Second,
@@ -244,7 +244,7 @@ func TestIngester_StartReadRequest(t *testing.T) {
 
 	setupIngester := func(tc testCase) *failingIngester {
 		cfg := defaultIngesterTestConfig(t)
-		cfg.ReadCircuitBreakerConfig = CircuitBreakerConfig{
+		cfg.ReadCircuitBreaker = CircuitBreakerConfig{
 			Enabled:        true,
 			CooldownPeriod: 10 * time.Second,
 			RequestTimeout: 30 * time.Second,

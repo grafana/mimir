@@ -420,7 +420,7 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
 				if initialDelayEnabled {
 					initialDelay = 200 * time.Millisecond
 				}
-				cfg.PushCircuitBreakerConfig = CircuitBreakerConfig{
+				cfg.PushCircuitBreaker = CircuitBreakerConfig{
 					Enabled:                    true,
 					FailureThresholdPercentage: uint(failureThreshold),
 					CooldownPeriod:             10 * time.Second,
@@ -562,7 +562,7 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
 func TestIngester_StartPushRequest_CircuitBreakerOpen(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	cfg := defaultIngesterTestConfig(t)
-	cfg.PushCircuitBreakerConfig = CircuitBreakerConfig{Enabled: true, CooldownPeriod: 10 * time.Second}
+	cfg.PushCircuitBreaker = CircuitBreakerConfig{Enabled: true, CooldownPeriod: 10 * time.Second}
 
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
 	require.NoError(t, err)
@@ -756,7 +756,7 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			cfg := defaultIngesterTestConfig(t)
-			cfg.PushCircuitBreakerConfig = CircuitBreakerConfig{
+			cfg.PushCircuitBreaker = CircuitBreakerConfig{
 				Enabled:        true,
 				RequestTimeout: 2 * time.Second,
 			}
@@ -778,7 +778,7 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 				requestDuration: testCase.pushRequestDuration,
 				requestFinish: func(duration time.Duration, err error) {
 					if testCase.acquiredCircuitBreakerPermit {
-						_ = i.circuitBreaker.pushCircuitBreaker.finishRequest(duration, cfg.PushCircuitBreakerConfig.RequestTimeout, err)
+						_ = i.circuitBreaker.pushCircuitBreaker.finishRequest(duration, cfg.PushCircuitBreaker.RequestTimeout, err)
 					}
 				},
 				pushErr: testCase.err,
@@ -812,7 +812,7 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
 			if initialDelayEnabled {
 				initialDelay = 200 * time.Millisecond
 			}
-			cfg.PushCircuitBreakerConfig = CircuitBreakerConfig{
+			cfg.PushCircuitBreaker = CircuitBreakerConfig{
 				Enabled:                    true,
 				FailureThresholdPercentage: uint(failureThreshold),
 				CooldownPeriod:             10 * time.Second,
