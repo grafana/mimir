@@ -84,8 +84,7 @@ func TestIngester_StartPushRequest(t *testing.T) {
 	const reqSize = 10
 	instanceLimits := &InstanceLimits{}
 	pushReqState := &pushRequestState{
-		requestSize:                  10,
-		acquiredCircuitBreakerPermit: true,
+		requestSize: 10,
 	}
 	ctx := context.Background()
 	ctxWithPushReqState := context.WithValue(ctx, pushReqCtxKey, pushReqState)
@@ -105,7 +104,7 @@ func TestIngester_StartPushRequest(t *testing.T) {
 
 	setupIngester := func(tc testCase) *failingIngester {
 		cfg := defaultIngesterTestConfig(t)
-		cfg.CircuitBreakerConfig = CircuitBreakerConfig{
+		cfg.PushCircuitBreakerConfig = CircuitBreakerConfig{
 			Enabled:        true,
 			InitialDelay:   tc.cbInitialDelay,
 			CooldownPeriod: 10 * time.Second,
@@ -128,9 +127,9 @@ func TestIngester_StartPushRequest(t *testing.T) {
 		require.Equal(t, expectedState, failingIng.lifecycler.State())
 
 		if tc.cbOpen {
-			failingIng.circuitBreaker.cb.Open()
+			failingIng.circuitBreaker.pushCircuitBreaker.cb.Open()
 		} else {
-			failingIng.circuitBreaker.cb.Close()
+			failingIng.circuitBreaker.pushCircuitBreaker.cb.Close()
 		}
 
 		if tc.instanceLimitReached {
@@ -223,6 +222,113 @@ func TestIngester_StartPushRequest(t *testing.T) {
 				require.Nil(t, ctx)
 				require.NotNil(t, tc.verifyErr)
 				tc.verifyErr(err)
+			}
+		})
+	}
+}
+
+func TestIngester_StartReadRequest(t *testing.T) {
+	type failureCause int
+	const (
+		NONE failureCause = iota
+		UNAVAILABLE
+		OVERLOADED
+	)
+
+	type testCase struct {
+		failingCause                         failureCause
+		cbOpen                               bool
+		cbInitialDelay                       time.Duration
+		verifyErr                            func(error)
+		expectedAcquiredCircuitBreakerPermit bool
+	}
+
+	utilizationLimiter := &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+
+	setupIngester := func(tc testCase) *failingIngester {
+		cfg := defaultIngesterTestConfig(t)
+		cfg.ReadCircuitBreakerConfig = CircuitBreakerConfig{
+			Enabled:        true,
+			InitialDelay:   tc.cbInitialDelay,
+			CooldownPeriod: 10 * time.Second,
+		}
+		var (
+			failingCause    error
+			expectedState   services.State
+			additionalSetup func(cause *failingIngester)
+		)
+		switch tc.failingCause {
+		case UNAVAILABLE:
+			expectedState = services.Terminated
+			failingCause = newUnavailableError(expectedState)
+		case OVERLOADED:
+			expectedState = services.Running
+			additionalSetup = func(failingIng *failingIngester) {
+				failingIng.utilizationBasedLimiter = utilizationLimiter
+			}
+		case NONE:
+			expectedState = services.Running
+		}
+		failingIng := setupFailingIngester(t, cfg, failingCause)
+		failingIng.startWaitAndCheck(context.Background(), t)
+		require.Equal(t, expectedState, failingIng.lifecycler.State())
+		if additionalSetup != nil {
+			additionalSetup(failingIng)
+		}
+
+		if tc.cbOpen {
+			failingIng.circuitBreaker.readCircuitBreaker.cb.Open()
+		} else {
+			failingIng.circuitBreaker.readCircuitBreaker.cb.Close()
+		}
+
+		return failingIng
+	}
+
+	testCases := map[string]testCase{
+		"fail if ingester is not available for read": {
+			failingCause: UNAVAILABLE,
+			verifyErr: func(err error) {
+				require.ErrorAs(t, err, &unavailableError{})
+			},
+		},
+		"fail if ingester is overloaded": {
+			failingCause: OVERLOADED,
+			verifyErr: func(err error) {
+				require.ErrorIs(t, err, errTooBusy)
+			},
+		},
+		"fail if circuit breaker is open": {
+			failingCause: NONE,
+			cbOpen:       true,
+			verifyErr: func(err error) {
+				require.ErrorAs(t, err, &circuitBreakerOpenError{})
+			},
+		},
+		"do not fail if circuit breaker is not active": {
+			failingCause:                         NONE,
+			cbInitialDelay:                       1 * time.Minute,
+			expectedAcquiredCircuitBreakerPermit: false,
+		},
+		"do not fail if everything is ok": {
+			failingCause:                         NONE,
+			expectedAcquiredCircuitBreakerPermit: true,
+		},
+	}
+	for testName, tc := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			failingIng := setupIngester(tc)
+			defer services.StopAndAwaitTerminated(context.Background(), failingIng) //nolint:errcheck
+
+			finish, err := failingIng.startReadRequest()
+
+			if err == nil {
+				require.NotNil(t, finish)
+				require.NotNil(t, finish)
+			} else {
+				require.NotNil(t, tc.verifyErr)
+				tc.verifyErr(err)
+				require.Nil(t, finish)
 			}
 		})
 	}
