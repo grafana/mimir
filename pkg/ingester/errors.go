@@ -494,15 +494,16 @@ func (e ingesterPushGrpcDisabledError) errorCause() mimirpb.ErrorCause {
 var _ ingesterError = ingesterPushGrpcDisabledError{}
 
 type circuitBreakerOpenError struct {
+	path           string
 	remainingDelay time.Duration
 }
 
-func newCircuitBreakerOpenError(remainingDelay time.Duration) circuitBreakerOpenError {
-	return circuitBreakerOpenError{remainingDelay: remainingDelay}
+func newCircuitBreakerOpenError(path string, remainingDelay time.Duration) circuitBreakerOpenError {
+	return circuitBreakerOpenError{path: path, remainingDelay: remainingDelay}
 }
 
 func (e circuitBreakerOpenError) Error() string {
-	return fmt.Sprintf("%s with remaining delay %s", circuitbreaker.ErrOpen.Error(), e.remainingDelay.String())
+	return fmt.Sprintf("%s on %s path with remaining delay %s", circuitbreaker.ErrOpen.Error(), e.path, e.remainingDelay.String())
 }
 
 func (e circuitBreakerOpenError) errorCause() mimirpb.ErrorCause {
