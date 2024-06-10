@@ -605,13 +605,10 @@ func (r *PartitionReader) pollFetches(ctx context.Context) (result kgo.Fetches) 
 	defer func(start time.Time) {
 		r.metrics.fetchWaitDuration.Observe(time.Since(start).Seconds())
 		result.EachRecord(func(record *kgo.Record) {
-			r.metrics.fetchedBytes.Add(float64(len(record.Value))) // TODO dimitarvdimitrov make sure we're not conflicting with the actual client; perhaps disable metrics there and just use our own
+			r.metrics.fetchedBytes.Add(float64(len(record.Value)))
 		})
-		level.Info(r.logger).Log("msg", "PartitionReader.pollFetches done", "num_records", result.NumRecords())
 	}(time.Now())
 
-	level.Info(r.logger).Log("msg", "PartitionReader.pollFetches")
-	// TODO dimitarvdimitrov consider using franz-go during stable state
 	f := r.client.PollFetches(ctx)
 	for fIdx, fetch := range f {
 		for tIdx, topic := range fetch.Topics {
@@ -628,7 +625,6 @@ func (r *PartitionReader) pollFetches(ctx context.Context) (result kgo.Fetches) 
 		}
 	}
 	return f
-	//return r.fetcher.pollFetches(ctx)
 }
 
 func (r *PartitionReader) setPollingStartOffset(offset int64) {
@@ -697,6 +693,7 @@ func newConcurrentFetchers(ctx context.Context, client *kgo.Client, logger log.L
 	return f, nil
 }
 
+// TODO dimitarvdimitrov rename and maybe restructure how it's used in processNextFetchesUntilMaxLagHonored
 func (r *concurrentFetchers) pollFetches(ctx context.Context) (result kgo.Fetches) {
 	defer func(start time.Time) {
 		r.metrics.fetchWaitDuration.Observe(time.Since(start).Seconds())
