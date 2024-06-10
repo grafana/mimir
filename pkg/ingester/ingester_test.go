@@ -128,9 +128,9 @@ func TestIngester_StartPushRequest(t *testing.T) {
 		require.Equal(t, expectedState, failingIng.lifecycler.State())
 
 		if tc.cbOpen {
-			failingIng.circuitBreaker.pushCircuitBreaker.cb.Open()
+			failingIng.circuitBreaker.push.cb.Open()
 		} else {
-			failingIng.circuitBreaker.pushCircuitBreaker.cb.Close()
+			failingIng.circuitBreaker.push.cb.Close()
 		}
 
 		if tc.instanceLimitReached {
@@ -257,13 +257,13 @@ func TestIngester_StartReadRequest(t *testing.T) {
 		recordedSuccessCount = atomic.NewInt64(0)
 		recordedFailureCount = atomic.NewInt64(0)
 
-		failingIng.circuitBreaker.readCircuitBreaker.cb = &mockedCircuitBreaker{
+		failingIng.circuitBreaker.read.cb = &mockedCircuitBreaker{
 			acquiredPermitCount: acquiredPermitCount,
 			recordSuccessCount:  recordedSuccessCount,
 			recordFailureCount:  recordedFailureCount,
-			CircuitBreaker:      failingIng.circuitBreaker.readCircuitBreaker.cb,
+			CircuitBreaker:      failingIng.circuitBreaker.read.cb,
 		}
-		failingIng.circuitBreaker.readCircuitBreaker.cb.Close()
+		failingIng.circuitBreaker.read.cb.Close()
 
 		return failingIng
 	}
@@ -289,7 +289,7 @@ func TestIngester_StartReadRequest(t *testing.T) {
 		},
 		"fail if circuit breaker is open, and do not acquire a permit": {
 			setup: func(failingIng *failingIngester) {
-				failingIng.circuitBreaker.readCircuitBreaker.cb.Open()
+				failingIng.circuitBreaker.read.cb.Open()
 			},
 			expectedAcquiredPermitCount: 0,
 			verifyErr: func(err error) {
@@ -298,7 +298,7 @@ func TestIngester_StartReadRequest(t *testing.T) {
 		},
 		"do not fail if circuit breaker is not active, and do not acquire a permit": {
 			setup: func(failingIng *failingIngester) {
-				failingIng.circuitBreaker.readCircuitBreaker.active.Store(false)
+				failingIng.circuitBreaker.read.active.Store(false)
 			},
 			expectedAcquiredPermitCount: 0,
 		},

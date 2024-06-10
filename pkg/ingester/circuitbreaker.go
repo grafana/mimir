@@ -104,7 +104,7 @@ type circuitBreaker struct {
 	active  atomic.Bool
 	cb      circuitbreaker.CircuitBreaker[any]
 
-	// testRequestDelay is needed for testing purposes to simulate long lasting requests
+	// testRequestDelay is needed for testing purposes to simulate long-lasting requests
 	testRequestDelay time.Duration
 }
 
@@ -246,55 +246,55 @@ func (cb *circuitBreaker) recordResult(errs ...error) error {
 	return nil
 }
 
-type prCircuitBreaker struct {
-	pushCircuitBreaker *circuitBreaker
-	readCircuitBreaker *circuitBreaker
+type ingesterCircuitBreaker struct {
+	push *circuitBreaker
+	read *circuitBreaker
 }
 
-func newPRCircuitBreaker(pushCfg CircuitBreakerConfig, readCfg CircuitBreakerConfig, logger log.Logger, registerer prometheus.Registerer) *prCircuitBreaker {
-	prCB := &prCircuitBreaker{}
+func newIngesterCircuitBreaker(pushCfg CircuitBreakerConfig, readCfg CircuitBreakerConfig, logger log.Logger, registerer prometheus.Registerer) *ingesterCircuitBreaker {
+	prCB := &ingesterCircuitBreaker{}
 	state := func(path string) circuitbreaker.State {
 		switch path {
 		case circuitBreakerWritePath:
-			if prCB.pushCircuitBreaker.isActive() {
-				return prCB.pushCircuitBreaker.cb.State()
+			if prCB.push.isActive() {
+				return prCB.push.cb.State()
 			}
 		case circuitBreakerReadPath:
-			if prCB.readCircuitBreaker.isActive() {
-				return prCB.readCircuitBreaker.cb.State()
+			if prCB.read.isActive() {
+				return prCB.read.cb.State()
 			}
 		}
 		return -1
 	}
 	metrics := newCircuitBreakerMetrics(registerer, state, []string{circuitBreakerWritePath, circuitBreakerReadPath})
-	prCB.pushCircuitBreaker = newCircuitBreaker(pushCfg, metrics, circuitBreakerWritePath, logger)
-	prCB.readCircuitBreaker = newCircuitBreaker(readCfg, metrics, circuitBreakerReadPath, logger)
+	prCB.push = newCircuitBreaker(pushCfg, metrics, circuitBreakerWritePath, logger)
+	prCB.read = newCircuitBreaker(readCfg, metrics, circuitBreakerReadPath, logger)
 	return prCB
 }
 
-func (cb *prCircuitBreaker) activate() {
+func (cb *ingesterCircuitBreaker) activate() {
 	if cb == nil {
 		return
 	}
-	cb.pushCircuitBreaker.activate()
-	cb.readCircuitBreaker.activate()
+	cb.push.activate()
+	cb.read.activate()
 }
 
 // tryPushAcquirePermit tries to acquire a permit to use the push circuit breaker and returns whether a permit was acquired.
 // If it was possible, tryPushAcquirePermit returns a function that should be called to release the acquired permit.
 // If it was not possible, the causing error is returned.
-func (cb *prCircuitBreaker) tryPushAcquirePermit() (func(time.Duration, error), error) {
+func (cb *ingesterCircuitBreaker) tryPushAcquirePermit() (func(time.Duration, error), error) {
 	if cb == nil {
 		return func(time.Duration, error) {}, nil
 	}
 
-	pushAcquiredPermit, err := cb.pushCircuitBreaker.tryAcquirePermit()
+	pushAcquiredPermit, err := cb.push.tryAcquirePermit()
 	if err != nil {
 		return nil, err
 	}
 	return func(duration time.Duration, err error) {
 		if pushAcquiredPermit {
-			_ = cb.pushCircuitBreaker.finishRequest(duration, cb.pushCircuitBreaker.cfg.RequestTimeout, err)
+			_ = cb.push.finishRequest(duration, cb.push.cfg.RequestTimeout, err)
 		}
 	}, nil
 }
@@ -302,22 +302,22 @@ func (cb *prCircuitBreaker) tryPushAcquirePermit() (func(time.Duration, error), 
 // tryReadAcquirePermit tries to acquire a permit to use the read circuit breaker and returns whether a permit was acquired.
 // If it was possible, tryReadAcquirePermit returns a function that should be called to release the acquired permit.
 // If it was not possible, the causing error is returned.
-func (cb *prCircuitBreaker) tryReadAcquirePermit() (func(time.Duration, error), error) {
+func (cb *ingesterCircuitBreaker) tryReadAcquirePermit() (func(time.Duration, error), error) {
 	if cb == nil {
 		return func(time.Duration, error) {}, nil
 	}
 
-	if cb.pushCircuitBreaker.isActive() && cb.pushCircuitBreaker.cb.State() == circuitbreaker.OpenState {
-		return nil, newCircuitBreakerOpenError(cb.pushCircuitBreaker.path, cb.pushCircuitBreaker.cb.RemainingDelay())
+	if cb.push.isActive() && cb.push.cb.State() == circuitbreaker.OpenState {
+		return nil, newCircuitBreakerOpenError(cb.push.path, cb.push.cb.RemainingDelay())
 	}
 
-	readAcquiredPermit, err := cb.readCircuitBreaker.tryAcquirePermit()
+	readAcquiredPermit, err := cb.read.tryAcquirePermit()
 	if err != nil {
 		return nil, err
 	}
 	return func(duration time.Duration, err error) {
 		if readAcquiredPermit {
-			_ = cb.readCircuitBreaker.finishRequest(duration, cb.readCircuitBreaker.cfg.RequestTimeout, err)
+			_ = cb.read.finishRequest(duration, cb.read.cfg.RequestTimeout, err)
 		}
 	}, nil
 }
