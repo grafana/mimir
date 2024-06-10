@@ -173,7 +173,7 @@ func handler(
 			if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 				code, msg = int(resp.Code), string(resp.Body)
 			} else {
-				_, code = toGRPCHTTPStatus(ctx, err, limits)
+				_, code = toGRPCHTTPStatus(ctx, err, limits, nil)
 				msg = err.Error()
 			}
 			if code != 202 {
@@ -188,6 +188,30 @@ func handler(
 			http.Error(w, msg, code)
 		}
 	})
+}
+
+// Retryable HTTP codes for otlp collector
+var retryableHTTPCodes = map[int]bool{
+	502: true,
+	503: true,
+	504: true,
+	429: true,
+}
+
+// convertHTTPCodeOtlp maps specific HTTP status codes to those recognized by the OTLP client for retry.
+//   - Maps a custom 529 error to the standard 429 (Too Many Requests) error.
+//   - Converts non-retryable 5xx errors to 503 (Service Unavailable) to trigger client retries, as per OTLP specifications (https://opentelemetry.io/docs/specs/otlp/#failures-1).
+//   - Ensures that the 501 (Not Implemented) error is not retried.
+var convertHTTPCodeOtlp = func(httpCode int) int {
+	if httpCode == StatusServiceOverloaded {
+		httpCode = http.StatusTooManyRequests
+	}
+	if httpCode/100 == 5 && !retryableHTTPCodes[httpCode] {
+		if httpCode != http.StatusNotImplemented {
+			httpCode = http.StatusServiceUnavailable
+		}
+	}
+	return httpCode
 }
 
 func otlpHandler(
@@ -247,7 +271,7 @@ func otlpHandler(
 				grpcCode = s.Code() // this will be the same as httpCode.
 				errorMsg = string(resp.Body)
 			} else {
-				grpcCode, httpCode = toGRPCHTTPStatus(ctx, err, limits)
+				grpcCode, httpCode = toGRPCHTTPStatus(ctx, err, limits, convertHTTPCodeOtlp)
 				errorMsg = err.Error()
 			}
 			if httpCode != 202 {
@@ -258,6 +282,7 @@ func otlpHandler(
 				}
 				level.Error(logger).Log(msgs...)
 			}
+
 			addHeaders(w, err, r, httpCode, retryCfg)
 			writeErrorToHTTPResponseBody(w, httpCode, grpcCode, errorMsg, logger)
 		}
@@ -306,44 +331,50 @@ func calculateRetryAfter(retryAttemptHeader string, baseSeconds int, maxBackoffE
 // toGRPCHTTPStatus converts the given error into an appropriate GRPC and HTTP status corresponding
 // to that error, if the error is one of the errors from this package. Otherwise, codes.Internal and
 // http.StatusInternalServerError is returned.
-func toGRPCHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrides) (codes.Code, int) {
-	if errors.Is(pushErr, context.DeadlineExceeded) {
-		return codes.Internal, http.StatusInternalServerError
-	}
-
-	var distributorErr Error
-	if errors.As(pushErr, &distributorErr) {
-		switch distributorErr.Cause() {
-		case mimirpb.BAD_DATA:
-			return codes.InvalidArgument, http.StatusBadRequest
-		case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
-			serviceOverloadErrorEnabled := false
-			userID, err := tenant.TenantID(ctx)
-			if err == nil {
-				serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
+// convertHTTPCodeFunc is utilized by the OTLP endpoint.
+// According to the OTLP specifications (https://opentelemetry.io/docs/specs/otlp/#failures-1), unlike Prometheus, the OTLP client only retries on HTTP status codes 429, 502, 503, and 504.
+// Use convertHTTPCodeFunc to map non-retryable HTTP error codes to retryable ones.
+func toGRPCHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrides, convertHTTPCodeFunc func(httpCode int) int) (codes.Code, int) {
+	gCode := codes.Internal
+	httpCode := http.StatusInternalServerError
+	if !errors.Is(pushErr, context.DeadlineExceeded) {
+		var distributorErr Error
+		if errors.As(pushErr, &distributorErr) {
+			switch distributorErr.Cause() {
+			case mimirpb.BAD_DATA:
+				gCode, httpCode = codes.InvalidArgument, http.StatusBadRequest
+			case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
+				serviceOverloadErrorEnabled := false
+				userID, err := tenant.TenantID(ctx)
+				if err == nil {
+					serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
+				}
+				// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
+				// Client may discard the data or slow down and re-send.
+				// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+				if serviceOverloadErrorEnabled {
+					gCode, httpCode = codes.ResourceExhausted, StatusServiceOverloaded
+				} else {
+					gCode, httpCode = codes.ResourceExhausted, http.StatusTooManyRequests
+				}
+			case mimirpb.REPLICAS_DID_NOT_MATCH:
+				gCode, httpCode = codes.OK, http.StatusAccepted
+			case mimirpb.TOO_MANY_CLUSTERS:
+				gCode, httpCode = codes.InvalidArgument, http.StatusBadRequest
+			case mimirpb.TSDB_UNAVAILABLE:
+				gCode, httpCode = codes.Unavailable, http.StatusServiceUnavailable
+			case mimirpb.CIRCUIT_BREAKER_OPEN:
+				gCode, httpCode = codes.Unavailable, http.StatusServiceUnavailable
+			case mimirpb.METHOD_NOT_ALLOWED:
+				// Return a 501 (and not 405) to explicitly signal a misconfiguration and to possibly track that amongst other 5xx errors.
+				gCode, httpCode = codes.Unimplemented, http.StatusNotImplemented
 			}
-			// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
-			// Client may discard the data or slow down and re-send.
-			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-			if serviceOverloadErrorEnabled {
-				return codes.ResourceExhausted, StatusServiceOverloaded
-			}
-			return codes.ResourceExhausted, http.StatusTooManyRequests
-		case mimirpb.REPLICAS_DID_NOT_MATCH:
-			return codes.OK, http.StatusAccepted
-		case mimirpb.TOO_MANY_CLUSTERS:
-			return codes.InvalidArgument, http.StatusBadRequest
-		case mimirpb.TSDB_UNAVAILABLE:
-			return codes.Unavailable, http.StatusServiceUnavailable
-		case mimirpb.CIRCUIT_BREAKER_OPEN:
-			return codes.Unavailable, http.StatusServiceUnavailable
-		case mimirpb.METHOD_NOT_ALLOWED:
-			// Return a 501 (and not 405) to explicitly signal a misconfiguration and to possibly track that amongst other 5xx errors.
-			return codes.Unimplemented, http.StatusNotImplemented
 		}
 	}
-
-	return codes.Internal, http.StatusInternalServerError
+	if convertHTTPCodeFunc != nil {
+		return gCode, convertHTTPCodeFunc(httpCode)
+	}
+	return gCode, httpCode
 }
 
 func addHeaders(w http.ResponseWriter, err error, r *http.Request, responseCode int, retryCfg RetryConfig) {
