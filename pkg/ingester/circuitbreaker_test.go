@@ -476,7 +476,7 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
 					for _, req := range reqs {
 						ctx := user.InjectOrgID(context.Background(), userID)
 						count++
-						i.circuitBreaker.pushCircuitBreaker.testRequestDelay = testCase.pushRequestDelay
+						i.circuitBreaker.push.testRequestDelay = testCase.pushRequestDelay
 						err = i.PushToStorage(ctx, req)
 						if initialDelayEnabled {
 							if testCase.expectedErrorWhenCircuitBreakerClosed != nil {
@@ -577,12 +577,12 @@ func TestIngester_StartPushRequest_CircuitBreakerOpen(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "test")
 
 	// If i's circuit breaker is closed, StartPushRequest is successful.
-	i.circuitBreaker.pushCircuitBreaker.cb.Close()
+	i.circuitBreaker.push.cb.Close()
 	_, err = i.StartPushRequest(ctx, 0)
 	require.NoError(t, err)
 
 	// If i's circuit breaker is open, StartPushRequest returns a circuitBreakerOpenError.
-	i.circuitBreaker.pushCircuitBreaker.cb.Open()
+	i.circuitBreaker.push.cb.Open()
 	_, err = i.StartPushRequest(ctx, 0)
 	require.Error(t, err)
 	require.ErrorAs(t, err, &circuitBreakerOpenError{})
@@ -778,7 +778,7 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 				requestDuration: testCase.pushRequestDuration,
 				requestFinish: func(duration time.Duration, err error) {
 					if testCase.acquiredCircuitBreakerPermit {
-						_ = i.circuitBreaker.pushCircuitBreaker.finishRequest(duration, cfg.PushCircuitBreaker.RequestTimeout, err)
+						_ = i.circuitBreaker.push.finishRequest(duration, cfg.PushCircuitBreaker.RequestTimeout, err)
 					}
 				},
 				pushErr: testCase.err,
@@ -871,7 +871,7 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
 				for _, req := range reqs {
 					ctx := user.InjectOrgID(context.Background(), userID)
 					// Configure circuit breaker to delay push requests.
-					i.circuitBreaker.pushCircuitBreaker.testRequestDelay = pushTimeout
+					i.circuitBreaker.push.testRequestDelay = pushTimeout
 					count++
 
 					ctx, err = i.StartPushRequest(ctx, int64(req.Size()))
@@ -882,7 +882,7 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
 						// less than failureThreshold deadline exceeded errors, it is still
 						// closed.
 						require.NoError(t, err)
-						require.Equal(t, circuitbreaker.ClosedState, i.circuitBreaker.pushCircuitBreaker.cb.State())
+						require.Equal(t, circuitbreaker.ClosedState, i.circuitBreaker.push.cb.State())
 						st, ok := ctx.Value(pushReqCtxKey).(*pushRequestState)
 						require.True(t, ok)
 						require.Equal(t, int64(req.Size()), st.requestSize)
@@ -890,7 +890,7 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
 						require.NoError(t, err)
 						i.FinishPushRequest(ctx)
 					} else {
-						require.Equal(t, circuitbreaker.OpenState, i.circuitBreaker.pushCircuitBreaker.cb.State())
+						require.Equal(t, circuitbreaker.OpenState, i.circuitBreaker.push.cb.State())
 						require.Nil(t, ctx)
 						require.ErrorAs(t, err, &circuitBreakerOpenError{})
 					}
@@ -1010,10 +1010,10 @@ func TestPRCircuitBreaker_NewPRCircuitBreaker(t *testing.T) {
 		testModeEnabled: true,
 	}
 	registerer := prometheus.NewRegistry()
-	prCB := newPRCircuitBreaker(pushCfg, readCfg, log.NewNopLogger(), registerer)
+	prCB := newIngesterCircuitBreaker(pushCfg, readCfg, log.NewNopLogger(), registerer)
 	require.NotNil(t, prCB)
-	require.NotNil(t, prCB.pushCircuitBreaker)
-	require.NotNil(t, prCB.readCircuitBreaker)
+	require.NotNil(t, prCB.push)
+	require.NotNil(t, prCB.read)
 
 	expectedMetrics := `
 		# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
@@ -1056,13 +1056,13 @@ func TestPRCircuitBreaker_TryPushAcquirePermit(t *testing.T) {
 		"cortex_ingester_circuit_breaker_current_state",
 	}
 	testCases := map[string]struct {
-		circuitBreakerSetup         func(breaker *prCircuitBreaker)
+		circuitBreakerSetup         func(breaker *ingesterCircuitBreaker)
 		expectedCircuitBreakerError bool
 		expectedMetrics             string
 	}{
 		"if push circuit breaker is not active, finish function and no error are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.pushCircuitBreaker.active.Store(false)
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.push.active.Store(false)
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1093,9 +1093,9 @@ func TestPRCircuitBreaker_TryPushAcquirePermit(t *testing.T) {
 			`,
 		},
 		"if push circuit breaker is closed, finish function and no error are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.pushCircuitBreaker.activate()
-				cb.pushCircuitBreaker.cb.Close()
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.push.activate()
+				cb.push.cb.Close()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1126,9 +1126,9 @@ func TestPRCircuitBreaker_TryPushAcquirePermit(t *testing.T) {
 			`,
 		},
 		"if push circuit breaker is open, no finish function and a circuitBreakerErrorOpen are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.pushCircuitBreaker.activate()
-				cb.pushCircuitBreaker.cb.Open()
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.push.activate()
+				cb.push.cb.Open()
 			},
 			expectedCircuitBreakerError: true,
 			expectedMetrics: `
@@ -1159,9 +1159,9 @@ func TestPRCircuitBreaker_TryPushAcquirePermit(t *testing.T) {
 			`,
 		},
 		"if push circuit breaker is half-open, finish function and no error are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.pushCircuitBreaker.activate()
-				cb.pushCircuitBreaker.cb.HalfOpen()
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.push.activate()
+				cb.push.cb.HalfOpen()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1205,9 +1205,9 @@ func TestPRCircuitBreaker_TryPushAcquirePermit(t *testing.T) {
 			acquiredPermitCount := atomic.NewInt64(0)
 			recordedSuccessCount := atomic.NewInt64(0)
 			recordedFailureCount := atomic.NewInt64(0)
-			cb := newPRCircuitBreaker(cfg, cfg, log.NewNopLogger(), registry)
-			cb.pushCircuitBreaker.cb = &mockedCircuitBreaker{
-				CircuitBreaker:      cb.pushCircuitBreaker.cb,
+			cb := newIngesterCircuitBreaker(cfg, cfg, log.NewNopLogger(), registry)
+			cb.push.cb = &mockedCircuitBreaker{
+				CircuitBreaker:      cb.push.cb,
 				acquiredPermitCount: acquiredPermitCount,
 				recordSuccessCount:  recordedSuccessCount,
 				recordFailureCount:  recordedFailureCount,
@@ -1224,7 +1224,7 @@ func TestPRCircuitBreaker_TryPushAcquirePermit(t *testing.T) {
 				require.NoError(t, err)
 				require.NotNil(t, finish)
 				var expectedVal int64
-				if cb.pushCircuitBreaker.isActive() {
+				if cb.push.isActive() {
 					expectedVal = 1
 				}
 				require.Equal(t, expectedVal, acquiredPermitCount.Load())
@@ -1247,14 +1247,14 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 		"cortex_ingester_circuit_breaker_current_state",
 	}
 	testCases := map[string]struct {
-		circuitBreakerSetup         func(breaker *prCircuitBreaker)
+		circuitBreakerSetup         func(breaker *ingesterCircuitBreaker)
 		expectedCircuitBreakerError bool
 		expectedMetrics             string
 	}{
 		"if read circuit breaker is not active and push circuit breaker is not active, finish function and no error are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.readCircuitBreaker.active.Store(false)
-				cb.pushCircuitBreaker.active.Store(false)
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.read.active.Store(false)
+				cb.push.active.Store(false)
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1285,10 +1285,10 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			`,
 		},
 		"if read circuit breaker is not active and push circuit breaker is closed, finish function and no error are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.readCircuitBreaker.active.Store(false)
-				cb.pushCircuitBreaker.activate()
-				cb.pushCircuitBreaker.cb.Close()
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.read.active.Store(false)
+				cb.push.activate()
+				cb.push.cb.Close()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1319,10 +1319,10 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			`,
 		},
 		"if read circuit breaker is not active and push circuit breaker is open, finish function and no error are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.readCircuitBreaker.active.Store(false)
-				cb.pushCircuitBreaker.activate()
-				cb.pushCircuitBreaker.cb.Open()
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.read.active.Store(false)
+				cb.push.activate()
+				cb.push.cb.Open()
 			},
 			expectedCircuitBreakerError: true,
 			expectedMetrics: `
@@ -1353,10 +1353,10 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			`,
 		},
 		"if read circuit breaker is not active and push circuit breaker is half-open, finish function and no error are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.readCircuitBreaker.active.Store(false)
-				cb.pushCircuitBreaker.activate()
-				cb.pushCircuitBreaker.cb.HalfOpen()
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.read.active.Store(false)
+				cb.push.activate()
+				cb.push.cb.HalfOpen()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1387,10 +1387,10 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			`,
 		},
 		"if read circuit breaker is closed and push circuit breaker is is not active, finish function and no error are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.readCircuitBreaker.activate()
-				cb.readCircuitBreaker.cb.Close()
-				cb.pushCircuitBreaker.active.Store(false)
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.read.activate()
+				cb.read.cb.Close()
+				cb.push.active.Store(false)
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1421,11 +1421,11 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			`,
 		},
 		"if read circuit breaker is closed and push circuit breaker is closed, finish function and no error are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.readCircuitBreaker.activate()
-				cb.readCircuitBreaker.cb.Close()
-				cb.pushCircuitBreaker.activate()
-				cb.pushCircuitBreaker.cb.Close()
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.read.activate()
+				cb.read.cb.Close()
+				cb.push.activate()
+				cb.push.cb.Close()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1456,11 +1456,11 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			`,
 		},
 		"if read circuit breaker is closed and push circuit breaker is open, finish function and no error are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.readCircuitBreaker.activate()
-				cb.readCircuitBreaker.cb.Close()
-				cb.pushCircuitBreaker.activate()
-				cb.pushCircuitBreaker.cb.Open()
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.read.activate()
+				cb.read.cb.Close()
+				cb.push.activate()
+				cb.push.cb.Open()
 			},
 			expectedCircuitBreakerError: true,
 			expectedMetrics: `
@@ -1491,11 +1491,11 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			`,
 		},
 		"if read circuit breaker is closed and push circuit breaker is half-open, finish function and no error are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.readCircuitBreaker.activate()
-				cb.readCircuitBreaker.cb.Close()
-				cb.pushCircuitBreaker.activate()
-				cb.pushCircuitBreaker.cb.HalfOpen()
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.read.activate()
+				cb.read.cb.Close()
+				cb.push.activate()
+				cb.push.cb.HalfOpen()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1526,10 +1526,10 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			`,
 		},
 		"if read circuit breaker is open and push circuit breaker is not active, no finish function and a circuitBreakerErrorOpen are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.readCircuitBreaker.activate()
-				cb.readCircuitBreaker.cb.Open()
-				cb.pushCircuitBreaker.active.Store(false)
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.read.activate()
+				cb.read.cb.Open()
+				cb.push.active.Store(false)
 			},
 			expectedCircuitBreakerError: true,
 			expectedMetrics: `
@@ -1560,11 +1560,11 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			`,
 		},
 		"if read circuit breaker is open and push circuit breaker is closed, no finish function and a circuitBreakerErrorOpen are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.readCircuitBreaker.activate()
-				cb.readCircuitBreaker.cb.Open()
-				cb.pushCircuitBreaker.activate()
-				cb.pushCircuitBreaker.cb.Close()
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.read.activate()
+				cb.read.cb.Open()
+				cb.push.activate()
+				cb.push.cb.Close()
 			},
 			expectedCircuitBreakerError: true,
 			expectedMetrics: `
@@ -1595,11 +1595,11 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			`,
 		},
 		"if read circuit breaker is open and push circuit breaker is open, finish function and no error are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.readCircuitBreaker.activate()
-				cb.readCircuitBreaker.cb.Open()
-				cb.pushCircuitBreaker.activate()
-				cb.pushCircuitBreaker.cb.Open()
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.read.activate()
+				cb.read.cb.Open()
+				cb.push.activate()
+				cb.push.cb.Open()
 			},
 			expectedCircuitBreakerError: true,
 			expectedMetrics: `
@@ -1630,11 +1630,11 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			`,
 		},
 		"if read circuit breaker is open and push circuit breaker is half-open, finish function and no error are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.readCircuitBreaker.activate()
-				cb.readCircuitBreaker.cb.Open()
-				cb.pushCircuitBreaker.activate()
-				cb.pushCircuitBreaker.cb.HalfOpen()
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.read.activate()
+				cb.read.cb.Open()
+				cb.push.activate()
+				cb.push.cb.HalfOpen()
 			},
 			expectedCircuitBreakerError: true,
 			expectedMetrics: `
@@ -1665,10 +1665,10 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			`,
 		},
 		"if read circuit breaker is half-open and push circuit breaker is not active, finish function and no error are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.readCircuitBreaker.activate()
-				cb.readCircuitBreaker.cb.HalfOpen()
-				cb.pushCircuitBreaker.active.Store(false)
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.read.activate()
+				cb.read.cb.HalfOpen()
+				cb.push.active.Store(false)
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1699,11 +1699,11 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			`,
 		},
 		"if read circuit breaker is half-open and push circuit breaker is closed, finish function and no error are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.readCircuitBreaker.activate()
-				cb.readCircuitBreaker.cb.HalfOpen()
-				cb.pushCircuitBreaker.activate()
-				cb.pushCircuitBreaker.cb.Close()
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.read.activate()
+				cb.read.cb.HalfOpen()
+				cb.push.activate()
+				cb.push.cb.Close()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1734,11 +1734,11 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			`,
 		},
 		"if read circuit breaker is half-open and push circuit breaker is open, finish function and no error are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.readCircuitBreaker.activate()
-				cb.readCircuitBreaker.cb.HalfOpen()
-				cb.pushCircuitBreaker.activate()
-				cb.pushCircuitBreaker.cb.Open()
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.read.activate()
+				cb.read.cb.HalfOpen()
+				cb.push.activate()
+				cb.push.cb.Open()
 			},
 			expectedCircuitBreakerError: true,
 			expectedMetrics: `
@@ -1769,11 +1769,11 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			`,
 		},
 		"if read circuit breaker is half-open and push circuit breaker is half-open, finish function and no error are returned": {
-			circuitBreakerSetup: func(cb *prCircuitBreaker) {
-				cb.readCircuitBreaker.activate()
-				cb.readCircuitBreaker.cb.HalfOpen()
-				cb.pushCircuitBreaker.activate()
-				cb.pushCircuitBreaker.cb.HalfOpen()
+			circuitBreakerSetup: func(cb *ingesterCircuitBreaker) {
+				cb.read.activate()
+				cb.read.cb.HalfOpen()
+				cb.push.activate()
+				cb.push.cb.HalfOpen()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1827,15 +1827,15 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			readAcquiredPermitCount := atomic.NewInt64(0)
 			readRecordedSuccessCount := atomic.NewInt64(0)
 			readRecordedFailureCount := atomic.NewInt64(0)
-			cb := newPRCircuitBreaker(pushCfg, readCfg, log.NewNopLogger(), registry)
-			cb.pushCircuitBreaker.cb = &mockedCircuitBreaker{
-				CircuitBreaker:      cb.pushCircuitBreaker.cb,
+			cb := newIngesterCircuitBreaker(pushCfg, readCfg, log.NewNopLogger(), registry)
+			cb.push.cb = &mockedCircuitBreaker{
+				CircuitBreaker:      cb.push.cb,
 				acquiredPermitCount: pushAcquiredPermitCount,
 				recordSuccessCount:  pushRecordedSuccessCount,
 				recordFailureCount:  pushRecordedFailureCount,
 			}
-			cb.readCircuitBreaker.cb = &mockedCircuitBreaker{
-				CircuitBreaker:      cb.readCircuitBreaker.cb,
+			cb.read.cb = &mockedCircuitBreaker{
+				CircuitBreaker:      cb.read.cb,
 				acquiredPermitCount: readAcquiredPermitCount,
 				recordSuccessCount:  readRecordedSuccessCount,
 				recordFailureCount:  readRecordedFailureCount,
@@ -1852,7 +1852,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 				require.NoError(t, err)
 				require.NotNil(t, finish)
 				var expectedReadVal int64
-				if cb.readCircuitBreaker.isActive() {
+				if cb.read.isActive() {
 					expectedReadVal = 1
 				}
 				require.Equal(t, int64(0), pushAcquiredPermitCount.Load())
