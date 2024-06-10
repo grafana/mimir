@@ -303,7 +303,7 @@ func (cb *ingesterCircuitBreaker) tryPushAcquirePermit() (func(time.Duration, er
 // If it was possible, tryReadAcquirePermit returns a function that should be called to release the acquired permit.
 // If it was not possible, the causing error is returned.
 func (cb *ingesterCircuitBreaker) tryReadAcquirePermit() (func(time.Duration, error), error) {
-	if cb == nil {
+	if cb == nil || !cb.read.isActive() {
 		return func(time.Duration, error) {}, nil
 	}
 
