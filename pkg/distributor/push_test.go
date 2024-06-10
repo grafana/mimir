@@ -1057,7 +1057,7 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 	}
 }
 
-func TestHandler_ToHTTPStatus(t *testing.T) {
+func TestHandler_toHTTPStatus(t *testing.T) {
 	const (
 		ingesterID  = "ingester-25"
 		userID      = "user"
@@ -1073,424 +1073,168 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 		err                         error
 		serviceOverloadErrorEnabled bool
 		expectedHTTPStatus          int
-		expectedGRPCStatus          codes.Code
 		expectedErrorMsg            string
-		convertHTTPCodeFunc         func(int) int
 	}
 	testCases := map[string]testStruct{
-		"remote write, a generic error gets translated into a HTTP 500": {
+		"a generic error gets translated into a HTTP 500": {
 			err:                originalErr,
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   originalMsg,
 		},
-		"remote write, a DoNotLog of a generic error gets translated into a HTTP 500": {
+		"a DoNotLog of a generic error gets translated into a HTTP 500": {
 			err:                middleware.DoNotLogError{Err: originalErr},
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   originalMsg,
 		},
-		"remote write, a context.DeadlineExceeded gets translated into a HTTP 500": {
+		"a context.DeadlineExceeded gets translated into a HTTP 500": {
 			err:                context.DeadlineExceeded,
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   context.DeadlineExceeded.Error(),
 		},
-		"remote write, a replicasDidNotMatchError gets translated into an HTTP 202": {
+		"a replicasDidNotMatchError gets translated into an HTTP 202": {
 			err:                replicasNotMatchErr,
 			expectedHTTPStatus: http.StatusAccepted,
-			expectedGRPCStatus: codes.OK,
 			expectedErrorMsg:   replicasNotMatchErr.Error(),
 		},
-		"remote write, a DoNotLogError of a replicasDidNotMatchError gets translated into an HTTP 202": {
+		"a DoNotLogError of a replicasDidNotMatchError gets translated into an HTTP 202": {
 			err:                middleware.DoNotLogError{Err: replicasNotMatchErr},
 			expectedHTTPStatus: http.StatusAccepted,
-			expectedGRPCStatus: codes.OK,
 			expectedErrorMsg:   replicasNotMatchErr.Error(),
 		},
-		"remote write, a tooManyClustersError gets translated into an HTTP 400": {
+		"a tooManyClustersError gets translated into an HTTP 400": {
 			err:                tooManyClustersErr,
 			expectedHTTPStatus: http.StatusBadRequest,
-			expectedGRPCStatus: codes.InvalidArgument,
 			expectedErrorMsg:   tooManyClustersErr.Error(),
 		},
-		"remote write, a DoNotLogError of a tooManyClustersError gets translated into an HTTP 400": {
+		"a DoNotLogError of a tooManyClustersError gets translated into an HTTP 400": {
 			err:                middleware.DoNotLogError{Err: tooManyClustersErr},
 			expectedHTTPStatus: http.StatusBadRequest,
-			expectedGRPCStatus: codes.InvalidArgument,
 			expectedErrorMsg:   tooManyClustersErr.Error(),
 		},
-		"remote write, a validationError gets translated into an HTTP 400": {
+		"a validationError gets translated into an HTTP 400": {
 			err:                newValidationError(originalErr),
 			expectedHTTPStatus: http.StatusBadRequest,
-			expectedGRPCStatus: codes.InvalidArgument,
 			expectedErrorMsg:   originalMsg,
 		},
-		"remote write, a DoNotLogError of a validationError gets translated into an HTTP 400": {
+		"a DoNotLogError of a validationError gets translated into an HTTP 400": {
 			err:                middleware.DoNotLogError{Err: newValidationError(originalErr)},
 			expectedHTTPStatus: http.StatusBadRequest,
-			expectedGRPCStatus: codes.InvalidArgument,
 			expectedErrorMsg:   originalMsg,
 		},
-		"remote write, an ingestionRateLimitedError gets translated into an HTTP 429": {
+		"an ingestionRateLimitedError gets translated into an HTTP 429": {
 			err:                ingestionRateLimitedErr,
 			expectedHTTPStatus: http.StatusTooManyRequests,
-			expectedGRPCStatus: codes.ResourceExhausted,
 			expectedErrorMsg:   ingestionRateLimitedErr.Error(),
 		},
-		"remote write, an ingestionRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529": {
+		"an ingestionRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529": {
 			err:                         ingestionRateLimitedErr,
 			serviceOverloadErrorEnabled: true,
 			expectedHTTPStatus:          StatusServiceOverloaded,
-			expectedGRPCStatus:          codes.ResourceExhausted,
 			expectedErrorMsg:            ingestionRateLimitedErr.Error(),
 		},
-		"remote write, a DoNotLogError of an ingestionRateLimitedError gets translated into an HTTP 429": {
+		"a DoNotLogError of an ingestionRateLimitedError gets translated into an HTTP 429": {
 			err:                middleware.DoNotLogError{Err: ingestionRateLimitedErr},
 			expectedHTTPStatus: http.StatusTooManyRequests,
-			expectedGRPCStatus: codes.ResourceExhausted,
 			expectedErrorMsg:   ingestionRateLimitedErr.Error(),
 		},
-		"remote write, a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529": {
+		"a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529": {
 			err:                         requestRateLimitedErr,
 			serviceOverloadErrorEnabled: true,
 			expectedHTTPStatus:          StatusServiceOverloaded,
-			expectedGRPCStatus:          codes.ResourceExhausted,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
-		"remote write, a DoNotLogError of a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529": {
+		"a DoNotLogError of a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529": {
 			err:                         middleware.DoNotLogError{Err: requestRateLimitedErr},
 			serviceOverloadErrorEnabled: true,
 			expectedHTTPStatus:          StatusServiceOverloaded,
-			expectedGRPCStatus:          codes.ResourceExhausted,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
-		"remote write, a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an HTTP 429": {
+		"a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an HTTP 429": {
 			err:                         requestRateLimitedErr,
 			serviceOverloadErrorEnabled: false,
 			expectedHTTPStatus:          http.StatusTooManyRequests,
-			expectedGRPCStatus:          codes.ResourceExhausted,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
-		"remote write, a DoNotLogError of a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an HTTP 429": {
+		"a DoNotLogError of a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an HTTP 429": {
 			err:                         middleware.DoNotLogError{Err: requestRateLimitedErr},
 			serviceOverloadErrorEnabled: false,
 			expectedHTTPStatus:          http.StatusTooManyRequests,
-			expectedGRPCStatus:          codes.ResourceExhausted,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
-		"remote write, an ingesterPushError with BAD_DATA cause gets translated into an HTTP 400": {
+		"an ingesterPushError with BAD_DATA cause gets translated into an HTTP 400": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.BAD_DATA), ingesterID),
 			expectedHTTPStatus: http.StatusBadRequest,
-			expectedGRPCStatus: codes.InvalidArgument,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
-		"remote write, a DoNotLogError of an ingesterPushError with BAD_DATA cause gets translated into an HTTP 400": {
+		"a DoNotLogError of an ingesterPushError with BAD_DATA cause gets translated into an HTTP 400": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.FailedPrecondition, originalMsg, mimirpb.BAD_DATA), ingesterID)},
 			expectedHTTPStatus: http.StatusBadRequest,
-			expectedGRPCStatus: codes.InvalidArgument,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
-		"remote write, an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into an HTTP 501": {
+		"an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into an HTTP 501": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID),
 			expectedHTTPStatus: http.StatusNotImplemented,
-			expectedGRPCStatus: codes.Unimplemented,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
-		"remote write, a DoNotLogError of an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into an HTTP 501": {
+		"a DoNotLogError of an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into an HTTP 501": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID)},
 			expectedHTTPStatus: http.StatusNotImplemented,
-			expectedGRPCStatus: codes.Unimplemented,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
-		"remote write, an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into an HTTP 503": {
+		"an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into an HTTP 503": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
-			expectedGRPCStatus: codes.Unavailable,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
-		"remote write, a DoNotLogError of an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into an HTTP 503": {
+		"a DoNotLogError of an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into an HTTP 503": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE), ingesterID)},
 			expectedHTTPStatus: http.StatusServiceUnavailable,
-			expectedGRPCStatus: codes.Unavailable,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
-		"remote write, an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into an HTTP 500": {
+		"an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into an HTTP 500": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE), ingesterID),
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
-		"remote write, a DoNotLogError of an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into an HTTP 500": {
+		"a DoNotLogError of an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into an HTTP 500": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE), ingesterID)},
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
-		"remote write, an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 500": {
+		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 500": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT), ingesterID),
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
-		"remote write, a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 500": {
+		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 500": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT), ingesterID)},
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
-		"remote write, an ingesterPushError with UNKNOWN_CAUSE cause gets translated into an HTTP 500": {
+		"an ingesterPushError with UNKNOWN_CAUSE cause gets translated into an HTTP 500": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.UNKNOWN_CAUSE), ingesterID),
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
-		"remote write, a DoNotLogError of an ingesterPushError with UNKNOWN_CAUSE cause gets translated into an HTTP 500": {
+		"a DoNotLogError of an ingesterPushError with UNKNOWN_CAUSE cause gets translated into an HTTP 500": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.UNKNOWN_CAUSE), ingesterID)},
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
-		"remote write, an ingesterPushError obtained from a DeadlineExceeded coming from the ingester gets translated into an HTTP 500": {
+		"an ingesterPushError obtained from a DeadlineExceeded coming from the ingester gets translated into an HTTP 500": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, context.DeadlineExceeded.Error(), mimirpb.UNKNOWN_CAUSE), ingesterID),
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, context.DeadlineExceeded),
 		},
-		"remote write, a circuitBreakerOpenError gets translated into an HTTP 503": {
+		"a circuitBreakerOpenError gets translated into an HTTP 503": {
 			err:                newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
-			expectedGRPCStatus: codes.Unavailable,
 			expectedErrorMsg:   circuitbreaker.ErrOpen.Error(),
 		},
-		"remote write, a wrapped circuitBreakerOpenError gets translated into an HTTP 503": {
+		"a wrapped circuitBreakerOpenError gets translated into an HTTP 503": {
 			err:                errors.Wrap(newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}), fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
-			expectedGRPCStatus: codes.Unavailable,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, circuitbreaker.ErrOpen),
-		},
-
-		"otlp endpoint, a generic error gets translated into a HTTP 503": {
-			err:                 originalErr,
-			expectedHTTPStatus:  http.StatusServiceUnavailable,
-			expectedGRPCStatus:  codes.Internal,
-			expectedErrorMsg:    originalMsg,
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a DoNotLog of a generic error gets translated into a HTTP 503": {
-			err:                 middleware.DoNotLogError{Err: originalErr},
-			expectedHTTPStatus:  http.StatusServiceUnavailable,
-			expectedGRPCStatus:  codes.Internal,
-			expectedErrorMsg:    originalMsg,
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a context.DeadlineExceeded gets translated into a HTTP 503": {
-			err:                 context.DeadlineExceeded,
-			expectedHTTPStatus:  http.StatusServiceUnavailable,
-			expectedGRPCStatus:  codes.Internal,
-			expectedErrorMsg:    context.DeadlineExceeded.Error(),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a replicasDidNotMatchError gets translated into an HTTP 202": {
-			err:                 replicasNotMatchErr,
-			expectedHTTPStatus:  http.StatusAccepted,
-			expectedGRPCStatus:  codes.OK,
-			expectedErrorMsg:    replicasNotMatchErr.Error(),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a DoNotLogError of a replicasDidNotMatchError gets translated into an HTTP 202": {
-			err:                 middleware.DoNotLogError{Err: replicasNotMatchErr},
-			expectedHTTPStatus:  http.StatusAccepted,
-			expectedGRPCStatus:  codes.OK,
-			expectedErrorMsg:    replicasNotMatchErr.Error(),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a tooManyClustersError gets translated into an HTTP 400": {
-			err:                 tooManyClustersErr,
-			expectedHTTPStatus:  http.StatusBadRequest,
-			expectedGRPCStatus:  codes.InvalidArgument,
-			expectedErrorMsg:    tooManyClustersErr.Error(),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a DoNotLogError of a tooManyClustersError gets translated into an HTTP 400": {
-			err:                 middleware.DoNotLogError{Err: tooManyClustersErr},
-			expectedHTTPStatus:  http.StatusBadRequest,
-			expectedGRPCStatus:  codes.InvalidArgument,
-			expectedErrorMsg:    tooManyClustersErr.Error(),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a validationError gets translated into an HTTP 400": {
-			err:                 newValidationError(originalErr),
-			expectedHTTPStatus:  http.StatusBadRequest,
-			expectedGRPCStatus:  codes.InvalidArgument,
-			expectedErrorMsg:    originalMsg,
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a DoNotLogError of a validationError gets translated into an HTTP 400": {
-			err:                 middleware.DoNotLogError{Err: newValidationError(originalErr)},
-			expectedHTTPStatus:  http.StatusBadRequest,
-			expectedGRPCStatus:  codes.InvalidArgument,
-			expectedErrorMsg:    originalMsg,
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, an ingestionRateLimitedError gets translated into an HTTP 429": {
-			err:                 ingestionRateLimitedErr,
-			expectedHTTPStatus:  http.StatusTooManyRequests,
-			expectedGRPCStatus:  codes.ResourceExhausted,
-			expectedErrorMsg:    ingestionRateLimitedErr.Error(),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, an ingestionRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 429": {
-			err:                         ingestionRateLimitedErr,
-			serviceOverloadErrorEnabled: true,
-			expectedHTTPStatus:          http.StatusTooManyRequests,
-			expectedGRPCStatus:          codes.ResourceExhausted,
-			expectedErrorMsg:            ingestionRateLimitedErr.Error(),
-			convertHTTPCodeFunc:         convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a DoNotLogError of an ingestionRateLimitedError gets translated into an HTTP 429": {
-			err:                 middleware.DoNotLogError{Err: ingestionRateLimitedErr},
-			expectedHTTPStatus:  http.StatusTooManyRequests,
-			expectedGRPCStatus:  codes.ResourceExhausted,
-			expectedErrorMsg:    ingestionRateLimitedErr.Error(),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 429": {
-			err:                         requestRateLimitedErr,
-			serviceOverloadErrorEnabled: true,
-			expectedHTTPStatus:          http.StatusTooManyRequests,
-			expectedGRPCStatus:          codes.ResourceExhausted,
-			expectedErrorMsg:            requestRateLimitedErr.Error(),
-			convertHTTPCodeFunc:         convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a DoNotLogError of a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 429": {
-			err:                         middleware.DoNotLogError{Err: requestRateLimitedErr},
-			serviceOverloadErrorEnabled: true,
-			expectedHTTPStatus:          http.StatusTooManyRequests,
-			expectedGRPCStatus:          codes.ResourceExhausted,
-			expectedErrorMsg:            requestRateLimitedErr.Error(),
-			convertHTTPCodeFunc:         convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an HTTP 429": {
-			err:                         requestRateLimitedErr,
-			serviceOverloadErrorEnabled: false,
-			expectedHTTPStatus:          http.StatusTooManyRequests,
-			expectedGRPCStatus:          codes.ResourceExhausted,
-			expectedErrorMsg:            requestRateLimitedErr.Error(),
-			convertHTTPCodeFunc:         convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a DoNotLogError of a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an HTTP 429": {
-			err:                         middleware.DoNotLogError{Err: requestRateLimitedErr},
-			serviceOverloadErrorEnabled: false,
-			expectedHTTPStatus:          http.StatusTooManyRequests,
-			expectedGRPCStatus:          codes.ResourceExhausted,
-			expectedErrorMsg:            requestRateLimitedErr.Error(),
-			convertHTTPCodeFunc:         convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, an ingesterPushError with BAD_DATA cause gets translated into an HTTP 400": {
-			err:                 newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.BAD_DATA), ingesterID),
-			expectedHTTPStatus:  http.StatusBadRequest,
-			expectedGRPCStatus:  codes.InvalidArgument,
-			expectedErrorMsg:    fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a DoNotLogError of an ingesterPushError with BAD_DATA cause gets translated into an HTTP 400": {
-			err:                 middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.FailedPrecondition, originalMsg, mimirpb.BAD_DATA), ingesterID)},
-			expectedHTTPStatus:  http.StatusBadRequest,
-			expectedGRPCStatus:  codes.InvalidArgument,
-			expectedErrorMsg:    fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into an HTTP 501": {
-			err:                 newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID),
-			expectedHTTPStatus:  http.StatusNotImplemented,
-			expectedGRPCStatus:  codes.Unimplemented,
-			expectedErrorMsg:    fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a DoNotLogError of an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into an HTTP 501": {
-			err:                 middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID)},
-			expectedHTTPStatus:  http.StatusNotImplemented,
-			expectedGRPCStatus:  codes.Unimplemented,
-			expectedErrorMsg:    fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into an HTTP 503": {
-			err:                 newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE), ingesterID),
-			expectedHTTPStatus:  http.StatusServiceUnavailable,
-			expectedGRPCStatus:  codes.Unavailable,
-			expectedErrorMsg:    fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a DoNotLogError of an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into an HTTP 503": {
-			err:                 middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE), ingesterID)},
-			expectedHTTPStatus:  http.StatusServiceUnavailable,
-			expectedGRPCStatus:  codes.Unavailable,
-			expectedErrorMsg:    fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into an HTTP 503": {
-			err:                 newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE), ingesterID),
-			expectedHTTPStatus:  http.StatusServiceUnavailable,
-			expectedGRPCStatus:  codes.Internal,
-			expectedErrorMsg:    fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a DoNotLogError of an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into an HTTP 503": {
-			err:                 middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE), ingesterID)},
-			expectedHTTPStatus:  http.StatusServiceUnavailable,
-			expectedGRPCStatus:  codes.Internal,
-			expectedErrorMsg:    fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 503": {
-			err:                 newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT), ingesterID),
-			expectedHTTPStatus:  http.StatusServiceUnavailable,
-			expectedGRPCStatus:  codes.Internal,
-			expectedErrorMsg:    fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 503": {
-			err:                 middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT), ingesterID)},
-			expectedHTTPStatus:  http.StatusServiceUnavailable,
-			expectedGRPCStatus:  codes.Internal,
-			expectedErrorMsg:    fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, an ingesterPushError with UNKNOWN_CAUSE cause gets translated into an HTTP 503": {
-			err:                 newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.UNKNOWN_CAUSE), ingesterID),
-			expectedHTTPStatus:  http.StatusServiceUnavailable,
-			expectedGRPCStatus:  codes.Internal,
-			expectedErrorMsg:    fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a DoNotLogError of an ingesterPushError with UNKNOWN_CAUSE cause gets translated into an HTTP 503": {
-			err:                 middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.UNKNOWN_CAUSE), ingesterID)},
-			expectedHTTPStatus:  http.StatusServiceUnavailable,
-			expectedGRPCStatus:  codes.Internal,
-			expectedErrorMsg:    fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, an ingesterPushError obtained from a DeadlineExceeded coming from the ingester gets translated into an HTTP 503": {
-			err:                 newIngesterPushError(createStatusWithDetails(t, codes.Internal, context.DeadlineExceeded.Error(), mimirpb.UNKNOWN_CAUSE), ingesterID),
-			expectedHTTPStatus:  http.StatusServiceUnavailable,
-			expectedGRPCStatus:  codes.Internal,
-			expectedErrorMsg:    fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, context.DeadlineExceeded),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a circuitBreakerOpenError gets translated into an HTTP 503": {
-			err:                 newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}),
-			expectedHTTPStatus:  http.StatusServiceUnavailable,
-			expectedGRPCStatus:  codes.Unavailable,
-			expectedErrorMsg:    circuitbreaker.ErrOpen.Error(),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
-		},
-		"otlp endpoint, a wrapped circuitBreakerOpenError gets translated into an HTTP 503": {
-			err:                 errors.Wrap(newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}), fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)),
-			expectedHTTPStatus:  http.StatusServiceUnavailable,
-			expectedGRPCStatus:  codes.Unavailable,
-			expectedErrorMsg:    fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, circuitbreaker.ErrOpen),
-			convertHTTPCodeFunc: convertHTTPCodeOtlp,
 		},
 	}
 	for name, tc := range testCases {
@@ -1508,7 +1252,191 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			gStatus, status := toGRPCHTTPStatus(ctx, tc.err, limits, tc.convertHTTPCodeFunc)
+			status := toHTTPStatus(ctx, tc.err, limits)
+			msg := tc.err.Error()
+			assert.Equal(t, tc.expectedHTTPStatus, status)
+			assert.Equal(t, tc.expectedErrorMsg, msg)
+		})
+	}
+}
+
+func TestHandler_toGRPCHTTPStatusOtlp(t *testing.T) {
+	const (
+		ingesterID  = "ingester-25"
+		originalMsg = "this is an error"
+	)
+	originalErr := errors.New(originalMsg)
+	replicasNotMatchErr := newReplicasDidNotMatchError("a", "b")
+	tooManyClustersErr := newTooManyClustersError(10)
+	ingestionRateLimitedErr := newIngestionRateLimitedError(10, 10)
+
+	type testStruct struct {
+		err                error
+		expectedHTTPStatus int
+		expectedGRPCStatus codes.Code
+		expectedErrorMsg   string
+	}
+	testCases := map[string]testStruct{
+		"a generic error gets translated into a HTTP 503": {
+			err:                originalErr,
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedGRPCStatus: codes.Internal,
+			expectedErrorMsg:   originalMsg,
+		},
+		"a DoNotLog of a generic error gets translated into a HTTP 503": {
+			err:                middleware.DoNotLogError{Err: originalErr},
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedGRPCStatus: codes.Internal,
+			expectedErrorMsg:   originalMsg,
+		},
+		"a context.DeadlineExceeded gets translated into a HTTP 503": {
+			err:                context.DeadlineExceeded,
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedGRPCStatus: codes.Internal,
+			expectedErrorMsg:   context.DeadlineExceeded.Error(),
+		},
+		"a replicasDidNotMatchError gets translated into an HTTP 202": {
+			err:                replicasNotMatchErr,
+			expectedHTTPStatus: http.StatusAccepted,
+			expectedGRPCStatus: codes.OK,
+			expectedErrorMsg:   replicasNotMatchErr.Error(),
+		},
+		"a DoNotLogError of a replicasDidNotMatchError gets translated into an HTTP 202": {
+			err:                middleware.DoNotLogError{Err: replicasNotMatchErr},
+			expectedHTTPStatus: http.StatusAccepted,
+			expectedGRPCStatus: codes.OK,
+			expectedErrorMsg:   replicasNotMatchErr.Error(),
+		},
+		"a tooManyClustersError gets translated into an HTTP 400": {
+			err:                tooManyClustersErr,
+			expectedHTTPStatus: http.StatusBadRequest,
+			expectedGRPCStatus: codes.InvalidArgument,
+			expectedErrorMsg:   tooManyClustersErr.Error(),
+		},
+		"a DoNotLogError of a tooManyClustersError gets translated into an HTTP 400": {
+			err:                middleware.DoNotLogError{Err: tooManyClustersErr},
+			expectedHTTPStatus: http.StatusBadRequest,
+			expectedGRPCStatus: codes.InvalidArgument,
+			expectedErrorMsg:   tooManyClustersErr.Error(),
+		},
+		"a validationError gets translated into an HTTP 400": {
+			err:                newValidationError(originalErr),
+			expectedHTTPStatus: http.StatusBadRequest,
+			expectedGRPCStatus: codes.InvalidArgument,
+			expectedErrorMsg:   originalMsg,
+		},
+		"a DoNotLogError of a validationError gets translated into an HTTP 400": {
+			err:                middleware.DoNotLogError{Err: newValidationError(originalErr)},
+			expectedHTTPStatus: http.StatusBadRequest,
+			expectedGRPCStatus: codes.InvalidArgument,
+			expectedErrorMsg:   originalMsg,
+		},
+		"an ingestionRateLimitedError gets translated into an HTTP 429": {
+			err:                ingestionRateLimitedErr,
+			expectedHTTPStatus: http.StatusTooManyRequests,
+			expectedGRPCStatus: codes.ResourceExhausted,
+			expectedErrorMsg:   ingestionRateLimitedErr.Error(),
+		},
+		"a DoNotLogError of an ingestionRateLimitedError gets translated into an HTTP 429": {
+			err:                middleware.DoNotLogError{Err: ingestionRateLimitedErr},
+			expectedHTTPStatus: http.StatusTooManyRequests,
+			expectedGRPCStatus: codes.ResourceExhausted,
+			expectedErrorMsg:   ingestionRateLimitedErr.Error(),
+		},
+		"an ingesterPushError with BAD_DATA cause gets translated into an HTTP 400": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.BAD_DATA), ingesterID),
+			expectedHTTPStatus: http.StatusBadRequest,
+			expectedGRPCStatus: codes.InvalidArgument,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
+		},
+		"a DoNotLogError of an ingesterPushError with BAD_DATA cause gets translated into an HTTP 400": {
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.FailedPrecondition, originalMsg, mimirpb.BAD_DATA), ingesterID)},
+			expectedHTTPStatus: http.StatusBadRequest,
+			expectedGRPCStatus: codes.InvalidArgument,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
+		},
+		"an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into an HTTP 501": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID),
+			expectedHTTPStatus: http.StatusNotImplemented,
+			expectedGRPCStatus: codes.Unimplemented,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
+		},
+		"a DoNotLogError of an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into an HTTP 501": {
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID)},
+			expectedHTTPStatus: http.StatusNotImplemented,
+			expectedGRPCStatus: codes.Unimplemented,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
+		},
+		"an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into an HTTP 503": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE), ingesterID),
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedGRPCStatus: codes.Unavailable,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
+		},
+		"a DoNotLogError of an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into an HTTP 503": {
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE), ingesterID)},
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedGRPCStatus: codes.Unavailable,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
+		},
+		"an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into an HTTP 503": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE), ingesterID),
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedGRPCStatus: codes.Internal,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
+		},
+		"a DoNotLogError of an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into an HTTP 503": {
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE), ingesterID)},
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedGRPCStatus: codes.Internal,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
+		},
+		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 503": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT), ingesterID),
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedGRPCStatus: codes.Internal,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
+		},
+		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 503": {
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT), ingesterID)},
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedGRPCStatus: codes.Internal,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
+		},
+		"an ingesterPushError with UNKNOWN_CAUSE cause gets translated into an HTTP 503": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.UNKNOWN_CAUSE), ingesterID),
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedGRPCStatus: codes.Internal,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
+		},
+		"a DoNotLogError of an ingesterPushError with UNKNOWN_CAUSE cause gets translated into an HTTP 503": {
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.UNKNOWN_CAUSE), ingesterID)},
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedGRPCStatus: codes.Internal,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
+		},
+		"an ingesterPushError obtained from a DeadlineExceeded coming from the ingester gets translated into an HTTP 503": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, context.DeadlineExceeded.Error(), mimirpb.UNKNOWN_CAUSE), ingesterID),
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedGRPCStatus: codes.Internal,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, context.DeadlineExceeded),
+		},
+		"a circuitBreakerOpenError gets translated into an HTTP 503": {
+			err:                newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}),
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedGRPCStatus: codes.Unavailable,
+			expectedErrorMsg:   circuitbreaker.ErrOpen.Error(),
+		},
+		"a wrapped circuitBreakerOpenError gets translated into an HTTP 503": {
+			err:                errors.Wrap(newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}), fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)),
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedGRPCStatus: codes.Unavailable,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, circuitbreaker.ErrOpen),
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			gStatus, status := toGRPCHTTPStatusOtlp(tc.err)
 			msg := tc.err.Error()
 			assert.Equal(t, tc.expectedHTTPStatus, status)
 			assert.Equal(t, tc.expectedGRPCStatus, gStatus)

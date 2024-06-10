@@ -54,7 +54,7 @@
 * [ENHANCEMENT] Ingester/Querier: Optimise regexps with long lists of alternates. #8221, #8234
 * [ENHANCEMENT] Ingester: Include more detail in tracing of queries. #8242
 * [EHNAHCEMENT] Distributor: add `insight=true` to remote-write and OTLP write handlers when the HTTP response status code is 4xx. #8294
-* [BUGFIX] Map Non-Retryable Errors to Retryable in OTLP Endpoint. #8324
+* [BUGFIX] Distributor: prometheus retry on 5xx and 429 errors, while otlp collector only retry on 429, 502, 503 and 504, mapping other 5xx errors to the retryable ones in otlp endpoint. #8324
 * [BUGFIX] Distributor: make OTLP endpoint return marshalled proto bytes as response body for 4xx/5xx errors. #8227
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
 * [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
