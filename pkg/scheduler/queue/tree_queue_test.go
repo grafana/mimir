@@ -11,9 +11,6 @@ import (
 	"testing"
 )
 
-// TODO (casie): Write a test for dequeuing from tqa childA, enqueue to new childB, expect to dequeue next from childB
-// TODO (casie): Write a test for enqueueFrontByPath()
-
 func newTenantQuerierAssignments() *tenantQuerierAssignments {
 	return &tenantQuerierAssignments{
 		tenantQuerierIDs: make(map[TenantID]map[QuerierID]struct{}),
@@ -63,7 +60,6 @@ func Test_EnqueueBackByPath(t *testing.T) {
 	tests := []struct {
 		name             string
 		treeAlgosByDepth []DequeueAlgorithm
-		rootAlgo         DequeueAlgorithm
 		children         []QueuePath
 		expectErr        bool
 	}{
@@ -123,6 +119,59 @@ func Test_EnqueueBackByPath(t *testing.T) {
 	}
 }
 
+func Test_EnqueueFrontByPath(t *testing.T) {
+	type enqueueObj struct {
+		obj  any
+		path QueuePath
+	}
+	someQuerier := QuerierID("placeholder")
+	tests := []struct {
+		name             string
+		treeAlgosByDepth []DequeueAlgorithm
+		enqueueObjs      []enqueueObj
+		expected         []any
+	}{
+		{
+			name:             "enqueue to front of round-robin node",
+			treeAlgosByDepth: []DequeueAlgorithm{&roundRobinState{}},
+			enqueueObjs: []enqueueObj{
+				{"query-1", QueuePath{}},
+				{"query-2", QueuePath{}},
+			},
+			expected: []any{"query-2", "query-1"},
+		},
+		{
+			name: "enqueue to front of shuffle-shard node",
+			treeAlgosByDepth: []DequeueAlgorithm{&tenantQuerierAssignments{
+				currentQuerier: &someQuerier,
+			}},
+			enqueueObjs: []enqueueObj{
+				{"query-1", QueuePath{}},
+				{"query-2", QueuePath{}},
+			},
+			expected: []any{"query-2", "query-1"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tree, err := NewTree(tt.treeAlgosByDepth...)
+			require.NoError(t, err)
+
+			for _, o := range tt.enqueueObjs {
+				err = tree.EnqueueFrontByPath(o.path, o.obj)
+			}
+			require.NoError(t, err)
+
+			for _, expectedVal := range tt.expected {
+				_, v := tree.Dequeue()
+				require.Equal(t, expectedVal, v)
+			}
+			_, v := tree.Dequeue()
+			require.Nil(t, v)
+		})
+	}
+}
+
 func Test_Dequeue_RootNode(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -150,7 +199,6 @@ func Test_Dequeue_RootNode(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// TODO (casie): ugly
 			querierID := QuerierID("placeholder")
 			switch tt.rootAlgo.(type) {
 			case *tenantQuerierAssignments:
@@ -498,7 +546,7 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 			expected: []any{nil},
 		},
 		{
-			// TODO (casie): also dequeues if the tenant _is not_ in the tenant querier map; is this expected? (probably)
+			// This also dequeues if the tenant _is not_ in the tenant querier map; is this expected? (probably)
 			name: "dequeue from a tenant with a nil tenant-querier map",
 			treeAlgosByDepth: []DequeueAlgorithm{
 				&tenantQuerierAssignments{tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{}},

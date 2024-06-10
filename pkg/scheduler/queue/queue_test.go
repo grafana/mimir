@@ -29,6 +29,8 @@ import (
 	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
+// TODO (casie): Write tests for prioritizeQueryComponents is true
+
 func TestMain(m *testing.M) {
 	util_test.VerifyNoLeakTestMain(m)
 }
@@ -110,10 +112,7 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 	normalQueueDimensionFunc := func() []string { return []string{normalQueueDimension} }
 	slowQueueDimensionFunc := func() []string { return []string{slowConsumerQueueDimension} }
 
-	additionalQueueDimensionsEnabledCases := []bool{
-		false,
-		true,
-	}
+	additionalQueueDimensionsEnabledCases := []bool{false, true}
 	queueDurationTotals := map[bool]map[string]float64{
 		false: {normalQueueDimension: 0.0, slowConsumerQueueDimension: 0.0},
 		true:  {normalQueueDimension: 0.0, slowConsumerQueueDimension: 0.0},
@@ -188,8 +187,7 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 		for consumerIdx := 0; consumerIdx < numConsumers; consumerIdx++ {
 			consumerIdx := consumerIdx
 			queueConsumerErrGroup.Go(func() error {
-				returnVal := runConsumer(consumerIdx)
-				return returnVal
+				return runConsumer(consumerIdx)
 			})
 		}
 
@@ -367,7 +365,7 @@ func runQueueConsumerIters(
 	start chan struct{},
 	consumeFunc consumeRequest,
 ) func(consumerIdx int) error {
-	returnFunc := func(consumerIdx int) error {
+	return func(consumerIdx int) error {
 		consumerIters := queueActorIterationCount(totalIters, numConsumers, consumerIdx)
 		lastTenantIndex := FirstTenant()
 		querierID := fmt.Sprintf("consumer-%v", consumerIdx)
@@ -387,7 +385,6 @@ func runQueueConsumerIters(
 
 		return nil
 	}
-	return returnFunc
 }
 
 type consumeRequest func(request Request) error
@@ -649,7 +646,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 		log.NewNopLogger(),
 		1,
 		true,
-		false, // TODO (casie): Write tests for when this is true
+		false,
 		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),

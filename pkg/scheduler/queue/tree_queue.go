@@ -181,7 +181,6 @@ func (n *Node) enqueueBackByPath(tree *Tree, pathFromNode QueuePath, v any) erro
 	if err != nil {
 		return err
 	}
-	// TODO (casie): Create localQueue on node creation; why not?
 	childNode.localQueue.PushBack(v)
 	return nil
 }

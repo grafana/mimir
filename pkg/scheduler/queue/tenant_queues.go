@@ -30,6 +30,7 @@ type queueBroker struct {
 
 	maxTenantQueueSize               int
 	additionalQueueDimensionsEnabled bool
+	prioritizeQueryComponents        bool
 }
 
 func newQueueBroker(
@@ -75,6 +76,7 @@ func newQueueBroker(
 		tenantQuerierAssignments:         tqas,
 		maxTenantQueueSize:               maxTenantQueueSize,
 		additionalQueueDimensionsEnabled: additionalQueueDimensionsEnabled,
+		prioritizeQueryComponents:        prioritizeQueryComponents,
 	}
 
 	return qb
@@ -129,6 +131,9 @@ func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQuer
 func (qb *queueBroker) makeQueuePath(request *tenantRequest) (QueuePath, error) {
 	if qb.additionalQueueDimensionsEnabled {
 		if schedulerRequest, ok := request.req.(*SchedulerRequest); ok {
+			if qb.prioritizeQueryComponents {
+				return append(schedulerRequest.AdditionalQueueDimensions, string(request.tenantID)), nil
+			}
 			return append(QueuePath{string(request.tenantID)}, schedulerRequest.AdditionalQueueDimensions...), nil
 		}
 	}

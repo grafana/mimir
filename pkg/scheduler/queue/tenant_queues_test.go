@@ -17,11 +17,6 @@ import (
 	"time"
 )
 
-// TODO (casie): Add a test case where, if a tenant is queued in the queueTree, but doesn't exist from the queueBroker perspective,
-//  it should never be dequeued.
-
-// TODO (casie): maybe implement a way to fetch an entire node that _would_ be dequeued from, rather than just one elt
-
 func (qb *queueBroker) enqueueObjectsForTests(tenantID TenantID, numObjects int) error {
 	for i := 0; i < numObjects; i++ {
 		err := qb.queueTree.EnqueueBackByPath(QueuePath{string(tenantID)}, &tenantRequest{
@@ -283,8 +278,6 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 	}
 	qOneLastTenantIndex := assertExpectedValuesOnDequeue(t, qb, -1, "querier-1", expectedDequeueVals)
 
-	// TODO (casie): This is consistent with the previous test only because the previous test
-	//  checked n % numTenants == 0 dequeues.
 	expectedDequeueVals = []dequeueVal{
 		{buildExpectedObject(tenantOne.tenantID, 2), tenantOne},
 		{buildExpectedObject(tenantTwo.tenantID, 2), tenantTwo},
