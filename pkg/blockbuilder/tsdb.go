@@ -28,7 +28,7 @@ import (
 )
 
 type builder interface {
-	process(ctx context.Context, rec *kgo.Record, blockMin, blockMax int64, recordProcessedBefore bool) (_ bool, err error)
+	process(ctx context.Context, rec *kgo.Record, lastBlockMax, blockMax int64, recordProcessedBefore bool) (_ bool, err error)
 	compactAndUpload(ctx context.Context, blockUploaderForUser func(context.Context, string) blockUploader) error
 	close() error
 }
@@ -65,7 +65,7 @@ func newTSDBBuilder(logger log.Logger, limits *validation.Overrides, blocksStora
 // where the sample was not put in the TSDB because it was discarded or was already processed before.
 // lastEnd: "end" time of the previous block building cycle.
 // currEnd: end time of the block we are looking at right now.
-func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, blockMin, blockMax int64, recordProcessedBefore bool) (_ bool, err error) {
+func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastBlockMax, blockMax int64, recordProcessedBefore bool) (_ bool, err error) {
 	userID := string(rec.Key)
 
 	req := mimirpb.WriteRequest{}
@@ -119,7 +119,7 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, blockMin, bl
 				allSamplesProcessed = false
 				continue
 			}
-			if recordProcessedBefore && s.TimestampMs < blockMin {
+			if recordProcessedBefore && s.TimestampMs < lastBlockMax {
 				// This sample was already processed in the previous cycle.
 				continue
 			}
@@ -147,7 +147,7 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, blockMin, bl
 				allSamplesProcessed = false
 				continue
 			}
-			if recordProcessedBefore && h.Timestamp < blockMin {
+			if recordProcessedBefore && h.Timestamp < lastBlockMax {
 				// This sample was already processed in the previous cycle.
 				continue
 			}
