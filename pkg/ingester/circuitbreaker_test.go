@@ -1324,7 +1324,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 				cb.push.activate()
 				cb.push.cb.Open()
 			},
-			expectedCircuitBreakerError: true,
+			expectedCircuitBreakerError: false,
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
