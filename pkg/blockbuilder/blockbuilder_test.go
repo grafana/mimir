@@ -80,7 +80,7 @@ func TestBlockBuilder_BuildBlocks(t *testing.T) {
 	limits.NativeHistogramsIngestionEnabled = true
 	overrides, err := validation.NewOverrides(limits, nil)
 
-	bb, err := NewBlockBuilder(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides)
+	bb, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides)
 	require.NoError(t, err)
 
 	compactCalled := make(chan struct{}, 10)
@@ -88,7 +88,7 @@ func TestBlockBuilder_BuildBlocks(t *testing.T) {
 		procFunc: func(ctx context.Context, rec *kgo.Record, blockMin, blockMax int64, _ bool) (bool, error) {
 			return true, nil
 		},
-		compactFunc: func(ctx context.Context, shipperDir string) error {
+		compactFunc: func(ctx context.Context, blockUploaderForUser func(context.Context, string) blockUploader) error {
 			compactCalled <- struct{}{}
 			return nil
 		},
@@ -161,15 +161,15 @@ func newKafkaProduceClient(t *testing.T, addrs ...string) *kgo.Client {
 
 type testTSDBBuilder struct {
 	procFunc    func(ctx context.Context, rec *kgo.Record, blockMin, blockMax int64, recordProcessedBefore bool) (bool, error)
-	compactFunc func(ctx context.Context, shipperDir string) error
+	compactFunc func(ctx context.Context, blockUploaderForUser func(context.Context, string) blockUploader) error
 }
 
 func (t testTSDBBuilder) process(ctx context.Context, rec *kgo.Record, blockMin, blockMax int64, recordProcessedBefore bool) (_ bool, err error) {
 	return t.procFunc(ctx, rec, blockMin, blockMax, recordProcessedBefore)
 }
 
-func (t testTSDBBuilder) compact(ctx context.Context, shipperDir string) error {
-	return t.compactFunc(ctx, shipperDir)
+func (t testTSDBBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser func(context.Context, string) blockUploader) error {
+	return t.compactFunc(ctx, blockUploaderForUser)
 }
 
 func (t testTSDBBuilder) close() error {
