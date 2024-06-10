@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -15,11 +14,14 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/thanos-io/objstore"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/plugin/kprom"
 
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -31,6 +33,7 @@ type BlockBuilder struct {
 	register    prometheus.Registerer
 	limits      *validation.Overrides
 	kafkaClient *kgo.Client
+	bucket      objstore.Bucket
 
 	// for testing
 	tsdbBuilder func() builder
@@ -39,7 +42,7 @@ type BlockBuilder struct {
 	assignment   map[string][]int32
 }
 
-func NewBlockBuilder(
+func New(
 	cfg Config,
 	logger log.Logger,
 	reg prometheus.Registerer,
@@ -56,6 +59,12 @@ func NewBlockBuilder(
 		return newTSDBBuilder(b.logger, b.limits, b.cfg.BlocksStorageConfig)
 	}
 
+	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorageConfig.Bucket, "ingester", logger, reg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create the bucket client: %w", err)
+	}
+	b.bucket = bucketClient
+
 	b.Service = services.NewBasicService(b.starting, b.running, b.stopping)
 
 	// TODO(codesome): add a shipping subservice responsible for shipping the blocks to the storage.
@@ -71,9 +80,6 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	}
 	if err := os.MkdirAll(b.cfg.BlocksStorageConfig.TSDB.Dir, os.ModePerm); err != nil {
 		return fmt.Errorf("creating tsdb dir: %w", err)
-	}
-	if err := os.MkdirAll(b.shipperDir(), os.ModePerm); err != nil {
-		return fmt.Errorf("creating shipper dir: %w", err)
 	}
 
 	opts := []kgo.Opt{
@@ -119,11 +125,8 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	}
 
 	level.Info(b.logger).Log("msg", "waiting until kafka brokers are reachable")
-	if err := b.waitKafka(ctx); err != nil {
-		return err
-	}
 
-	return nil
+	return b.waitKafka(ctx)
 }
 
 func (b *BlockBuilder) handlePartitionsAssigned(_ context.Context, _ *kgo.Client, assignment map[string][]int32) {
@@ -185,6 +188,9 @@ func (b *BlockBuilder) stopping(_ error) error {
 	if b.kafkaClient != nil {
 		b.kafkaClient.Close()
 	}
+
+	// TODO(codesome): wait for any active consume cycle or abort it.
+
 	return nil
 }
 
@@ -359,7 +365,7 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, cycleEnd time.Time
 				// in the past. In which case if we try to consume all at once, it can overwhelm the system.
 				// So we break this into multiple block building cycles.
 				if rec.Timestamp.After(blockEndAt) {
-					if err := builder.compact(ctx, b.shipperDir()); err != nil {
+					if err := builder.compactAndUpload(ctx, b.blockUploaderForUser); err != nil {
 						return fmt.Errorf("compact tsdb builder: %w", err)
 					}
 				}
@@ -368,7 +374,7 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, cycleEnd time.Time
 
 			level.Debug(b.logger).Log("msg", "process record", "offset", rec.Offset, "rec", rec.Timestamp, "bmin", blockStartAt, "bmax", blockEndAt)
 
-			recProcessedBefore := false
+			recProcessedBefore := false // TODO: get this from kafka commit
 			blockMin, blockMax := blockStartAt.UnixMilli(), blockEndAt.UnixMilli()
 			allSamplesProcessed, err := builder.process(ctx, rec, blockMin, blockMax, recProcessedBefore)
 			if err != nil {
@@ -386,13 +392,39 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, cycleEnd time.Time
 		}
 	}
 
-	if err := builder.compact(ctx, b.shipperDir()); err != nil {
+	if err := builder.compactAndUpload(ctx, b.blockUploaderForUser); err != nil {
 		// TODO(codesome): add metric
 		return err
 	}
 
 	// TODO(codesome): Make sure all the blocks have been shipped before committing the offset.
 	return b.finalizePartition(ctx, firstUncommittedRec, checkpointRec)
+}
+
+func (b *BlockBuilder) blockUploaderForUser(ctx context.Context, userID string) blockUploader {
+	buc := bucket.NewUserBucketClient(userID, b.bucket, b.limits)
+	return func(blockDir string) error {
+		meta, err := block.ReadMetaFromDir(blockDir)
+		if err != nil {
+			return err
+		}
+
+		if meta.Stats.NumSamples == 0 {
+			// No need to upload empty block.
+			return nil
+		}
+
+		meta.Thanos.Source = block.BlockBuilderSource
+		meta.Thanos.SegmentFiles = block.GetSegmentFiles(blockDir)
+
+		if meta.Compaction.FromOutOfOrder() && b.limits.OutOfOrderBlocksExternalLabelEnabled(userID) {
+			// At this point the OOO data was already ingested and compacted, so there's no point in checking for the OOO feature flag
+			meta.Thanos.Labels[mimir_tsdb.OutOfOrderExternalLabel] = mimir_tsdb.OutOfOrderExternalLabelValue
+		}
+
+		// Upload block with custom metadata.
+		return block.Upload(ctx, b.logger, buc, blockDir, meta)
+	}
 }
 
 func (b *BlockBuilder) finalizePartition(ctx context.Context, uncommittedRec, checkpointRec *kgo.Record) error {
@@ -419,10 +451,6 @@ func (b *BlockBuilder) finalizePartition(ctx context.Context, uncommittedRec, ch
 	}
 
 	return nil
-}
-
-func (b *BlockBuilder) shipperDir() string {
-	return filepath.Join(b.cfg.BlocksStorageConfig.TSDB.Dir, "shipper")
 }
 
 func blockBounds(t time.Time, length time.Duration) (time.Time, time.Time) {

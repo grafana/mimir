@@ -4,6 +4,8 @@ import (
 	"context"
 	"math"
 	"math/rand"
+	"os"
+	"path"
 	"sort"
 	"strconv"
 	"testing"
@@ -272,7 +274,7 @@ func TestTSDBBuilder(t *testing.T) {
 
 			// This should create the appropriate blocks and close the DB.
 			shipperDir := t.TempDir()
-			err = builder.compact(context.Background(), shipperDir)
+			err = builder.compactAndUpload(context.Background(), mockUploaderFunc(t, shipperDir))
 			require.NoError(t, err)
 			require.Nil(t, builder.getTSDB(tenant))
 
@@ -288,6 +290,16 @@ func TestTSDBBuilder(t *testing.T) {
 			queryDB(newDB)
 			require.NoError(t, newDB.Close())
 		})
+	}
+}
+
+func mockUploaderFunc(t *testing.T, destDir string) func(context.Context, string) blockUploader {
+	return func(context.Context, string) blockUploader {
+		return func(blockDir string) error {
+			err := os.Rename(blockDir, path.Join(destDir, path.Base(blockDir)))
+			require.NoError(t, err)
+			return nil
+		}
 	}
 }
 
@@ -332,7 +344,7 @@ func TestProcessingEmptyRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, allProcessed)
 
-	require.NoError(t, builder.close())
+	require.NoError(t, builder.tsdbs[tsdbTenant{0, userID}].db.Close())
 }
 
 func defaultLimitsTestConfig() validation.Limits {

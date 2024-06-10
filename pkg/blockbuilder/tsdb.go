@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -28,7 +29,7 @@ import (
 
 type builder interface {
 	process(ctx context.Context, rec *kgo.Record, blockMin, blockMax int64, recordProcessedBefore bool) (_ bool, err error)
-	compact(ctx context.Context, shipperDir string) error
+	compactAndUpload(ctx context.Context, blockUploaderForUser func(context.Context, string) blockUploader) error
 	close() error
 }
 
@@ -47,6 +48,8 @@ type tsdbBuilder struct {
 	limits              *validation.Overrides
 	blocksStorageConfig mimir_tsdb.BlocksStorageConfig
 }
+
+type blockUploader func(blockDir string) error
 
 func newTSDBBuilder(logger log.Logger, limits *validation.Overrides, blocksStorageConfig mimir_tsdb.BlocksStorageConfig) *tsdbBuilder {
 	return &tsdbBuilder{
@@ -262,14 +265,16 @@ func (b *tsdbBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 		return nil, err
 	}
 
+	db.DisableCompactions()
+
 	udb.db = db
 
 	return udb, nil
 }
 
-// compactBlocks compacts the blocks of all the TSDBs.
-// It moves all the blocks produced into the shipperDir.
-func (b *tsdbBuilder) compact(ctx context.Context, shipperDir string) error {
+// compactAndUpload compacts the blocks of all the TSDBs
+// and uploads them.
+func (b *tsdbBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser func(context.Context, string) blockUploader) error {
 	b.tsdbsMu.Lock()
 	defer b.tsdbsMu.Unlock()
 
@@ -277,6 +282,10 @@ func (b *tsdbBuilder) compact(ctx context.Context, shipperDir string) error {
 		return nil
 	}
 
+	eg, ctx := errgroup.WithContext(ctx)
+	if b.blocksStorageConfig.TSDB.ShipConcurrency > 0 {
+		eg.SetLimit(b.blocksStorageConfig.TSDB.ShipConcurrency)
+	}
 	for tenant, db := range b.tsdbs {
 		if err := db.compactEverything(ctx); err != nil {
 			return err
@@ -298,25 +307,24 @@ func (b *tsdbBuilder) compact(ctx context.Context, shipperDir string) error {
 
 		delete(b.tsdbs, tenant)
 
-		// Move all blocks to the shipper directory. This allows deleting the TSDB directory here,
-		// and hence don't mess with future compaction cycles. Also makes it easier to handle
-		// dynamically changing tenants without requiring a shipper per user.
-		for _, bn := range blockNames {
-			if err := os.Rename(filepath.Join(dbDir, bn), filepath.Join(shipperDir, bn)); err != nil {
-				return err
+		eg.Go(func() error {
+			uploader := blockUploaderForUser(ctx, tenant.id)
+			for _, bn := range blockNames {
+				if err := uploader(filepath.Join(dbDir, bn)); err != nil {
+					return err
+				}
 			}
-		}
 
-		// Remove any remaining artifacts of this TSDB, like the head block files.
-		if err := os.RemoveAll(dbDir); err != nil {
-			return err
-		}
+			// Clear the DB from the disk. Don't need it anymore.
+			return os.RemoveAll(dbDir)
+		})
 	}
+	err := eg.Wait()
 
 	// Clear the map so that it can be released from the memory. Not setting to nil in case
 	// we want to reuse the tsdbBuilder.
 	b.tsdbs = make(map[tsdbTenant]*userTSDB)
-	return nil
+	return err
 }
 
 func (b *tsdbBuilder) close() error {
