@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/go-openapi/strfmt"
 
 	"github.com/grafana/alerting/cluster"
 	"github.com/grafana/alerting/notify/nfstatus"
@@ -293,11 +294,44 @@ func (am *GrafanaAlertmanager) StopAndWait() {
 
 // GetReceivers returns the receivers configured as part of the current configuration.
 // It is safe to call concurrently.
-func (am *GrafanaAlertmanager) GetReceivers() []*NotifyReceiver {
+func (am *GrafanaAlertmanager) GetReceivers() []models.Receiver {
 	am.reloadConfigMtx.RLock()
-	defer am.reloadConfigMtx.RUnlock()
+	receivers := am.receivers
+	am.reloadConfigMtx.RUnlock()
 
-	return am.receivers
+	return GetReceivers(receivers)
+}
+
+// GetReceivers converts the internal receiver status into the API response.
+func GetReceivers(receivers []*nfstatus.Receiver) []models.Receiver {
+	apiReceivers := make([]models.Receiver, 0, len(receivers))
+	for _, rcv := range receivers {
+		// Build integrations slice for each receiver.
+		integrations := make([]models.Integration, 0, len(rcv.Integrations()))
+		for _, integration := range rcv.Integrations() {
+			ts, d, err := integration.GetReport()
+			integrations = append(integrations, models.Integration{
+				Name:                      integration.Name(),
+				SendResolved:              integration.SendResolved(),
+				LastNotifyAttempt:         strfmt.DateTime(ts),
+				LastNotifyAttemptDuration: d.String(),
+				LastNotifyAttemptError: func() string {
+					if err != nil {
+						return err.Error()
+					}
+					return ""
+				}(),
+			})
+		}
+
+		apiReceivers = append(apiReceivers, models.Receiver{
+			Active:       rcv.Active(),
+			Integrations: integrations,
+			Name:         rcv.Name(),
+		})
+	}
+
+	return apiReceivers
 }
 
 func (am *GrafanaAlertmanager) ExternalURL() string {
