@@ -173,7 +173,7 @@ func handler(
 			if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 				code, msg = int(resp.Code), string(resp.Body)
 			} else {
-				_, code = toGRPCHTTPStatus(ctx, err, limits)
+				code = toHTTPStatus(ctx, err, limits)
 				msg = err.Error()
 			}
 			if code != 202 {
@@ -194,7 +194,6 @@ func otlpHandler(
 	maxRecvMsgSize int,
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
-	limits *validation.Overrides,
 	retryCfg RetryConfig,
 	push PushFunc,
 	logger log.Logger,
@@ -247,7 +246,7 @@ func otlpHandler(
 				grpcCode = s.Code() // this will be the same as httpCode.
 				errorMsg = string(resp.Body)
 			} else {
-				grpcCode, httpCode = toGRPCHTTPStatus(ctx, err, limits)
+				grpcCode, httpCode = toGRPCHTTPStatusOtlp(err)
 				errorMsg = err.Error()
 			}
 			if httpCode != 202 {
@@ -303,19 +302,21 @@ func calculateRetryAfter(retryAttemptHeader string, baseSeconds int, maxBackoffE
 	return strconv.FormatInt(delaySeconds, 10)
 }
 
-// toGRPCHTTPStatus converts the given error into an appropriate GRPC and HTTP status corresponding
+// toHTTPStatus converts the given error into an appropriate HTTP status corresponding
+// to that error, if the error is one of the errors from this package. Otherwise, an
+// http.StatusInternalServerError is returned.
 // to that error, if the error is one of the errors from this package. Otherwise, codes.Internal and
 // http.StatusInternalServerError is returned.
-func toGRPCHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrides) (codes.Code, int) {
+func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrides) int {
 	if errors.Is(pushErr, context.DeadlineExceeded) {
-		return codes.Internal, http.StatusInternalServerError
+		return http.StatusInternalServerError
 	}
 
 	var distributorErr Error
 	if errors.As(pushErr, &distributorErr) {
 		switch distributorErr.Cause() {
 		case mimirpb.BAD_DATA:
-			return codes.InvalidArgument, http.StatusBadRequest
+			return http.StatusBadRequest
 		case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
 			serviceOverloadErrorEnabled := false
 			userID, err := tenant.TenantID(ctx)
@@ -326,24 +327,51 @@ func toGRPCHTTPStatus(ctx context.Context, pushErr error, limits *validation.Ove
 			// Client may discard the data or slow down and re-send.
 			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
 			if serviceOverloadErrorEnabled {
-				return codes.ResourceExhausted, StatusServiceOverloaded
+				return StatusServiceOverloaded
 			}
-			return codes.ResourceExhausted, http.StatusTooManyRequests
+			return http.StatusTooManyRequests
 		case mimirpb.REPLICAS_DID_NOT_MATCH:
-			return codes.OK, http.StatusAccepted
+			return http.StatusAccepted
 		case mimirpb.TOO_MANY_CLUSTERS:
-			return codes.InvalidArgument, http.StatusBadRequest
+			return http.StatusBadRequest
 		case mimirpb.TSDB_UNAVAILABLE:
-			return codes.Unavailable, http.StatusServiceUnavailable
+			return http.StatusServiceUnavailable
 		case mimirpb.CIRCUIT_BREAKER_OPEN:
-			return codes.Unavailable, http.StatusServiceUnavailable
+			return http.StatusServiceUnavailable
 		case mimirpb.METHOD_NOT_ALLOWED:
 			// Return a 501 (and not 405) to explicitly signal a misconfiguration and to possibly track that amongst other 5xx errors.
-			return codes.Unimplemented, http.StatusNotImplemented
+			return http.StatusNotImplemented
 		}
 	}
 
-	return codes.Internal, http.StatusInternalServerError
+	return http.StatusInternalServerError
+}
+
+// toGRPCHTTPStatusOtlp is utilized by the OTLP endpoint.
+// According to the OTLP specifications (https://opentelemetry.io/docs/specs/otlp/#failures-1), unlike Prometheus, the OTLP client only retries on HTTP status codes 429, 502, 503, and 504.
+func toGRPCHTTPStatusOtlp(pushErr error) (codes.Code, int) {
+	if !errors.Is(pushErr, context.DeadlineExceeded) {
+		var distributorErr Error
+		if errors.As(pushErr, &distributorErr) {
+			switch distributorErr.Cause() {
+			case mimirpb.BAD_DATA:
+				return codes.InvalidArgument, http.StatusBadRequest
+			case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
+				return codes.ResourceExhausted, http.StatusTooManyRequests
+			case mimirpb.REPLICAS_DID_NOT_MATCH:
+				return codes.OK, http.StatusAccepted
+			case mimirpb.TOO_MANY_CLUSTERS:
+				return codes.InvalidArgument, http.StatusBadRequest
+			case mimirpb.TSDB_UNAVAILABLE:
+				return codes.Unavailable, http.StatusServiceUnavailable
+			case mimirpb.CIRCUIT_BREAKER_OPEN:
+				return codes.Unavailable, http.StatusServiceUnavailable
+			case mimirpb.METHOD_NOT_ALLOWED:
+				return codes.Unimplemented, http.StatusNotImplemented
+			}
+		}
+	}
+	return codes.Internal, http.StatusServiceUnavailable
 }
 
 func addHeaders(w http.ResponseWriter, err error, r *http.Request, responseCode int, retryCfg RetryConfig) {
