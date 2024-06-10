@@ -813,10 +813,14 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 					if f.Err != nil {
 						level.Info(logger).Log("msg", "fetcher got en error", "err", f.Err, "num_records", len(f.Records))
 					}
-					//if errors.Is(f.Err, kerr.OffsetOutOfRange) {
-					//	w.startOffset++
-					//	continue
-					//}
+					if errors.Is(f.Err, kerr.OffsetOutOfRange) {
+						if w.startOffset > f.HighWatermark {
+							break
+						} else if w.startOffset < f.LogStartOffset {
+							w.startOffset = f.LogStartOffset
+							continue
+						}
+					}
 					if len(f.Records) == 0 {
 						boff.Wait()
 						continue
