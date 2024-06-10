@@ -1,11 +1,9 @@
 package definition
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
-	"github.com/grafana/alerting/notify"
 	"github.com/prometheus/alertmanager/config"
 	"gopkg.in/yaml.v3"
 )
@@ -232,26 +230,5 @@ func GrafanaToUpstreamConfig(cfg *PostableApiAlertingConfig) config.Config {
 		Templates:         cfg.Config.Templates,
 		MuteTimeIntervals: cfg.Config.MuteTimeIntervals,
 		TimeIntervals:     cfg.Config.TimeIntervals,
-	}
-}
-
-func PostableAPIReceiverToAPIReceiver(r *PostableApiReceiver) *notify.APIReceiver {
-	integrations := notify.GrafanaIntegrations{
-		Integrations: make([]*notify.GrafanaIntegrationConfig, 0, len(r.GrafanaManagedReceivers)),
-	}
-	for _, p := range r.GrafanaManagedReceivers {
-		integrations.Integrations = append(integrations.Integrations, &notify.GrafanaIntegrationConfig{
-			UID:                   p.UID,
-			Name:                  p.Name,
-			Type:                  p.Type,
-			DisableResolveMessage: p.DisableResolveMessage,
-			Settings:              json.RawMessage(p.Settings),
-			SecureSettings:        p.SecureSettings,
-		})
-	}
-
-	return &notify.APIReceiver{
-		ConfigReceiver:      r.Receiver,
-		GrafanaIntegrations: integrations,
 	}
 }
