@@ -26,25 +26,34 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+type builder interface {
+	process(ctx context.Context, rec *kgo.Record, blockMin, blockMax int64, recordProcessedBefore bool) (_ bool, err error)
+	compact(ctx context.Context, shipperDir string) error
+	close() error
+}
+
+type tsdbTenant struct {
+	part int32
+	id   string
+}
+
 type tsdbBuilder struct {
 	logger log.Logger
 
 	// tenant-to-tsdb
-	tsdbs   map[string]*userTSDB
+	tsdbs   map[tsdbTenant]*userTSDB
 	tsdbsMu sync.RWMutex
 
 	limits              *validation.Overrides
 	blocksStorageConfig mimir_tsdb.BlocksStorageConfig
-	kafkaPartition      int32 // Used to determine the directory for TSDB.
 }
 
-func newTSDBBuilder(logger log.Logger, limits *validation.Overrides, partition int32, blocksStorageConfig mimir_tsdb.BlocksStorageConfig) *tsdbBuilder {
+func newTSDBBuilder(logger log.Logger, limits *validation.Overrides, blocksStorageConfig mimir_tsdb.BlocksStorageConfig) *tsdbBuilder {
 	return &tsdbBuilder{
-		tsdbs:               make(map[string]*userTSDB),
+		tsdbs:               make(map[tsdbTenant]*userTSDB),
 		logger:              logger,
 		limits:              limits,
 		blocksStorageConfig: blocksStorageConfig,
-		kafkaPartition:      partition,
 	}
 }
 
@@ -53,7 +62,7 @@ func newTSDBBuilder(logger log.Logger, limits *validation.Overrides, partition i
 // where the sample was not put in the TSDB because it was discarded or was already processed before.
 // lastEnd: "end" time of the previous block building cycle.
 // currEnd: end time of the block we are looking at right now.
-func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, currEnd int64, recordProcessedBefore bool) (_ bool, err error) {
+func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, blockMin, blockMax int64, recordProcessedBefore bool) (_ bool, err error) {
 	userID := string(rec.Key)
 
 	req := mimirpb.WriteRequest{}
@@ -69,7 +78,11 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, cur
 		return true, nil
 	}
 
-	db, err := b.getOrCreateTSDB(userID)
+	tenant := tsdbTenant{
+		part: rec.Partition,
+		id:   userID,
+	}
+	db, err := b.getOrCreateTSDB(tenant)
 	if err != nil {
 		return false, fmt.Errorf("get tsdb for tenant %s: %w", userID, err)
 	}
@@ -98,12 +111,12 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, cur
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
 
 		for _, s := range ts.Samples {
-			if s.TimestampMs >= currEnd {
+			if s.TimestampMs >= blockMax {
 				// We will process this sample in the next cycle.
 				allSamplesProcessed = false
 				continue
 			}
-			if recordProcessedBefore && s.TimestampMs < lastEnd {
+			if recordProcessedBefore && s.TimestampMs < blockMin {
 				// This sample was already processed in the previous cycle.
 				continue
 			}
@@ -126,12 +139,12 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, cur
 		}
 
 		for _, h := range ts.Histograms {
-			if h.Timestamp >= currEnd {
+			if h.Timestamp >= blockMax {
 				// We will process this sample in the next cycle.
 				allSamplesProcessed = false
 				continue
 			}
-			if recordProcessedBefore && h.Timestamp < lastEnd {
+			if recordProcessedBefore && h.Timestamp < blockMin {
 				// This sample was already processed in the previous cycle.
 				continue
 			}
@@ -171,14 +184,14 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastEnd, cur
 	return allSamplesProcessed, app.Commit()
 }
 
-func (b *tsdbBuilder) getTSDB(userID string) *userTSDB {
+func (b *tsdbBuilder) getTSDB(tenant tsdbTenant) *userTSDB {
 	b.tsdbsMu.RLock()
 	defer b.tsdbsMu.RUnlock()
-	return b.tsdbs[userID]
+	return b.tsdbs[tenant]
 }
 
-func (b *tsdbBuilder) getOrCreateTSDB(userID string) (*userTSDB, error) {
-	db := b.getTSDB(userID)
+func (b *tsdbBuilder) getOrCreateTSDB(tenant tsdbTenant) (*userTSDB, error) {
+	db := b.getTSDB(tenant)
 	if db != nil {
 		return db, nil
 	}
@@ -188,27 +201,27 @@ func (b *tsdbBuilder) getOrCreateTSDB(userID string) (*userTSDB, error) {
 
 	// Check again for DB in the event it was created in-between locks
 	var ok bool
-	db, ok = b.tsdbs[userID]
+	db, ok = b.tsdbs[tenant]
 	if ok {
 		return db, nil
 	}
 
-	db, err := b.newTSDB(userID)
+	db, err := b.newTSDB(tenant)
 	if err != nil {
 		return nil, err
 	}
 
-	b.tsdbs[userID] = db
+	b.tsdbs[tenant] = db
 
 	return db, nil
 }
 
-func (b *tsdbBuilder) tsdbDir(userID string) string {
-	return filepath.Join(b.blocksStorageConfig.TSDB.Dir, strconv.Itoa(int(b.kafkaPartition)), userID)
+func (b *tsdbBuilder) tsdbDir(tenant tsdbTenant) string {
+	return filepath.Join(b.blocksStorageConfig.TSDB.Dir, strconv.Itoa(int(tenant.part)), tenant.id)
 }
 
-func (b *tsdbBuilder) newTSDB(userID string) (*userTSDB, error) {
-	udir := b.tsdbDir(userID)
+func (b *tsdbBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
+	udir := b.tsdbDir(tenant)
 	// Remove any previous TSDB dir. We don't need it.
 	if err := os.RemoveAll(udir); err != nil {
 		return nil, err
@@ -217,6 +230,7 @@ func (b *tsdbBuilder) newTSDB(userID string) (*userTSDB, error) {
 		return nil, err
 	}
 
+	userID := tenant.id
 	userLogger := util_log.WithUserID(userID, b.logger)
 
 	udb := &userTSDB{
@@ -255,11 +269,15 @@ func (b *tsdbBuilder) newTSDB(userID string) (*userTSDB, error) {
 
 // compactBlocks compacts the blocks of all the TSDBs.
 // It moves all the blocks produced into the shipperDir.
-func (b *tsdbBuilder) compactAndClose(ctx context.Context, shipperDir string) error {
+func (b *tsdbBuilder) compact(ctx context.Context, shipperDir string) error {
 	b.tsdbsMu.Lock()
 	defer b.tsdbsMu.Unlock()
 
-	for userID, db := range b.tsdbs {
+	if len(b.tsdbs) == 0 {
+		return nil
+	}
+
+	for tenant, db := range b.tsdbs {
 		if err := db.compactEverything(ctx); err != nil {
 			return err
 		}
@@ -278,7 +296,7 @@ func (b *tsdbBuilder) compactAndClose(ctx context.Context, shipperDir string) er
 			return err
 		}
 
-		delete(b.tsdbs, userID)
+		delete(b.tsdbs, tenant)
 
 		// Move all blocks to the shipper directory. This allows deleting the TSDB directory here,
 		// and hence don't mess with future compaction cycles. Also makes it easier to handle
@@ -297,7 +315,7 @@ func (b *tsdbBuilder) compactAndClose(ctx context.Context, shipperDir string) er
 
 	// Clear the map so that it can be released from the memory. Not setting to nil in case
 	// we want to reuse the tsdbBuilder.
-	b.tsdbs = make(map[string]*userTSDB)
+	b.tsdbs = make(map[tsdbTenant]*userTSDB)
 	return nil
 }
 
@@ -321,7 +339,7 @@ func (b *tsdbBuilder) close() error {
 
 	// Clear the map so that it can be released from the memory. Not setting to nil in case
 	// we want to reuse the tsdbBuilder.
-	b.tsdbs = make(map[string]*userTSDB)
+	b.tsdbs = make(map[tsdbTenant]*userTSDB)
 	return nil
 }
 
