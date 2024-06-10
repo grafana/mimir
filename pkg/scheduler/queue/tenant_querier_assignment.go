@@ -96,14 +96,6 @@ type tenantQuerierAssignments struct {
 	currentQuerier   *QuerierID
 }
 
-func (tqa *tenantQuerierAssignments) getTenant(tenantID TenantID) (*queueTenant, error) {
-	if tenantID == emptyTenantID {
-		return nil, ErrInvalidTenantID
-	}
-	tenant := tqa.tenantsByID[tenantID]
-	return tenant, nil
-}
-
 // createOrUpdateTenant creates or updates a tenant into the tenant-querier assignment state.
 //
 // New tenants are added to the tenant order list and tenant-querier shards are shuffled if needed.

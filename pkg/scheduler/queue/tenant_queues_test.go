@@ -8,13 +8,14 @@ package queue
 import (
 	"context"
 	"fmt"
-	"github.com/grafana/dskit/httpgrpc"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"math"
 	"math/rand"
 	"testing"
 	"time"
+
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func (qb *queueBroker) enqueueObjectsForTests(tenantID TenantID, numObjects int) error {
@@ -111,7 +112,7 @@ func TestQueues(t *testing.T) {
 		{buildExpectedObject(tenantTwo.tenantID, 2), tenantTwo},
 		{buildExpectedObject(tenantOne.tenantID, 5), tenantOne},
 	}
-	lastTenantIndex = assertExpectedValuesOnDequeue(t, qb, -1, "querier-2", expectedDequeueVals)
+	_ = assertExpectedValuesOnDequeue(t, qb, -1, "querier-2", expectedDequeueVals)
 
 	//[one two three]
 	// confirm fifo by adding a third tenant queue and iterating to it
@@ -310,7 +311,7 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 
 	// After disconnecting querier-2, it's expected to own no queue.
 	qb.tenantQuerierAssignments.removeQuerier("querier-2")
-	req, tenant, qTwolastTenantIndex, err = qb.dequeueRequestForQuerier(qTwolastTenantIndex, "querier-2")
+	req, tenant, _, err = qb.dequeueRequestForQuerier(qTwolastTenantIndex, "querier-2")
 	assert.Nil(t, req)
 	assert.Nil(t, tenant)
 	assert.Equal(t, ErrQuerierShuttingDown, err)

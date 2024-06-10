@@ -118,9 +118,7 @@ func newNode(name string, depth int, da DequeueAlgorithm) (*Node, error) {
 	if da == nil {
 		return nil, fmt.Errorf("cannot create a node without a defined DequeueAlgorithm")
 	}
-	switch da.(type) {
-	case *tenantQuerierAssignments:
-		tqa := da.(*tenantQuerierAssignments)
+	if tqa, ok := da.(*tenantQuerierAssignments); ok {
 		tqa.tenantOrderIndex = localQueueIndex - 1 // start from -2 so that we first check local queue
 		if tqa.tenantNodes == nil {
 			tqa.tenantNodes = map[string][]*Node{}

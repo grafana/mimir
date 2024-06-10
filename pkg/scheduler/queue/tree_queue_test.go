@@ -5,10 +5,9 @@ package queue
 import (
 	"fmt"
 	"strings"
-
-	//"fmt"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func newTenantQuerierAssignments() *tenantQuerierAssignments {
@@ -620,12 +619,22 @@ func Test_ChangeTenantQuerierAssignments(t *testing.T) {
 	tree, err := NewTree(state, &roundRobinState{}, &roundRobinState{})
 	require.NoError(t, err)
 
-	err = tree.EnqueueBackByPath(QueuePath{"tenant-1", "query-component-1"}, "query-1")
-	err = tree.EnqueueBackByPath(QueuePath{"tenant-2", "query-component-1"}, "query-2")
-	err = tree.EnqueueBackByPath(QueuePath{"tenant-2", "query-component-1"}, "query-3")
-	err = tree.EnqueueBackByPath(QueuePath{"tenant-2", "query-component-1"}, "query-4")
-	err = tree.EnqueueBackByPath(QueuePath{"tenant-3", "query-component-1"}, "query-5")
-	require.NoError(t, err)
+	type enqueueObj struct {
+		obj  any
+		path QueuePath
+	}
+	enqueueObjs := []enqueueObj{
+		{"query-1", QueuePath{"tenant-1", "query-component-1"}},
+		{"query-2", QueuePath{"tenant-2", "query-component-1"}},
+		{"query-3", QueuePath{"tenant-2", "query-component-1"}},
+		{"query-4", QueuePath{"tenant-2", "query-component-1"}},
+		{"query-5", QueuePath{"tenant-3", "query-component-1"}},
+	}
+
+	for _, eo := range enqueueObjs {
+		err = tree.EnqueueBackByPath(eo.path, eo.obj)
+		require.NoError(t, err)
+	}
 
 	querier1 := QuerierID("querier-1")
 	querier2 := QuerierID("querier-2")

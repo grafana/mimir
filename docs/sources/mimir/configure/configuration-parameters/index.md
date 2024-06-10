@@ -1708,6 +1708,11 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.additional-query-queue-dimensions-enabled
 [additional_query_queue_dimensions_enabled: <boolean> | default = false]
 
+# (experimental) Prioritize rotation through query components over rotation
+# through tenants during dequeueing.
+# CLI flag: -query-scheduler.prioritize-query-components
+[prioritize_query_components: <boolean> | default = false]
+
 # (experimental) If a querier disconnects without sending notification about
 # graceful shutdown, the query-scheduler will keep the querier in the tenant's
 # shard until the forget delay has passed. This feature is useful to reduce the
