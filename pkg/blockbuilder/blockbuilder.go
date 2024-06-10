@@ -2,6 +2,7 @@ package blockbuilder
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -325,7 +326,9 @@ func (b *BlockBuilder) consumePartitions(ctx context.Context, cycleEnd time.Time
 		}
 
 		fetches.EachError(func(_ string, part int32, err error) {
-			level.Error(b.logger).Log("msg", "failed to fetch records", "part", part, "err", err)
+			if !errors.Is(err, context.DeadlineExceeded) {
+				level.Error(b.logger).Log("msg", "failed to fetch records", "part", part, "err", err)
+			}
 		})
 
 		if fetches.Empty() && lag <= 0 {
