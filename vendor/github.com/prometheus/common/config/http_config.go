@@ -718,11 +718,15 @@ func (s *InlineSecret) Immutable() bool {
 	return true
 }
 
-type fileSecret struct {
+type FileSecret struct {
 	file string
 }
 
-func (s *fileSecret) Fetch(ctx context.Context) (string, error) {
+func NewFileSecret(file string) *FileSecret {
+	return &FileSecret{file: file}
+}
+
+func (s *FileSecret) Fetch(ctx context.Context) (string, error) {
 	fileBytes, err := os.ReadFile(s.file)
 	if err != nil {
 		return "", fmt.Errorf("unable to read file %s: %w", s.file, err)
@@ -730,11 +734,11 @@ func (s *fileSecret) Fetch(ctx context.Context) (string, error) {
 	return strings.TrimSpace(string(fileBytes)), nil
 }
 
-func (s *fileSecret) Description() string {
+func (s *FileSecret) Description() string {
 	return fmt.Sprintf("file %s", s.file)
 }
 
-func (s *fileSecret) Immutable() bool {
+func (s *FileSecret) Immutable() bool {
 	return false
 }
 
@@ -763,9 +767,7 @@ func toSecret(secretManager SecretManager, text Secret, file, ref string) (Secre
 		return NewInlineSecret(string(text)), nil
 	}
 	if file != "" {
-		return &fileSecret{
-			file: file,
-		}, nil
+		return NewFileSecret(file), nil
 	}
 	if ref != "" {
 		if secretManager == nil {
