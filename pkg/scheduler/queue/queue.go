@@ -374,7 +374,7 @@ func (q *RequestQueue) trySendNextRequestForQuerier(waitingConn *waitingQuerierC
 			exceedsThreshold, queryComponent := q.QueryComponentUtilization.ExceedsThresholdForComponentName(
 				queryComponentName,
 				int(q.connectedQuerierWorkers.Load()),
-				q.queueBroker.queueTree.rootNode.ItemCount(),
+				q.queueBroker.tree.rootNode.ItemCount(),
 				q.waitingQuerierConnsToDispatch.Len(),
 			)
 

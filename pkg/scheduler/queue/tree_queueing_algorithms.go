@@ -2,8 +2,8 @@
 
 package queue
 
-// DequeueAlgorithm represents the set of operations specific to different approaches to dequeueing. It is applied
-// at the layer-level -- every Node at the same depth in a Tree shares the same DequeueAlgorithm, including state
+// DequeueAlgorithm represents the set of operations specific to different approaches to dequeuing. It is applied
+// at the layer-level -- every Node at the same depth in a TreeQueue shares the same DequeueAlgorithm, including state
 // that may be stored in a struct that implements DequeueAlgorithm.
 type DequeueAlgorithm interface {
 	addChildNode(*Node, *Node)
@@ -13,7 +13,7 @@ type DequeueAlgorithm interface {
 }
 
 // roundRobinState is the simplest type of DequeueAlgorithm; nodes which use this DequeueAlgorithm and are at
-// the same depth in a Tree do not share any state. When children are added to these nodes, they are placed at
+// the same depth in a TreeQueue do not share any state. When children are added to these nodes, they are placed at
 // the "end" of the order from the perspective of the node's current queuePosition (e.g., if queuePosition is 3,
 // a new child will be placed at index 2). Children are dequeued from using a simple round-robin ordering;
 // queuePosition is incremented on every dequeue.

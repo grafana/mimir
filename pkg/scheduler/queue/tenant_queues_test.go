@@ -19,7 +19,7 @@ import (
 
 func (qb *queueBroker) enqueueObjectsForTests(tenantID TenantID, numObjects int) error {
 	for i := 0; i < numObjects; i++ {
-		err := qb.queueTree.EnqueueBackByPath(QueuePath{string(tenantID)}, &tenantRequest{
+		err := qb.tree.EnqueueBackByPath(QueuePath{string(tenantID)}, &tenantRequest{
 			tenantID: tenantID,
 			req:      fmt.Sprintf("%v: object-%v", tenantID, i),
 		})
@@ -213,12 +213,12 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	}
 	// assert item count of tenant node and its subnodes
 	queuePath := QueuePath{"tenant-1"}
-	assert.Equal(t, maxTenantQueueSize, qb.queueTree.rootNode.getNode(queuePath).ItemCount())
+	assert.Equal(t, maxTenantQueueSize, qb.tree.rootNode.getNode(queuePath).ItemCount())
 
 	// assert equal distribution of queue items between tenant node and 3 subnodes
 	for _, v := range additionalQueueDimensions {
 		queuePath := append(QueuePath{"tenant-1"}, v...)
-		assert.Equal(t, maxTenantQueueSize/len(additionalQueueDimensions), qb.queueTree.GetNode(queuePath).getLocalQueue().Len())
+		assert.Equal(t, maxTenantQueueSize/len(additionalQueueDimensions), qb.tree.GetNode(queuePath).getLocalQueue().Len())
 	}
 
 	// assert error received when hitting a tenant's enqueue limit,
@@ -686,7 +686,7 @@ func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) (
 		return nil, err
 	}
 
-	node, err := qb.queueTree.rootNode.getOrAddNode(qb.makeQueuePathForTests(tenantID), qb.queueTree)
+	node, err := qb.tree.rootNode.getOrAddNode(qb.makeQueuePathForTests(tenantID), qb.tree)
 	if err != nil {
 		return nil, err
 	}
@@ -697,7 +697,7 @@ func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) (
 func (qb *queueBroker) removeTenantQueue(tenantID TenantID) bool {
 	qb.tenantQuerierAssignments.removeTenant(tenantID)
 	queuePath := QueuePath{string(tenantID)}
-	return qb.queueTree.rootNode.deleteNode(queuePath)
+	return qb.tree.rootNode.deleteNode(queuePath)
 }
 
 func (n *Node) deleteNode(pathFromNode QueuePath) bool {
@@ -735,7 +735,7 @@ func isConsistent(qb *queueBroker) error {
 
 	for ix, tenantID := range qb.tenantQuerierAssignments.tenantIDOrder {
 		path := qb.makeQueuePathForTests(tenantID)
-		node := qb.queueTree.rootNode.getNode(path)
+		node := qb.tree.rootNode.getNode(path)
 
 		if tenantID != "" && node == nil {
 			return fmt.Errorf("tenant %s doesn't have queue", tenantID)
@@ -773,7 +773,7 @@ func isConsistent(qb *queueBroker) error {
 		}
 	}
 
-	tenantQueueCount := qb.queueTree.rootNode.nodeCount() - 1
+	tenantQueueCount := qb.tree.rootNode.nodeCount() - 1
 	if tenantQueueCount != tenantCount {
 		return fmt.Errorf("inconsistent number of tenants list and tenant queues")
 	}

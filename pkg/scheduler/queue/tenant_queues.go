@@ -24,7 +24,7 @@ type tenantRequest struct {
 // queueBroker encapsulates access to tenant queues for pending requests
 // and maintains consistency with the tenant-querier assignments
 type queueBroker struct {
-	queueTree *Tree
+	tree *TreeQueue
 
 	tenantQuerierAssignments *tenantQuerierAssignments
 
@@ -51,7 +51,7 @@ func newQueueBroker(
 		tenantOrderIndex:   localQueueIndex - 1,
 	}
 
-	// If prioritizeQueryComponents is true, the queueTree will be created
+	// If prioritizeQueryComponents is true, the tree will be created
 	// with query components at one level above tenants; if it is false,
 	// tenant nodes will each maintain their own query component subtree.
 	tree, err := NewTree(
@@ -72,7 +72,7 @@ func newQueueBroker(
 		panic(fmt.Sprintf("error creating the tree queue: %v", err))
 	}
 	qb := &queueBroker{
-		queueTree:                        tree,
+		tree:                             tree,
 		tenantQuerierAssignments:         tqas,
 		maxTenantQueueSize:               maxTenantQueueSize,
 		additionalQueueDimensionsEnabled: additionalQueueDimensionsEnabled,
@@ -83,7 +83,7 @@ func newQueueBroker(
 }
 
 func (qb *queueBroker) isEmpty() bool {
-	return qb.queueTree.IsEmpty()
+	return qb.tree.IsEmpty()
 }
 
 // enqueueRequestBack is the standard interface to enqueue requests for dispatch to queriers.
@@ -100,13 +100,13 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 		return err
 	}
 
-	if tenantQueueNode := qb.queueTree.rootNode.getNode(queuePath[:1]); tenantQueueNode != nil {
+	if tenantQueueNode := qb.tree.rootNode.getNode(queuePath[:1]); tenantQueueNode != nil {
 		if tenantQueueNode.ItemCount()+1 > qb.maxTenantQueueSize {
 			return ErrTooManyRequests
 		}
 	}
 
-	err = qb.queueTree.EnqueueBackByPath(queuePath, request)
+	err = qb.tree.EnqueueBackByPath(queuePath, request)
 	return err
 }
 
@@ -125,7 +125,7 @@ func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQuer
 	if err != nil {
 		return err
 	}
-	return qb.queueTree.EnqueueFrontByPath(queuePath, request)
+	return qb.tree.EnqueueFrontByPath(queuePath, request)
 }
 
 func (qb *queueBroker) makeQueuePath(request *tenantRequest) (QueuePath, error) {
@@ -159,7 +159,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 	qb.tenantQuerierAssignments.currentQuerier = &querierID
 	qb.tenantQuerierAssignments.tenantOrderIndex = lastTenantIndex
 
-	queuePath, queueElement := qb.queueTree.Dequeue()
+	queuePath, queueElement := qb.tree.Dequeue()
 
 	var request *tenantRequest
 	var tenantID TenantID
@@ -175,7 +175,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 	}
 
 	// dequeue returns the full path including root, but getNode expects the path _from_ root
-	queueNodeAfterDequeue := qb.queueTree.rootNode.getNode(queuePath)
+	queueNodeAfterDequeue := qb.tree.rootNode.getNode(queuePath)
 	if queueNodeAfterDequeue == nil && len(qb.tenantQuerierAssignments.tenantNodes[string(tenantID)]) == 0 {
 		// queue node was deleted due to being empty after dequeue
 		qb.tenantQuerierAssignments.removeTenant(tenantID)
