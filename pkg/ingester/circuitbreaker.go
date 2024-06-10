@@ -206,7 +206,7 @@ func (cb *circuitBreaker) tryAcquirePermit() (bool, error) {
 	}
 	if !cb.cb.TryAcquirePermit() {
 		cb.metrics.circuitBreakerResults.WithLabelValues(cb.path, circuitBreakerResultOpen).Inc()
-		return false, newCircuitBreakerOpenError(cb.cb.RemainingDelay())
+		return false, newCircuitBreakerOpenError(cb.path, cb.cb.RemainingDelay())
 	}
 	return true, nil
 }
@@ -307,24 +307,17 @@ func (cb *prCircuitBreaker) tryReadAcquirePermit() (func(time.Duration, error), 
 		return func(time.Duration, error) {}, nil
 	}
 
+	if cb.pushCircuitBreaker.isActive() && cb.pushCircuitBreaker.cb.State() == circuitbreaker.OpenState {
+		return nil, newCircuitBreakerOpenError(cb.pushCircuitBreaker.path, cb.pushCircuitBreaker.cb.RemainingDelay())
+	}
+
 	readAcquiredPermit, err := cb.readCircuitBreaker.tryAcquirePermit()
 	if err != nil {
-		return nil, err
-	}
-	pushAcquiredPermit, err := cb.pushCircuitBreaker.tryAcquirePermit()
-	if err != nil {
-		_ = cb.readCircuitBreaker.finishRequest(0, 0, nil)
 		return nil, err
 	}
 	return func(duration time.Duration, err error) {
 		if readAcquiredPermit {
 			_ = cb.readCircuitBreaker.finishRequest(duration, cb.readCircuitBreaker.cfg.RequestTimeout, err)
-		}
-		if pushAcquiredPermit {
-			// We finish the request on pushCircuitBreaker side as successful,
-			// because it wasn't a real push request, and we don't want errors
-			// on read-path to impact the execution of write-path.
-			_ = cb.pushCircuitBreaker.finishRequest(0, cb.readCircuitBreaker.cfg.RequestTimeout, nil)
 		}
 	}, nil
 }
