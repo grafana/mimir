@@ -4,6 +4,7 @@ package ingest
 
 import (
 	"bytes"
+	"container/list"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -727,17 +728,16 @@ func (r *concurrentFetchers) fetchSingle(ctx context.Context, w fetchWant) kgo.F
 		Topic:   r.topicName,
 		TopicID: r.topicID,
 		Partitions: []kmsg.FetchRequestTopicPartition{{
-			Partition:          r.partitionID,
-			FetchOffset:        w.startOffset,
-			CurrentLeaderEpoch: 0, // TODO dimitarvdimitrov works for cases with a fresh kafka (like unit tests); needs fixing
-			LastFetchedEpoch:   -1,
-			LogStartOffset:     -1,
-			PartitionMaxBytes:  100_000_000,
+			Partition:         r.partitionID,
+			FetchOffset:       w.startOffset,
+			LastFetchedEpoch:  -1,
+			LogStartOffset:    -1,
+			PartitionMaxBytes: 100_000_000,
 		}},
 	}}
 	req.MinBytes = 1
 	req.Version = 13
-	req.MaxWaitMillis = 5000
+	req.MaxWaitMillis = 10000
 	req.MaxBytes = 100_000_000
 
 	req.SessionEpoch = 0
@@ -787,14 +787,13 @@ func (r *concurrentFetchers) getEndOffset(ctx context.Context) (int64, error) {
 }
 
 func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64) {
+	wants := make(chan fetchWant)
+	defer close(wants)
 
 	defer level.Info(r.logger).Log("msg", "done running fetchers")
-	results := make(chan chan kgo.FetchPartition, r.concurrency+2)
 	wg := sync.WaitGroup{}
 	wg.Add(r.concurrency)
 	defer wg.Wait()
-	wants := make(chan fetchWant)
-	defer close(wants)
 	for i := 0; i < r.concurrency; i++ {
 		logger := log.With(r.logger, "fetcher", i)
 		go func() {
@@ -842,30 +841,27 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 	var (
 		nextFetch  = fetchWantFrom(startOffset)
 		nextResult chan kgo.FetchPartition
+		results    = list.New()
 	)
-	r.logger.Log("msg", "results", "cap", cap(results), "len", len(results))
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case wants <- nextFetch:
-			select {
-			case results <- nextFetch.result:
-				r.logger.Log("msg", "wrote to results")
-			default:
-				panic("deadlock")
-			}
-
+			r.logger.Log("msg", "wrote to results")
+			results.PushBack(nextFetch.result)
 			if nextResult == nil {
-				nextResult = <-results
+				nextResult = results.Front().Value.(chan kgo.FetchPartition)
+				results.Remove(results.Front())
 				r.logger.Log("msg", "took from results")
 			}
 			nextFetch = nextFetchWant(nextFetch)
 		case result, moreLeft := <-nextResult:
 			if !moreLeft {
-				if len(results) > 0 {
-					nextResult = <-results
+				if results.Len() > 0 {
+					nextResult = results.Front().Value.(chan kgo.FetchPartition)
+					results.Remove(results.Front())
 					r.logger.Log("msg", "took from results")
 				} else {
 					nextResult = nil
