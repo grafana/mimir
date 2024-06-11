@@ -191,10 +191,10 @@ groups:
             severity: warning
         - alert: MimirStoreGatewayTooManyFailedOperations
           annotations:
-            message: Mimir store-gateway {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.
+            message: Mimir store-gateway in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstoregatewaytoomanyfailedoperations
           expr: |
-            sum by(cluster, namespace, pod, operation) (rate(thanos_objstore_bucket_operation_failures_total{component="store-gateway"}[1m])) > 0
+            sum by(cluster, namespace, operation) (rate(thanos_objstore_bucket_operation_failures_total{component="store-gateway"}[1m])) > 0
           for: 5m
           labels:
             severity: warning
@@ -707,27 +707,27 @@ groups:
             severity: warning
         - alert: MimirIngesterTSDBWALCorrupted
           annotations:
-            message: Mimir Ingester {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} got a corrupted TSDB WAL.
+            message: Mimir Ingester in {{ $labels.cluster }}/{{ $labels.namespace }} got a corrupted TSDB WAL.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringestertsdbwalcorrupted
           expr: |
             # alert when there are more than one corruptions
-            count by (cluster, namespace, pod) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0) > 1
+            count by (cluster, namespace) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0) > 1
             and
             # and there is only one zone
-            count by (cluster, namespace, pod) (group by (cluster, namespace, pod, job) (cortex_ingester_tsdb_wal_corruptions_total)) == 1
+            count by (cluster, namespace) (group by (cluster, namespace, job) (cortex_ingester_tsdb_wal_corruptions_total)) == 1
           labels:
             deployment: single-zone
             severity: critical
         - alert: MimirIngesterTSDBWALCorrupted
           annotations:
-            message: Mimir Ingester {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} got a corrupted TSDB WAL.
+            message: Mimir Ingester in {{ $labels.cluster }}/{{ $labels.namespace }} got a corrupted TSDB WAL.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringestertsdbwalcorrupted
           expr: |
             # alert when there are more than one corruptions
-            count by (cluster, namespace, pod) (sum by (cluster, namespace, pod, job) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0)) > 1
+            count by (cluster, namespace) (sum by (cluster, namespace, job) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0)) > 1
             and
             # and there are multiple zones
-            count by (cluster, namespace, pod) (group by (cluster, namespace, pod, job) (cortex_ingester_tsdb_wal_corruptions_total)) > 1
+            count by (cluster, namespace) (group by (cluster, namespace, job) (cortex_ingester_tsdb_wal_corruptions_total)) > 1
           labels:
             deployment: multi-zone
             severity: critical
