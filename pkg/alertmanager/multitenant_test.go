@@ -70,6 +70,8 @@ receivers:
 
 receivers:
   - name: dummy`
+
+	grafanaConfig = `{"template_files":{},"alertmanager_config":{"route":{"receiver":"grafana-default-email","group_by":["grafana_folder","alertname"]},"templates":null,"receivers":[{"name":"grafana-default-email","grafana_managed_receiver_configs":[{"uid":"dde6ntuob69dtf","name":"WH","type":"webhook","disableResolveMessage":false,"settings":{"url":"http://localhost:8080","username":"test"},"secureSettings":{"password":"test"}}]}]}}`
 )
 
 func mockAlertmanagerConfig(t *testing.T) *MultitenantAlertmanagerConfig {
@@ -106,6 +108,9 @@ func setupSingleMultitenantAlertmanager(t *testing.T, cfg *MultitenantAlertmanag
 	amCfg, err := ComputeFallbackConfig("")
 	require.NoError(t, err)
 
+	if limits == nil {
+		limits = &mockAlertManagerLimits{}
+	}
 	am, err := createMultitenantAlertmanager(cfg, amCfg, store, ringStore, limits, features, logger, registerer)
 	require.NoError(t, err)
 
@@ -347,6 +352,75 @@ templates:
 	require.True(t, cfgExists)
 	require.Equal(t, simpleConfigTwo, currentConfig.RawConfig)
 
+	// Ensure that when a Grafana config is added, it is synced correctly
+	userGrafanaCfg := alertspb.GrafanaAlertConfigDesc{
+		User:               "user4",
+		RawConfig:          grafanaConfig,
+		Hash:               "test",
+		CreatedAtTimestamp: time.Now().Unix(),
+		Default:            false,
+		Promoted:           true,
+	}
+	emptyMimirConfig := alertspb.AlertConfigDesc{User: "user4"}
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
+	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{User: "user4"}))
+
+	err = am.loadAndSyncConfigs(ctx, reasonPeriodic)
+	require.NoError(t, err)
+	require.Len(t, am.alertmanagers, 4)
+
+	// The Mimir configuration was empty, so the Grafana configuration should be chosen for user 4.
+	parsed, err := parseGrafanaConfig(userGrafanaCfg)
+	require.NoError(t, err)
+	require.Equal(t, parsed, am.cfgs["user4"])
+
+	dirs = am.getPerUserDirectories()
+	user4Dir := dirs["user4"]
+	require.NotZero(t, user4Dir)
+	require.True(t, dirExists(t, user4Dir))
+
+	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
+		# TYPE cortex_alertmanager_config_last_reload_successful gauge
+		cortex_alertmanager_config_last_reload_successful{user="user1"} 1
+		cortex_alertmanager_config_last_reload_successful{user="user2"} 1
+		cortex_alertmanager_config_last_reload_successful{user="user3"} 1
+		cortex_alertmanager_config_last_reload_successful{user="user4"} 1
+	`), "cortex_alertmanager_config_last_reload_successful"))
+
+	// Ensure the config can be unpromoted.
+	userGrafanaCfg.Promoted = false
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
+
+	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+	require.NoError(t, err)
+	require.Equal(t, emptyMimirConfig, am.cfgs["user4"])
+
+	// Ensure the Grafana config is used when it's promoted again.
+	userGrafanaCfg.Promoted = true
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
+
+	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+	require.NoError(t, err)
+	require.Equal(t, parsed, am.cfgs["user4"])
+
+	// Ensure the Grafana config is ignored when it's marked as default.
+	userGrafanaCfg.Default = true
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
+
+	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+	require.NoError(t, err)
+	require.Equal(t, emptyMimirConfig, am.cfgs["user4"])
+
+	// Ensure the Grafana config is ignored when it's empty.
+	userGrafanaCfg.Default = false
+	userGrafanaCfg.RawConfig = ""
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
+
+	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+	require.NoError(t, err)
+	require.Equal(t, emptyMimirConfig, am.cfgs["user4"])
+
 	// Test Delete User, ensure config is removed and the resources are freed.
 	require.NoError(t, store.DeleteAlertConfig(ctx, "user3"))
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
@@ -368,6 +442,7 @@ templates:
 		# TYPE cortex_alertmanager_config_last_reload_successful gauge
 		cortex_alertmanager_config_last_reload_successful{user="user1"} 1
 		cortex_alertmanager_config_last_reload_successful{user="user2"} 1
+		cortex_alertmanager_config_last_reload_successful{user="user4"} 1
 	`), "cortex_alertmanager_config_last_reload_successful"))
 
 	// Ensure when a 3rd config is re-added, it is synced correctly
@@ -399,6 +474,7 @@ templates:
 		cortex_alertmanager_config_last_reload_successful{user="user1"} 1
 		cortex_alertmanager_config_last_reload_successful{user="user2"} 1
 		cortex_alertmanager_config_last_reload_successful{user="user3"} 1
+		cortex_alertmanager_config_last_reload_successful{user="user4"} 1
 	`), "cortex_alertmanager_config_last_reload_successful"))
 
 	// Removed template files should be cleaned up
@@ -798,7 +874,7 @@ func TestMultitenantAlertmanager_zoneAwareSharding(t *testing.T) {
 		cfg.ShardingRing.ZoneAwarenessEnabled = true
 		cfg.ShardingRing.InstanceZone = zone
 
-		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewLogfmtLogger(os.Stdout), reg)
+		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewLogfmtLogger(os.Stdout), reg)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, am))
@@ -870,7 +946,7 @@ func TestMultitenantAlertmanager_deleteUnusedRemoteUserState(t *testing.T) {
 		// Increase state write interval so that state gets written sooner, making test faster.
 		cfg.Persister.Interval = 500 * time.Millisecond
 
-		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewLogfmtLogger(os.Stdout), reg)
+		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewLogfmtLogger(os.Stdout), reg)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, am))
@@ -966,7 +1042,7 @@ func TestMultitenantAlertmanager_deleteUnusedRemoteUserStateDisabled(t *testing.
 		// Disable state cleanup.
 		cfg.EnableStateCleanup = false
 
-		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewLogfmtLogger(os.Stdout), reg)
+		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewLogfmtLogger(os.Stdout), reg)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, am))
@@ -1337,7 +1413,7 @@ func TestMultitenantAlertmanager_InitialSync(t *testing.T) {
 				}))
 			}
 
-			am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
+			am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 			defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1442,7 +1518,7 @@ func TestMultitenantAlertmanager_PerTenantSharding(t *testing.T) {
 				amConfig.ShardingRing.RingCheckPeriod = time.Hour
 
 				reg := prometheus.NewPedanticRegistry()
-				am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
+				am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 				require.NoError(t, err)
 				defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1597,7 +1673,7 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 			alertStore := prepareInMemoryAlertStore()
 
 			reg := prometheus.NewPedanticRegistry()
-			am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
+			am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 			require.NoError(t, err)
 
 			require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
@@ -1648,7 +1724,7 @@ func TestMultitenantAlertmanager_RingLifecyclerShouldAutoForgetUnhealthyInstance
 
 	alertStore := prepareInMemoryAlertStore()
 
-	am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
+	am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, am))
 	defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
@@ -1685,7 +1761,7 @@ func TestMultitenantAlertmanager_InitialSyncFailure(t *testing.T) {
 	bkt.MockIter("alertmanager/", nil, nil)
 	store := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, bkt, nil, log.NewNopLogger())
 
-	am, err := createMultitenantAlertmanager(amConfig, nil, store, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
+	am, err := createMultitenantAlertmanager(amConfig, nil, store, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1728,7 +1804,7 @@ func TestAlertmanager_ReplicasPosition(t *testing.T) {
 		amConfig.ShardingRing.RingCheckPeriod = time.Hour
 
 		reg := prometheus.NewPedanticRegistry()
-		am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
+		am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 		require.NoError(t, err)
 		defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1834,7 +1910,7 @@ func TestAlertmanager_StateReplication(t *testing.T) {
 				amConfig.ShardingRing.RingCheckPeriod = time.Hour
 
 				reg := prometheus.NewPedanticRegistry()
-				am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
+				am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 				require.NoError(t, err)
 				defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -2013,7 +2089,7 @@ func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 				amConfig.ShardingRing.RingCheckPeriod = time.Hour
 
 				reg := prometheus.NewPedanticRegistry()
-				am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
+				am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 				require.NoError(t, err)
 
 				clientPool.setServer(amConfig.ShardingRing.Common.InstanceAddr+":0", am)
@@ -2145,7 +2221,8 @@ func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 
 // prepareInMemoryAlertStore builds and returns an in-memory alert store.
 func prepareInMemoryAlertStore() alertstore.AlertStore {
-	return bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, objstore.NewInMemBucket(), nil, log.NewNopLogger())
+	cfg := bucketclient.BucketAlertStoreConfig{FetchGrafanaConfig: true}
+	return bucketclient.NewBucketAlertStore(cfg, objstore.NewInMemBucket(), nil, log.NewNopLogger())
 }
 
 func TestSafeTemplateFilepath(t *testing.T) {
@@ -2353,6 +2430,8 @@ type mockAlertManagerLimits struct {
 	emailNotificationRateLimit     rate.Limit
 	emailNotificationBurst         int
 	maxConfigSize                  int
+	maxSilencesCount               int
+	maxSilenceSizeBytes            int
 	maxTemplatesCount              int
 	maxSizeOfTemplate              int
 	maxDispatcherAggregationGroups int
@@ -2362,6 +2441,12 @@ type mockAlertManagerLimits struct {
 
 func (m *mockAlertManagerLimits) AlertmanagerMaxConfigSize(string) int {
 	return m.maxConfigSize
+}
+
+func (m *mockAlertManagerLimits) AlertmanagerMaxSilencesCount(string) int { return m.maxSilencesCount }
+
+func (m *mockAlertManagerLimits) AlertmanagerMaxSilenceSizeBytes(string) int {
+	return m.maxSilenceSizeBytes
 }
 
 func (m *mockAlertManagerLimits) AlertmanagerMaxTemplatesCount(string) int {

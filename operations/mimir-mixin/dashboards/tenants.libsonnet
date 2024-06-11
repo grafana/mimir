@@ -1,7 +1,8 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 local filename = 'mimir-tenants.json';
 
-(import 'dashboard-utils.libsonnet') {
+(import 'dashboard-utils.libsonnet') +
+(import 'dashboard-queries.libsonnet') {
   local user_limits_overrides_query(limit_name) = |||
     max(cortex_limits_overrides{%(overrides_exporter)s, limit_name="%(limit_name)s", user="$user"})
     or
@@ -41,54 +42,19 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           [
-            |||
-              sum(
-                (
-                  cortex_ingester_memory_series_created_total{%(ingester)s, user="$user"}
-                  - cortex_ingester_memory_series_removed_total{%(ingester)s, user="$user"}
-                )
-                / on(%(group_by_cluster)s) group_left
-                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
+            local perIngesterInMemorySeries = |||
+              (
+                cortex_ingester_memory_series_created_total{%(ingester)s, user="$user"}
+                - cortex_ingester_memory_series_removed_total{%(ingester)s, user="$user"}
               )
             ||| % {
               ingester: $.jobMatcher($._config.job_names.ingester),
-              distributor: $.jobMatcher($._config.job_names.distributor),
-              group_by_cluster: $._config.group_by_cluster,
-            },
+            };
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery(perIngesterInMemorySeries),
             user_limits_overrides_query('max_global_series_per_user'),
-            |||
-              sum(
-                cortex_ingester_active_series{%(ingester)s, user="$user"}
-                / on(%(group_by_cluster)s) group_left
-                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-              )
-            ||| % {
-              ingester: $.jobMatcher($._config.job_names.ingester),
-              distributor: $.jobMatcher($._config.job_names.distributor),
-              group_by_cluster: $._config.group_by_cluster,
-            },
-            |||
-              sum(
-                cortex_ingester_owned_series{%(ingester)s, user="$user"}
-                / on(%(group_by_cluster)s) group_left
-                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-              )
-            ||| % {
-              ingester: $.jobMatcher($._config.job_names.ingester),
-              distributor: $.jobMatcher($._config.job_names.distributor),
-              group_by_cluster: $._config.group_by_cluster,
-            },
-            |||
-              sum by (name) (
-                cortex_ingester_active_series_custom_tracker{%(ingester)s, user="$user"}
-                / on(%(group_by_cluster)s) group_left
-                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-              ) > 0
-            ||| % {
-              ingester: $.jobMatcher($._config.job_names.ingester),
-              distributor: $.jobMatcher($._config.job_names.distributor),
-              group_by_cluster: $._config.group_by_cluster,
-            },
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_series{%s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_owned_series{%s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_series_custom_tracker{%s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)], groupByLabels='name'),
           ],
           [
             'in-memory',
@@ -130,6 +96,7 @@ local filename = 'mimir-tenants.json';
             '{{pod}}',
           ],
         ) +
+        $.showAllTooltip +
         {
           fieldConfig+: {
             defaults+: { custom+: { fillOpacity: 0 } },
@@ -141,10 +108,6 @@ local filename = 'mimir-tenants.json';
             ],
           },
           options+: {
-            tooltip+: {
-              mode: 'multi',
-              sort: 'desc',
-            },
             legend+: { showLegend: false },
           },
         } +
@@ -178,6 +141,7 @@ local filename = 'mimir-tenants.json';
             '{{pod}}',
           ],
         ) +
+        $.showAllTooltip +
         {
           fieldConfig+: {
             defaults+: { custom+: { fillOpacity: 0 } },
@@ -189,10 +153,6 @@ local filename = 'mimir-tenants.json';
             ],
           },
           options+: {
-            tooltip+: {
-              mode: 'multi',
-              sort: 'desc',
-            },
             legend+: { showLegend: false },
           },
         } +
@@ -213,17 +173,7 @@ local filename = 'mimir-tenants.json';
         local title = 'Series with exemplars';
         $.timeseriesPanel(title) +
         $.queryPanel(
-          |||
-            sum(
-              cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{%(ingester)s, user="$user"}
-              / on(%(group_by_cluster)s) group_left
-              max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-            )
-          ||| % {
-            ingester: $.jobMatcher($._config.job_names.ingester),
-            distributor: $.jobMatcher($._config.job_names.distributor),
-            group_by_cluster: $._config.group_by_cluster,
-          },
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{%(ingester)s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
           'series',
         ) +
         { options+: { legend+: { showLegend: false } } } +
@@ -261,28 +211,8 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           [
-            |||
-              sum(
-                cortex_ingester_active_native_histogram_series{%(ingester)s, user="$user"}
-                / on(%(group_by_cluster)s) group_left
-                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-              )
-            ||| % {
-              ingester: $.jobMatcher($._config.job_names.ingester),
-              distributor: $.jobMatcher($._config.job_names.distributor),
-              group_by_cluster: $._config.group_by_cluster,
-            },
-            |||
-              sum by (name) (
-                cortex_ingester_active_native_histogram_series_custom_tracker{%(ingester)s, user="$user"}
-                / on(%(group_by_cluster)s) group_left
-                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-              ) > 0
-            ||| % {
-              ingester: $.jobMatcher($._config.job_names.ingester),
-              distributor: $.jobMatcher($._config.job_names.distributor),
-              group_by_cluster: $._config.group_by_cluster,
-            },
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_native_histogram_series{%(ingester)s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_native_histogram_series_custom_tracker{%(ingester)s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)], groupByLabels='name'),
           ],
           [
             'active',
@@ -303,28 +233,8 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           [
-            |||
-              sum(
-                cortex_ingester_active_native_histogram_buckets{%(ingester)s, user="$user"}
-                / on(%(group_by_cluster)s) group_left
-                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-              )
-            ||| % {
-              ingester: $.jobMatcher($._config.job_names.ingester),
-              distributor: $.jobMatcher($._config.job_names.distributor),
-              group_by_cluster: $._config.group_by_cluster,
-            },
-            |||
-              sum by (name) (
-                cortex_ingester_active_native_histogram_buckets_custom_tracker{%(ingester)s, user="$user"}
-                / on(%(group_by_cluster)s) group_left
-                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-              ) > 0
-            ||| % {
-              ingester: $.jobMatcher($._config.job_names.ingester),
-              distributor: $.jobMatcher($._config.job_names.distributor),
-              group_by_cluster: $._config.group_by_cluster,
-            },
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_native_histogram_buckets{%(ingester)s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_native_histogram_buckets_custom_tracker{%(ingester)s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)], groupByLabels='name'),
           ],
           [
             'buckets',
@@ -562,17 +472,7 @@ local filename = 'mimir-tenants.json';
         local title = 'Ingester appended exemplars rate';
         $.timeseriesPanel(title) +
         $.queryPanel(
-          |||
-            sum(
-              rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{%(ingester)s, user="$user"}[$__rate_interval])
-              / on(%(group_by_cluster)s) group_left
-              max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-            )
-          ||| % {
-            ingester: $.jobMatcher($._config.job_names.ingester),
-            distributor: $.jobMatcher($._config.job_names.distributor),
-            group_by_cluster: $._config.group_by_cluster,
-          },
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{%(ingester)s, user="$user"}[$__rate_interval])' % [$.jobMatcher($._config.job_names.ingester)]),
           'rate',
         ) +
         { options+: { legend+: { showLegend: false } } } +
@@ -856,18 +756,14 @@ local filename = 'mimir-tenants.json';
             (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{%s}[$__rate_interval])) == 0)
           ||| % [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)],
           '{{ job }}',
-        ) + {
+        ) +
+        $.showAllTooltip + {
           fieldConfig+: {
             defaults+: {
               custom+: {
                 fillOpacity: 50,
                 stacking+: { mode: 'normal' },
               },
-            },
-          },
-          options+: {
-            tooltip+: {
-              mode: 'multi',
             },
           },
         } +

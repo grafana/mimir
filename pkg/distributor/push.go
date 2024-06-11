@@ -169,10 +169,16 @@ func handler(
 			if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 				code, msg = int(resp.Code), string(resp.Body)
 			} else {
-				code, msg = toHTTPStatus(ctx, err, limits), err.Error()
+				code = toHTTPStatus(ctx, err, limits)
+				msg = err.Error()
 			}
 			if code != 202 {
-				level.Error(logger).Log("msg", "push error", "err", err)
+				// This error message is consistent with error message in OTLP handler, and ingester's ingest-storage pushToStorage method.
+				msgs := []interface{}{"msg", "detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)", "httpCode", code, "err", err}
+				if code/100 == 4 {
+					msgs = append(msgs, "insight", true)
+				}
+				level.Error(logger).Log(msgs...)
 			}
 			addHeaders(w, err, r, code, retryCfg)
 			http.Error(w, msg, code)
@@ -200,6 +206,8 @@ func calculateRetryAfter(retryAttemptHeader string, baseSeconds int, maxBackoffE
 
 // toHTTPStatus converts the given error into an appropriate HTTP status corresponding
 // to that error, if the error is one of the errors from this package. Otherwise, an
+// http.StatusInternalServerError is returned.
+// to that error, if the error is one of the errors from this package. Otherwise, codes.Internal and
 // http.StatusInternalServerError is returned.
 func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrides) int {
 	if errors.Is(pushErr, context.DeadlineExceeded) {

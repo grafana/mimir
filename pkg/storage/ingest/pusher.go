@@ -4,17 +4,20 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -29,7 +32,9 @@ type pusherConsumer struct {
 	clientErrRequests     prometheus.Counter
 	serverErrRequests     prometheus.Counter
 	totalRequests         prometheus.Counter
-	logger                log.Logger
+
+	fallbackClientErrSampler *util_log.Sampler // Fallback log message sampler client errors that are not sampled yet.
+	logger                   log.Logger
 }
 
 type parsedRecord struct {
@@ -40,15 +45,16 @@ type parsedRecord struct {
 	err      error
 }
 
-func newPusherConsumer(p Pusher, reg prometheus.Registerer, l log.Logger) *pusherConsumer {
+func newPusherConsumer(p Pusher, fallbackClientErrSampler *util_log.Sampler, reg prometheus.Registerer, l log.Logger) *pusherConsumer {
 	errRequestsCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_ingest_storage_reader_records_failed_total",
 		Help: "Number of records (write requests) which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.",
 	}, []string{"cause"})
 
 	return &pusherConsumer{
-		pusher: p,
-		logger: l,
+		pusher:                   p,
+		logger:                   l,
+		fallbackClientErrSampler: fallbackClientErrSampler,
 		processingTimeSeconds: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                            "cortex_ingest_storage_reader_processing_time_seconds",
 			Help:                            "Time taken to process a single record (write request).",
@@ -118,14 +124,30 @@ func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req 
 
 		// The error could be sampled or marked to be skipped in logs, so we check whether it should be
 		// logged before doing it.
-		if keep, reason := shouldLog(ctx, err); keep {
+		if keep, reason := c.shouldLogClientError(ctx, err); keep {
 			if reason != "" {
 				err = fmt.Errorf("%w (%s)", err, reason)
 			}
-			level.Warn(spanLog).Log("msg", "detected a client error while ingesting write request (the request may have been partially ingested)", "err", err, "user", tenantID)
+			// This error message is consistent with error message in Prometheus remote-write and OTLP handlers in distributors.
+			level.Warn(spanLog).Log("msg", "detected a client error while ingesting write request (the request may have been partially ingested)", "user", tenantID, "insight", true, "err", err)
 		}
 	}
 	return nil
+}
+
+// shouldLogClientError returns whether err should be logged.
+func (c pusherConsumer) shouldLogClientError(ctx context.Context, err error) (bool, string) {
+	var optional middleware.OptionalLogging
+	if !errors.As(err, &optional) {
+		// If error isn't sampled yet, we wrap it into our sampler and try again.
+		err = c.fallbackClientErrSampler.WrapError(err)
+		if !errors.As(err, &optional) {
+			// We can get here if c.clientErrSampler is nil.
+			return true, ""
+		}
+	}
+
+	return optional.ShouldLog(ctx)
 }
 
 // The passed context is expected to be cancelled after all items in records were fully processed and are ready

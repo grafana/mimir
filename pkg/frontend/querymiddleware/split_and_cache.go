@@ -667,14 +667,23 @@ func evaluateAtModifierFunction(query string, start, end int64) (string, error) 
 		return "", apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
 	}
 	parser.Inspect(expr, func(n parser.Node, _ []parser.Node) error {
-		if selector, ok := n.(*parser.VectorSelector); ok {
-			switch selector.StartOrEnd {
+		switch exprAt := n.(type) {
+		case *parser.VectorSelector:
+			switch exprAt.StartOrEnd {
 			case parser.START:
-				selector.Timestamp = &start
+				exprAt.Timestamp = &start
 			case parser.END:
-				selector.Timestamp = &end
+				exprAt.Timestamp = &end
 			}
-			selector.StartOrEnd = 0
+			exprAt.StartOrEnd = 0
+		case *parser.SubqueryExpr:
+			switch exprAt.StartOrEnd {
+			case parser.START:
+				exprAt.Timestamp = &start
+			case parser.END:
+				exprAt.Timestamp = &end
+			}
+			exprAt.StartOrEnd = 0
 		}
 		return nil
 	})

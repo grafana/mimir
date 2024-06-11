@@ -955,6 +955,11 @@ instance_limits:
 # limiting feature.)
 # CLI flag: -distributor.reusable-ingester-push-workers
 [reusable_ingester_push_workers: <int> | default = 2000]
+
+# (experimental) When enabled, OTLP write requests are directly translated to
+# Mimir equivalents, for optimum performance.
+# CLI flag: -distributor.direct-otlp-translation-enabled
+[direct_otlp_translation_enabled: <boolean> | default = true]
 ```
 
 ### ingester
@@ -1212,6 +1217,49 @@ instance_limits:
 # owned series as a result of detected change.
 # CLI flag: -ingester.owned-series-update-interval
 [owned_series_update_interval: <duration> | default = 15s]
+
+circuit_breaker:
+  # (experimental) Enable circuit breaking when making requests to ingesters
+  # CLI flag: -ingester.circuit-breaker.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Max percentage of requests that can fail over period before
+  # the circuit breaker opens
+  # CLI flag: -ingester.circuit-breaker.failure-threshold-percentage
+  [failure_threshold_percentage: <int> | default = 10]
+
+  # (experimental) How many requests must have been executed in period for the
+  # circuit breaker to be eligible to open for the rate of failures
+  # CLI flag: -ingester.circuit-breaker.failure-execution-threshold
+  [failure_execution_threshold: <int> | default = 100]
+
+  # (experimental) Moving window of time that the percentage of failed requests
+  # is computed over
+  # CLI flag: -ingester.circuit-breaker.thresholding-period
+  [thresholding_period: <duration> | default = 1m]
+
+  # (experimental) How long the circuit breaker will stay in the open state
+  # before allowing some requests
+  # CLI flag: -ingester.circuit-breaker.cooldown-period
+  [cooldown_period: <duration> | default = 10s]
+
+  # (experimental) How long the circuit breaker should wait between an
+  # activation request and becoming effectively active. During that time both
+  # failures and successes will not be counted.
+  # CLI flag: -ingester.circuit-breaker.initial-delay
+  [initial_delay: <duration> | default = 0s]
+
+  # (experiment) The maximum length of time an ingester's Push request can last
+  # before it triggers a circuit breaker. This configuration is used for circuit
+  # breakers only, and its timeouts aren't reported as errors.
+  # CLI flag: -ingester.circuit-breaker.push-timeout
+  [push_timeout: <duration> | default = 2s]
+
+  # (experiment) The maximum length of time an ingester's read-path request can
+  # last before it triggers a circuit breaker. This configuration is used for
+  # circuit breakers only, and its timeouts aren't reported as errors.
+  # CLI flag: -ingester.circuit-breaker.read-timeout
+  [read_timeout: <duration> | default = 30s]
 ```
 
 ### querier
@@ -1336,9 +1384,9 @@ store_gateway_client:
 # CLI flag: -querier.minimize-ingester-requests-hedging-delay
 [minimize_ingester_requests_hedging_delay: <duration> | default = 3s]
 
-# (experimental) PromQL engine to use, either 'standard' or 'streaming'
+# (experimental) PromQL engine to use, either 'prometheus' or 'mimir'
 # CLI flag: -querier.promql-engine
-[promql_engine: <string> | default = "standard"]
+[promql_engine: <string> | default = "prometheus"]
 
 # (experimental) If set to true and the streaming engine is in use, fall back to
 # using the Prometheus PromQL engine for any queries not supported by the
@@ -3030,10 +3078,17 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (advanced) Controls how far into the future incoming samples and exemplars are
 # accepted compared to the wall clock. Any sample or exemplar will be rejected
-# if its timestamp is greater than '(now + grace_period)'. This configuration is
-# enforced in the distributor and ingester.
+# if its timestamp is greater than '(now + creation_grace_period)'. This
+# configuration is enforced in the distributor and ingester.
 # CLI flag: -validation.create-grace-period
 [creation_grace_period: <duration> | default = 10m]
+
+# (advanced) Controls how far into the past incoming samples and exemplars are
+# accepted compared to the wall clock. Any sample or exemplar will be rejected
+# if its timestamp is lower than '(now - OOO window - past_grace_period)'. This
+# configuration is enforced in the distributor and ingester. 0 to disable.
+# CLI flag: -validation.past-grace-period
+[past_grace_period: <duration> | default = 0s]
 
 # (advanced) Enforce every metadata has a metric name.
 # CLI flag: -validation.enforce-metadata-metric-name
@@ -3163,6 +3218,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # disable.
 # CLI flag: -querier.max-fetched-chunk-bytes-per-query
 [max_fetched_chunk_bytes_per_query: <int> | default = 0]
+
+# (experimental) The maximum estimated memory a single query can consume at
+# once, in bytes. This limit is only enforced when Mimir's query engine is in
+# use. This limit is enforced in the querier. 0 to disable.
+# CLI flag: -querier.max-estimated-memory-consumption-per-query
+[max_estimated_memory_consumption_per_query: <int> | default = 0]
 
 # Limit how long back data (series and metadata) can be queried, up until
 # <lookback> duration ago. This limit is enforced in the query-frontend, querier
@@ -3434,6 +3495,15 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Alertmanager API. 0 = no limit.
 # CLI flag: -alertmanager.max-config-size-bytes
 [alertmanager_max_config_size_bytes: <int> | default = 0]
+
+# Maximum number of silences, including expired silences, that a tenant can have
+# at once. 0 = no limit.
+# CLI flag: -alertmanager.max-silences-count
+[alertmanager_max_silences_count: <int> | default = 0]
+
+# Maximum silence size in bytes. 0 = no limit.
+# CLI flag: -alertmanager.max-silence-size-bytes
+[alertmanager_max_silence_size_bytes: <int> | default = 0]
 
 # Maximum number of templates in tenant's Alertmanager configuration uploaded
 # via Alertmanager API. 0 = no limit.

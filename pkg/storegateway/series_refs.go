@@ -139,6 +139,13 @@ func (b seriesChunkRefsSet) release() {
 	seriesChunkRefsSetPool.Put(&reuse)
 }
 
+// makeUnreleasable returns a new seriesChunkRefsSet that cannot be released on a subsequent call to release.
+//
+// This is useful for scenarios where a set will be used multiple times and so it is not safe for consumers to release it.
+func (b seriesChunkRefsSet) makeUnreleasable() seriesChunkRefsSet {
+	return seriesChunkRefsSet{b.series, false}
+}
+
 // seriesChunkRefs holds a series with a list of chunk references.
 type seriesChunkRefs struct {
 	lset labels.Labels
@@ -690,47 +697,58 @@ func openBlockSeriesChunkRefsSetsIterator(
 	ctx context.Context,
 	batchSize int,
 	tenantID string,
-	indexr *bucketIndexReader, // Index reader for block.
+	indexr *bucketIndexReader,
 	indexCache indexcache.IndexCache,
 	blockMeta *block.Meta,
-	matchers []*labels.Matcher, // Series matchers.
-	shard *sharding.ShardSelector, // Shard selector.
+	matchers []*labels.Matcher,
+	shard *sharding.ShardSelector,
 	seriesHasher seriesHasher,
 	strategy seriesIteratorStrategy,
-	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
+	minTime, maxTime int64,
 	stats *safeQueryStats,
-	reuse *reusedPostingsAndMatchers, // If this is not nil, these posting and matchers are used as it is without fetching new ones.
 	logger log.Logger,
+	streamingIterators *streamingSeriesIterators,
 ) (iterator[seriesChunkRefsSet], error) {
 	if batchSize <= 0 {
 		return nil, errors.New("set size must be a positive number")
 	}
 
-	var (
-		ps              []storage.SeriesRef
-		pendingMatchers []*labels.Matcher
-		fetchPostings   = true
-	)
-	if reuse != nil {
-		fetchPostings = !reuse.isSet()
-		ps = reuse.ps
-		pendingMatchers = reuse.matchers
-	}
-	if fetchPostings {
-		var err error
-		ps, pendingMatchers, err = indexr.ExpandedPostings(ctx, matchers, stats)
-		if err != nil {
-			return nil, errors.Wrap(err, "expanded matching postings")
-		}
-		if reuse != nil {
-			reuse.set(ps, pendingMatchers)
-		}
+	ps, pendingMatchers, err := indexr.ExpandedPostings(ctx, matchers, stats)
+	if err != nil {
+		return nil, errors.Wrap(err, "expanded matching postings")
 	}
 
+	iteratorFactory := func(strategy seriesIteratorStrategy, psi *postingsSetsIterator) iterator[seriesChunkRefsSet] {
+		return openBlockSeriesChunkRefsSetsIteratorFromPostings(ctx, tenantID, indexr, indexCache, blockMeta, shard, seriesHasher, strategy, minTime, maxTime, stats, psi, pendingMatchers, logger)
+	}
+
+	if streamingIterators == nil {
+		psi := newPostingsSetsIterator(ps, batchSize)
+		return iteratorFactory(strategy, psi), nil
+	}
+
+	return streamingIterators.wrapIterator(strategy, ps, batchSize, iteratorFactory), nil
+}
+
+func openBlockSeriesChunkRefsSetsIteratorFromPostings(
+	ctx context.Context,
+	tenantID string,
+	indexr *bucketIndexReader,
+	indexCache indexcache.IndexCache,
+	blockMeta *block.Meta,
+	shard *sharding.ShardSelector,
+	seriesHasher seriesHasher,
+	strategy seriesIteratorStrategy,
+	minTime, maxTime int64,
+	stats *safeQueryStats,
+	postingsSetsIterator *postingsSetsIterator,
+	pendingMatchers []*labels.Matcher,
+	logger log.Logger,
+) iterator[seriesChunkRefsSet] {
 	var it iterator[seriesChunkRefsSet]
 	it = newLoadingSeriesChunkRefsSetIterator(
 		ctx,
-		newPostingsSetsIterator(ps, batchSize),
+		postingsSetsIterator,
 		indexr,
 		indexCache,
 		stats,
@@ -743,36 +761,12 @@ func openBlockSeriesChunkRefsSetsIterator(
 		tenantID,
 		logger,
 	)
+
 	if len(pendingMatchers) > 0 {
 		it = newFilteringSeriesChunkRefsSetIterator(pendingMatchers, it, stats)
 	}
 
-	return it, nil
-}
-
-// reusedPostings is used to share the postings and matches across function calls for re-use
-// in case of streaming series. We have it as a separate struct so that we can give a safe way
-// to use it by making a copy where required. You can use it to put items only once.
-type reusedPostingsAndMatchers struct {
-	ps       []storage.SeriesRef
-	matchers []*labels.Matcher
-	filled   bool
-}
-
-func (p *reusedPostingsAndMatchers) set(ps []storage.SeriesRef, matchers []*labels.Matcher) {
-	if p.filled {
-		// We already have something here.
-		return
-	}
-	// Postings list can be modified later, so we make a copy here.
-	p.ps = make([]storage.SeriesRef, len(ps))
-	copy(p.ps, ps)
-	p.matchers = matchers
-	p.filled = true
-}
-
-func (p *reusedPostingsAndMatchers) isSet() bool {
-	return p.filled
+	return it
 }
 
 // seriesIteratorStrategy defines the strategy to use when loading the series and their chunk refs.
@@ -810,6 +804,14 @@ func (s seriesIteratorStrategy) isNoChunkRefsOnEntireBlock() bool {
 
 func (s seriesIteratorStrategy) isNoChunkRefsAndOverlapMintMaxt() bool {
 	return s.isNoChunkRefs() && s.isOverlapMintMaxt()
+}
+
+func (s seriesIteratorStrategy) withNoChunkRefs() seriesIteratorStrategy {
+	return s | noChunkRefs
+}
+
+func (s seriesIteratorStrategy) withChunkRefs() seriesIteratorStrategy {
+	return s & ^noChunkRefs
 }
 
 func newLoadingSeriesChunkRefsSetIterator(

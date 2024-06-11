@@ -2029,9 +2029,19 @@ spec:
       behavior:
         scaleDown:
           policies:
-          - periodSeconds: 600
+          - periodSeconds: 120
             type: Percent
             value: 10
+          stabilizationWindowSeconds: 1800
+        scaleUp:
+          policies:
+          - periodSeconds: 120
+            type: Percent
+            value: 50
+          - periodSeconds: 120
+            type: Pods
+            value: 15
+          stabilizationWindowSeconds: 120
   maxReplicaCount: 30
   minReplicaCount: 3
   pollingInterval: 10
@@ -2042,11 +2052,11 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_distributor_cpu_hpa_default
       query: |
-        max_over_time(
+        quantile_over_time(0.95,
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="distributor",namespace="default"}[5m]))
             and
-            max by (pod) (up{container="distributor",namespace="default"}) > 0
+            max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
         and
@@ -2065,12 +2075,12 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_distributor_memory_hpa_default
       query: |
-        max_over_time(
+        quantile_over_time(0.95,
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="distributor",namespace="default"})
               and
-              max by (pod) (up{container="distributor",namespace="default"}) > 0
+              max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
             ) or vector(0)
           )[15m:]
         )
@@ -2384,11 +2394,11 @@ spec:
     type: prometheus
   - metadata:
       ignoreNullValues: "false"
-      metricName: cortex_ruler_querier_queries_hpa_default
+      metricName: ruler_querier_queries_hpa_default
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="default",quantile="0.5"}[1m]))
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
-    name: cortex_ruler_querier_queries_hpa_default
+    name: ruler_querier_queries_hpa_default
     type: prometheus
 ---
 apiVersion: keda.sh/v1alpha1

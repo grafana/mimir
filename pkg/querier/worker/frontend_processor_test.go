@@ -152,6 +152,7 @@ func TestRecvFailDoesntCancelProcess(t *testing.T) {
 	defer cancel()
 
 	// We use random port here, hopefully without any gRPC server.
+	// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
 	cc, err := grpc.DialContext(ctx, "localhost:999", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 
@@ -185,6 +186,7 @@ func TestContextCancelStopsProcess(t *testing.T) {
 	defer cancel()
 
 	// We use random port here, hopefully without any gRPC server.
+	// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
 	cc, err := grpc.DialContext(ctx, "localhost:999", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 

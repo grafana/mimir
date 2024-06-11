@@ -81,6 +81,10 @@ Usage of ./cmd/mimir/mimir:
     	Maximum size of configuration file for Alertmanager that tenant can upload via Alertmanager API. 0 = no limit.
   -alertmanager.max-dispatcher-aggregation-groups int
     	Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.
+  -alertmanager.max-silence-size-bytes int
+    	Maximum silence size in bytes. 0 = no limit.
+  -alertmanager.max-silences-count int
+    	Maximum number of silences, including expired silences, that a tenant can have at once. 0 = no limit.
   -alertmanager.max-template-size-bytes int
     	Maximum size of single template in tenant's Alertmanager configuration uploaded via Alertmanager API. 0 = no limit.
   -alertmanager.max-templates-count int
@@ -385,6 +389,10 @@ Usage of ./cmd/mimir/mimir:
     	Print basic help.
   -help-all
     	Print help, also including advanced and experimental parameters.
+  -ingester.circuit-breaker.push-timeout duration
+    	The maximum length of time an ingester's Push request can last before it triggers a circuit breaker. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 2s)
+  -ingester.circuit-breaker.read-timeout duration
+    	The maximum length of time an ingester's read-path request can last before it triggers a circuit breaker. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 30s)
   -ingester.max-global-metadata-per-metric int
     	The maximum number of metadata per metric, across the cluster. 0 to disable.
   -ingester.max-global-metadata-per-user int
