@@ -63,12 +63,12 @@ func newCircuitBreakerMetrics(r prometheus.Registerer, currentState func() circu
 	}
 	for _, s := range []circuitbreaker.State{circuitbreaker.OpenState, circuitbreaker.HalfOpenState, circuitbreaker.ClosedState} {
 		circuitBreakerCurrentStateGauge(s)
-		// We initialize all possible states for the given requestType and the circuitBreakerTransitions metrics
+		// We initialize all possible states for the circuitBreakerTransitions metrics
 		cbMetrics.circuitBreakerTransitions.WithLabelValues(s.String())
 	}
 
 	for _, r := range []string{circuitBreakerResultSuccess, circuitBreakerResultError, circuitBreakerResultOpen} {
-		// We initialize all possible results for the given requestType and the circuitBreakerResults metrics
+		// We initialize all possible results for the circuitBreakerResults metrics
 		cbMetrics.circuitBreakerResults.WithLabelValues(r)
 	}
 	return cbMetrics
@@ -269,9 +269,6 @@ func newIngesterCircuitBreaker(pushCfg CircuitBreakerConfig, readCfg CircuitBrea
 }
 
 func (cb *ingesterCircuitBreaker) activate() {
-	if cb == nil {
-		return
-	}
 	cb.push.activate()
 	cb.read.activate()
 }
@@ -280,14 +277,7 @@ func (cb *ingesterCircuitBreaker) activate() {
 // If it was possible, tryPushAcquirePermit returns a function that should be called to release the acquired permit.
 // If it was not possible, the causing error is returned.
 func (cb *ingesterCircuitBreaker) tryPushAcquirePermit() (func(time.Duration, error), error) {
-	finish, err := cb.push.tryAcquirePermit()
-	if err != nil {
-		return nil, err
-	}
-
-	return func(duration time.Duration, err error) {
-		finish(duration, err)
-	}, nil
+	return cb.push.tryAcquirePermit()
 }
 
 // tryReadAcquirePermit tries to acquire a permit to use the read circuit breaker and returns whether a permit was acquired.
@@ -304,12 +294,5 @@ func (cb *ingesterCircuitBreaker) tryReadAcquirePermit() (func(time.Duration, er
 		return nil, newCircuitBreakerOpenError(cb.push.requestType, cb.push.cb.RemainingDelay())
 	}
 
-	finish, err := cb.read.tryAcquirePermit()
-	if err != nil {
-		return nil, err
-	}
-
-	return func(duration time.Duration, err error) {
-		finish(duration, err)
-	}, nil
+	return cb.read.tryAcquirePermit()
 }
