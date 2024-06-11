@@ -91,7 +91,7 @@
 * [BUGFIX] Query-frontend: fix splitting of queries using `@ start()` and `@end()` modifiers on a subquery. Previously the `start()` and `end()` would be evaluated using the start end end of the split query instead of the original query. #8162
 * [BUGFIX] Distributor: Don't discard time series with invalid exemplars, just drop affected exemplars. #8224
 * [BUGFIX] Ingester: fixed in-memory series count when replaying a corrupted WAL. #8295
-* [BUGFIX] Ingester: fix context cancellation handling when a query is busy running `PostingsForMatchers` through the `PostingsForMatchersCache`. #8337
+* [BUGFIX] Ingester: fix context cancellation handling when a query is busy looking up series in the TSDB index and `-blocks-storage.tsdb.head-postings-for-matchers-cache*` or `-blocks-storage.tsdb.block-postings-for-matchers-cache*` are in use. #8337
 
 ### Mixin
 
