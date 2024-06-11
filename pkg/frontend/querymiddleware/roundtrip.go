@@ -72,6 +72,11 @@ type Config struct {
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
 	CacheKeyGenerator CacheKeyGenerator `yaml:"-"`
 
+	// ExtraMiddlewares allows to inject custom middlewares into the middleware chain.
+	// These middlewares will be placed right after default middlewares and before the query sharding middleware,
+	// in order to avoid interfering with core functionality.
+	ExtraMiddlewares []MetricsQueryMiddleware `yaml:"-"`
+
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
 }
 
@@ -338,6 +343,11 @@ func newQueryMiddlewares(
 		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
 		queryBlockerMiddleware,
 	)
+
+	if len(cfg.ExtraMiddlewares) > 0 {
+		queryRangeMiddleware = append(queryRangeMiddleware, cfg.ExtraMiddlewares...)
+		queryInstantMiddleware = append(queryInstantMiddleware, cfg.ExtraMiddlewares...)
+	}
 
 	if cfg.ShardedQueries {
 		// Inject the cardinality estimation middleware after time-based splitting and
