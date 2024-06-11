@@ -197,10 +197,10 @@ func (n *Node) dequeue() (QueuePath, any) {
 	var dequeueNode *Node
 	// continue until we've found a value or checked all nodes that need checking
 	for v == nil && !checkedAllNodes {
-		dequeueNode, checkedAllNodes = n.dequeueAlgorithm.dequeueGetNode(n)
-		var deletedNode bool
+		dequeueNode, checkedAllNodes = n.dequeueAlgorithm.dequeueSelectNode(n)
+		switch dequeueNode {
 		// dequeuing from local queue
-		if dequeueNode == n {
+		case n:
 			if n.localQueue.Len() > 0 {
 				// dequeueNode is self, local queue non-empty
 				if elt := n.localQueue.Front(); elt != nil {
@@ -208,24 +208,24 @@ func (n *Node) dequeue() (QueuePath, any) {
 					v = elt.Value
 				}
 			}
-		} else if dequeueNode == nil {
-			// no dequeue-able child found; reset checked children to 0,
-			// as we won't update state before moving on
-			n.childrenChecked = 0
-			return path, v
-		} else {
-			// dequeue from a child
+		// no dequeue-able child found; break out of the loop,
+		// since we won't find anything to dequeue if we don't
+		// have a node to dequeue from now
+		case nil:
+			checkedAllNodes = true
+		// dequeue from a child
+		default:
 			childPath, v = dequeueNode.dequeue()
-			// if the dequeue node is empty _after_ dequeuing, delete it from children
-			if dequeueNode.IsEmpty() {
-				// removing an element sets our position one step forward;
-				// tell state to reset it to original queuePosition
-				delete(n.queueMap, dequeueNode.Name())
-				deletedNode = n.dequeueAlgorithm.deleteChildNode(n, dequeueNode)
-			}
 		}
-		n.dequeueAlgorithm.dequeueUpdateState(n, v, deletedNode)
+
+		if v == nil {
+			n.childrenChecked++
+		}
+
+		n.dequeueAlgorithm.dequeueUpdateState(n, dequeueNode)
 	}
+	// reset children checked to 0 before completing this dequeue
+	n.childrenChecked = 0
 	return append(path, childPath...), v
 }
 

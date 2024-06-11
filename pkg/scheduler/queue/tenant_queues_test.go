@@ -6,6 +6,7 @@
 package queue
 
 import (
+	"container/list"
 	"context"
 	"fmt"
 	"math"
@@ -701,6 +702,7 @@ func (qb *queueBroker) removeTenantQueue(tenantID TenantID) bool {
 	return qb.tree.rootNode.deleteNode(queuePath)
 }
 
+// deleteNode is a test utility, not intended for use by consumers of Node
 func (n *Node) deleteNode(pathFromNode QueuePath) bool {
 	if len(pathFromNode) == 0 {
 		// node cannot delete itself
@@ -716,8 +718,10 @@ func (n *Node) deleteNode(pathFromNode QueuePath) bool {
 		return false
 	}
 	if deleteNode := parentNode.getNode(QueuePath{deleteNodeName}); deleteNode != nil {
-		childDeleted := parentNode.dequeueAlgorithm.deleteChildNode(parentNode, deleteNode)
-		parentNode.dequeueAlgorithm.dequeueUpdateState(parentNode, nil, childDeleted)
+		// empty the node so that update state properly deletes it
+		deleteNode.queueMap = map[string]*Node{}
+		deleteNode.localQueue = list.New()
+		parentNode.dequeueAlgorithm.dequeueUpdateState(parentNode, deleteNode)
 		return true
 	}
 	return false

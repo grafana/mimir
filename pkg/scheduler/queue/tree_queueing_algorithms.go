@@ -6,10 +6,9 @@ package queue
 // at the layer-level -- every Node at the same depth in a TreeQueue shares the same DequeueAlgorithm, including state
 // that may be stored in a struct that implements DequeueAlgorithm.
 type DequeueAlgorithm interface {
-	addChildNode(*Node, *Node)
-	deleteChildNode(*Node, *Node) bool
-	dequeueGetNode(*Node) (*Node, bool)
-	dequeueUpdateState(*Node, any, bool)
+	addChildNode(parent, child *Node)
+	dequeueSelectNode(dequeueFrom *Node) (*Node, bool)
+	dequeueUpdateState(dequeueParent *Node, dequeuedFrom *Node)
 }
 
 // roundRobinState is the simplest type of DequeueAlgorithm; nodes which use this DequeueAlgorithm and are at
@@ -37,49 +36,52 @@ func (rrs *roundRobinState) addChildNode(parent, child *Node) {
 	}
 }
 
-// deleteChildNode removes a child node from a parent's children, and returns whether a child was found in the
-// parent's queueOrder. This allows us to adjust the parent's queuePosition if necessary.
-func (rrs *roundRobinState) deleteChildNode(parent, child *Node) bool {
-	var childFound bool
-	childName := child.Name()
-
-	for idx, name := range parent.queueOrder {
-		if name == childName {
-			parent.queueOrder = append(parent.queueOrder[:idx], parent.queueOrder[idx+1:]...)
-			childFound = true
-		}
-	}
-	return childFound
-}
-
 // dequeueGetNode returns the node at the node's queuePosition. queuePosition represents the position of
 // the next node to dequeue from, and is incremented in dequeueUpdateState.
-func (rrs *roundRobinState) dequeueGetNode(n *Node) (*Node, bool) {
-	checkedAllNodes := n.childrenChecked == len(n.queueOrder)+1
-	if n.queuePosition == localQueueIndex {
-		return n, checkedAllNodes
+func (rrs *roundRobinState) dequeueSelectNode(dequeueFrom *Node) (*Node, bool) {
+	checkedAllNodes := dequeueFrom.childrenChecked == len(dequeueFrom.queueOrder)+1
+	if dequeueFrom.queuePosition == localQueueIndex {
+		return dequeueFrom, checkedAllNodes
 	}
 
-	currentNodeName := n.queueOrder[n.queuePosition]
-	if node, ok := n.queueMap[currentNodeName]; ok {
+	currentNodeName := dequeueFrom.queueOrder[dequeueFrom.queuePosition]
+	if node, ok := dequeueFrom.queueMap[currentNodeName]; ok {
 		return node, checkedAllNodes
 	}
 	return nil, checkedAllNodes
 }
 
-// dequeueUpdateState increments queuePosition based on whether a child node was deleted during dequeue,
-// and updates childrenChecked to reflect the number of children checked so that the dequeueGetNode operation
-// will stop once it has checked all possible nodes.
-func (rrs *roundRobinState) dequeueUpdateState(n *Node, v any, deletedNode bool) {
-	if v != nil {
-		n.childrenChecked = 0
+// dequeueUpdateState does the following:
+//   - deletes the dequeued-from child node if it is empty after the dequeue operation
+//   - increments queuePosition if no child was deleted
+//   - updates childrenChecked to reflect the number of children checked so that the dequeueGetNode operation
+//     will stop once it has checked all possible nodes.
+func (rrs *roundRobinState) dequeueUpdateState(parent *Node, dequeuedFrom *Node) {
+	// if the child node is nil, we haven't done anything to the tree; return early
+	if dequeuedFrom == nil {
+		return
+	}
+
+	// corner case: if parent == dequeuedFrom and is empty, we will try to delete a "child" (no-op),
+	// and won't increment position. This is fine, because if the parent is empty, there's nothing to
+	// increment to.
+	childIsEmpty := dequeuedFrom.IsEmpty()
+
+	// if the child is empty, we should delete it, but not increment queue position, since removing an element
+	// from queueOrder sets our position to the next element already.
+	if childIsEmpty {
+		childName := dequeuedFrom.Name()
+		delete(parent.queueMap, childName)
+		for idx, name := range parent.queueOrder {
+			if name == childName {
+				parent.queueOrder = append(parent.queueOrder[:idx], parent.queueOrder[idx+1:]...)
+			}
+		}
+
 	} else {
-		n.childrenChecked++
+		parent.queuePosition++
 	}
-	if !deletedNode {
-		n.queuePosition++
-	}
-	if n.queuePosition >= len(n.queueOrder) {
-		n.queuePosition = localQueueIndex
+	if parent.queuePosition >= len(parent.queueOrder) {
+		parent.queuePosition = localQueueIndex
 	}
 }

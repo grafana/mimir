@@ -371,7 +371,6 @@ func Test_DequeueOrderAfterEnqueue(t *testing.T) {
 			require.NoError(t, err)
 
 			for _, operation := range tt.operationOrder {
-				fmt.Println(operation)
 				if operation.kind == enqueue {
 					err = tree.EnqueueBackByPath(operation.path, operation.obj)
 					require.NoError(t, err)
@@ -831,6 +830,8 @@ func Test_EnqueueDuringDequeueRespectsRoundRobin(t *testing.T) {
 	require.True(t, tree.IsEmpty())
 }
 
+// Test_NodeCannotDeleteItself creates an empty node, dequeues from it, and ensures that the node still exists
+// and has not deleted itself.
 func Test_NodeCannotDeleteItself(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -841,12 +842,15 @@ func Test_NodeCannotDeleteItself(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tree, err := NewTree(&roundRobinState{})
+			tree, err := NewTree(tt.nodeType)
 			require.NoError(t, err)
 			require.NotNil(t, tree)
 
-			require.False(t, tree.rootNode.dequeueAlgorithm.deleteChildNode(tree.rootNode, tree.rootNode))
+			_, _ = tree.Dequeue()
+
 			require.NotNil(t, tree.rootNode)
+			require.Zero(t, tree.rootNode.getLocalQueue().Len())
+			require.Empty(t, tree.rootNode.queueMap)
 		})
 	}
 }

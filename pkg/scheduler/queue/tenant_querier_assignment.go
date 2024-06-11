@@ -323,13 +323,13 @@ func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID TenantID, sc
 //
 // Note that because we use the shared  tenantIDOrder and tenantOrderIndex to manage the queue, we functionally
 // ignore each Node's individual queueOrder and queuePosition.
-func (tqa *tenantQuerierAssignments) dequeueGetNode(n *Node) (*Node, bool) {
+func (tqa *tenantQuerierAssignments) dequeueSelectNode(dequeueFrom *Node) (*Node, bool) {
 	// can't get a tenant if no querier set
 	if tqa.currentQuerier == nil {
 		return nil, true
 	}
 
-	checkedAllNodes := n.childrenChecked == len(n.queueMap)+1 // must check local queue as well
+	checkedAllNodes := dequeueFrom.childrenChecked == len(dequeueFrom.queueMap)+1 // must check local queue as well
 
 	// advance queue position for dequeue
 	tqa.tenantOrderIndex++
@@ -338,8 +338,8 @@ func (tqa *tenantQuerierAssignments) dequeueGetNode(n *Node) (*Node, bool) {
 	}
 
 	// no children
-	if len(n.queueMap) == 0 || tqa.tenantOrderIndex == localQueueIndex {
-		return n, checkedAllNodes
+	if len(dequeueFrom.queueMap) == 0 || tqa.tenantOrderIndex == localQueueIndex {
+		return dequeueFrom, checkedAllNodes
 	}
 
 	checkIndex := tqa.tenantOrderIndex
@@ -351,25 +351,25 @@ func (tqa *tenantQuerierAssignments) dequeueGetNode(n *Node) (*Node, bool) {
 		tenantID := tqa.tenantIDOrder[checkIndex]
 		tenantName := string(tenantID)
 
-		if _, ok := n.queueMap[tenantName]; !ok {
+		if _, ok := dequeueFrom.queueMap[tenantName]; !ok {
 			// tenant not in _this_ node's children, move on
 			checkIndex++
 			continue
 		}
 
 		// increment nodes checked even if not in tenant-querier map
-		n.childrenChecked++
-		checkedAllNodes = n.childrenChecked == len(n.queueMap)+1
+		dequeueFrom.childrenChecked++
+		checkedAllNodes = dequeueFrom.childrenChecked == len(dequeueFrom.queueMap)+1
 
 		// if the tenant-querier set is nil, any querier can serve this tenant
 		if tqa.tenantQuerierIDs[tenantID] == nil {
 			tqa.tenantOrderIndex = checkIndex
-			return n.queueMap[tenantName], checkedAllNodes
+			return dequeueFrom.queueMap[tenantName], checkedAllNodes
 		}
 		if tenantQuerierSet, ok := tqa.tenantQuerierIDs[tenantID]; ok {
 			if _, ok := tenantQuerierSet[*tqa.currentQuerier]; ok {
 				tqa.tenantOrderIndex = checkIndex
-				return n.queueMap[tenantName], checkedAllNodes
+				return dequeueFrom.queueMap[tenantName], checkedAllNodes
 			}
 		}
 		checkIndex++
@@ -377,16 +377,49 @@ func (tqa *tenantQuerierAssignments) dequeueGetNode(n *Node) (*Node, bool) {
 	return nil, checkedAllNodes
 }
 
-// dequeueUpdateState updates the node state to reflect the number of children that have been checked
-// for dequeueable elements, so that dequeueGetNode will stop checking if it has checked all possible nodes.
-func (tqa *tenantQuerierAssignments) dequeueUpdateState(n *Node, v any, _ bool) {
-	// we need to reset our checked nodes if we found a value to dequeue
-	if v != nil {
-		n.childrenChecked = 0
+// dequeueUpdateState deletes the dequeued-from node from the following locations if it is empty:
+//   - parent's queueMap,
+//   - tenantNodes
+//   - tenantIDOrder iff there are no other nodes by the same name in tenantNodes. If the child is at the end of
+//     tenantIDOrder, it is removed outright; otherwise, it is replaced with an empty ("") element
+//
+// dequeueUpdateState would normally also handle incrementing the queue position after performing a dequeue, but
+// tenantQuerierAssignments currently expects the caller to handle this by having the querier set tenantOrderIndex.
+func (tqa *tenantQuerierAssignments) dequeueUpdateState(parent *Node, dequeuedFrom *Node) {
+	// if dequeuedFrom is nil or is not empty, we don't need to do anything;
+	// position updates will be handled by the caller, and we don't need to remove any nodes.
+	if dequeuedFrom == nil || !dequeuedFrom.IsEmpty() {
 		return
 	}
 
-	n.childrenChecked++
+	// delete from the node's children
+	childName := dequeuedFrom.Name()
+	delete(parent.queueMap, childName)
+
+	// delete from shared tenantNodes
+	for i, tenantNode := range tqa.tenantNodes[childName] {
+		if tenantNode == dequeuedFrom {
+			tqa.tenantNodes[childName] = append(tqa.tenantNodes[childName][:i], tqa.tenantNodes[childName][i+1:]...)
+		}
+	}
+
+	// check tenantNodes; we only remove from tenantIDOrder if all nodes with this name are gone.
+	// If the removed child is at the _end_ of tenantIDOrder, we remove it outright; otherwise,
+	// we replace it with an empty string so as not to reindex all slice elements
+	removeFromSharedQueueOrder := len(tqa.tenantNodes[childName]) == 0
+
+	if removeFromSharedQueueOrder {
+		for idx, name := range tqa.tenantIDOrder {
+			if string(name) == childName {
+				tqa.tenantIDOrder[idx] = emptyTenantID
+			}
+		}
+		// clear all sequential empty elements from tenantIDOrder
+		lastElementIndex := len(tqa.tenantIDOrder) - 1
+		for i := lastElementIndex; i >= 0 && tqa.tenantIDOrder[i] == ""; i-- {
+			tqa.tenantIDOrder = tqa.tenantIDOrder[:i]
+		}
+	}
 }
 
 // addChildNode adds a child to:
@@ -426,45 +459,4 @@ func (tqa *tenantQuerierAssignments) addChildNode(parent, child *Node) {
 	// if we get here, we didn't find any empty elements in tenantIDOrder; append
 	tqa.tenantIDOrder = append(tqa.tenantIDOrder, TenantID(childName))
 
-}
-
-// deleteChildNode removes a child from:
-//   - parent's queueMap,
-//   - tenantNodes
-//   - tenantIDOrder iff there are no other nodes by the same name in tenantNodes. If the child is at the end of
-//     tenantIDOrder, it is removed outright; otherwise, it is replaced with an empty ("") element
-func (tqa *tenantQuerierAssignments) deleteChildNode(parent, child *Node) bool {
-	childName := child.Name()
-
-	// delete from parent's children
-	delete(parent.queueMap, childName)
-
-	// delete from shared tenantNodes
-	for i, tenantNode := range tqa.tenantNodes[childName] {
-		if tenantNode == child {
-			tqa.tenantNodes[childName] = append(tqa.tenantNodes[childName][:i], tqa.tenantNodes[childName][i+1:]...)
-		}
-	}
-
-	// check tenantNodes; we only remove from tenantIDOrder if all nodes with this name are gone.
-	// If the removed child is at the _end_ of tenantIDOrder, we remove it outright; otherwise,
-	// we replace it with an empty string so as not to reindex all slice elements
-	removeFromSharedQueueOrder := len(tqa.tenantNodes[childName]) == 0
-
-	if removeFromSharedQueueOrder {
-		for idx, name := range tqa.tenantIDOrder {
-			if string(name) == childName {
-				tqa.tenantIDOrder[idx] = emptyTenantID
-			}
-		}
-		// clear all sequential empty elements from tenantIDOrder
-		lastElementIndex := len(tqa.tenantIDOrder) - 1
-		for i := lastElementIndex; i >= 0 && tqa.tenantIDOrder[i] == ""; i-- {
-			tqa.tenantIDOrder = tqa.tenantIDOrder[:i]
-		}
-	}
-	// The only time we remove elements from tenantIDOrder is when they are empty nodes, _and_ at the end of
-	// tenantIDOrder, so we will never remove a tenant from tenantIDOrder at a position before tenantOrderIndex.
-	// Thus, we will never need to decrement tenantOrderIndex.
-	return false
 }
