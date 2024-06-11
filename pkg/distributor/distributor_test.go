@@ -1426,63 +1426,84 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		req    *mimirpb.WriteRequest
-		errMsg string
-		errID  globalerror.ID
+		req            *mimirpb.WriteRequest
+		expectedDrop   bool
+		expectedErrMsg string
+		expectedErrID  globalerror.ID
 	}{
 		"valid exemplar": {
-			req: makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, []string{"foo", "bar"}),
+			req: makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, 1, []string{"foo", "bar"}),
 		},
-		"rejects exemplar with no labels": {
-			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, []string{}),
-			errMsg: `received an exemplar with no valid labels, timestamp: 1000 series: test labels: {}`,
-			errID:  globalerror.ExemplarLabelsMissing,
+		"drops exemplar with no labels": {
+			req:          makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, 1, []string{}),
+			expectedDrop: true,
 		},
-		"rejects exemplar with no timestamp": {
-			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 0, []string{"foo", "bar"}),
-			errMsg: `received an exemplar with no timestamp, timestamp: 0 series: test labels: {foo="bar"}`,
-			errID:  globalerror.ExemplarTimestampInvalid,
+		"drops exemplar with no timestamp": {
+			req:          makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 0, 1, []string{"foo", "bar"}),
+			expectedDrop: true,
 		},
-		"rejects exemplar with too long labelset": {
-			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, []string{"foo", strings.Repeat("0", 126)}),
-			errMsg: fmt.Sprintf(`received an exemplar where the size of its combined labels exceeds the limit of 128 characters, timestamp: 1000 series: test labels: {foo="%s"}`, strings.Repeat("0", 126)),
-			errID:  globalerror.ExemplarLabelsTooLong,
+		"drops exemplar with too long labelset": {
+			req:          makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, 1, []string{"foo", strings.Repeat("0", 126)}),
+			expectedDrop: true,
 		},
 		"rejects exemplar with too many series labels": {
-			req:    makeWriteRequestExemplar(manyLabels, 0, nil),
-			errMsg: "received a series whose number of labels exceeds the limit",
-			errID:  globalerror.MaxLabelNamesPerSeries,
+			req:            makeWriteRequestExemplar(manyLabels, 0, 1, nil),
+			expectedErrMsg: "received a series whose number of labels exceeds the limit",
+			expectedErrID:  globalerror.MaxLabelNamesPerSeries,
 		},
 		"rejects exemplar with duplicate series labels": {
-			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test", "foo", "bar", "foo", "bar"}, 0, nil),
-			errMsg: "received a series with duplicate label name",
-			errID:  globalerror.SeriesWithDuplicateLabelNames,
+			req:            makeWriteRequestExemplar([]string{model.MetricNameLabel, "test", "foo", "bar", "foo", "bar"}, 0, 1, nil),
+			expectedErrMsg: "received a series with duplicate label name",
+			expectedErrID:  globalerror.SeriesWithDuplicateLabelNames,
 		},
 		"rejects exemplar with empty series label name": {
-			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test", "", "bar"}, 0, nil),
-			errMsg: "received a series with an invalid label",
-			errID:  globalerror.SeriesInvalidLabel,
+			req:            makeWriteRequestExemplar([]string{model.MetricNameLabel, "test", "", "bar"}, 0, 1, nil),
+			expectedErrMsg: "received a series with an invalid label",
+			expectedErrID:  globalerror.SeriesInvalidLabel,
 		},
 	}
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
+			// Pass a copy of the reference request, since Push may modify it during cleanup.
+			reqBytes, err := tc.req.Marshal()
+			require.NoError(t, err)
+			reqCopy := &mimirpb.WriteRequest{}
+			require.NoError(t, reqCopy.Unmarshal(reqBytes))
+
+			expectedSamples := tc.req.Timeseries[0].Samples
+			expectedExemplars := tc.req.Timeseries[0].Exemplars
+
 			limits := prepareDefaultLimits()
 			limits.MaxGlobalExemplarsPerUser = 10
-			ds, _, _, _ := prepare(t, prepConfig{
+			ds, ingesters, _, _ := prepare(t, prepConfig{
 				limits:           limits,
 				numIngesters:     2,
 				happyIngesters:   2,
 				numDistributors:  1,
 				shuffleShardSize: 0,
 			})
-			_, err := ds[0].Push(ctx, tc.req)
-			if tc.errMsg != "" {
+			_, err = ds[0].Push(ctx, reqCopy)
+			if tc.expectedErrMsg != "" {
+				require.Error(t, err)
 				fromError, _ := grpcutil.ErrorToStatus(err)
-				assert.Contains(t, fromError.Message(), tc.errMsg)
-				assert.Contains(t, fromError.Message(), tc.errID)
-			} else {
-				assert.Nil(t, err)
+				assert.Contains(t, fromError.Message(), tc.expectedErrMsg)
+				assert.Contains(t, fromError.Message(), tc.expectedErrID)
+				return
+			}
+
+			require.NoError(t, err)
+			for _, i := range ingesters {
+				ss := i.series()
+				require.Len(t, ss, 1)
+				for _, s := range ss {
+					require.Equal(t, expectedSamples, s.Samples)
+					if !tc.expectedDrop {
+						require.Equal(t, expectedExemplars, s.Exemplars)
+					} else {
+						require.Empty(t, s.Exemplars)
+					}
+				}
 			}
 		})
 	}
@@ -1575,7 +1596,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			minExemplarTS: 0,
 			maxExemplarTS: 0,
 			req: makeWriteRequestWith(
-				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
+				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, 0, []string{"foo", "bar"}),
 			),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{TimeSeries: &mimirpb.TimeSeries{
@@ -1591,12 +1612,12 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			minExemplarTS: 0,
 			maxExemplarTS: math.MaxInt64,
 			req: makeWriteRequestWith(
-				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
-				makeExemplarTimeseries([]string{model.MetricNameLabel, "test2"}, 1000, []string{"foo", "bar"}),
+				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, 0, []string{"foo", "bar"}),
+				makeExemplarTimeseries([]string{model.MetricNameLabel, "test2"}, 1000, 0, []string{"foo", "bar"}),
 			),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
-				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
-				makeExemplarTimeseries([]string{model.MetricNameLabel, "test2"}, 1000, []string{"foo", "bar"}),
+				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, 0, []string{"foo", "bar"}),
+				makeExemplarTimeseries([]string{model.MetricNameLabel, "test2"}, 1000, 0, []string{"foo", "bar"}),
 			},
 		},
 		"should drop exemplars with timestamp lower than the accepted minimum, when the exemplars are specified in different series": {
@@ -1606,15 +1627,15 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			minExemplarTS: 300000,
 			maxExemplarTS: math.MaxInt64,
 			req: makeWriteRequestWith(
-				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 1000, []string{"foo", "bar"}),
-				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 601000, []string{"foo", "bar"}),
+				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 1000, 0, []string{"foo", "bar"}),
+				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 601000, 0, []string{"foo", "bar"}),
 			),
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{TimeSeries: &mimirpb.TimeSeries{
 					Labels:    []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
 					Exemplars: []mimirpb.Exemplar{},
 				}},
-				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 601000, []string{"foo", "bar"}),
+				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 601000, 0, []string{"foo", "bar"}),
 			},
 			expectedMetrics: `
 			# HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
@@ -5745,8 +5766,8 @@ func makeWriteRequestForGenerators(series int, lsg labelSetGen, elsg labelSetGen
 	return request
 }
 
-func makeWriteRequestExemplar(seriesLabels []string, timestamp int64, exemplarLabels []string) *mimirpb.WriteRequest {
-	return makeWriteRequestWith(makeExemplarTimeseries(seriesLabels, timestamp, exemplarLabels))
+func makeWriteRequestExemplar(seriesLabels []string, timestamp int64, samples int, exemplarLabels []string) *mimirpb.WriteRequest {
+	return makeWriteRequestWith(makeExemplarTimeseries(seriesLabels, timestamp, samples, exemplarLabels))
 }
 
 func makeWriteRequestHistogram(seriesLabels []string, timestamp int64, histogram *histogram.Histogram) *mimirpb.WriteRequest {
@@ -5757,10 +5778,18 @@ func makeWriteRequestFloatHistogram(seriesLabels []string, timestamp int64, hist
 	return makeWriteRequestWith(makeFloatHistogramTimeseries(seriesLabels, timestamp, histogram))
 }
 
-func makeExemplarTimeseries(seriesLabels []string, timestamp int64, exemplarLabels []string) mimirpb.PreallocTimeseries {
+func makeExemplarTimeseries(seriesLabels []string, timestamp int64, numSamples int, exemplarLabels []string) mimirpb.PreallocTimeseries {
+	var samples []mimirpb.Sample
+	for i := 0; i < numSamples; i++ {
+		samples = append(samples, mimirpb.Sample{
+			Value:       1,
+			TimestampMs: timestamp,
+		})
+	}
 	return mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
-			Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(seriesLabels...)),
+			Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(seriesLabels...)),
+			Samples: samples,
 			Exemplars: []mimirpb.Exemplar{
 				{
 					Labels:      mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(exemplarLabels...)),
@@ -6733,6 +6762,7 @@ func TestDistributorValidation(t *testing.T) {
 		labels      [][]mimirpb.LabelAdapter
 		samples     []mimirpb.Sample
 		exemplars   []*mimirpb.Exemplar
+		limits      func(limits *validation.Limits)
 		expectedErr *status.Status
 	}{
 		"validation passes": {
@@ -6768,6 +6798,18 @@ func TestDistributorValidation(t *testing.T) {
 				Value:       4,
 			}},
 			expectedErr: status.New(codes.FailedPrecondition, fmt.Sprintf(sampleTimestampTooNewMsgFormat, future, "testmetric")),
+		},
+
+		"validation does not fail for samples from the past without past_grace_period setting": {
+			labels:  [][]mimirpb.LabelAdapter{{{Name: "foo", Value: "bar"}, {Name: labels.MetricName, Value: "testmetric"}}},
+			samples: []mimirpb.Sample{{TimestampMs: int64(past), Value: 1}},
+		},
+
+		"validation fails for samples from the past": {
+			labels:      [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
+			samples:     []mimirpb.Sample{{TimestampMs: int64(past), Value: 4}},
+			limits:      func(limits *validation.Limits) { limits.PastGracePeriod = model.Duration(now.Sub(past) / 2) },
+			expectedErr: status.New(codes.FailedPrecondition, fmt.Sprintf(sampleTimestampTooOldMsgFormat, past, "testmetric")),
 		},
 
 		"exceeds maximum labels per series": {
@@ -6824,6 +6866,7 @@ func TestDistributorValidation(t *testing.T) {
 			}},
 			expectedErr: status.New(codes.FailedPrecondition, metadataMetricNameMissingMsgFormat),
 		},
+		// Validation passes for empty exemplar labels, since we just want to skip the exemplars and not fail the time series as a whole.
 		"empty exemplar labels": {
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "testmetric", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
 			labels:   [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
@@ -6836,7 +6879,6 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(now),
 				Value:       1,
 			}},
-			expectedErr: status.New(codes.FailedPrecondition, fmt.Sprintf(exemplarEmptyLabelsMsgFormat, now, `testmetric{foo="bar"}`, "{}")),
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -6846,6 +6888,9 @@ func TestDistributorValidation(t *testing.T) {
 			limits.CreationGracePeriod = model.Duration(2 * time.Hour)
 			limits.MaxLabelNamesPerSeries = 2
 			limits.MaxGlobalExemplarsPerUser = 10
+			if tc.limits != nil {
+				tc.limits(&limits)
+			}
 
 			ds, _, _, _ := prepare(t, prepConfig{
 				numIngesters:    3,

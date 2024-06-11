@@ -77,7 +77,7 @@ func CreateBlocks(input IteratorCreator, mint, maxt int64, maxSamplesInAppender 
 	blockDuration := tsdb.DefaultBlockDuration
 	mint = blockDuration * (mint / blockDuration)
 
-	db, err := tsdb.OpenDBReadOnly(outputDir, nil)
+	db, err := tsdb.OpenDBReadOnly(outputDir, "", nil)
 	if err != nil {
 		return err
 	}

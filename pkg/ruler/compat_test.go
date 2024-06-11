@@ -659,9 +659,8 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 
 		// Create a test alerting rule with a "for" duration greater than the "grace period".
 		ruleGroup = rulespb.RuleGroupDesc{
-			Name:            "test",
-			Interval:        cfg.EvaluationInterval,
-			EvaluationDelay: 0,
+			Name:     "test",
+			Interval: cfg.EvaluationInterval,
 			Rules: []*rulespb.RuleDesc{{
 				Expr:  fmt.Sprintf("%s > 0", metricName),
 				Alert: "test",

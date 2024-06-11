@@ -271,7 +271,7 @@ func (a *app) allTestCaseNames() []string {
 	names := make([]string, 0, 2*len(cases))
 
 	for _, c := range cases {
-		names = append(names, benchmarkName+"/"+c.Name()+"/streaming")
+		names = append(names, benchmarkName+"/"+c.Name()+"/Mimir")
 		names = append(names, benchmarkName+"/"+c.Name()+"/Prometheus")
 	}
 
@@ -317,8 +317,8 @@ func (a *app) runTestCase(name string, printBenchmarkHeader bool) error {
 	buf := &bytes.Buffer{}
 	cmd.Stdout = buf
 	cmd.Stderr = os.Stderr
-	cmd.Env = append(cmd.Env, "STREAMING_PROMQL_ENGINE_BENCHMARK_INGESTER_ADDR="+a.ingesterAddress)
-	cmd.Env = append(cmd.Env, "STREAMING_PROMQL_ENGINE_BENCHMARK_SKIP_COMPARE_RESULTS=true")
+	cmd.Env = append(cmd.Env, "MIMIR_PROMQL_ENGINE_BENCHMARK_INGESTER_ADDR="+a.ingesterAddress)
+	cmd.Env = append(cmd.Env, "MIMIR_PROMQL_ENGINE_BENCHMARK_SKIP_COMPARE_RESULTS=true")
 
 	if err := cmd.Run(); err != nil {
 		slog.Warn("output from failed command", "output", buf.String())

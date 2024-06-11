@@ -91,24 +91,21 @@ func (rs CreateTopicResponses) On(topic string, fn func(*CreateTopicResponse) er
 	return CreateTopicResponse{}, kerr.UnknownTopicOrPartition
 }
 
+// Error iterates over all responses and returns the first error
+// encountered, if any.
+func (rs CreateTopicResponses) Error() error {
+	for _, r := range rs {
+		if r.Err != nil {
+			return r.Err
+		}
+	}
+	return nil
+}
+
 // CreateTopic issues a create topics request with the given partitions,
-// replication factor, and (optional) configs for the given topic name. Under
-// the hood, this uses the default 15s request timeout and lets Kafka choose
-// where to place partitions. This function exists to complement CreateTopics,
-// making the single-topic creation case easier to handle.
-//
-// Version 4 of the underlying create topic request was introduced in Kafka 2.4
-// and brought client support for creation defaults. If talking to a 2.4+
-// cluster, you can use -1 for partitions and replicationFactor to use broker
-// defaults.
-//
-// This package includes a StringPtr function to aid in building config values.
-//
-// If the topic could not be created this function will return an error. An
-// error may be returned due to authorization failure, a failed network
-// request, a missing controller or other issues. If the request was successful
-// but the CreateTopicResponse.Err is non-nil, this returns the error, so you
-// do not need to additionally check the Err field.
+// replication factor, and (optional) configs for the given topic name.
+// This is similar to CreateTopics, but returns the kerr.ErrorForCode(response.ErrorCode)
+// if the request/response is successful.
 func (cl *Client) CreateTopic(
 	ctx context.Context,
 	partitions int32,
@@ -277,8 +274,34 @@ func (rs DeleteTopicResponses) On(topic string, fn func(*DeleteTopicResponse) er
 	return DeleteTopicResponse{}, kerr.UnknownTopicOrPartition
 }
 
+// Error iterates over all responses and returns the first error
+// encountered, if any.
+func (rs DeleteTopicResponses) Error() error {
+	for _, r := range rs {
+		if r.Err != nil {
+			return r.Err
+		}
+	}
+	return nil
+}
+
+// DeleteTopic issues a delete topic request for the given topic name with a
+// (by default) 15s timeout. This is similar to DeleteTopics, but returns the
+// kerr.ErrorForCode(response.ErrorCode) if the request/response is successful.
+func (cl *Client) DeleteTopic(ctx context.Context, topic string) (DeleteTopicResponse, error) {
+	rs, err := cl.DeleteTopics(ctx, topic)
+	if err != nil {
+		return DeleteTopicResponse{}, err
+	}
+	r, exists := rs[topic]
+	if !exists {
+		return DeleteTopicResponse{}, errors.New("requested topic was not part of delete topic response")
+	}
+	return r, r.Err
+}
+
 // DeleteTopics issues a delete topics request for the given topic names with a
-// 15s timeout.
+// (by default) 15s timeout.
 //
 // This does not return an error on authorization failures, instead,
 // authorization failures are included in the responses. This only returns an
@@ -402,6 +425,19 @@ func (rs DeleteRecordsResponses) On(topic string, partition int32, fn func(*Dele
 	return DeleteRecordsResponse{}, kerr.UnknownTopicOrPartition
 }
 
+// Error iterates over all responses and returns the first error
+// encountered, if any.
+func (rs DeleteRecordsResponses) Error() error {
+	for _, ps := range rs {
+		for _, r := range ps {
+			if r.Err != nil {
+				return r.Err
+			}
+		}
+	}
+	return nil
+}
+
 // DeleteRecords issues a delete records request for the given offsets. Per
 // offset, only the Offset field needs to be set.
 //
@@ -496,6 +532,17 @@ func (rs CreatePartitionsResponses) On(topic string, fn func(*CreatePartitionsRe
 		}
 	}
 	return CreatePartitionsResponse{}, kerr.UnknownTopicOrPartition
+}
+
+// Error iterates over all responses and returns the first error
+// encountered, if any.
+func (rs CreatePartitionsResponses) Error() error {
+	for _, r := range rs {
+		if r.Err != nil {
+			return r.Err
+		}
+	}
+	return nil
 }
 
 // CreatePartitions issues a create partitions request for the given topics,

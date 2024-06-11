@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
@@ -193,6 +194,9 @@ func newExemplarMissingSeriesError(timestamp model.Time, seriesLabels, exemplarL
 
 func newExemplarTimestampTooFarInFutureError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
 	return newExemplarError(globalerror.ExemplarTooFarInFuture, "received an exemplar whose timestamp is too far in the future", timestamp, seriesLabels, exemplarLabels)
+}
+func newExemplarTimestampTooFarInPastError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
+	return newExemplarError(globalerror.ExemplarTooFarInPast, "received an exemplar whose timestamp is too far in the past", timestamp, seriesLabels, exemplarLabels)
 }
 
 // tsdbIngestExemplarErr is an ingesterError indicating a problem with an exemplar.
@@ -488,6 +492,24 @@ func (e ingesterPushGrpcDisabledError) errorCause() mimirpb.ErrorCause {
 
 // Ensure that ingesterPushGrpcDisabledError is an ingesterError.
 var _ ingesterError = ingesterPushGrpcDisabledError{}
+
+type circuitBreakerOpenError struct {
+	remainingDelay time.Duration
+}
+
+func newCircuitBreakerOpenError(remainingDelay time.Duration) circuitBreakerOpenError {
+	return circuitBreakerOpenError{remainingDelay: remainingDelay}
+}
+
+func (e circuitBreakerOpenError) Error() string {
+	return fmt.Sprintf("%s with remaining delay %s", circuitbreaker.ErrOpen.Error(), e.remainingDelay.String())
+}
+
+func (e circuitBreakerOpenError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.CIRCUIT_BREAKER_OPEN
+}
+
+var _ ingesterError = circuitBreakerOpenError{}
 
 type ingesterErrSamplers struct {
 	sampleTimestampTooOld             *log.Sampler

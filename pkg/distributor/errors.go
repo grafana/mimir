@@ -15,6 +15,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -200,6 +201,34 @@ func (e ingesterPushError) Cause() mimirpb.ErrorCause {
 // Ensure that ingesterPushError implements Error.
 var _ Error = ingesterPushError{}
 
+// partitionPushError is an error to represent a failed attempt to write to a partition.
+type partitionPushError struct {
+	err   error
+	cause mimirpb.ErrorCause
+}
+
+func newPartitionPushError(err error, cause mimirpb.ErrorCause) partitionPushError {
+	return partitionPushError{
+		err:   err,
+		cause: cause,
+	}
+}
+
+func (e partitionPushError) Error() string {
+	return e.err.Error()
+}
+
+func (e partitionPushError) Cause() mimirpb.ErrorCause {
+	return e.cause
+}
+
+func (e partitionPushError) Unwrap() error {
+	return e.err
+}
+
+// Ensure that partitionPushError implements Error.
+var _ Error = partitionPushError{}
+
 type circuitBreakerOpenError struct {
 	err client.ErrCircuitBreakerOpen
 }
@@ -287,7 +316,16 @@ func wrapPartitionPushError(err error, partitionID int32) error {
 		return nil
 	}
 
-	return errors.Wrap(err, fmt.Sprintf("%s %d", failedPushingToPartitionMessage, partitionID))
+	// Add the partition ID to the error message.
+	err = errors.Wrap(err, fmt.Sprintf("%s %d", failedPushingToPartitionMessage, partitionID))
+
+	// Detect the cause.
+	cause := mimirpb.UNKNOWN_CAUSE
+	if errors.Is(err, ingest.ErrWriteRequestDataItemTooLarge) {
+		cause = mimirpb.BAD_DATA
+	}
+
+	return newPartitionPushError(err, cause)
 }
 
 func wrapDeadlineExceededPushError(err error) error {
@@ -298,10 +336,15 @@ func wrapDeadlineExceededPushError(err error) error {
 	return err
 }
 
-func isIngesterClientError(err error) bool {
+func isIngestionClientError(err error) bool {
 	var ingesterPushErr ingesterPushError
 	if errors.As(err, &ingesterPushErr) {
 		return ingesterPushErr.Cause() == mimirpb.BAD_DATA
+	}
+
+	var partitionPushErr partitionPushError
+	if errors.As(err, &partitionPushErr) {
+		return partitionPushErr.Cause() == mimirpb.BAD_DATA
 	}
 
 	// This code is needed for backwards compatibility, since ingesters may still return errors with HTTP status

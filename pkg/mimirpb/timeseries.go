@@ -175,7 +175,7 @@ func (p *PreallocTimeseries) HistogramsUpdated() {
 	p.clearUnmarshalData()
 }
 
-// DeleteExemplarByMovingLast deletes the exemplar by moving the last one on top and shortening the slice
+// DeleteExemplarByMovingLast deletes the exemplar by moving the last one on top and shortening the slice.
 func (p *PreallocTimeseries) DeleteExemplarByMovingLast(ix int) {
 	last := len(p.Exemplars) - 1
 	if ix < last {
@@ -704,9 +704,10 @@ func (p *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *Writ
 	}
 
 	return &WriteRequest{
-		Timeseries: timeseries,
-		Metadata:   metadata,
-		Source:     p.Source,
+		Timeseries:              timeseries,
+		Metadata:                metadata,
+		Source:                  p.Source,
+		SkipLabelNameValidation: p.SkipLabelNameValidation,
 	}
 }
 

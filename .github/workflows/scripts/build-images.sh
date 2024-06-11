@@ -19,7 +19,7 @@ do
   make \
     BUILD_IN_CONTAINER=false \
     PUSH_MULTIARCH_TARGET="type=oci,dest=$OUTPUT/$NAME.oci" \
-    PUSH_MULTIARCH_TARGET_DISTROLESS="type=oci,dest=$OUTPUT/$NAME\-distroless.oci" \
+    PUSH_MULTIARCH_TARGET_ALPINE="type=oci,dest=$OUTPUT/$NAME\-alpine.oci" \
     PUSH_MULTIARCH_TARGET_CONTINUOUS_TEST="type=oci,dest=$OUTPUT/$NAME\-continuous\-test.oci" \
     push-multiarch-$target
 done

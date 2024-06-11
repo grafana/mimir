@@ -284,11 +284,12 @@ func NewQuerierHandler(
 	api.InstallCodec(protobufCodec{})
 
 	router := mux.NewRouter()
+	routeInjector := middleware.RouteInjector{RouteMatcher: router}
+	router.Use(routeInjector.Wrap)
 
 	// Use a separate metric for the querier in order to differentiate requests from the query-frontend when
 	// running Mimir in monolithic mode.
 	instrumentMiddleware := middleware.Instrument{
-		RouteMatcher:     router,
 		Duration:         querierRequestDuration,
 		RequestBodySize:  receivedMessageSize,
 		ResponseBodySize: sentMessageSize,

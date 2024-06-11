@@ -43,6 +43,7 @@ When the usage statistics reporting is enabled, Grafana Mimir collects the follo
 - Information about the Mimir **cluster scale**:
   - Ingester:
     - The number of in-memory series.
+    - The number of active series.
     - The number of tenants that have in-memory series.
     - The number of tenants that have out-of-order ingestion enabled.
     - The number of samples and exemplars ingested.

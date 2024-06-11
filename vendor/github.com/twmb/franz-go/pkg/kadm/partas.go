@@ -69,6 +69,18 @@ func (rs AlterPartitionAssignmentsResponses) Each(fn func(AlterPartitionAssignme
 	}
 }
 
+// Error returns the first error in the responses, if any.
+func (rs AlterPartitionAssignmentsResponses) Error() error {
+	for _, ps := range rs {
+		for _, r := range ps {
+			if r.Err != nil {
+				return r.Err
+			}
+		}
+	}
+	return nil
+}
+
 // AlterPartitionAssignments alters partition assignments for the requested
 // partitions, returning an error if the response could not be issued or if
 // you do not have permissions.

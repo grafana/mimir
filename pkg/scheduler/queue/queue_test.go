@@ -33,12 +33,6 @@ func TestMain(m *testing.M) {
 	util_test.VerifyNoLeakTestMain(m)
 }
 
-// cannot import constants from frontend/v2 due to import cycle,
-// but content of the strings should not matter as much as the number of options
-const ingesterQueueDimension = "ingester"
-const storeGatewayQueueDimension = "store-gateway"
-const ingesterAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
-
 var secondQueueDimensionOptions = []string{
 	ingesterQueueDimension,
 	storeGatewayQueueDimension,
@@ -65,9 +59,9 @@ func randAdditionalQueueDimension(allowEmpty bool) []string {
 // used by the queue mechanics, in order get a more meaningful % delta between competing queue implementations.
 func makeSchedulerRequest(tenantID string, additionalQueueDimensions []string) *SchedulerRequest {
 	return &SchedulerRequest{
-		Ctx:             context.Background(),
-		FrontendAddress: "http://query-frontend:8007",
-		UserID:          tenantID,
+		Ctx:          context.Background(),
+		FrontendAddr: "http://query-frontend:8007",
+		UserID:       tenantID,
 		Request: &httpgrpc.HTTPRequest{
 			Method: "GET",
 			Headers: []*httpgrpc.Header{
@@ -132,15 +126,17 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 			Help: "[test] total time spent by items in queue before getting picked up by a consumer",
 		}, []string{"additional_queue_dimensions"})
 
-		queue := NewRequestQueue(
+		queue, err := NewRequestQueue(
 			log.NewNopLogger(),
 			maxOutstandingRequestsPerTenant,
 			additionalQueueDimensionsEnabled,
 			forgetQuerierDelay,
-			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"tenant"}),
-			promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"tenant"}),
+			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+			promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 			promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		)
+		require.NoError(t, err)
 
 		ctx := context.Background()
 		require.NoError(t, queue.starting(ctx))
@@ -193,7 +189,7 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 		}
 
 		close(startConsumersChan)
-		err := queueConsumerErrGroup.Wait()
+		err = queueConsumerErrGroup.Wait()
 		require.NoError(t, err)
 
 		// record total queue duration by queue dimensions and whether the queue splitting was enabled
@@ -235,15 +231,17 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 					// Queriers run with parallelism of 16 when query sharding is enabled.
 					for _, numConsumers := range []int{16, 160, 1600} {
 						b.Run(fmt.Sprintf("%v concurrent consumers", numConsumers), func(b *testing.B) {
-							queue := NewRequestQueue(
+							queue, err := NewRequestQueue(
 								log.NewNopLogger(),
 								maxOutstandingRequestsPerTenant,
 								true,
 								forgetQuerierDelay,
-								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"tenant"}),
-								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"tenant"}),
+								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 								promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 							)
+							require.NoError(b, err)
 
 							startSignalChan := make(chan struct{})
 							queueActorsErrGroup, ctx := errgroup.WithContext(context.Background())
@@ -275,7 +273,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 
 							b.ResetTimer()
 							close(startSignalChan)
-							err := queueActorsErrGroup.Wait()
+							err = queueActorsErrGroup.Wait()
 							if err != nil {
 								require.NoError(b, err)
 							}
@@ -343,7 +341,7 @@ func queueProduce(
 	}
 	req := makeSchedulerRequest(tenantID, additionalQueueDimensions)
 	for {
-		err := queue.EnqueueRequestToDispatcher(tenantID, req, maxQueriersPerTenant, func() {})
+		err := queue.SubmitRequestToEnqueue(tenantID, req, maxQueriersPerTenant, func() {})
 		if err == nil {
 			break
 		}
@@ -390,7 +388,7 @@ type consumeRequest func(request Request) error
 func queueConsume(
 	ctx context.Context, queue *RequestQueue, querierID string, lastTenantIndex TenantIndex, consumeFunc consumeRequest,
 ) (TenantIndex, error) {
-	request, idx, err := queue.GetNextRequestForQuerier(ctx, lastTenantIndex, querierID)
+	request, idx, err := queue.WaitForRequestForQuerier(ctx, lastTenantIndex, querierID)
 	if err != nil {
 		return lastTenantIndex, err
 	}
@@ -406,14 +404,16 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	const forgetDelay = 3 * time.Second
 	const testTimeout = 10 * time.Second
 
-	queue := NewRequestQueue(
+	queue, err := NewRequestQueue(
 		log.NewNopLogger(),
 		1, true,
 		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 	)
+	require.NoError(t, err)
 
 	// Start the queue service.
 	ctx := context.Background()
@@ -435,7 +435,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	querier2wg.Add(1)
 	go func() {
 		defer querier2wg.Done()
-		_, _, err := queue.GetNextRequestForQuerier(ctx, FirstTenant(), "querier-2")
+		_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), "querier-2")
 		require.NoError(t, err)
 	}()
 
@@ -450,7 +450,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: randAdditionalQueueDimension(true),
 	}
-	require.NoError(t, queue.EnqueueRequestToDispatcher("user-1", req, 1, nil))
+	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, 1, nil))
 
 	startTime := time.Now()
 	done := make(chan struct{})
@@ -473,14 +473,16 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 	const forgetDelay = 3 * time.Second
 	const testTimeout = 10 * time.Second
 
-	queue := NewRequestQueue(
+	queue, err := NewRequestQueue(
 		log.NewNopLogger(),
 		1, true,
 		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 	)
+	require.NoError(t, err)
 
 	// Start the queue service.
 	ctx := context.Background()
@@ -515,7 +517,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 	querier2wg.Add(1)
 	go func() {
 		defer querier2wg.Done()
-		_, _, err := queue.GetNextRequestForQuerier(ctx, FirstTenant(), "querier-2")
+		_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), "querier-2")
 		require.NoError(t, err)
 	}()
 
@@ -531,7 +533,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: randAdditionalQueueDimension(true),
 	}
-	require.NoError(t, queue.EnqueueRequestToDispatcher("user-1", req, 2, nil))
+	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, 2, nil))
 
 	startTime := time.Now()
 	done := make(chan struct{})
@@ -554,7 +556,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue := NewRequestQueue(
+	queue, err := NewRequestQueue(
 		log.NewNopLogger(),
 		1,
 		true,
@@ -562,7 +564,9 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 	)
+	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), queue))
 	t.Cleanup(func() {
@@ -574,11 +578,11 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
-		_, _, err := queue.GetNextRequestForQuerier(ctx, FirstTenant(), querierID)
+		_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), querierID)
 		errChan <- err
 	}()
 
-	time.Sleep(20 * time.Millisecond) // Wait for GetNextRequestForQuerier to be waiting for a query.
+	time.Sleep(20 * time.Millisecond) // Wait for WaitForRequestForQuerier to be waiting for a query.
 	cancel()
 
 	select {
@@ -593,7 +597,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue := NewRequestQueue(
+	queue, err := NewRequestQueue(
 		log.NewNopLogger(),
 		1,
 		true,
@@ -601,7 +605,9 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 	)
+	require.NoError(t, err)
 
 	ctx := context.Background()
 	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
@@ -612,7 +618,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 	queue.SubmitRegisterQuerierConnection(querierID)
 	queue.SubmitNotifyQuerierShutdown(querierID)
 
-	_, _, err := queue.GetNextRequestForQuerier(context.Background(), FirstTenant(), querierID)
+	_, _, err = queue.WaitForRequestForQuerier(context.Background(), FirstTenant(), querierID)
 	require.EqualError(t, err, "querier has informed the scheduler it is shutting down")
 }
 
@@ -620,7 +626,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue := NewRequestQueue(
+	queue, err := NewRequestQueue(
 		log.NewNopLogger(),
 		1,
 		true,
@@ -628,10 +634,12 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 	)
+	require.NoError(t, err)
 
 	// bypassing queue dispatcher loop for direct usage of the queueBroker and
-	// passing a nextRequestForQuerierCall for a canceled querier connection
+	// passing a waitingQuerierConn for a canceled querier connection
 	queueBroker := newQueueBroker(queue.maxOutstandingPerTenant, queue.additionalQueueDimensionsEnabled, queue.forgetDelay)
 	queueBroker.addQuerierConnection(querierID)
 
@@ -651,16 +659,16 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	require.False(t, queueBroker.tenantQueuesTree.getNode(QueuePath{"tenant-1"}).IsEmpty())
 
 	ctx, cancel := context.WithCancel(context.Background())
-	call := &nextRequestForQuerierCall{
-		ctx:             ctx,
+	call := &waitingQuerierConn{
+		querierConnCtx:  ctx,
 		querierID:       QuerierID(querierID),
 		lastTenantIndex: FirstTenant(),
-		resultChan:      make(chan nextRequestForQuerier),
+		recvChan:        make(chan requestForQuerier),
 	}
 	cancel() // ensure querier context done before send is attempted
 
 	// send to querier will fail but method returns true,
-	// indicating not to re-submit a request for nextRequestForQuerierCall for the querier
+	// indicating not to re-submit a request for waitingQuerierConn for the querier
 	require.True(t, queue.trySendNextRequestForQuerier(call))
 	// assert request was re-enqueued for tenant after failed send
 	require.False(t, queueBroker.tenantQueuesTree.getNode(QueuePath{"tenant-1"}).IsEmpty())
