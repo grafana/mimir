@@ -3222,7 +3222,7 @@
               "fieldDefaultValue": 2000000000,
               "fieldFlag": "ingester.push-circuit-breaker.request-timeout",
               "fieldType": "duration",
-              "fieldCategory": "experiment"
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -3309,7 +3309,7 @@
               "fieldDefaultValue": 30000000000,
               "fieldFlag": "ingester.read-circuit-breaker.request-timeout",
               "fieldType": "duration",
-              "fieldCategory": "experiment"
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

@@ -1006,9 +1006,7 @@ func (i *Ingester) FinishPushRequest(ctx context.Context) {
 	if st.requestSize > 0 {
 		i.inflightPushRequestsBytes.Sub(st.requestSize)
 	}
-	if st.requestFinish != nil {
-		st.requestFinish(st.requestDuration, st.pushErr)
-	}
+	st.requestFinish(st.requestDuration, st.pushErr)
 }
 
 // This method can be called in two ways: 1. Ingester.PushWithCleanup, or 2. Ingester.StartPushRequest via gRPC server's method limiter.
@@ -3798,9 +3796,7 @@ func (i *Ingester) startReadRequest() (func(error), error) {
 	}
 
 	finishReadRequest := func(err error) {
-		if finish != nil {
-			finish(time.Since(start), err)
-		}
+		finish(time.Since(start), err)
 	}
 
 	if err = i.checkAvailableForRead(); err != nil {

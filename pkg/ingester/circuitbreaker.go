@@ -26,6 +26,7 @@ const (
 	circuitBreakerResultOpen         = "circuit_breaker_open"
 	circuitBreakerDefaultPushTimeout = 2 * time.Second
 	circuitBreakerDefaultReadTimeout = 30 * time.Second
+	circuitBreakerRequestTypeLabel   = "request_type"
 	circuitBreakerPushRequestType    = "push"
 	circuitBreakerReadRequestType    = "read"
 )
@@ -35,40 +36,40 @@ type circuitBreakerMetrics struct {
 	circuitBreakerResults     *prometheus.CounterVec
 }
 
-func newCircuitBreakerMetrics(r prometheus.Registerer, currentStateFn func(string) circuitbreaker.State, requestTypes []string) *circuitBreakerMetrics {
+func newCircuitBreakerMetrics(r prometheus.Registerer, currentState func() circuitbreaker.State, requestType string) *circuitBreakerMetrics {
 	cbMetrics := &circuitBreakerMetrics{
 		circuitBreakerTransitions: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ingester_circuit_breaker_transitions_total",
-			Help: "Number of times the circuit breaker has entered a state.",
-		}, []string{"request_type", "state"}),
+			Name:        "cortex_ingester_circuit_breaker_transitions_total",
+			Help:        "Number of times the circuit breaker has entered a state.",
+			ConstLabels: map[string]string{circuitBreakerRequestTypeLabel: requestType},
+		}, []string{"state"}),
 		circuitBreakerResults: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ingester_circuit_breaker_results_total",
-			Help: "Results of executing requests via the circuit breaker.",
-		}, []string{"request_type", "result"}),
+			Name:        "cortex_ingester_circuit_breaker_results_total",
+			Help:        "Results of executing requests via the circuit breaker.",
+			ConstLabels: map[string]string{circuitBreakerRequestTypeLabel: requestType},
+		}, []string{"result"}),
 	}
-	circuitBreakerCurrentStateGaugeFn := func(requestType string, state circuitbreaker.State) prometheus.GaugeFunc {
+	circuitBreakerCurrentStateGauge := func(state circuitbreaker.State) prometheus.GaugeFunc {
 		return promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 			Name:        "cortex_ingester_circuit_breaker_current_state",
 			Help:        "Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.",
-			ConstLabels: map[string]string{"request_type": requestType, "state": state.String()},
+			ConstLabels: map[string]string{circuitBreakerRequestTypeLabel: requestType, "state": state.String()},
 		}, func() float64 {
-			if currentStateFn(requestType) == state {
+			if currentState() == state {
 				return 1
 			}
 			return 0
 		})
 	}
-	for _, requestType := range requestTypes {
-		for _, s := range []circuitbreaker.State{circuitbreaker.OpenState, circuitbreaker.HalfOpenState, circuitbreaker.ClosedState} {
-			circuitBreakerCurrentStateGaugeFn(requestType, s)
-			// We initialize all possible states for the given requestType and the circuitBreakerTransitions metrics
-			cbMetrics.circuitBreakerTransitions.WithLabelValues(requestType, s.String())
-		}
+	for _, s := range []circuitbreaker.State{circuitbreaker.OpenState, circuitbreaker.HalfOpenState, circuitbreaker.ClosedState} {
+		circuitBreakerCurrentStateGauge(s)
+		// We initialize all possible states for the given requestType and the circuitBreakerTransitions metrics
+		cbMetrics.circuitBreakerTransitions.WithLabelValues(s.String())
+	}
 
-		for _, r := range []string{circuitBreakerResultSuccess, circuitBreakerResultError, circuitBreakerResultOpen} {
-			// We initialize all possible results for the given requestType and the circuitBreakerResults metrics
-			cbMetrics.circuitBreakerResults.WithLabelValues(requestType, r)
-		}
+	for _, r := range []string{circuitBreakerResultSuccess, circuitBreakerResultError, circuitBreakerResultOpen} {
+		// We initialize all possible results for the given requestType and the circuitBreakerResults metrics
+		cbMetrics.circuitBreakerResults.WithLabelValues(r)
 	}
 	return cbMetrics
 }
@@ -80,7 +81,7 @@ type CircuitBreakerConfig struct {
 	ThresholdingPeriod         time.Duration `yaml:"thresholding_period" category:"experimental"`
 	CooldownPeriod             time.Duration `yaml:"cooldown_period" category:"experimental"`
 	InitialDelay               time.Duration `yaml:"initial_delay" category:"experimental"`
-	RequestTimeout             time.Duration `yaml:"request_timeout" category:"experiment"`
+	RequestTimeout             time.Duration `yaml:"request_timeout" category:"experimental"`
 	testModeEnabled            bool          `yaml:"-"`
 }
 
@@ -108,7 +109,7 @@ type circuitBreaker struct {
 	testRequestDelay time.Duration
 }
 
-func newCircuitBreaker(cfg CircuitBreakerConfig, metrics *circuitBreakerMetrics, requestType string, logger log.Logger) *circuitBreaker {
+func newCircuitBreaker(cfg CircuitBreakerConfig, registerer prometheus.Registerer, requestType string, logger log.Logger) *circuitBreaker {
 	if !cfg.Enabled {
 		return nil
 	}
@@ -117,26 +118,25 @@ func newCircuitBreaker(cfg CircuitBreakerConfig, metrics *circuitBreakerMetrics,
 		cfg:         cfg,
 		requestType: requestType,
 		logger:      logger,
-		metrics:     metrics,
 		active:      *active,
 	}
 
-	circuitBreakerTransitionsCounterFn := func(metrics *circuitBreakerMetrics, requestType string, state circuitbreaker.State) prometheus.Counter {
-		return metrics.circuitBreakerTransitions.WithLabelValues(requestType, state.String())
+	circuitBreakerTransitionsCounter := func(metrics *circuitBreakerMetrics, state circuitbreaker.State) prometheus.Counter {
+		return metrics.circuitBreakerTransitions.WithLabelValues(state.String())
 	}
 
 	cbBuilder := circuitbreaker.Builder[any]().
 		WithDelay(cfg.CooldownPeriod).
 		OnClose(func(event circuitbreaker.StateChangedEvent) {
-			circuitBreakerTransitionsCounterFn(cb.metrics, requestType, circuitbreaker.ClosedState).Inc()
+			circuitBreakerTransitionsCounter(cb.metrics, circuitbreaker.ClosedState).Inc()
 			level.Info(logger).Log("msg", "circuit breaker is closed", "previous", event.OldState, "current", event.NewState)
 		}).
 		OnOpen(func(event circuitbreaker.StateChangedEvent) {
-			circuitBreakerTransitionsCounterFn(cb.metrics, requestType, circuitbreaker.OpenState).Inc()
+			circuitBreakerTransitionsCounter(cb.metrics, circuitbreaker.OpenState).Inc()
 			level.Warn(logger).Log("msg", "circuit breaker is open", "previous", event.OldState, "current", event.NewState)
 		}).
 		OnHalfOpen(func(event circuitbreaker.StateChangedEvent) {
-			circuitBreakerTransitionsCounterFn(cb.metrics, requestType, circuitbreaker.HalfOpenState).Inc()
+			circuitBreakerTransitionsCounter(cb.metrics, circuitbreaker.HalfOpenState).Inc()
 			level.Info(logger).Log("msg", "circuit breaker is half-open", "previous", event.OldState, "current", event.NewState)
 		})
 
@@ -150,6 +150,7 @@ func newCircuitBreaker(cfg CircuitBreakerConfig, metrics *circuitBreakerMetrics,
 	}
 
 	cb.cb = cbBuilder.Build()
+	cb.metrics = newCircuitBreakerMetrics(registerer, cb.cb.State, requestType)
 	return &cb
 }
 
@@ -195,20 +196,29 @@ func (cb *circuitBreaker) activate() {
 	})
 }
 
-// tryAcquirePermit tries to acquire a permit to use the circuit breaker and returns whether a permit was acquired.
-// If it was possible to acquire a permit, success flag true and no error are returned. The acquired permit must be
-// returned by a call to finishRequest.
-// If it was not possible to acquire a permit, success flag false is returned. In this case no call to finishRequest
-// is needed. If the permit was not acquired because of an error, that causing error is returned as well.
-func (cb *circuitBreaker) tryAcquirePermit() (bool, error) {
+func (cb *circuitBreaker) isOpen() bool {
 	if !cb.isActive() {
-		return false, nil
+		return false
 	}
+	return cb.cb.IsOpen()
+}
+
+// tryAcquirePermit tries to acquire a permit to use the circuit breaker and returns whether a permit was acquired.
+// If it was possible to acquire a permit, it returns a function that should be called to release the acquired permit.
+// If it was not possible, the causing error is returned.
+func (cb *circuitBreaker) tryAcquirePermit() (func(time.Duration, error), error) {
+	if !cb.isActive() {
+		return func(time.Duration, error) {}, nil
+	}
+
 	if !cb.cb.TryAcquirePermit() {
-		cb.metrics.circuitBreakerResults.WithLabelValues(cb.requestType, circuitBreakerResultOpen).Inc()
-		return false, newCircuitBreakerOpenError(cb.requestType, cb.cb.RemainingDelay())
+		cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultOpen).Inc()
+		return nil, newCircuitBreakerOpenError(cb.requestType, cb.cb.RemainingDelay())
 	}
-	return true, nil
+
+	return func(duration time.Duration, err error) {
+		_ = cb.finishRequest(duration, cb.cfg.RequestTimeout, err)
+	}, nil
 }
 
 // finishRequest completes a request executed upon a successfully acquired circuit breaker permit.
@@ -237,12 +247,12 @@ func (cb *circuitBreaker) recordResult(errs ...error) error {
 	for _, err := range errs {
 		if err != nil && isCircuitBreakerFailure(err) {
 			cb.cb.RecordFailure()
-			cb.metrics.circuitBreakerResults.WithLabelValues(cb.requestType, circuitBreakerResultError).Inc()
+			cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultError).Inc()
 			return err
 		}
 	}
 	cb.cb.RecordSuccess()
-	cb.metrics.circuitBreakerResults.WithLabelValues(cb.requestType, circuitBreakerResultSuccess).Inc()
+	cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultSuccess).Inc()
 	return nil
 }
 
@@ -252,24 +262,10 @@ type ingesterCircuitBreaker struct {
 }
 
 func newIngesterCircuitBreaker(pushCfg CircuitBreakerConfig, readCfg CircuitBreakerConfig, logger log.Logger, registerer prometheus.Registerer) *ingesterCircuitBreaker {
-	prCB := &ingesterCircuitBreaker{}
-	state := func(requestType string) circuitbreaker.State {
-		switch requestType {
-		case circuitBreakerPushRequestType:
-			if prCB.push.isActive() {
-				return prCB.push.cb.State()
-			}
-		case circuitBreakerReadRequestType:
-			if prCB.read.isActive() {
-				return prCB.read.cb.State()
-			}
-		}
-		return -1
+	return &ingesterCircuitBreaker{
+		push: newCircuitBreaker(pushCfg, registerer, circuitBreakerPushRequestType, logger),
+		read: newCircuitBreaker(readCfg, registerer, circuitBreakerReadRequestType, logger),
 	}
-	metrics := newCircuitBreakerMetrics(registerer, state, []string{circuitBreakerPushRequestType, circuitBreakerReadRequestType})
-	prCB.push = newCircuitBreaker(pushCfg, metrics, circuitBreakerPushRequestType, logger)
-	prCB.read = newCircuitBreaker(readCfg, metrics, circuitBreakerReadRequestType, logger)
-	return prCB
 }
 
 func (cb *ingesterCircuitBreaker) activate() {
@@ -284,18 +280,13 @@ func (cb *ingesterCircuitBreaker) activate() {
 // If it was possible, tryPushAcquirePermit returns a function that should be called to release the acquired permit.
 // If it was not possible, the causing error is returned.
 func (cb *ingesterCircuitBreaker) tryPushAcquirePermit() (func(time.Duration, error), error) {
-	if cb == nil || !cb.push.isActive() {
-		return func(time.Duration, error) {}, nil
-	}
-
-	pushAcquiredPermit, err := cb.push.tryAcquirePermit()
+	finish, err := cb.push.tryAcquirePermit()
 	if err != nil {
 		return nil, err
 	}
+
 	return func(duration time.Duration, err error) {
-		if pushAcquiredPermit {
-			_ = cb.push.finishRequest(duration, cb.push.cfg.RequestTimeout, err)
-		}
+		finish(duration, err)
 	}, nil
 }
 
@@ -303,21 +294,22 @@ func (cb *ingesterCircuitBreaker) tryPushAcquirePermit() (func(time.Duration, er
 // If it was possible, tryReadAcquirePermit returns a function that should be called to release the acquired permit.
 // If it was not possible, the causing error is returned.
 func (cb *ingesterCircuitBreaker) tryReadAcquirePermit() (func(time.Duration, error), error) {
-	if cb == nil || !cb.read.isActive() {
+	// If the read circuit breaker is not active, we don't try to acquire a permit.
+	if !cb.read.isActive() {
 		return func(time.Duration, error) {}, nil
 	}
 
-	if cb.push.isActive() && cb.push.cb.State() == circuitbreaker.OpenState {
+	// We don't want to allow read requests if the push circuit breaker is open.
+	if cb.push.isOpen() {
 		return nil, newCircuitBreakerOpenError(cb.push.requestType, cb.push.cb.RemainingDelay())
 	}
 
-	readAcquiredPermit, err := cb.read.tryAcquirePermit()
+	finish, err := cb.read.tryAcquirePermit()
 	if err != nil {
 		return nil, err
 	}
+
 	return func(duration time.Duration, err error) {
-		if readAcquiredPermit {
-			_ = cb.read.finishRequest(duration, cb.read.cfg.RequestTimeout, err)
-		}
+		finish(duration, err)
 	}, nil
 }

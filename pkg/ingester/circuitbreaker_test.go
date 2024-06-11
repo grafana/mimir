@@ -78,7 +78,7 @@ func TestCircuitBreaker_IsActive(t *testing.T) {
 	require.False(t, cb.isActive())
 
 	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 10 * time.Millisecond}
-	cb = createCircuitBreaker(cfg, prometheus.NewRegistry(), log.NewNopLogger())
+	cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
 	cb.activate()
 
 	// When InitialDelay is set, circuit breaker is not immediately active.
@@ -99,32 +99,28 @@ func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
 	testCases := map[string]struct {
 		initialDelay                time.Duration
 		circuitBreakerSetup         func(*circuitBreaker)
-		expectedSuccess             bool
 		expectedCircuitBreakerError bool
 		expectedMetrics             string
 	}{
-		"if circuit breaker is not active, status false and no error are returned": {
+		"if circuit breaker is not active, finish function and no error are returned": {
 			initialDelay: 1 * time.Minute,
 			circuitBreakerSetup: func(cb *circuitBreaker) {
 				cb.active.Store(false)
 			},
-			expectedSuccess:             false,
 			expectedCircuitBreakerError: false,
 		},
-		"if circuit breaker closed, status true and no error are returned": {
+		"if circuit breaker closed, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb *circuitBreaker) {
 				cb.activate()
 				cb.cb.Close()
 			},
-			expectedSuccess:             true,
 			expectedCircuitBreakerError: false,
 		},
-		"if circuit breaker open, status false and a circuitBreakerErrorOpen are returned": {
+		"if circuit breaker open, no finish function and a circuitBreakerErrorOpen are returned": {
 			circuitBreakerSetup: func(cb *circuitBreaker) {
 				cb.activate()
 				cb.cb.Open()
 			},
-			expectedSuccess:             false,
 			expectedCircuitBreakerError: true,
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
@@ -144,12 +140,11 @@ func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
         	    cortex_ingester_circuit_breaker_current_state{request_type="test-request-type",state="open"} 1
 			`,
 		},
-		"if circuit breaker half-open, status true and no error are returned": {
+		"if circuit breaker half-open, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb *circuitBreaker) {
 				cb.activate()
 				cb.cb.HalfOpen()
 			},
-			expectedSuccess:             true,
 			expectedCircuitBreakerError: false,
 		},
 	}
@@ -162,15 +157,16 @@ func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
 				CooldownPeriod:             10 * time.Second,
 				testModeEnabled:            true,
 			}
-			cb := createCircuitBreaker(cfg, registry, log.NewNopLogger())
+			cb := newCircuitBreaker(cfg, registry, "test-request-type", log.NewNopLogger())
 			testCase.circuitBreakerSetup(cb)
-			status, err := cb.tryAcquirePermit()
-			require.Equal(t, testCase.expectedSuccess, status)
+			finish, err := cb.tryAcquirePermit()
 			if testCase.expectedCircuitBreakerError {
 				require.ErrorAs(t, err, &circuitBreakerOpenError{})
+				require.Nil(t, finish)
 				assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(testCase.expectedMetrics), metricNames...))
 			} else {
 				require.NoError(t, err)
+				require.NotNil(t, finish)
 			}
 		})
 	}
@@ -234,7 +230,7 @@ func TestCircuitBreaker_RecordResult(t *testing.T) {
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			registry := prometheus.NewRegistry()
-			cb := createCircuitBreaker(cfg, registry, log.NewNopLogger())
+			cb := newCircuitBreaker(cfg, registry, "test-request-type", log.NewNopLogger())
 			cb.activate()
 			err := cb.recordResult(testCase.errs...)
 			require.Equal(t, testCase.expectedErr, err)
@@ -366,7 +362,7 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				Enabled:        true,
 				RequestTimeout: 2 * time.Second,
 			}
-			cb := createCircuitBreaker(cfg, registry, log.NewNopLogger())
+			cb := newCircuitBreaker(cfg, registry, "test-request-type", log.NewNopLogger())
 			cb.active.Store(testCase.isActive)
 			err := cb.finishRequest(testCase.requestDuration, maxRequestDuration, testCase.err)
 			if testCase.expectedErr == nil {
@@ -503,54 +499,36 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
 						# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 						# TYPE cortex_ingester_circuit_breaker_results_total counter
         	            cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
-        	            cortex_ingester_circuit_breaker_results_total{request_type="read",result="circuit_breaker_open"} 0
         	            cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
-        	            cortex_ingester_circuit_breaker_results_total{request_type="read",result="error"} 0
         	            cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-        	            cortex_ingester_circuit_breaker_results_total{request_type="read",result="success"} 0
 						# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
 						# TYPE cortex_ingester_circuit_breaker_transitions_total counter
         	            cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="closed"} 0
-        	            cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="closed"} 0
         	            cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="half-open"} 0
-        	            cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="half-open"} 0
         	            cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="open"} 0
-        	            cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="open"} 0
 						# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
         	            # TYPE cortex_ingester_circuit_breaker_current_state gauge
-        	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
-        	            cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 0
+        	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 1
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
-        	            cortex_ingester_circuit_breaker_current_state{request_type="read",state="half-open"} 0
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 0
-        	            cortex_ingester_circuit_breaker_current_state{request_type="read",state="open"} 0
     				`
 				} else {
 					expectedMetrics = `
 						# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 						# TYPE cortex_ingester_circuit_breaker_results_total counter
         	            cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 2
-        	            cortex_ingester_circuit_breaker_results_total{request_type="read",result="circuit_breaker_open"} 0
         	            cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 2
-        	            cortex_ingester_circuit_breaker_results_total{request_type="read",result="error"} 0
         	            cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 1
-        	            cortex_ingester_circuit_breaker_results_total{request_type="read",result="success"} 0
 						# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
 						# TYPE cortex_ingester_circuit_breaker_transitions_total counter
         	            cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="closed"} 0
-        	            cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="closed"} 0
         	            cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="half-open"} 0
-        	            cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="half-open"} 0
         	            cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="open"} 1
-        	            cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="open"} 0
 						# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
         	            # TYPE cortex_ingester_circuit_breaker_current_state gauge
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
-        	            cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 0
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
-        	            cortex_ingester_circuit_breaker_current_state{request_type="read",state="half-open"} 0
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 1
-        	            cortex_ingester_circuit_breaker_current_state{request_type="read",state="open"} 0
     				`
 				}
 				assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
@@ -596,27 +574,18 @@ func TestIngester_StartPushRequest_CircuitBreakerOpen(t *testing.T) {
 		# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 		# TYPE cortex_ingester_circuit_breaker_results_total counter
         cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 1
-        cortex_ingester_circuit_breaker_results_total{request_type="read",result="circuit_breaker_open"} 0
         cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
-        cortex_ingester_circuit_breaker_results_total{request_type="read",result="error"} 0
         cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-        cortex_ingester_circuit_breaker_results_total{request_type="read",result="success"} 0
 		# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
 		# TYPE cortex_ingester_circuit_breaker_transitions_total counter
         cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="closed"} 0
-        cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="closed"} 0
         cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="half-open"} 0
-        cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="half-open"} 0
         cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="open"} 1
-        cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="open"} 0
 		# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
         # TYPE cortex_ingester_circuit_breaker_current_state gauge
         cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
-        cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 0
         cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
-        cortex_ingester_circuit_breaker_current_state{request_type="read",state="half-open"} 0
         cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 1
-        cortex_ingester_circuit_breaker_current_state{request_type="read",state="open"} 0
 	`
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
 }
@@ -639,11 +608,8 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 1
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="success"} 0
 			`,
 		},
 		"when a permit not acquired, pushRequestDuration lower than RequestTimeout and no input err, FinishPushRequest does nothing": {
@@ -654,11 +620,8 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="success"} 0
 			`,
 		},
 		"with a permit acquired, pushRequestDuration higher than RequestTimeout and no input error, FinishPushRequest records a failure": {
@@ -669,11 +632,8 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 1
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="success"} 0
 			`,
 		},
 		"with a permit not acquired, pushRequestDuration higher than RequestTimeout and no input error, FinishPushRequest does nothing": {
@@ -684,11 +644,8 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="success"} 0
 			`,
 		},
 		"with a permit acquired, pushRequestDuration higher than RequestTimeout and an input error relevant for the circuit breakers, FinishPushRequest records a failure": {
@@ -699,11 +656,8 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 1
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="success"} 0
 			`,
 		},
 		"with a permit acquired, pushRequestDuration higher than RequestTimeout and an input error irrelevant for the circuit breakers, FinishPushRequest records a failure": {
@@ -714,11 +668,8 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 1
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="success"} 0
 			`,
 		},
 		"with a permit not acquired, pushRequestDuration higher than RequestTimeout and an input error relevant for the circuit breakers, FinishPushRequest does nothing": {
@@ -729,11 +680,8 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="success"} 0
 			`,
 		},
 		"with a permit not acquired, pushRequestDuration higher than RequestTimeout and an input error irrelevant for the circuit breakers, FinishPushRequest does nothing": {
@@ -744,11 +692,8 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="success"} 0
 			`,
 		},
 	}
@@ -904,69 +849,41 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
 						# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 						# TYPE cortex_ingester_circuit_breaker_results_total counter
         	            cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
-        	            cortex_ingester_circuit_breaker_results_total{request_type="read",result="circuit_breaker_open"} 0
         	            cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
-        	            cortex_ingester_circuit_breaker_results_total{request_type="read",result="error"} 0
         	            cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-        	            cortex_ingester_circuit_breaker_results_total{request_type="read",result="success"} 0
 						# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
 						# TYPE cortex_ingester_circuit_breaker_transitions_total counter
         	            cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="closed"} 0
-        	            cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="closed"} 0
         	            cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="half-open"} 0
-        	            cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="half-open"} 0
         	            cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="open"} 0
-        	            cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="open"} 0
 						# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
         	            # TYPE cortex_ingester_circuit_breaker_current_state gauge
-        	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
-        	            cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 0
+        	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 1
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
-        	            cortex_ingester_circuit_breaker_current_state{request_type="read",state="half-open"} 0
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 0
-        	            cortex_ingester_circuit_breaker_current_state{request_type="read",state="open"} 0
     				`
 			} else {
 				expectedMetrics = `
 						# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 						# TYPE cortex_ingester_circuit_breaker_results_total counter
         	            cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 2
-        	            cortex_ingester_circuit_breaker_results_total{request_type="read",result="circuit_breaker_open"} 0
         	            cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 2
-        	            cortex_ingester_circuit_breaker_results_total{request_type="read",result="error"} 0
         	            cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 1
-        	            cortex_ingester_circuit_breaker_results_total{request_type="read",result="success"} 0
 						# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
 						# TYPE cortex_ingester_circuit_breaker_transitions_total counter
         	            cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="closed"} 0
-        	            cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="closed"} 0
         	            cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="half-open"} 0
-        	            cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="half-open"} 0
         	            cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="open"} 1
-        	            cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="open"} 0
 						# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
         	            # TYPE cortex_ingester_circuit_breaker_current_state gauge
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
-        	            cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 0
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
-        	            cortex_ingester_circuit_breaker_current_state{request_type="read",state="half-open"} 0
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 1
-        	            cortex_ingester_circuit_breaker_current_state{request_type="read",state="open"} 0
     				`
 			}
 			assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 		})
 	}
-}
-
-func createCircuitBreaker(cfg CircuitBreakerConfig, registerer prometheus.Registerer, logger log.Logger) *circuitBreaker {
-	var cb *circuitBreaker
-	state := func(requestType string) circuitbreaker.State {
-		return cb.cb.State()
-	}
-	metrics := newCircuitBreakerMetrics(registerer, state, []string{"test-request-type"})
-	cb = newCircuitBreaker(cfg, metrics, "test-request-type", logger)
-	return cb
 }
 
 type mockedCircuitBreaker struct {
@@ -1038,8 +955,8 @@ func TestPRCircuitBreaker_NewPRCircuitBreaker(t *testing.T) {
 		cortex_ingester_circuit_breaker_current_state{request_type="read",state="open"} 0
 		cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
 		cortex_ingester_circuit_breaker_current_state{request_type="read",state="half-open"} 0
-		cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
-		cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 0
+		cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 1
+		cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 1
 	`
 	metricNames := []string{
 		"cortex_ingester_circuit_breaker_results_total",
@@ -1069,27 +986,18 @@ func TestPRCircuitBreaker_TryPushAcquirePermit(t *testing.T) {
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="circuit_breaker_open"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="success"} 0
 				# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
 				# TYPE cortex_ingester_circuit_breaker_transitions_total counter
         	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="closed"} 0
-        	    cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="closed"} 0
         	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="half-open"} 0
-        	    cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="open"} 0
-        	    cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="open"} 0
 				# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
 				# TYPE cortex_ingester_circuit_breaker_current_state gauge
-        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
-        	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 0
+        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 1
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
-        	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 0
-				cortex_ingester_circuit_breaker_current_state{request_type="read",state="open"} 0
 			`,
 		},
 		"if push circuit breaker is closed, finish function and no error are returned": {
@@ -1102,27 +1010,18 @@ func TestPRCircuitBreaker_TryPushAcquirePermit(t *testing.T) {
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="circuit_breaker_open"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 1
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="success"} 0
 				# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
 				# TYPE cortex_ingester_circuit_breaker_transitions_total counter
         	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="closed"} 0
-        	    cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="closed"} 0
         	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="half-open"} 0
-        	    cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="open"} 0
-        	    cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="open"} 0
 				# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
 				# TYPE cortex_ingester_circuit_breaker_current_state gauge
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 1
-        	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
-        	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 0
-				cortex_ingester_circuit_breaker_current_state{request_type="read",state="open"} 0
 			`,
 		},
 		"if push circuit breaker is open, no finish function and a circuitBreakerErrorOpen are returned": {
@@ -1135,27 +1034,18 @@ func TestPRCircuitBreaker_TryPushAcquirePermit(t *testing.T) {
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 1
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="circuit_breaker_open"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="success"} 0
 				# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
 				# TYPE cortex_ingester_circuit_breaker_transitions_total counter
         	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="closed"} 0
-        	    cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="closed"} 0
         	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="half-open"} 0
-        	    cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="open"} 1
-        	    cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="open"} 0
 				# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
 				# TYPE cortex_ingester_circuit_breaker_current_state gauge
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
-        	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
-        	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 1
-				cortex_ingester_circuit_breaker_current_state{request_type="read",state="open"} 0
 			`,
 		},
 		"if push circuit breaker is half-open, finish function and no error are returned": {
@@ -1168,27 +1058,18 @@ func TestPRCircuitBreaker_TryPushAcquirePermit(t *testing.T) {
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="circuit_breaker_open"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 1
-        	    cortex_ingester_circuit_breaker_results_total{request_type="read",result="success"} 0
 				# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
 				# TYPE cortex_ingester_circuit_breaker_transitions_total counter
         	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="closed"} 1
-        	    cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="closed"} 0
         	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="half-open"} 1
-        	    cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="open"} 0
-        	    cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="open"} 0
 				# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
 				# TYPE cortex_ingester_circuit_breaker_current_state gauge
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 1
-        	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
-        	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 0
-				cortex_ingester_circuit_breaker_current_state{request_type="read",state="open"} 0
 			`,
 		},
 	}
@@ -1205,7 +1086,7 @@ func TestPRCircuitBreaker_TryPushAcquirePermit(t *testing.T) {
 			acquiredPermitCount := atomic.NewInt64(0)
 			recordedSuccessCount := atomic.NewInt64(0)
 			recordedFailureCount := atomic.NewInt64(0)
-			cb := newIngesterCircuitBreaker(cfg, cfg, log.NewNopLogger(), registry)
+			cb := newIngesterCircuitBreaker(cfg, CircuitBreakerConfig{}, log.NewNopLogger(), registry)
 			cb.push.cb = &mockedCircuitBreaker{
 				CircuitBreaker:      cb.push.cb,
 				acquiredPermitCount: acquiredPermitCount,
@@ -1276,8 +1157,8 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
         	    cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="open"} 0
 				# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
 				# TYPE cortex_ingester_circuit_breaker_current_state gauge
-        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
-        	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 0
+        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 1
+        	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 1
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 0
@@ -1311,7 +1192,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 				# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
 				# TYPE cortex_ingester_circuit_breaker_current_state gauge
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 1
-        	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 0
+        	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 1
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 0
@@ -1345,7 +1226,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 				# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
 				# TYPE cortex_ingester_circuit_breaker_current_state gauge
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
-        	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 0
+        	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 1
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 1
@@ -1379,7 +1260,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 				# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
 				# TYPE cortex_ingester_circuit_breaker_current_state gauge
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
-        	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 0
+        	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 1
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 1
         	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 0
@@ -1412,7 +1293,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
         	    cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="open"} 0
 				# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
 				# TYPE cortex_ingester_circuit_breaker_current_state gauge
-        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
+        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 1
         	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 1
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="half-open"} 0
@@ -1551,7 +1432,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
         	    cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="open"} 1
 				# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
 				# TYPE cortex_ingester_circuit_breaker_current_state gauge
-        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
+        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 1
         	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="half-open"} 0
@@ -1690,7 +1571,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
         	    cortex_ingester_circuit_breaker_transitions_total{request_type="read",state="open"} 0
 				# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
 				# TYPE cortex_ingester_circuit_breaker_current_state gauge
-        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
+        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 1
         	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 1
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="read",state="half-open"} 0

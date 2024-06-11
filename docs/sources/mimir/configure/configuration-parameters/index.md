@@ -1249,7 +1249,7 @@ push_circuit_breaker:
   # CLI flag: -ingester.push-circuit-breaker.initial-delay
   [initial_delay: <duration> | default = 0s]
 
-  # (experiment) The maximum duration of an ingester's request before it
+  # (experimental) The maximum duration of an ingester's request before it
   # triggers a circuit breaker. This configuration is used for circuit breakers
   # only, and its timeouts aren't reported as errors.
   # CLI flag: -ingester.push-circuit-breaker.request-timeout
@@ -1286,7 +1286,7 @@ read_circuit_breaker:
   # CLI flag: -ingester.read-circuit-breaker.initial-delay
   [initial_delay: <duration> | default = 0s]
 
-  # (experiment) The maximum duration of an ingester's request before it
+  # (experimental) The maximum duration of an ingester's request before it
   # triggers a circuit breaker. This configuration is used for circuit breakers
   # only, and its timeouts aren't reported as errors.
   # CLI flag: -ingester.read-circuit-breaker.request-timeout
