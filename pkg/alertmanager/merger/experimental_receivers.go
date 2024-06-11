@@ -88,10 +88,9 @@ func mergeIntegrations(in []alertingmodels.Integration) ([]alertingmodels.Integr
 		if current, ok := integrations[integration.Name]; ok {
 			// If this is a duplicate integration, check if it has a more recent
 			// notification attempt than the current integration.
-			if time.Time(integration.LastNotifyAttempt).After(time.Time(current.LastNotifyAttempt)) {
-				integrations[integration.Name] = integration
+			if !time.Time(integration.LastNotifyAttempt).After(time.Time(current.LastNotifyAttempt)) {
+				continue
 			}
-		} else {
 			integrations[integration.Name] = integration
 		}
 

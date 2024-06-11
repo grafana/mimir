@@ -429,11 +429,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 	route := dispatch.NewRoute(cfg.Route, nil)
 
 	receivers := make([]*nfstatus.Receiver, 0, len(integrationsMap))
-	activeReceivers := make(map[string]struct{})
-	visitFunc := func(r *dispatch.Route) {
-		activeReceivers[r.RouteOpts.Receiver] = struct{}{}
-	}
-	route.Walk(visitFunc)
+	activeReceivers := alertingNotify.GetActiveReceiversMap(route)
 
 	baseIntegrationsMap := make(map[string][]*notify.Integration)
 	for name, v := range integrationsMap {

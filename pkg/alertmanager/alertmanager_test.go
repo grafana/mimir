@@ -511,7 +511,7 @@ route:
 		},
 	}, result)
 
-	// Send an alert which to cause a notification attempt.
+	// Send an alert to cause a notification attempt.
 
 	now := time.Now()
 	inputAlerts := []*types.Alert{
@@ -545,7 +545,7 @@ route:
 
 	assert.Equal(t, "webhook", result[0].Integrations[0].Name)
 	assert.NotZero(t, result[0].Integrations[0].LastNotifyAttempt)
-	assert.Equal(t, "failed to notify due to rate limits", result[0].Integrations[0].LastNotifyAttemptError)
+	assert.Equal(t, errRateLimited.Error(), result[0].Integrations[0].LastNotifyAttemptError)
 
 	// Check the status of the other integration is not changed.
 
