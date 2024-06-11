@@ -1120,12 +1120,8 @@ func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, lo
 func (s *loadingSeriesChunkRefsSetIterator) singlePassStringify(symbolizedSet symbolizedSeriesChunkRefsSet) (seriesChunkRefsSet, error) {
 	// Some conservative map pre-allocation; the goal is to get an order of magnitude size of the map, so we minimize map growth.
 	symbols := make(map[uint32]string, len(symbolizedSet.series)/2)
-	maxLabelsPerSeries := 0
 
 	for _, series := range symbolizedSet.series {
-		if numLabels := len(series.lset); maxLabelsPerSeries < numLabels {
-			maxLabelsPerSeries = numLabels
-		}
 		for _, symRef := range series.lset {
 			symbols[symRef.value] = ""
 			symbols[symRef.name] = ""
