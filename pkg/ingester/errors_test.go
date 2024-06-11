@@ -248,8 +248,8 @@ func TestTooBusyError(t *testing.T) {
 
 func TestNewCircuitBreakerOpenError(t *testing.T) {
 	remainingDelay := 1 * time.Second
-	expectedMsg := fmt.Sprintf("circuit breaker open on aaa request type with remaining delay %s", remainingDelay.String())
-	err := newCircuitBreakerOpenError("aaa", remainingDelay)
+	expectedMsg := fmt.Sprintf("circuit breaker open on foo request type with remaining delay %s", remainingDelay.String())
+	err := newCircuitBreakerOpenError("foo", remainingDelay)
 	require.Error(t, err)
 	require.EqualError(t, err, expectedMsg)
 	checkIngesterError(t, err, mimirpb.CIRCUIT_BREAKER_OPEN, false)

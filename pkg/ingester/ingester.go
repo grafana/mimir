@@ -358,7 +358,7 @@ type Ingester struct {
 	ingestPartitionID         int32
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
 
-	circuitBreaker *ingesterCircuitBreaker
+	circuitBreaker ingesterCircuitBreaker
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -1031,7 +1031,7 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (context
 	// If it is not possible, it is because the circuit breaker is open, and a circuitBreakerOpenError is returned.
 	// If it is possible, a permit has to be released by recording either a success or a failure with the circuit
 	// breaker. This is done by FinishPushRequest().
-	finish, err := i.circuitBreaker.tryPushAcquirePermit()
+	finish, err := i.circuitBreaker.tryAcquirePushPermit()
 	if err != nil {
 		return nil, false, err
 	}
@@ -3790,7 +3790,7 @@ func (i *Ingester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
 // function is returned.
 func (i *Ingester) startReadRequest() (func(error), error) {
 	start := time.Now()
-	finish, err := i.circuitBreaker.tryReadAcquirePermit()
+	finish, err := i.circuitBreaker.tryAcquireReadPermit()
 	if err != nil {
 		return nil, err
 	}

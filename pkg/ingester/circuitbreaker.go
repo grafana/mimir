@@ -261,8 +261,8 @@ type ingesterCircuitBreaker struct {
 	read *circuitBreaker
 }
 
-func newIngesterCircuitBreaker(pushCfg CircuitBreakerConfig, readCfg CircuitBreakerConfig, logger log.Logger, registerer prometheus.Registerer) *ingesterCircuitBreaker {
-	return &ingesterCircuitBreaker{
+func newIngesterCircuitBreaker(pushCfg CircuitBreakerConfig, readCfg CircuitBreakerConfig, logger log.Logger, registerer prometheus.Registerer) ingesterCircuitBreaker {
+	return ingesterCircuitBreaker{
 		push: newCircuitBreaker(pushCfg, registerer, circuitBreakerPushRequestType, logger),
 		read: newCircuitBreaker(readCfg, registerer, circuitBreakerReadRequestType, logger),
 	}
@@ -273,17 +273,17 @@ func (cb *ingesterCircuitBreaker) activate() {
 	cb.read.activate()
 }
 
-// tryPushAcquirePermit tries to acquire a permit to use the push circuit breaker and returns whether a permit was acquired.
-// If it was possible, tryPushAcquirePermit returns a function that should be called to release the acquired permit.
+// tryAcquirePushPermit tries to acquire a permit to use the push circuit breaker and returns whether a permit was acquired.
+// If it was possible, tryAcquirePushPermit returns a function that should be called to release the acquired permit.
 // If it was not possible, the causing error is returned.
-func (cb *ingesterCircuitBreaker) tryPushAcquirePermit() (func(time.Duration, error), error) {
+func (cb *ingesterCircuitBreaker) tryAcquirePushPermit() (func(time.Duration, error), error) {
 	return cb.push.tryAcquirePermit()
 }
 
-// tryReadAcquirePermit tries to acquire a permit to use the read circuit breaker and returns whether a permit was acquired.
-// If it was possible, tryReadAcquirePermit returns a function that should be called to release the acquired permit.
+// tryAcquireReadPermit tries to acquire a permit to use the read circuit breaker and returns whether a permit was acquired.
+// If it was possible, tryAcquireReadPermit returns a function that should be called to release the acquired permit.
 // If it was not possible, the causing error is returned.
-func (cb *ingesterCircuitBreaker) tryReadAcquirePermit() (func(time.Duration, error), error) {
+func (cb *ingesterCircuitBreaker) tryAcquireReadPermit() (func(time.Duration, error), error) {
 	// If the read circuit breaker is not active, we don't try to acquire a permit.
 	if !cb.read.isActive() {
 		return func(time.Duration, error) {}, nil
