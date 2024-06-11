@@ -1087,7 +1087,7 @@ func TestLimitingSeriesChunkRefsSetIterator(t *testing.T) {
 }
 
 func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
-	b := labels.NewScratchBuilder(4)
+	b := labels.NewScratchBuilder(1)
 	oneLabel := func(name, value string) labels.Labels {
 		b.Reset()
 		b.Add(name, value)
@@ -2415,7 +2415,7 @@ func readAllSeriesChunkRefs(it iterator[seriesChunkRefs]) []seriesChunkRefs {
 // incremented by +1.
 func createSeriesChunkRefsSet(minSeriesID, maxSeriesID int, releasable bool) seriesChunkRefsSet {
 	set := newSeriesChunkRefsSet(maxSeriesID-minSeriesID+1, releasable)
-	b := labels.NewScratchBuilder(4)
+	b := labels.NewScratchBuilder(1)
 
 	for seriesID := minSeriesID; seriesID <= maxSeriesID; seriesID++ {
 		b.Reset()
