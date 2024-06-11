@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	alertingmodels "github.com/grafana/alerting/models"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
@@ -647,11 +648,11 @@ func TestAlertmanagerSharding(t *testing.T) {
 				for _, c := range clients {
 					list, err := c.GetReceiversExperimental(context.Background())
 					assert.NoError(t, err)
-					assert.ElementsMatch(t, list, []e2emimir.Receiver{
+					assert.ElementsMatch(t, list, []alertingmodels.Receiver{
 						{
 							Name:   "dummy",
 							Active: true,
-							Integrations: []e2emimir.Integration{
+							Integrations: []alertingmodels.Integration{
 								{
 									LastNotifyAttemptDuration: "0s",
 									Name:                      "email",

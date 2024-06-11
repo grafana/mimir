@@ -18,9 +18,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-openapi/strfmt"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	alertingmodels "github.com/grafana/alerting/models"
 	"github.com/klauspost/compress/s2"
 	alertConfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/types"
@@ -1453,21 +1453,7 @@ func (c *Client) GetReceivers(ctx context.Context) ([]string, error) {
 	return receivers, nil
 }
 
-type Integration struct {
-	LastNotifyAttempt         strfmt.DateTime `json:"lastNotifyAttempt"`
-	LastNotifyAttemptDuration string          `json:"lastNotifyAttemptDuration"`
-	LastNotifyAttemptError    string          `json:"lastNotifyAttemptError"`
-	Name                      string          `json:"name"`
-	SendResolved              bool            `json:"sendResolved"`
-}
-
-type Receiver struct {
-	Name         string        `json:"name"`
-	Active       bool          `json:"active"`
-	Integrations []Integration `json:"integrations"`
-}
-
-func (c *Client) GetReceiversExperimental(ctx context.Context) ([]Receiver, error) {
+func (c *Client) GetReceiversExperimental(ctx context.Context) ([]alertingmodels.Receiver, error) {
 	u := c.alertmanagerClient.URL("api/v1/grafana/receivers", nil)
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
@@ -1488,7 +1474,7 @@ func (c *Client) GetReceiversExperimental(ctx context.Context) ([]Receiver, erro
 		return nil, fmt.Errorf("getting receivers failed with status %d and error %v", resp.StatusCode, string(body))
 	}
 
-	decoded := []Receiver{}
+	decoded := []alertingmodels.Receiver{}
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		return nil, err
 	}
