@@ -389,10 +389,6 @@ Usage of ./cmd/mimir/mimir:
     	Print basic help.
   -help-all
     	Print help, also including advanced and experimental parameters.
-  -ingester.circuit-breaker.push-timeout duration
-    	The maximum length of time an ingester's Push request can last before it triggers a circuit breaker. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 2s)
-  -ingester.circuit-breaker.read-timeout duration
-    	The maximum length of time an ingester's read-path request can last before it triggers a circuit breaker. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 30s)
   -ingester.max-global-metadata-per-metric int
     	The maximum number of metadata per metric, across the cluster. 0 to disable.
   -ingester.max-global-metadata-per-user int

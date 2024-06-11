@@ -1307,22 +1307,6 @@ Usage of ./cmd/mimir/mimir:
     	After what time a series is considered to be inactive. (default 10m0s)
   -ingester.active-series-metrics-update-period duration
     	How often to update active series metrics. (default 1m0s)
-  -ingester.circuit-breaker.cooldown-period duration
-    	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 10s)
-  -ingester.circuit-breaker.enabled
-    	[experimental] Enable circuit breaking when making requests to ingesters
-  -ingester.circuit-breaker.failure-execution-threshold uint
-    	[experimental] How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures (default 100)
-  -ingester.circuit-breaker.failure-threshold-percentage uint
-    	[experimental] Max percentage of requests that can fail over period before the circuit breaker opens (default 10)
-  -ingester.circuit-breaker.initial-delay duration
-    	[experimental] How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.
-  -ingester.circuit-breaker.push-timeout duration
-    	The maximum length of time an ingester's Push request can last before it triggers a circuit breaker. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 2s)
-  -ingester.circuit-breaker.read-timeout duration
-    	The maximum length of time an ingester's read-path request can last before it triggers a circuit breaker. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 30s)
-  -ingester.circuit-breaker.thresholding-period duration
-    	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -ingester.client.backoff-min-period duration
@@ -1417,8 +1401,36 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -query-frontend.results-cache-ttl-for-out-of-order-time-window option to specify TTL for resulting cache entry.
   -ingester.owned-series-update-interval duration
     	[experimental] How often to check for ring changes and possibly recompute owned series as a result of detected change. (default 15s)
+  -ingester.push-circuit-breaker.cooldown-period duration
+    	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 10s)
+  -ingester.push-circuit-breaker.enabled
+    	[experimental] Enable circuit breaking when making requests to ingesters
+  -ingester.push-circuit-breaker.failure-execution-threshold uint
+    	[experimental] How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures (default 100)
+  -ingester.push-circuit-breaker.failure-threshold-percentage uint
+    	[experimental] Max percentage of requests that can fail over period before the circuit breaker opens (default 10)
+  -ingester.push-circuit-breaker.initial-delay duration
+    	[experimental] How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.
+  -ingester.push-circuit-breaker.request-timeout duration
+    	[experimental] The maximum duration of an ingester's request before it triggers a circuit breaker. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 2s)
+  -ingester.push-circuit-breaker.thresholding-period duration
+    	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.rate-update-period duration
     	Period with which to update the per-tenant ingestion rates. (default 15s)
+  -ingester.read-circuit-breaker.cooldown-period duration
+    	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 10s)
+  -ingester.read-circuit-breaker.enabled
+    	[experimental] Enable circuit breaking when making requests to ingesters
+  -ingester.read-circuit-breaker.failure-execution-threshold uint
+    	[experimental] How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures (default 100)
+  -ingester.read-circuit-breaker.failure-threshold-percentage uint
+    	[experimental] Max percentage of requests that can fail over period before the circuit breaker opens (default 10)
+  -ingester.read-circuit-breaker.initial-delay duration
+    	[experimental] How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.
+  -ingester.read-circuit-breaker.request-timeout duration
+    	[experimental] The maximum duration of an ingester's request before it triggers a circuit breaker. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 30s)
+  -ingester.read-circuit-breaker.thresholding-period duration
+    	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.read-path-cpu-utilization-limit float
     	[experimental] CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.read-path-memory-utilization-limit uint
