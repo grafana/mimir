@@ -389,7 +389,7 @@
 
 ### Documentation
 
-* [CHANGE] Inform reader about changes made regarding get started with mimir tutorial files.
+* [CHANGE] Note that the _Play with Grafana Mimir_ tutorial directory path changed after the release of the video. #8319
 * [CHANGE] No longer mark OTLP distributor endpoint as experimental. #7348
 * [ENHANCEMENT] Added runbook for `KubePersistentVolumeFillingUp` alert. #7297
 * [ENHANCEMENT] Add Grafana Cloud recommendations to OTLP documentation. #7375
