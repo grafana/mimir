@@ -1468,7 +1468,7 @@ type Receiver struct {
 }
 
 func (c *Client) GetReceiversExperimental(ctx context.Context) ([]Receiver, error) {
-	u := c.alertmanagerClient.URL("alertmanager/experimental/api/v1/receivers", nil)
+	u := c.alertmanagerClient.URL("api/v1/grafana/receivers", nil)
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {

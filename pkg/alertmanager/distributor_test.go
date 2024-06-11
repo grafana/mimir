@@ -197,14 +197,14 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 			expectedTotalCalls: 1,
 			route:              "/receivers",
 		}, {
-			name:               "Read /experimental/api/v1/receivers is sent to 3 AMs",
+			name:               "Read /api/v1/grafana/receivers is sent to 3 AMs",
 			numAM:              5,
 			numHappyAM:         5,
 			replicationFactor:  3,
 			isRead:             true,
 			expStatusCode:      http.StatusOK,
 			expectedTotalCalls: 3,
-			route:              "/experimental/api/v1/receivers",
+			route:              "/api/v1/grafana/receivers",
 			responseBody:       []byte(`[]`),
 		}, {
 			name:                "Write /receivers not supported",

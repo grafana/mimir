@@ -642,7 +642,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 				}
 			}
 
-			// Endpoint: GET /experimental/api/v1/receivers
+			// Endpoint: GET /api/v1/grafana/receivers
 			{
 				for _, c := range clients {
 					list, err := c.GetReceiversExperimental(context.Background())

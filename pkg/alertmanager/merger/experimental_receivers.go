@@ -10,7 +10,7 @@ import (
 	alertingmodels "github.com/grafana/alerting/models"
 )
 
-// ExperimentalReceivers implements the Merger interface for GET /experimental/api/v1/receivers.
+// ExperimentalReceivers implements the Merger interface for GET /api/v1/grafana/receivers.
 // It returns the union of receivers and integrations from all responses, merging duplicates.
 // When an integration is duplicated in multiple responses, the integration status is taken
 // from the integration with the most recent notification attempt.
