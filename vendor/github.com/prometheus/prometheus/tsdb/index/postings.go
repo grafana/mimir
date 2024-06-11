@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bboreham/go-loser"
 
@@ -425,6 +426,16 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 }
 
 func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
+	// TODO DEBUG - Simulate slow regexp matcher.
+	fmt.Println("DEBUG - Enter long sleep to simulate slow regexp matcher")
+	select {
+	case <-ctx.Done():
+		fmt.Println("DEBUG - Exit long sleep because context has been canceled")
+
+	case <-time.After(time.Minute):
+		fmt.Println("DEBUG - Exit long sleep because waiting time has elapsed")
+	}
+
 	// We'll copy the values into a slice and then match over that,
 	// this way we don't need to hold the mutex while we're matching,
 	// which can be slow (seconds) if the match function is a huge regex.

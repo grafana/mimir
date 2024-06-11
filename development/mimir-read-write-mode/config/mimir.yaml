@@ -15,6 +15,17 @@ blocks_storage:
   tsdb:
     dir: /data/ingester
 
+    head_postings_for_matchers_cache_ttl: '10s'
+    head_postings_for_matchers_cache_size: 10000
+    head_postings_for_matchers_cache_force: true
+
+    block_postings_for_matchers_cache_ttl: '5m'
+    block_postings_for_matchers_cache_size: 10000
+    block_postings_for_matchers_cache_force: true
+
+    head_postings_for_matchers_cache_max_bytes: 157286400
+    block_postings_for_matchers_cache_max_bytes: 157286400
+
   bucket_store:
     index_cache:
       backend: memcached
