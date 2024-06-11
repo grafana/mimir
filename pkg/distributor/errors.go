@@ -274,9 +274,8 @@ func toGRPCStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErrorEnabled b
 	case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
 		if serviceOverloadErrorEnabled {
 			return codes.Unavailable
-		} else {
-			return codes.ResourceExhausted
 		}
+		return codes.ResourceExhausted
 	case mimirpb.REPLICAS_DID_NOT_MATCH:
 		return codes.AlreadyExists
 	case mimirpb.TOO_MANY_CLUSTERS:

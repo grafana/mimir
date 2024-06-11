@@ -305,7 +305,7 @@ func TestDistributor_Push_ShouldReturnErrorMappedTo4xxStatusCodeIfWriteRequestCo
 		// We expect a gRPC error.
 		errStatus, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
-		assert.Equal(t, codes.FailedPrecondition, errStatus.Code())
+		assert.Equal(t, codes.InvalidArgument, errStatus.Code())
 		assert.ErrorContains(t, errStatus.Err(), ingest.ErrWriteRequestDataItemTooLarge.Error())
 
 		// We expect the gRPC error to be detected as client error.
