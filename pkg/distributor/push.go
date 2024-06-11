@@ -207,8 +207,6 @@ func calculateRetryAfter(retryAttemptHeader string, baseSeconds int, maxBackoffE
 // toHTTPStatus converts the given error into an appropriate HTTP status corresponding
 // to that error, if the error is one of the errors from this package. Otherwise, an
 // http.StatusInternalServerError is returned.
-// to that error, if the error is one of the errors from this package. Otherwise, codes.Internal and
-// http.StatusInternalServerError is returned.
 func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrides) int {
 	if errors.Is(pushErr, context.DeadlineExceeded) {
 		return http.StatusInternalServerError

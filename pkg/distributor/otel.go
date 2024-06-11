@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
+	"github.com/gogo/status"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
@@ -28,7 +29,6 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 	"go.uber.org/multierr"
 	"google.golang.org/grpc/codes"
-	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/distributor/otlp"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -252,12 +252,10 @@ func otlpHandler(
 				grpcCode codes.Code
 				errorMsg string
 			)
-			if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
-				// here the error would always be nil, since it is already checked in httpgrpc.HTTPResponseFromError
-				s, _ := grpcutil.ErrorToStatus(err)
-				httpCode = int(resp.Code)
-				grpcCode = s.Code() // this will be the same as httpCode.
-				errorMsg = string(resp.Body)
+			if st, ok := grpcutil.ErrorToStatus(err); ok {
+				httpCode = int(st.Code())
+				grpcCode = st.Code()
+				errorMsg = st.Message()
 			} else {
 				grpcCode, httpCode = toOtlpGRPCHTTPStatus(err)
 				errorMsg = err.Error()
@@ -277,30 +275,39 @@ func otlpHandler(
 }
 
 // toOtlpGRPCHTTPStatus is utilized by the OTLP endpoint.
-// According to the OTLP specifications (https://opentelemetry.io/docs/specs/otlp/#failures-1), unlike Prometheus, the OTLP client only retries on HTTP status codes 429, 502, 503, and 504.
 func toOtlpGRPCHTTPStatus(pushErr error) (codes.Code, int) {
-	if !errors.Is(pushErr, context.DeadlineExceeded) {
-		var distributorErr Error
-		if errors.As(pushErr, &distributorErr) {
-			switch distributorErr.Cause() {
-			case mimirpb.BAD_DATA:
-				return codes.InvalidArgument, http.StatusBadRequest
-			case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
-				return codes.ResourceExhausted, http.StatusTooManyRequests
-			case mimirpb.REPLICAS_DID_NOT_MATCH:
-				return codes.OK, http.StatusAccepted
-			case mimirpb.TOO_MANY_CLUSTERS:
-				return codes.InvalidArgument, http.StatusBadRequest
-			case mimirpb.TSDB_UNAVAILABLE:
-				return codes.Unavailable, http.StatusServiceUnavailable
-			case mimirpb.CIRCUIT_BREAKER_OPEN:
-				return codes.Unavailable, http.StatusServiceUnavailable
-			case mimirpb.METHOD_NOT_ALLOWED:
-				return codes.Unimplemented, http.StatusNotImplemented
-			}
-		}
+	var distributorErr Error
+	if errors.Is(pushErr, context.DeadlineExceeded) || !errors.As(pushErr, &distributorErr) {
+		return codes.Internal, http.StatusServiceUnavailable
 	}
-	return codes.Internal, http.StatusServiceUnavailable
+
+	grpcStatusCode := toGRPCStatusCode(distributorErr.Cause(), false)
+	otlpHTTPStatusCode := toOtlpHTTPStatus(distributorErr.Cause())
+	return grpcStatusCode, otlpHTTPStatusCode
+}
+
+// toOtlpHTTPStatus maps the given mimirpb.ErrorCause to its OTLP endpoint HTTP status.
+// This function is slightly different from toHTTPStatus() due to the OTLP specifications
+// (https://opentelemetry.io/docs/specs/otlp/#failures-1): unlike Prometheus, the OTLP
+// client only retries on HTTP status codes 429, 502, 503, and 504.
+func toOtlpHTTPStatus(errCause mimirpb.ErrorCause) int {
+	switch errCause {
+	case mimirpb.BAD_DATA:
+		return http.StatusBadRequest
+	case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
+		return http.StatusTooManyRequests
+	case mimirpb.REPLICAS_DID_NOT_MATCH:
+		return http.StatusAccepted
+	case mimirpb.TOO_MANY_CLUSTERS:
+		return http.StatusBadRequest
+	case mimirpb.TSDB_UNAVAILABLE:
+		return http.StatusServiceUnavailable
+	case mimirpb.CIRCUIT_BREAKER_OPEN:
+		return http.StatusServiceUnavailable
+	case mimirpb.METHOD_NOT_ALLOWED:
+		return http.StatusNotImplemented
+	}
+	return http.StatusServiceUnavailable
 }
 
 // writeErrorToHTTPResponseBody converts the given error into a grpc status and marshals it into a byte slice, in order to be written to the response body.
@@ -310,10 +317,10 @@ func writeErrorToHTTPResponseBody(w http.ResponseWriter, httpCode int, grpcCode 
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(httpCode)
 
-	respBytes, err := proto.Marshal(grpcstatus.New(grpcCode, msg).Proto())
+	respBytes, err := proto.Marshal(status.New(grpcCode, msg).Proto())
 	if err != nil {
 		level.Error(logger).Log("msg", "otlp response marshal failed", "err", err)
-		writeResponseFailedBody, _ := proto.Marshal(grpcstatus.New(codes.Internal, "failed to marshal OTLP response").Proto())
+		writeResponseFailedBody, _ := proto.Marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto())
 		_, _ = w.Write(writeResponseFailedBody)
 		return
 	}

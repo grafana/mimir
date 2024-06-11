@@ -201,7 +201,7 @@ func TestNewCircuitBreakerOpenError(t *testing.T) {
 	checkDistributorError(t, wrappedErr, mimirpb.CIRCUIT_BREAKER_OPEN)
 }
 
-func TestToGRPCError(t *testing.T) {
+func TestToErrorWithGRPCStatus(t *testing.T) {
 	const (
 		ingesterID  = "ingester-25"
 		originalMsg = "this is an error"
@@ -253,25 +253,39 @@ func TestToGRPCError(t *testing.T) {
 			expectedErrorMsg:     tooManyClustersErr.Error(),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.TOO_MANY_CLUSTERS},
 		},
-		"a validationError gets translated into gets translated into a FailedPrecondition error with VALIDATION cause": {
+		"a validationError gets translated into gets translated into an InvalidArgument error with BAD_DATA cause": {
 			err:                  newValidationError(originalErr),
-			expectedGRPCCode:     codes.FailedPrecondition,
+			expectedGRPCCode:     codes.InvalidArgument,
 			expectedErrorMsg:     originalMsg,
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
-		"a DoNotLogError of a validationError gets translated into gets translated into a FailedPrecondition error with VALIDATION cause": {
+		"a DoNotLogError of a validationError gets translated into gets translated into an InvalidArgument error with BAD_DATA cause": {
 			err:                  middleware.DoNotLogError{Err: newValidationError(originalErr)},
-			expectedGRPCCode:     codes.FailedPrecondition,
+			expectedGRPCCode:     codes.InvalidArgument,
 			expectedErrorMsg:     originalMsg,
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
-		"an ingestionRateLimitedError gets translated into gets translated into a ResourceExhausted error with INGESTION_RATE_LIMITED cause": {
+		"an ingestionRateLimitedError with serviceOverloadErrorEnabled gets translated into gets translated into an Unavailable error with INGESTION_RATE_LIMITED cause": {
+			err:                         ingestionRateLimitedErr,
+			serviceOverloadErrorEnabled: true,
+			expectedGRPCCode:            codes.Unavailable,
+			expectedErrorMsg:            ingestionRateLimitedErr.Error(),
+			expectedErrorDetails:        &mimirpb.ErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED},
+		},
+		"a DoNotLogError of an ingestionRateLimitedError with serviceOverloadErrorEnabled gets translated into gets translated into an Unavailable error with INGESTION_RATE_LIMITED cause": {
+			err:                         middleware.DoNotLogError{Err: ingestionRateLimitedErr},
+			serviceOverloadErrorEnabled: true,
+			expectedGRPCCode:            codes.Unavailable,
+			expectedErrorMsg:            ingestionRateLimitedErr.Error(),
+			expectedErrorDetails:        &mimirpb.ErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED},
+		},
+		"an ingestionRateLimitedError without serviceOverloadErrorEnabled gets translated into gets translated into a ResourceExhausted error with INGESTION_RATE_LIMITED cause": {
 			err:                  ingestionRateLimitedErr,
 			expectedGRPCCode:     codes.ResourceExhausted,
 			expectedErrorMsg:     ingestionRateLimitedErr.Error(),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED},
 		},
-		"a DoNotLogError of an ingestionRateLimitedError gets translated into gets translated into a ResourceExhausted error with INGESTION_RATE_LIMITED cause": {
+		"a DoNotLogError of an ingestionRateLimitedError without serviceOverloadErrorEnabled gets translated into gets translated into a ResourceExhausted error with INGESTION_RATE_LIMITED cause": {
 			err:                  middleware.DoNotLogError{Err: ingestionRateLimitedErr},
 			expectedGRPCCode:     codes.ResourceExhausted,
 			expectedErrorMsg:     ingestionRateLimitedErr.Error(),
@@ -303,15 +317,15 @@ func TestToGRPCError(t *testing.T) {
 			expectedErrorMsg:     requestRateLimitedErr.Error(),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.REQUEST_RATE_LIMITED},
 		},
-		"an ingesterPushError with BAD_DATA cause gets translated into a FailedPrecondition error with BAD_DATA cause": {
+		"an ingesterPushError with BAD_DATA cause gets translated into an InvalidArgument error with BAD_DATA cause": {
 			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.BAD_DATA), ingesterID),
-			expectedGRPCCode:     codes.FailedPrecondition,
+			expectedGRPCCode:     codes.InvalidArgument,
 			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
-		"a DoNotLogError of an ingesterPushError with BAD_DATA cause gets translated into a FailedPrecondition error with BAD_DATA cause": {
+		"a DoNotLogError of an ingesterPushError with BAD_DATA cause gets translated into an InvalidArgument error with BAD_DATA cause": {
 			err:                  middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.BAD_DATA), ingesterID)},
-			expectedGRPCCode:     codes.FailedPrecondition,
+			expectedGRPCCode:     codes.InvalidArgument,
 			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
@@ -390,7 +404,7 @@ func TestToGRPCError(t *testing.T) {
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			err := toGRPCError(tc.err, tc.serviceOverloadErrorEnabled)
+			err := toErrorWithGRPCStatus(tc.err, tc.serviceOverloadErrorEnabled)
 
 			stat, ok := grpcutil.ErrorToStatus(err)
 			require.True(t, ok)

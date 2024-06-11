@@ -7552,9 +7552,9 @@ func TestHandlePushError(t *testing.T) {
 			pushError:          httpGrpc5xxErr,
 			expectedOtherError: httpGrpc5xxErr,
 		},
-		"an Error gives the error returned by toGRPCError()": {
+		"an Error gives the error returned by toErrorWithGRPCStatus()": {
 			pushError:         mockDistributorErr(testErrorMsg),
-			expectedGRPCError: status.Convert(toGRPCError(mockDistributorErr(testErrorMsg), false)),
+			expectedGRPCError: status.Convert(toErrorWithGRPCStatus(mockDistributorErr(testErrorMsg), false)),
 		},
 		"a random error without status gives an Internal gRPC error": {
 			pushError:         errWithUserID,

@@ -253,8 +253,8 @@ func (e circuitBreakerOpenError) Cause() mimirpb.ErrorCause {
 // Ensure that circuitBreakerOpenError implements Error.
 var _ Error = circuitBreakerOpenError{}
 
-// toGRPCError converts the given error into an appropriate gRPC error.
-func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
+// toErrorWithGRPCStatus converts the given error into an appropriate gRPC error.
+func toErrorWithGRPCStatus(pushErr error, serviceOverloadErrorEnabled bool) error {
 	var (
 		distributorErr Error
 		errDetails     *mimirpb.ErrorDetails
@@ -262,28 +262,31 @@ func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 	)
 	if errors.As(pushErr, &distributorErr) {
 		errDetails = &mimirpb.ErrorDetails{Cause: distributorErr.Cause()}
-		switch distributorErr.Cause() {
-		case mimirpb.BAD_DATA:
-			errCode = codes.FailedPrecondition
-		case mimirpb.INGESTION_RATE_LIMITED:
-			errCode = codes.ResourceExhausted
-		case mimirpb.REQUEST_RATE_LIMITED:
-			if serviceOverloadErrorEnabled {
-				errCode = codes.Unavailable
-			} else {
-				errCode = codes.ResourceExhausted
-			}
-		case mimirpb.REPLICAS_DID_NOT_MATCH:
-			errCode = codes.AlreadyExists
-		case mimirpb.TOO_MANY_CLUSTERS:
-			errCode = codes.FailedPrecondition
-		case mimirpb.CIRCUIT_BREAKER_OPEN:
-			errCode = codes.Unavailable
-		case mimirpb.METHOD_NOT_ALLOWED:
-			errCode = codes.Unimplemented
-		}
+		errCode = toGRPCStatusCode(distributorErr.Cause(), serviceOverloadErrorEnabled)
 	}
 	return globalerror.WrapErrorWithGRPCStatus(pushErr, errCode, errDetails).Err()
+}
+
+func toGRPCStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErrorEnabled bool) codes.Code {
+	switch errCause {
+	case mimirpb.BAD_DATA:
+		return codes.InvalidArgument
+	case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
+		if serviceOverloadErrorEnabled {
+			return codes.Unavailable
+		} else {
+			return codes.ResourceExhausted
+		}
+	case mimirpb.REPLICAS_DID_NOT_MATCH:
+		return codes.AlreadyExists
+	case mimirpb.TOO_MANY_CLUSTERS:
+		return codes.FailedPrecondition
+	case mimirpb.CIRCUIT_BREAKER_OPEN:
+		return codes.Unavailable
+	case mimirpb.METHOD_NOT_ALLOWED:
+		return codes.Unimplemented
+	}
+	return codes.Internal
 }
 
 func wrapIngesterPushError(err error, ingesterID string) error {
