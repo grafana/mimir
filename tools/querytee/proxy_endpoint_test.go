@@ -454,16 +454,17 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 		expectedProportionalSampleSum float64
 	}{
 		"secondary backend is faster than preferred": {
-			latencyPairs: []latencyPair{{
-				preferredResponseLatency: 3 * time.Second,
-				secondaryResponseLatency: 1 * time.Second,
-			}, {
-				preferredResponseLatency: 5 * time.Second,
-				secondaryResponseLatency: 2 * time.Second,
-			},
+			latencyPairs: []latencyPair{
+				{
+					preferredResponseLatency: 3 * time.Second,
+					secondaryResponseLatency: 1 * time.Second,
+				}, {
+					preferredResponseLatency: 5 * time.Second,
+					secondaryResponseLatency: 2 * time.Second,
+				},
 			},
 			expectedDurationSampleSum:     -5,
-			expectedProportionalSampleSum: 1.0/3 + 2.0/5,
+			expectedProportionalSampleSum: -2.0/3 + -3.0/5,
 		},
 		"preferred backend is 5 seconds faster than secondary": {
 			latencyPairs: []latencyPair{{
@@ -471,7 +472,7 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 				secondaryResponseLatency: 7 * time.Second,
 			}},
 			expectedDurationSampleSum:     5,
-			expectedProportionalSampleSum: 7.0 / 2,
+			expectedProportionalSampleSum: 5.0 / 2,
 		},
 	}
 
