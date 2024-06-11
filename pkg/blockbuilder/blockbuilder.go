@@ -278,6 +278,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 	// the ownership of some of its partitions
 	// TODO(v): test for this case
 
+	//kadm.NewClient(b.kafkaClient).FetchOffsetsForTopics(ctx, b.cfg.Kafka.Topic)
 	commitOffsets, err := kadm.NewClient(b.kafkaClient).ListCommittedOffsets(ctx, b.cfg.Kafka.Topic)
 	if err != nil {
 		return fmt.Errorf("get committed offsets: %w", err)
@@ -287,6 +288,8 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 		// relative to the cycleEnd. We consume the partition in parts accordingly.
 		offset, ok := commitOffsets.Lookup(b.cfg.Kafka.Topic, part)
 		if ok {
+			// TODO(codesome): offset.Timestamp might not be what we want. It is likely the commit time.
+			//                 See how we can get the first record timestamp. Maybe include it in the commit metadata.
 			commitTime := time.UnixMilli(offset.Timestamp)
 			if cycleEnd.Sub(commitTime) > 3*b.cfg.ConsumeInterval/2 {
 				// If the commit timestamp is older than the last block end time, we are lagging behind.
@@ -333,9 +336,12 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 
 		// Either we did not find a commit offset or we are not lagging behind by
 		// more than 1.5 times the consume interval.
-		lastBlockEndAt := cycleEnd.Truncate(b.cfg.ConsumeInterval).Add(-b.cfg.ConsumeInterval)
+		// When we do not know the block end of the last compaction, we should play safe and assume
+		// it was 0 so that we do not discard any samples unnecessarily.
+		lastBlockEndAt := time.Unix(0, 0)
 		seenTs := int64(0) // Kafka record timestamp till which records were processed before.
 		if ok {
+			// We have a commit. Get lastBlockEndAt and seenTs from commit metadata.
 			// TODO(codesome): get lastBlockEndAt and seenOffset from commit metadata
 		}
 
@@ -381,13 +387,12 @@ func (b *BlockBuilder) consumePartition(
 	defer builder.close() // TODO: handle error
 
 	var (
-		done                bool
-		firstUncommittedRec *kgo.Record
-		checkpointRec       *kgo.Record
-		lastRec             *kgo.Record
-		lastBlockMax        = lastBlockEnd.UnixMilli()
-		blockEndAt          = cycleEnd.Truncate(b.cfg.ConsumeInterval)
-		blockMax            = blockEndAt.UnixMilli()
+		done         bool
+		commitRec    *kgo.Record
+		lastRec      *kgo.Record
+		lastBlockMax = lastBlockEnd.UnixMilli()
+		blockEndAt   = cycleEnd.Truncate(b.cfg.ConsumeInterval)
+		blockMax     = blockEndAt.UnixMilli()
 	)
 	for !done {
 		// Limit time client waits for a new batch. Otherwise, the client will hang if it lands on an inactive partition.
@@ -419,14 +424,9 @@ func (b *BlockBuilder) consumePartition(
 			// Stop consuming after we reached the cycleEnd marker.
 			// NOTE: the timestamp of the record is when the record was produced relative to distributor's time.
 			if rec.Timestamp.After(cycleEnd) {
-				if firstUncommittedRec == nil {
-					firstUncommittedRec = rec
-				}
 				done = true
 				break
 			}
-
-			lastRec = rec
 
 			level.Debug(b.logger).Log("msg", "process record", "offset", rec.Offset, "rec", rec.Timestamp, "bmin", lastBlockEnd, "bmax", blockEndAt)
 
@@ -437,13 +437,13 @@ func (b *BlockBuilder) consumePartition(
 				// TODO(codesome): do we just ignore this? What if it was Mimir's issue and this leading to data loss?
 				// TODO(codesome): add metric
 			}
-			if !allSamplesProcessed && checkpointRec == nil {
-				// First record where all samples were not processed becomes the checkpoint/commit point.
-				checkpointRec = rec
+			if !allSamplesProcessed && commitRec == nil {
+				// If block builder restarts, it will start consuming from the record after this from kafka.
+				// So the commit record should be the last record that was fully processed and not the
+				// first record that was not fully processed.
+				commitRec = lastRec
 			}
-			if firstUncommittedRec == nil {
-				firstUncommittedRec = rec
-			}
+			lastRec = rec
 		}
 	}
 
@@ -452,12 +452,12 @@ func (b *BlockBuilder) consumePartition(
 		return lag, err
 	}
 
-	if checkpointRec == nil {
+	if commitRec == nil {
 		// All samples in all records were processed. We can commit the last record's offset.
-		checkpointRec = lastRec
+		commitRec = lastRec
 	}
 
-	return lag, b.finalizePartition(ctx, firstUncommittedRec, checkpointRec)
+	return lag, b.finalizePartition(ctx, commitRec, lastRec, blockMax)
 }
 
 func (b *BlockBuilder) blockUploaderForUser(ctx context.Context, userID string) blockUploader {
@@ -486,39 +486,67 @@ func (b *BlockBuilder) blockUploaderForUser(ctx context.Context, userID string) 
 	}
 }
 
-func (b *BlockBuilder) finalizePartition(ctx context.Context, uncommittedRec, checkpointRec *kgo.Record) error {
-	// If there is an uncommitted record, rewind the client to the record's offset to consume it on the next cycle.
-	if uncommittedRec != nil {
-		part := uncommittedRec.Partition
-		b.kafkaClient.SetOffsets(map[string]map[int32]kgo.EpochOffset{
-			b.cfg.Kafka.Topic: {
-				part: {
-					Epoch:  uncommittedRec.LeaderEpoch,
-					Offset: uncommittedRec.Offset - 1,
-				},
+func (b *BlockBuilder) finalizePartition(ctx context.Context, commitRec, lastRec *kgo.Record, blockEnd int64) error {
+	if commitRec == nil {
+		return nil
+	}
+	// Rewind the offset to the commit record so that when the partition is read again by this
+	// block builder, it starts at the commit point.
+	b.kafkaClient.SetOffsets(map[string]map[int32]kgo.EpochOffset{
+		b.cfg.Kafka.Topic: {
+			commitRec.Partition: {
+				Epoch:  commitRec.LeaderEpoch,
+				Offset: commitRec.Offset,
 			},
-		})
+		},
+	})
+
+	var off kadm.Offsets
+	off.Add(kadm.Offset{
+		Topic:       commitRec.Topic,
+		Partition:   commitRec.Partition,
+		At:          commitRec.Offset,
+		LeaderEpoch: commitRec.LeaderEpoch,
+		Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), lastRec.Timestamp.UnixMilli(), blockEnd),
+	})
+	committed, err := kadm.NewClient(b.kafkaClient).CommitOffsets(ctx, b.cfg.Kafka.ConsumerGroup, off)
+	if err != nil {
+		return err
+	} else if !committed.Ok() {
+		return committed.Error()
 	}
 
-	if checkpointRec != nil {
-		// TODO(codesome): persist uncommittedRec with checkpoint's metadata
-		err := b.kafkaClient.CommitRecords(ctx, checkpointRec)
-		if err != nil {
-			// TODO(codesome): add metric
-			return err
-		}
-	}
+	committedOffset, _ := committed.Lookup(b.cfg.Kafka.Topic, commitRec.Partition)
+	level.Debug(b.logger).Log("msg", "last commit offset successfully committed to Kafka", "offset", committedOffset.At)
 
 	return nil
 }
 
-func blockBounds(t time.Time, length time.Duration) (time.Time, time.Time) {
-	maxt := t.Truncate(length)
-	if maxt.Before(t) {
-		maxt = maxt.Add(length)
+const (
+	kafkaCommitMetaV1 = 1
+)
+
+func marshallCommitMeta(commitTs, lastRecTs, blockEnd int64) string {
+	return fmt.Sprintf("%d,%d,%d,%d", kafkaCommitMetaV1, commitTs, lastRecTs, blockEnd)
+}
+
+func unmarshallCommitMeta(meta string) (commitTs, lastRecTs, blockEnd int64, err error) {
+	var (
+		version int
+		s       string
+	)
+	_, err = fmt.Sscanf(meta, "%d,%s", &version, &s)
+	if err != nil {
+		return
 	}
-	mint := maxt.Add(-length)
-	return mint, maxt
+
+	switch version {
+	case kafkaCommitMetaV1:
+		_, err = fmt.Sscanf(s, "%d,%d,%d", &commitTs, &lastRecTs, &blockEnd)
+	default:
+		err = fmt.Errorf("unsupported commit meta version %d", version)
+	}
+	return
 }
 
 type Config struct {
