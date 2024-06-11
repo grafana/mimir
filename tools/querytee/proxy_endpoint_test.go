@@ -462,17 +462,16 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 				secondaryResponseLatency: 2 * time.Second,
 			},
 			},
-			expectedDurationSampleSum:     5,
-			expectedProportionalSampleSum: (3.0/1 + 5.0/2),
+			expectedDurationSampleSum:     -5,
+			expectedProportionalSampleSum: 1.0/3 + 2.0/5,
 		},
 		"preferred backend is 5 seconds faster than secondary": {
 			latencyPairs: []latencyPair{{
 				preferredResponseLatency: 2 * time.Second,
 				secondaryResponseLatency: 7 * time.Second,
-			},
-			},
-			expectedDurationSampleSum:     -5,
-			expectedProportionalSampleSum: (2.0 / 7),
+			}},
+			expectedDurationSampleSum:     5,
+			expectedProportionalSampleSum: 7.0 / 2,
 		},
 	}
 
@@ -511,12 +510,12 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 			gotDuration := filterMetrics(got, []string{"cortex_querytee_backend_response_relative_duration_seconds"})
 			require.Equal(t, 1, len(gotDuration), "Expect only one metric after filtering")
 			require.Equal(t, uint64(len(scenario.latencyPairs)), gotDuration[0].Metric[0].Histogram.GetSampleCount())
-			require.Equal(t, scenario.expectedDurationSampleSum, gotDuration[0].Metric[0].Histogram.GetSampleSum())
+			require.InDelta(t, scenario.expectedDurationSampleSum, gotDuration[0].Metric[0].Histogram.GetSampleSum(), 1e-9)
 
 			gotProportional := filterMetrics(got, []string{"cortex_querytee_backend_response_relative_duration_proportional"})
 			require.Equal(t, 1, len(gotProportional), "Expect only one metric after filtering")
 			require.Equal(t, uint64(len(scenario.latencyPairs)), gotProportional[0].Metric[0].Histogram.GetSampleCount())
-			require.Equal(t, scenario.expectedProportionalSampleSum, gotProportional[0].Metric[0].Histogram.GetSampleSum())
+			require.InDelta(t, scenario.expectedProportionalSampleSum, gotProportional[0].Metric[0].Histogram.GetSampleSum(), 1e-9)
 		})
 	}
 }
