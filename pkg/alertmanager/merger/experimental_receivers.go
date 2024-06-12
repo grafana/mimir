@@ -91,9 +91,8 @@ func mergeIntegrations(in []alertingmodels.Integration) ([]alertingmodels.Integr
 			if !time.Time(integration.LastNotifyAttempt).After(time.Time(current.LastNotifyAttempt)) {
 				continue
 			}
-			integrations[integration.Name] = integration
 		}
-
+		integrations[integration.Name] = integration
 	}
 
 	result := make([]alertingmodels.Integration, 0, len(integrations))
