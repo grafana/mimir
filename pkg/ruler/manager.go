@@ -368,12 +368,6 @@ func (r *DefaultMultiTenantManager) GetRules(userID string) []*promRules.Group {
 }
 
 func (r *DefaultMultiTenantManager) Stop() {
-	r.notifiersMtx.Lock()
-	for _, n := range r.notifiers {
-		n.stop()
-	}
-	r.notifiersMtx.Unlock()
-
 	level.Info(r.logger).Log("msg", "stopping user managers")
 	wg := sync.WaitGroup{}
 	r.userManagerMtx.Lock()
@@ -390,6 +384,14 @@ func (r *DefaultMultiTenantManager) Stop() {
 	wg.Wait()
 	r.userManagerMtx.Unlock()
 	level.Info(r.logger).Log("msg", "all user managers stopped")
+
+	// Stop notifiers after all rule evaluations have finished, so that we have
+	// a chance to send any notifications generated while shutting down.
+	r.notifiersMtx.Lock()
+	for _, n := range r.notifiers {
+		n.stop()
+	}
+	r.notifiersMtx.Unlock()
 
 	// cleanup user rules directories
 	r.mapper.cleanup()
