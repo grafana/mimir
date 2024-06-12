@@ -40,11 +40,13 @@ func ParseRemoteReadRequestWithoutConsumingBody(req *http.Request) (url.Values, 
 		return nil, err
 	}
 
+	add := func(i int, name, value string) { params.Add(name+"_"+strconv.Itoa(i), value) }
+
 	queries := remoteReadRequest.GetQueries()
 
 	for i, query := range queries {
-		params.Add("start_"+strconv.Itoa(i), fmt.Sprintf("%d", query.GetStartTimestampMs()))
-		params.Add("end_"+strconv.Itoa(i), fmt.Sprintf("%d", query.GetEndTimestampMs()))
+		add(i, "start", fmt.Sprintf("%d", query.GetStartTimestampMs()))
+		add(i, "end", fmt.Sprintf("%d", query.GetEndTimestampMs()))
 
 		matchersStrings := make([]string, 0, len(query.Matchers))
 		matchers, err := remote.FromLabelMatchers(query.Matchers)
@@ -57,9 +59,9 @@ func ParseRemoteReadRequestWithoutConsumingBody(req *http.Request) (url.Values, 
 		params.Add("matchers_"+strconv.Itoa(i), strings.Join(matchersStrings, ","))
 		if query.Hints != nil {
 			if hints, err := json.Marshal(query.Hints); err == nil {
-				params.Add("hints_"+strconv.Itoa(i), string(hints))
+				add(i, "hints", string(hints))
 			} else {
-				params.Add("hints_"+strconv.Itoa(i), fmt.Sprintf("error marshalling hints: %v", err))
+				add(i, "hints", fmt.Sprintf("error marshalling hints: %v", err))
 			}
 		}
 	}
