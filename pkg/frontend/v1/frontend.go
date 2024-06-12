@@ -87,6 +87,8 @@ type request struct {
 
 // New creates a new frontend. Frontend implements service, and must be started and stopped.
 func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Registerer) (*Frontend, error) {
+	var err error
+
 	f := &Frontend{
 		cfg:                cfg,
 		log:                log,
@@ -111,12 +113,30 @@ func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Regist
 		Name: "cortex_query_frontend_enqueue_duration_seconds",
 		Help: "Time spent by requests waiting to join the queue or be rejected.",
 	})
-
+	querierInflightRequests := promauto.With(registerer).NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "cortex_query_frontend_querier_inflight_requests",
+			Help: "Number of inflight requests being processed on all querier-scheduler connections.",
+		},
+		[]string{"query_component"},
+	)
 	// additional queue dimensions not used in v1/frontend
-	f.requestQueue = queue.NewRequestQueue(log, cfg.MaxOutstandingPerTenant, false, cfg.QuerierForgetDelay, f.queueLength, f.discardedRequests, enqueueDuration)
+	f.requestQueue, err = queue.NewRequestQueue(
+		log,
+		cfg.MaxOutstandingPerTenant,
+		false,
+		cfg.QuerierForgetDelay,
+		f.queueLength,
+		f.discardedRequests,
+		enqueueDuration,
+		querierInflightRequests,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	f.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(f.cleanupInactiveUserMetrics)
 
-	var err error
 	f.subservices, err = services.NewManager(f.requestQueue, f.activeUsers)
 	if err != nil {
 		return nil, err
@@ -214,7 +234,7 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 	lastTenantIndex := queue.FirstTenant()
 
 	for {
-		reqWrapper, idx, err := f.requestQueue.GetNextRequestForQuerier(server.Context(), lastTenantIndex, querierID)
+		reqWrapper, idx, err := f.requestQueue.WaitForRequestForQuerier(server.Context(), lastTenantIndex, querierID)
 		if err != nil {
 			return err
 		}
@@ -338,7 +358,7 @@ func (f *Frontend) queueRequest(ctx context.Context, req *request) error {
 	joinedTenantID := tenant.JoinTenantIDs(tenantIDs)
 	f.activeUsers.UpdateUserTimestamp(joinedTenantID, now)
 
-	err = f.requestQueue.EnqueueRequestToDispatcher(joinedTenantID, req, maxQueriers, nil)
+	err = f.requestQueue.SubmitRequestToEnqueue(joinedTenantID, req, maxQueriers, nil)
 	if errors.Is(err, queue.ErrTooManyRequests) {
 		return errTooManyRequest
 	}

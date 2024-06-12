@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -184,7 +185,15 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Limit the read body size.
 	r.Body = http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize)
 
-	params, err := util.ParseRequestFormWithoutConsumingBody(r)
+	var params url.Values
+	var err error
+
+	if r.Header.Get("Content-Type") == "application/x-protobuf" && querymiddleware.IsRemoteReadQuery(r.URL.Path) {
+		params, err = querymiddleware.ParseRemoteReadRequestWithoutConsumingBody(r)
+	} else {
+		params, err = util.ParseRequestFormWithoutConsumingBody(r)
+	}
+
 	if err != nil {
 		writeError(w, apierror.New(apierror.TypeBadData, err.Error()))
 		return
@@ -306,6 +315,7 @@ func (f *Handler) reportQueryStats(
 		"component", "query-frontend",
 		"method", r.Method,
 		"path", r.URL.Path,
+		"route_name", middleware.ExtractRouteName(r.Context()),
 		"user_agent", r.UserAgent(),
 		"status_code", queryResponseStatusCode,
 		"response_time", queryResponseTime,

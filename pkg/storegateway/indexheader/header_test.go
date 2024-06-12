@@ -181,7 +181,7 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		expectedLabelVals, err := indexReader.SortedLabelValues(ctx, lname)
 		require.NoError(t, err)
 
-		valOffsets, err := headerReader.LabelValuesOffsets(lname, "", nil)
+		valOffsets, err := headerReader.LabelValuesOffsets(ctx, lname, "", nil)
 		require.NoError(t, err)
 		strValsFromOffsets := make([]string, len(valOffsets))
 		for i := range valOffsets {
@@ -257,7 +257,7 @@ func TestReadersLabelValuesOffsets(t *testing.T) {
 				t.Run(lbl, func(t *testing.T) {
 					for _, tc := range tcs {
 						t.Run(fmt.Sprintf("prefix='%s'%s", tc.prefix, tc.desc), func(t *testing.T) {
-							values, err := r.LabelValuesOffsets(lbl, tc.prefix, tc.filter)
+							values, err := r.LabelValuesOffsets(context.Background(), lbl, tc.prefix, tc.filter)
 							require.NoError(t, err)
 							require.Equal(t, tc.expected, len(values))
 						})

@@ -6,6 +6,7 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -20,13 +21,17 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/protobuf/proto"
+	"github.com/golang/snappy"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -61,6 +66,8 @@ func TestWriteError(t *testing.T) {
 }
 
 func TestHandler_ServeHTTP(t *testing.T) {
+	const testRouteName = "the_test_route"
+
 	for _, tt := range []struct {
 		name                    string
 		cfg                     HandlerConfig
@@ -152,6 +159,53 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: "",
 		},
+		{
+			name: "handler with stats enabled, serving remote read query with snappy compression",
+			cfg:  HandlerConfig{QueryStatsEnabled: true, MaxBodySize: 1024},
+			request: func() *http.Request {
+				r := httptest.NewRequest("GET", "/api/v1/read", nil)
+				r.Header.Add("User-Agent", "test-user-agent")
+				r.Header.Add("Content-Type", "application/x-protobuf")
+				remoteReadRequest := &prompb.ReadRequest{
+					Queries: []*prompb.Query{
+						{
+							Matchers: []*prompb.LabelMatcher{
+								{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "some_metric"},
+								{Name: "foo", Type: prompb.LabelMatcher_RE, Value: ".*bar.*"},
+							},
+							StartTimestampMs: 0,
+							EndTimestampMs:   42,
+						},
+						{
+							Matchers: []*prompb.LabelMatcher{
+								{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "up"},
+							},
+							StartTimestampMs: 10,
+							EndTimestampMs:   20,
+							Hints: &prompb.ReadHints{
+								StepMs: 1000,
+							},
+						},
+					},
+				}
+				data, _ := proto.Marshal(remoteReadRequest) // Ignore error, if this fails, the test will fail.
+				r.Header.Add("Content-Encoding", "snappy")
+				compressed := snappy.Encode(nil, data)
+				r.Body = io.NopCloser(bytes.NewReader(compressed))
+				return r
+			},
+			expectedActivity: "user:12345 UA:test-user-agent req:GET /api/v1/read end_0=42&end_1=20&hints_1=%7B%22step_ms%22%3A1000%7D&matchers_0=__name__%3D%22some_metric%22%2Cfoo%3D~%22.%2Abar.%2A%22&matchers_1=__name__%3D%22up%22&start_0=0&start_1=10",
+			expectedMetrics:  5,
+			expectedParams: url.Values{
+				"matchers_0": []string{"__name__=\"some_metric\",foo=~\".*bar.*\""},
+				"start_0":    []string{"0"},
+				"end_0":      []string{"42"},
+				"matchers_1": []string{"__name__=\"up\""},
+				"start_1":    []string{"10"},
+				"end_1":      []string{"20"},
+				"hints_1":    []string{"{\"step_ms\":1000}"},
+			},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			activityFile := filepath.Join(t.TempDir(), "activity-tracker")
@@ -162,8 +216,10 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				assert.Len(t, activities, 1)
 				assert.Equal(t, tt.expectedActivity, activities[0].Activity)
 
-				assert.NoError(t, req.ParseForm())
-				assert.Equal(t, tt.expectedParams, req.Form)
+				if req.Header.Get("Content-Type") != "application/x-protobuf" {
+					assert.NoError(t, req.ParseForm())
+					assert.Equal(t, tt.expectedParams, req.Form)
+				}
 
 				return &http.Response{
 					StatusCode: http.StatusOK,
@@ -182,11 +238,12 @@ func TestHandler_ServeHTTP(t *testing.T) {
 
 			req := tt.request()
 			req = req.WithContext(user.InjectOrgID(req.Context(), "12345"))
+			req = middleware.WithRouteName(req, testRouteName)
 			resp := httptest.NewRecorder()
 
 			handler.ServeHTTP(resp, req)
 			responseData, _ := io.ReadAll(resp.Body)
-			require.Equal(t, resp.Code, http.StatusOK)
+			require.Equal(t, http.StatusOK, resp.Code)
 
 			count, err := promtest.GatherAndCount(
 				reg,
@@ -215,6 +272,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.Equal(t, "12345", msg["user"])
 				require.Equal(t, req.Method, msg["method"])
 				require.Equal(t, req.URL.Path, msg["path"])
+				require.Equal(t, testRouteName, msg["route_name"])
 				require.Equal(t, req.UserAgent(), msg["user_agent"])
 				require.Contains(t, msg, "response_time")
 				require.Equal(t, int64(len(responseData)), msg["response_size_bytes"])
@@ -227,6 +285,18 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.EqualValues(t, 0, msg["split_queries"])
 				require.EqualValues(t, 0, msg["estimated_series_count"])
 				require.EqualValues(t, 0, msg["queue_time_seconds"])
+
+				// Check that the HTTP or Protobuf request parameters are logged.
+				paramsLogged := 0
+				for key := range msg {
+					if strings.HasPrefix(key, "param_") {
+						paramsLogged++
+					}
+				}
+				require.Equal(t, len(tt.expectedParams), paramsLogged)
+				for key, value := range tt.expectedParams {
+					require.Equal(t, value[0], msg["param_"+key])
+				}
 
 				if tt.expectedReadConsistency != "" {
 					require.Equal(t, tt.expectedReadConsistency, msg["read_consistency"])

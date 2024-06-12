@@ -94,7 +94,7 @@ func (cmd *PrometheusAnalyzeCommand) newAPI() (v1.API, error) {
 			RoundTripper: rt,
 			tenantID:     cmd.username,
 		}
-		rt = config.NewBasicAuthRoundTripper(cmd.username, config.Secret(cmd.password), "", "", rt)
+		rt = config.NewBasicAuthRoundTripper(config.NewInlineSecret(cmd.username), config.NewInlineSecret(cmd.password), rt)
 	}
 
 	address, err := url.JoinPath(cmd.address, cmd.prometheusHTTPPrefix)

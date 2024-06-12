@@ -151,11 +151,24 @@ groups:
           expr: |
             (min by(cluster, namespace, instance) (cortex_ingester_memory_users) == 0)
             and on (cluster, namespace)
-            # Only if there are more time-series than would be expected due to continuous testing load
+            # Only if there are more timeseries than would be expected due to continuous testing load
             (
-              sum by(cluster, namespace) (cortex_ingester_memory_series)
-              /
-              max by(cluster, namespace) (cortex_distributor_replication_factor)
+              ( # Classic storage timeseries
+                sum by(cluster, namespace) (cortex_ingester_memory_series)
+                /
+                max by(cluster, namespace) (cortex_distributor_replication_factor)
+              )
+              or
+              ( # Ingest storage timeseries
+                sum by(cluster, namespace) (
+                  max by(ingester_id, cluster, namespace) (
+                    label_replace(cortex_ingester_memory_series,
+                      "ingester_id", "$1",
+                      "instance", ".*-([0-9]+)$"
+                    )
+                  )
+                )
+              )
             ) > 100000
           for: 1h
           labels:
@@ -959,6 +972,19 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterfailstoprocessrecordsfromkafka
           expr: |
             sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m])) > 0
+          for: 5m
+          labels:
+            severity: critical
+        - alert: MimirIngesterStuckProcessingRecordsFromKafka
+          annotations:
+            message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is stuck processing write requests from Kafka.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterstuckprocessingrecordsfromkafka
+          expr: |
+            # Alert if the reader is not processing any records, but there buffered records to process in the Kafka client.
+            (sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_reader_records_total[5m])) == 0)
+            and
+            # NOTE: the cortex_ingest_storage_reader_buffered_fetch_records_total metric is a gauge showing the current number of buffered records.
+            (sum by (cluster, namespace, instance) (cortex_ingest_storage_reader_buffered_fetch_records_total) > 0)
           for: 5m
           labels:
             severity: critical

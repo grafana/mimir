@@ -191,6 +191,7 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 
 	a.indexPage.AddLinks(defaultWeight, "Alertmanager", []IndexPageLink{
 		{Desc: "Status", Path: "/multitenant_alertmanager/status"},
+		{Desc: "Status", Path: "/multitenant_alertmanager/configs"},
 		{Desc: "Ring status", Path: "/multitenant_alertmanager/ring"},
 		{Desc: "Alertmanager", Path: "/alertmanager"},
 	})
@@ -262,7 +263,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
 	a.RegisterRoute(PrometheusPushEndpoint, distributor.Handler(pushConfig.MaxRecvMsgSize, d.RequestBufferPool, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, limits, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, a.logger), true, false, "POST")
-	a.RegisterRoute(OTLPPushEndpoint, distributor.OTLPHandler(pushConfig.MaxRecvMsgSize, d.RequestBufferPool, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, a.cfg.EnableOtelMetadataStorage, limits, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, reg, a.logger), true, false, "POST")
+	a.RegisterRoute(OTLPPushEndpoint, distributor.OTLPHandler(pushConfig.MaxRecvMsgSize, d.RequestBufferPool, a.sourceIPs, a.cfg.EnableOtelMetadataStorage, limits, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, reg, a.logger, pushConfig.DirectOTLPTranslationEnabled), true, false, "POST")
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/distributor/ring"},
@@ -443,6 +444,7 @@ func (a *API) RegisterQueryAPI(handler http.Handler, buildInfoHandler http.Handl
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/label_names"), handler, true, true, "GET", "POST")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/label_values"), handler, true, true, "GET", "POST")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_series"), handler, true, true, "GET", "POST")
+	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_native_histogram_metrics"), handler, true, true, "GET", "POST")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/format_query"), handler, true, true, "GET", "POST")
 }
 

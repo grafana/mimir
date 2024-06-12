@@ -54,6 +54,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
+	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -78,6 +79,262 @@ func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[str
 	m, err := activeseries.NewCustomTrackersConfig(source)
 	require.NoError(t, err)
 	return m
+}
+
+func TestIngester_StartPushRequest(t *testing.T) {
+	const reqSize = 10
+	instanceLimits := &InstanceLimits{}
+	pushReqState := &pushRequestState{
+		requestSize: 10,
+	}
+	ctx := context.Background()
+	ctxWithPushReqState := context.WithValue(ctx, pushReqCtxKey, pushReqState)
+
+	type testCase struct {
+		ctx                               context.Context
+		failingIngester                   bool
+		cbOpen                            bool
+		cbInitialDelay                    time.Duration
+		instanceLimitReached              bool
+		expectedStatus                    bool
+		expectedInFlightPushRequests      int64
+		expectedInflightPushRequestsBytes int64
+		verifyCtxFn                       func(context.Context, context.Context)
+		verifyErr                         func(error)
+	}
+
+	setupIngester := func(tc testCase) *failingIngester {
+		cfg := defaultIngesterTestConfig(t)
+		cfg.PushCircuitBreaker = CircuitBreakerConfig{
+			Enabled:        true,
+			InitialDelay:   tc.cbInitialDelay,
+			CooldownPeriod: 10 * time.Second,
+		}
+		cfg.InstanceLimitsFn = func() *InstanceLimits {
+			return instanceLimits
+		}
+		var (
+			failingCause  error
+			expectedState services.State
+		)
+		if tc.failingIngester {
+			expectedState = services.Terminated
+			failingCause = newUnavailableError(expectedState)
+		} else {
+			expectedState = services.Running
+		}
+		failingIng := setupFailingIngester(t, cfg, failingCause)
+		failingIng.startWaitAndCheck(ctx, t)
+		require.Equal(t, expectedState, failingIng.lifecycler.State())
+
+		if tc.cbOpen {
+			failingIng.circuitBreaker.push.cb.Open()
+		} else {
+			failingIng.circuitBreaker.push.cb.Close()
+		}
+
+		if tc.instanceLimitReached {
+			instanceLimits.MaxInflightPushRequestsBytes = 1
+		} else {
+			instanceLimits.MaxInflightPushRequestsBytes = 0
+		}
+
+		return failingIng
+	}
+
+	testCases := map[string]testCase{
+		"fail if ingester is not available for push": {
+			failingIngester:                   true,
+			ctx:                               ctx,
+			expectedStatus:                    false,
+			expectedInFlightPushRequests:      0,
+			expectedInflightPushRequestsBytes: 0,
+			verifyErr: func(err error) {
+				require.ErrorAs(t, err, &unavailableError{})
+			},
+		},
+		"fail if circuit breaker is open": {
+			ctx:                               ctx,
+			cbOpen:                            true,
+			expectedStatus:                    false,
+			expectedInFlightPushRequests:      0,
+			expectedInflightPushRequestsBytes: 0,
+			verifyErr: func(err error) {
+				require.ErrorAs(t, err, &circuitBreakerOpenError{})
+			},
+		},
+		"fail if instance limit is reached": {
+			ctx:                               ctx,
+			instanceLimitReached:              true,
+			expectedStatus:                    false,
+			expectedInFlightPushRequests:      0,
+			expectedInflightPushRequestsBytes: 0,
+			verifyErr: func(err error) {
+				require.ErrorAs(t, err, &instanceLimitReachedError{})
+			},
+		},
+		"do not fail if circuit breaker is not active": {
+			ctx:                               ctx,
+			cbInitialDelay:                    1 * time.Minute,
+			expectedStatus:                    true,
+			expectedInFlightPushRequests:      1,
+			expectedInflightPushRequestsBytes: reqSize,
+			verifyCtxFn: func(inCtx, outCtx context.Context) {
+				require.NotEqual(t, inCtx, outCtx)
+			},
+		},
+		"do not fail and return the same context if it already contains a pushRequestState": {
+			ctx:                               ctxWithPushReqState,
+			expectedStatus:                    false,
+			expectedInFlightPushRequests:      0,
+			expectedInflightPushRequestsBytes: 0,
+			verifyCtxFn: func(inCtx, outCtx context.Context) {
+				require.Equal(t, inCtx, outCtx)
+			},
+		},
+		"do not fail and add pushRequestState to the context if everything is ok": {
+			ctx:                               ctx,
+			expectedStatus:                    true,
+			expectedInFlightPushRequests:      1,
+			expectedInflightPushRequestsBytes: reqSize,
+			verifyCtxFn: func(inCtx, outCtx context.Context) {
+				require.NotEqual(t, inCtx, outCtx)
+			},
+		},
+	}
+	for testName, tc := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			failingIng := setupIngester(tc)
+			defer services.StopAndAwaitTerminated(context.Background(), failingIng) //nolint:errcheck
+
+			ctx, shouldFinish, err := failingIng.startPushRequest(tc.ctx, reqSize)
+			require.Equal(t, tc.expectedStatus, shouldFinish)
+			require.Equal(t, tc.expectedInFlightPushRequests, failingIng.inflightPushRequests.Load())
+			require.Equal(t, tc.expectedInflightPushRequestsBytes, failingIng.inflightPushRequestsBytes.Load())
+
+			if err == nil {
+				pushReqState := getPushRequestState(ctx)
+				require.NotNil(t, pushReqState)
+
+				if tc.verifyCtxFn != nil {
+					tc.verifyCtxFn(tc.ctx, ctx)
+				}
+			} else {
+				require.Nil(t, ctx)
+				require.NotNil(t, tc.verifyErr)
+				tc.verifyErr(err)
+			}
+		})
+	}
+}
+
+func TestIngester_StartReadRequest(t *testing.T) {
+	type testCase struct {
+		setup                       func(*failingIngester)
+		verifyErr                   func(error)
+		expectedAcquiredPermitCount int
+	}
+
+	var (
+		acquiredPermitCount  *atomic.Int64
+		recordedSuccessCount *atomic.Int64
+		recordedFailureCount *atomic.Int64
+		utilizationLimiter   = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+	)
+
+	setupIngester := func(tc testCase) *failingIngester {
+		cfg := defaultIngesterTestConfig(t)
+		cfg.ReadCircuitBreaker = CircuitBreakerConfig{
+			Enabled:        true,
+			CooldownPeriod: 10 * time.Second,
+			RequestTimeout: 30 * time.Second,
+		}
+		failingIng := newFailingIngester(t, cfg, nil, nil)
+		failingIng.startWaitAndCheck(context.Background(), t)
+		require.Equal(t, services.Running, failingIng.lifecycler.State())
+
+		acquiredPermitCount = atomic.NewInt64(0)
+		recordedSuccessCount = atomic.NewInt64(0)
+		recordedFailureCount = atomic.NewInt64(0)
+
+		failingIng.circuitBreaker.read.cb = &mockedCircuitBreaker{
+			acquiredPermitCount: acquiredPermitCount,
+			recordSuccessCount:  recordedSuccessCount,
+			recordFailureCount:  recordedFailureCount,
+			CircuitBreaker:      failingIng.circuitBreaker.read.cb,
+		}
+		failingIng.circuitBreaker.read.cb.Close()
+
+		return failingIng
+	}
+
+	testCases := map[string]testCase{
+		"fail if ingester is not available for read, and do not acquire a permit": {
+			setup: func(failingIng *failingIngester) {
+				services.StopAndAwaitTerminated(context.Background(), failingIng) //nolint:errcheck
+			},
+			expectedAcquiredPermitCount: 0,
+			verifyErr: func(err error) {
+				require.ErrorAs(t, err, &unavailableError{})
+			},
+		},
+		"fail if ingester is overloaded, and do not acquire a permit": {
+			setup: func(failingIng *failingIngester) {
+				failingIng.utilizationBasedLimiter = utilizationLimiter
+			},
+			expectedAcquiredPermitCount: 0,
+			verifyErr: func(err error) {
+				require.ErrorIs(t, err, errTooBusy)
+			},
+		},
+		"fail if circuit breaker is open, and do not acquire a permit": {
+			setup: func(failingIng *failingIngester) {
+				failingIng.circuitBreaker.read.cb.Open()
+			},
+			expectedAcquiredPermitCount: 0,
+			verifyErr: func(err error) {
+				require.ErrorAs(t, err, &circuitBreakerOpenError{})
+			},
+		},
+		"do not fail if circuit breaker is not active, and do not acquire a permit": {
+			setup: func(failingIng *failingIngester) {
+				failingIng.circuitBreaker.read.active.Store(false)
+			},
+			expectedAcquiredPermitCount: 0,
+		},
+		"do not fail if everything is ok, and acquire a permit": {
+			expectedAcquiredPermitCount: 1,
+		},
+	}
+	for testName, tc := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			failingIng := setupIngester(tc)
+			if tc.setup != nil {
+				tc.setup(failingIng)
+			}
+			defer services.StopAndAwaitTerminated(context.Background(), failingIng) //nolint:errcheck
+
+			finish, err := failingIng.startReadRequest()
+			require.Equal(t, int64(tc.expectedAcquiredPermitCount), acquiredPermitCount.Load())
+
+			if err == nil {
+				require.Nil(t, tc.verifyErr)
+				require.NotNil(t, finish)
+
+				// Calling finish must release a potentially acquired permit
+				// and in that case record a success, and no failures.
+				expectedSuccessCount := acquiredPermitCount.Load()
+				finish(err)
+				require.Equal(t, int64(0), acquiredPermitCount.Load())
+				require.Equal(t, expectedSuccessCount, recordedSuccessCount.Load())
+				require.Equal(t, int64(0), recordedFailureCount.Load())
+			} else {
+				require.NotNil(t, tc.verifyErr)
+				tc.verifyErr(err)
+				require.Nil(t, finish)
+			}
+		})
+	}
 }
 
 func TestIngester_Push(t *testing.T) {
@@ -2646,6 +2903,9 @@ func TestIngester_Push(t *testing.T) {
 
 			i.updateUsageStats()
 
+			if !testData.disableActiveSeries {
+				assert.Equal(t, int64(len(testData.expectedIngested)), usagestats.GetInt(activeSeriesStatsName).Value())
+			}
 			assert.Equal(t, int64(len(testData.expectedIngested)), usagestats.GetInt(memorySeriesStatsName).Value())
 			assert.Equal(t, int64(expectedTenantsCount), usagestats.GetInt(memoryTenantsStatsName).Value())
 			assert.Equal(t, int64(expectedSamplesCount)+appendedSamplesStatsBefore, usagestats.GetCounter(appendedSamplesStatsName).Total())

@@ -2269,7 +2269,7 @@ func (cl *Client) handleShardedReq(ctx context.Context, req kmsg.Request) ([]Res
 				backoff := cl.cfg.retryBackoff(tries)
 				if err != nil &&
 					(reshardable && isPinned && errors.Is(err, errBrokerTooOld) && tries <= 3) ||
-					(retryTimeout == 0 || time.Now().Add(backoff).Sub(start) < retryTimeout) && cl.shouldRetry(tries, err) && cl.waitTries(ctx, backoff) {
+					(retryTimeout == 0 || time.Now().Add(backoff).Sub(start) <= retryTimeout) && cl.shouldRetry(tries, err) && cl.waitTries(ctx, backoff) {
 					// Non-reshardable re-requests just jump back to the
 					// top where the broker is loaded. This is the case on
 					// requests where the original request is split to
@@ -2401,7 +2401,7 @@ func (cl *Client) maybeDeleteMappedMetadata(unknownTopic bool, ts ...string) (sh
 // requests that are sharded and use metadata, and the one this benefits most
 // is ListOffsets. Likely, ListOffsets for the same topic will be issued back
 // to back, so not caching for so long is ok.
-func (cl *Client) cachedMappedMetadata(ts ...string) (map[string]mappedMetadataTopic, []string) {
+func (cl *Client) fetchCachedMappedMetadata(ts ...string) (map[string]mappedMetadataTopic, []string) {
 	cl.mappedMetaMu.Lock()
 	defer cl.mappedMetaMu.Unlock()
 	if cl.mappedMeta == nil {
@@ -2429,7 +2429,7 @@ func (cl *Client) fetchMappedMetadata(ctx context.Context, topics []string, useC
 	var r map[string]mappedMetadataTopic
 	needed := topics
 	if useCache {
-		r, needed = cl.cachedMappedMetadata(topics...)
+		r, needed = cl.fetchCachedMappedMetadata(topics...)
 		if len(needed) == 0 {
 			return r, nil
 		}
@@ -2443,6 +2443,17 @@ func (cl *Client) fetchMappedMetadata(ctx context.Context, topics []string, useC
 		return nil, err
 	}
 
+	// Cache the mapped metadata, and also store each topic in the results.
+	cl.storeCachedMappedMetadata(meta, func(entry mappedMetadataTopic) {
+		r[*entry.t.Topic] = entry
+	})
+
+	return r, nil
+}
+
+// storeCachedMappedMetadata caches the fetched metadata in the Client, and calls the onEachTopic callback
+// function for each topic in the MetadataResponse.
+func (cl *Client) storeCachedMappedMetadata(meta *kmsg.MetadataResponse, onEachTopic func(_ mappedMetadataTopic)) {
 	cl.mappedMetaMu.Lock()
 	defer cl.mappedMetaMu.Unlock()
 	if cl.mappedMeta == nil {
@@ -2461,9 +2472,12 @@ func (cl *Client) fetchMappedMetadata(ctx context.Context, topics []string, useC
 			when: when,
 		}
 		cl.mappedMeta[*topic.Topic] = t
-		r[*topic.Topic] = t
 		for _, partition := range topic.Partitions {
 			t.ps[partition.Partition] = partition
+		}
+
+		if onEachTopic != nil {
+			onEachTopic(t)
 		}
 	}
 	if len(meta.Topics) != len(cl.mappedMeta) {
@@ -2476,7 +2490,6 @@ func (cl *Client) fetchMappedMetadata(ctx context.Context, topics []string, useC
 			}
 		}
 	}
-	return r, nil
 }
 
 func unknownOrCode(exists bool, code int16) error {

@@ -1701,6 +1701,17 @@
           "fieldFlag": "distributor.reusable-ingester-push-workers",
           "fieldType": "int",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "direct_otlp_translation_enabled",
+          "required": false,
+          "desc": "When enabled, OTLP write requests are directly translated to Mimir equivalents, for optimum performance.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "distributor.direct-otlp-translation-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -1902,9 +1913,9 @@
           "kind": "field",
           "name": "promql_engine",
           "required": false,
-          "desc": "PromQL engine to use, either 'standard' or 'streaming'",
+          "desc": "PromQL engine to use, either 'prometheus' or 'mimir'",
           "fieldValue": null,
-          "fieldDefaultValue": "standard",
+          "fieldDefaultValue": "prometheus",
           "fieldFlag": "querier.promql-engine",
           "fieldType": "string",
           "fieldCategory": "experimental"
@@ -3129,6 +3140,180 @@
           "fieldFlag": "ingester.owned-series-update-interval",
           "fieldType": "duration",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "block",
+          "name": "push_circuit_breaker",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable circuit breaking when making requests to ingesters",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.push-circuit-breaker.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "failure_threshold_percentage",
+              "required": false,
+              "desc": "Max percentage of requests that can fail over period before the circuit breaker opens",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "ingester.push-circuit-breaker.failure-threshold-percentage",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "failure_execution_threshold",
+              "required": false,
+              "desc": "How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures",
+              "fieldValue": null,
+              "fieldDefaultValue": 100,
+              "fieldFlag": "ingester.push-circuit-breaker.failure-execution-threshold",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "thresholding_period",
+              "required": false,
+              "desc": "Moving window of time that the percentage of failed requests is computed over",
+              "fieldValue": null,
+              "fieldDefaultValue": 60000000000,
+              "fieldFlag": "ingester.push-circuit-breaker.thresholding-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "cooldown_period",
+              "required": false,
+              "desc": "How long the circuit breaker will stay in the open state before allowing some requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ingester.push-circuit-breaker.cooldown-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_delay",
+              "required": false,
+              "desc": "How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingester.push-circuit-breaker.initial-delay",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "request_timeout",
+              "required": false,
+              "desc": "The maximum duration of an ingester's request before it triggers a circuit breaker. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2000000000,
+              "fieldFlag": "ingester.push-circuit-breaker.request-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "read_circuit_breaker",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable circuit breaking when making requests to ingesters",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.read-circuit-breaker.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "failure_threshold_percentage",
+              "required": false,
+              "desc": "Max percentage of requests that can fail over period before the circuit breaker opens",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "ingester.read-circuit-breaker.failure-threshold-percentage",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "failure_execution_threshold",
+              "required": false,
+              "desc": "How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures",
+              "fieldValue": null,
+              "fieldDefaultValue": 100,
+              "fieldFlag": "ingester.read-circuit-breaker.failure-execution-threshold",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "thresholding_period",
+              "required": false,
+              "desc": "Moving window of time that the percentage of failed requests is computed over",
+              "fieldValue": null,
+              "fieldDefaultValue": 60000000000,
+              "fieldFlag": "ingester.read-circuit-breaker.thresholding-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "cooldown_period",
+              "required": false,
+              "desc": "How long the circuit breaker will stay in the open state before allowing some requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ingester.read-circuit-breaker.cooldown-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_delay",
+              "required": false,
+              "desc": "How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingester.read-circuit-breaker.initial-delay",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "request_timeout",
+              "required": false,
+              "desc": "The maximum duration of an ingester's request before it triggers a circuit breaker. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors.",
+              "fieldValue": null,
+              "fieldDefaultValue": 30000000000,
+              "fieldFlag": "ingester.read-circuit-breaker.request-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -3338,10 +3523,21 @@
           "kind": "field",
           "name": "creation_grace_period",
           "required": false,
-          "desc": "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor and ingester.",
+          "desc": "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester.",
           "fieldValue": null,
           "fieldDefaultValue": 600000000000,
           "fieldFlag": "validation.create-grace-period",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "past_grace_period",
+          "required": false,
+          "desc": "Controls how far into the past incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is lower than '(now - OOO window - past_grace_period)'. This configuration is enforced in the distributor and ingester. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "validation.past-grace-period",
           "fieldType": "duration",
           "fieldCategory": "advanced"
         },
@@ -3544,6 +3740,17 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "querier.max-fetched-chunk-bytes-per-query",
           "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "max_estimated_memory_consumption_per_query",
+          "required": false,
+          "desc": "The maximum estimated memory a single query can consume at once, in bytes. This limit is only enforced when Mimir's query engine is in use. This limit is enforced in the querier. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "querier.max-estimated-memory-consumption-per-query",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -3783,7 +3990,7 @@
           "kind": "field",
           "name": "active_series_results_max_size_bytes",
           "required": false,
-          "desc": "Maximum size of an active series request result shard in bytes. 0 to disable.",
+          "desc": "Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 419430400,
           "fieldFlag": "querier.active-series-results-max-size-bytes",
@@ -4039,6 +4246,26 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "alertmanager.max-config-size-bytes",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "alertmanager_max_silences_count",
+          "required": false,
+          "desc": "Maximum number of silences, including expired silences, that a tenant can have at once. 0 = no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "alertmanager.max-silences-count",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "alertmanager_max_silence_size_bytes",
+          "required": false,
+          "desc": "Maximum silence size in bytes. 0 = no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "alertmanager.max-silence-size-bytes",
           "fieldType": "int"
         },
         {
@@ -8517,6 +8744,17 @@
                   "fieldFlag": "blocks-storage.bucket-store.index-header.lazy-loading-concurrency",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "lazy_loading_concurrency_queue_timeout",
+                  "required": false,
+                  "desc": "Timeout for the queue of index header loads. If the queue is full and the timeout is reached, the load will return an error. 0 means no timeout and the load will wait indefinitely.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",

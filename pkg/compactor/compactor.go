@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-kit/log"
@@ -285,6 +286,10 @@ type MultitenantCompactor struct {
 	compactionRunInterval          prometheus.Gauge
 	blocksMarkedForDeletion        prometheus.Counter
 
+	// outOfSpace is a separate metric for out-of-space errors because this is a common issue which often requires an operator to investigate,
+	// so alerts need to be able to treat it with higher priority than other compaction errors.
+	outOfSpace prometheus.Counter
+
 	// Metrics shared across all BucketCompactor instances.
 	bucketCompactorMetrics *BucketCompactorMetrics
 
@@ -383,6 +388,10 @@ func newMultitenantCompactor(
 		compactionRunInterval: promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_compactor_compaction_interval_seconds",
 			Help: "The configured interval on which compaction is run in seconds. Useful when compared to the last successful run metric to accurately detect multiple failed compaction runs.",
+		}),
+		outOfSpace: promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_compactor_disk_out_of_space_errors_total",
+			Help: "Number of times a compaction failed because the compactor disk was out of space.",
 		}),
 		blocksMarkedForDeletion: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name:        blocksMarkedForDeletionName,
@@ -665,6 +674,9 @@ func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
 				// We don't want to count shutdowns as failed compactions because we will pick up with the rest of the compaction after the restart.
 				level.Info(c.logger).Log("msg", "compaction for user was interrupted by a shutdown", "user", userID)
 				return
+			case errors.Is(err, syscall.ENOSPC):
+				c.outOfSpace.Inc()
+				fallthrough
 			default:
 				c.compactionRunFailedTenants.Inc()
 				compactionErrorCount++

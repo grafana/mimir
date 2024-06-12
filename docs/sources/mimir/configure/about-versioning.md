@@ -73,6 +73,8 @@ The following features are currently experimental:
     - `-distributor.max-exemplars-per-series-per-request`
   - Enforce a maximum pool buffer size for write requests
     - `-distributor.max-request-pool-buffer-size`
+  - Enable direct translation from OTLP write requests to Mimir equivalents
+    - `-distributor.direct-otlp-translation-enabled`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
@@ -115,12 +117,27 @@ The following features are currently experimental:
     - `-ingester.track-ingester-owned-series`
     - `-ingester.use-ingester-owned-series-for-limits`
     - `-ingester.owned-series-update-interval`
+  - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
+    - `-ingester.push-circuit-breaker.circuit-breaker.enabled`
+    - `-ingester.push-circuit-breaker.failure-threshold-percentage`
+    - `-ingester.push-circuit-breaker.failure-execution-threshold`
+    - `-ingester.push-circuit-breaker.thresholding-period`
+    - `-ingester.push-circuit-breaker.cooldown-period`
+    - `-ingester.push-circuit-breaker.initial-delay`
+    - `-ingester.push-circuit-breaker.request-timeout`
+    - `-ingester.read-circuit-breaker.circuit-breaker.enabled`
+    - `-ingester.read-circuit-breaker.failure-threshold-percentage`
+    - `-ingester.read-circuit-breaker.failure-execution-threshold`
+    - `-ingester.read-circuit-breaker.thresholding-period`
+    - `-ingester.read-circuit-breaker.cooldown-period`
+    - `-ingester.read-circuit-breaker.initial-delay`
+    - `-ingester.read-circuit-breaker.request-timeout`
 - Ingester client
   - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
     - `-ingester.client.circuit-breaker.enabled`
     - `-ingester.client.circuit-breaker.failure-threshold`
     - `-ingester.client.circuit-breaker.failure-execution-threshold`
-    - `-ingester.client.circuit-breaker.period`
+    - `-ingester.client.circuit-breaker.thresholding-period`
     - `-ingester.client.circuit-breaker.cooldown-period`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
@@ -130,7 +147,8 @@ The following features are currently experimental:
   - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
   - Enable PromQL experimental functions (`-querier.promql-experimental-functions-enabled`)
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
-  - Streaming PromQL engine (`-querier.promql-engine=streaming` and `-querier.enable-promql-engine-fallback`)
+  - Mimir query engine (`-querier.promql-engine=mimir` and `-querier.enable-promql-engine-fallback`)
+  - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
@@ -146,6 +164,7 @@ The following features are currently experimental:
   - Use of Redis cache backend (`-blocks-storage.bucket-store.chunks-cache.backend=redis`, `-blocks-storage.bucket-store.index-cache.backend=redis`, `-blocks-storage.bucket-store.metadata-cache.backend=redis`)
   - `-blocks-storage.bucket-store.series-selection-strategy`
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
+  - Set a timeout for index-header lazy loading (`-blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout`)
 - Read-write deployment mode
 - API endpoints:
   - `/api/v1/user_limits`
@@ -199,3 +218,8 @@ The following features or configuration parameters are currently deprecated and 
   - `-ingester.client.report-grpc-codes-in-instrumentation-label-enabled`
 - Mimirtool
   - the flag `--rule-files`
+
+The following features or configuration parameters are currently deprecated and will be **removed in a future release (to be announced)**:
+
+- Rule group configuration file
+  - `evaluation_delay` field: use `query_offset` instead
