@@ -39,3 +39,12 @@ eval range from 0 to 8m step 1m rate(some_metric_with_gaps[2m])
 # Test that we handle staleness markers correctly.
 eval range from 0 to 5m step 1m rate(some_metric_with_stale_marker[2m])
   {} _ 0.5 1 1 1 1
+
+clear
+
+# Test simple functions
+load 1m
+  some_metric{env="prod"} 0 0.5 NaN
+
+eval range from 0 to 2m step 1m acos(some_metric)
+  {env="prod"} 1.5707963267948966 1.0471975511965976 NaN

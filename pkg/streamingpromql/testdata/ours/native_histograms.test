@@ -13,11 +13,91 @@ eval instant at 5m single_histogram
 eval range from 0 to 5m step 1m single_histogram
 	{__name__="single_histogram"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:20 count:7 buckets:[9 10 1]}}
 
+# histogram_count extracts the count property from the histogram.
+eval range from 0 to 5m step 1m  histogram_count(single_histogram)
+	{} 4 4 4 4 4 7
+
+# histogram_sum extracts the sum property from the histogram.
+eval range from 0 to 5m step 1m  histogram_sum(single_histogram)
+	{} 5 5 5 5 5 20
+
 clear
 
 # Test metric with mixed floats and histograms
 load 1m
 	mixed_metric 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:8 count:6 buckets:[1 4 1]}}
 
-eval range from 0 to 4m step 1m mixed_metric
-	{__name__="mixed_metric"} 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}}
+eval range from 0 to 5m step 1m mixed_metric
+	{__name__="mixed_metric"} 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} {{count:6 sum:8 buckets:[1 4 1]}}
+
+eval instant at 3m histogram_count(mixed_metric)
+	{} 4
+
+eval instant at 4m histogram_sum(mixed_metric)
+	{} 8
+
+eval range from 0 to 5m step 1m histogram_count(mixed_metric)
+{} _ _ _ 4 6 6
+
+eval range from 0 to 5m step 1m histogram_sum(mixed_metric)
+{} _ _ _ 5 8 8
+
+# histogram_count ignores any float values
+eval instant at 2m histogram_count(mixed_metric)
+
+# histogram_sum ignores any float values
+eval instant at 2m histogram_sum(mixed_metric)
+
+clear
+
+# Test multiple histograms
+load 5m
+	route{path="one"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+	route{path="two"} {{schema:0 sum:10 count:20 buckets:[9 10 1]}}
+	route{path="three"} {{schema:0 sum:12 count:10 buckets:[3 2 5]}}
+
+eval instant at 5m route
+	route{path="one"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+	route{path="two"} {{schema:0 sum:10 count:20 buckets:[9 10 1]}}
+	route{path="three"} {{schema:0 sum:12 count:10 buckets:[3 2 5]}}
+
+eval instant at 5m histogram_count(route)
+	{path="one"} 4
+	{path="two"} 20
+	{path="three"} 10
+
+eval instant at 5m histogram_sum(route)
+	{path="one"} 5
+	{path="two"} 10
+	{path="three"} 12
+
+clear
+
+# TODO: Verify if these tests are correct. At the moment they match promql engine.
+# See: https://github.com/prometheus/prometheus/issues/14172
+
+# Test metric with mixed floats and histograms
+load 1m
+	mixed_metric 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:8 count:6 buckets:[1 4 1]}} 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
+
+# This is what we would expect, but it currently fails (disabled)
+# eval range from 0 to 8m step 1m mixed_metric
+#	{__name__="mixed_metric"} 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}} {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
+
+# eval range from 0 to 8m step 1m histogram_count(mixed_metric)
+# {} _ _ _ 4 6 _ _ 10 10
+
+# eval range from 0 to 8m step 1m histogram_sum(mixed_metric)
+# {} _ _ _ 5 8 _ _ 18 18
+
+# Instead this is what we get from both engines.
+eval range from 0 to 8m step 1m mixed_metric
+	{__name__="mixed_metric"} 1 2 3 3 3 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}} {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
+
+eval range from 0 to 8m step 1m histogram_count(mixed_metric)
+{} _ _ _ _ _ _ _ 10 10
+
+eval range from 0 to 8m step 1m histogram_sum(mixed_metric)
+{} _ _ _ _ _ _ _ 18 18
+
+clear
