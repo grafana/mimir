@@ -3350,9 +3350,11 @@ gateway:
             {{- if .Values.gateway.nginx.config.enableIPv6 }}
             listen [::]:{{ include "mimir.serverHttpListenPort" . }};
             {{- end }}
+
             {{- if .Values.gateway.nginx.config.clientMaxBodySize }}
             client_max_body_size {{ .Values.gateway.nginx.config.clientMaxBodySize }};
             {{- end }}
+
             {{- if .Values.gateway.nginx.basicAuth.enabled }}
             auth_basic           "Mimir";
             auth_basic_user_file /etc/nginx/secrets/.htpasswd;
