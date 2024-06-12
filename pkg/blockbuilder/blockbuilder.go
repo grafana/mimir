@@ -454,7 +454,7 @@ func (b *BlockBuilder) consumePartition(
 	if lastRec != nil {
 		retSeenTillTs = lastRec.Timestamp.UnixMilli()
 	}
-	return lag, retSeenTillTs, blockMax, b.finalizePartition(ctx, commitRec, lastRec, blockMax)
+	return lag, retSeenTillTs, blockMax, commitRecord(ctx, b.logger, b.kafkaClient, b.cfg.Kafka.Topic, commitRec, lastRec, blockMax)
 }
 
 func (b *BlockBuilder) blockUploaderForUser(ctx context.Context, userID string) blockUploader {
@@ -483,14 +483,14 @@ func (b *BlockBuilder) blockUploaderForUser(ctx context.Context, userID string) 
 	}
 }
 
-func (b *BlockBuilder) finalizePartition(ctx context.Context, commitRec, lastRec *kgo.Record, blockEnd int64) error {
+func commitRecord(ctx context.Context, l log.Logger, kc *kgo.Client, topic string, commitRec, lastReadRec *kgo.Record, blockEnd int64) error {
 	if commitRec == nil {
 		return nil
 	}
 	// Rewind the offset to the commit record so that when the partition is read again by this
 	// block builder, it starts at the commit point.
-	b.kafkaClient.SetOffsets(map[string]map[int32]kgo.EpochOffset{
-		b.cfg.Kafka.Topic: {
+	kc.SetOffsets(map[string]map[int32]kgo.EpochOffset{
+		topic: {
 			commitRec.Partition: {
 				Epoch:  commitRec.LeaderEpoch,
 				Offset: commitRec.Offset,
@@ -499,9 +499,9 @@ func (b *BlockBuilder) finalizePartition(ctx context.Context, commitRec, lastRec
 	})
 
 	ctx = kgo.PreCommitFnContext(ctx, func(req *kmsg.OffsetCommitRequest) error {
-		meta := marshallCommitMeta(commitRec.Timestamp.UnixMilli(), lastRec.Timestamp.UnixMilli(), blockEnd)
+		meta := marshallCommitMeta(commitRec.Timestamp.UnixMilli(), lastReadRec.Timestamp.UnixMilli(), blockEnd)
 		for ti := range req.Topics {
-			if req.Topics[ti].Topic != b.cfg.Kafka.Topic {
+			if req.Topics[ti].Topic != topic {
 				continue
 			}
 			for pi := range req.Topics[ti].Partitions {
@@ -510,15 +510,15 @@ func (b *BlockBuilder) finalizePartition(ctx context.Context, commitRec, lastRec
 				}
 			}
 		}
-		level.Info(b.logger).Log("commit request", fmt.Sprintf("%+v", req))
+		level.Info(l).Log("commit request", fmt.Sprintf("%+v", req))
 		return nil
 	})
-	err := b.kafkaClient.CommitRecords(ctx, commitRec)
-	if err != nil {
+
+	if err := kc.CommitRecords(ctx, commitRec); err != nil {
 		return fmt.Errorf("commit record with part %d, offset %d: %w", commitRec.Partition, commitRec.Offset, err)
 	}
 
-	level.Debug(b.logger).Log("msg", "successfully committed to Kafka", "part", commitRec.Partition, "offset", commitRec.Offset)
+	level.Debug(l).Log("msg", "successfully committed to Kafka", "part", commitRec.Partition, "offset", commitRec.Offset)
 
 	return nil
 }

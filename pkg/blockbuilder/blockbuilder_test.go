@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -16,6 +17,7 @@ import (
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -48,15 +50,7 @@ func TestBlockBuilder_BuildBlocks(t *testing.T) {
 	for i := int64(0); i < 10; i++ {
 		ts := testEpoch.Add(time.Duration(i/5) * time.Hour)
 		val := createWriteRequest(t, floatSample(ts.UnixMilli()), nil)
-		rec := &kgo.Record{
-			Timestamp: ts,
-			Key:       []byte(userID),
-			Value:     val,
-			Topic:     testTopic,
-			Partition: int32(i % numPartitions), // samples in this batch are split between N partitions
-		}
-		produceResult := writeClient.ProduceSync(ctx, rec)
-		require.NoError(t, produceResult.FirstErr())
+		produceRecords(t, ctx, writeClient, ts, userID, testTopic, int32(i%numPartitions), val)
 	}
 
 	cfg := Config{
@@ -117,16 +111,8 @@ func TestBlockBuilder_BuildBlocks(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		ts := testEpoch.Add(3 * time.Hour)
 		val := createWriteRequest(t, floatSample(ts.UnixMilli()), nil)
-		rec := &kgo.Record{
-			Timestamp: ts,
-			Key:       []byte(userID),
-			Value:     val,
-			Topic:     testTopic,
-			Partition: 1, // these samples are only for first partition
-		}
-		produceResult := writeClient.ProduceSync(ctx, rec)
-		require.NoError(t, produceResult.FirstErr())
-
+		// these samples are only for first partition
+		produceResult := produceRecords(t, ctx, writeClient, ts, userID, testTopic, 1, val)
 		lastProducedOffest = produceResult[0].Record.Offset
 	}
 
@@ -146,6 +132,19 @@ func TestBlockBuilder_BuildBlocks(t *testing.T) {
 	offset, ok := offsets.Lookup(testTopic, 1)
 	require.True(t, ok)
 	require.Equal(t, lastProducedOffest+1, offset.Offset) // +1 because lastProducedOffset points at already consumed record
+}
+
+func produceRecords(t *testing.T, ctx context.Context, writeClient *kgo.Client, ts time.Time, userID, topic string, part int32, val []byte) kgo.ProduceResults {
+	rec := &kgo.Record{
+		Timestamp: ts,
+		Key:       []byte(userID),
+		Value:     val,
+		Topic:     topic,
+		Partition: part, // samples in this batch are split between N partitions
+	}
+	produceResult := writeClient.ProduceSync(ctx, rec)
+	require.NoError(t, produceResult.FirstErr())
+	return produceResult
 }
 
 func newKafkaProduceClient(t *testing.T, addrs ...string) *kgo.Client {
@@ -195,4 +194,64 @@ func TestKafkaCommitMetaMarshalling(t *testing.T) {
 	// Error parsing
 	_, _, _, err = unmarshallCommitMeta("1,3,4")
 	require.Error(t, err)
+}
+
+func TestKafkaCommitMetadata(t *testing.T) {
+	const (
+		testTopic = "test"
+		testGroup = "testgroup"
+		numRecs   = 10
+	)
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, testTopic)
+	writeClient := newKafkaProduceClient(t, addr)
+
+	for i := int64(0); i < numRecs; i++ {
+		val := createWriteRequest(t, floatSample(i), nil)
+		produceRecords(t, ctx, writeClient, time.Now(), "1", testTopic, 0, val)
+	}
+
+	opts := []kgo.Opt{
+		kgo.ClientID("1"),
+		kgo.SeedBrokers(addr),
+		kgo.DialTimeout(10 * time.Second),
+		kgo.ConsumeTopics(testTopic),
+		kgo.ConsumerGroup(testGroup),
+		kgo.DisableAutoCommit(),
+	}
+	kc, err := kgo.NewClient(opts...)
+	require.NoError(t, err)
+
+	fetches := kc.PollFetches(ctx)
+	require.NoError(t, fetches.Err())
+
+	var recs []*kgo.Record
+	for it := fetches.RecordIter(); !it.Done(); {
+		recs = append(recs, it.Next())
+	}
+	require.Len(t, recs, numRecs)
+
+	commitRec := recs[numRecs/2]
+	lastRec := recs[numRecs-1]
+	blockEnd := time.Now().Truncate(1 * time.Hour).UnixMilli()
+
+	err = commitRecord(ctx, log.NewNopLogger(), kc, testTopic, commitRec, lastRec, blockEnd)
+	require.NoError(t, err)
+
+	// Checking the commit
+	offsets, err := kadm.NewClient(kc).FetchOffsetsForTopics(ctx, testGroup, testTopic)
+	require.NoError(t, err)
+
+	offset, ok := offsets.Lookup(testTopic, 0)
+	require.True(t, ok)
+	require.Equal(t, kadm.Offset{
+		Topic:       testTopic,
+		Partition:   0,
+		At:          commitRec.Offset + 1,
+		LeaderEpoch: commitRec.LeaderEpoch,
+		Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), lastRec.Timestamp.UnixMilli(), blockEnd),
+	}, offset.Offset)
 }
