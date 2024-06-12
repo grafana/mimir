@@ -25,7 +25,7 @@ func TestDropSeriesName(t *testing.T) {
 		{Labels: labels.FromStrings("label2", "value2")},
 	}
 
-	modifiedMetadata, err := DropSeriesName(seriesMetadata, pooling.NewLimitingPool(0))
+	modifiedMetadata, err := DropSeriesName(seriesMetadata, pooling.NewLimitingPool(0, nil))
 	require.NoError(t, err)
 	require.Equal(t, expected, modifiedMetadata)
 }
@@ -54,7 +54,7 @@ func TestFloatTransformationFunc(t *testing.T) {
 		},
 	}
 
-	modifiedSeriesData, err := transformFunc(seriesData, pooling.NewLimitingPool(0))
+	modifiedSeriesData, err := transformFunc(seriesData, pooling.NewLimitingPool(0, nil))
 	require.NoError(t, err)
 	require.Equal(t, expected, modifiedSeriesData)
 }
@@ -81,7 +81,7 @@ func TestFloatTransformationDropHistogramsFunc(t *testing.T) {
 		Histograms: nil, // Histograms should be dropped
 	}
 
-	modifiedSeriesData, err := transformFunc(seriesData, pooling.NewLimitingPool(0))
+	modifiedSeriesData, err := transformFunc(seriesData, pooling.NewLimitingPool(0, nil))
 	require.NoError(t, err)
 	require.Equal(t, expected, modifiedSeriesData)
 }

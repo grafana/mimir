@@ -5,8 +5,9 @@ package streamingpromql
 import (
 	"testing"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 )
 
 func TestRegisterInstantVectorFunctionOperator(t *testing.T) {

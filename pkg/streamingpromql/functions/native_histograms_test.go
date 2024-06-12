@@ -14,7 +14,7 @@ import (
 )
 
 func TestHistogramCount(t *testing.T) {
-	pool := pooling.NewLimitingPool(0)
+	pool := pooling.NewLimitingPool(0, nil)
 
 	seriesData := types.InstantVectorSeriesData{
 		Histograms: []promql.HPoint{
@@ -36,7 +36,7 @@ func TestHistogramCount(t *testing.T) {
 }
 
 func TestHistogramSum(t *testing.T) {
-	pool := pooling.NewLimitingPool(0)
+	pool := pooling.NewLimitingPool(0, nil)
 
 	seriesData := types.InstantVectorSeriesData{
 		Histograms: []promql.HPoint{

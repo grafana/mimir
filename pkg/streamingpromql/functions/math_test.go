@@ -15,7 +15,7 @@ import (
 )
 
 func TestAcos(t *testing.T) {
-	pool := pooling.NewLimitingPool(0)
+	pool := pooling.NewLimitingPool(0, nil)
 
 	seriesData := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{

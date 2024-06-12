@@ -43,7 +43,7 @@ func TestFunctionOverInstantVector(t *testing.T) {
 	}
 	operator := &FunctionOverInstantVector{
 		Inner: inner,
-		Pool:  pooling.NewLimitingPool(0),
+		Pool:  pooling.NewLimitingPool(0, nil),
 
 		MetadataFunc:   mustBeCalledMetadata,
 		SeriesDataFunc: mustBeCalledSeriesData,
