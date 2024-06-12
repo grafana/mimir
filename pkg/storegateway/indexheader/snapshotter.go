@@ -121,8 +121,10 @@ func (s *Snapshotter) RestoreLoadedBlocks() map[ulid.ULID]int64 {
 			"err", err,
 		)
 		// We will remove the file only on error.
-		// Note, in the case such as snapshot loading causing OOM, we will need to
-		// remove the snapshot and lazy load after server is restarted.
+		// Note, in the case such as snapshot loading causing OOM, an operator will need to
+		// remove the snapshot manually and let it lazy load after server restarts.
+		// The current experience is that this is less of a problem than not eagerly loading
+		// index headers after two consecutive restarts (ref grafana/mimir#8281).
 		if err := os.Remove(fileName); err != nil {
 			level.Warn(s.logger).Log("msg", "removing the lazy-loaded index-header snapshot failed", "file", fileName, "err", err)
 		}
