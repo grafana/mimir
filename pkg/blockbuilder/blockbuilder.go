@@ -60,7 +60,7 @@ func New(
 		return newTSDBBuilder(b.logger, b.limits, b.cfg.BlocksStorageConfig)
 	}
 
-	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorageConfig.Bucket, "ingester", logger, reg)
+	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorageConfig.Bucket, "blockbuilder", logger, reg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create the bucket client: %w", err)
 	}
@@ -504,9 +504,9 @@ func (b *BlockBuilder) finalizePartition(ctx context.Context, commitRec, lastRec
 			if topic.Topic != b.cfg.Kafka.Topic {
 				continue
 			}
-			for _, part := range req.Topics[0].Partitions {
-				if part.Partition == commitRec.Partition {
-					part.Metadata = &meta
+			for i := range req.Topics[0].Partitions {
+				if req.Topics[0].Partitions[i].Partition == commitRec.Partition {
+					req.Topics[0].Partitions[i].Metadata = &meta
 				}
 			}
 		}
