@@ -27,7 +27,7 @@ import (
 
 func TestPrometheusCodec_JSONResponse(t *testing.T) {
 	headers := http.Header{"Content-Type": []string{"application/json"}}
-	expectedRespHeaders := []*PrometheusResponseHeader{
+	expectedRespHeaders := []*PrometheusHeader{
 		{
 			Name:   "Content-Type",
 			Values: []string{"application/json"},
