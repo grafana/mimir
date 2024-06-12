@@ -10,6 +10,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// enqueueObj is intended for use in tests; it represents an obj to enqueue to path, or an expected path and obj
+// for a given dequeue
+type enqueueObj struct {
+	obj  any
+	path QueuePath
+}
+
 func newTenantQuerierAssignments() *tenantQuerierAssignments {
 	return &tenantQuerierAssignments{
 		tenantQuerierIDs: make(map[TenantID]map[QuerierID]struct{}),
@@ -30,10 +37,6 @@ func Test_NewTree(t *testing.T) {
 		},
 		{
 			name:      "create shuffle-shard tree",
-			treeAlgos: []DequeueAlgorithm{newTenantQuerierAssignments()},
-		},
-		{
-			name:      "create shuffle-shard tree with no tenant-querier map, we should create an empty one",
 			treeAlgos: []DequeueAlgorithm{&tenantQuerierAssignments{}},
 		},
 		{
@@ -57,48 +60,51 @@ func Test_NewTree(t *testing.T) {
 
 func Test_EnqueueBackByPath(t *testing.T) {
 	tests := []struct {
-		name             string
-		treeAlgosByDepth []DequeueAlgorithm
-		children         []QueuePath
-		expectErr        bool
+		name                string
+		treeAlgosByDepth    []DequeueAlgorithm
+		childPathsToEnqueue []QueuePath
+		expectErr           bool
 	}{
 		{
-			name:             "enqueue round-robin node to round-robin node",
-			treeAlgosByDepth: []DequeueAlgorithm{&roundRobinState{}, &roundRobinState{}},
-			children:         []QueuePath{{"round-robin-child-1"}},
+			name:                "enqueue tenant-querier node to round-robin node",
+			treeAlgosByDepth:    []DequeueAlgorithm{&roundRobinState{}, &roundRobinState{}},
+			childPathsToEnqueue: []QueuePath{{"child-1"}},
 		},
 		{
-			name:             "enqueue shuffle-shard node to round-robin node",
-			treeAlgosByDepth: []DequeueAlgorithm{&roundRobinState{}, &tenantQuerierAssignments{tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{}}},
-			children:         []QueuePath{{"shuffle-shard-child-1"}},
+			name:                "enqueue tenant-querier node to round-robin node",
+			treeAlgosByDepth:    []DequeueAlgorithm{&roundRobinState{}, &tenantQuerierAssignments{tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{}}},
+			childPathsToEnqueue: []QueuePath{{"child-1"}, {"child-2"}},
 		},
 		{
-			name:             "enqueue shuffle-shard node with no tenant-querier map to round-robin node, we should create an empty one",
-			treeAlgosByDepth: []DequeueAlgorithm{&roundRobinState{}, &tenantQuerierAssignments{}},
-			children:         []QueuePath{{"shuffle-shard-child-1"}},
-		},
-		{
-			name: "enqueue round-robin node to shuffle-shard node",
+			name: "enqueue round-robin node to tenant-querier node",
 			treeAlgosByDepth: []DequeueAlgorithm{
 				newTenantQuerierAssignments(),
 				&roundRobinState{},
 			},
-			children: []QueuePath{{"round-robin-child-1"}},
+			childPathsToEnqueue: []QueuePath{{"child-1"}, {"child-2"}},
 		},
 		{
-			name: "create tree with multiple shuffle-shard depths",
+			name: "enqueue tenant-querier node to tenant-querier node",
+			treeAlgosByDepth: []DequeueAlgorithm{
+				newTenantQuerierAssignments(),
+				newTenantQuerierAssignments(),
+			},
+			childPathsToEnqueue: []QueuePath{{"child-1"}},
+		},
+		{
+			name: "enqueue grandchildren to a tree with max-depth of 2",
 			treeAlgosByDepth: []DequeueAlgorithm{
 				newTenantQuerierAssignments(),
 				&roundRobinState{},
 				newTenantQuerierAssignments(),
 			},
-			children: []QueuePath{{"child"}, {"grandchild"}},
+			childPathsToEnqueue: []QueuePath{{"child"}, {"grandchild"}},
 		},
 		{
-			name:             "enqueue beyond max-depth",
-			treeAlgosByDepth: []DequeueAlgorithm{&roundRobinState{}},
-			children:         []QueuePath{{"child"}, {"child, grandchild"}},
-			expectErr:        true,
+			name:                "enqueue beyond max-depth",
+			treeAlgosByDepth:    []DequeueAlgorithm{&roundRobinState{}},
+			childPathsToEnqueue: []QueuePath{{"child"}, {"child, grandchild"}},
+			expectErr:           true,
 		},
 	}
 	for _, tt := range tests {
@@ -106,7 +112,7 @@ func Test_EnqueueBackByPath(t *testing.T) {
 			tree, err := NewTree(tt.treeAlgosByDepth...)
 			require.NoError(t, err)
 
-			for _, childPath := range tt.children {
+			for _, childPath := range tt.childPathsToEnqueue {
 				err = tree.EnqueueBackByPath(childPath, "some-object")
 			}
 			if tt.expectErr {
@@ -119,10 +125,6 @@ func Test_EnqueueBackByPath(t *testing.T) {
 }
 
 func Test_EnqueueFrontByPath(t *testing.T) {
-	type enqueueObj struct {
-		obj  any
-		path QueuePath
-	}
 	someQuerier := QuerierID("placeholder")
 	tests := []struct {
 		name             string
@@ -386,11 +388,6 @@ func Test_DequeueOrderAfterEnqueue(t *testing.T) {
 }
 
 func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
-	type enqueueObj struct {
-		obj  any
-		path QueuePath
-	}
-
 	tests := []struct {
 		name             string
 		treeAlgosByDepth []DequeueAlgorithm
@@ -618,10 +615,6 @@ func Test_ChangeTenantQuerierAssignments(t *testing.T) {
 	tree, err := NewTree(state, &roundRobinState{}, &roundRobinState{})
 	require.NoError(t, err)
 
-	type enqueueObj struct {
-		obj  any
-		path QueuePath
-	}
 	enqueueObjs := []enqueueObj{
 		{"query-1", QueuePath{"tenant-1", "query-component-1"}},
 		{"query-2", QueuePath{"tenant-2", "query-component-1"}},
