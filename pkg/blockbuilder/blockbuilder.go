@@ -500,13 +500,13 @@ func (b *BlockBuilder) finalizePartition(ctx context.Context, commitRec, lastRec
 
 	ctx = kgo.PreCommitFnContext(ctx, func(req *kmsg.OffsetCommitRequest) error {
 		meta := marshallCommitMeta(commitRec.Timestamp.UnixMilli(), lastRec.Timestamp.UnixMilli(), blockEnd)
-		for _, topic := range req.Topics {
-			if topic.Topic != b.cfg.Kafka.Topic {
+		for ti := range req.Topics {
+			if req.Topics[ti].Topic != b.cfg.Kafka.Topic {
 				continue
 			}
-			for i := range req.Topics[0].Partitions {
-				if req.Topics[0].Partitions[i].Partition == commitRec.Partition {
-					req.Topics[0].Partitions[i].Metadata = &meta
+			for pi := range req.Topics[ti].Partitions {
+				if req.Topics[ti].Partitions[pi].Partition == commitRec.Partition {
+					req.Topics[ti].Partitions[pi].Metadata = &meta
 				}
 			}
 		}
