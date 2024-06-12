@@ -53,11 +53,11 @@
 * [ENHANCEMENT] OTLP: Speed up conversion from OTel to Mimir format by about 8% and reduce memory consumption by about 30%. Can be disabled via `-distributor.direct-otlp-translation-enabled=false` #7957
 * [ENHANCEMENT] Ingester/Querier: Optimise regexps with long lists of alternates. #8221, #8234
 * [ENHANCEMENT] Ingester: Include more detail in tracing of queries. #8242
-* [EHNAHCEMENT] Distributor: add `insight=true` to remote-write and OTLP write handlers when the HTTP response status code is 4xx. #8294
+* [ENHANCEMENT] Distributor: add `insight=true` to remote-write and OTLP write handlers when the HTTP response status code is 4xx. #8294
 * [ENHANCEMENT] Ingester: reduce locked time while matching postings for a label, improving the write latency and compaction speed. #8327
 * [ENHANCEMENT] Ingester: reduce the amount of locks taken during the Head compaction's garbage-collection process, improving the write latency and compaction speed. #8327
 * [ENHANCEMENT] Query-frontend: log the start, end time and matchers for remote read requests to the query stats logs. #8326
-* [BUGFIX] Distributor: prometheus retry on 5xx and 429 errors, while otlp collector only retry on 429, 502, 503 and 504, mapping other 5xx errors to the retryable ones in otlp endpoint. #8324
+* [BUGFIX] Distributor: prometheus retry on 5xx and 429 errors, while otlp collector only retry on 429, 502, 503 and 504, mapping other 5xx errors to the retryable ones in otlp endpoint. #8324 #8339
 * [BUGFIX] Distributor: make OTLP endpoint return marshalled proto bytes as response body for 4xx/5xx errors. #8227
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
 * [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
@@ -428,10 +428,6 @@
 * [CHANGE] Ingester: changed the default value for the experimental configuration parameter `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage` from 10 to 15. #6186
 * [CHANGE] Ingester: `/ingester/push` HTTP endpoint has been removed. This endpoint was added for testing and troubleshooting, but was never documented or used for anything. #6299
 * [CHANGE] Experimental setting `-log.rate-limit-logs-per-second-burst` renamed to `-log.rate-limit-logs-burst-size`. #6230
-* [CHANGE] Distributor: instead of errors with HTTP status codes, `Push()` now returns errors with gRPC codes: #6377
-  * `http.StatusAccepted` (202) code is replaced with `codes.AlreadyExists`.
-  * `http.BadRequest` (400) code is replaced with `codes.FailedPrecondition`.
-  * `http.StatusTooManyRequests` (429) and the non-standard `529` (The service is overloaded) codes are replaced with `codes.ResourceExhausted`.
 * [CHANGE] Ingester: by setting the newly introduced experimental CLI flag `-ingester.return-only-grpc-errors` to true, ingester will return only gRPC errors. This feature changes the following status codes: #6443 #6680 #6723
   * `http.StatusBadRequest` (400) is replaced with `codes.FailedPrecondition` on the write path.
   * `http.StatusServiceUnavailable` (503) is replaced with `codes.Internal` on the write path, and with `codes.ResourceExhausted` on the read path.

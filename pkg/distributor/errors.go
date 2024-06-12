@@ -5,6 +5,7 @@ package distributor
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/gogo/status"
@@ -253,8 +254,8 @@ func (e circuitBreakerOpenError) Cause() mimirpb.ErrorCause {
 // Ensure that circuitBreakerOpenError implements Error.
 var _ Error = circuitBreakerOpenError{}
 
-// toGRPCError converts the given error into an appropriate gRPC error.
-func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
+// toErrorWithGRPCStatus converts the given error into an appropriate gRPC error.
+func toErrorWithGRPCStatus(pushErr error, serviceOverloadErrorEnabled bool) error {
 	var (
 		distributorErr Error
 		errDetails     *mimirpb.ErrorDetails
@@ -262,28 +263,57 @@ func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 	)
 	if errors.As(pushErr, &distributorErr) {
 		errDetails = &mimirpb.ErrorDetails{Cause: distributorErr.Cause()}
-		switch distributorErr.Cause() {
-		case mimirpb.BAD_DATA:
-			errCode = codes.FailedPrecondition
-		case mimirpb.INGESTION_RATE_LIMITED:
-			errCode = codes.ResourceExhausted
-		case mimirpb.REQUEST_RATE_LIMITED:
-			if serviceOverloadErrorEnabled {
-				errCode = codes.Unavailable
-			} else {
-				errCode = codes.ResourceExhausted
-			}
-		case mimirpb.REPLICAS_DID_NOT_MATCH:
-			errCode = codes.AlreadyExists
-		case mimirpb.TOO_MANY_CLUSTERS:
-			errCode = codes.FailedPrecondition
-		case mimirpb.CIRCUIT_BREAKER_OPEN:
-			errCode = codes.Unavailable
-		case mimirpb.METHOD_NOT_ALLOWED:
-			errCode = codes.Unimplemented
-		}
+		errCode = errorCauseToGRPCStatusCode(distributorErr.Cause(), serviceOverloadErrorEnabled)
 	}
 	return globalerror.WrapErrorWithGRPCStatus(pushErr, errCode, errDetails).Err()
+}
+
+func errorCauseToGRPCStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErrorEnabled bool) codes.Code {
+	switch errCause {
+	case mimirpb.BAD_DATA:
+		return codes.InvalidArgument
+	case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
+		if serviceOverloadErrorEnabled {
+			return codes.Unavailable
+		}
+		return codes.ResourceExhausted
+	case mimirpb.REPLICAS_DID_NOT_MATCH:
+		return codes.AlreadyExists
+	case mimirpb.TOO_MANY_CLUSTERS:
+		return codes.FailedPrecondition
+	case mimirpb.CIRCUIT_BREAKER_OPEN:
+		return codes.Unavailable
+	case mimirpb.METHOD_NOT_ALLOWED:
+		return codes.Unimplemented
+	}
+	return codes.Internal
+}
+
+func errorCauseToHTTPStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErrorEnabled bool) int {
+	switch errCause {
+	case mimirpb.BAD_DATA:
+		return http.StatusBadRequest
+	case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
+		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
+		// Client may discard the data or slow down and re-send.
+		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+		if serviceOverloadErrorEnabled {
+			return StatusServiceOverloaded
+		}
+		return http.StatusTooManyRequests
+	case mimirpb.REPLICAS_DID_NOT_MATCH:
+		return http.StatusAccepted
+	case mimirpb.TOO_MANY_CLUSTERS:
+		return http.StatusBadRequest
+	case mimirpb.TSDB_UNAVAILABLE:
+		return http.StatusServiceUnavailable
+	case mimirpb.CIRCUIT_BREAKER_OPEN:
+		return http.StatusServiceUnavailable
+	case mimirpb.METHOD_NOT_ALLOWED:
+		// Return a 501 (and not 405) to explicitly signal a misconfiguration and to possibly track that amongst other 5xx errors.
+		return http.StatusNotImplemented
+	}
+	return http.StatusInternalServerError
 }
 
 func wrapIngesterPushError(err error, ingesterID string) error {
