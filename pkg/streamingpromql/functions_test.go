@@ -20,5 +20,5 @@ func TestRegisterInstantVectorFunctionOperator(t *testing.T) {
 	newFunc := LabelManipulationFunctionOperator("new_function", functions.DropSeriesName)
 	err = RegisterInstantVectorFunctionOperator("new_function", newFunc)
 	require.NoError(t, err)
-	require.Contains(t, instantVectorFunctions, "new_function")
+	require.Contains(t, instantVectorFunctionOperatorFactories, "new_function")
 }
