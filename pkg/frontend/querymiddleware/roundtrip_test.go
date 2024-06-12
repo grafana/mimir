@@ -529,21 +529,21 @@ func TestRemoteReadMiddleware(t *testing.T) {
 			},
 			expectError:         true,
 			expectAPIError:      true,
-			expectErrorContains: "the request has been blocked by the cluster administrator (err-mimir-query-blocked)",
+			expectErrorContains: "remote read error (matchers_1: {__name__=\"up\"}): the request has been blocked by the cluster administrator (err-mimir-query-blocked)",
 		},
 		"block a regex query": {
 			makeRequest: generateTestRemoteReadRequest,
 			limits: mockLimits{
 				blockedQueries: []*validation.BlockedQuery{
 					{
-						Pattern: ".*up.*",
+						Pattern: "{.*foo.*}",
 						Regex:   true,
 					},
 				},
 			},
 			expectError:         true,
 			expectAPIError:      true,
-			expectErrorContains: "the request has been blocked by the cluster administrator (err-mimir-query-blocked)",
+			expectErrorContains: "remote read error (matchers_0: {__name__=\"some_metric\",foo=~\".*bar.*\"}): the request has been blocked by the cluster administrator (err-mimir-query-blocked)",
 		},
 	}
 

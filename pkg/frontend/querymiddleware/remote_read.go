@@ -18,8 +18,17 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage/remote"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/util"
+)
+
+// To keep logs and error messages in sync, we define the following keys:
+const (
+	endLogKey      = "end"
+	hintsLogKey    = "hints"
+	matchersLogKey = "matchers"
+	startLogKey    = "start"
 )
 
 type remoteReadRoundTripper struct {
@@ -46,7 +55,7 @@ func (r *remoteReadRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 	}
 
 	queries := remoteReadRequest.GetQueries()
-	for _, query := range queries {
+	for i, query := range queries {
 		metricsRequest, err := toMetricsRequest(req.URL.Path, query)
 		if err != nil {
 			return nil, err
@@ -58,7 +67,7 @@ func (r *remoteReadRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 		}))
 		_, error := handler.Do(req.Context(), metricsRequest)
 		if error != nil {
-			return nil, error
+			return nil, apierror.AddDetails(error, fmt.Sprintf("remote read error (%s_%d: %s)", matchersLogKey, i, metricsRequest.GetQuery()))
 		}
 	}
 
@@ -107,20 +116,20 @@ func parseRemoteReadRequest(remoteReadRequest *prompb.ReadRequest) (url.Values, 
 	queries := remoteReadRequest.GetQueries()
 
 	for i, query := range queries {
-		add(i, "start", fmt.Sprintf("%d", query.GetStartTimestampMs()))
-		add(i, "end", fmt.Sprintf("%d", query.GetEndTimestampMs()))
+		add(i, startLogKey, fmt.Sprintf("%d", query.GetStartTimestampMs()))
+		add(i, endLogKey, fmt.Sprintf("%d", query.GetEndTimestampMs()))
 
 		matcher, err := remoteReadMatchersToString(query)
 		if err != nil {
 			return nil, err
 		}
-		params.Add("matchers_"+strconv.Itoa(i), matcher)
+		add(i, matchersLogKey, matcher)
 
 		if query.Hints != nil {
 			if hints, err := json.Marshal(query.Hints); err == nil {
-				add(i, "hints", string(hints))
+				add(i, hintsLogKey, string(hints))
 			} else {
-				add(i, "hints", fmt.Sprintf("error marshalling hints: %v", err))
+				add(i, hintsLogKey, fmt.Sprintf("error marshalling hints: %v", err))
 			}
 		}
 	}
@@ -129,15 +138,20 @@ func parseRemoteReadRequest(remoteReadRequest *prompb.ReadRequest) (url.Values, 
 }
 
 func remoteReadMatchersToString(q *prompb.Query) (string, error) {
-	matchersStrings := make([]string, 0, len(q.GetMatchers()))
 	matchers, err := remote.FromLabelMatchers(q.GetMatchers())
 	if err != nil {
 		return "", err
 	}
-	for _, m := range matchers {
-		matchersStrings = append(matchersStrings, m.String())
+	builder := strings.Builder{}
+	builder.WriteRune('{')
+	for i, m := range matchers {
+		if i > 0 {
+			builder.WriteRune(',')
+		}
+		builder.WriteString(m.String())
 	}
-	return strings.Join(matchersStrings, ","), nil
+	builder.WriteRune('}')
+	return builder.String(), nil
 }
 
 func toMetricsRequest(path string, query *prompb.Query) (MetricsQueryRequest, error) {
@@ -150,7 +164,6 @@ func toMetricsRequest(path string, query *prompb.Query) (MetricsQueryRequest, er
 	if err != nil {
 		return nil, err
 	}
-	metricsQuery.promQuery = fmt.Sprintf("{%s}", metricsQuery.promQuery)
 	return metricsQuery, nil
 }
 

@@ -39,10 +39,10 @@ func TestParseRemoteReadRequestWithoutConsumingBody(t *testing.T) {
 			expectedParams: url.Values{
 				"start_0":    []string{"0"},
 				"end_0":      []string{"42"},
-				"matchers_0": []string{"__name__=\"some_metric\",foo=~\".*bar.*\""},
+				"matchers_0": []string{"{__name__=\"some_metric\",foo=~\".*bar.*\"}"},
 				"start_1":    []string{"10"},
 				"end_1":      []string{"20"},
-				"matchers_1": []string{"__name__=\"up\""},
+				"matchers_1": []string{"{__name__=\"up\"}"},
 				"hints_1":    []string{"{\"step_ms\":1000}"},
 			},
 		},
@@ -100,7 +100,7 @@ func TestRemoteReadRoundTripperCallsDownstreamOnAll(t *testing.T) {
 		handler                MetricsQueryHandler
 		expectDownstreamCalled int
 		expectMiddlewareCalled int
-		expectError            error
+		expectError            string
 	}{
 		"skipping middleware": {
 			handler:                &skipMiddleware{},
@@ -111,7 +111,7 @@ func TestRemoteReadRoundTripperCallsDownstreamOnAll(t *testing.T) {
 			handler:                &errorMiddleware{},
 			expectDownstreamCalled: 0,
 			expectMiddlewareCalled: 1,
-			expectError:            fmt.Errorf("TestErrorMiddleware"),
+			expectError:            "remote read error (matchers_0: {__name__=\"some_metric\",foo=~\".*bar.*\"}): TestErrorMiddleware",
 		},
 	}
 
@@ -125,7 +125,12 @@ func TestRemoteReadRoundTripperCallsDownstreamOnAll(t *testing.T) {
 			})
 			rr := newRemoteReadRoundTripper(roundTripper, middleware)
 			_, err := rr.RoundTrip(generateTestRemoteReadRequest())
-			require.Equal(t, tc.expectError, err)
+			if tc.expectError != "" {
+				require.Error(t, err)
+				require.Equal(t, tc.expectError, err.Error())
+			} else {
+				require.NoError(t, err)
+			}
 			require.Equal(t, tc.expectDownstreamCalled, roundTripper.called)
 			require.Equal(t, tc.expectMiddlewareCalled, countMiddleWareCalls)
 		})

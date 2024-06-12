@@ -194,13 +194,13 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				r.Body = io.NopCloser(bytes.NewReader(compressed))
 				return r
 			},
-			expectedActivity: "user:12345 UA:test-user-agent req:GET /api/v1/read end_0=42&end_1=20&hints_1=%7B%22step_ms%22%3A1000%7D&matchers_0=__name__%3D%22some_metric%22%2Cfoo%3D~%22.%2Abar.%2A%22&matchers_1=__name__%3D%22up%22&start_0=0&start_1=10",
+			expectedActivity: "user:12345 UA:test-user-agent req:GET /api/v1/read end_0=42&end_1=20&hints_1=%7B%22step_ms%22%3A1000%7D&matchers_0=%7B__name__%3D%22some_metric%22%2Cfoo%3D~%22.%2Abar.%2A%22%7D&matchers_1=%7B__name__%3D%22up%22%7D&start_0=0&start_1=10",
 			expectedMetrics:  5,
 			expectedParams: url.Values{
-				"matchers_0": []string{"__name__=\"some_metric\",foo=~\".*bar.*\""},
+				"matchers_0": []string{"{__name__=\"some_metric\",foo=~\".*bar.*\"}"},
 				"start_0":    []string{"0"},
 				"end_0":      []string{"42"},
-				"matchers_1": []string{"__name__=\"up\""},
+				"matchers_1": []string{"{__name__=\"up\"}"},
 				"start_1":    []string{"10"},
 				"end_1":      []string{"20"},
 				"hints_1":    []string{"{\"step_ms\":1000}"},
