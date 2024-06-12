@@ -46,12 +46,12 @@ type blocksLoader interface {
 	LoadedBlocks() map[ulid.ULID]int64
 }
 
-func (s *Snapshotter) Start(ctx context.Context, l blocksLoader) error {
+func (s *Snapshotter) Start(ctx context.Context, bl blocksLoader) error {
 	if !s.conf.Enabled {
 		return nil
 	}
 
-	err := s.persistLoadedBlocks(l)
+	err := s.PersistLoadedBlocks(bl)
 	if err != nil {
 		return fmt.Errorf("persist initial list of lazy-loaded index headers: %w", err)
 	}
@@ -67,7 +67,7 @@ func (s *Snapshotter) Start(ctx context.Context, l blocksLoader) error {
 			case <-s.done:
 				return
 			case <-tick.C:
-				if err := s.persistLoadedBlocks(l); err != nil {
+				if err := s.PersistLoadedBlocks(bl); err != nil {
 					level.Warn(s.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
 				}
 			}
@@ -77,9 +77,13 @@ func (s *Snapshotter) Start(ctx context.Context, l blocksLoader) error {
 	return nil
 }
 
-func (s *Snapshotter) persistLoadedBlocks(l blocksLoader) error {
+func (s *Snapshotter) Stop() {
+	close(s.done)
+}
+
+func (s *Snapshotter) PersistLoadedBlocks(bl blocksLoader) error {
 	snapshot := &indexHeadersSnapshot{
-		IndexHeaderLastUsedTime: l.LoadedBlocks(),
+		IndexHeaderLastUsedTime: bl.LoadedBlocks(),
 		UserID:                  s.conf.UserID,
 	}
 	data, err := json.Marshal(snapshot)
@@ -94,10 +98,6 @@ func (s *Snapshotter) persistLoadedBlocks(l blocksLoader) error {
 	finalPath := filepath.Join(s.conf.Path, lazyLoadedHeadersListFileName)
 
 	return atomicfs.CreateFileAndMove(tmpPath, finalPath, bytes.NewReader(data))
-}
-
-func (s *Snapshotter) Stop() {
-	close(s.done)
 }
 
 func (s *Snapshotter) RestoreLoadedBlocks() map[ulid.ULID]int64 {
