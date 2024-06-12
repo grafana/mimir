@@ -47,7 +47,10 @@ func (r *remoteReadRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 
 	queries := remoteReadRequest.GetQueries()
 	for _, query := range queries {
-		metricsRequest := toMetricsRequest(req.URL.Path, query)
+		metricsRequest, err := toMetricsRequest(req.URL.Path, query)
+		if err != nil {
+			return nil, err
+		}
 		handler := r.middleware.Wrap(HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 			// We do not need to do anything here as this middleware is used for
 			// validation only and previous middlewares would have already returned errors.
@@ -107,15 +110,12 @@ func parseRemoteReadRequest(remoteReadRequest *prompb.ReadRequest) (url.Values, 
 		add(i, "start", fmt.Sprintf("%d", query.GetStartTimestampMs()))
 		add(i, "end", fmt.Sprintf("%d", query.GetEndTimestampMs()))
 
-		matchersStrings := make([]string, 0, len(query.Matchers))
-		matchers, err := remote.FromLabelMatchers(query.Matchers)
+		matcher, err := remoteReadMatchersToString(query)
 		if err != nil {
 			return nil, err
 		}
-		for _, m := range matchers {
-			matchersStrings = append(matchersStrings, m.String())
-		}
-		params.Add("matchers_"+strconv.Itoa(i), strings.Join(matchersStrings, ","))
+		params.Add("matchers_"+strconv.Itoa(i), matcher)
+
 		if query.Hints != nil {
 			if hints, err := json.Marshal(query.Hints); err == nil {
 				add(i, "hints", string(hints))
@@ -128,11 +128,30 @@ func parseRemoteReadRequest(remoteReadRequest *prompb.ReadRequest) (url.Values, 
 	return params, nil
 }
 
-func toMetricsRequest(path string, query *prompb.Query) MetricsQueryRequest {
-	return &remoteReadQuery{
+func remoteReadMatchersToString(q *prompb.Query) (string, error) {
+	matchersStrings := make([]string, 0, len(q.GetMatchers()))
+	matchers, err := remote.FromLabelMatchers(q.GetMatchers())
+	if err != nil {
+		return "", err
+	}
+	for _, m := range matchers {
+		matchersStrings = append(matchersStrings, m.String())
+	}
+	return strings.Join(matchersStrings, ","), nil
+}
+
+func toMetricsRequest(path string, query *prompb.Query) (MetricsQueryRequest, error) {
+	metricsQuery := &remoteReadQuery{
 		path:  path,
 		query: query,
 	}
+	var err error
+	metricsQuery.promQuery, err = remoteReadMatchersToString(query)
+	if err != nil {
+		return nil, err
+	}
+	metricsQuery.promQuery = fmt.Sprintf("{%s}", metricsQuery.promQuery)
+	return metricsQuery, nil
 }
 
 type remoteReadQuery struct {

@@ -222,7 +222,9 @@ func newQueryTripperware(
 	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
 
-	remoteReadMiddleware := []MetricsQueryMiddleware{}
+	remoteReadMiddleware := []MetricsQueryMiddleware{
+		queryBlockerMiddleware,
+	}
 
 	queryRangeMiddleware := []MetricsQueryMiddleware{
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
