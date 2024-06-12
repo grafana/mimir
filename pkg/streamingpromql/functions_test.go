@@ -26,4 +26,7 @@ func TestRegisterInstantVectorFunctionOperator(t *testing.T) {
 	err = RegisterInstantVectorFunctionOperator("new_function", newFunc)
 	require.Error(t, err)
 	require.Equal(t, "function 'new_function' has already been registered", err.Error())
+
+	// Cleanup changes to instantVectorFunctionOperatorFactories
+	delete(instantVectorFunctionOperatorFactories, "new_function")
 }
