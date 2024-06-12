@@ -54,6 +54,8 @@ func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics, lo
 	if err != nil {
 		return nil, err
 	}
+
+	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(inst.Addr, dialOpts...)
 	if err != nil {
 		return nil, err

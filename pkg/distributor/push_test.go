@@ -7,36 +7,31 @@ package distributor
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/go-kit/log"
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
-	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
-	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -110,371 +105,6 @@ func TestOTelMetricsToMetadata(t *testing.T) {
 			assert.Equal(t, sampleMetadata, res)
 		})
 	}
-}
-
-func TestHandlerOTLPPush(t *testing.T) {
-	sampleSeries :=
-		[]prompb.TimeSeries{
-			{
-				Labels: []prompb.Label{
-					{Name: "__name__", Value: "foo"},
-				},
-				Samples: []prompb.Sample{
-					{Value: 1, Timestamp: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
-				},
-			},
-		}
-	// Sample Metadata needs to contain metadata for every series in the sampleSeries
-	sampleMetadata := []mimirpb.MetricMetadata{
-		{
-			Help: "metric_help",
-			Unit: "metric_unit",
-		},
-	}
-	samplesVerifierFunc := func(t *testing.T, pushReq *Request) error {
-		request, err := pushReq.WriteRequest()
-		require.NoError(t, err)
-
-		series := request.Timeseries
-		require.Len(t, series, 1)
-
-		samples := series[0].Samples
-		require.Len(t, samples, 1)
-		assert.Equal(t, float64(1), samples[0].Value)
-		assert.Equal(t, "__name__", series[0].Labels[0].Name)
-		assert.Equal(t, "foo", series[0].Labels[0].Value)
-
-		metadata := request.Metadata
-		require.Len(t, metadata, 1)
-		assert.Equal(t, mimirpb.GAUGE, metadata[0].GetType())
-		assert.Equal(t, "foo", metadata[0].GetMetricFamilyName())
-		assert.Equal(t, "metric_help", metadata[0].GetHelp())
-		assert.Equal(t, "metric_unit", metadata[0].GetUnit())
-
-		return nil
-	}
-
-	samplesVerifierFuncDisabledMetadataIngest := func(t *testing.T, pushReq *Request) error {
-		request, err := pushReq.WriteRequest()
-		require.NoError(t, err)
-
-		series := request.Timeseries
-		require.Len(t, series, 1)
-
-		samples := series[0].Samples
-		require.Equal(t, 1, len(samples))
-		assert.Equal(t, float64(1), samples[0].Value)
-		assert.Equal(t, "__name__", series[0].Labels[0].Name)
-		assert.Equal(t, "foo", series[0].Labels[0].Value)
-
-		metadata := request.Metadata
-		assert.Equal(t, []*mimirpb.MetricMetadata(nil), metadata)
-
-		return nil
-	}
-
-	tests := []struct {
-		name     string
-		series   []prompb.TimeSeries
-		metadata []mimirpb.MetricMetadata
-
-		compression bool
-		encoding    string
-		maxMsgSize  int
-
-		verifyFunc                func(*testing.T, *Request) error
-		responseCode              int
-		errMessage                string
-		enableOtelMetadataStorage bool
-	}{
-		{
-			name:                      "Write samples. No compression",
-			maxMsgSize:                100000,
-			verifyFunc:                samplesVerifierFunc,
-			series:                    sampleSeries,
-			metadata:                  sampleMetadata,
-			responseCode:              http.StatusOK,
-			enableOtelMetadataStorage: true,
-		},
-		{
-			name:                      "Write samples. Not enabled metadata ingest",
-			maxMsgSize:                100000,
-			verifyFunc:                samplesVerifierFuncDisabledMetadataIngest,
-			series:                    sampleSeries,
-			metadata:                  sampleMetadata,
-			responseCode:              http.StatusOK,
-			enableOtelMetadataStorage: false,
-		},
-		{
-			name:                      "Write samples. With compression",
-			compression:               true,
-			maxMsgSize:                100000,
-			verifyFunc:                samplesVerifierFunc,
-			series:                    sampleSeries,
-			metadata:                  sampleMetadata,
-			responseCode:              http.StatusOK,
-			enableOtelMetadataStorage: true,
-		},
-		{
-			name:        "Write samples. Request too big",
-			compression: false,
-			maxMsgSize:  30,
-			series:      sampleSeries,
-			metadata:    sampleMetadata,
-			verifyFunc: func(_ *testing.T, pushReq *Request) error {
-				_, err := pushReq.WriteRequest()
-				return err
-			},
-			responseCode: http.StatusRequestEntityTooLarge,
-			errMessage:   "the incoming push request has been rejected because its message size of 63 bytes is larger",
-		},
-		{
-			name:       "Write samples. Unsupported compression",
-			encoding:   "snappy",
-			maxMsgSize: 100000,
-			series:     sampleSeries,
-			metadata:   sampleMetadata,
-			verifyFunc: func(_ *testing.T, pushReq *Request) error {
-				_, err := pushReq.WriteRequest()
-				return err
-			},
-			responseCode: http.StatusUnsupportedMediaType,
-			errMessage:   "Only \"gzip\" or no compression supported",
-		},
-		{
-			name:       "Write histograms",
-			maxMsgSize: 100000,
-			series: []prompb.TimeSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "foo"},
-					},
-					Histograms: []prompb.Histogram{
-						remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(1)),
-					},
-				},
-			},
-			metadata: []mimirpb.MetricMetadata{
-				{
-					Help: "metric_help",
-					Unit: "metric_unit",
-				},
-			},
-			verifyFunc: func(t *testing.T, pushReq *Request) error {
-				request, err := pushReq.WriteRequest()
-				require.NoError(t, err)
-
-				series := request.Timeseries
-				require.Len(t, series, 1)
-
-				histograms := series[0].Histograms
-				assert.Equal(t, 1, len(histograms))
-				assert.Equal(t, 1, int(histograms[0].Schema))
-
-				metadata := request.Metadata
-				assert.Equal(t, mimirpb.HISTOGRAM, metadata[0].GetType())
-				assert.Equal(t, "foo", metadata[0].GetMetricFamilyName())
-				assert.Equal(t, "metric_help", metadata[0].GetHelp())
-				assert.Equal(t, "metric_unit", metadata[0].GetUnit())
-
-				pushReq.CleanUp()
-				return nil
-			},
-			responseCode:              http.StatusOK,
-			enableOtelMetadataStorage: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			exportReq := TimeseriesToOTLPRequest(tt.series, tt.metadata)
-			req := createOTLPProtoRequest(t, exportReq, tt.compression)
-			if tt.encoding != "" {
-				req.Header.Set("Content-Encoding", tt.encoding)
-			}
-
-			limits, err := validation.NewOverrides(
-				validation.Limits{},
-				validation.NewMockTenantLimits(map[string]*validation.Limits{}),
-			)
-			require.NoError(t, err)
-			pusher := func(_ context.Context, pushReq *Request) error {
-				t.Helper()
-				t.Cleanup(pushReq.CleanUp)
-				return tt.verifyFunc(t, pushReq)
-			}
-			handler := OTLPHandler(tt.maxMsgSize, nil, nil, tt.enableOtelMetadataStorage, limits, RetryConfig{}, pusher, nil, nil, log.NewNopLogger(), true)
-
-			resp := httptest.NewRecorder()
-			handler.ServeHTTP(resp, req)
-
-			assert.Equal(t, tt.responseCode, resp.Code)
-			if tt.errMessage != "" {
-				body, err := io.ReadAll(resp.Body)
-				require.NoError(t, err)
-				respStatus := &status.Status{}
-				err = proto.Unmarshal(body, respStatus)
-				assert.NoError(t, err)
-				assert.Contains(t, respStatus.GetMessage(), tt.errMessage)
-			}
-		})
-	}
-}
-
-func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
-	// https://github.com/grafana/mimir/issues/3037 is triggered by a single metric
-	// having two different datapoints that correspond to different Prometheus metrics.
-
-	// For the error to be triggered, md.MetricCount() < len(tsMap), hence we're inserting 3 valid
-	// samples from one metric (len = 3), and one invalid metric (metric count = 2).
-
-	md := pmetric.NewMetrics()
-	const name = "foo"
-	attributes := pcommon.NewMap()
-	attributes.PutStr(model.MetricNameLabel, name)
-
-	metric1 := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
-	metric1.SetName(name)
-	metric1.SetEmptyGauge()
-
-	datapoint1 := metric1.Gauge().DataPoints().AppendEmpty()
-	datapoint1.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
-	datapoint1.SetDoubleValue(0)
-	attributes.CopyTo(datapoint1.Attributes())
-	datapoint1.Attributes().PutStr("diff_label", "bar")
-
-	datapoint2 := metric1.Gauge().DataPoints().AppendEmpty()
-	datapoint2.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
-	datapoint2.SetDoubleValue(0)
-	attributes.CopyTo(datapoint2.Attributes())
-	datapoint2.Attributes().PutStr("diff_label", "baz")
-
-	datapoint3 := metric1.Gauge().DataPoints().AppendEmpty()
-	datapoint3.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
-	datapoint3.SetDoubleValue(0)
-	attributes.CopyTo(datapoint3.Attributes())
-	datapoint3.Attributes().PutStr("diff_label", "food")
-
-	metric2 := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
-	metric2.SetName(name)
-	metric2.SetEmptyGauge()
-
-	limits, err := validation.NewOverrides(
-		validation.Limits{},
-		validation.NewMockTenantLimits(map[string]*validation.Limits{}),
-	)
-	require.NoError(t, err)
-
-	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
-	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, nil, true, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
-		request, err := pushReq.WriteRequest()
-		assert.NoError(t, err)
-		assert.Len(t, request.Timeseries, 3)
-		assert.False(t, request.SkipLabelNameValidation)
-		pushReq.CleanUp()
-		return nil
-	}, nil, nil, log.NewNopLogger(), true)
-	handler.ServeHTTP(resp, req)
-	assert.Equal(t, 200, resp.Code)
-}
-
-func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
-	// After the above test, the panic occurred again.
-	// This test is to ensure that the panic is fixed for the new cases as well.
-
-	// First case is to make sure that target_info is counted correctly.
-	md := pmetric.NewMetrics()
-	const name = "foo"
-	attributes := pcommon.NewMap()
-	attributes.PutStr(model.MetricNameLabel, name)
-
-	resource1 := md.ResourceMetrics().AppendEmpty()
-	resource1.Resource().Attributes().PutStr("region", "us-central1")
-
-	metric1 := resource1.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
-	metric1.SetName(name)
-	metric1.SetEmptyGauge()
-	datapoint1 := metric1.Gauge().DataPoints().AppendEmpty()
-	datapoint1.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
-	datapoint1.SetDoubleValue(0)
-	attributes.CopyTo(datapoint1.Attributes())
-	datapoint1.Attributes().PutStr("diff_label", "bar")
-
-	metric2 := resource1.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
-	metric2.SetName(name)
-	metric2.SetEmptyGauge()
-
-	limits, err := validation.NewOverrides(
-		validation.Limits{},
-		validation.NewMockTenantLimits(map[string]*validation.Limits{}),
-	)
-	require.NoError(t, err)
-
-	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
-	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, nil, true, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
-		request, err := pushReq.WriteRequest()
-		t.Cleanup(pushReq.CleanUp)
-		require.NoError(t, err)
-		assert.Len(t, request.Timeseries, 1)
-		assert.False(t, request.SkipLabelNameValidation)
-		return nil
-	}, nil, nil, log.NewNopLogger(), true)
-	handler.ServeHTTP(resp, req)
-	assert.Equal(t, 200, resp.Code)
-
-	// Second case is to make sure that histogram metrics are counted correctly.
-	metric3 := resource1.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
-	metric3.SetName("http_request_duration_seconds")
-	metric3.SetEmptyHistogram()
-	metric3.Histogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
-	datapoint3 := metric3.Histogram().DataPoints().AppendEmpty()
-	datapoint3.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
-	datapoint3.SetCount(50)
-	datapoint3.SetSum(100)
-	datapoint3.ExplicitBounds().FromRaw([]float64{0.1, 0.2, 0.3, 0.4, 0.5})
-	datapoint3.BucketCounts().FromRaw([]uint64{10, 20, 30, 40, 50})
-	attributes.CopyTo(datapoint3.Attributes())
-
-	req = createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
-	resp = httptest.NewRecorder()
-	handler = OTLPHandler(100000, nil, nil, true, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
-		request, err := pushReq.WriteRequest()
-		t.Cleanup(pushReq.CleanUp)
-		require.NoError(t, err)
-		assert.Len(t, request.Timeseries, 9) // 6 buckets (including +Inf) + 2 sum/count + 2 from the first case
-		assert.False(t, request.SkipLabelNameValidation)
-		return nil
-	}, nil, nil, log.NewNopLogger(), true)
-	handler.ServeHTTP(resp, req)
-	assert.Equal(t, 200, resp.Code)
-}
-
-func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
-	// createOTLPProtoRequest will create a request which is BIGGER with compression (37 vs 58 bytes).
-	// Hence creating a dummy request.
-	var b bytes.Buffer
-	gz := gzip.NewWriter(&b)
-	_, err := gz.Write(make([]byte, 100000))
-	require.NoError(t, err)
-	require.NoError(t, gz.Close())
-
-	req, err := http.NewRequest("POST", "http://localhost/", bytes.NewReader(b.Bytes()))
-	require.NoError(t, err)
-	req.Header.Set("Content-Type", "application/x-protobuf")
-	req.Header.Set("Content-Encoding", "gzip")
-
-	resp := httptest.NewRecorder()
-
-	handler := OTLPHandler(140, nil, nil, true, nil, RetryConfig{}, readBodyPushFunc(t), nil, nil, log.NewNopLogger(), true)
-	handler.ServeHTTP(resp, req)
-	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
-	body, err := io.ReadAll(resp.Body)
-	assert.NoError(t, err)
-	respStatus := &status.Status{}
-	err = proto.Unmarshal(body, respStatus)
-	assert.NoError(t, err)
-	assert.Contains(t, respStatus.GetMessage(), "the incoming push request has been rejected because its message size is larger than the allowed limit of 140 bytes (err-mimir-distributor-max-write-message-size). To adjust the related limit, configure -distributor.max-recv-msg-size, or contact your service administrator.")
 }
 
 func TestHandler_mimirWriteRequest(t *testing.T) {
@@ -759,18 +389,21 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 		err                  error
 		expectedHTTPStatus   int
 		expectedErrorMessage string
+		expectedLogs         []string
 	}{
 		{
 			name:                 "a generic error during request parsing gets an HTTP 400",
 			err:                  fmt.Errorf(errMsg),
 			expectedHTTPStatus:   http.StatusBadRequest,
 			expectedErrorMessage: errMsg,
+			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=400 err="rpc error: code = Code(400) desc = this is an error" insight=true`},
 		},
 		{
 			name:                 "a gRPC error with a status during request parsing gets translated into HTTP error without DoNotLogError header",
 			err:                  httpgrpc.Errorf(http.StatusRequestEntityTooLarge, errMsg),
 			expectedHTTPStatus:   http.StatusRequestEntityTooLarge,
 			expectedErrorMessage: errMsg,
+			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = this is an error" insight=true`},
 		},
 	}
 	for _, tc := range parserTestCases {
@@ -783,13 +416,21 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 				return err
 			}
 
-			h := handler(10, nil, nil, false, nil, RetryConfig{}, pushFunc, log.NewNopLogger(), parserFunc)
+			logs := &concurrency.SyncBuffer{}
+			h := handler(10, nil, nil, false, nil, RetryConfig{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
 
 			recorder := httptest.NewRecorder()
-			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}))
+			ctxWithUser := user.InjectOrgID(context.Background(), "testuser")
+			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}).WithContext(ctxWithUser))
 
 			assert.Equal(t, tc.expectedHTTPStatus, recorder.Code)
 			assert.Equal(t, fmt.Sprintf("%s\n", tc.expectedErrorMessage), recorder.Body.String())
+
+			var logLines []string
+			if logsStr := logs.String(); logsStr != "" {
+				logLines = strings.Split(strings.TrimSpace(logsStr), "\n")
+			}
+			assert.Equal(t, tc.expectedLogs, logLines)
 		})
 	}
 
@@ -799,6 +440,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 		expectedHTTPStatus          int
 		expectedErrorMessage        string
 		expectedDoNotLogErrorHeader bool
+		expectedLogs                []string
 	}{
 		{
 			name:               "no error during push gets translated into a HTTP 200",
@@ -810,6 +452,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			err:                  fmt.Errorf(errMsg),
 			expectedHTTPStatus:   http.StatusInternalServerError,
 			expectedErrorMessage: errMsg,
+			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=500 err="this is an error"`},
 		},
 		{
 			name:                        "a DoNotLogError of a generic error during push gets a HTTP 500 with DoNotLogError header",
@@ -817,12 +460,14 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			expectedHTTPStatus:          http.StatusInternalServerError,
 			expectedErrorMessage:        errMsg,
 			expectedDoNotLogErrorHeader: true,
+			expectedLogs:                []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=500 err="this is an error"`},
 		},
 		{
 			name:                 "a gRPC error with a status during push gets translated into HTTP error without DoNotLogError header",
 			err:                  httpgrpc.Errorf(http.StatusRequestEntityTooLarge, errMsg),
 			expectedHTTPStatus:   http.StatusRequestEntityTooLarge,
 			expectedErrorMessage: errMsg,
+			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = this is an error" insight=true`},
 		},
 		{
 			name:                        "a DoNotLogError of a gRPC error with a status during push gets translated into HTTP error without DoNotLogError header",
@@ -830,12 +475,21 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			expectedHTTPStatus:          http.StatusRequestEntityTooLarge,
 			expectedErrorMessage:        errMsg,
 			expectedDoNotLogErrorHeader: true,
+			expectedLogs:                []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = this is an error" insight=true`},
 		},
 		{
 			name:                 "a context.Canceled error during push gets translated into a HTTP 499",
 			err:                  context.Canceled,
 			expectedHTTPStatus:   statusClientClosedRequest,
 			expectedErrorMessage: context.Canceled.Error(),
+			expectedLogs:         []string{`level=warn user=testuser msg="push request canceled" err="context canceled"`},
+		},
+		{
+			name:                 "StatusBadRequest is logged with insight=true",
+			err:                  httpgrpc.Errorf(http.StatusBadRequest, "limits reached"),
+			expectedHTTPStatus:   http.StatusBadRequest,
+			expectedErrorMessage: "limits reached",
+			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=400 err="rpc error: code = Code(400) desc = limits reached" insight=true`},
 		},
 	}
 
@@ -852,9 +506,12 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 				}
 				return tc.err
 			}
-			h := handler(10, nil, nil, false, nil, RetryConfig{}, pushFunc, log.NewNopLogger(), parserFunc)
+
+			logs := &concurrency.SyncBuffer{}
+			h := handler(10, nil, nil, false, nil, RetryConfig{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
 			recorder := httptest.NewRecorder()
-			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}))
+			ctxWithUser := user.InjectOrgID(context.Background(), "testuser")
+			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}).WithContext(ctxWithUser))
 
 			assert.Equal(t, tc.expectedHTTPStatus, recorder.Code)
 			if tc.err != nil {
@@ -866,6 +523,12 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			} else {
 				require.Equal(t, "", header)
 			}
+
+			var logLines []string
+			if logsStr := logs.String(); logsStr != "" {
+				logLines = strings.Split(strings.TrimSpace(logsStr), "\n")
+			}
+			assert.Equal(t, tc.expectedLogs, logLines)
 		})
 	}
 }
@@ -991,7 +654,7 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 	}
 }
 
-func TestHandler_ToHTTPStatus(t *testing.T) {
+func TestHandler_toHTTPStatus(t *testing.T) {
 	const (
 		ingesterID  = "ingester-25"
 		userID      = "user"
@@ -1007,199 +670,167 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 		err                         error
 		serviceOverloadErrorEnabled bool
 		expectedHTTPStatus          int
-		expectedGRPCStatus          codes.Code
 		expectedErrorMsg            string
 	}
 	testCases := map[string]testStruct{
 		"a generic error gets translated into a HTTP 500": {
 			err:                originalErr,
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   originalMsg,
 		},
 		"a DoNotLog of a generic error gets translated into a HTTP 500": {
 			err:                middleware.DoNotLogError{Err: originalErr},
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   originalMsg,
 		},
 		"a context.DeadlineExceeded gets translated into a HTTP 500": {
 			err:                context.DeadlineExceeded,
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   context.DeadlineExceeded.Error(),
 		},
 		"a replicasDidNotMatchError gets translated into an HTTP 202": {
 			err:                replicasNotMatchErr,
 			expectedHTTPStatus: http.StatusAccepted,
-			expectedGRPCStatus: codes.OK,
 			expectedErrorMsg:   replicasNotMatchErr.Error(),
 		},
 		"a DoNotLogError of a replicasDidNotMatchError gets translated into an HTTP 202": {
 			err:                middleware.DoNotLogError{Err: replicasNotMatchErr},
 			expectedHTTPStatus: http.StatusAccepted,
-			expectedGRPCStatus: codes.OK,
 			expectedErrorMsg:   replicasNotMatchErr.Error(),
 		},
 		"a tooManyClustersError gets translated into an HTTP 400": {
 			err:                tooManyClustersErr,
 			expectedHTTPStatus: http.StatusBadRequest,
-			expectedGRPCStatus: codes.InvalidArgument,
 			expectedErrorMsg:   tooManyClustersErr.Error(),
 		},
 		"a DoNotLogError of a tooManyClustersError gets translated into an HTTP 400": {
 			err:                middleware.DoNotLogError{Err: tooManyClustersErr},
 			expectedHTTPStatus: http.StatusBadRequest,
-			expectedGRPCStatus: codes.InvalidArgument,
 			expectedErrorMsg:   tooManyClustersErr.Error(),
 		},
 		"a validationError gets translated into an HTTP 400": {
 			err:                newValidationError(originalErr),
 			expectedHTTPStatus: http.StatusBadRequest,
-			expectedGRPCStatus: codes.InvalidArgument,
 			expectedErrorMsg:   originalMsg,
 		},
 		"a DoNotLogError of a validationError gets translated into an HTTP 400": {
 			err:                middleware.DoNotLogError{Err: newValidationError(originalErr)},
 			expectedHTTPStatus: http.StatusBadRequest,
-			expectedGRPCStatus: codes.InvalidArgument,
 			expectedErrorMsg:   originalMsg,
 		},
 		"an ingestionRateLimitedError gets translated into an HTTP 429": {
 			err:                ingestionRateLimitedErr,
 			expectedHTTPStatus: http.StatusTooManyRequests,
-			expectedGRPCStatus: codes.ResourceExhausted,
 			expectedErrorMsg:   ingestionRateLimitedErr.Error(),
 		},
 		"an ingestionRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529": {
 			err:                         ingestionRateLimitedErr,
 			serviceOverloadErrorEnabled: true,
 			expectedHTTPStatus:          StatusServiceOverloaded,
-			expectedGRPCStatus:          codes.ResourceExhausted,
 			expectedErrorMsg:            ingestionRateLimitedErr.Error(),
 		},
 		"a DoNotLogError of an ingestionRateLimitedError gets translated into an HTTP 429": {
 			err:                middleware.DoNotLogError{Err: ingestionRateLimitedErr},
 			expectedHTTPStatus: http.StatusTooManyRequests,
-			expectedGRPCStatus: codes.ResourceExhausted,
 			expectedErrorMsg:   ingestionRateLimitedErr.Error(),
 		},
 		"a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529": {
 			err:                         requestRateLimitedErr,
 			serviceOverloadErrorEnabled: true,
 			expectedHTTPStatus:          StatusServiceOverloaded,
-			expectedGRPCStatus:          codes.ResourceExhausted,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
 		"a DoNotLogError of a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529": {
 			err:                         middleware.DoNotLogError{Err: requestRateLimitedErr},
 			serviceOverloadErrorEnabled: true,
 			expectedHTTPStatus:          StatusServiceOverloaded,
-			expectedGRPCStatus:          codes.ResourceExhausted,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
 		"a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an HTTP 429": {
 			err:                         requestRateLimitedErr,
 			serviceOverloadErrorEnabled: false,
 			expectedHTTPStatus:          http.StatusTooManyRequests,
-			expectedGRPCStatus:          codes.ResourceExhausted,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
 		"a DoNotLogError of a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an HTTP 429": {
 			err:                         middleware.DoNotLogError{Err: requestRateLimitedErr},
 			serviceOverloadErrorEnabled: false,
 			expectedHTTPStatus:          http.StatusTooManyRequests,
-			expectedGRPCStatus:          codes.ResourceExhausted,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
 		"an ingesterPushError with BAD_DATA cause gets translated into an HTTP 400": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.BAD_DATA), ingesterID),
 			expectedHTTPStatus: http.StatusBadRequest,
-			expectedGRPCStatus: codes.InvalidArgument,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"a DoNotLogError of an ingesterPushError with BAD_DATA cause gets translated into an HTTP 400": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.FailedPrecondition, originalMsg, mimirpb.BAD_DATA), ingesterID)},
 			expectedHTTPStatus: http.StatusBadRequest,
-			expectedGRPCStatus: codes.InvalidArgument,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into an HTTP 501": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID),
 			expectedHTTPStatus: http.StatusNotImplemented,
-			expectedGRPCStatus: codes.Unimplemented,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"a DoNotLogError of an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into an HTTP 501": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID)},
 			expectedHTTPStatus: http.StatusNotImplemented,
-			expectedGRPCStatus: codes.Unimplemented,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into an HTTP 503": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
-			expectedGRPCStatus: codes.Unavailable,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"a DoNotLogError of an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into an HTTP 503": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE), ingesterID)},
 			expectedHTTPStatus: http.StatusServiceUnavailable,
-			expectedGRPCStatus: codes.Unavailable,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into an HTTP 500": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE), ingesterID),
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"a DoNotLogError of an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into an HTTP 500": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE), ingesterID)},
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 500": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT), ingesterID),
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 500": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT), ingesterID)},
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"an ingesterPushError with UNKNOWN_CAUSE cause gets translated into an HTTP 500": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.UNKNOWN_CAUSE), ingesterID),
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"a DoNotLogError of an ingesterPushError with UNKNOWN_CAUSE cause gets translated into an HTTP 500": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.UNKNOWN_CAUSE), ingesterID)},
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"an ingesterPushError obtained from a DeadlineExceeded coming from the ingester gets translated into an HTTP 500": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, context.DeadlineExceeded.Error(), mimirpb.UNKNOWN_CAUSE), ingesterID),
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedGRPCStatus: codes.Internal,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, context.DeadlineExceeded),
 		},
 		"a circuitBreakerOpenError gets translated into an HTTP 503": {
 			err:                newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
-			expectedGRPCStatus: codes.Unavailable,
 			expectedErrorMsg:   circuitbreaker.ErrOpen.Error(),
 		},
 		"a wrapped circuitBreakerOpenError gets translated into an HTTP 503": {
 			err:                errors.Wrap(newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}), fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
-			expectedGRPCStatus: codes.Unavailable,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, circuitbreaker.ErrOpen),
 		},
 	}
@@ -1218,10 +849,9 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			gStatus, status := toGRPCHTTPStatus(ctx, tc.err, limits)
+			status := toHTTPStatus(ctx, tc.err, limits)
 			msg := tc.err.Error()
 			assert.Equal(t, tc.expectedHTTPStatus, status)
-			assert.Equal(t, tc.expectedGRPCStatus, gStatus)
 			assert.Equal(t, tc.expectedErrorMsg, msg)
 		})
 	}

@@ -1218,43 +1218,79 @@ instance_limits:
 # CLI flag: -ingester.owned-series-update-interval
 [owned_series_update_interval: <duration> | default = 15s]
 
-circuit_breaker:
+push_circuit_breaker:
   # (experimental) Enable circuit breaking when making requests to ingesters
-  # CLI flag: -ingester.circuit-breaker.enabled
+  # CLI flag: -ingester.push-circuit-breaker.enabled
   [enabled: <boolean> | default = false]
 
   # (experimental) Max percentage of requests that can fail over period before
   # the circuit breaker opens
-  # CLI flag: -ingester.circuit-breaker.failure-threshold-percentage
+  # CLI flag: -ingester.push-circuit-breaker.failure-threshold-percentage
   [failure_threshold_percentage: <int> | default = 10]
 
   # (experimental) How many requests must have been executed in period for the
   # circuit breaker to be eligible to open for the rate of failures
-  # CLI flag: -ingester.circuit-breaker.failure-execution-threshold
+  # CLI flag: -ingester.push-circuit-breaker.failure-execution-threshold
   [failure_execution_threshold: <int> | default = 100]
 
   # (experimental) Moving window of time that the percentage of failed requests
   # is computed over
-  # CLI flag: -ingester.circuit-breaker.thresholding-period
+  # CLI flag: -ingester.push-circuit-breaker.thresholding-period
   [thresholding_period: <duration> | default = 1m]
 
   # (experimental) How long the circuit breaker will stay in the open state
   # before allowing some requests
-  # CLI flag: -ingester.circuit-breaker.cooldown-period
+  # CLI flag: -ingester.push-circuit-breaker.cooldown-period
   [cooldown_period: <duration> | default = 10s]
 
   # (experimental) How long the circuit breaker should wait between an
   # activation request and becoming effectively active. During that time both
   # failures and successes will not be counted.
-  # CLI flag: -ingester.circuit-breaker.initial-delay
+  # CLI flag: -ingester.push-circuit-breaker.initial-delay
   [initial_delay: <duration> | default = 0s]
 
-  # (experiment) How long is execution of ingester's Push supposed to last
-  # before it is reported as timeout in a circuit breaker. This configuration is
-  # used for circuit breakers only, and timeout expirations are not reported as
-  # errors
-  # CLI flag: -ingester.circuit-breaker.push-timeout
-  [push_timeout: <duration> | default = 2s]
+  # (experimental) The maximum duration of an ingester's request before it
+  # triggers a circuit breaker. This configuration is used for circuit breakers
+  # only, and its timeouts aren't reported as errors.
+  # CLI flag: -ingester.push-circuit-breaker.request-timeout
+  [request_timeout: <duration> | default = 2s]
+
+read_circuit_breaker:
+  # (experimental) Enable circuit breaking when making requests to ingesters
+  # CLI flag: -ingester.read-circuit-breaker.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Max percentage of requests that can fail over period before
+  # the circuit breaker opens
+  # CLI flag: -ingester.read-circuit-breaker.failure-threshold-percentage
+  [failure_threshold_percentage: <int> | default = 10]
+
+  # (experimental) How many requests must have been executed in period for the
+  # circuit breaker to be eligible to open for the rate of failures
+  # CLI flag: -ingester.read-circuit-breaker.failure-execution-threshold
+  [failure_execution_threshold: <int> | default = 100]
+
+  # (experimental) Moving window of time that the percentage of failed requests
+  # is computed over
+  # CLI flag: -ingester.read-circuit-breaker.thresholding-period
+  [thresholding_period: <duration> | default = 1m]
+
+  # (experimental) How long the circuit breaker will stay in the open state
+  # before allowing some requests
+  # CLI flag: -ingester.read-circuit-breaker.cooldown-period
+  [cooldown_period: <duration> | default = 10s]
+
+  # (experimental) How long the circuit breaker should wait between an
+  # activation request and becoming effectively active. During that time both
+  # failures and successes will not be counted.
+  # CLI flag: -ingester.read-circuit-breaker.initial-delay
+  [initial_delay: <duration> | default = 0s]
+
+  # (experimental) The maximum duration of an ingester's request before it
+  # triggers a circuit breaker. This configuration is used for circuit breakers
+  # only, and its timeouts aren't reported as errors.
+  # CLI flag: -ingester.read-circuit-breaker.request-timeout
+  [request_timeout: <duration> | default = 30s]
 ```
 
 ### querier
@@ -3073,10 +3109,17 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (advanced) Controls how far into the future incoming samples and exemplars are
 # accepted compared to the wall clock. Any sample or exemplar will be rejected
-# if its timestamp is greater than '(now + grace_period)'. This configuration is
-# enforced in the distributor and ingester.
+# if its timestamp is greater than '(now + creation_grace_period)'. This
+# configuration is enforced in the distributor and ingester.
 # CLI flag: -validation.create-grace-period
 [creation_grace_period: <duration> | default = 10m]
+
+# (advanced) Controls how far into the past incoming samples and exemplars are
+# accepted compared to the wall clock. Any sample or exemplar will be rejected
+# if its timestamp is lower than '(now - OOO window - past_grace_period)'. This
+# configuration is enforced in the distributor and ingester. 0 to disable.
+# CLI flag: -validation.past-grace-period
+[past_grace_period: <duration> | default = 0s]
 
 # (advanced) Enforce every metadata has a metric name.
 # CLI flag: -validation.enforce-metadata-metric-name

@@ -75,6 +75,7 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
+	"github.com/grafana/mimir/pkg/util/tracing"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 	"github.com/grafana/mimir/pkg/vault"
@@ -786,7 +787,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	// We are passing the wrapped tracer to both opentracing and opentelemetry until after the ecosystem
 	// gets converged into the latter.
 	opentracing.SetGlobalTracer(tracer)
-	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(tracer))
+	otel.SetTracerProvider(tracing.NewOpenTelemetryProviderBridge(tracer))
 
 	mimir.Cfg.Server.Router = mux.NewRouter()
 

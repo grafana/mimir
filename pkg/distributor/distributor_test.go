@@ -6762,6 +6762,7 @@ func TestDistributorValidation(t *testing.T) {
 		labels      [][]mimirpb.LabelAdapter
 		samples     []mimirpb.Sample
 		exemplars   []*mimirpb.Exemplar
+		limits      func(limits *validation.Limits)
 		expectedErr *status.Status
 	}{
 		"validation passes": {
@@ -6797,6 +6798,18 @@ func TestDistributorValidation(t *testing.T) {
 				Value:       4,
 			}},
 			expectedErr: status.New(codes.FailedPrecondition, fmt.Sprintf(sampleTimestampTooNewMsgFormat, future, "testmetric")),
+		},
+
+		"validation does not fail for samples from the past without past_grace_period setting": {
+			labels:  [][]mimirpb.LabelAdapter{{{Name: "foo", Value: "bar"}, {Name: labels.MetricName, Value: "testmetric"}}},
+			samples: []mimirpb.Sample{{TimestampMs: int64(past), Value: 1}},
+		},
+
+		"validation fails for samples from the past": {
+			labels:      [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
+			samples:     []mimirpb.Sample{{TimestampMs: int64(past), Value: 4}},
+			limits:      func(limits *validation.Limits) { limits.PastGracePeriod = model.Duration(now.Sub(past) / 2) },
+			expectedErr: status.New(codes.FailedPrecondition, fmt.Sprintf(sampleTimestampTooOldMsgFormat, past, "testmetric")),
 		},
 
 		"exceeds maximum labels per series": {
@@ -6875,6 +6888,9 @@ func TestDistributorValidation(t *testing.T) {
 			limits.CreationGracePeriod = model.Duration(2 * time.Hour)
 			limits.MaxLabelNamesPerSeries = 2
 			limits.MaxGlobalExemplarsPerUser = 10
+			if tc.limits != nil {
+				tc.limits(&limits)
+			}
 
 			ds, _, _, _ := prepare(t, prepConfig{
 				numIngesters:    3,

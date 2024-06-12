@@ -16,11 +16,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+
+	"github.com/grafana/mimir/pkg/querier/stats"
 )
 
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
-func NewEngine(opts promql.EngineOpts, limitsProvider QueryLimitsProvider, logger log.Logger) (promql.QueryEngine, error) {
+func NewEngine(opts promql.EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, logger log.Logger) (promql.QueryEngine, error) {
 	lookbackDelta := opts.LookbackDelta
 	if lookbackDelta == 0 {
 		lookbackDelta = defaultLookbackDelta
@@ -50,6 +52,7 @@ func NewEngine(opts promql.EngineOpts, limitsProvider QueryLimitsProvider, logge
 			Help:                        "Estimated peak memory consumption of each query (in bytes)",
 			NativeHistogramBucketFactor: 1.1,
 		}),
+		queriesRejectedDueToPeakMemoryConsumption: metrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption),
 	}, nil
 }
 
@@ -59,8 +62,9 @@ type Engine struct {
 	limitsProvider     QueryLimitsProvider
 	activeQueryTracker promql.QueryTracker
 
-	logger                         log.Logger
-	estimatedPeakMemoryConsumption prometheus.Histogram
+	logger                                    log.Logger
+	estimatedPeakMemoryConsumption            prometheus.Histogram
+	queriesRejectedDueToPeakMemoryConsumption prometheus.Counter
 }
 
 func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {

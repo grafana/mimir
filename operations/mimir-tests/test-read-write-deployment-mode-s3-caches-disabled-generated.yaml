@@ -100,14 +100,6 @@ rules:
   - statefulsets/status
   verbs:
   - update
-- apiGroups:
-  - ""
-  resources:
-  - configmaps
-  verbs:
-  - get
-  - update
-  - create
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -490,8 +482,6 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
-        - -use-zone-tracker=true
-        - -zone-tracker.config-map-name=rollout-operator-zone-tracker
         image: grafana/rollout-operator:v0.14.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator

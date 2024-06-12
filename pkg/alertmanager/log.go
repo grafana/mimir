@@ -14,8 +14,6 @@ type alertingLogger struct {
 }
 
 // newLoggerFactory returns a function that implements the alertingLogging.LoggerFactory interface.
-//
-//lint:ignore U1000 Ignore unused functions for now, they will be used to create the Grafana notifiers.
 func newLoggerFactory(logger log.Logger) alertingLogging.LoggerFactory {
 	return func(loggerName string, ctx ...any) alertingLogging.Logger {
 		keyvals := append([]any{"logger", loggerName}, ctx...)

@@ -135,12 +135,6 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	// Having a nil global config causes panics in the Alertmanager codebase.
-	if c.Global == nil {
-		c.Global = &config.GlobalConfig{}
-		*c.Global = config.DefaultGlobalConfig()
-	}
-
 	if c.Route == nil {
 		return fmt.Errorf("no routes provided")
 	}
@@ -201,6 +195,15 @@ type PostableApiAlertingConfig struct {
 
 	// Override with our superset receiver type
 	Receivers []*PostableApiReceiver `yaml:"receivers,omitempty" json:"receivers,omitempty"`
+}
+
+// Load parses a slice of bytes (json/yaml) into a configuration and validates it.
+func Load(rawCfg []byte) (*PostableApiAlertingConfig, error) {
+	var cfg PostableApiAlertingConfig
+	if err := yaml.Unmarshal(rawCfg, &cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
 }
 
 func (c *PostableApiAlertingConfig) GetReceivers() []*PostableApiReceiver {

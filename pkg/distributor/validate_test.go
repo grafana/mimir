@@ -398,6 +398,14 @@ func (c sampleValidationCfg) CreationGracePeriod(_ string) time.Duration {
 	return 0
 }
 
+func (c sampleValidationCfg) PastGracePeriod(_ string) time.Duration {
+	return 0
+}
+
+func (c sampleValidationCfg) OutOfOrderTimeWindow(_ string) time.Duration {
+	return 0
+}
+
 func (c sampleValidationCfg) MaxNativeHistogramBuckets(_ string) int {
 	return c.maxNativeHistogramBuckets
 }

@@ -5,6 +5,7 @@ package pooling
 import (
 	"unsafe"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -61,11 +62,16 @@ type LimitingPool struct {
 	MaxEstimatedMemoryConsumptionBytes     uint64
 	CurrentEstimatedMemoryConsumptionBytes uint64
 	PeakEstimatedMemoryConsumptionBytes    uint64
+
+	rejectionCount        prometheus.Counter
+	haveRecordedRejection bool
 }
 
-func NewLimitingPool(maxEstimatedMemoryConsumptionBytes uint64) *LimitingPool {
+func NewLimitingPool(maxEstimatedMemoryConsumptionBytes uint64, rejectionCount prometheus.Counter) *LimitingPool {
 	return &LimitingPool{
 		MaxEstimatedMemoryConsumptionBytes: maxEstimatedMemoryConsumptionBytes,
+
+		rejectionCount: rejectionCount,
 	}
 }
 
@@ -84,6 +90,12 @@ func getWithElementSize[E any, S ~[]E](p *LimitingPool, pool *pool.BucketedPool[
 
 	if p.MaxEstimatedMemoryConsumptionBytes > 0 && p.CurrentEstimatedMemoryConsumptionBytes+estimatedBytes > p.MaxEstimatedMemoryConsumptionBytes {
 		pool.Put(s)
+
+		if !p.haveRecordedRejection {
+			p.haveRecordedRejection = true
+			p.rejectionCount.Inc()
+		}
+
 		return nil, limiter.NewMaxEstimatedMemoryConsumptionPerQueryLimitError(p.MaxEstimatedMemoryConsumptionBytes)
 	}
 
