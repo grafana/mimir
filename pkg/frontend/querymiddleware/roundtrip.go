@@ -323,6 +323,7 @@ func newQueryTripperware(
 	return func(next http.RoundTripper) http.RoundTripper {
 		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
 		instant := newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...)
+		remoteRead := newRemoteReadRoundTripper(next)
 
 		// Wrap next for cardinality, labels queries and all other queries.
 		// That attempts to parse "start" and "end" from the HTTP request and set them in the request's QueryDetails.
@@ -358,6 +359,8 @@ func newQueryTripperware(
 				return activeNativeHistogramMetrics.RoundTrip(r)
 			case IsLabelsQuery(r.URL.Path):
 				return labels.RoundTrip(r)
+			case IsRemoteReadQuery(r.URL.Path):
+				return remoteRead.RoundTrip(r)
 			default:
 				return next.RoundTrip(r)
 			}

@@ -27,7 +27,7 @@ func TestParseRemoteReadRequestWithoutConsumingBody(t *testing.T) {
 			reqBody: func() io.ReadCloser {
 				return nil
 			},
-			expectedParams: make(url.Values),
+			expectedParams: nil,
 		},
 		"valid body": {
 			reqBody: func() io.ReadCloser {
