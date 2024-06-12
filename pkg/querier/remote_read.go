@@ -31,7 +31,7 @@ import (
 
 const (
 	// Queries are a set of matchers with time ranges - should not get into megabytes
-	maxRemoteReadQuerySize = 1024 * 1024
+	MaxRemoteReadQuerySize = 1024 * 1024
 
 	// Maximum number of bytes in frame when using streaming remote read.
 	// Google's recommendation is to keep protobuf message not larger than 1MB.
@@ -51,7 +51,7 @@ func remoteReadHandler(q storage.SampleAndChunkQueryable, maxBytesInFrame int, l
 		ctx := r.Context()
 		var req client.ReadRequest
 		logger := util_log.WithContext(r.Context(), lg)
-		if _, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRemoteReadQuerySize, nil, &req, util.RawSnappy); err != nil {
+		if _, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), MaxRemoteReadQuerySize, nil, &req, util.RawSnappy); err != nil {
 			level.Error(logger).Log("msg", "failed to parse proto", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

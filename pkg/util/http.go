@@ -343,6 +343,7 @@ func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compressi
 
 // ParseRequestFormWithoutConsumingBody parsed and returns the request parameters (query string and/or request body)
 // from the input http.Request. If the request has a Body, the request's Body is replaces so that it can be consumed again.
+// It does not check the req.Body size, so it is the caller's responsibility to ensure that the body is not too large.
 func ParseRequestFormWithoutConsumingBody(r *http.Request) (url.Values, error) {
 	if r.Body == nil {
 		if err := r.ParseForm(); err != nil {
@@ -352,16 +353,10 @@ func ParseRequestFormWithoutConsumingBody(r *http.Request) (url.Values, error) {
 		return r.Form, nil
 	}
 
-	// Close the original body reader. It's going to be replaced later in this function.
-	origBody := r.Body
-	defer func() { _ = origBody.Close() }()
-
-	// Store the body contents, so we can read it multiple times.
-	bodyBytes, err := io.ReadAll(r.Body)
+	bodyBytes, err := ReadRequestBodyWithoutConsuming(r)
 	if err != nil {
 		return nil, err
 	}
-	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
 	// Parse the request data.
 	if err := r.ParseForm(); err != nil {
@@ -376,6 +371,30 @@ func ParseRequestFormWithoutConsumingBody(r *http.Request) (url.Values, error) {
 	r.Form, r.PostForm = nil, nil
 
 	return params, nil
+}
+
+// ReadRequestBodyWithoutConsuming makes a copy of the request body bytes
+// without consuming the body, so it can be read again later.
+// If the request has no body, it returns nil without error.
+// It does not check the req.Body size, so it is the caller's responsibility
+// to ensure that the body is not too large.
+func ReadRequestBodyWithoutConsuming(r *http.Request) ([]byte, error) {
+	if r.Body == nil {
+		return nil, nil
+	}
+
+	// Close the original body reader. It's going to be replaced later in this function.
+	origBody := r.Body
+	defer func() { _ = origBody.Close() }()
+
+	// Store the body contents, so we can read it multiple times.
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+	return bodyBytes, nil
 }
 
 func copyValues(src url.Values) url.Values {

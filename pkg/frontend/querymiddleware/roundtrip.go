@@ -36,6 +36,7 @@ const (
 	cardinalityActiveSeriesPathSuffix                 = "/api/v1/cardinality/active_series"
 	cardinalityActiveNativeHistogramMetricsPathSuffix = "/api/v1/cardinality/active_native_histogram_metrics"
 	labelNamesPathSuffix                              = "/api/v1/labels"
+	remoteReadPathSuffix                              = "/api/v1/read"
 
 	// DefaultDeprecatedAlignQueriesWithStep is the default value for the deprecated querier frontend config DeprecatedAlignQueriesWithStep
 	// which has been moved to a per-tenant limit; TODO remove in Mimir 2.14
@@ -459,4 +460,8 @@ func IsActiveSeriesQuery(path string) bool {
 
 func IsActiveNativeHistogramMetricsQuery(path string) bool {
 	return strings.HasSuffix(path, cardinalityActiveNativeHistogramMetricsPathSuffix)
+}
+
+func IsRemoteReadQuery(path string) bool {
+	return strings.HasSuffix(path, remoteReadPathSuffix)
 }
