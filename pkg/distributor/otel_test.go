@@ -655,14 +655,14 @@ func TestHandler_toOtlpGRPCHTTPStatus(t *testing.T) {
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.InvalidArgument,
 		},
-		"an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into gRPC codes.StatusNotImplemented and HTTP 501 statuses": {
+		"an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into gRPC codes.StatusNotImplemented and HTTP 503 statuses": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID),
-			expectedHTTPStatus: http.StatusNotImplemented,
+			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Unimplemented,
 		},
-		"a DoNotLogError of an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into gRPC codes.StatusNotImplemented and HTTP 501 statuses": {
+		"a DoNotLogError of an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into gRPC codes.StatusNotImplemented and HTTP 503 statuses": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID)},
-			expectedHTTPStatus: http.StatusNotImplemented,
+			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Unimplemented,
 		},
 		"an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
