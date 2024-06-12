@@ -729,3 +729,53 @@ func TestHandler_toOtlpGRPCHTTPStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestHttpRetryableToOtlpRetryable(t *testing.T) {
+	testCases := map[string]struct {
+		httpStatusCode             int
+		expectedOtlpHTTPStatusCode int
+	}{
+		"HTTP status codes 2xx gets translated into themselves": {
+			httpStatusCode:             http.StatusAccepted,
+			expectedOtlpHTTPStatusCode: http.StatusAccepted,
+		},
+		"HTTP status code 400 gets translated into itself": {
+			httpStatusCode:             http.StatusBadRequest,
+			expectedOtlpHTTPStatusCode: http.StatusBadRequest,
+		},
+		"HTTP status code 429 gets translated into itself": {
+			httpStatusCode:             http.StatusTooManyRequests,
+			expectedOtlpHTTPStatusCode: http.StatusTooManyRequests,
+		},
+		"HTTP status code 500 gets translated into 503": {
+			httpStatusCode:             http.StatusInternalServerError,
+			expectedOtlpHTTPStatusCode: http.StatusServiceUnavailable,
+		},
+		"HTTP status code 501 gets translated into 503": {
+			httpStatusCode:             http.StatusNotImplemented,
+			expectedOtlpHTTPStatusCode: http.StatusServiceUnavailable,
+		},
+		"HTTP status code 502 gets translated into itself": {
+			httpStatusCode:             http.StatusBadGateway,
+			expectedOtlpHTTPStatusCode: http.StatusBadGateway,
+		},
+		"HTTP status code 503 gets translated into itself": {
+			httpStatusCode:             http.StatusServiceUnavailable,
+			expectedOtlpHTTPStatusCode: http.StatusServiceUnavailable,
+		},
+		"HTTP status code 504 gets translated into itself": {
+			httpStatusCode:             http.StatusGatewayTimeout,
+			expectedOtlpHTTPStatusCode: http.StatusGatewayTimeout,
+		},
+		"HTTP status code 507 gets translated into 503": {
+			httpStatusCode:             http.StatusInsufficientStorage,
+			expectedOtlpHTTPStatusCode: http.StatusServiceUnavailable,
+		},
+	}
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			otlpHTTPStatusCode := httpRetryableToOtlpRetryable(testCase.httpStatusCode)
+			require.Equal(t, testCase.expectedOtlpHTTPStatusCode, otlpHTTPStatusCode)
+		})
+	}
+}

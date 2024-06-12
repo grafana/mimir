@@ -253,7 +253,10 @@ func otlpHandler(
 				errorMsg string
 			)
 			if st, ok := grpcutil.ErrorToStatus(err); ok {
-				httpCode = int(st.Code())
+				// TODO: This code is needed for backwards compatibility,
+				// and can be removed once -ingester.return-only-grpc-errors
+				// is removed.
+				httpCode = httpRetryableToOtlpRetryable(int(st.Code()))
 				grpcCode = st.Code()
 				errorMsg = st.Message()
 			} else {
@@ -281,33 +284,27 @@ func toOtlpGRPCHTTPStatus(pushErr error) (codes.Code, int) {
 		return codes.Internal, http.StatusServiceUnavailable
 	}
 
-	grpcStatusCode := toGRPCStatusCode(distributorErr.Cause(), false)
-	otlpHTTPStatusCode := toOtlpHTTPStatus(distributorErr.Cause())
+	grpcStatusCode := errorCauseToGRPCStatusCode(distributorErr.Cause(), false)
+	httpStatusCode := errorCauseToHTTPStatusCode(distributorErr.Cause(), false)
+	otlpHTTPStatusCode := httpRetryableToOtlpRetryable(httpStatusCode)
 	return grpcStatusCode, otlpHTTPStatusCode
 }
 
-// toOtlpHTTPStatus maps the given mimirpb.ErrorCause to its OTLP endpoint HTTP status.
-// This function is slightly different from toHTTPStatus() due to the OTLP specifications
-// (https://opentelemetry.io/docs/specs/otlp/#failures-1): unlike Prometheus, the OTLP
-// client only retries on HTTP status codes 429, 502, 503, and 504.
-func toOtlpHTTPStatus(errCause mimirpb.ErrorCause) int {
-	switch errCause {
-	case mimirpb.BAD_DATA:
-		return http.StatusBadRequest
-	case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
-		return http.StatusTooManyRequests
-	case mimirpb.REPLICAS_DID_NOT_MATCH:
-		return http.StatusAccepted
-	case mimirpb.TOO_MANY_CLUSTERS:
-		return http.StatusBadRequest
-	case mimirpb.TSDB_UNAVAILABLE:
-		return http.StatusServiceUnavailable
-	case mimirpb.CIRCUIT_BREAKER_OPEN:
-		return http.StatusServiceUnavailable
-	case mimirpb.METHOD_NOT_ALLOWED:
-		return http.StatusNotImplemented
+// httpRetryableToOtlpRetryable maps non-retryable 5xx HTTP status codes according
+// to the OTLP specifications (https://opentelemetry.io/docs/specs/otlp/#failures-1)
+// to http.StatusServiceUnavailable. In case of a non-retryable HTTP status code,
+// httpRetryableToOtlpRetryable returns the HTTP status code itself.
+// Unlike Prometheus, which retries 429 and all 5xx HTTP status codes,
+// the OTLP client only retries on HTTP status codes 429, 502, 503, and 504.
+func httpRetryableToOtlpRetryable(httpStatusCode int) int {
+	if httpStatusCode/100 == 5 {
+		mask := httpStatusCode % 100
+		// We map all 5xx except 502, 503 and 504 into 503.
+		if mask <= 1 || mask > 4 {
+			return http.StatusServiceUnavailable
+		}
 	}
-	return http.StatusServiceUnavailable
+	return httpStatusCode
 }
 
 // writeErrorToHTTPResponseBody converts the given error into a grpc status and marshals it into a byte slice, in order to be written to the response body.
