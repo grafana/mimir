@@ -13,17 +13,13 @@ import (
 
 type InstantVectorFunctionOperatorFactory func(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error)
 
-// SingleInputVectorFunctionOperator creates an InstantVectorFunctionOperator for functions
+// SingleInputVectorFunctionOperator creates an InstantVectorFunctionOperatorFactory for functions
 // that have exactly 1 argument (v instant-vector).
 //
 // Parameters:
 //   - name: The name of the function.
 //   - metadataFunc: The function for handling metadata
 //   - seriesDataFunc: The function to handle series data
-//
-// Returns:
-//
-//	An InstantVectorFunctionOperator.
 func SingleInputVectorFunctionOperator(name string, metadataFunc functions.SeriesMetadataFunction, seriesDataFunc functions.InstantVectorFunction) InstantVectorFunctionOperatorFactory {
 	return func(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error) {
 		if len(args) != 1 {
@@ -47,16 +43,12 @@ func SingleInputVectorFunctionOperator(name string, metadataFunc functions.Serie
 	}
 }
 
-// TransformationFunctionOperator creates an InstantVectorFunctionOperator for functions
+// TransformationFunctionOperator creates an InstantVectorFunctionOperatorFactory for functions
 // that have exactly 1 argument (v instant-vector), and drop the series __name__ label.
 //
 // Parameters:
 //   - name: The name of the function.
 //   - seriesDataFunc: The function to handle series data
-//
-// Returns:
-//
-//	An InstantVectorFunctionOperator.
 func TransformationFunctionOperator(name string, seriesDataFunc functions.InstantVectorFunction) InstantVectorFunctionOperatorFactory {
 	return SingleInputVectorFunctionOperator(name, functions.DropSeriesName, seriesDataFunc)
 }
