@@ -25,9 +25,8 @@ func TestSnapshotter_PersistAndRestoreLoadedBlocks(t *testing.T) {
 	testBlocksLoader := testBlocksLoaderFunc(func() map[ulid.ULID]int64 { return origBlocks })
 
 	config := SnapshotterConfig{
-		Enabled: true,
-		Path:    tmpDir,
-		UserID:  "anonymous",
+		Path:   tmpDir,
+		UserID: "anonymous",
 	}
 
 	// First instance persists the original snapshot.

@@ -240,13 +240,15 @@ func NewBucketStore(
 	}
 
 	snapConfig := indexheader.SnapshotterConfig{
-		Enabled: bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled,
-		Path:    dir,
-		UserID:  userID,
+		Path:   dir,
+		UserID: userID,
 	}
 	s.indexHeadersSnapshotter = indexheader.NewSnapshotter(s.logger, snapConfig)
 
-	lazyLoadedBlocks := s.indexHeadersSnapshotter.RestoreLoadedBlocks()
+	var lazyLoadedBlocks map[ulid.ULID]int64
+	if bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled {
+		lazyLoadedBlocks = s.indexHeadersSnapshotter.RestoreLoadedBlocks()
+	}
 	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics, lazyLoadedBlocks)
 
 	if err := os.MkdirAll(dir, 0750); err != nil {

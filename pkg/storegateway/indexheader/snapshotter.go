@@ -19,8 +19,6 @@ import (
 const lazyLoadedHeadersListFileName = "lazy-loaded.json"
 
 type SnapshotterConfig struct {
-	Enabled bool
-
 	// Path stores where lazy loaded blocks will be tracked in a single file per tenant
 	Path   string
 	UserID string
@@ -47,10 +45,6 @@ type blocksLoader interface {
 }
 
 func (s *Snapshotter) Start(ctx context.Context, bl blocksLoader) error {
-	if !s.conf.Enabled {
-		return nil
-	}
-
 	err := s.PersistLoadedBlocks(bl)
 	if err != nil {
 		return fmt.Errorf("persist initial list of lazy-loaded index headers: %w", err)
@@ -101,10 +95,6 @@ func (s *Snapshotter) PersistLoadedBlocks(bl blocksLoader) error {
 }
 
 func (s *Snapshotter) RestoreLoadedBlocks() map[ulid.ULID]int64 {
-	if !s.conf.Enabled {
-		return nil
-	}
-
 	var snapshot indexHeadersSnapshot
 	fileName := filepath.Join(s.conf.Path, lazyLoadedHeadersListFileName)
 	err := loadIndexHeadersSnapshot(fileName, &snapshot)
