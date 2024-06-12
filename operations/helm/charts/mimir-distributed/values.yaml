@@ -2879,8 +2879,6 @@ nginx:
     serverSnippet: ""
     # -- Allows appending custom configuration to the http block
     httpSnippet: ""
-    # -- Allow to set client_max_body_size in the nginx configuration
-    clientMaxBodySize: null
     # -- Allows to set a custom resolver
     resolver: null
     # -- Config file contents for Nginx. Passed through the `tpl` function to allow templating
@@ -2890,9 +2888,6 @@ nginx:
       error_log  /dev/stderr {{ .Values.nginx.nginxConfig.errorLogLevel }};
       pid        /tmp/nginx.pid;
       worker_rlimit_nofile 8192;
-      {{- if .Values.nginx.nginxConfig.clientMaxBodySize }}
-      client_max_body_size {{ .Values.nginx.nginxConfig.clientMaxBodySize }};
-      {{- end }}
 
       events {
         worker_connections  4096;  ## Default: 1024
@@ -2948,9 +2943,6 @@ nginx:
         server {
           listen 8080;
           listen [::]:8080;
-          {{- if .Values.nginx.nginxConfig.clientMaxBodySize }}
-          client_max_body_size {{ .Values.nginx.nginxConfig.clientMaxBodySize }};
-          {{- end }}
 
           {{- if .Values.nginx.basicAuth.enabled }}
           auth_basic           "Mimir";
@@ -3286,6 +3278,8 @@ gateway:
       serverSnippet: ""
       # -- Allows appending custom configuration to the http block
       httpSnippet: ""
+      # -- Allow to set client_max_body_size in the nginx configuration
+      clientMaxBodySize: null
       # -- Allows to set a custom resolver
       resolver: null
       # -- Configures whether or not NGINX bind IPv6
@@ -3296,6 +3290,9 @@ gateway:
         error_log  /dev/stderr {{ .Values.gateway.nginx.config.errorLogLevel }};
         pid        /tmp/nginx.pid;
         worker_rlimit_nofile 8192;
+        {{- if .Values.gateway.nginx.config.clientMaxBodySize }}
+        client_max_body_size {{ .Values.gateway.nginx.config.clientMaxBodySize }};
+        {{- end }}
 
         events {
           worker_connections  4096;  ## Default: 1024
@@ -3353,7 +3350,9 @@ gateway:
             {{- if .Values.gateway.nginx.config.enableIPv6 }}
             listen [::]:{{ include "mimir.serverHttpListenPort" . }};
             {{- end }}
-
+            {{- if .Values.gateway.nginx.config.clientMaxBodySize }}
+            client_max_body_size {{ .Values.gateway.nginx.config.clientMaxBodySize }};
+            {{- end }}
             {{- if .Values.gateway.nginx.basicAuth.enabled }}
             auth_basic           "Mimir";
             auth_basic_user_file /etc/nginx/secrets/.htpasswd;

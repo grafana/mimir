@@ -100,12 +100,13 @@ location / {
 }
 ```
 
-For Helm deployments of Mimir, you can set the nginx.nginxConfig.client_max_body_size value in your Helm values file to a higher value, e.g.:
+For Helm deployments of Mimir, you can set the `gateway.nginx.config.clientMaxBodySize` value in your Helm values file to a higher value, e.g.:
 
 ```yaml
-nginx:
-  nginxConfig:
-    client_max_body_size: 95M
+gateway:
+  nginx:
+    config:
+      clientMaxBodySize: 95M
 ```
 
 Apply the configuration changes:

@@ -51,6 +51,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] The new values `global.extraVolumes` and `global.extraVolumeMounts` adds volumes and volumeMounts to all pods directly managed by mimir-distributed. #7922
 * [ENHANCEMENT] Smoke-test: Parameterized `backoffLimit` for smoke tests in Helm chart to accommodate slower startup environments like k3d. #8025
 * [ENHANCEMENT] Add a volumeClaimTemplates section to the `chunks-cache`, `index-cache`, `metadata-cache`, and `results-cache` components. #8016
+* [ENHANCEMENT] Add 'gateway.nginx.config.clientMaxBodySize' to the `gateway` to allow setting the maximum allowed size of the client request body. #7960
 * [BUGFIX] Helm: Allowed setting static NodePort for nginx gateway via `gateway.service.nodePort`. #6966
 * [BUGFIX] Helm: Expose AM configs in the `gateway` NGINX configuration. #8248
 * [BUGFIX] Helm: fix ServiceMonitor and PVC template to not show diff in ArgoCD. #8829
