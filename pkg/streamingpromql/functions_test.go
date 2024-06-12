@@ -10,20 +10,20 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 )
 
-func TestRegisterInstantVectorFunctionOperator(t *testing.T) {
+func TestRegisterInstantVectorFunctionOperatorFactory(t *testing.T) {
 	// Register an already existing function
-	err := RegisterInstantVectorFunctionOperator("acos", LabelManipulationFunctionOperator("acos", functions.DropSeriesName))
+	err := RegisterInstantVectorFunctionOperatorFactory("acos", LabelManipulationFunctionOperatorFactory("acos", functions.DropSeriesName))
 	require.Error(t, err)
 	require.Equal(t, "function 'acos' has already been registered", err.Error())
 
 	// Register a new function
-	newFunc := LabelManipulationFunctionOperator("new_function", functions.DropSeriesName)
-	err = RegisterInstantVectorFunctionOperator("new_function", newFunc)
+	newFunc := LabelManipulationFunctionOperatorFactory("new_function", functions.DropSeriesName)
+	err = RegisterInstantVectorFunctionOperatorFactory("new_function", newFunc)
 	require.NoError(t, err)
 	require.Contains(t, instantVectorFunctionOperatorFactories, "new_function")
 
 	// Register existing function we registered previously
-	err = RegisterInstantVectorFunctionOperator("new_function", newFunc)
+	err = RegisterInstantVectorFunctionOperatorFactory("new_function", newFunc)
 	require.Error(t, err)
 	require.Equal(t, "function 'new_function' has already been registered", err.Error())
 
