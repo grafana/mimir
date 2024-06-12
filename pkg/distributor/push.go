@@ -211,6 +211,10 @@ func calculateRetryAfter(retryAttemptHeader string, baseSeconds int, maxBackoffE
 // to that error, if the error is one of the errors from this package. Otherwise, an
 // http.StatusInternalServerError is returned.
 func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrides) int {
+	if errors.Is(pushErr, context.DeadlineExceeded) {
+		return http.StatusInternalServerError
+	}
+
 	var distributorErr Error
 	if errors.As(pushErr, &distributorErr) {
 		serviceOverloadErrorEnabled := false

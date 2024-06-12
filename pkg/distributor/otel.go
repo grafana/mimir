@@ -256,7 +256,7 @@ func otlpHandler(
 				// TODO: This code is needed for backwards compatibility,
 				// and can be removed once -ingester.return-only-grpc-errors
 				// is removed.
-				httpCode = httpRetryableToOtlpRetryable(int(st.Code()))
+				httpCode = httpRetryableToOTLPRetryable(int(st.Code()))
 				grpcCode = st.Code()
 				errorMsg = st.Message()
 			} else {
@@ -286,17 +286,17 @@ func toOtlpGRPCHTTPStatus(pushErr error) (codes.Code, int) {
 
 	grpcStatusCode := errorCauseToGRPCStatusCode(distributorErr.Cause(), false)
 	httpStatusCode := errorCauseToHTTPStatusCode(distributorErr.Cause(), false)
-	otlpHTTPStatusCode := httpRetryableToOtlpRetryable(httpStatusCode)
+	otlpHTTPStatusCode := httpRetryableToOTLPRetryable(httpStatusCode)
 	return grpcStatusCode, otlpHTTPStatusCode
 }
 
-// httpRetryableToOtlpRetryable maps non-retryable 5xx HTTP status codes according
+// httpRetryableToOTLPRetryable maps non-retryable 5xx HTTP status codes according
 // to the OTLP specifications (https://opentelemetry.io/docs/specs/otlp/#failures-1)
 // to http.StatusServiceUnavailable. In case of a non-retryable HTTP status code,
-// httpRetryableToOtlpRetryable returns the HTTP status code itself.
+// httpRetryableToOTLPRetryable returns the HTTP status code itself.
 // Unlike Prometheus, which retries 429 and all 5xx HTTP status codes,
 // the OTLP client only retries on HTTP status codes 429, 502, 503, and 504.
-func httpRetryableToOtlpRetryable(httpStatusCode int) int {
+func httpRetryableToOTLPRetryable(httpStatusCode int) int {
 	if httpStatusCode/100 == 5 {
 		mask := httpStatusCode % 100
 		// We map all 5xx except 502, 503 and 504 into 503.

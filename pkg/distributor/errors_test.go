@@ -611,15 +611,15 @@ func TestErrorCauseToGRPCStatusCode(t *testing.T) {
 		expectedGRPCStatusCode      codes.Code
 	}
 	testCases := map[string]testStruct{
-		"an REPLICAS_DID_NOT_MATCH error cause gets translated into an AlreadyExist": {
+		"a REPLICAS_DID_NOT_MATCH error cause gets translated into an AlreadyExists": {
 			errorCause:             mimirpb.REPLICAS_DID_NOT_MATCH,
 			expectedGRPCStatusCode: codes.AlreadyExists,
 		},
-		"an TOO_MANY_CLUSTERS error cause gets translated into a FailedPrecondition": {
+		"a TOO_MANY_CLUSTERS error cause gets translated into a FailedPrecondition": {
 			errorCause:             mimirpb.TOO_MANY_CLUSTERS,
 			expectedGRPCStatusCode: codes.FailedPrecondition,
 		},
-		"an BAD_DATA error cause gets translated into a InvalidArgument": {
+		"a BAD_DATA error cause gets translated into a InvalidArgument": {
 			errorCause:             mimirpb.BAD_DATA,
 			expectedGRPCStatusCode: codes.InvalidArgument,
 		},
@@ -633,12 +633,12 @@ func TestErrorCauseToGRPCStatusCode(t *testing.T) {
 			serviceOverloadErrorEnabled: true,
 			expectedGRPCStatusCode:      codes.Unavailable,
 		},
-		"an REQUEST_RATE_LIMITED error cause without serviceOverloadErrorEnabled gets translated into a ResourceExhausted": {
+		"a REQUEST_RATE_LIMITED error cause without serviceOverloadErrorEnabled gets translated into a ResourceExhausted": {
 			errorCause:                  mimirpb.REQUEST_RATE_LIMITED,
 			serviceOverloadErrorEnabled: false,
 			expectedGRPCStatusCode:      codes.ResourceExhausted,
 		},
-		"an REQUEST_RATE_LIMITED error cause with serviceOverloadErrorEnabled gets translated into an Unavailable": {
+		"a REQUEST_RATE_LIMITED error cause with serviceOverloadErrorEnabled gets translated into an Unavailable": {
 			errorCause:                  mimirpb.REQUEST_RATE_LIMITED,
 			serviceOverloadErrorEnabled: true,
 			expectedGRPCStatusCode:      codes.Unavailable,
@@ -651,23 +651,23 @@ func TestErrorCauseToGRPCStatusCode(t *testing.T) {
 			errorCause:             mimirpb.INSTANCE_LIMIT,
 			expectedGRPCStatusCode: codes.Internal,
 		},
-		"an SERVICE_UNAVAILABLE error cause gets translated into an Internal": {
+		"a SERVICE_UNAVAILABLE error cause gets translated into an Internal": {
 			errorCause:             mimirpb.SERVICE_UNAVAILABLE,
 			expectedGRPCStatusCode: codes.Internal,
 		},
-		"an TOO_BUSY error cause gets translated into an Internal": {
+		"a TOO_BUSY error cause gets translated into an Internal": {
 			errorCause:             mimirpb.TOO_BUSY,
 			expectedGRPCStatusCode: codes.Internal,
 		},
-		"an CIRCUIT_BREAKER_OPEN error cause gets translated into an Unavailable": {
+		"a CIRCUIT_BREAKER_OPEN error cause gets translated into an Unavailable": {
 			errorCause:             mimirpb.CIRCUIT_BREAKER_OPEN,
 			expectedGRPCStatusCode: codes.Unavailable,
 		},
-		"an METHOD_NOT_ALLOWED error cause gets translated into an Unimplemented": {
+		"a METHOD_NOT_ALLOWED error cause gets translated into an Unimplemented": {
 			errorCause:             mimirpb.METHOD_NOT_ALLOWED,
 			expectedGRPCStatusCode: codes.Unimplemented,
 		},
-		"an TSDB_UNAVAILABLE error cause gets translated into an Internal": {
+		"a TSDB_UNAVAILABLE error cause gets translated into an Internal": {
 			errorCause:             mimirpb.TSDB_UNAVAILABLE,
 			expectedGRPCStatusCode: codes.Internal,
 		},
@@ -687,15 +687,15 @@ func TestErrorCauseToHTTPStatusCode(t *testing.T) {
 		expectedHTTPStatus          int
 	}
 	testCases := map[string]testStruct{
-		"an REPLICAS_DID_NOT_MATCH error cause gets translated into a HTTP 202": {
+		"a REPLICAS_DID_NOT_MATCH error cause gets translated into a HTTP 202": {
 			errorCause:         mimirpb.REPLICAS_DID_NOT_MATCH,
 			expectedHTTPStatus: http.StatusAccepted,
 		},
-		"an TOO_MANY_CLUSTERS error cause gets translated into a HTTP 400": {
+		"a TOO_MANY_CLUSTERS error cause gets translated into a HTTP 400": {
 			errorCause:         mimirpb.TOO_MANY_CLUSTERS,
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
-		"an BAD_DATA error cause gets translated into a HTTP 400": {
+		"a BAD_DATA error cause gets translated into a HTTP 400": {
 			errorCause:         mimirpb.BAD_DATA,
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
@@ -709,12 +709,12 @@ func TestErrorCauseToHTTPStatusCode(t *testing.T) {
 			serviceOverloadErrorEnabled: true,
 			expectedHTTPStatus:          StatusServiceOverloaded,
 		},
-		"an REQUEST_RATE_LIMITED error cause without serviceOverloadErrorEnabled gets translated into a HTTP 429": {
+		"a REQUEST_RATE_LIMITED error cause without serviceOverloadErrorEnabled gets translated into a HTTP 429": {
 			errorCause:                  mimirpb.REQUEST_RATE_LIMITED,
 			serviceOverloadErrorEnabled: false,
 			expectedHTTPStatus:          http.StatusTooManyRequests,
 		},
-		"an REQUEST_RATE_LIMITED error cause with serviceOverloadErrorEnabled gets translated into a HTTP 529": {
+		"a REQUEST_RATE_LIMITED error cause with serviceOverloadErrorEnabled gets translated into a HTTP 529": {
 			errorCause:                  mimirpb.REQUEST_RATE_LIMITED,
 			serviceOverloadErrorEnabled: true,
 			expectedHTTPStatus:          StatusServiceOverloaded,
@@ -727,23 +727,23 @@ func TestErrorCauseToHTTPStatusCode(t *testing.T) {
 			errorCause:         mimirpb.INSTANCE_LIMIT,
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
-		"an SERVICE_UNAVAILABLE error cause gets translated into a HTTP 500": {
+		"a SERVICE_UNAVAILABLE error cause gets translated into a HTTP 500": {
 			errorCause:         mimirpb.SERVICE_UNAVAILABLE,
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
-		"an TOO_BUSY error cause gets translated into a HTTP 500": {
+		"a TOO_BUSY error cause gets translated into a HTTP 500": {
 			errorCause:         mimirpb.TOO_BUSY,
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
-		"an CIRCUIT_BREAKER_OPEN error cause gets translated into a HTTP 500": {
-			errorCause:         mimirpb.CIRCUIT_BREAKER_OPEN,
-			expectedHTTPStatus: http.StatusServiceUnavailable,
-		},
-		"an METHOD_NOT_ALLOWED error cause gets translated into a HTTP 501": {
+		"a METHOD_NOT_ALLOWED error cause gets translated into a HTTP 501": {
 			errorCause:         mimirpb.METHOD_NOT_ALLOWED,
 			expectedHTTPStatus: http.StatusNotImplemented,
 		},
-		"an TSDB_UNAVAILABLE error cause gets translated into a HTTP 503": {
+		"a CIRCUIT_BREAKER_OPEN error cause gets translated into a HTTP 503": {
+			errorCause:         mimirpb.CIRCUIT_BREAKER_OPEN,
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+		},
+		"a TSDB_UNAVAILABLE error cause gets translated into a HTTP 503": {
 			errorCause:         mimirpb.TSDB_UNAVAILABLE,
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 		},
