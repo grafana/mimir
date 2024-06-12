@@ -446,10 +446,10 @@ clear
 
 
 # Tests for clamp_max, clamp_min(), and clamp().
-# load 5m
-# 	test_clamp{src="clamp-a"}	-50
-# 	test_clamp{src="clamp-b"}	0
-# 	test_clamp{src="clamp-c"}	100
+load 5m
+	test_clamp{src="clamp-a"}	-50
+	test_clamp{src="clamp-b"}	0
+	test_clamp{src="clamp-c"}	100
 
 # Unsupported by streaming engine.
 # eval instant at 0m clamp_max(test_clamp, 75)

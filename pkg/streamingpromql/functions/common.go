@@ -30,12 +30,13 @@ func floatTransformationFunc(transform func(f float64) float64) InstantVectorFun
 }
 
 func FloatTransformationDropHistogramsFunc(transform func(f float64) float64) InstantVectorFunction {
+	ft := floatTransformationFunc(transform)
 	return func(seriesData types.InstantVectorSeriesData, pool *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
 		// Functions that do not explicitly mention native histograms in their documentation will ignore histogram samples.
 		// https://prometheus.io/docs/prometheus/latest/querying/functions
 		pool.PutHPointSlice(seriesData.Histograms)
 		seriesData.Histograms = nil
-		return floatTransformationFunc(transform)(seriesData, pool)
+		return ft(seriesData, pool)
 	}
 }
 

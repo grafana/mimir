@@ -91,24 +91,14 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 }
 
 func (q *Query) convertToOperator(expr parser.Expr) (types.Operator, error) {
-	var op types.Operator
-	var err error
 	switch expr.Type() {
 	case parser.ValueTypeMatrix:
-		op, err = q.convertToRangeVectorOperator(expr)
-		if err != nil {
-			return nil, err
-		}
+		return q.convertToRangeVectorOperator(expr)
 	case parser.ValueTypeVector:
-		op, err = q.convertToInstantVectorOperator(expr)
-		if err != nil {
-			return nil, err
-		}
+		return q.convertToInstantVectorOperator(expr)
 	default:
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("%s value as top-level expression", parser.DocumentedType(expr.Type())))
 	}
-
-	return op, nil
 }
 
 func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantVectorOperator, error) {

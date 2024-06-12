@@ -62,7 +62,8 @@ func TransformationFunctionOperator(name string, seriesDataFunc functions.Instan
 }
 
 // LabelManipulationFunctionOperator creates an InstantVectorFunctionOperator for functions
-// that have exactly 1 argument (v instant-vector), and need to manipulate the labels.
+// that have exactly 1 argument (v instant-vector), and need to manipulate the labels of
+// each series without manipulating the returned samples.
 // The values of v are passed through.
 //
 // Parameters:
@@ -93,8 +94,6 @@ func rateFunctionOperator(args []types.Operator, pool *pooling.LimitingPool) (ty
 		Pool:  pool,
 	}, nil
 }
-
-var _ InstantVectorFunctionOperator = rateFunctionOperator
 
 // These functions return an instant-vector.
 var instantVectorFunctions = map[string]InstantVectorFunctionOperator{
