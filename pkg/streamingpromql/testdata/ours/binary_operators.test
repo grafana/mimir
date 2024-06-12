@@ -126,7 +126,7 @@ load 6m
   right_side{env="test"} 100 200 300
 
 eval_fail range from 0 to 42m step 6m left_side * on (env) right_side
-  # TODO: expected_message multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)
+  expected_fail_regexp (multiple matches for labels: many-to-one matching must be explicit \(group_left/group_right\)|found duplicate series for the match group \{env="test"\} on the left side of the operation at timestamp 1970-01-01T00:00:00Z: \{__name__="left_side", env="test", pod="a"\} and \{__name__="left_side", env="test", pod="b"\})
 
 clear
 
@@ -139,7 +139,7 @@ load 6m
   right_side{env="test", pod="d"} _ 10 11
 
 eval_fail range from 0 to 42m step 6m left_side * on (env) right_side
-  # TODO: expected_message found duplicate series for the match group {env="test"} on the right hand-side of the operation: [{__name__="right_side", env="test", pod="b"}, {__name__="right_side", env="test", pod="a"}];many-to-many matching not allowed: matching labels must be unique on one side
+  expected_fail_regexp (found duplicate series for the match group \{env="test"\} on the right hand-side of the operation: \[\{__name__="right_side", env="test", pod="(a|b|c)"\}, \{__name__="right_side", env="test", pod="(a|b|c)"\}\];many-to-many matching not allowed: matching labels must be unique on one side|found duplicate series for the match group \{env="test"\} on the right side of the operation at timestamp 1970-01-01T00:00:00Z: \{__name__="right_side", env="test", pod="a"\} and \{__name__="right_side", env="test", pod="b"\})
 
 clear
 
