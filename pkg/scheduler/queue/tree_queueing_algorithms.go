@@ -7,8 +7,8 @@ package queue
 // that may be stored in a struct that implements DequeueAlgorithm.
 type DequeueAlgorithm interface {
 	addChildNode(parent, child *Node)
-	dequeueSelectNode(dequeueFrom *Node) (*Node, bool)
-	dequeueUpdateState(dequeueParent *Node, dequeuedFrom *Node)
+	dequeueSelectNode(node *Node) (*Node, bool)
+	dequeueUpdateState(node *Node, dequeuedFrom *Node)
 }
 
 // roundRobinState is the simplest type of DequeueAlgorithm; nodes which use this DequeueAlgorithm and are at
@@ -38,14 +38,14 @@ func (rrs *roundRobinState) addChildNode(parent, child *Node) {
 
 // dequeueGetNode returns the node at the node's queuePosition. queuePosition represents the position of
 // the next node to dequeue from, and is incremented in dequeueUpdateState.
-func (rrs *roundRobinState) dequeueSelectNode(dequeueFrom *Node) (*Node, bool) {
-	checkedAllNodes := dequeueFrom.childrenChecked == len(dequeueFrom.queueOrder)+1
-	if dequeueFrom.queuePosition == localQueueIndex {
-		return dequeueFrom, checkedAllNodes
+func (rrs *roundRobinState) dequeueSelectNode(node *Node) (*Node, bool) {
+	checkedAllNodes := node.childrenChecked == len(node.queueOrder)+1
+	if node.queuePosition == localQueueIndex {
+		return node, checkedAllNodes
 	}
 
-	currentNodeName := dequeueFrom.queueOrder[dequeueFrom.queuePosition]
-	if node, ok := dequeueFrom.queueMap[currentNodeName]; ok {
+	currentNodeName := node.queueOrder[node.queuePosition]
+	if node, ok := node.queueMap[currentNodeName]; ok {
 		return node, checkedAllNodes
 	}
 	return nil, checkedAllNodes
@@ -56,14 +56,14 @@ func (rrs *roundRobinState) dequeueSelectNode(dequeueFrom *Node) (*Node, bool) {
 //   - increments queuePosition if no child was deleted
 //   - updates childrenChecked to reflect the number of children checked so that the dequeueGetNode operation
 //     will stop once it has checked all possible nodes.
-func (rrs *roundRobinState) dequeueUpdateState(parent *Node, dequeuedFrom *Node) {
+func (rrs *roundRobinState) dequeueUpdateState(node *Node, dequeuedFrom *Node) {
 	// if the child node is nil, we haven't done anything to the tree; return early
 	if dequeuedFrom == nil {
 		return
 	}
 
-	// corner case: if parent == dequeuedFrom and is empty, we will try to delete a "child" (no-op),
-	// and won't increment position. This is fine, because if the parent is empty, there's nothing to
+	// corner case: if node == dequeuedFrom and is empty, we will try to delete a "child" (no-op),
+	// and won't increment position. This is fine, because if the node is empty, there's nothing to
 	// increment to.
 	childIsEmpty := dequeuedFrom.IsEmpty()
 
@@ -71,17 +71,17 @@ func (rrs *roundRobinState) dequeueUpdateState(parent *Node, dequeuedFrom *Node)
 	// from queueOrder sets our position to the next element already.
 	if childIsEmpty {
 		childName := dequeuedFrom.Name()
-		delete(parent.queueMap, childName)
-		for idx, name := range parent.queueOrder {
+		delete(node.queueMap, childName)
+		for idx, name := range node.queueOrder {
 			if name == childName {
-				parent.queueOrder = append(parent.queueOrder[:idx], parent.queueOrder[idx+1:]...)
+				node.queueOrder = append(node.queueOrder[:idx], node.queueOrder[idx+1:]...)
 			}
 		}
 
 	} else {
-		parent.queuePosition++
+		node.queuePosition++
 	}
-	if parent.queuePosition >= len(parent.queueOrder) {
-		parent.queuePosition = localQueueIndex
+	if node.queuePosition >= len(node.queueOrder) {
+		node.queuePosition = localQueueIndex
 	}
 }

@@ -128,7 +128,6 @@ func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Regist
 		log,
 		cfg.MaxOutstandingPerTenant,
 		false,
-		false,
 		cfg.QuerierForgetDelay,
 		f.queueLength,
 		f.discardedRequests,

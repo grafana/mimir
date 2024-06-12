@@ -323,13 +323,13 @@ func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID TenantID, sc
 //
 // Note that because we use the shared  tenantIDOrder and tenantOrderIndex to manage the queue, we functionally
 // ignore each Node's individual queueOrder and queuePosition.
-func (tqa *tenantQuerierAssignments) dequeueSelectNode(dequeueFrom *Node) (*Node, bool) {
+func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) (*Node, bool) {
 	// can't get a tenant if no querier set
 	if tqa.currentQuerier == nil {
 		return nil, true
 	}
 
-	checkedAllNodes := dequeueFrom.childrenChecked == len(dequeueFrom.queueMap)+1 // must check local queue as well
+	checkedAllNodes := node.childrenChecked == len(node.queueMap)+1 // must check local queue as well
 
 	// advance queue position for dequeue
 	tqa.tenantOrderIndex++
@@ -338,8 +338,8 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(dequeueFrom *Node) (*Node
 	}
 
 	// no children
-	if len(dequeueFrom.queueMap) == 0 || tqa.tenantOrderIndex == localQueueIndex {
-		return dequeueFrom, checkedAllNodes
+	if len(node.queueMap) == 0 || tqa.tenantOrderIndex == localQueueIndex {
+		return node, checkedAllNodes
 	}
 
 	checkIndex := tqa.tenantOrderIndex
@@ -351,25 +351,25 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(dequeueFrom *Node) (*Node
 		tenantID := tqa.tenantIDOrder[checkIndex]
 		tenantName := string(tenantID)
 
-		if _, ok := dequeueFrom.queueMap[tenantName]; !ok {
+		if _, ok := node.queueMap[tenantName]; !ok {
 			// tenant not in _this_ node's children, move on
 			checkIndex++
 			continue
 		}
 
 		// increment nodes checked even if not in tenant-querier map
-		dequeueFrom.childrenChecked++
-		checkedAllNodes = dequeueFrom.childrenChecked == len(dequeueFrom.queueMap)+1
+		node.childrenChecked++
+		checkedAllNodes = node.childrenChecked == len(node.queueMap)+1
 
 		// if the tenant-querier set is nil, any querier can serve this tenant
 		if tqa.tenantQuerierIDs[tenantID] == nil {
 			tqa.tenantOrderIndex = checkIndex
-			return dequeueFrom.queueMap[tenantName], checkedAllNodes
+			return node.queueMap[tenantName], checkedAllNodes
 		}
 		if tenantQuerierSet, ok := tqa.tenantQuerierIDs[tenantID]; ok {
 			if _, ok := tenantQuerierSet[*tqa.currentQuerier]; ok {
 				tqa.tenantOrderIndex = checkIndex
-				return dequeueFrom.queueMap[tenantName], checkedAllNodes
+				return node.queueMap[tenantName], checkedAllNodes
 			}
 		}
 		checkIndex++
@@ -385,7 +385,7 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(dequeueFrom *Node) (*Node
 //
 // dequeueUpdateState would normally also handle incrementing the queue position after performing a dequeue, but
 // tenantQuerierAssignments currently expects the caller to handle this by having the querier set tenantOrderIndex.
-func (tqa *tenantQuerierAssignments) dequeueUpdateState(parent *Node, dequeuedFrom *Node) {
+func (tqa *tenantQuerierAssignments) dequeueUpdateState(node *Node, dequeuedFrom *Node) {
 	// if dequeuedFrom is nil or is not empty, we don't need to do anything;
 	// position updates will be handled by the caller, and we don't need to remove any nodes.
 	if dequeuedFrom == nil || !dequeuedFrom.IsEmpty() {
@@ -394,7 +394,7 @@ func (tqa *tenantQuerierAssignments) dequeueUpdateState(parent *Node, dequeuedFr
 
 	// delete from the node's children
 	childName := dequeuedFrom.Name()
-	delete(parent.queueMap, childName)
+	delete(node.queueMap, childName)
 
 	// delete from shared tenantNodes
 	for i, tenantNode := range tqa.tenantNodes[childName] {
