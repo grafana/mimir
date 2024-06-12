@@ -11,7 +11,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-type instantVectorFunctionOperatorFactory func(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error)
+type InstantVectorFunctionOperatorFactory func(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error)
 
 // SingleInputVectorFunctionOperator creates an InstantVectorFunctionOperator for functions
 // that have exactly 1 argument (v instant-vector).
@@ -24,7 +24,7 @@ type instantVectorFunctionOperatorFactory func(args []types.Operator, pool *pool
 // Returns:
 //
 //	An InstantVectorFunctionOperator.
-func SingleInputVectorFunctionOperator(name string, metadataFunc functions.SeriesMetadataFunction, seriesDataFunc functions.InstantVectorFunction) instantVectorFunctionOperatorFactory {
+func SingleInputVectorFunctionOperator(name string, metadataFunc functions.SeriesMetadataFunction, seriesDataFunc functions.InstantVectorFunction) InstantVectorFunctionOperatorFactory {
 	return func(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error) {
 		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
@@ -57,7 +57,7 @@ func SingleInputVectorFunctionOperator(name string, metadataFunc functions.Serie
 // Returns:
 //
 //	An InstantVectorFunctionOperator.
-func TransformationFunctionOperator(name string, seriesDataFunc functions.InstantVectorFunction) instantVectorFunctionOperatorFactory {
+func TransformationFunctionOperator(name string, seriesDataFunc functions.InstantVectorFunction) InstantVectorFunctionOperatorFactory {
 	return SingleInputVectorFunctionOperator(name, functions.DropSeriesName, seriesDataFunc)
 }
 
@@ -73,7 +73,7 @@ func TransformationFunctionOperator(name string, seriesDataFunc functions.Instan
 // Returns:
 //
 //	An InstantVectorFunctionOperator.
-func LabelManipulationFunctionOperator(name string, metadataFunc functions.SeriesMetadataFunction) instantVectorFunctionOperatorFactory {
+func LabelManipulationFunctionOperator(name string, metadataFunc functions.SeriesMetadataFunction) InstantVectorFunctionOperatorFactory {
 	return SingleInputVectorFunctionOperator(name, metadataFunc, functions.Passthrough)
 }
 
@@ -96,14 +96,14 @@ func rateFunctionOperator(args []types.Operator, pool *pooling.LimitingPool) (ty
 }
 
 // These functions return an instant-vector.
-var instantVectorFunctionOperatorFactories = map[string]instantVectorFunctionOperatorFactory{
+var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOperatorFactory{
 	"acos":            TransformationFunctionOperator("acos", functions.Acos),
 	"histogram_count": TransformationFunctionOperator("histogram_count", functions.HistogramCount),
 	"histogram_sum":   TransformationFunctionOperator("histogram_sum", functions.HistogramSum),
 	"rate":            rateFunctionOperator,
 }
 
-func RegisterInstantVectorFunctionOperator(functionName string, functionOperator instantVectorFunctionOperatorFactory) error {
+func RegisterInstantVectorFunctionOperator(functionName string, functionOperator InstantVectorFunctionOperatorFactory) error {
 	if _, exists := instantVectorFunctionOperatorFactories[functionName]; exists {
 		return fmt.Errorf("function '%s' has already been registered", functionName)
 	}
