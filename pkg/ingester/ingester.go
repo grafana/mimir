@@ -1033,6 +1033,7 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (context
 	// breaker. This is done by FinishPushRequest().
 	finish, err := i.circuitBreaker.tryAcquirePushPermit()
 	if err != nil {
+		level.Error(i.logger).Log("msg", "it was impossible to acquire a push permit", err, "error")
 		return nil, false, err
 	}
 	st := &pushRequestState{
@@ -3792,6 +3793,7 @@ func (i *Ingester) startReadRequest() (func(error), error) {
 	start := time.Now()
 	finish, err := i.circuitBreaker.tryAcquireReadPermit()
 	if err != nil {
+		level.Error(i.logger).Log("msg", "it was impossible to acquire a read permit", err, "error")
 		return nil, err
 	}
 
