@@ -41,13 +41,18 @@ const (
 	maxErrMsgLen   = 1024
 )
 
+type OTLPHandlerLimits interface {
+	OTelMetricSuffixesEnabled(id string) bool
+	ServiceOverloadStatusCodeOnRateLimitEnabled(id string) bool
+}
+
 // OTLPHandler is an http.Handler accepting OTLP write requests.
 func OTLPHandler(
 	maxRecvMsgSize int,
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
 	enableOtelMetadataStorage bool,
-	limits *validation.Overrides,
+	limits OTLPHandlerLimits,
 	retryCfg RetryConfig,
 	push PushFunc,
 	pushMetrics *PushMetrics,
