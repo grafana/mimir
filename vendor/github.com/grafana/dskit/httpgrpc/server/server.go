@@ -31,18 +31,16 @@ var (
 	// will be marked as non-loggable.
 	DoNotLogErrorHeaderKey = http.CanonicalHeaderKey("X-DoNotLogError")
 
-	// ErrorMessageHeaderKey is a header name that contains error message that should be used when httpgrpc.Handler
-	// decides to response as an error, using status.ErrorProto. Normally httpgrpc.Handler would use entire response
-	// body as a error message, but Message field of rcp.Status object is a string, and if body contains non-utf8 bytes,
-	// Marshalling of this object will fail.
+	// ErrorMessageHeaderKey is a header name for header that contains error message that should be used when Server.Handle
+	// (httpgrpc.HTTP/Handle implementation) decides to return the response as an error, using status.ErrorProto.
+	// Normally Server.Handle would use entire response body as a error message, but Message field of rcp.Status object
+	// is a string, and if body contains non-utf8 bytes, marshalling of this object will fail.
 	ErrorMessageHeaderKey = http.CanonicalHeaderKey("X-ErrorMessage")
 )
 
 type contextType int
 
-const (
-	handledByHttpgrpcServer contextType = 0
-)
+const handledByHttpgrpcServer contextType = 0
 
 type Option func(*Server)
 
@@ -232,6 +230,8 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// IsHandledByHttpgrpcServer returns true if context is associated with HTTP request that was initiated by
+// Server.Handle, which is an implementation of httpgrpc.HTTP/Handle gRPC method.
 func IsHandledByHttpgrpcServer(ctx context.Context) bool {
 	val := ctx.Value(handledByHttpgrpcServer)
 	if v, ok := val.(bool); ok {

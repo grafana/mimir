@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -921,8 +922,13 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 
 	// start the server
 	require.NoError(t, err)
-	go func() { _ = srv.Run() }()
-	t.Cleanup(srv.Stop)
+
+	var wg sync.WaitGroup
+	go func() { defer wg.Done(); _ = srv.Run() }()
+	t.Cleanup(func() {
+		srv.Stop()
+		wg.Wait()
+	})
 
 	// create client
 	conn, err := grpc.NewClient(srv.GRPCListenAddr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithUnaryInterceptor(middleware.ClientUserHeaderInterceptor))
