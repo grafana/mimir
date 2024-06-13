@@ -569,7 +569,7 @@ github.com/grafana-tools/sdk
 github.com/grafana/alerting/definition
 github.com/grafana/alerting/logging
 github.com/grafana/alerting/receivers
-# github.com/grafana/dskit v0.0.0-20240613131924-7e83c3cb3b11
+# github.com/grafana/dskit v0.0.0-20240613153104-a26a26cbbb54
 ## explicit; go 1.20
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast

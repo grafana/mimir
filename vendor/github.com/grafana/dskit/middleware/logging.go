@@ -56,11 +56,9 @@ func NewLogMiddleware(log log.Logger, logRequestHeaders bool, logRequestAtInfoLe
 // logWithRequest information from the request and context as fields.
 func (l Log) logWithRequest(r *http.Request) log.Logger {
 	localLog := l.Log
-	traceID, ok := tracing.ExtractSampledTraceID(r.Context())
+	traceID, ok := tracing.ExtractTraceID(r.Context())
 	if ok {
 		localLog = log.With(localLog, "trace_id", traceID)
-	} else if traceID != "" {
-		localLog = log.With(localLog, "trace_id_unsampled", traceID)
 	}
 
 	if l.SourceIPs != nil {
