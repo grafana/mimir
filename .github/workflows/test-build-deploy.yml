@@ -347,7 +347,9 @@ jobs:
         run: |
           export IMAGE_TAG=$(make image-tag)
           # skopeo will by default load system-specific version of the image (linux/amd64).
-          skopeo copy oci-archive:/tmp/images/mimirtool.oci "docker-daemon:grafana/mimirtool:$IMAGE_TAG"
+          # note that this doesn't use skopeo version from our build-image, because we don't use build-image when running integration tests.
+          # that's why we use docker run to run latest version.
+          docker run -v /tmp/images:/tmp/images -v /var/run/docker.sock:/var/run/docker.sock quay.io/skopeo/stable:v1.15.1 copy oci-archive:/tmp/images/mimirtool.oci "docker-daemon:grafana/mimirtool:$IMAGE_TAG"
       - name: Download Archive with Docker Images
         uses: actions/download-artifact@v4
         with:
@@ -420,7 +422,9 @@ jobs:
         run: |
           export IMAGE_TAG=$(make image-tag)
           # skopeo will by default load system-specific version of the image (linux/amd64).
-          skopeo copy oci-archive:/tmp/images/mimirtool.oci "docker-daemon:grafana/mimirtool:$IMAGE_TAG"
+          # note that this doesn't use skopeo version from our build-image, because we don't use build-image when running integration tests.
+          # that's why we use docker run to run latest version.
+          docker run -v /tmp/images:/tmp/images -v /var/run/docker.sock:/var/run/docker.sock quay.io/skopeo/stable:v1.15.1 copy oci-archive:/tmp/images/mimirtool.oci "docker-daemon:grafana/mimirtool:$IMAGE_TAG"
       - name: Download Archive with Docker Images
         uses: actions/download-artifact@v4
         with:
