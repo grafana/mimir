@@ -555,6 +555,18 @@ func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 			expectedMessage: fmt.Sprintf("wrapped: %s", newPerMetricMetadataLimitReachedError(10, family).Error()),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
+		"a circuitBreakerOpenError gets translated into an ErrorWithStatus Unavailable error with details": {
+			err:             newCircuitBreakerOpenError("foo", 1*time.Second),
+			expectedCode:    codes.Unavailable,
+			expectedMessage: newCircuitBreakerOpenError("foo", 1*time.Second).Error(),
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.CIRCUIT_BREAKER_OPEN},
+		},
+		"a wrapped circuitBreakerOpenError gets translated into an ErrorWithStatus Unavailable error with details": {
+			err:             fmt.Errorf("wrapped: %w", newCircuitBreakerOpenError("foo", 1*time.Second)),
+			expectedCode:    codes.Unavailable,
+			expectedMessage: fmt.Sprintf("wrapped: %s", newCircuitBreakerOpenError("foo", 1*time.Second).Error()),
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.CIRCUIT_BREAKER_OPEN},
+		},
 	}
 
 	for name, tc := range testCases {
@@ -736,6 +748,20 @@ func TestMapPushErrorToErrorWithHTTPOrGRPCStatus(t *testing.T) {
 				codes.Unimplemented,
 			),
 		},
+		"a circuitBreakerOpenError gets translated into an ErrorWithStatus Unavailable error": {
+			err: newCircuitBreakerOpenError("foo", 1*time.Second),
+			expectedTranslation: newErrorWithStatus(
+				newCircuitBreakerOpenError("foo", 1*time.Second),
+				codes.Unavailable,
+			),
+		},
+		"a wrapped circuitBreakerOpenError gets translated into an ErrorWithStatus Unavailable error": {
+			err: fmt.Errorf("wrapped: %w", newCircuitBreakerOpenError("foo", 1*time.Second)),
+			expectedTranslation: newErrorWithStatus(
+				fmt.Errorf("wrapped: %w", newCircuitBreakerOpenError("foo", 1*time.Second)),
+				codes.Unavailable,
+			),
+		},
 	}
 
 	for name, tc := range testCases {
@@ -793,6 +819,18 @@ func TestMapReadErrorToErrorWithStatus(t *testing.T) {
 			expectedMessage: fmt.Sprintf("wrapped: %s", ingesterTooBusyMsg),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.TOO_BUSY},
 		},
+		"a circuitBreakerOpenError gets translated into an ErrorWithStatus Unavailable error with details": {
+			err:             newCircuitBreakerOpenError("foo", 1*time.Second),
+			expectedCode:    codes.Unavailable,
+			expectedMessage: newCircuitBreakerOpenError("foo", 1*time.Second).Error(),
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.CIRCUIT_BREAKER_OPEN},
+		},
+		"a wrapped circuitBreakerOpenError gets translated into an ErrorWithStatus Unavailable error with details": {
+			err:             fmt.Errorf("wrapped: %w", newCircuitBreakerOpenError("foo", 1*time.Second)),
+			expectedCode:    codes.Unavailable,
+			expectedMessage: fmt.Sprintf("wrapped: %s", newCircuitBreakerOpenError("foo", 1*time.Second)),
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.CIRCUIT_BREAKER_OPEN},
+		},
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -830,9 +868,17 @@ func TestMapReadErrorToErrorWithHTTPOrGRPCStatus(t *testing.T) {
 			err:                 errTooBusy,
 			expectedTranslation: newErrorWithHTTPStatus(errTooBusy, http.StatusServiceUnavailable),
 		},
-		"a wrapped errTooBusy gets translated into an ErrorWithStatus with status code 503": {
+		"a wrapped errTooBusy gets translated into an errorWithHTTPStatus with status code 503": {
 			err:                 fmt.Errorf("wrapped: %w", errTooBusy),
 			expectedTranslation: newErrorWithHTTPStatus(fmt.Errorf("wrapped: %w", errTooBusy), http.StatusServiceUnavailable),
+		},
+		"a circuitBreakerOpenError gets translated into an ErrorWithStatus Unavailable error": {
+			err:                 newCircuitBreakerOpenError("foo", 1*time.Second),
+			expectedTranslation: newErrorWithStatus(newCircuitBreakerOpenError("foo", 1*time.Second), codes.Unavailable),
+		},
+		"a wrapped circuitBreakerOpenError gets translated into an ErrorWithStatus Unavailable": {
+			err:                 fmt.Errorf("wrapped: %w", newCircuitBreakerOpenError("foo", 1*time.Second)),
+			expectedTranslation: newErrorWithStatus(fmt.Errorf("wrapped: %w", newCircuitBreakerOpenError("foo", 1*time.Second)), codes.Unavailable),
 		},
 	}
 	for name, tc := range testCases {
