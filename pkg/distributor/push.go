@@ -30,7 +30,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	utillog "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // PushFunc defines the type of the push. It is similar to http.HandlerFunc.
@@ -78,7 +77,7 @@ func Handler(
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
-	limits *validation.Overrides,
+	limits PushHandlerLimits,
 	retryCfg RetryConfig,
 	push PushFunc,
 	pushMetrics *PushMetrics,
@@ -119,7 +118,7 @@ func handler(
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
-	limits *validation.Overrides,
+	limits PushHandlerLimits,
 	retryCfg RetryConfig,
 	push PushFunc,
 	logger log.Logger,
@@ -185,11 +184,16 @@ func handler(
 	})
 }
 
+type PushHandlerLimits interface {
+	OTelMetricSuffixesEnabled(id string) bool
+	ServiceOverloadStatusCodeOnRateLimitEnabled(id string) bool
+}
+
 func otlpHandler(
 	maxRecvMsgSize int,
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
-	limits *validation.Overrides,
+	limits PushHandlerLimits,
 	retryCfg RetryConfig,
 	push PushFunc,
 	logger log.Logger,
@@ -227,7 +231,7 @@ func otlpHandler(
 		if err := push(ctx, req); err != nil {
 			if errors.Is(err, context.Canceled) {
 				level.Warn(logger).Log("msg", "push request canceled", "err", err)
-				writeErrorToHTTPResponseBody(w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
+				writeErrorToHTTPResponseBody(r.Context(), w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
 				return
 			}
 			var (
@@ -237,10 +241,10 @@ func otlpHandler(
 			if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 				// here the error would always be nil, since it is already checked in httpgrpc.HTTPResponseFromError
 				s, _ := grpcutil.ErrorToStatus(err)
-				writeErrorToHTTPResponseBody(w, int(resp.Code), s.Code(), string(resp.Body), logger)
+				writeErrorToHTTPResponseBody(r.Context(), w, int(resp.Code), s.Code(), string(resp.Body), logger)
 			} else {
 				grpcCode, httpCode = toGRPCHTTPStatus(ctx, err, limits)
-				writeErrorToHTTPResponseBody(w, httpCode, grpcCode, err.Error(), logger)
+				writeErrorToHTTPResponseBody(r.Context(), w, httpCode, grpcCode, err.Error(), logger)
 			}
 			if httpCode != 202 {
 				level.Error(logger).Log("msg", "push error", "err", err)
@@ -252,11 +256,14 @@ func otlpHandler(
 
 // writeErrorToHTTPResponseBody converts the given error into a grpc status and marshals it into a byte slice, in order to be written to the response body.
 // See doc https://opentelemetry.io/docs/specs/otlp/#failures-1
-func writeErrorToHTTPResponseBody(w http.ResponseWriter, httpCode int, grpcCode codes.Code, msg string, logger log.Logger) {
+func writeErrorToHTTPResponseBody(reqCtx context.Context, w http.ResponseWriter, httpCode int, grpcCode codes.Code, msg string, logger log.Logger) {
 	// writeResponseFailedError would be returned when writeErrorToHTTPResponseBody fails to write the error to the response body.
 	writeResponseFailedBody, _ := proto.Marshal(grpcstatus.New(codes.Internal, "write error to response failed").Proto())
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if server.IsHandledByHttpgrpcServer(reqCtx) {
+		w.Header().Set(server.ErrorMessageHeaderKey, msg) // If httpgrpc Server wants to convert this HTTP response into error, use this error message, instead of using response body.
+	}
 	w.WriteHeader(httpCode)
 
 	respBytes, err := proto.Marshal(grpcstatus.New(grpcCode, msg).Proto())
@@ -293,7 +300,7 @@ func calculateRetryAfter(retryAttemptHeader string, baseSeconds int, maxBackoffE
 // toGRPCHTTPStatus converts the given error into an appropriate GRPC and HTTP status corresponding
 // to that error, if the error is one of the errors from this package. Otherwise, codes.Internal and
 // http.StatusInternalServerError is returned.
-func toGRPCHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrides) (codes.Code, int) {
+func toGRPCHTTPStatus(ctx context.Context, pushErr error, limits PushHandlerLimits) (codes.Code, int) {
 	if errors.Is(pushErr, context.DeadlineExceeded) {
 		return codes.Internal, http.StatusInternalServerError
 	}
