@@ -148,46 +148,46 @@ func (r *LazyBinaryReader) Close() error {
 }
 
 // IndexVersion implements Reader.
-func (r *LazyBinaryReader) IndexVersion() (int, error) {
-	reader, wg, err := r.getOrLoadReader()
+func (r *LazyBinaryReader) IndexVersion(ctx context.Context) (int, error) {
+	reader, wg, err := r.getOrLoadReader(ctx)
 	if err != nil {
 		return 0, err
 	}
 	defer wg.Done()
 
-	return reader.IndexVersion()
+	return reader.IndexVersion(ctx)
 }
 
 // PostingsOffset implements Reader.
-func (r *LazyBinaryReader) PostingsOffset(name, value string) (index.Range, error) {
-	reader, wg, err := r.getOrLoadReader()
+func (r *LazyBinaryReader) PostingsOffset(ctx context.Context, name string, value string) (index.Range, error) {
+	reader, wg, err := r.getOrLoadReader(ctx)
 	if err != nil {
 		return index.Range{}, err
 	}
 	defer wg.Done()
 
-	return reader.PostingsOffset(name, value)
+	return reader.PostingsOffset(ctx, name, value)
 }
 
 // LookupSymbol implements Reader.
-func (r *LazyBinaryReader) LookupSymbol(o uint32) (string, error) {
-	reader, wg, err := r.getOrLoadReader()
+func (r *LazyBinaryReader) LookupSymbol(ctx context.Context, o uint32) (string, error) {
+	reader, wg, err := r.getOrLoadReader(ctx)
 	if err != nil {
 		return "", err
 	}
 	defer wg.Done()
 
-	return reader.LookupSymbol(o)
+	return reader.LookupSymbol(ctx, o)
 }
 
 // SymbolsReader implements Reader.
-func (r *LazyBinaryReader) SymbolsReader() (streamindex.SymbolsReader, error) {
-	reader, wg, err := r.getOrLoadReader()
+func (r *LazyBinaryReader) SymbolsReader(ctx context.Context) (streamindex.SymbolsReader, error) {
+	reader, wg, err := r.getOrLoadReader(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	sr, err := reader.SymbolsReader()
+	sr, err := reader.SymbolsReader(ctx)
 	if err != nil {
 		wg.Done()
 		return nil, err
@@ -197,7 +197,7 @@ func (r *LazyBinaryReader) SymbolsReader() (streamindex.SymbolsReader, error) {
 
 // LabelValuesOffsets implements Reader.
 func (r *LazyBinaryReader) LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
-	reader, wg, err := r.getOrLoadReader()
+	reader, wg, err := r.getOrLoadReader(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -207,19 +207,19 @@ func (r *LazyBinaryReader) LabelValuesOffsets(ctx context.Context, name string, 
 }
 
 // LabelNames implements Reader.
-func (r *LazyBinaryReader) LabelNames() ([]string, error) {
-	reader, wg, err := r.getOrLoadReader()
+func (r *LazyBinaryReader) LabelNames(ctx context.Context) ([]string, error) {
+	reader, wg, err := r.getOrLoadReader(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer wg.Done()
 
-	return reader.LabelNames()
+	return reader.LabelNames(ctx)
 }
 
 // EagerLoad attempts to eagerly load this index header.
-func (r *LazyBinaryReader) EagerLoad() {
-	_, wg, err := r.getOrLoadReader()
+func (r *LazyBinaryReader) EagerLoad(ctx context.Context) {
+	_, wg, err := r.getOrLoadReader(ctx)
 	if err != nil {
 		level.Warn(r.logger).Log("msg", "eager loading of lazy loaded index-header failed; skipping", "err", err)
 		return
@@ -230,7 +230,7 @@ func (r *LazyBinaryReader) EagerLoad() {
 // getOrLoadReader ensures the underlying binary index-header reader has been successfully loaded.
 // Returns the reader, wait group that should be used to signal that usage of reader is finished, and an error on failure.
 // Must be called without lock.
-func (r *LazyBinaryReader) getOrLoadReader() (Reader, *sync.WaitGroup, error) {
+func (r *LazyBinaryReader) getOrLoadReader(ctx context.Context) (Reader, *sync.WaitGroup, error) {
 	r.readerMx.RLock()
 	defer r.readerMx.RUnlock()
 
