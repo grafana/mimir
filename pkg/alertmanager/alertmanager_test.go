@@ -7,14 +7,19 @@ package alertmanager
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/alerting/definition"
+	alertingmodels "github.com/grafana/alerting/models"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
@@ -418,4 +423,133 @@ func TestSilenceLimits(t *testing.T) {
 	// due to padding.
 	require.Contains(t, err.Error(), "silence exceeded maximum size")
 	require.Equal(t, "", id3)
+}
+
+func TestExperimentalReceiversAPI(t *testing.T) {
+	var buf concurrency.SyncBuffer
+	logger := log.NewLogfmtLogger(&buf)
+
+	user := "test"
+	reg := prometheus.NewPedanticRegistry()
+	am, err := New(&Config{
+		UserID:            user,
+		Logger:            logger,
+		Limits:            &mockAlertManagerLimits{maxDispatcherAggregationGroups: 10},
+		Features:          featurecontrol.NoopFlags{},
+		TenantDataDir:     t.TempDir(),
+		ExternalURL:       &url.URL{Path: "/am"},
+		ShardingEnabled:   true,
+		Store:             prepareInMemoryAlertStore(),
+		Replicator:        &stubReplicator{},
+		ReplicationFactor: 1,
+		PersisterConfig:   PersisterConfig{Interval: time.Hour},
+	}, reg)
+	require.NoError(t, err)
+	defer am.StopAndWait()
+
+	cfgRaw := `receivers:
+- name: 'recv-1'
+  webhook_configs:
+  - url: http://example.com/
+    send_resolved: true
+
+- name: 'recv-2'
+  webhook_configs:
+  - url: http://example.com/
+    send_resolved: false
+
+route:
+  group_by: ['alertname']
+  group_wait: 10ms
+  group_interval: 10ms
+  receiver: 'recv-1'`
+
+	cfg, err := definition.LoadCompat([]byte(cfgRaw))
+	require.NoError(t, err)
+	require.NoError(t, am.ApplyConfig(user, cfg, cfgRaw))
+
+	doGetReceivers := func() []alertingmodels.Receiver {
+		rr := httptest.NewRecorder()
+		am.GetReceiversHandler(rr, nil)
+		require.Equal(t, http.StatusOK, rr.Code)
+		result := []alertingmodels.Receiver{}
+		err = json.Unmarshal(rr.Body.Bytes(), &result)
+		assert.NoError(t, err)
+		sort.Slice(result, func(i, j int) bool {
+			return result[i].Name < result[j].Name
+		})
+		return result
+	}
+
+	// Check the API returns all receivers but without any notification status.
+
+	result := doGetReceivers()
+	assert.Equal(t, []alertingmodels.Receiver{
+		{
+			Name:   "recv-1",
+			Active: true,
+			Integrations: []alertingmodels.Integration{
+				{
+					Name:                      "webhook",
+					LastNotifyAttemptDuration: "0s",
+					SendResolved:              true,
+				},
+			},
+		},
+		{
+			Name: "recv-2",
+			// Receiver not used in a route.
+			Active: false,
+			Integrations: []alertingmodels.Integration{
+				{
+					Name:                      "webhook",
+					LastNotifyAttemptDuration: "0s",
+					// We configure send_resolved to false.
+					SendResolved: false,
+				},
+			},
+		},
+	}, result)
+
+	// Send an alert to cause a notification attempt.
+
+	now := time.Now()
+	inputAlerts := []*types.Alert{
+		{
+			Alert: model.Alert{
+				Labels: model.LabelSet{
+					"alertname": model.LabelValue("Alert-1"),
+					"a":         "b",
+				},
+				Annotations:  model.LabelSet{"foo": "bar"},
+				StartsAt:     now,
+				EndsAt:       now.Add(5 * time.Minute),
+				GeneratorURL: "http://example.com/prometheus",
+			},
+			UpdatedAt: now,
+			Timeout:   false,
+		},
+	}
+	require.NoError(t, am.alerts.Put(inputAlerts...))
+
+	// Wait for the API to tell us there was a notification attempt.
+
+	result = []alertingmodels.Receiver{}
+	require.Eventually(t, func() bool {
+		result = doGetReceivers()
+		return len(result) == 2 &&
+			len(result[0].Integrations) == 1 &&
+			len(result[1].Integrations) == 1 &&
+			!result[0].Integrations[0].LastNotifyAttempt.IsZero()
+	}, 5*time.Second, 100*time.Millisecond)
+
+	assert.Equal(t, "webhook", result[0].Integrations[0].Name)
+	assert.NotZero(t, result[0].Integrations[0].LastNotifyAttempt)
+	assert.Equal(t, errRateLimited.Error(), result[0].Integrations[0].LastNotifyAttemptError)
+
+	// Check the status of the other integration is not changed.
+
+	assert.Equal(t, "webhook", result[1].Integrations[0].Name)
+	assert.Zero(t, result[1].Integrations[0].LastNotifyAttempt)
+	assert.Equal(t, "", result[1].Integrations[0].LastNotifyAttemptError)
 }
