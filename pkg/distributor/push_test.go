@@ -22,7 +22,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
-	"github.com/golang/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
@@ -1073,13 +1072,13 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 }
 
 func mustMarshalStatus(t *testing.T, code codes.Code, msg string) []byte {
-	bytes, err := proto.Marshal(status.New(code, msg).Proto())
+	bytes, err := status.New(code, msg).Proto().Marshal()
 	require.NoError(t, err)
 	return bytes
 }
 
 type otlpLimitsMock struct{}
 
-func (o otlpLimitsMock) OTelMetricSuffixesEnabled(id string) bool {
+func (o otlpLimitsMock) OTelMetricSuffixesEnabled(_ string) bool {
 	return false
 }
