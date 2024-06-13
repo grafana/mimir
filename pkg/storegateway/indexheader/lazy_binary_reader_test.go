@@ -20,12 +20,15 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 )
 
 func TestNewLazyBinaryReader_ShouldFailIfUnableToBuildIndexHeader(t *testing.T) {
@@ -369,19 +372,160 @@ func TestLazyBinaryReader_ConcurrentLoadingOfSameIndexReader(t *testing.T) {
 	time.Sleep(1 * time.Second)
 	close(start)
 
+	assert.NoError(t, wgWaitTimeout(&clientWG, 10*time.Second))
+}
+
+func wgWaitTimeout(wg *sync.WaitGroup, timeout time.Duration) error {
 	done := make(chan struct{})
 	go func() {
-		// Wait until all of them finish.
-		clientWG.Wait()
+		wg.Wait()
 		close(done)
 	}()
-
 	select {
 	case <-done:
-		// ok
-	case <-time.After(10 * time.Second):
-		require.Fail(t, "goroutines did not finish in time")
+		return nil
+	case <-time.After(timeout):
+		return errors.New("timeout waiting for WaitGroup")
 	}
+}
+
+type mockReader struct {
+	IndexVersionFunc func(ctx context.Context) (int, error)
+}
+
+func (m mockReader) Close() error {
+	panic("not implemented")
+}
+
+func (m mockReader) IndexVersion(ctx context.Context) (int, error) {
+	return m.IndexVersionFunc(ctx)
+}
+
+func (m mockReader) PostingsOffset(ctx context.Context, name string, value string) (index.Range, error) {
+	panic("not implemented")
+}
+
+func (m mockReader) LookupSymbol(ctx context.Context, o uint32) (string, error) {
+	panic("not implemented")
+}
+
+func (m mockReader) SymbolsReader(ctx context.Context) (streamindex.SymbolsReader, error) {
+	panic("not implemented")
+}
+
+func (m mockReader) LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
+	panic("not implemented")
+}
+
+func (m mockReader) LabelNames(ctx context.Context) ([]string, error) {
+	panic("not implemented")
+}
+
+func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading(t *testing.T) {
+	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
+
+	const (
+		maxLazyLoadConcurrency = 1
+		numClients             = 25
+		mockIndexVersion       = -42
+	)
+
+	waitLoad := make(chan struct{})
+	loadStarted := make(chan struct{})
+
+	factory := func() (Reader, error) {
+		close(loadStarted) // will panic if closed twice
+		<-waitLoad
+		reader := mockReader{
+			IndexVersionFunc: func(ctx context.Context) (int, error) { return mockIndexVersion, nil },
+		}
+		return reader, nil
+	}
+
+	lazyLoadingGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
+	lazyReader, err := NewLazyBinaryReader(context.Background(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
+	require.NoError(t, err)
+
+	var clientWG sync.WaitGroup
+	clientWG.Add(numClients)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Start many clients for the same lazyReader
+	for i := 0; i < numClients; i++ {
+		go func() {
+			_, _ = lazyReader.IndexVersion(ctx)
+			clientWG.Done()
+		}()
+	}
+	<-loadStarted                                            // wait until the first load is started
+	cancel()                                                 // abort waiting for lazy load
+	assert.NoError(t, wgWaitTimeout(&clientWG, time.Second)) // all clients should return
+
+	close(waitLoad) // unblock the lazy load
+
+	version, err := lazyReader.IndexVersion(context.Background()) // try to use the reader implementation now that it has loaded
+	assert.NoError(t, err)
+	assert.Equal(t, mockIndexVersion, version)
+}
+
+func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading_LoadingReturnsAnError(t *testing.T) {
+	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
+
+	const (
+		maxLazyLoadConcurrency = 1
+		numClients             = 25
+		mockIndexVersion       = -42
+	)
+
+	waitLoad := make(chan struct{})
+	loadStarted := make(chan struct{})
+
+	reader, loadErr := Reader(nil), assert.AnError
+
+	factory := func() (Reader, error) {
+		close(loadStarted)
+		<-waitLoad
+		return reader, loadErr
+	}
+
+	lazyLoadingGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
+	lazyReader, err := NewLazyBinaryReader(context.Background(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
+	require.NoError(t, err)
+
+	var clientWG sync.WaitGroup
+	clientWG.Add(numClients)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Start many clients for the same lazyReader and cancel them before lazy loading completes.
+	for i := 0; i < numClients; i++ {
+		go func() {
+			_, _ = lazyReader.IndexVersion(ctx)
+			clientWG.Done()
+		}()
+	}
+	<-loadStarted                                            // wait until the first load is started
+	cancel()                                                 // abort waiting for lazy load
+	assert.NoError(t, wgWaitTimeout(&clientWG, time.Second)) // all clients should return
+
+	close(waitLoad) // unblock the lazy load
+
+	// Start another client to make sure the factory is invoked again if the first invocation returned an error.
+	loadStarted = make(chan struct{})
+	_, err = lazyReader.IndexVersion(context.Background()) // try to use the reader implementation now that it has loaded
+	assert.ErrorIs(t, err, assert.AnError)
+
+	// Return a functional reader and invoke the lazy reader again. This time we expect to receive a legitimate reader.
+	reader = mockReader{
+		IndexVersionFunc: func(ctx context.Context) (int, error) { return mockIndexVersion, nil },
+	}
+	loadErr = nil
+
+	version, err := lazyReader.IndexVersion(context.Background()) // try to use the reader implementation now that it has loaded
+	assert.NoError(t, err)
+
+	assert.Equal(t, mockIndexVersion, version)
 }
 
 func TestLazyBinaryReader_SymbolReaderAndUnload(t *testing.T) {
