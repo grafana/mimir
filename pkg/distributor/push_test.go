@@ -1406,14 +1406,14 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 				// This is simple OTLP request, with "report_server_error".
 				Body: []byte(`{"resourceMetrics": [{"scopeMetrics": [{"metrics": [{"name": "report_server_error", "gauge": {"dataPoints": [{"timeUnixNano": "1679912463340000000", "asDouble": 10.66}]}}]}]}]}`),
 			},
-			expectedResponse: &httpgrpc.HTTPResponse{Code: 503,
+			expectedResponse: &httpgrpc.HTTPResponse{Code: 500,
 				Headers: []*httpgrpc.Header{
 					{Key: "Content-Type", Values: []string{"application/octet-stream"}},
 					{Key: "X-Content-Type-Options", Values: []string{"nosniff"}},
 				},
 				Body: mustMarshalStatus(t, codes.Internal, "some random push error"),
 			},
-			expectedGrpcErrorMessage: "rpc error: code = Code(503) desc = some random push error",
+			expectedGrpcErrorMessage: "rpc error: code = Code(500) desc = some random push error",
 		},
 	}
 
