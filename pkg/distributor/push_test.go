@@ -901,7 +901,6 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 
 	srv, err := dskit_server.New(cfg)
 	require.NoError(t, err)
-	//srv.HTTP.
 
 	push := func(ctx context.Context, req *Request) error {
 		// Trigger conversion of incoming request to WriteRequest.
@@ -923,6 +922,7 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 	require.NoError(t, err)
 
 	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() { defer wg.Done(); _ = srv.Run() }()
 	t.Cleanup(func() {
 		srv.Stop()
