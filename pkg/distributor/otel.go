@@ -16,6 +16,7 @@ import (
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
@@ -46,13 +47,17 @@ const (
 	maxErrMsgLen   = 1024
 )
 
+type OTLPHandlerLimits interface {
+	OTelMetricSuffixesEnabled(id string) bool
+}
+
 // OTLPHandler is an http.Handler accepting OTLP write requests.
 func OTLPHandler(
 	maxRecvMsgSize int,
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
 	enableOtelMetadataStorage bool,
-	limits *validation.Overrides,
+	limits OTLPHandlerLimits,
 	retryCfg RetryConfig,
 	push PushFunc,
 	pushMetrics *PushMetrics,
@@ -244,7 +249,7 @@ func otlpHandler(
 		if err := push(ctx, req); err != nil {
 			if errors.Is(err, context.Canceled) {
 				level.Warn(logger).Log("msg", "push request canceled", "err", err)
-				writeErrorToHTTPResponseBody(w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
+				writeErrorToHTTPResponseBody(r.Context(), w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
 				return
 			}
 			var (
@@ -272,7 +277,7 @@ func otlpHandler(
 				level.Error(logger).Log(msgs...)
 			}
 			addHeaders(w, err, r, httpCode, retryCfg)
-			writeErrorToHTTPResponseBody(w, httpCode, grpcCode, errorMsg, logger)
+			writeErrorToHTTPResponseBody(r.Context(), w, httpCode, grpcCode, errorMsg, logger)
 		}
 	})
 }
@@ -309,9 +314,12 @@ func httpRetryableToOTLPRetryable(httpStatusCode int) int {
 
 // writeErrorToHTTPResponseBody converts the given error into a grpc status and marshals it into a byte slice, in order to be written to the response body.
 // See doc https://opentelemetry.io/docs/specs/otlp/#failures-1
-func writeErrorToHTTPResponseBody(w http.ResponseWriter, httpCode int, grpcCode codes.Code, msg string, logger log.Logger) {
+func writeErrorToHTTPResponseBody(reqCtx context.Context, w http.ResponseWriter, httpCode int, grpcCode codes.Code, msg string, logger log.Logger) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if server.IsHandledByHttpgrpcServer(reqCtx) {
+		w.Header().Set(server.ErrorMessageHeaderKey, msg) // If httpgrpc Server wants to convert this HTTP response into error, use this error message, instead of using response body.
+	}
 	w.WriteHeader(httpCode)
 
 	respBytes, err := proto.Marshal(status.New(grpcCode, msg).Proto())
