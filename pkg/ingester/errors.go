@@ -560,6 +560,8 @@ func mapPushErrorToErrorWithStatus(err error) error {
 			errCode = codes.Internal
 		case mimirpb.METHOD_NOT_ALLOWED:
 			errCode = codes.Unimplemented
+		case mimirpb.CIRCUIT_BREAKER_OPEN:
+			errCode = codes.Unavailable
 		}
 	}
 	return newErrorWithStatus(wrappedErr, errCode)
@@ -581,6 +583,8 @@ func mapPushErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
 		case mimirpb.METHOD_NOT_ALLOWED:
 			return newErrorWithStatus(err, codes.Unimplemented)
+		case mimirpb.CIRCUIT_BREAKER_OPEN:
+			return newErrorWithStatus(err, codes.Unavailable)
 		}
 	}
 	return err
@@ -600,6 +604,8 @@ func mapReadErrorToErrorWithStatus(err error) error {
 			errCode = codes.Unavailable
 		case mimirpb.METHOD_NOT_ALLOWED:
 			return newErrorWithStatus(err, codes.Unimplemented)
+		case mimirpb.CIRCUIT_BREAKER_OPEN:
+			return newErrorWithStatus(err, codes.Unavailable)
 		}
 	}
 	return newErrorWithStatus(err, errCode)
@@ -619,6 +625,8 @@ func mapReadErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 			return newErrorWithStatus(err, codes.Unavailable)
 		case mimirpb.METHOD_NOT_ALLOWED:
 			return newErrorWithStatus(err, codes.Unimplemented)
+		case mimirpb.CIRCUIT_BREAKER_OPEN:
+			return newErrorWithStatus(err, codes.Unavailable)
 		}
 	}
 	return err
