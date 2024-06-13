@@ -302,6 +302,14 @@
       - "8080:8080"
     "volumes":
       - "../common/config:/etc/nginx/templates"
+  "otel_collector":
+    "command":
+      - "--config=/etc/otel-collector/otel-collector.yaml"
+    "image": "otel/opentelemetry-collector-contrib:0.88.0"
+    "ports":
+      - "8083:8083"
+    "volumes":
+      - "./config:/etc/otel-collector"
   "prometheus":
     "command":
       - "--config.file=/etc/prometheus/prometheus.yaml"
