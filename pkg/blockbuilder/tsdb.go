@@ -357,9 +357,8 @@ type extendedAppender interface {
 }
 
 type userTSDB struct {
-	db      *tsdb.DB
-	userID  string
-	shipper BlocksUploader
+	db     *tsdb.DB
+	userID string
 }
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.

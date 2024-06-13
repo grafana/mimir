@@ -2,6 +2,7 @@ package blockbuilder
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"math/rand"
 	"os"
@@ -108,53 +109,6 @@ func TestTSDBBuilder(t *testing.T) {
 		allProcessed, err := builder.process(context.Background(), rec, lastEnd, currEnd, recordProcessedBefore)
 		require.NoError(t, err)
 		require.Equal(t, accepted, allProcessed)
-	}
-
-	queryDB := func(db *tsdb.DB) {
-		querier, err := db.Querier(math.MinInt64, math.MaxInt64)
-		require.NoError(t, err)
-		ss := querier.Select(
-			context.Background(), true, nil,
-			labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
-		)
-
-		var actSamples []mimirpb.Sample
-		var actHistograms []mimirpb.Histogram
-		for ss.Next() {
-			series := ss.At()
-
-			require.True(t, labels.Compare(labels.FromStrings("foo", "float"), series.Labels()) == 0 ||
-				labels.Compare(labels.FromStrings("foo", "histogram"), series.Labels()) == 0)
-
-			it := series.Iterator(nil)
-			for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
-				switch typ {
-				case chunkenc.ValFloat:
-					ts, val := it.At()
-					actSamples = append(actSamples, mimirpb.Sample{TimestampMs: ts, Value: val})
-				case chunkenc.ValHistogram:
-					ts, h := it.AtHistogram(nil)
-					hp := mimirpb.FromHistogramToHistogramProto(ts, h)
-					hp.ResetHint = 0
-					actHistograms = append(actHistograms, hp)
-				default:
-					t.Fatalf("unexpected sample type %v", typ)
-				}
-			}
-			require.NoError(t, it.Err())
-		}
-
-		require.NoError(t, ss.Err())
-		require.NoError(t, querier.Close())
-
-		sort.Slice(expSamples, func(i, j int) bool {
-			return expSamples[i].TimestampMs < expSamples[j].TimestampMs
-		})
-		sort.Slice(expHistograms, func(i, j int) bool {
-			return expHistograms[i].Timestamp < expHistograms[j].Timestamp
-		})
-		require.Equal(t, expSamples, actSamples)
-		require.Equal(t, expHistograms, actHistograms)
 	}
 
 	processingRange := time.Hour.Milliseconds()
@@ -270,7 +224,7 @@ func TestTSDBBuilder(t *testing.T) {
 			require.NoError(t, err)
 
 			// Check the samples in the DB.
-			queryDB(db.db)
+			compareQuery(t, db.db, expSamples, expHistograms, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
 
 			// This should create the appropriate blocks and close the DB.
 			shipperDir := t.TempDir()
@@ -287,10 +241,58 @@ func TestTSDBBuilder(t *testing.T) {
 			tc.verifyBlocksAfterCompaction(blocks)
 
 			// Check correctness of samples in the blocks.
-			queryDB(newDB)
+			compareQuery(t, newDB, expSamples, expHistograms, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
 			require.NoError(t, newDB.Close())
 		})
 	}
+}
+
+func compareQuery(t *testing.T, db *tsdb.DB, expSamples []mimirpb.Sample, expHistograms []mimirpb.Histogram, matchers ...*labels.Matcher) {
+	querier, err := db.Querier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	ss := querier.Select(
+		context.Background(), true, nil,
+		matchers...,
+	)
+
+	var actSamples []mimirpb.Sample
+	var actHistograms []mimirpb.Histogram
+	for ss.Next() {
+		series := ss.At()
+
+		require.True(t, labels.Compare(labels.FromStrings("foo", "float"), series.Labels()) == 0 ||
+			labels.Compare(labels.FromStrings("foo", "histogram"), series.Labels()) == 0)
+
+		it := series.Iterator(nil)
+		for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
+			switch typ {
+			case chunkenc.ValFloat:
+				ts, val := it.At()
+				actSamples = append(actSamples, mimirpb.Sample{TimestampMs: ts, Value: val})
+			case chunkenc.ValHistogram:
+				ts, h := it.AtHistogram(nil)
+				hp := mimirpb.FromHistogramToHistogramProto(ts, h)
+				hp.ResetHint = 0
+				actHistograms = append(actHistograms, hp)
+			default:
+				t.Fatalf("unexpected sample type %v", typ)
+			}
+		}
+		require.NoError(t, it.Err())
+	}
+
+	require.NoError(t, ss.Err())
+	require.NoError(t, querier.Close())
+
+	sort.Slice(expSamples, func(i, j int) bool {
+		return expSamples[i].TimestampMs < expSamples[j].TimestampMs
+	})
+	sort.Slice(expHistograms, func(i, j int) bool {
+		return expHistograms[i].Timestamp < expHistograms[j].Timestamp
+	})
+	fmt.Println("Expected samples:", expSamples)
+	require.Equal(t, expSamples, actSamples)
+	require.Equal(t, expHistograms, actHistograms)
 }
 
 func mockUploaderFunc(t *testing.T, destDir string) func(context.Context, string) blockUploader {

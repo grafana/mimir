@@ -207,8 +207,8 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 		return err
 	}
 
-	nextBlockTime := time.Now().Truncate(b.cfg.ConsumeInterval).Add(b.cfg.ConsumeInterval)
-	waitTime := time.Until(nextBlockTime)
+	nextCycleTime := time.Now().Truncate(b.cfg.ConsumeInterval).Add(b.cfg.ConsumeInterval + b.cfg.ConsumeIntervalBuffer)
+	waitTime := time.Until(nextCycleTime)
 
 	for {
 		select {
@@ -220,11 +220,10 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 
 			// If we took more than consumptionItvl time to consume the records, this
 			// will immediately start the next consumption.
-			nextBlockTime = nextBlockTime.Add(b.cfg.ConsumeInterval)
-			waitTime = time.Until(nextBlockTime)
+			nextCycleTime = nextCycleTime.Add(b.cfg.ConsumeInterval)
+			waitTime = time.Until(nextCycleTime)
 			if waitTime < 0 {
-				// TODO(codesome): track "-waitTime", which is the time we ran over. Or something better that lets us alert
-				// if it goes beyond a certain point consistently.
+				// TODO(codesome): track "-waitTime", which is the time we ran over. Should have an alert on this.
 			}
 		case <-ctx.Done():
 			return nil
@@ -239,7 +238,6 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 	b.assignmentMu.Lock()
 	assignment := b.assignment
 	b.assignmentMu.Unlock()
-
 	assignmentParts, ok := assignment[b.cfg.Kafka.Topic]
 	if !ok || len(assignmentParts) == 0 {
 		return fmt.Errorf("no partitions assigned in %+v, topic %s", assignment, b.cfg.Kafka.Topic)
@@ -296,13 +294,20 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 			level.Debug(b.logger).Log("part", offset.Partition, "offset", offset.At, "meta", offset.Metadata)
 			commitRecTs, seenTillTs, lastBlockEnd, err = unmarshallCommitMeta(offset.Metadata)
 			if err != nil {
-				return err
+				// If there is an error in unmarshalling the metadata, treat it as if
+				// we have no commit. There is no reason to stop the cycle for this.
+				level.Warn(b.logger).Log("msg", "error unmarshalling commit metadata", "part", part, "offset", offset.At, "metadata", offset.Metadata)
+				ok = false
 			}
 			commitRecTime = time.UnixMilli(commitRecTs)
 		} else {
 			level.Warn(b.logger).Log("msg", "didn't find partition", "part", part, "offsets", fmt.Sprintf("%+v", offsets))
 		}
 
+		// TODO(codesome): when we deploy it first, we will not have any kafka commit and we will
+		// be lagging. Add an option to block builder to start consuming from the end for the first rollout.
+		// 		TODO Optionally also explore a way to consume in parts without the presence of commit
+		//      so that we don't go into a crash loop (because of low resources) in worst case.
 		lagging := ok && cycleEnd.Sub(commitRecTime) > 3*b.cfg.ConsumeInterval/2
 		if !lagging {
 			// Either we did not find a commit offset or we are not lagging behind by
