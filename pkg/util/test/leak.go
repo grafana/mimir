@@ -28,6 +28,7 @@ func goLeakOptions() []goleak.Option {
 		// it gets closed when we close the BucketStore. However, we currently don't close BucketStore
 		// on store-gateway termination so it never gets terminated.
 		goleak.IgnoreTopFunction("github.com/grafana/mimir/pkg/storegateway/indexheader.NewReaderPool.func1"),
+		goleak.IgnoreTopFunction("github.com/grafana/mimir/pkg/storegateway/indexheader.(*LazyBinaryReader).controlLoop"),
 		// Similar to the one above, store-gateway BucketStore starts a goroutine in snapshotter
 		// that manages lazy-loaded snapshots. It stops the snapshotter on BucketStore close.
 		goleak.IgnoreTopFunction("github.com/grafana/mimir/pkg/storegateway/indexheader.(*Snapshotter).Start.func1"),

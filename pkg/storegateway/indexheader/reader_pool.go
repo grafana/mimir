@@ -162,7 +162,7 @@ func (p *ReaderPool) getIdleReadersSince(ts int64) []*LazyBinaryReader {
 
 	var idle []*LazyBinaryReader
 	for r := range p.lazyReaders {
-		if r.isIdleSince(ts) {
+		if r.IsIdleSince(ts) {
 			idle = append(idle, r)
 		}
 	}

@@ -189,8 +189,6 @@ func TestReaderPool_LoadedBlocks(t *testing.T) {
 	lb := LazyBinaryReader{
 		blockID: id,
 		usedAt:  atomic.NewInt64(usedAt.UnixNano()),
-		// we just set to make reader != nil
-		reader: &StreamBinaryReader{},
 	}
 	rp := ReaderPool{
 		lazyReaderEnabled: true,
