@@ -2,7 +2,6 @@ package blockbuilder
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"math/rand"
 	"os"
@@ -290,7 +289,6 @@ func compareQuery(t *testing.T, db *tsdb.DB, expSamples []mimirpb.Sample, expHis
 	sort.Slice(expHistograms, func(i, j int) bool {
 		return expHistograms[i].Timestamp < expHistograms[j].Timestamp
 	})
-	fmt.Println("Expected samples:", expSamples)
 	require.Equal(t, expSamples, actSamples)
 	require.Equal(t, expHistograms, actHistograms)
 }

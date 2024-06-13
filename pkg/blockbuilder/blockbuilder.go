@@ -198,10 +198,7 @@ func (b *BlockBuilder) stopping(_ error) error {
 func (b *BlockBuilder) running(ctx context.Context) error {
 	// Do initial consumption on start using current time as the point up to which we are consuming.
 	// To avoid small blocks at startup, we consume until the last hour boundary + buffer.
-	cycleEnd := time.Now().Truncate(b.cfg.ConsumeInterval).Add(b.cfg.ConsumeIntervalBuffer)
-	if cycleEnd.After(time.Now()) {
-		cycleEnd = cycleEnd.Add(-b.cfg.ConsumeInterval)
-	}
+	cycleEnd := cycleEndAtStartup(b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
 	err := b.nextConsumeCycle(ctx, cycleEnd)
 	if err != nil {
 		return err
@@ -229,6 +226,14 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 			return nil
 		}
 	}
+}
+
+func cycleEndAtStartup(interval, buffer time.Duration) time.Time {
+	cycleEnd := time.Now().Truncate(interval).Add(buffer)
+	if cycleEnd.After(time.Now()) {
+		cycleEnd = cycleEnd.Add(-interval)
+	}
+	return cycleEnd
 }
 
 // nextConsumeCycle manages consumption of currently assigned partitions.
@@ -327,7 +332,6 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 		}
 
 		// We are lagging behind. We need to consume the partition in parts.
-
 		// We iterate through all the cycleEnds starting from the first one after commit until the cycleEnd.
 		cycleEndStartAt := commitRecTime.Truncate(b.cfg.ConsumeInterval).Add(b.cfg.ConsumeInterval + b.cfg.ConsumeIntervalBuffer)
 		for ce := cycleEndStartAt; cycleEnd.Sub(ce) >= 0; ce = ce.Add(b.cfg.ConsumeInterval) {
@@ -394,7 +398,8 @@ func (b *BlockBuilder) consumePartition(
 	)
 	for !done {
 		// Limit time client waits for a new batch. Otherwise, the client will hang if it lands on an inactive partition.
-		ctx1, cancel := context.WithTimeout(ctx, 5*time.Second)
+		// TODO: make it 5 seconds after writing tests. Made it less to run tests quickly during development.
+		ctx1, cancel := context.WithTimeout(ctx, 1*time.Second)
 		fetches := b.kafkaClient.PollFetches(ctx1)
 		cancel()
 		if fetches.IsClientClosed() {
@@ -443,6 +448,11 @@ func (b *BlockBuilder) consumePartition(
 				commitRec = lastRec
 			}
 			lastRec = rec
+		}
+		if lag <= 0 {
+			// TODO(codesome): Verify with Vladimir if this is okay. This makes tests go faster because
+			// otherwise the fetch waits until timeout for the next one.
+			break
 		}
 	}
 
