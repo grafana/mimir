@@ -79,6 +79,7 @@
 * [BUGFIX] Store-gateway: Allow long-running index scans to be interrupted. #8154
 * [BUGFIX] Query-frontend: fix splitting of queries using `@ start()` and `@end()` modifiers on a subquery. Previously the `start()` and `end()` would be evaluated using the start end end of the split query instead of the original query. #8162
 * [BUGFIX] Distributor: Don't discard time series with invalid exemplars, just drop affected exemplars. #8224
+* [BUGFIX] OTLP handler: fix errors returned by OTLP handler when used via httpgrpc tunneling. #8363
 
 ### Mixin
 

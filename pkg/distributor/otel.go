@@ -47,7 +47,7 @@ func OTLPHandler(
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
 	enableOtelMetadataStorage bool,
-	limits *validation.Overrides,
+	limits PushHandlerLimits,
 	retryCfg RetryConfig,
 	push PushFunc,
 	pushMetrics *PushMetrics,
