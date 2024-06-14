@@ -140,6 +140,12 @@ func TestRemoteReadRoundTripperCallsDownstreamOnAll(t *testing.T) {
 	}
 }
 
+type apiResponse struct {
+	Status    string        `json:"status"`
+	ErrorType apierror.Type `json:"errorType,omitempty"`
+	Error     string        `json:"error,omitempty"`
+}
+
 func generateTestRemoteReadRequest() *http.Request {
 	request := httptest.NewRequest("GET", "/api/v1/read", nil)
 	request.Header.Add("User-Agent", "test-user-agent")
