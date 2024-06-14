@@ -31,6 +31,22 @@ var (
 type Sender struct {
 	c   *http.Client
 	log log.Logger
+
+	// TODO: set
+	smtpEnabled    bool
+	externalURL    string
+	fromName       string
+	fromAddress    string
+	host           string
+	skipVerify     bool
+	certFile       string
+	keyFile        string
+	user           string
+	password       string
+	ehloIdentity   string
+	startTLSPolicy string
+	staticHeaders  map[string]string
+	contentTypes   []string
 }
 
 func NewSender(log log.Logger) *Sender {
@@ -116,10 +132,4 @@ func (s *Sender) SendWebhook(ctx context.Context, cmd *alertingReceivers.SendWeb
 
 	level.Debug(s.log).Log("msg", "Webhook failed", "url", cmd.URL, "statuscode", resp.Status, "body", string(body))
 	return fmt.Errorf("webhook response status %v", resp.Status)
-}
-
-// SendEmail implements alertingReceivers.EmailSender.
-// TODO: no-op for now, implement.
-func (s *Sender) SendEmail(_ context.Context, _ *alertingReceivers.SendEmailSettings) error {
-	return errors.New("e-mail sending not implemented")
 }
