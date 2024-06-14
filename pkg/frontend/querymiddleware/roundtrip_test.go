@@ -12,12 +12,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/api"
@@ -432,6 +435,100 @@ func TestTripperware_Metrics(t *testing.T) {
 				"cortex_query_frontend_non_step_aligned_queries_total",
 				"cortex_query_frontend_queries_total",
 			))
+		})
+	}
+}
+
+// TestMiddlewaresConsistency ensures that we don't forget to add a middleware to a given type of request
+// (e.g. range query, remote read, ...) when a new middleware is added. By default, it expects that a middleware
+// is added to each type of request, and then it allows to define exceptions when we intentionally don't
+// want a given middleware to be used for a specific request.
+func TestMiddlewaresConsistency(t *testing.T) {
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+	cfg.CacheResults = true
+	cfg.ShardedQueries = true
+
+	// Ensure all features are enabled, so that we assert on all middlewares.
+	require.NotZero(t, cfg.CacheResults)
+	require.NotZero(t, cfg.ShardedQueries)
+	require.NotZero(t, cfg.SplitQueriesByInterval)
+	require.NotZero(t, cfg.MaxRetries)
+
+	queryRangeMiddlewares, queryInstantMiddlewares, remoteReadMiddlewares := newQueryMiddlewares(
+		cfg,
+		log.NewNopLogger(),
+		mockLimits{
+			alignQueriesWithStep: true,
+		},
+		newTestPrometheusCodec(),
+		nil,
+		nil,
+		nil,
+		promql.NewEngine(promql.EngineOpts{}),
+		nil,
+	)
+
+	middlewaresByRequestType := map[string]struct {
+		instances  []MetricsQueryMiddleware
+		exceptions []string
+	}{
+		"instant query": {
+			instances:  queryInstantMiddlewares,
+			exceptions: []string{"splitAndCacheMiddleware", "stepAlignMiddleware"},
+		},
+		"range query": {
+			instances:  queryRangeMiddlewares,
+			exceptions: []string{"splitInstantQueryByIntervalMiddleware"},
+		},
+		"remote read": {
+			instances:  remoteReadMiddlewares,
+			exceptions: []string{"instrumentMiddleware", "limitsMiddleware", "queryBlockerMiddleware", "querySharding", "queryStatsMiddleware", "retry", "splitAndCacheMiddleware", "splitInstantQueryByIntervalMiddleware", "stepAlignMiddleware"},
+		},
+	}
+
+	// Utility to get the name of the struct.
+	getName := func(i interface{}) string {
+		t := reflect.TypeOf(i)
+		if t.Kind() == reflect.Ptr {
+			t = t.Elem()
+		}
+		return t.Name()
+	}
+
+	// Utility to get the names of middlewares.
+	getMiddlewareNames := func(middlewares []MetricsQueryMiddleware) (names []string) {
+		for _, middleware := range middlewares {
+			handler := middleware.Wrap(&mockHandler{})
+			name := getName(handler)
+
+			names = append(names, name)
+		}
+
+		// Unique names.
+		slices.Sort(names)
+		names = slices.Compact(names)
+
+		return
+	}
+
+	// Get the (unique) names of all middlewares.
+	var allNames []string
+	for _, middlewares := range middlewaresByRequestType {
+		allNames = append(allNames, getMiddlewareNames(middlewares.instances)...)
+	}
+	slices.Sort(allNames)
+	allNames = slices.Compact(allNames)
+
+	// Ensure that all request types implements all middlewares, except exclusions.
+	for requestType, middlewares := range middlewaresByRequestType {
+		t.Run(requestType, func(t *testing.T) {
+			actualNames := getMiddlewareNames(middlewares.instances)
+			expectedNames := slices.DeleteFunc(slices.Clone(allNames), func(s string) bool {
+				return slices.Contains(middlewares.exceptions, s)
+			})
+
+			assert.ElementsMatch(t, expectedNames, actualNames)
 		})
 	}
 }
