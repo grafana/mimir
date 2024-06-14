@@ -67,6 +67,7 @@ type Config struct {
 	TargetSeriesPerShard           uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
 	ShardActiveSeriesQueries       bool          `yaml:"shard_active_series_queries" category:"experimental"`
 	UseActiveSeriesDecoder         bool          `yaml:"use_active_series_decoder" category:"experimental"`
+	RemoteReadLimitsEnabled        bool          `yaml:"remote_read_limits_enabled" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -86,6 +87,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
 	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
+	f.BoolVar(&cfg.RemoteReadLimitsEnabled, "query-frontend.remote-read-limits-enabled", false, "True to enable limits enforcement for remote read requests.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 
 	// The query-frontend.align-queries-with-step flag has been moved to the limits.go file
@@ -274,7 +276,7 @@ func newQueryTripperware(
 				return activeNativeHistogramMetrics.RoundTrip(r)
 			case IsLabelsQuery(r.URL.Path):
 				return labels.RoundTrip(r)
-			case IsRemoteReadQuery(r.URL.Path):
+			case IsRemoteReadQuery(r.URL.Path) && cfg.RemoteReadLimitsEnabled:
 				return remoteRead.RoundTrip(r)
 			default:
 				return next.RoundTrip(r)

@@ -119,9 +119,9 @@ func TestInstantTripperware(t *testing.T) {
 	codec := newTestPrometheusCodec()
 
 	tw, err := NewTripperware(
-		Config{
-			ShardedQueries: true,
-		},
+		makeTestConfig(func(cfg *Config) {
+			cfg.ShardedQueries = true
+		}),
 		log.NewNopLogger(),
 		mockLimits{totalShards: totalShards},
 		codec,
@@ -444,8 +444,7 @@ func TestTripperware_Metrics(t *testing.T) {
 // is added to each type of request, and then it allows to define exceptions when we intentionally don't
 // want a given middleware to be used for a specific request.
 func TestMiddlewaresConsistency(t *testing.T) {
-	cfg := Config{}
-	flagext.DefaultValues(&cfg)
+	cfg := makeTestConfig()
 	cfg.CacheResults = true
 	cfg.ShardedQueries = true
 
@@ -638,7 +637,7 @@ func TestRemoteReadMiddleware(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			tw, err := NewTripperware(
-				Config{},
+				makeTestConfig(),
 				log.NewNopLogger(),
 				tc.limits,
 				newTestPrometheusCodec(),
@@ -688,4 +687,18 @@ func (s singleHostRoundTripper) RoundTrip(r *http.Request) (*http.Response, erro
 	r.URL.Scheme = "http"
 	r.URL.Host = s.host
 	return s.next.RoundTrip(r)
+}
+
+func makeTestConfig(overrides ...func(*Config)) Config {
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+
+	// Enable remote read limits by default, in order to exercise the code in tests.
+	cfg.RemoteReadLimitsEnabled = true
+
+	for _, override := range overrides {
+		override(&cfg)
+	}
+
+	return cfg
 }
