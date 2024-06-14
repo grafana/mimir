@@ -3430,7 +3430,14 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ruler.sync-rules-on-changes-enabled
 [ruler_sync_rules_on_changes_enabled: <boolean> | default = true]
 
-ruler_max_rules_per_rule_group_by_namespace:
+# (advanced) Maximum number of rules per rule group by namespace. Value is a
+# map, where each key is the namespace and value is the number of rules allowed
+# in the namespace (int64). On the command line, this map is given in a JSON
+# format. The number of rules specified has the same meaning as
+# -ruler.max-rules-per-rule-group, but only applies for the specific namespace.
+# If specified, it supersedes -ruler.max-rules-per-rule-group.
+# CLI flag: -ruler.max-rules-per-rule-group-by-namespace
+[ruler_max_rules_per_rule_group_by_namespace: <map of string to int64> | default = {}]
 
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
@@ -3515,7 +3522,14 @@ ruler_max_rules_per_rule_group_by_namespace:
 # CLI flag: -alertmanager.notification-rate-limit
 [alertmanager_notification_rate_limit: <float> | default = 0]
 
-alertmanager_notification_rate_limit_per_integration:
+# Per-integration notification rate limits. Value is a map, where each key is
+# integration name and value is a rate-limit (float). On command line, this map
+# is given in JSON format. Rate limit has the same meaning as
+# -alertmanager.notification-rate-limit, but only applies for specific
+# integration. Allowed integration names: webhook, email, pagerduty, opsgenie,
+# wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams.
+# CLI flag: -alertmanager.notification-rate-limit-per-integration
+[alertmanager_notification_rate_limit_per_integration: <map of string to float64> | default = {}]
 
 # Maximum size of configuration file for Alertmanager that tenant can upload via
 # Alertmanager API. 0 = no limit.
