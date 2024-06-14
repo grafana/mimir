@@ -34,14 +34,13 @@ const (
 
 	// maxSyncConcurrency is the upper bound limit on the concurrency value that can be set.
 	maxSyncConcurrency = 32
-
-	// disallowedNamespaceChars is a regex pattern that matches characters that are not allowed in namespaces. They are characters not allow in Linux and Windows file names.
-	disallowedNamespaceChars = `[<>:"/\\|?*\x00-\x1F]`
 )
 
 var (
 	backends = []string{rules.MimirBackend}      // list of supported backend types
 	formats  = []string{"json", "yaml", "table"} // list of supported formats for the list command
+	// disallowedNamespaceChars is a regex pattern that matches characters that are not allowed in namespaces. They are characters not allow in Linux and Windows file names.
+	disallowedNamespaceChars = regexp.MustCompile(`[<>:"/\\|?*\x00-\x1F]`)
 )
 
 // ruleCommandClient defines the interface that should be implemented by the API client used by
@@ -440,9 +439,9 @@ func saveNamespaceRuleGroup(ns string, ruleGroup []rwrulefmt.RuleGroup, dir stri
 		return err
 	}
 
-	if regexp.MustCompile(disallowedNamespaceChars).Match([]byte(ns)) {
+	if disallowedNamespaceChars.Match([]byte(ns)) {
 		oldNs := ns
-		ns = strings.TrimSpace(regexp.MustCompile(disallowedNamespaceChars).ReplaceAllString(ns, "_"))
+		ns = strings.TrimSpace(disallowedNamespaceChars.ReplaceAllString(ns, "_"))
 		log.Warnf("We found disallowed characters in the namespace name '%s', replacing them with underscores '%s'", oldNs, ns)
 	}
 
