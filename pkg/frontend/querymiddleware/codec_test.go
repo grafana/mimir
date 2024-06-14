@@ -79,6 +79,7 @@ func TestMetricsQueryRequest(t *testing.T) {
 			url: "/api/v1/query_range?end=1536716880&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&step=120",
 			expected: NewPrometheusRangeQueryRequest(
 				"/api/v1/query_range",
+				nil,
 				1536673680*1e3,
 				1536716880*1e3,
 				(2 * time.Minute).Milliseconds(),
@@ -92,6 +93,7 @@ func TestMetricsQueryRequest(t *testing.T) {
 			url: "/api/v1/query?query=sum+by+%28namespace%29+%28container_memory_rss%29&time=1536716880",
 			expected: NewPrometheusInstantQueryRequest(
 				"/api/v1/query",
+				nil,
 				1536716880*1e3,
 				0*time.Minute,
 				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
@@ -171,6 +173,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 
 	rangeRequest := NewPrometheusRangeQueryRequest(
 		"/api/v1/query_range",
+		nil,
 		startTime.UnixMilli(),
 		endTime.UnixMilli(),
 		stepDuration.Milliseconds(),
@@ -181,6 +184,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 	)
 	instantRequest := NewPrometheusInstantQueryRequest(
 		"/api/v1/query",
+		nil,
 		endTime.UnixMilli(),
 		lookbackDuration,
 		parseQuery(t, "go_goroutines{}"),
@@ -297,6 +301,7 @@ func TestMetricsQuery_WithStartEnd_TransformConsistency(t *testing.T) {
 
 	rangeRequest := NewPrometheusRangeQueryRequest(
 		"/api/v1/query_range",
+		nil,
 		startTime.UnixMilli(),
 		endTime.UnixMilli(),
 		stepDuration.Milliseconds(),
@@ -307,6 +312,7 @@ func TestMetricsQuery_WithStartEnd_TransformConsistency(t *testing.T) {
 	)
 	instantRequest := NewPrometheusInstantQueryRequest(
 		"/api/v1/query",
+		nil,
 		endTime.UnixMilli(),
 		time.Duration(0),
 		parseQuery(t, "go_goroutines{}"),
@@ -375,6 +381,7 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 
 	rangeRequest := NewPrometheusRangeQueryRequest(
 		"/api/v1/query_range",
+		nil,
 		startTime.UnixMilli(),
 		endTime.UnixMilli(),
 		stepDuration.Milliseconds(),
@@ -385,6 +392,7 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 	)
 	instantRequest := NewPrometheusInstantQueryRequest(
 		"/api/v1/query",
+		nil,
 		endTime.UnixMilli(),
 		time.Duration(0),
 		parseQuery(t, "go_goroutines{}"),

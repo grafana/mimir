@@ -209,6 +209,10 @@ func (r *remoteReadQueryRequest) GetQuery() string {
 	return r.promQuery
 }
 
+func (r *remoteReadQueryRequest) GetHeaders() []*PrometheusHeader {
+	return nil
+}
+
 func (r *remoteReadQueryRequest) WithID(_ int64) MetricsQueryRequest {
 	panic("not implemented")
 }
@@ -222,6 +226,10 @@ func (r *remoteReadQueryRequest) WithExpr(_ parser.Expr) MetricsQueryRequest {
 }
 
 func (r *remoteReadQueryRequest) WithQuery(_ string) (MetricsQueryRequest, error) {
+	panic("not implemented")
+}
+
+func (r *remoteReadQueryRequest) WithHeaders([]*PrometheusHeader) MetricsQueryRequest {
 	panic("not implemented")
 }
 

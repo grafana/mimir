@@ -45,10 +45,11 @@ func newEmptyPrometheusResponse() *PrometheusResponse {
 }
 
 type PrometheusRangeQueryRequest struct {
-	path  string
-	start int64
-	end   int64
-	step  int64
+	path    string
+	headers []*PrometheusHeader
+	start   int64
+	end     int64
+	step    int64
 	// lookback is set at query engine level rather than per request, but required to know minT and maxT
 	lookbackDelta time.Duration
 	queryExpr     parser.Expr
@@ -65,6 +66,7 @@ type PrometheusRangeQueryRequest struct {
 
 func NewPrometheusRangeQueryRequest(
 	urlPath string,
+	headers []*PrometheusHeader,
 	start, end, step int64,
 	lookbackDelta time.Duration,
 	queryExpr parser.Expr,
@@ -81,6 +83,7 @@ func NewPrometheusRangeQueryRequest(
 
 	return &PrometheusRangeQueryRequest{
 		path:          urlPath,
+		headers:       headers,
 		start:         start,
 		end:           end,
 		step:          step,
@@ -99,6 +102,10 @@ func (r *PrometheusRangeQueryRequest) GetID() int64 {
 
 func (r *PrometheusRangeQueryRequest) GetPath() string {
 	return r.path
+}
+
+func (r *PrometheusRangeQueryRequest) GetHeaders() []*PrometheusHeader {
+	return r.headers
 }
 
 func (r *PrometheusRangeQueryRequest) GetStart() int64 {
@@ -177,6 +184,13 @@ func (r *PrometheusRangeQueryRequest) WithQuery(query string) (MetricsQueryReque
 	return &newRequest, nil
 }
 
+// WithHeaders clones the current `PrometheusRangeQueryRequest` with new headers.
+func (r *PrometheusRangeQueryRequest) WithHeaders(headers []*PrometheusHeader) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.headers = headers
+	return &newRequest
+}
+
 // WithExpr clones the current `PrometheusRangeQueryRequest` with a new query expression.
 func (r *PrometheusRangeQueryRequest) WithExpr(queryExpr parser.Expr) MetricsQueryRequest {
 	newRequest := *r
@@ -227,8 +241,9 @@ func (r *PrometheusRangeQueryRequest) AddSpanTags(sp opentracing.Span) {
 }
 
 type PrometheusInstantQueryRequest struct {
-	path string
-	time int64
+	path    string
+	headers []*PrometheusHeader
+	time    int64
 	// lookback is set at query engine level rather than per request, but required to know minT and maxT
 	lookbackDelta time.Duration
 	queryExpr     parser.Expr
@@ -245,6 +260,7 @@ type PrometheusInstantQueryRequest struct {
 
 func NewPrometheusInstantQueryRequest(
 	urlPath string,
+	headers []*PrometheusHeader,
 	time int64,
 	lookbackDelta time.Duration,
 	queryExpr parser.Expr,
@@ -260,6 +276,7 @@ func NewPrometheusInstantQueryRequest(
 	}
 	return &PrometheusInstantQueryRequest{
 		path:          urlPath,
+		headers:       headers,
 		time:          time,
 		lookbackDelta: lookbackDelta,
 		queryExpr:     queryExpr,
@@ -276,6 +293,10 @@ func (r *PrometheusInstantQueryRequest) GetID() int64 {
 
 func (r *PrometheusInstantQueryRequest) GetPath() string {
 	return r.path
+}
+
+func (r *PrometheusInstantQueryRequest) GetHeaders() []*PrometheusHeader {
+	return r.headers
 }
 
 func (r *PrometheusInstantQueryRequest) GetTime() int64 {
@@ -360,6 +381,13 @@ func (r *PrometheusInstantQueryRequest) WithQuery(query string) (MetricsQueryReq
 		)
 	}
 	return &newRequest, nil
+}
+
+// WithHeaders clones the current `PrometheusRangeQueryRequest` with new headers.
+func (r *PrometheusInstantQueryRequest) WithHeaders(headers []*PrometheusHeader) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.headers = headers
+	return &newRequest
 }
 
 // WithExpr clones the current `PrometheusInstantQueryRequest` with a new query expression.
