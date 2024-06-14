@@ -131,6 +131,17 @@ func TestRemoteReadRoundTripperCallsDownstreamOnAll(t *testing.T) {
 			if tc.expectError != "" {
 				require.Error(t, err)
 				require.Equal(t, tc.expectError, err.Error())
+				// The error has to be an apiError to have the correct formatting
+				// in the HTTP transport handler. Otherwise the wrapper error
+				// is lost. So we check the conversion to HTTP error here.
+				response, ok := apierror.HTTPResponseFromError(err)
+				require.True(t, ok)
+				require.Equal(t, http.StatusBadRequest, int(response.Code))
+				apiErr := apiResponse{}
+				require.NoError(t, json.Unmarshal(response.Body, &apiErr))
+				require.Equal(t, "error", apiErr.Status)
+				require.Equal(t, apierror.TypeBadData, apiErr.ErrorType)
+				require.Equal(t, tc.expectError, apiErr.Error)
 			} else {
 				require.NoError(t, err)
 			}
