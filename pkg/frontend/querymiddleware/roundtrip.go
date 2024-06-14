@@ -110,10 +110,6 @@ func (cfg *Config) Validate() error {
 		}
 	}
 
-	if cfg.CacheErrors {
-		// validate cache config. this will be predominantly copied from the cache results as it will be the same backend
-	}
-
 	if !slices.Contains(allFormats, cfg.QueryResultResponseFormat) {
 		return fmt.Errorf("unknown query result response format '%s'. Supported values: %s", cfg.QueryResultResponseFormat, strings.Join(allFormats, ", "))
 	}
