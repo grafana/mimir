@@ -247,6 +247,27 @@ func TestRuleSaveToFile_NamespaceRuleGroup(t *testing.T) {
 		err := saveNamespaceRuleGroup(namespace, rule1, tempDir)
 		assert.NoError(t, err)
 	})
+	t.Run("Successful save with a modified namespace", func(t *testing.T) {
+		namespace := "a/b/c"
+		rule1 := []rwrulefmt.RuleGroup{{
+			RuleGroup: rulefmt.RuleGroup{
+				Name: "group-1",
+				Rules: []rulefmt.RuleNode{
+					{
+						Record: yaml.Node{Value: "up", Kind: yaml.ScalarNode},
+						Expr:   yaml.Node{Value: "up==1", Kind: yaml.ScalarNode},
+					},
+				},
+			},
+		}}
+
+		tempDir := t.TempDir()
+		err := saveNamespaceRuleGroup(namespace, rule1, tempDir)
+		assert.NoError(t, err)
+
+		assert.NoFileExists(t, filepath.Join(tempDir, "a/b/c.yaml"))
+		assert.FileExists(t, filepath.Join(tempDir, "a_b_c.yaml"))
+	})
 	t.Run("Successful save and load", func(t *testing.T) {
 		expected := `namespace: ns1
 groups:

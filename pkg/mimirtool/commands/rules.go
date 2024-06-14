@@ -34,6 +34,9 @@ const (
 
 	// maxSyncConcurrency is the upper bound limit on the concurrency value that can be set.
 	maxSyncConcurrency = 32
+
+	// disallowedNamespaceChars is a regex pattern that matches characters that are not allowed in namespaces.
+	disallowedNamespaceChars = `[<>:"/\\|?*\x00-\x1F]`
 )
 
 var (
@@ -436,6 +439,13 @@ func saveNamespaceRuleGroup(ns string, ruleGroup []rwrulefmt.RuleGroup, dir stri
 	if err != nil {
 		return err
 	}
+
+	if regexp.MustCompile(disallowedNamespaceChars).Match([]byte(ns)) {
+		oldNs := ns
+		ns = strings.TrimSpace(regexp.MustCompile(disallowedNamespaceChars).ReplaceAllString(ns, "_"))
+		log.Warnf("We found disallowed characters in the namespace name '%s', replacing them with underscores '%s'", oldNs, ns)
+	}
+
 	file := filepath.Join(baseDir, fmt.Sprintf("%s.yaml", ns))
 	rule := map[string]rules.RuleNamespace{ns: {
 		Namespace: ns,
@@ -554,7 +564,7 @@ func (r *RuleCommand) diffRules(_ *kingpin.ParseContext) error {
 	}
 
 	currentNamespaceMap, err := r.cli.ListRules(context.Background(), "")
-	//TODO: Skipping the 404s here might end up in an unsual scenario.
+	// TODO: Skipping the 404s here might end up in an unsual scenario.
 	// If we're unable to reach the Mimir API due to a bad URL, we'll assume no rules are
 	// part of the namespace and provide a diff of the whole ruleset.
 	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
@@ -622,7 +632,7 @@ func (r *RuleCommand) syncRules(_ *kingpin.ParseContext) error {
 	}
 
 	currentNamespaceMap, err := r.cli.ListRules(context.Background(), "")
-	//TODO: Skipping the 404s here might end up in an unsual scenario.
+	// TODO: Skipping the 404s here might end up in an unsual scenario.
 	// If we're unable to reach the Mimir API due to a bad URL, we'll assume no rules are
 	// part of the namespace and provide a diff of the whole ruleset.
 	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
