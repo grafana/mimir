@@ -56,7 +56,11 @@ func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Override
 	return cfg, overrides
 }
 
-func TestBlockBuilder_SinglePartition(t *testing.T) {
+// TestBlockBuilder tests a lot of different cases of BlockBuilder lifecycle.
+// It tests for both float and histogram samples while also testing multiple partitions.
+// The test is simplified by always producing float samples to partition 0 and histogram samples
+// to partition 1. That way, managing and checking timestamps for each partition remains the same.
+func TestBlockBuilder(t *testing.T) {
 	const (
 		userID = "1"
 	)
@@ -64,13 +68,14 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
-	_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, testTopic)
+	_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 2, testTopic)
 
 	type kafkaRecInfo struct {
 		sampleTs, recTs time.Time
 	}
 	var (
 		kafkaSamples   []mimirpb.Sample
+		kafkaHSamples  []mimirpb.Histogram
 		kafkaRecords   []kafkaRecInfo
 		cfg, overrides = blockBuilderConfig(t, addr)
 		compactCalled  = make(chan struct{}, 10)
@@ -98,7 +103,12 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 			val := createWriteRequest(t, samples, nil)
 			produceRecords(t, ctx, writeClient, kafkaRecTs, userID, testTopic, 0, val)
 
+			hSamples := histogramSample(sampleTs.UnixMilli())
+			val = createWriteRequest(t, nil, hSamples)
+			produceRecords(t, ctx, writeClient, kafkaRecTs, userID, testTopic, 1, val)
+
 			kafkaSamples = append(kafkaSamples, samples...)
+			kafkaHSamples = append(kafkaHSamples, hSamples...)
 			kafkaRecords = append(kafkaRecords, kafkaRecInfo{sampleTs, kafkaRecTs})
 		}
 
@@ -107,6 +117,17 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 			var res []mimirpb.Sample
 			for _, sample := range s {
 				if sample.TimestampMs < maxT {
+					res = append(res, sample)
+				}
+			}
+			return res
+		}
+
+		filterHistogramSamples = func(s []mimirpb.Histogram, maxTime time.Time) []mimirpb.Histogram {
+			maxT := maxTime.UnixMilli()
+			var res []mimirpb.Histogram
+			for _, sample := range s {
+				if sample.Timestamp < maxT {
 					res = append(res, sample)
 				}
 			}
@@ -150,10 +171,10 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 			return count
 		}
 
-		getCommitMeta = func() (int64, int64, int64) {
+		getCommitMeta = func(part int32) (int64, int64, int64) {
 			offsets, err := kadm.NewClient(bb.kafkaClient).FetchOffsetsForTopics(ctx, testGroup, testTopic)
 			require.NoError(t, err)
-			offset, ok := offsets.Lookup(testTopic, 0)
+			offset, ok := offsets.Lookup(testTopic, part)
 			require.True(t, ok)
 			commitRecTs, lastRecTs, blockEnd, err := unmarshallCommitMeta(offset.Metadata)
 			require.NoError(t, err)
@@ -190,10 +211,12 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 				}
 			}
 
-			commitRecTs, lastRecTs, blockEnd := getCommitMeta()
-			require.Equal(t, expCommitTs, commitRecTs)
-			require.Equal(t, expLastTs, lastRecTs)
-			require.Equal(t, expBlockMax, blockEnd)
+			for _, part := range []int32{0, 1} {
+				commitRecTs, lastRecTs, blockEnd := getCommitMeta(part)
+				require.Equal(t, expCommitTs, commitRecTs)
+				require.Equal(t, expLastTs, lastRecTs)
+				require.Equal(t, expBlockMax, blockEnd)
+			}
 		}
 	)
 
@@ -211,16 +234,18 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 		// Since there was no commit record, the first consume cycle will consume everything
 		// in one go. So each partition will have one compact call (although they will produce
 		// more than one block).
-		select {
-		case <-compactCalled:
-		case <-ctx.Done():
-			t.Fatal(ctx.Err())
+		for want := 2; want > 0; want-- {
+			select {
+			case <-compactCalled:
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
 		}
 
 		compareQuery(t,
 			dbOnBucketDir(t),
 			filterSamples(kafkaSamples, cycleEndAtStartup(cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)),
-			nil,
+			filterHistogramSamples(kafkaHSamples, cycleEndAtStartup(cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)),
 			labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 		)
 	})
@@ -240,13 +265,13 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 		// We want number of cycles to be at least 3 per partition. But not more than 4 because of any
 		// time calculation differences because of when the test was called.
 		compacts := collectCompacts()
-		require.GreaterOrEqual(t, compacts, 3)
-		require.LessOrEqual(t, compacts, 4)
+		require.GreaterOrEqual(t, compacts, 6)
+		require.LessOrEqual(t, compacts, 8)
 
 		compareQuery(t,
 			dbOnBucketDir(t),
 			filterSamples(kafkaSamples, cycleEnd.Add(-cfg.ConsumeIntervalBuffer)),
-			nil,
+			filterHistogramSamples(kafkaHSamples, cycleEnd.Add(-cfg.ConsumeIntervalBuffer)),
 			labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 		)
 	})
@@ -262,12 +287,13 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 		}
 
 		cycleEnd = cycleEnd.Add(cfg.ConsumeInterval)
-		nextConsumeCycleWithChecks(cycleEnd, 1, 1)
+		// 1 per partition.
+		nextConsumeCycleWithChecks(cycleEnd, 2, 2)
 
 		compareQuery(t,
 			dbOnBucketDir(t),
 			filterSamples(kafkaSamples, cycleEnd.Add(-cfg.ConsumeIntervalBuffer)),
-			nil,
+			filterHistogramSamples(kafkaHSamples, cycleEnd.Add(-cfg.ConsumeIntervalBuffer)),
 			labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 		)
 	})
@@ -299,17 +325,18 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 		createAndProduceSample(inOrderSampleTime.Add(time.Minute), kafkaTime)
 
 		t.Run("consume only out of order nad in-order", func(t *testing.T) {
-			expBlockCreation := 1
+			// 1 per partition.
+			expBlockCreation := 2
 			if inOrderSampleTime.Truncate(2*time.Hour).Compare(oooSampleTime.Truncate(2*time.Hour)) != 0 {
-				// The samples cross the 2h boundary.
-				expBlockCreation = 2
+				// The samples cross the 2h boundary. 2 per partition.
+				expBlockCreation = 4
 			}
-			nextConsumeCycleWithChecks(cycleEnd, expBlockCreation, 1)
+			nextConsumeCycleWithChecks(cycleEnd, expBlockCreation, 2)
 
 			compareQuery(t,
 				dbOnBucketDir(t),
 				kafkaSamples[:len(kafkaSamples)-2], // Don't expect the last two sample.
-				nil,
+				kafkaHSamples[:len(kafkaHSamples)-2],
 				labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 			)
 		})
@@ -319,18 +346,22 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 			// should get consumed in this cycle. The other sample that is still in the future
 			// should not be consumed.
 			cycleEnd = cycleEnd.Add(cfg.ConsumeInterval)
-			// 2 compact calls because the cycleEnd lags with the committed record because of future sample.
-			nextConsumeCycleWithChecks(cycleEnd, 1, 2)
+			// 2 compact calls per partition because the cycleEnd lags with the committed record because of future sample.
+			nextConsumeCycleWithChecks(cycleEnd, 2, 4)
 
 			// The second to last sample in kafkaSamples is the one that is still in the future.
 			// So we exclude that.
 			var expSamples []mimirpb.Sample
 			expSamples = append(expSamples, kafkaSamples[:len(kafkaSamples)-2]...)
 			expSamples = append(expSamples, kafkaSamples[len(kafkaSamples)-1])
+
+			var expHSamples []mimirpb.Histogram
+			expHSamples = append(expHSamples, kafkaHSamples[:len(kafkaHSamples)-2]...)
+			expHSamples = append(expHSamples, kafkaHSamples[len(kafkaHSamples)-1])
 			compareQuery(t,
 				dbOnBucketDir(t),
 				expSamples,
-				nil,
+				expHSamples,
 				labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 			)
 		})
@@ -341,13 +372,13 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 			// we still go back to the last kafka commit and consume the sample
 			// that happened to be in the future.
 			cycleEnd = cycleEnd.Add(cfg.ConsumeInterval)
-			// 3 compact calls because the cycleEnd lags with the committed record because of future sample.
-			nextConsumeCycleWithChecks(cycleEnd, 1, 3)
+			// 3 compact calls per partition because the cycleEnd lags with the committed record because of future sample.
+			nextConsumeCycleWithChecks(cycleEnd, 2, 6)
 
 			compareQuery(t,
 				dbOnBucketDir(t),
 				kafkaSamples,
-				nil,
+				kafkaHSamples,
 				labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 			)
 		})
@@ -357,6 +388,7 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 
 // Testing block builder starting up with an existing kafka commit.
 func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
+	// TODO(codesome): cleanup the test after fixing the kafka client bug
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
@@ -438,12 +470,6 @@ LL:
 		nil,
 		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 	)
-}
-
-// Since a single partition is well tested above, here we only test if
-// multiple partitions are being called properly by the consume cycle.
-func TestBlockBuilder_MultiPartition(t *testing.T) {
-	// TODO(codesome): Implement this.
 }
 
 func produceRecords(t *testing.T, ctx context.Context, writeClient *kgo.Client, ts time.Time, userID, topic string, part int32, val []byte) kgo.ProduceResults {
