@@ -18,6 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var _ = MetricsQueryRequest(&remoteReadQueryRequest{})
+
 func TestParseRemoteReadRequestWithoutConsumingBody(t *testing.T) {
 	testCases := map[string]struct {
 		makeRequest           func() *http.Request

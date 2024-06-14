@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/prometheus/prompb"
@@ -55,7 +54,7 @@ func (r *remoteReadRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 
 	queries := remoteReadRequest.GetQueries()
 	for i, query := range queries {
-		metricsRequest, err := toMetricsRequest(req.URL.Path, query)
+		metricsRequest, err := remoteReadToMetricsQueryRequest(req.URL.Path, query)
 		if err != nil {
 			return nil, err
 		}
@@ -64,9 +63,9 @@ func (r *remoteReadRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 			// validation only and previous middlewares would have already returned errors.
 			return nil, nil
 		}))
-		_, error := handler.Do(req.Context(), metricsRequest)
-		if error != nil {
-			return nil, apierror.AddDetails(error, fmt.Sprintf("remote read error (%s_%d: %s)", matchersLogKey, i, metricsRequest.GetQuery()))
+		_, err = handler.Do(req.Context(), metricsRequest)
+		if err != nil {
+			return nil, apierror.AddDetails(err, fmt.Sprintf("remote read error (%s_%d: %s)", matchersLogKey, i, metricsRequest.GetQuery()))
 		}
 	}
 
@@ -118,7 +117,7 @@ func parseRemoteReadRequest(remoteReadRequest *prompb.ReadRequest) (url.Values, 
 		add(i, startLogKey, fmt.Sprintf("%d", query.GetStartTimestampMs()))
 		add(i, endLogKey, fmt.Sprintf("%d", query.GetEndTimestampMs()))
 
-		matcher, err := remoteReadMatchersToString(query)
+		matcher, err := remoteReadQueryMatchersToString(query)
 		if err != nil {
 			return nil, err
 		}
@@ -136,111 +135,100 @@ func parseRemoteReadRequest(remoteReadRequest *prompb.ReadRequest) (url.Values, 
 	return params, nil
 }
 
-func remoteReadMatchersToString(q *prompb.Query) (string, error) {
+func remoteReadQueryMatchersToString(q *prompb.Query) (string, error) {
 	matchers, err := remote.FromLabelMatchers(q.GetMatchers())
 	if err != nil {
 		return "", err
 	}
-	builder := strings.Builder{}
-	builder.WriteRune('{')
-	for i, m := range matchers {
-		if i > 0 {
-			builder.WriteRune(',')
-		}
-		builder.WriteString(m.String())
-	}
-	builder.WriteRune('}')
-	return builder.String(), nil
+	return util.LabelMatchersToString(matchers), nil
 }
 
-func toMetricsRequest(path string, query *prompb.Query) (MetricsQueryRequest, error) {
-	metricsQuery := &remoteReadQuery{
+func remoteReadToMetricsQueryRequest(path string, query *prompb.Query) (MetricsQueryRequest, error) {
+	metricsQuery := &remoteReadQueryRequest{
 		path:  path,
 		query: query,
 	}
 	var err error
-	metricsQuery.promQuery, err = remoteReadMatchersToString(query)
+	metricsQuery.promQuery, err = remoteReadQueryMatchersToString(query)
 	if err != nil {
 		return nil, err
 	}
 	return metricsQuery, nil
 }
 
-type remoteReadQuery struct {
+type remoteReadQueryRequest struct {
 	path      string
 	query     *prompb.Query
 	promQuery string
 }
 
-var _ = MetricsQueryRequest(&remoteReadQuery{})
-
-func (r *remoteReadQuery) AddSpanTags(sp opentracing.Span) {
+func (r *remoteReadQueryRequest) AddSpanTags(sp opentracing.Span) {
 	// No-op.
 }
 
-func (r *remoteReadQuery) GetStart() int64 {
+func (r *remoteReadQueryRequest) GetStart() int64 {
 	return r.query.GetStartTimestampMs()
 }
 
-func (r *remoteReadQuery) GetEnd() int64 {
+func (r *remoteReadQueryRequest) GetEnd() int64 {
 	return r.query.GetEndTimestampMs()
 }
 
-func (r *remoteReadQuery) GetHints() *Hints {
+func (r *remoteReadQueryRequest) GetHints() *Hints {
 	return nil
 }
 
-func (r *remoteReadQuery) GetStep() int64 {
+func (r *remoteReadQueryRequest) GetStep() int64 {
 	if r.query.Hints != nil {
 		return r.query.Hints.GetStepMs()
 	}
 	return 0
 }
 
-func (r *remoteReadQuery) GetID() int64 {
+func (r *remoteReadQueryRequest) GetID() int64 {
 	return 0
 }
 
-func (r *remoteReadQuery) GetMaxT() int64 {
+func (r *remoteReadQueryRequest) GetMaxT() int64 {
 	return r.GetEnd()
 }
 
-func (r *remoteReadQuery) GetMinT() int64 {
+func (r *remoteReadQueryRequest) GetMinT() int64 {
 	return r.GetStart()
 }
 
-func (r *remoteReadQuery) GetOptions() Options {
+func (r *remoteReadQueryRequest) GetOptions() Options {
 	return Options{}
 }
 
-func (r *remoteReadQuery) GetPath() string {
+func (r *remoteReadQueryRequest) GetPath() string {
 	return r.path
 }
 
-func (r *remoteReadQuery) GetQuery() string {
+func (r *remoteReadQueryRequest) GetQuery() string {
 	return r.promQuery
 }
 
-func (r *remoteReadQuery) WithID(_ int64) MetricsQueryRequest {
+func (r *remoteReadQueryRequest) WithID(_ int64) MetricsQueryRequest {
 	panic("not implemented")
 }
 
-func (r *remoteReadQuery) WithEstimatedSeriesCountHint(_ uint64) MetricsQueryRequest {
+func (r *remoteReadQueryRequest) WithEstimatedSeriesCountHint(_ uint64) MetricsQueryRequest {
 	panic("not implemented")
 }
 
-func (r *remoteReadQuery) WithExpr(_ parser.Expr) MetricsQueryRequest {
+func (r *remoteReadQueryRequest) WithExpr(_ parser.Expr) MetricsQueryRequest {
 	panic("not implemented")
 }
 
-func (r *remoteReadQuery) WithQuery(_ string) (MetricsQueryRequest, error) {
+func (r *remoteReadQueryRequest) WithQuery(_ string) (MetricsQueryRequest, error) {
 	panic("not implemented")
 }
 
-func (r *remoteReadQuery) WithStartEnd(_ int64, _ int64) MetricsQueryRequest {
+func (r *remoteReadQueryRequest) WithStartEnd(_ int64, _ int64) MetricsQueryRequest {
 	panic("not implemented")
 }
 
-func (r *remoteReadQuery) WithTotalQueriesHint(_ int32) MetricsQueryRequest {
+func (r *remoteReadQueryRequest) WithTotalQueriesHint(_ int32) MetricsQueryRequest {
 	panic("not implemented")
 }
