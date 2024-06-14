@@ -158,6 +158,7 @@ The following features are currently experimental:
   - Max number of tenants that may be queried at once (`-tenant-federation.max-tenants`)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
+  - Remote read request limits (`-query-frontend.remote-read-limits-enabled`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway

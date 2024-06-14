@@ -186,6 +186,8 @@ func NewQueryFrontend(name string, flags map[string]string, options ...Option) *
 			"-log.level": "warn",
 			// Quickly detect query-scheduler when running it.
 			"-query-frontend.scheduler-dns-lookup-period": "1s",
+			// Always exercise remote read limits in integration tests.
+			"-query-frontend.remote-read-limits-enabled": "true",
 		},
 		flags,
 		options...,

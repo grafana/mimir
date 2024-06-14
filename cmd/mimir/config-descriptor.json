@@ -5988,6 +5988,17 @@
         },
         {
           "kind": "field",
+          "name": "remote_read_limits_enabled",
+          "required": false,
+          "desc": "True to enable limits enforcement for remote read requests.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.remote-read-limits-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "query_result_response_format",
           "required": false,
           "desc": "Format to use when retrieving query results from queriers. Supported values: json, protobuf",

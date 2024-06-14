@@ -1613,6 +1613,10 @@ results_cache:
 # CLI flag: -query-frontend.use-active-series-decoder
 [use_active_series_decoder: <boolean> | default = false]
 
+# (experimental) True to enable limits enforcement for remote read requests.
+# CLI flag: -query-frontend.remote-read-limits-enabled
+[remote_read_limits_enabled: <boolean> | default = false]
+
 # Format to use when retrieving query results from queriers. Supported values:
 # json, protobuf
 # CLI flag: -query-frontend.query-result-response-format
