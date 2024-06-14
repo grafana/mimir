@@ -25,17 +25,14 @@ func newQueryBlockerMiddleware(
 	limits Limits,
 	logger log.Logger,
 	registerer prometheus.Registerer,
+	blockedQueriesCounter *prometheus.CounterVec,
 ) MetricsQueryMiddleware {
-	blockedQueriesCounter := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
-		Name: "cortex_query_frontend_rejected_queries_total",
-		Help: "Number of queries that were rejected by the cluster administrator.",
-	}, []string{"user", "reason"})
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &queryBlockerMiddleware{
-			next:                  next,
-			limits:                limits,
-			logger:                logger,
-			blockedQueriesCounter: blockedQueriesCounter,
+			next:   next,
+			limits: limits,
+			logger: logger,
+				blockedQueriesCounter: blockedQueriesCounter,
 		}
 	})
 }

@@ -60,6 +60,7 @@ type Config struct {
 	DeprecatedAlignQueriesWithStep bool          `yaml:"align_queries_with_step" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.12, remove in Mimir 2.14 (https://github.com/grafana/mimir/issues/6712)
 	ResultsCacheConfig             `yaml:"results_cache"`
 	CacheResults                   bool          `yaml:"cache_results"`
+	CacheErrors                    bool          `yaml:"cache_errors"`
 	MaxRetries                     int           `yaml:"max_retries" category:"advanced"`
 	NotRunningTimeout              time.Duration `yaml:"not_running_timeout" category:"advanced"`
 	ShardedQueries                 bool          `yaml:"parallelize_shardable_queries"`
@@ -80,6 +81,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.NotRunningTimeout, "query-frontend.not-running-timeout", 2*time.Second, "Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up)")
 	f.DurationVar(&cfg.SplitQueriesByInterval, "query-frontend.split-queries-by-interval", 24*time.Hour, "Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.")
 	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
+	f.BoolVar(&cfg.CacheErrors, "query-frontend.cache-errors", false, "Cache query errors in the results cache. Only available if query-frontend.results-cache is configured.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
@@ -106,6 +108,10 @@ func (cfg *Config) Validate() error {
 		if err := cfg.ResultsCacheConfig.Validate(); err != nil {
 			return errors.Wrap(err, "invalid query-frontend results cache config")
 		}
+	}
+
+	if cfg.CacheErrors {
+		// validate cache config. this will be predominantly copied from the cache results as it will be the same backend
 	}
 
 	if !slices.Contains(allFormats, cfg.QueryResultResponseFormat) {
@@ -216,9 +222,14 @@ func newQueryTripperware(
 	// Experimental functions can only be enabled globally, and not on a per-engine basis.
 	parser.EnableExperimentalFunctions = engineExperimentalFunctionsEnabled
 
+	blockedQueriesCounter := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_query_frontend_rejected_queries_total",
+		Help: "Number of queries that were rejected by the cluster administrator.",
+	}, []string{"user", "reason"})
+	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer, blockedQueriesCounter)
+
 	// Metric used to keep track of each middleware execution duration.
 	metrics := newInstrumentMiddlewareMetrics(registerer)
-	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
 
 	queryRangeMiddleware := []MetricsQueryMiddleware{
@@ -331,11 +342,19 @@ func newQueryTripperware(
 		activeSeries := next
 		activeNativeHistogramMetrics := next
 		labels := next
+		errors := next
 
 		// Inject the cardinality and labels query cache roundtripper only if the query results cache is enabled.
 		if cfg.CacheResults {
 			cardinality = newCardinalityQueryCacheRoundTripper(c, cacheKeyGenerator, limits, cardinality, log, registerer)
 			labels = newLabelsQueryCacheRoundTripper(c, cacheKeyGenerator, limits, labels, log, registerer)
+
+			// Inject error cache only if the results cache is enabled.
+			if cfg.CacheErrors {
+				errors = newErrorCacheRoundTripper(c, cacheKeyGenerator, limits, errors, log, registerer)
+				// queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("error_cache", metrics), newErrorCacheMiddleware())
+				// queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("error_cache", metrics), newErrorCacheMiddleware())
+			}
 		}
 
 		if cfg.ShardActiveSeriesQueries {
