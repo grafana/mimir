@@ -223,7 +223,7 @@ func newQueryTripperware(
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
 
 	remoteReadMiddleware := []MetricsQueryMiddleware{
-		// Empty for now.
+		queryBlockerMiddleware,
 	}
 
 	queryRangeMiddleware := []MetricsQueryMiddleware{

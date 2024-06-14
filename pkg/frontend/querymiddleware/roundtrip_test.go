@@ -31,6 +31,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestRangeTripperware(t *testing.T) {
@@ -515,6 +516,34 @@ func TestRemoteReadMiddleware(t *testing.T) {
 		"valid query": {
 			makeRequest: generateTestRemoteReadRequest,
 			limits:      mockLimits{},
+		},
+		"block an exact query": {
+			makeRequest: generateTestRemoteReadRequest,
+			limits: mockLimits{
+				blockedQueries: []*validation.BlockedQuery{
+					{
+						Pattern: "{__name__=\"up\"}",
+						Regex:   false,
+					},
+				},
+			},
+			expectError:         true,
+			expectAPIError:      true,
+			expectErrorContains: "remote read error (matchers_1: {__name__=\"up\"}): the request has been blocked by the cluster administrator (err-mimir-query-blocked)",
+		},
+		"block a regex query": {
+			makeRequest: generateTestRemoteReadRequest,
+			limits: mockLimits{
+				blockedQueries: []*validation.BlockedQuery{
+					{
+						Pattern: "{.*foo.*}",
+						Regex:   true,
+					},
+				},
+			},
+			expectError:         true,
+			expectAPIError:      true,
+			expectErrorContains: "remote read error (matchers_0: {__name__=\"some_metric\",foo=~\".*bar.*\"}): the request has been blocked by the cluster administrator (err-mimir-query-blocked)",
 		},
 	}
 
