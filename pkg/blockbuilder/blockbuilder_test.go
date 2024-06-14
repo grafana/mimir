@@ -3,12 +3,14 @@ package blockbuilder
 import (
 	"context"
 	"errors"
+	"os"
 	"path"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
+	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -23,25 +25,24 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func TestBlockBuilder_BuildBlocks(t *testing.T) {
+func TestBlockBuilder_SinglePartition(t *testing.T) {
 	const (
-		testTopic     = "test"
-		numPartitions = 1
-		userID        = "1"
+		testTopic = "test"
+		userID    = "1"
 	)
 
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
-	_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+	_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, testTopic)
 
 	var (
-		expSamples    []mimirpb.Sample
+		kafkaSamples  []mimirpb.Sample
 		cfg           = blockBuilderConfig(t, addr, testTopic)
 		compactCalled = make(chan struct{}, 10)
 		writeClient   = newKafkaProduceClient(t, addr)
 		bucketDir     = path.Join(cfg.BlocksStorageConfig.Bucket.Filesystem.Directory, userID)
-		kafkaTime     = time.Now().Truncate(cfg.ConsumeInterval).Add(-6 * time.Hour).Add(30 * time.Minute)
+		kafkaTime     = time.Now().Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
 		parentT       = t
 	)
 
@@ -49,6 +50,7 @@ func TestBlockBuilder_BuildBlocks(t *testing.T) {
 	limits.OutOfOrderTimeWindow = 2 * model.Duration(time.Hour)
 	limits.NativeHistogramsIngestionEnabled = true
 	overrides, err := validation.NewOverrides(limits, nil)
+	require.NoError(t, err)
 
 	bb, err := New(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry(), overrides)
 	require.NoError(t, err)
@@ -61,25 +63,103 @@ func TestBlockBuilder_BuildBlocks(t *testing.T) {
 		return testBuilder
 	}
 
-	filterSamples := func(s []mimirpb.Sample, maxTime time.Time) []mimirpb.Sample {
-		maxT := maxTime.UnixMilli()
-		var res []mimirpb.Sample
-		for _, sample := range s {
-			if sample.TimestampMs < maxT {
-				res = append(res, sample)
-			}
+	// Helper functions.
+	var (
+		//createBlockBuilder = func() *BlockBuilder {
+		//	bb, err := New(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry(), overrides)
+		//	require.NoError(t, err)
+		//
+		//	bb.tsdbBuilder = func() builder {
+		//		testBuilder := newTestTSDBBuilder(cfg, overrides)
+		//		testBuilder.compactFunc = func() {
+		//			compactCalled <- struct{}{}
+		//		}
+		//		return testBuilder
+		//	}
+		//
+		//	return bb
+		//}
+
+		createAndProduceSample = func(sampleTs, kafkaRecTs time.Time) {
+			samples := floatSample(sampleTs.UnixMilli())
+			val := createWriteRequest(t, samples, nil)
+			produceRecords(t, ctx, writeClient, kafkaRecTs, userID, testTopic, 0, val)
+			kafkaSamples = append(kafkaSamples, samples...)
 		}
-		return res
-	}
+
+		filterSamples = func(s []mimirpb.Sample, maxTime time.Time) []mimirpb.Sample {
+			maxT := maxTime.UnixMilli()
+			var res []mimirpb.Sample
+			for _, sample := range s {
+				if sample.TimestampMs < maxT {
+					res = append(res, sample)
+				}
+			}
+			return res
+		}
+
+		collectCompacts = func() int {
+			counts := 0
+			done := false
+			for !done {
+				select {
+				case <-compactCalled:
+					counts++
+				default:
+					done = true
+				}
+			}
+			return counts
+		}
+
+		dbOnBucketDir = func(givenT *testing.T) *tsdb.DB {
+			db, err := tsdb.Open(bucketDir, log.NewNopLogger(), nil, nil, nil)
+			require.NoError(givenT, err)
+			givenT.Cleanup(func() { require.NoError(t, db.Close()) })
+			return db
+		}
+
+		numBlocksInBucket = func(givenT *testing.T) int {
+			files, err := os.ReadDir(bucketDir)
+			require.NoError(givenT, err)
+			count := 0
+			for _, f := range files {
+				if !f.IsDir() {
+					continue
+				}
+				_, err := ulid.ParseStrict(f.Name())
+				if err == nil {
+					count++
+				}
+			}
+			return count
+		}
+
+		//getCommitMeta = func() (int64, int64, int64) {
+		//	offsets, err := kadm.NewClient(bb.kafkaClient).FetchOffsetsForTopics(ctx, cfg.Kafka.ConsumerGroup, testTopic)
+		//	require.NoError(t, err)
+		//	offset, ok := offsets.Lookup(testTopic, 0)
+		//	require.True(t, ok)
+		//	commitRecTs, lastRecTs, blockEnd, err := unmarshallCommitMeta(offset.Metadata)
+		//	require.NoError(t, err)
+		//	return commitRecTs, lastRecTs, blockEnd
+		//}
+
+		//bb = createBlockBuilder()
+
+		nextConsumeCycleWithChecks = func(cycleEnd time.Time, expBlocksCreated, expCompacts int) {
+			blocksBefore := numBlocksInBucket(t)
+			require.NoError(t, bb.nextConsumeCycle(ctx, cycleEnd))
+			require.Equal(t, expCompacts, collectCompacts(), "mismatch in compact calls")
+			blocksAfter := numBlocksInBucket(t)
+			require.Equal(t, expBlocksCreated, blocksAfter-blocksBefore, "mismatch in blocks created")
+		}
+	)
 
 	t.Run("starting fresh with existing data but no kafka commit", func(t *testing.T) {
-		for i := int64(0); i < 6; i++ {
-			ts := kafkaTime.Add(-time.Minute)
-			samples := floatSample(ts.UnixMilli())
-			val := createWriteRequest(t, samples, nil)
-			produceRecords(t, ctx, writeClient, kafkaTime, userID, testTopic, int32(i%numPartitions), val)
-			kafkaTime = kafkaTime.Add(cfg.ConsumeInterval)
-			expSamples = append(expSamples, samples...)
+		for i := int64(0); i < 12; i++ {
+			kafkaTime = kafkaTime.Add(cfg.ConsumeInterval / 2)
+			createAndProduceSample(kafkaTime.Add(-time.Minute), kafkaTime)
 		}
 
 		require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
@@ -90,20 +170,15 @@ func TestBlockBuilder_BuildBlocks(t *testing.T) {
 		// Since there was no commit record, the first consume cycle will consume everything
 		// in one go. So each partition will have one compact call (although they will produce
 		// more than one block).
-		for want := numPartitions; want > 0; want-- {
-			select {
-			case <-compactCalled:
-			case <-ctx.Done():
-				t.Fatal(ctx.Err())
-			}
+		select {
+		case <-compactCalled:
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
 		}
 
-		db, err := tsdb.Open(bucketDir, log.NewNopLogger(), nil, nil, nil)
-		require.NoError(t, err)
-		t.Cleanup(func() { require.NoError(t, db.Close()) })
 		compareQuery(t,
-			db,
-			filterSamples(expSamples, cycleEndAtStartup(cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)),
+			dbOnBucketDir(t),
+			filterSamples(kafkaSamples, cycleEndAtStartup(cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)),
 			nil,
 			labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 		)
@@ -111,80 +186,134 @@ func TestBlockBuilder_BuildBlocks(t *testing.T) {
 		// TODO(codesome): check that commit has the right information.
 	})
 
+	var cycleEnd time.Time
 	t.Run("when there is some lag after startup", func(t *testing.T) {
 		// Add samples worth at least 3 cycles.
-		for i := int64(0); i < 3; i++ {
-			ts := kafkaTime.Add(-time.Minute)
-			samples := floatSample(ts.UnixMilli())
-			val := createWriteRequest(t, samples, nil)
-			produceRecords(t, ctx, writeClient, kafkaTime, userID, testTopic, int32(i%numPartitions), val)
-			kafkaTime = kafkaTime.Add(cfg.ConsumeInterval)
-			expSamples = append(expSamples, samples...)
+		for i := int64(0); i < 6; i++ {
+			kafkaTime = kafkaTime.Add(cfg.ConsumeInterval / 2)
+			createAndProduceSample(kafkaTime.Add(-time.Minute), kafkaTime)
 		}
 
-		cycleEnd := kafkaTime.Add(-cfg.ConsumeInterval).Truncate(cfg.ConsumeInterval).Add(cfg.ConsumeInterval + cfg.ConsumeIntervalBuffer)
-		blocker := make(chan struct{})
-		go func() {
-			require.NoError(t, bb.nextConsumeCycle(ctx, cycleEnd))
-			close(blocker)
-		}()
+		cycleEnd = kafkaTime.Add(-cfg.ConsumeInterval).Truncate(cfg.ConsumeInterval).Add(cfg.ConsumeInterval + cfg.ConsumeIntervalBuffer)
 
-		counts := 0
-		done := false
-		for !done {
-			select {
-			case <-blocker:
-				done = true
-			case <-compactCalled:
-				counts++
-			}
-		}
+		require.NoError(t, bb.nextConsumeCycle(ctx, cycleEnd))
+
 		// We want number of cycles to be at least 3 per partition. But not more than 4 because of any
 		// time calculation differences because of when the test was called.
-		require.GreaterOrEqual(t, counts, 3*numPartitions)
-		require.LessOrEqual(t, counts, 4*numPartitions)
+		compacts := collectCompacts()
+		require.GreaterOrEqual(t, compacts, 3)
+		require.LessOrEqual(t, compacts, 4)
 
-		db, err := tsdb.Open(bucketDir, log.NewNopLogger(), nil, nil, nil)
-		require.NoError(t, err)
-		t.Cleanup(func() { require.NoError(t, db.Close()) })
 		compareQuery(t,
-			db,
-			filterSamples(expSamples, cycleEnd),
+			dbOnBucketDir(t),
+			filterSamples(kafkaSamples, cycleEnd.Add(-cfg.ConsumeIntervalBuffer)),
 			nil,
 			labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 		)
 	})
 
 	t.Run("restart scenario when there is a kafka commit", func(t *testing.T) {
-
+		// TODO(codesome): likely requires a new test because startup uses wall clock
 	})
 
-	//// Add samples equivalent
-	//var lastProducedOffest int64
-	//for i := 0; i < 10; i++ {
-	//	ts := kafkaTime.Add(3 * time.Hour)
-	//	val := createWriteRequest(t, floatSample(ts.UnixMilli()), nil)
-	//	// these samples are only for first partition
-	//	produceResult := produceRecords(t, ctx, writeClient, ts, userID, testTopic, 1, val)
-	//	lastProducedOffest = produceResult[0].Record.Offset
-	//}
-	//
-	//cycleEnd := kafkaTime.Add(4 * time.Hour)
-	//err = bb.nextConsumeCycle(ctx, cycleEnd)
-	//require.NoError(t, err)
-	//
-	//// Assert that one block was compacted (a block per partition per cycle's bounds).
-	//select {
-	//case <-compactCalled:
-	//case <-ctx.Done():
-	//	t.Fatal(ctx.Err())
-	//}
-	//
-	//offsets, err := kadm.NewClient(writeClient).ListCommittedOffsets(ctx, testTopic)
-	//require.NoError(t, err)
-	//offset, ok := offsets.Lookup(testTopic, 1)
-	//require.True(t, ok)
-	//require.Equal(t, lastProducedOffest+1, offset.Offset) // +1 because lastProducedOffset points at already consumed record
+	t.Run("normal case of no lag", func(t *testing.T) {
+		for i := int64(0); i < 3; i++ {
+			kafkaTime = kafkaTime.Add(cfg.ConsumeInterval / 10)
+			createAndProduceSample(kafkaTime.Add(-time.Minute), kafkaTime)
+		}
+
+		cycleEnd = cycleEnd.Add(cfg.ConsumeInterval)
+		nextConsumeCycleWithChecks(cycleEnd, 1, 1)
+
+		compareQuery(t,
+			dbOnBucketDir(t),
+			filterSamples(kafkaSamples, cycleEnd.Add(-cfg.ConsumeIntervalBuffer)),
+			nil,
+			labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+		)
+	})
+
+	t.Run("out of order w.r.t. old cycle and future record with valid sample", func(t *testing.T) {
+		kafkaTime = cycleEnd
+
+		// Out of order sample w.r.t. samples in last cycle. But for this cycle,
+		// the TSDB starts fresh. So in terms of the actual block building, it will be
+		// taken as in-order. Depending on if the out-of-order and in-order sample below
+		// crosses the 2h block boundary, we expect either 1 or 2 blocks.
+		oooSampleTime := kafkaTime.Add(-time.Hour)
+		createAndProduceSample(oooSampleTime, kafkaTime)
+
+		// In-order sample w.r.t. last consume cycle.
+		kafkaTime = kafkaTime.Add(cfg.ConsumeInterval / 10)
+		inOrderSampleTime := kafkaTime.Add(-time.Minute)
+		createAndProduceSample(inOrderSampleTime, kafkaTime)
+
+		cycleEnd = cycleEnd.Add(cfg.ConsumeInterval)
+
+		// Sample that is not a part of next consume cycle (a future sample) but the kafka
+		// record falls in this cycle. So this sample should not go in this cycle.
+		kafkaTime = kafkaTime.Add(cfg.ConsumeInterval / 10)
+		createAndProduceSample(cycleEnd.Add(cfg.ConsumeInterval), kafkaTime)
+		// In-order sample falls within the next consume cycle but the kafka record time does not
+		// fall within the next consume cycle. So this sample should not go in the next cycle.
+		kafkaTime = cycleEnd.Add(time.Minute)
+		createAndProduceSample(inOrderSampleTime.Add(time.Minute), kafkaTime)
+
+		t.Run("consume only out of order nad in-order", func(t *testing.T) {
+			expBlockCreation := 1
+			if inOrderSampleTime.Truncate(2*time.Hour).Compare(oooSampleTime.Truncate(2*time.Hour)) != 0 {
+				// The samples cross the 2h boundary.
+				expBlockCreation = 2
+			}
+			nextConsumeCycleWithChecks(cycleEnd, expBlockCreation, 1)
+
+			compareQuery(t,
+				dbOnBucketDir(t),
+				kafkaSamples[:len(kafkaSamples)-2], // Don't expect the last two sample.
+				nil,
+				labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+			)
+		})
+
+		t.Run("future record", func(t *testing.T) {
+			// The sample from above which was in-order but the kafka record was in future
+			// should get consumed in this cycle. The other sample that is still in the future
+			// should not be consumed.
+			cycleEnd = cycleEnd.Add(cfg.ConsumeInterval)
+			// 2 compact calls because the cycleEnd lags with the committed record because of future sample.
+			nextConsumeCycleWithChecks(cycleEnd, 1, 2)
+
+			// The second to last sample in kafkaSamples is the one that is still in the future.
+			// So we exclude that.
+			var expSamples []mimirpb.Sample
+			expSamples = append(expSamples, kafkaSamples[:len(kafkaSamples)-2]...)
+			expSamples = append(expSamples, kafkaSamples[len(kafkaSamples)-1])
+			compareQuery(t,
+				dbOnBucketDir(t),
+				expSamples,
+				nil,
+				labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+			)
+		})
+
+		t.Run("future sample", func(t *testing.T) {
+			// The future sample gets consumed here. This also tests the case
+			// where even though the kafka record after this was processed completely,
+			// we still go back to the last kafka commit and consume the sample
+			// that happened to be in the future.
+			cycleEnd = cycleEnd.Add(cfg.ConsumeInterval)
+			// 3 compact calls because the cycleEnd lags with the committed record because of future sample.
+			nextConsumeCycleWithChecks(cycleEnd, 1, 3)
+
+			compareQuery(t,
+				dbOnBucketDir(t),
+				kafkaSamples,
+				nil,
+				labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+			)
+		})
+
+	})
 }
 
 func blockBuilderConfig(t *testing.T, addr, topic string) Config {
@@ -326,7 +455,7 @@ func TestKafkaCommitMetadata(t *testing.T) {
 	lastRec := recs[numRecs-1]
 	blockEnd := time.Now().Truncate(1 * time.Hour).UnixMilli()
 
-	err = commitRecord(ctx, log.NewNopLogger(), kc, testTopic, commitRec, lastRec, blockEnd)
+	err = commitRecord(ctx, log.NewNopLogger(), kc, testTopic, commitRec, lastRec.Timestamp.UnixMilli(), blockEnd)
 	require.NoError(t, err)
 
 	// Checking the commit

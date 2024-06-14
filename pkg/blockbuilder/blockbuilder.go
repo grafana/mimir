@@ -466,10 +466,19 @@ func (b *BlockBuilder) consumePartition(
 		commitRec = lastRec
 	}
 
-	if lastRec != nil {
-		retSeenTillTs = lastRec.Timestamp.UnixMilli()
+	// We should take the max of "seen till" timestamp. If the partition was lagging
+	// due to some record not being processed because of a future sample, we might be
+	// coming back to the same consume cycle again.
+	if lastRec != nil && seenTillTs < lastRec.Timestamp.UnixMilli() {
+		seenTillTs = lastRec.Timestamp.UnixMilli()
 	}
-	return lag, retSeenTillTs, blockMax, commitRecord(ctx, b.logger, b.kafkaClient, b.cfg.Kafka.Topic, commitRec, lastRec, blockMax)
+	// Take the max of block max times because of same reasons above.
+	commitBlockMax := blockMax
+	if lastBlockMax > blockMax {
+		commitBlockMax = lastBlockMax
+	}
+	err = commitRecord(ctx, b.logger, b.kafkaClient, b.cfg.Kafka.Topic, commitRec, seenTillTs, commitBlockMax)
+	return lag, seenTillTs, commitBlockMax, err
 }
 
 func (b *BlockBuilder) blockUploaderForUser(ctx context.Context, userID string) blockUploader {
@@ -498,7 +507,7 @@ func (b *BlockBuilder) blockUploaderForUser(ctx context.Context, userID string) 
 	}
 }
 
-func commitRecord(ctx context.Context, l log.Logger, kc *kgo.Client, topic string, commitRec, lastReadRec *kgo.Record, blockEnd int64) error {
+func commitRecord(ctx context.Context, l log.Logger, kc *kgo.Client, topic string, commitRec *kgo.Record, readTillTs, blockEnd int64) error {
 	if commitRec == nil {
 		return nil
 	}
@@ -514,7 +523,7 @@ func commitRecord(ctx context.Context, l log.Logger, kc *kgo.Client, topic strin
 	})
 
 	ctx = kgo.PreCommitFnContext(ctx, func(req *kmsg.OffsetCommitRequest) error {
-		meta := marshallCommitMeta(commitRec.Timestamp.UnixMilli(), lastReadRec.Timestamp.UnixMilli(), blockEnd)
+		meta := marshallCommitMeta(commitRec.Timestamp.UnixMilli(), readTillTs, blockEnd)
 		for ti := range req.Topics {
 			if req.Topics[ti].Topic != topic {
 				continue
