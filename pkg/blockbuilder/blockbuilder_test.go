@@ -25,10 +25,40 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+const (
+	testTopic = "test"
+	testGroup = "testgroup"
+)
+
+func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Overrides) {
+	cfg := Config{
+		ConsumeInterval:       time.Hour,
+		ConsumeIntervalBuffer: 15 * time.Minute,
+		Kafka: KafkaConfig{
+			Address:       addr,
+			Topic:         testTopic,
+			ClientID:      "1",
+			DialTimeout:   10 * time.Second,
+			ConsumerGroup: testGroup,
+		},
+	}
+
+	cfg.BlocksStorageConfig.TSDB.Dir = t.TempDir()
+	cfg.BlocksStorageConfig.Bucket.StorageBackendConfig.Backend = bucket.Filesystem
+	cfg.BlocksStorageConfig.Bucket.Filesystem.Directory = t.TempDir()
+
+	limits := defaultLimitsTestConfig()
+	limits.OutOfOrderTimeWindow = 2 * model.Duration(time.Hour)
+	limits.NativeHistogramsIngestionEnabled = true
+	overrides, err := validation.NewOverrides(limits, nil)
+	require.NoError(t, err)
+
+	return cfg, overrides
+}
+
 func TestBlockBuilder_SinglePartition(t *testing.T) {
 	const (
-		testTopic = "test"
-		userID    = "1"
+		userID = "1"
 	)
 
 	ctx, cancel := context.WithCancelCause(context.Background())
@@ -40,21 +70,15 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 		sampleTs, recTs time.Time
 	}
 	var (
-		kafkaSamples  []mimirpb.Sample
-		kafkaRecords  []kafkaRecInfo
-		cfg           = blockBuilderConfig(t, addr, testTopic)
-		compactCalled = make(chan struct{}, 10)
-		writeClient   = newKafkaProduceClient(t, addr)
-		bucketDir     = path.Join(cfg.BlocksStorageConfig.Bucket.Filesystem.Directory, userID)
-		kafkaTime     = time.Now().Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
-		parentT       = t
+		kafkaSamples   []mimirpb.Sample
+		kafkaRecords   []kafkaRecInfo
+		cfg, overrides = blockBuilderConfig(t, addr)
+		compactCalled  = make(chan struct{}, 10)
+		writeClient    = newKafkaProduceClient(t, addr)
+		bucketDir      = path.Join(cfg.BlocksStorageConfig.Bucket.Filesystem.Directory, userID)
+		kafkaTime      = time.Now().Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
+		parentT        = t
 	)
-
-	limits := defaultLimitsTestConfig()
-	limits.OutOfOrderTimeWindow = 2 * model.Duration(time.Hour)
-	limits.NativeHistogramsIngestionEnabled = true
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
 
 	bb, err := New(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry(), overrides)
 	require.NoError(t, err)
@@ -69,21 +93,6 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 
 	// Helper functions.
 	var (
-		//createBlockBuilder = func() *BlockBuilder {
-		//	bb, err := New(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry(), overrides)
-		//	require.NoError(t, err)
-		//
-		//	bb.tsdbBuilder = func() builder {
-		//		testBuilder := newTestTSDBBuilder(cfg, overrides)
-		//		testBuilder.compactFunc = func() {
-		//			compactCalled <- struct{}{}
-		//		}
-		//		return testBuilder
-		//	}
-		//
-		//	return bb
-		//}
-
 		createAndProduceSample = func(sampleTs, kafkaRecTs time.Time) {
 			samples := floatSample(sampleTs.UnixMilli())
 			val := createWriteRequest(t, samples, nil)
@@ -121,7 +130,7 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 		dbOnBucketDir = func(givenT *testing.T) *tsdb.DB {
 			db, err := tsdb.Open(bucketDir, log.NewNopLogger(), nil, nil, nil)
 			require.NoError(givenT, err)
-			givenT.Cleanup(func() { require.NoError(t, db.Close()) })
+			givenT.Cleanup(func() { require.NoError(givenT, db.Close()) })
 			return db
 		}
 
@@ -142,7 +151,7 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 		}
 
 		getCommitMeta = func() (int64, int64, int64) {
-			offsets, err := kadm.NewClient(bb.kafkaClient).FetchOffsetsForTopics(ctx, cfg.Kafka.ConsumerGroup, testTopic)
+			offsets, err := kadm.NewClient(bb.kafkaClient).FetchOffsetsForTopics(ctx, testGroup, testTopic)
 			require.NoError(t, err)
 			offset, ok := offsets.Lookup(testTopic, 0)
 			require.True(t, ok)
@@ -346,35 +355,95 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 	})
 }
 
+// Testing block builder starting up with an existing kafka commit.
 func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
-	// Testing block builder starting up with an existing kafka commit.
-	// TODO(codesome): implement this.
-}
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
 
-func TestBlockBuilder_MultiPartition(t *testing.T) {
-	// Since a single partition is well tested above, here we only test if
-	// multiple partitions are being called properly by the consume cycle.
-	// TODO(codesome): Implement this.
-}
-
-func blockBuilderConfig(t *testing.T, addr, topic string) Config {
-	cfg := Config{
-		ConsumeInterval:       time.Hour,
-		ConsumeIntervalBuffer: 15 * time.Minute,
-		Kafka: KafkaConfig{
-			Address:       addr,
-			Topic:         topic,
-			ClientID:      "1",
-			DialTimeout:   10 * time.Second,
-			ConsumerGroup: "testgroup",
-		},
+	_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, testTopic)
+	writeClient := newKafkaProduceClient(t, addr)
+	cfg, overrides := blockBuilderConfig(t, addr)
+	kafkaTime := time.Now().Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
+	var expSamples []mimirpb.Sample
+	for i := int64(0); i < 12; i++ {
+		kafkaTime = kafkaTime.Add(cfg.ConsumeInterval / 2)
+		sampleTs := kafkaTime.Add(-time.Minute)
+		samples := floatSample(sampleTs.UnixMilli())
+		val := createWriteRequest(t, samples, nil)
+		produceRecords(t, ctx, writeClient, kafkaTime, "1", testTopic, 0, val)
+		expSamples = append(expSamples, samples...)
 	}
 
-	cfg.BlocksStorageConfig.TSDB.Dir = t.TempDir()
-	cfg.BlocksStorageConfig.Bucket.StorageBackendConfig.Backend = bucket.Filesystem
-	cfg.BlocksStorageConfig.Bucket.Filesystem.Directory = t.TempDir()
+	opts := []kgo.Opt{
+		kgo.ClientID("1"), kgo.SeedBrokers(addr), kgo.ConsumeTopics(testTopic),
+		kgo.ConsumerGroup(testGroup), kgo.DisableAutoCommit(),
+	}
+	kc, err := kgo.NewClient(opts...)
+	require.NoError(t, err)
+	fetches := kc.PollFetches(ctx)
+	require.NoError(t, fetches.Err())
 
-	return cfg
+	var recs []*kgo.Record
+	for it := fetches.RecordIter(); !it.Done(); {
+		recs = append(recs, it.Next())
+	}
+	require.Len(t, recs, len(expSamples))
+
+	commitRec := recs[len(recs)/2]
+	lastRec := commitRec
+	blockEnd := commitRec.Timestamp.Truncate(cfg.ConsumeInterval).Add(cfg.ConsumeInterval)
+
+	err = commitRecord(ctx, log.NewNopLogger(), kc, testTopic, commitRec, lastRec.Timestamp.UnixMilli(), blockEnd.UnixMilli())
+	require.NoError(t, err)
+	kc.CloseAllowingRebalance()
+
+	// Because there is a commit, on startup, the block builder should consume samples
+	// only after the commit.
+	expSamples = expSamples[1+(len(expSamples)/2):]
+
+	bb, err := New(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry(), overrides)
+	require.NoError(t, err)
+	compactCalled := make(chan struct{}, 10)
+	bb.tsdbBuilder = func() builder {
+		testBuilder := newTestTSDBBuilder(cfg, overrides)
+		testBuilder.compactFunc = func() {
+			compactCalled <- struct{}{}
+		}
+		return testBuilder
+	}
+
+	// TODO(codesome): BB is not getting any partition assigned because of the above kafka client used for commit. Fix it.
+	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
+	})
+LL:
+	for {
+		time.Sleep(time.Second)
+		select {
+		case <-compactCalled:
+		default:
+			break LL
+		}
+	}
+
+	bucketDir := path.Join(cfg.BlocksStorageConfig.Bucket.Filesystem.Directory, "1")
+	db, err := tsdb.Open(bucketDir, log.NewNopLogger(), nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	compareQuery(t,
+		db,
+		expSamples,
+		nil,
+		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+	)
+}
+
+// Since a single partition is well tested above, here we only test if
+// multiple partitions are being called properly by the consume cycle.
+func TestBlockBuilder_MultiPartition(t *testing.T) {
+	// TODO(codesome): Implement this.
 }
 
 func produceRecords(t *testing.T, ctx context.Context, writeClient *kgo.Client, ts time.Time, userID, topic string, part int32, val []byte) kgo.ProduceResults {
