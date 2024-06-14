@@ -81,7 +81,7 @@ func HTTPResponseFromError(err error) (*httpgrpc.HTTPResponse, bool) {
 			Error     string `json:"error,omitempty"`
 		}{
 			Status:    "error",
-			Error:     apiErr.Message,
+			Error:     err.Error(), // TODO explain why (because we want to preserve the message from wrapped errors)
 			ErrorType: apiErr.Type,
 		},
 	)
