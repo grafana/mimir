@@ -484,7 +484,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 		},
 		"remote read": {
 			instances:  remoteReadMiddlewares,
-			exceptions: []string{"instrumentMiddleware", "limitsMiddleware", "queryBlockerMiddleware", "querySharding", "queryStatsMiddleware", "retry", "splitAndCacheMiddleware", "splitInstantQueryByIntervalMiddleware", "stepAlignMiddleware"},
+			exceptions: []string{"instrumentMiddleware", "limitsMiddleware", "querySharding", "queryStatsMiddleware", "retry", "splitAndCacheMiddleware", "splitInstantQueryByIntervalMiddleware", "stepAlignMiddleware"},
 		},
 	}
 
