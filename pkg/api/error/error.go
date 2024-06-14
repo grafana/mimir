@@ -7,11 +7,11 @@ package error
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/grafana/dskit/httpgrpc"
-	"github.com/pkg/errors"
 )
 
 type Type string
@@ -80,8 +80,10 @@ func HTTPResponseFromError(err error) (*httpgrpc.HTTPResponse, bool) {
 			ErrorType Type   `json:"errorType,omitempty"`
 			Error     string `json:"error,omitempty"`
 		}{
-			Status:    "error",
-			Error:     apiErr.Message,
+			Status: "error",
+			// We're not taking the apiErr.Message directly to allow using
+			// errors.Wrap() to add more details to the error.
+			Error:     err.Error(),
 			ErrorType: apiErr.Type,
 		},
 	)
@@ -116,17 +118,6 @@ func Newf(typ Type, tmpl string, args ...interface{}) error {
 func IsAPIError(err error) bool {
 	apiErr := &apiError{}
 	return errors.As(err, &apiErr)
-}
-
-// AddDetails adds details to an existing apiError, but keeps the type and handling.
-// If the error is not an apiError, it will wrap the error with the details.
-func AddDetails(err error, details string) error {
-	apiErr := &apiError{}
-	if !errors.As(err, &apiErr) {
-		return errors.Wrap(err, details)
-	}
-	apiErr.Message = fmt.Sprintf("%s: %s", details, apiErr.Message)
-	return apiErr
 }
 
 // IsNonRetryableAPIError returns true if err is an apiError which should be failed and not retried.

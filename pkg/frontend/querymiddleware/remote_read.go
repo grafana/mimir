@@ -12,11 +12,11 @@ import (
 	"strconv"
 
 	"github.com/opentracing/opentracing-go"
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage/remote"
 
-	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -65,7 +65,7 @@ func (r *remoteReadRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 		}))
 		_, err = handler.Do(req.Context(), metricsRequest)
 		if err != nil {
-			return nil, apierror.AddDetails(err, fmt.Sprintf("remote read error (%s_%d: %s)", matchersLogKey, i, metricsRequest.GetQuery()))
+			return nil, errors.Wrap(err, fmt.Sprintf("remote read error (%s_%d: %s)", matchersLogKey, i, metricsRequest.GetQuery()))
 		}
 	}
 
