@@ -586,6 +586,193 @@ testuser:
 	}
 }
 
+func TestRulerMaxRulesPerRuleGroupLimits(t *testing.T) {
+	tc := []struct {
+		name      string
+		inputYAML string
+		expected  struct {
+			limit     int
+			namespace string
+		}
+	}{
+		{
+			name: "no namespace specific limit",
+			inputYAML: `
+ruler_max_rules_per_rule_group: 100
+`,
+			expected: struct {
+				limit     int
+				namespace string
+			}{limit: 100, namespace: "mynamespace"},
+		},
+		{
+			name: "zero limit for the right namespace",
+			inputYAML: `
+ruler_max_rules_per_rule_group: 100
+
+ruler_max_rules_per_rule_group_by_namespace:
+  mynamespace: 0
+`,
+			expected: struct {
+				limit     int
+				namespace string
+			}{limit: 0, namespace: "mynamespace"},
+		},
+		{
+			name: "other namespaces are not affected",
+			inputYAML: `
+ruler_max_rules_per_rule_group: 100
+
+ruler_max_rules_per_rule_group_by_namespace:
+  mynamespace: 10
+`,
+			expected: struct {
+				limit     int
+				namespace string
+			}{limit: 100, namespace: "othernamespace"},
+		},
+	}
+
+	for _, tt := range tc {
+		t.Run(tt.name, func(t *testing.T) {
+			limitsYAML := Limits{}
+			require.NoError(t, yaml.Unmarshal([]byte(tt.inputYAML), &limitsYAML))
+
+			ov, err := NewOverrides(limitsYAML, nil)
+			require.NoError(t, err)
+
+			require.Equal(t, tt.expected.limit, ov.RulerMaxRulesPerRuleGroup("user", tt.expected.namespace))
+		})
+	}
+}
+
+func TestRulerMaxRulesPerRuleGroupLimitsOverrides(t *testing.T) {
+	baseYaml := `
+ruler_max_rules_per_rule_group: 5
+
+ruler_max_rules_per_rule_group_by_namespace:
+  mynamespace: 10
+`
+
+	overrideGenericLimitsOnly := `
+testuser:
+  ruler_max_rules_per_rule_group: 333
+`
+
+	overrideNamespaceLimits := `
+testuser:
+  ruler_max_rules_per_rule_group_by_namespace:
+    mynamespace: 7777
+`
+
+	overrideGenericLimitsAndNamespaceLimits := `
+testuser:
+  ruler_max_rules_per_rule_group: 333
+
+  ruler_max_rules_per_rule_group_by_namespace:
+    mynamespace: 7777
+`
+
+	differentUserOverride := `
+differentuser:
+  ruler_max_rules_per_rule_group_by_namespace:
+    mynamespace: 500
+`
+
+	tc := []struct {
+		name           string
+		overrides      string
+		inputNamespace string
+		expectedLimit  int
+	}{
+		{
+			name:           "no overrides, mynamespace",
+			inputNamespace: "mynamespace",
+			expectedLimit:  10,
+		},
+		{
+			name:           "no overrides, othernamespace",
+			inputNamespace: "othernamespace",
+			expectedLimit:  5,
+		},
+		{
+			name:           "generic override, mynamespace",
+			inputNamespace: "mynamespace",
+			overrides:      overrideGenericLimitsOnly,
+			expectedLimit:  10,
+		},
+		{
+			name:           "generic override, othernamespace",
+			inputNamespace: "othernamespace",
+			overrides:      overrideGenericLimitsOnly,
+			expectedLimit:  333,
+		},
+		{
+			name:           "namespace limit override, mynamespace",
+			inputNamespace: "mynamespace",
+			overrides:      overrideNamespaceLimits,
+			expectedLimit:  7777,
+		},
+		{
+			name:           "namespace limit override, othernamespace",
+			inputNamespace: "othernamespace",
+			overrides:      overrideNamespaceLimits,
+			expectedLimit:  5,
+		},
+		{
+			name:           "generic and namespace limit override, mynamespace",
+			inputNamespace: "mynamespace",
+			overrides:      overrideGenericLimitsAndNamespaceLimits,
+			expectedLimit:  7777,
+		},
+		{
+			name:           "generic and namespace limit override, othernamespace",
+			inputNamespace: "othernamespace",
+			overrides:      overrideGenericLimitsAndNamespaceLimits,
+			expectedLimit:  333,
+		},
+		{
+			name:           "different user override, mynamespace",
+			inputNamespace: "mynamespace",
+			overrides:      differentUserOverride,
+			expectedLimit:  10,
+		},
+		{
+			name:           "different user override, othernamespace",
+			inputNamespace: "othernamespace",
+			overrides:      differentUserOverride,
+			expectedLimit:  5,
+		},
+	}
+
+	for _, tt := range tc {
+		t.Run(tt.name, func(t *testing.T) {
+
+			t.Cleanup(func() {
+				SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+			})
+
+			SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+
+			var limitsYAML Limits
+			err := yaml.Unmarshal([]byte(baseYaml), &limitsYAML)
+			require.NoError(t, err)
+
+			SetDefaultLimitsForYAMLUnmarshalling(limitsYAML)
+
+			overrides := map[string]*Limits{}
+			err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+			require.NoError(t, err)
+
+			tl := NewMockTenantLimits(overrides)
+			ov, err := NewOverrides(limitsYAML, tl)
+			require.NoError(t, err)
+
+			require.Equal(t, tt.expectedLimit, ov.RulerMaxRulesPerRuleGroup("testuser", tt.inputNamespace))
+		})
+	}
+}
+
 func TestCustomTrackerConfigDeserialize(t *testing.T) {
 	expectedConfig, err := activeseries.NewCustomTrackersConfig(map[string]string{"baz": `{foo="bar"}`})
 	require.NoError(t, err, "creating expected config")

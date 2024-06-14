@@ -146,7 +146,7 @@ type RulesLimits interface {
 	EvaluationDelay(userID string) time.Duration
 	RulerTenantShardSize(userID string) int
 	RulerMaxRuleGroupsPerTenant(userID string) int
-	RulerMaxRulesPerRuleGroup(userID string) int
+	RulerMaxRulesPerRuleGroup(userID, namespace string) int
 	RulerRecordingRulesEvaluationEnabled(userID string) bool
 	RulerAlertingRulesEvaluationEnabled(userID string) bool
 	RulerSyncRulesOnChangesEnabled(userID string) bool
