@@ -78,7 +78,7 @@ type mockRoundTripper struct {
 	called int
 }
 
-func (m *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+func (m *mockRoundTripper) RoundTrip(_ *http.Request) (*http.Response, error) {
 	m.called++
 	return nil, nil
 }
@@ -86,14 +86,14 @@ func (m *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 type skipMiddleware struct {
 }
 
-func (s *skipMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+func (s *skipMiddleware) Do(_ context.Context, _ MetricsQueryRequest) (Response, error) {
 	return nil, nil
 }
 
 type errorMiddleware struct {
 }
 
-func (s *errorMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+func (s *errorMiddleware) Do(_ context.Context, _ MetricsQueryRequest) (Response, error) {
 	return nil, fmt.Errorf("TestErrorMiddleware")
 }
 

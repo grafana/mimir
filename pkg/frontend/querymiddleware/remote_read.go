@@ -162,7 +162,7 @@ type remoteReadQueryRequest struct {
 	promQuery string
 }
 
-func (r *remoteReadQueryRequest) AddSpanTags(sp opentracing.Span) {
+func (r *remoteReadQueryRequest) AddSpanTags(_ opentracing.Span) {
 	// No-op.
 }
 

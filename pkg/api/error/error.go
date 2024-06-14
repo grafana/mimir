@@ -10,9 +10,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/pkg/errors"
-
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/pkg/errors"
 )
 
 type Type string
