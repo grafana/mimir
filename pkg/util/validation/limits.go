@@ -880,15 +880,6 @@ func (o *Overrides) RulerSyncRulesOnChangesEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).RulerSyncRulesOnChangesEnabled
 }
 
-func (o *Overrides) getRulerMaxRulesPerRuleGroupByNamespaceLimitForUser(user, namespace string) int64 {
-	u := o.getOverridesForUser(user)
-	if n, ok := u.RulerMaxRulesPerRuleGroupByNamespace.data[namespace]; ok {
-		return n
-	}
-
-	return int64(u.RulerMaxRulesPerRuleGroup) // TODO: should I go for int at the end of the day?
-}
-
 // StoreGatewayTenantShardSize returns the store-gateway shard size for a given user.
 func (o *Overrides) StoreGatewayTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).StoreGatewayTenantShardSize

@@ -6,8 +6,9 @@
 package validation
 
 import (
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/pkg/errors"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 var integrationsValidation = func(k string, v float64) error {
