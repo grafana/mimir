@@ -36,8 +36,12 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 
 	_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, testTopic)
 
+	type kafkaRecInfo struct {
+		sampleTs, recTs time.Time
+	}
 	var (
 		kafkaSamples  []mimirpb.Sample
+		kafkaRecords  []kafkaRecInfo
 		cfg           = blockBuilderConfig(t, addr, testTopic)
 		compactCalled = make(chan struct{}, 10)
 		writeClient   = newKafkaProduceClient(t, addr)
@@ -84,7 +88,9 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 			samples := floatSample(sampleTs.UnixMilli())
 			val := createWriteRequest(t, samples, nil)
 			produceRecords(t, ctx, writeClient, kafkaRecTs, userID, testTopic, 0, val)
+
 			kafkaSamples = append(kafkaSamples, samples...)
+			kafkaRecords = append(kafkaRecords, kafkaRecInfo{sampleTs, kafkaRecTs})
 		}
 
 		filterSamples = func(s []mimirpb.Sample, maxTime time.Time) []mimirpb.Sample {
@@ -135,24 +141,50 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 			return count
 		}
 
-		//getCommitMeta = func() (int64, int64, int64) {
-		//	offsets, err := kadm.NewClient(bb.kafkaClient).FetchOffsetsForTopics(ctx, cfg.Kafka.ConsumerGroup, testTopic)
-		//	require.NoError(t, err)
-		//	offset, ok := offsets.Lookup(testTopic, 0)
-		//	require.True(t, ok)
-		//	commitRecTs, lastRecTs, blockEnd, err := unmarshallCommitMeta(offset.Metadata)
-		//	require.NoError(t, err)
-		//	return commitRecTs, lastRecTs, blockEnd
-		//}
-
-		//bb = createBlockBuilder()
+		getCommitMeta = func() (int64, int64, int64) {
+			offsets, err := kadm.NewClient(bb.kafkaClient).FetchOffsetsForTopics(ctx, cfg.Kafka.ConsumerGroup, testTopic)
+			require.NoError(t, err)
+			offset, ok := offsets.Lookup(testTopic, 0)
+			require.True(t, ok)
+			commitRecTs, lastRecTs, blockEnd, err := unmarshallCommitMeta(offset.Metadata)
+			require.NoError(t, err)
+			return commitRecTs, lastRecTs, blockEnd
+		}
 
 		nextConsumeCycleWithChecks = func(cycleEnd time.Time, expBlocksCreated, expCompacts int) {
 			blocksBefore := numBlocksInBucket(t)
+
 			require.NoError(t, bb.nextConsumeCycle(ctx, cycleEnd))
 			require.Equal(t, expCompacts, collectCompacts(), "mismatch in compact calls")
+
 			blocksAfter := numBlocksInBucket(t)
 			require.Equal(t, expBlocksCreated, blocksAfter-blocksBefore, "mismatch in blocks created")
+
+			// Check if the kafka commit is as expected.
+			var expCommitTs, expLastTs int64
+			expBlockMax := cycleEnd.Truncate(cfg.ConsumeInterval).UnixMilli()
+			commitTimeFinalised := false
+			for _, r := range kafkaRecords {
+				// The last record before the cycleEnd is the last seen timestamp.
+				if r.recTs.Before(cycleEnd) {
+					expLastTs = r.recTs.UnixMilli()
+				}
+
+				// The commit timestamp is timestamp until which all samples are in a block.
+				// If there is a sample after the expected blockMax, then the commit timestamp
+				// is of the record one before it.
+				if r.sampleTs.UnixMilli() >= expBlockMax {
+					commitTimeFinalised = true
+				}
+				if !commitTimeFinalised && r.sampleTs.UnixMilli() < expBlockMax {
+					expCommitTs = r.recTs.UnixMilli()
+				}
+			}
+
+			commitRecTs, lastRecTs, blockEnd := getCommitMeta()
+			require.Equal(t, expCommitTs, commitRecTs)
+			require.Equal(t, expLastTs, lastRecTs)
+			require.Equal(t, expBlockMax, blockEnd)
 		}
 	)
 
@@ -182,8 +214,6 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 			nil,
 			labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 		)
-
-		// TODO(codesome): check that commit has the right information.
 	})
 
 	var cycleEnd time.Time
@@ -316,6 +346,17 @@ func TestBlockBuilder_SinglePartition(t *testing.T) {
 	})
 }
 
+func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
+	// Testing block builder starting up with an existing kafka commit.
+	// TODO(codesome): implement this.
+}
+
+func TestBlockBuilder_MultiPartition(t *testing.T) {
+	// Since a single partition is well tested above, here we only test if
+	// multiple partitions are being called properly by the consume cycle.
+	// TODO(codesome): Implement this.
+}
+
 func blockBuilderConfig(t *testing.T, addr, topic string) Config {
 	cfg := Config{
 		ConsumeInterval:       time.Hour,
@@ -411,64 +452,4 @@ func TestKafkaCommitMetaMarshalling(t *testing.T) {
 	// Error parsing
 	_, _, _, err = unmarshallCommitMeta("1,3,4")
 	require.Error(t, err)
-}
-
-func TestKafkaCommitMetadata(t *testing.T) {
-	const (
-		testTopic = "test"
-		testGroup = "testgroup"
-		numRecs   = 10
-	)
-
-	ctx, cancel := context.WithCancelCause(context.Background())
-	t.Cleanup(func() { cancel(errors.New("test done")) })
-
-	_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, testTopic)
-	writeClient := newKafkaProduceClient(t, addr)
-
-	for i := int64(0); i < numRecs; i++ {
-		val := createWriteRequest(t, floatSample(i), nil)
-		produceRecords(t, ctx, writeClient, time.Now(), "1", testTopic, 0, val)
-	}
-
-	opts := []kgo.Opt{
-		kgo.ClientID("1"),
-		kgo.SeedBrokers(addr),
-		kgo.DialTimeout(10 * time.Second),
-		kgo.ConsumeTopics(testTopic),
-		kgo.ConsumerGroup(testGroup),
-		kgo.DisableAutoCommit(),
-	}
-	kc, err := kgo.NewClient(opts...)
-	require.NoError(t, err)
-
-	fetches := kc.PollFetches(ctx)
-	require.NoError(t, fetches.Err())
-
-	var recs []*kgo.Record
-	for it := fetches.RecordIter(); !it.Done(); {
-		recs = append(recs, it.Next())
-	}
-	require.Len(t, recs, numRecs)
-
-	commitRec := recs[numRecs/2]
-	lastRec := recs[numRecs-1]
-	blockEnd := time.Now().Truncate(1 * time.Hour).UnixMilli()
-
-	err = commitRecord(ctx, log.NewNopLogger(), kc, testTopic, commitRec, lastRec.Timestamp.UnixMilli(), blockEnd)
-	require.NoError(t, err)
-
-	// Checking the commit
-	offsets, err := kadm.NewClient(kc).FetchOffsetsForTopics(ctx, testGroup, testTopic)
-	require.NoError(t, err)
-
-	offset, ok := offsets.Lookup(testTopic, 0)
-	require.True(t, ok)
-	require.Equal(t, kadm.Offset{
-		Topic:       testTopic,
-		Partition:   0,
-		At:          commitRec.Offset + 1,
-		LeaderEpoch: commitRec.LeaderEpoch,
-		Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), lastRec.Timestamp.UnixMilli(), blockEnd),
-	}, offset.Offset)
 }
