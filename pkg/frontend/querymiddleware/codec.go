@@ -124,6 +124,8 @@ type MetricsQueryRequest interface {
 	// WithQuery clones the current request with a different query; returns error if query parse fails.
 	// Implementations must ensure minT and maxT are recalculated when the query changes.
 	WithQuery(string) (MetricsQueryRequest, error)
+	// WithHeaders clones the current request with different headers.
+	WithHeaders([]*PrometheusHeader) MetricsQueryRequest
 	// WithExpr clones the current `PrometheusRangeQueryRequest` with a new query expression.
 	// Implementations must ensure minT and maxT are recalculated when the query changes.
 	WithExpr(parser.Expr) MetricsQueryRequest

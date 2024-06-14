@@ -184,6 +184,13 @@ func (r *PrometheusRangeQueryRequest) WithQuery(query string) (MetricsQueryReque
 	return &newRequest, nil
 }
 
+// WithHeaders clones the current `PrometheusRangeQueryRequest` with new headers.
+func (r *PrometheusRangeQueryRequest) WithHeaders(headers []*PrometheusHeader) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.headers = headers
+	return &newRequest
+}
+
 // WithExpr clones the current `PrometheusRangeQueryRequest` with a new query expression.
 func (r *PrometheusRangeQueryRequest) WithExpr(queryExpr parser.Expr) MetricsQueryRequest {
 	newRequest := *r
@@ -374,6 +381,13 @@ func (r *PrometheusInstantQueryRequest) WithQuery(query string) (MetricsQueryReq
 		)
 	}
 	return &newRequest, nil
+}
+
+// WithHeaders clones the current `PrometheusRangeQueryRequest` with new headers.
+func (r *PrometheusInstantQueryRequest) WithHeaders(headers []*PrometheusHeader) MetricsQueryRequest {
+	newRequest := *r
+	newRequest.headers = headers
+	return &newRequest
 }
 
 // WithExpr clones the current `PrometheusInstantQueryRequest` with a new query expression.
