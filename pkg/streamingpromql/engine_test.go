@@ -472,8 +472,6 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			some_metric{idx="5"} 0+1x5
 			some_histogram{idx="1"} {{schema:1 sum:10 count:9 buckets:[3 3 3]}}x5
 			some_histogram{idx="2"} {{schema:1 sum:10 count:9 buckets:[3 3 3]}}x5
-			mixed_metric_histogram{idx="1"} 0 3 {{schema:1 sum:10 count:9 buckets:[3 3 3]}} {{schema:2 sum:2 count:4 buckets:[1 2 1]}} 6
-			mixed_metric_histogram{idx="1"} 0 3 {{schema:1 sum:10 count:9 buckets:[3 3 3]}} {{schema:2 sum:2 count:4 buckets:[1 2 1]}} 6
 	`)
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
@@ -530,7 +528,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
 			// At peak we'll hold in memory:
 			//  - the running total for the sum() (a float and a bool at each step, with the number of steps rounded to the nearest power of 2),
-			//  - the next series from the selector,
+			//  - and the next series from the selector.
 			rangeQueryExpectedPeak: 8*(pooling.Float64Size+pooling.BoolSize) + 8*pooling.FPointSize,
 			rangeQueryLimit:        8*(pooling.Float64Size+pooling.BoolSize) + 8*pooling.FPointSize,
 
@@ -538,7 +536,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			// At peak we'll hold in memory:
 			//  - the running total for the sum() (a float and a bool),
 			//  - the next series from the selector,
-			//  - the output sample,
+			//  - and the output sample.
 			instantQueryExpectedPeak: pooling.Float64Size + pooling.BoolSize + pooling.FPointSize + pooling.VectorSampleSize,
 			instantQueryLimit:        pooling.Float64Size + pooling.BoolSize + pooling.FPointSize + pooling.VectorSampleSize,
 		},
@@ -547,32 +545,60 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			shouldSucceed: false,
 
 			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
-			// At peak we'll hold in memory: the running total for the sum() (a float and a bool at each step, with the number of steps rounded to the nearest power of 2), and the next series from the selector.
+			// At peak we'll hold in memory:
+			// - the running total for the sum() (a float and a bool at each step, with the number of steps rounded to the nearest power of 2),
+			// - and the next series from the selector.
 			// The last thing to be allocated is the bool slice for the running total, so that won't contribute to the peak before the query is aborted.
 			rangeQueryExpectedPeak: 8*pooling.Float64Size + 8*pooling.FPointSize,
 			rangeQueryLimit:        8*(pooling.Float64Size+pooling.BoolSize) + 8*pooling.FPointSize - 1,
 
 			// Each series has one sample, which is already a power of two.
-			// At peak we'll hold in memory: the running total for the sum() (a float and a bool), the next series from the selector, and the output sample.
+			// At peak we'll hold in memory:
+			// - the running total for the sum() (a float and a bool),
+			// - the next series from the selector,
+			// - and the output sample.
 			// The last thing to be allocated is the bool slice for the running total, so that won't contribute to the peak before the query is aborted.
 			instantQueryExpectedPeak: pooling.Float64Size + pooling.FPointSize + pooling.VectorSampleSize,
 			instantQueryLimit:        pooling.Float64Size + pooling.BoolSize + pooling.FPointSize + pooling.VectorSampleSize - 1,
 		},
 		"histogram: limit enabled, but query does not exceed limit": {
-			expr:              "some_histogram",
-			rangeQueryLimit:   2000,
-			instantQueryLimit: 2000,
-			shouldSucceed:     true,
+			expr:          "sum(some_histogram)",
+			shouldSucceed: true,
+
+			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
+			// At peak we'll hold in memory:
+			//  - the running total for the sum() (a histogram pointer at each step, with the number of steps rounded to the nearest power of 2),
+			//  - and the next series from the selector.
+			rangeQueryExpectedPeak: 8*pooling.HistogramPointerSize + 8*pooling.HPointSize,
+			rangeQueryLimit:        8*pooling.HistogramPointerSize + 8*pooling.HPointSize,
+			// Each series has one sample, which is already a power of two.
+			// At peak we'll hold in memory:
+			//  - the running total for the sum() (a histogram pointer),
+			//  - the next series from the selector,
+			//  - and the output sample.
+			instantQueryExpectedPeak: pooling.HistogramPointerSize + pooling.HPointSize + pooling.VectorSampleSize,
+			instantQueryLimit:        pooling.HistogramPointerSize + pooling.HPointSize + pooling.VectorSampleSize,
 		},
 		"histogram: limit enabled, and query exceeds limit": {
-			expr:          "some_histogram",
+			expr:          "sum(some_histogram)",
 			shouldSucceed: false,
 
-			// Allow only a single sample.
-			rangeQueryLimit:   pooling.HPointSize,
-			instantQueryLimit: pooling.HPointSize,
+			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
+			// At peak we'll hold in memory:
+			//  - the running total for the sum() (a histogram pointer at each step, with the number of steps rounded to the nearest power of 2),
+			//  - and the next series from the selector.
+			// The last thing to be allocated is the HistogramPointerSize slice for the running total, so that won't contribute to the peak before the query is aborted.
+			rangeQueryExpectedPeak: 8 * pooling.HPointSize,
+			rangeQueryLimit:        8*pooling.HistogramPointerSize + 8*pooling.HPointSize - 1,
+			// Each series has one sample, which is already a power of two.
+			// At peak we'll hold in memory:
+			//  - the running total for the sum() (a histogram pointer),
+			//  - the next series from the selector,
+			//  - and the output sample.
+			// The last thing to be allocated is the HistogramPointerSize slice for the running total, so that won't contribute to the peak before the query is aborted.
+			instantQueryExpectedPeak: pooling.HPointSize + pooling.VectorSampleSize,
+			instantQueryLimit:        pooling.HistogramPointerSize + pooling.HPointSize + pooling.VectorSampleSize - 1,
 		},
-		// TODO: test the other limit cases for histograms and mixed-metrics
 	}
 
 	createEngine := func(t *testing.T, limit uint64) (promql.QueryEngine, *prometheus.Registry, opentracing.Span, context.Context) {
