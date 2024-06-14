@@ -165,8 +165,8 @@ cortex_querytee_responses_compared_total{route="<route>",result="<success|fail>"
 
 Additionally, if backend results comparison is configured, two native histograms are available:
 
-- `cortex_querytee_backend_response_relative_duration_seconds`: Time (in seconds) of preferred backend less secondary backend.
-- `cortex_querytee_backend_response_relative_duration_proportional`: Response time of preferred backend, as a proportion of secondary backend response time.
+- `cortex_querytee_backend_response_relative_duration_seconds`: Time (in seconds) of secondary backend less preferred backend.
+- `cortex_querytee_backend_response_relative_duration_proportional`: Response time of secondary backend less preferred backend, as a proportion of preferred backend response time.
 
 ### Ruler remote operational mode test
 
