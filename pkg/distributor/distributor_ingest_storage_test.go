@@ -285,6 +285,9 @@ func TestDistributor_Push_ShouldReturnErrorMappedTo4xxStatusCodeIfWriteRequestCo
 	limits := prepareDefaultLimits()
 	limits.MaxLabelValueLength = hugeLabelValueLength
 
+	overrides, err := validation.NewOverrides(*limits, nil)
+	require.NoError(t, err)
+
 	testConfig := prepConfig{
 		numDistributors:         1,
 		ingestStorageEnabled:    true,
@@ -305,7 +308,7 @@ func TestDistributor_Push_ShouldReturnErrorMappedTo4xxStatusCodeIfWriteRequestCo
 		// We expect a gRPC error.
 		errStatus, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
-		assert.Equal(t, codes.FailedPrecondition, errStatus.Code())
+		assert.Equal(t, codes.InvalidArgument, errStatus.Code())
 		assert.ErrorContains(t, errStatus.Err(), ingest.ErrWriteRequestDataItemTooLarge.Error())
 
 		// We expect the gRPC error to be detected as client error.
@@ -321,7 +324,7 @@ func TestDistributor_Push_ShouldReturnErrorMappedTo4xxStatusCodeIfWriteRequestCo
 		sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
 
 		// Send write request through the HTTP handler.
-		h := Handler(maxRecvMsgSize, nil, sourceIPs, false, nil, RetryConfig{}, distributors[0].PushWithMiddlewares, nil, log.NewNopLogger())
+		h := Handler(maxRecvMsgSize, nil, sourceIPs, false, overrides, RetryConfig{}, distributors[0].PushWithMiddlewares, nil, log.NewNopLogger())
 		h.ServeHTTP(resp, createRequest(t, marshalledReq))
 		assert.Equal(t, http.StatusBadRequest, resp.Code)
 	})
