@@ -531,11 +531,25 @@ func buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.T
 
 func buildGrafanaReceiverIntegrations(rcv *definition.PostableApiReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
 	loggerFactory := newLoggerFactory(logger)
+	smtpCfg := SmtpConfig{
+		SmtpEnabled:    true,
+		ExternalURL:    "http://test.test",
+		FromName:       "Erich From",
+		FromAddress:    "erichfrom@test.com",
+		Host:           "mailhog:1025",
+		SkipVerify:     true,
+		User:           "",
+		Password:       "",
+		EhloIdentity:   "",
+		StartTLSPolicy: "",
+		StaticHeaders:  map[string]string{"header-key-1:": "header-value-1"},
+		ContentTypes:   []string{},
+	}
 	whFn := func(n alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
-		return NewSender(logger), nil
+		return NewSender(logger, smtpCfg), nil
 	}
 	emailFn := func(n alertingReceivers.Metadata) (alertingReceivers.EmailSender, error) {
-		return NewSender(logger), nil
+		return NewSender(logger, smtpCfg), nil
 	}
 
 	// The decrypt functions and the context are used to decrypt the configuration.

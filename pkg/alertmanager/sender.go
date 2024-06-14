@@ -28,28 +28,31 @@ var (
 	ErrInvalidMethod = errors.New("webhook only supports HTTP methods PUT or POST")
 )
 
+type SmtpConfig struct {
+	SmtpEnabled    bool
+	ExternalURL    string
+	FromName       string
+	FromAddress    string
+	Host           string
+	SkipVerify     bool
+	CertFile       string
+	KeyFile        string
+	User           string
+	Password       string
+	EhloIdentity   string
+	StartTLSPolicy string
+	StaticHeaders  map[string]string
+	ContentTypes   []string
+}
+
 type Sender struct {
 	c   *http.Client
 	log log.Logger
 
-	// TODO: set
-	smtpEnabled    bool
-	externalURL    string
-	fromName       string
-	fromAddress    string
-	host           string
-	skipVerify     bool
-	certFile       string
-	keyFile        string
-	user           string
-	password       string
-	ehloIdentity   string
-	startTLSPolicy string
-	staticHeaders  map[string]string
-	contentTypes   []string
+	smtp SmtpConfig
 }
 
-func NewSender(log log.Logger) *Sender {
+func NewSender(log log.Logger, cfg SmtpConfig) *Sender {
 	netTransport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			Renegotiation: tls.RenegotiateFreelyAsClient,
@@ -65,8 +68,9 @@ func NewSender(log log.Logger) *Sender {
 		Transport: netTransport,
 	}
 	return &Sender{
-		c:   c,
-		log: log,
+		c:    c,
+		log:  log,
+		smtp: cfg,
 	}
 }
 

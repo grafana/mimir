@@ -107,7 +107,7 @@ func (s *Sender) buildEmailMessage(cmd *SendEmailCommand) (*Message, error) {
 		data = make(map[string]any, 10)
 	}
 
-	setDefaultTemplateData(s.externalURL, data, nil)
+	setDefaultTemplateData(s.smtp.ExternalURL, data, nil)
 
 	body := make(map[string]string)
 	// TODO: what?
@@ -154,7 +154,7 @@ func (s *Sender) buildEmailMessage(cmd *SendEmailCommand) (*Message, error) {
 		}
 	}
 
-	addr := mail.Address{Name: s.fromName, Address: s.fromAddress}
+	addr := mail.Address{Name: s.smtp.FromName, Address: s.smtp.FromAddress}
 	return &Message{
 		To:            cmd.To,
 		SingleEmail:   cmd.SingleEmail,
@@ -229,7 +229,7 @@ func (s *Sender) Send(ctx context.Context, messages ...*Message) (int, error) {
 }
 
 func (s *Sender) createDialer() (*gomail.Dialer, error) {
-	host, port, err := net.SplitHostPort(s.host)
+	host, port, err := net.SplitHostPort(s.smtp.Host)
 	if err != nil {
 		return nil, err
 	}
@@ -239,22 +239,22 @@ func (s *Sender) createDialer() (*gomail.Dialer, error) {
 	}
 
 	tlsconfig := &tls.Config{
-		InsecureSkipVerify: s.skipVerify,
+		InsecureSkipVerify: s.smtp.SkipVerify,
 		ServerName:         host,
 	}
 
-	if s.certFile != "" {
-		cert, err := tls.LoadX509KeyPair(s.certFile, s.keyFile)
+	if s.smtp.CertFile != "" {
+		cert, err := tls.LoadX509KeyPair(s.smtp.CertFile, s.smtp.KeyFile)
 		if err != nil {
 			return nil, fmt.Errorf("could not load cert or key file: %w", err)
 		}
 		tlsconfig.Certificates = []tls.Certificate{cert}
 	}
 
-	d := gomail.NewDialer(host, iPort, s.user, s.password)
+	d := gomail.NewDialer(host, iPort, s.smtp.User, s.smtp.Password)
 	d.TLSConfig = tlsconfig
-	d.StartTLSPolicy = getStartTLSPolicy(s.startTLSPolicy)
-	d.LocalName = s.ehloIdentity
+	d.StartTLSPolicy = getStartTLSPolicy(s.smtp.StartTLSPolicy)
+	d.LocalName = s.smtp.EhloIdentity
 
 	return d, nil
 }
@@ -263,7 +263,7 @@ func (s *Sender) createDialer() (*gomail.Dialer, error) {
 func (s *Sender) buildEmail(ctx context.Context, msg *Message) *gomail.Message {
 	m := gomail.NewMessage()
 	// add all static headers to the email message
-	for h, val := range s.staticHeaders {
+	for h, val := range s.smtp.StaticHeaders {
 		m.SetHeader(h, val)
 	}
 	m.SetHeader("From", msg.From)
@@ -280,11 +280,11 @@ func (s *Sender) buildEmail(ctx context.Context, msg *Message) *gomail.Message {
 	}
 	// loop over content types from settings in reverse order as they are ordered in according to descending
 	// preference while the alternatives should be ordered according to ascending preference
-	for i := len(s.contentTypes) - 1; i >= 0; i-- {
-		if i == len(s.contentTypes)-1 {
-			m.SetBody(s.contentTypes[i], msg.Body[s.contentTypes[i]])
+	for i := len(s.smtp.ContentTypes) - 1; i >= 0; i-- {
+		if i == len(s.smtp.ContentTypes)-1 {
+			m.SetBody(s.smtp.ContentTypes[i], msg.Body[s.smtp.ContentTypes[i]])
 		} else {
-			m.AddAlternative(s.contentTypes[i], msg.Body[s.contentTypes[i]])
+			m.AddAlternative(s.smtp.ContentTypes[i], msg.Body[s.smtp.ContentTypes[i]])
 		}
 	}
 
