@@ -217,24 +217,6 @@ func newQueryTripperware(
 	// Experimental functions can only be enabled globally, and not on a per-engine basis.
 	parser.EnableExperimentalFunctions = engineExperimentalFunctionsEnabled
 
-	// Metric used to keep track of each middleware execution duration.
-	metrics := newInstrumentMiddlewareMetrics(registerer)
-	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
-	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
-
-	remoteReadMiddleware := []MetricsQueryMiddleware{
-		// Empty for now.
-	}
-
-	queryRangeMiddleware := []MetricsQueryMiddleware{
-		// Track query range statistics. Added first before any subsequent middleware modifies the request.
-		queryStatsMiddleware,
-		newLimitsMiddleware(limits, log),
-		queryBlockerMiddleware,
-		newInstrumentMiddleware("step_align", metrics),
-		newStepAlignMiddleware(limits, log, registerer),
-	}
-
 	var c cache.Cache
 	if cfg.CacheResults || cfg.cardinalityBasedShardingEnabled() {
 		var err error
@@ -251,78 +233,7 @@ func newQueryTripperware(
 		cacheKeyGenerator = NewDefaultCacheKeyGenerator(codec, cfg.SplitQueriesByInterval)
 	}
 
-	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
-	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
-		shouldCache := func(r MetricsQueryRequest) bool {
-			return !r.GetOptions().CacheDisabled
-		}
-
-		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics), newSplitAndCacheMiddleware(
-			cfg.SplitQueriesByInterval > 0,
-			cfg.CacheResults,
-			cfg.SplitQueriesByInterval,
-			limits,
-			codec,
-			c,
-			cacheKeyGenerator,
-			cacheExtractor,
-			shouldCache,
-			log,
-			registerer,
-		))
-	}
-
-	queryInstantMiddleware := []MetricsQueryMiddleware{
-		// Track query range statistics. Added first before any subsequent middleware modifies the request.
-		queryStatsMiddleware,
-		newLimitsMiddleware(limits, log),
-		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
-		queryBlockerMiddleware,
-	}
-
-	if cfg.ShardedQueries {
-		// Inject the cardinality estimation middleware after time-based splitting and
-		// before query-sharding so that it can operate on the partial queries that are
-		// considered for sharding.
-		if cfg.cardinalityBasedShardingEnabled() {
-			cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(c, log, registerer)
-			queryRangeMiddleware = append(
-				queryRangeMiddleware,
-				newInstrumentMiddleware("cardinality_estimation", metrics),
-				cardinalityEstimationMiddleware,
-			)
-			queryInstantMiddleware = append(
-				queryInstantMiddleware,
-				newInstrumentMiddleware("cardinality_estimation", metrics),
-				cardinalityEstimationMiddleware,
-			)
-		}
-
-		queryshardingMiddleware := newQueryShardingMiddleware(
-			log,
-			engine,
-			limits,
-			cfg.TargetSeriesPerShard,
-			registerer,
-		)
-
-		queryRangeMiddleware = append(
-			queryRangeMiddleware,
-			newInstrumentMiddleware("querysharding", metrics),
-			queryshardingMiddleware,
-		)
-		queryInstantMiddleware = append(
-			queryInstantMiddleware,
-			newInstrumentMiddleware("querysharding", metrics),
-			queryshardingMiddleware,
-		)
-	}
-
-	if cfg.MaxRetries > 0 {
-		retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)
-		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
-		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
-	}
+	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(cfg, log, limits, codec, c, cacheKeyGenerator, cacheExtractor, engine, registerer)
 
 	return func(next http.RoundTripper) http.RoundTripper {
 		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
@@ -370,6 +281,113 @@ func newQueryTripperware(
 			}
 		})
 	}, nil
+}
+
+// newQueryMiddlewares creates and returns the middlewares that should injected for each type of request
+// handled by the query-frontend.
+func newQueryMiddlewares(
+	cfg Config,
+	log log.Logger,
+	limits Limits,
+	codec Codec,
+	cacheClient cache.Cache,
+	cacheKeyGenerator CacheKeyGenerator,
+	cacheExtractor Extractor,
+	engine *promql.Engine,
+	registerer prometheus.Registerer,
+) (queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware []MetricsQueryMiddleware) {
+	// Metric used to keep track of each middleware execution duration.
+	metrics := newInstrumentMiddlewareMetrics(registerer)
+	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
+	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
+
+	remoteReadMiddleware = []MetricsQueryMiddleware{
+		// Empty for now.
+	}
+
+	queryRangeMiddleware = append(queryRangeMiddleware,
+		// Track query range statistics. Added first before any subsequent middleware modifies the request.
+		queryStatsMiddleware,
+		newLimitsMiddleware(limits, log),
+		queryBlockerMiddleware,
+		newInstrumentMiddleware("step_align", metrics),
+		newStepAlignMiddleware(limits, log, registerer),
+	)
+
+	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
+	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
+		shouldCache := func(r MetricsQueryRequest) bool {
+			return !r.GetOptions().CacheDisabled
+		}
+
+		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics), newSplitAndCacheMiddleware(
+			cfg.SplitQueriesByInterval > 0,
+			cfg.CacheResults,
+			cfg.SplitQueriesByInterval,
+			limits,
+			codec,
+			cacheClient,
+			cacheKeyGenerator,
+			cacheExtractor,
+			shouldCache,
+			log,
+			registerer,
+		))
+	}
+
+	queryInstantMiddleware = append(queryInstantMiddleware,
+		// Track query range statistics. Added first before any subsequent middleware modifies the request.
+		queryStatsMiddleware,
+		newLimitsMiddleware(limits, log),
+		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
+		queryBlockerMiddleware,
+	)
+
+	if cfg.ShardedQueries {
+		// Inject the cardinality estimation middleware after time-based splitting and
+		// before query-sharding so that it can operate on the partial queries that are
+		// considered for sharding.
+		if cfg.cardinalityBasedShardingEnabled() {
+			cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(cacheClient, log, registerer)
+			queryRangeMiddleware = append(
+				queryRangeMiddleware,
+				newInstrumentMiddleware("cardinality_estimation", metrics),
+				cardinalityEstimationMiddleware,
+			)
+			queryInstantMiddleware = append(
+				queryInstantMiddleware,
+				newInstrumentMiddleware("cardinality_estimation", metrics),
+				cardinalityEstimationMiddleware,
+			)
+		}
+
+		queryshardingMiddleware := newQueryShardingMiddleware(
+			log,
+			engine,
+			limits,
+			cfg.TargetSeriesPerShard,
+			registerer,
+		)
+
+		queryRangeMiddleware = append(
+			queryRangeMiddleware,
+			newInstrumentMiddleware("querysharding", metrics),
+			queryshardingMiddleware,
+		)
+		queryInstantMiddleware = append(
+			queryInstantMiddleware,
+			newInstrumentMiddleware("querysharding", metrics),
+			queryshardingMiddleware,
+		)
+	}
+
+	if cfg.MaxRetries > 0 {
+		retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)
+		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
+		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
+	}
+
+	return
 }
 
 // newQueryDetailsStartEndRoundTripper parses "start" and "end" parameters from the query and sets same fields in the QueryDetails in the context.
