@@ -57,7 +57,7 @@
 * [ENHANCEMENT] Distributor: add `insight=true` to remote-write and OTLP write handlers when the HTTP response status code is 4xx. #8294
 * [ENHANCEMENT] Ingester: reduce locked time while matching postings for a label, improving the write latency and compaction speed. #8327
 * [ENHANCEMENT] Ingester: reduce the amount of locks taken during the Head compaction's garbage-collection process, improving the write latency and compaction speed. #8327
-* [ENHANCEMENT] Query-frontend: log the start, end time and matchers for remote read requests to the query stats logs. #8326 #8370
+* [ENHANCEMENT] Query-frontend: log the start, end time and matchers for remote read requests to the query stats logs. #8326 #8370 #8373
 * [ENHANCEMENT] Query-frontend: be able to block remote read queries via the per tenant runtime override `blocked_queries`. #8372
 * [BUGFIX] Distributor: prometheus retry on 5xx and 429 errors, while otlp collector only retry on 429, 502, 503 and 504, mapping other 5xx errors to the retryable ones in otlp endpoint. #8324 #8339
 * [BUGFIX] Distributor: make OTLP endpoint return marshalled proto bytes as response body for 4xx/5xx errors. #8227
@@ -149,6 +149,7 @@
 * [BUGFIX] Fix panic in `loadgen` subcommand. #7629
 * [ENHANCEMENT] Add `mimir-http-prefix` configuration to set the Mimir URL prefix when using legacy routes. #8069
 * [ENHANCEMENT] `mimirtool promql format`: Format PromQL query with Prometheus' string or pretty-print formatter. #7742
+* [ENHANCEMENT] Add option `--output-dir` to `mimirtool rules get` and `mimirtool rules print` to allow persisting rule groups to a file for edit and re-upload. #7247
 * [BUGFIX] `mimirtool rules prepare`: do not add aggregation label to `on()` clause if already present in `group_left()` or `group_right()`. #7839
 * [BUGFIX] Analyze Grafana: fix parsing queries with variables. #8062
 * [BUGFIX] `mimirtool rules sync`: detect a change when the `query_offset` or the deprecated `evaluation_delay` configuration changes. #8297
@@ -171,6 +172,7 @@
 
 * [ENHANCEMENT] Clarify Compactor and its storage volume when configured under Kubernetes. #7675
 * [ENHANCEMENT] Add OTLP route to _Mimir routes by path_ runbooks section. #8074
+* [ENHANCEMENT] Document option server.log-source-ips-full. #8268
 
 ### Tools
 
