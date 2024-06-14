@@ -411,7 +411,7 @@ func (r *LazyBinaryReader) controlLoop() {
 			r.metrics.unloadCount.Inc()
 			if err := loaded.reader.Close(); err != nil {
 				r.metrics.unloadFailedCount.Inc()
-				unloadPromise.response <- fmt.Errorf("closing bianry reader: %w", err)
+				unloadPromise.response <- fmt.Errorf("closing binary reader: %w", err)
 				continue
 			}
 
