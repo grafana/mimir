@@ -248,13 +248,23 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	jobLogger := log.With(c.logger, "groupKey", job.Key())
 	subDir := filepath.Join(c.compactDir, job.Key())
 
+	blockCount := len(job.metasByMinTime)
+
 	defer func() {
 		elapsed := time.Since(jobBeginTime)
 
+		jobType := "merge"
+		if job.UseSplitting() {
+			jobType = "split"
+		}
+
 		if rerr == nil {
-			level.Info(jobLogger).Log("msg", "compaction job succeeded", "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+			c.metrics.compactionJobDuration.WithLabelValues(jobType).Observe(elapsed.Seconds())
+			c.metrics.compactionJobBlocks.WithLabelValues(jobType).Observe(float64(blockCount))
+
+			level.Info(jobLogger).Log("msg", "compaction job succeeded", "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "block_count", blockCount)
 		} else {
-			level.Error(jobLogger).Log("msg", "compaction job failed", "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "err", rerr)
+			level.Error(jobLogger).Log("msg", "compaction job failed", "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "err", rerr, "block_count", blockCount)
 		}
 
 		if err := os.RemoveAll(subDir); err != nil {
@@ -290,7 +300,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 	toCompactStr := sb.String()
 
-	level.Info(jobLogger).Log("msg", "compaction available and planned; downloading blocks", "block_count", len(toCompact), "blocks", toCompactStr)
+	level.Info(jobLogger).Log("msg", "compaction available and planned; downloading blocks", "block_count", blockCount, "blocks", toCompactStr)
 
 	// Once we have a plan we need to download the actual data.
 	downloadBegin := time.Now()
@@ -341,7 +351,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 
 	elapsed := time.Since(downloadBegin)
-	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "block_count", len(blocksToCompactDirs), "blocks", toCompactStr, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "block_count", blockCount, "blocks", toCompactStr, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
 	compactionBegin := time.Now()
 
@@ -358,7 +368,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 	if !hasNonZeroULIDs(compIDs) {
 		// Prometheus compactor found that the compacted block would have no samples.
-		level.Info(jobLogger).Log("msg", "compacted block would have no samples, deleting source blocks", "blocks", toCompactStr)
+		level.Info(jobLogger).Log("msg", "compacted block would have no samples, deleting source blocks", "block_count", blockCount, "blocks", toCompactStr)
 		for _, meta := range toCompact {
 			if meta.Stats.NumSamples == 0 {
 				if err := deleteBlock(c.bkt, meta.ULID, filepath.Join(subDir, meta.ULID.String()), jobLogger, c.metrics.blocksMarkedForDeletion); err != nil {
@@ -371,7 +381,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 
 	elapsed = time.Since(compactionBegin)
-	level.Info(jobLogger).Log("msg", "compacted blocks", "new", fmt.Sprintf("%v", compIDs), "blocks", toCompactStr, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+	level.Info(jobLogger).Log("msg", "compacted blocks", "new_block_count", len(compIDs), "new_blocks", fmt.Sprintf("%v", compIDs), "block_count", blockCount, "blocks", toCompactStr, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
 	uploadBegin := time.Now()
 	uploadedBlocks := atomic.NewInt64(0)
@@ -658,6 +668,8 @@ type BucketCompactorMetrics struct {
 	blocksMarkedForDeletion            prometheus.Counter
 	blocksMarkedForNoCompact           *prometheus.CounterVec
 	blocksMaxTimeDelta                 prometheus.Histogram
+	compactionJobDuration              *prometheus.HistogramVec
+	compactionJobBlocks                *prometheus.HistogramVec
 }
 
 // NewBucketCompactorMetrics makes a new BucketCompactorMetrics.
@@ -687,6 +699,22 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}, []string{"level"}),
+		compactionJobDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_compactor_compaction_job_duration_seconds",
+			Help:                            "Duration of successful compaction job.",
+			Buckets:                         []float64{1 * 60, 5 * 60, 10 * 60, 15 * 60, 20 * 60, 30 * 60, 45 * 60, 60 * 60, 90 * 60},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+		}, []string{"type"}),
+		compactionJobBlocks: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_compactor_compaction_job_blocks",
+			Help:                            "Number of compacted blocks in successful compaction jobs.",
+			Buckets:                         []float64{4, 8, 16, 24, 32, 40, 48, 56, 64, 96},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+		}, []string{"type"}),
 		compactionBlocksVerificationFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_blocks_verification_failures_total",
 			Help: "Total number of failures when verifying min/max time ranges of compacted blocks.",
