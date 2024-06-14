@@ -51,7 +51,7 @@ type group struct {
 	floatSums           []float64
 	floatPresent        []bool
 	floatPointCount     int
-	histogramValues     []*histogram.FloatHistogram
+	histogramSums       []*histogram.FloatHistogram
 	histogramPointCount int
 }
 
@@ -172,32 +172,32 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 			thisSeriesGroup.floatPresent = thisSeriesGroup.floatPresent[:steps]
 		}
 
-		if len(s.Histograms) > 0 && thisSeriesGroup.histogramValues == nil {
+		if len(s.Histograms) > 0 && thisSeriesGroup.histogramSums == nil {
 			// First series for this group, populate it.
-			thisSeriesGroup.histogramValues, err = a.Pool.GetHistogramPointerSlice(steps)
+			thisSeriesGroup.histogramSums, err = a.Pool.GetHistogramPointerSlice(steps)
 			if err != nil {
 				return types.InstantVectorSeriesData{}, err
 			}
-			thisSeriesGroup.histogramValues = thisSeriesGroup.histogramValues[:steps]
+			thisSeriesGroup.histogramSums = thisSeriesGroup.histogramSums[:steps]
 		}
 
 		for _, p := range s.Floats {
 			idx := (p.T - start) / interval
 			thisSeriesGroup.floatSums[idx] += p.F
 			if !thisSeriesGroup.floatPresent[idx] {
-				thisSeriesGroup.floatPointCount += 1
+				thisSeriesGroup.floatPointCount++
 			}
 			thisSeriesGroup.floatPresent[idx] = true
 		}
 
 		for _, p := range s.Histograms {
 			idx := (p.T - start) / interval
-			if thisSeriesGroup.histogramValues[idx] == nil {
+			if thisSeriesGroup.histogramSums[idx] == nil {
 				// We copy here because we modify the histogram through Add later on.
-				thisSeriesGroup.histogramValues[idx] = p.H.Copy()
+				thisSeriesGroup.histogramSums[idx] = p.H.Copy()
 				thisSeriesGroup.histogramPointCount++
 			} else {
-				thisSeriesGroup.histogramValues[idx] = thisSeriesGroup.histogramValues[idx].Add(p.H)
+				thisSeriesGroup.histogramSums[idx] = thisSeriesGroup.histogramSums[idx].Add(p.H)
 			}
 		}
 
@@ -235,16 +235,16 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		for i, h := range thisGroup.histogramValues {
+		for i, h := range thisGroup.histogramSums {
 			if h != nil {
 				t := start + int64(i)*interval
-				histogramPoints = append(histogramPoints, promql.HPoint{T: t, H: thisGroup.histogramValues[i]})
+				histogramPoints = append(histogramPoints, promql.HPoint{T: t, H: thisGroup.histogramSums[i]})
 			}
 		}
 	}
 
-	a.Pool.PutHistogramPointerSlice(thisGroup.histogramValues)
-	thisGroup.histogramValues = nil
+	a.Pool.PutHistogramPointerSlice(thisGroup.histogramSums)
+	thisGroup.histogramSums = nil
 	thisGroup.histogramPointCount = 0
 
 	groupPool.Put(thisGroup)

@@ -212,7 +212,7 @@ func (p *LimitingPool) PutBoolSlice(s []bool) {
 	putWithElementSize(p, boolSlicePool, BoolSize, s)
 }
 
-// GetHistogramPointerSlice returns a slice of floatHistogram of length 0 and capacity greater than or equal to size.
+// GetHistogramPointerSlice returns a slice of FloatHistogram of length 0 and capacity greater than or equal to size.
 //
 // If the capacity of the returned slice would cause the max memory consumption limit to be exceeded, then an error is returned.
 //
@@ -232,7 +232,7 @@ func (p *LimitingPool) GetHistogramPointerSlice(size int) ([]*histogram.FloatHis
 	return s, nil
 }
 
-// PutHistogramPointerSlice returns a slice of floatHistogram to the pool and updates the current number of in-memory samples.
+// PutHistogramPointerSlice returns a slice of FloatHistogram to the pool and updates the current number of in-memory samples.
 func (p *LimitingPool) PutHistogramPointerSlice(s []*histogram.FloatHistogram) {
 	putWithElementSize(p, histogramSlicePool, HistogramPointerSize, s)
 }
