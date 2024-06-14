@@ -35,7 +35,7 @@ const (
 	// maxSyncConcurrency is the upper bound limit on the concurrency value that can be set.
 	maxSyncConcurrency = 32
 
-	// disallowedNamespaceChars is a regex pattern that matches characters that are not allowed in namespaces.
+	// disallowedNamespaceChars is a regex pattern that matches characters that are not allowed in namespaces. They are characters not allow in Linux and Windows file names.
 	disallowedNamespaceChars = `[<>:"/\\|?*\x00-\x1F]`
 )
 
