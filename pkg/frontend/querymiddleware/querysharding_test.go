@@ -1520,7 +1520,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			return nil, apierror.New(apierror.TypeInternal, "some internal error")
 		})
 		queryablePrometheusExecErr = storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
-			return nil, apierror.New(apierror.TypeExec, querier.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour).Error())
+			return nil, apierror.Newf(apierror.TypeExec, "expanding series: %s", querier.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour))
 		})
 		queryable = storageSeriesQueryable([]*promql.StorageSeries{
 			newSeries(labels.FromStrings("__name__", "bar1"), start.Add(-lookbackDelta), end, step, factor(5)),
@@ -1566,7 +1566,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			engineDownstream: engine,
 			engineSharding:   engineSampleLimit,
 			queryable:        queryableInternalErr,
-			expError:         apierror.New(apierror.TypeInternal, "expanding series: some internal error"),
+			expError:         apierror.New(apierror.TypeInternal, "some internal error"),
 		},
 		{
 			name:             "downstream - storage prometheus execution error",
