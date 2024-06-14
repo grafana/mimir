@@ -4,8 +4,11 @@ package validation
 
 import (
 	"errors"
+	"fmt"
+	"reflect"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
@@ -24,6 +27,10 @@ func TestNewLimitsMap(t *testing.T) {
 }
 
 func TestLimitsMap_SetAndString(t *testing.T) {
+	fmt.Println(reflect.TypeOf(LimitsMap[float64]{}).String())
+	fmt.Println(reflect.TypeOf(model.Duration(0)).String())
+	// validation.LimitsMap[float64]
+	// model.Duration
 	tc := []struct {
 		name     string
 		input    string

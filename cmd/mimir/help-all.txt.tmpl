@@ -2517,6 +2517,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of rule groups per-tenant. 0 to disable. (default 70)
   -ruler.max-rules-per-rule-group int
     	Maximum number of rules per rule group per-tenant. 0 to disable. (default 20)
+  -ruler.max-rules-per-rule-group-by-namespace value
+    	Maximum number of rules per rule group by namespace. Value is a map, where each key is the namespace and value is the number of rules allowed in the namespace (int64). On the command line, this map is given in a JSON format. The number of rules specified has the same meaning as -ruler.max-rules-per-rule-group, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rules-per-rule-group. (default {})
   -ruler.notification-queue-capacity int
     	Capacity of the queue for notifications to be sent to the Alertmanager. (default 10000)
   -ruler.notification-timeout duration

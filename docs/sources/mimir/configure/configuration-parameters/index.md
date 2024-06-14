@@ -3430,6 +3430,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ruler.sync-rules-on-changes-enabled
 [ruler_sync_rules_on_changes_enabled: <boolean> | default = true]
 
+ruler_max_rules_per_rule_group_by_namespace:
+
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
 # sharded across all store-gateway replicas.
@@ -3513,14 +3515,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -alertmanager.notification-rate-limit
 [alertmanager_notification_rate_limit: <float> | default = 0]
 
-# Per-integration notification rate limits. Value is a map, where each key is
-# integration name and value is a rate-limit (float). On command line, this map
-# is given in JSON format. Rate limit has the same meaning as
-# -alertmanager.notification-rate-limit, but only applies for specific
-# integration. Allowed integration names: webhook, email, pagerduty, opsgenie,
-# wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams.
-# CLI flag: -alertmanager.notification-rate-limit-per-integration
-[alertmanager_notification_rate_limit_per_integration: <map of string to float64> | default = {}]
+alertmanager_notification_rate_limit_per_integration:
 
 # Maximum size of configuration file for Alertmanager that tenant can upload via
 # Alertmanager API. 0 = no limit.
