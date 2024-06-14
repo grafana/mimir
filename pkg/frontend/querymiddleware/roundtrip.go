@@ -222,6 +222,10 @@ func newQueryTripperware(
 	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
 
+	remoteReadMiddleware := []MetricsQueryMiddleware{
+		// Empty for now.
+	}
+
 	queryRangeMiddleware := []MetricsQueryMiddleware{
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		queryStatsMiddleware,
@@ -323,6 +327,7 @@ func newQueryTripperware(
 	return func(next http.RoundTripper) http.RoundTripper {
 		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
 		instant := newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...)
+		remoteRead := newRemoteReadRoundTripper(next, remoteReadMiddleware...)
 
 		// Wrap next for cardinality, labels queries and all other queries.
 		// That attempts to parse "start" and "end" from the HTTP request and set them in the request's QueryDetails.
@@ -358,6 +363,8 @@ func newQueryTripperware(
 				return activeNativeHistogramMetrics.RoundTrip(r)
 			case IsLabelsQuery(r.URL.Path):
 				return labels.RoundTrip(r)
+			case IsRemoteReadQuery(r.URL.Path):
+				return remoteRead.RoundTrip(r)
 			default:
 				return next.RoundTrip(r)
 			}

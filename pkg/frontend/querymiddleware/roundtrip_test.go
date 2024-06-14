@@ -29,6 +29,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -499,6 +500,84 @@ func TestIsLabelsQuery(t *testing.T) {
 	for _, testData := range tests {
 		t.Run(testData.path, func(t *testing.T) {
 			assert.Equal(t, testData.expected, IsLabelsQuery(testData.path))
+		})
+	}
+}
+
+func TestRemoteReadMiddleware(t *testing.T) {
+	testCases := map[string]struct {
+		makeRequest         func() *http.Request
+		limits              mockLimits
+		expectError         bool
+		expectAPIError      bool
+		expectErrorContains string
+	}{
+		"valid query": {
+			makeRequest: generateTestRemoteReadRequest,
+			limits:      mockLimits{},
+		},
+	}
+
+	s := httptest.NewServer(
+		middleware.AuthenticateUser.Wrap(
+			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", jsonMimeType)
+				_, err := w.Write([]byte("{}"))
+				require.NoError(t, err)
+			}),
+		),
+	)
+	defer s.Close()
+
+	u, err := url.Parse(s.URL)
+	require.NoError(t, err)
+
+	downstream := singleHostRoundTripper{
+		host: u.Host,
+		next: http.DefaultTransport,
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			tw, err := NewTripperware(
+				Config{},
+				log.NewNopLogger(),
+				tc.limits,
+				newTestPrometheusCodec(),
+				nil,
+				promql.EngineOpts{
+					Logger:     log.NewNopLogger(),
+					Reg:        nil,
+					MaxSamples: 1000,
+					Timeout:    time.Minute,
+				},
+				true,
+				reg,
+			)
+			require.NoError(t, err)
+
+			req := tc.makeRequest()
+			require.NoError(t, err)
+
+			ctx := user.InjectOrgID(context.Background(), "user-1")
+			req = req.WithContext(ctx)
+			require.NoError(t, user.InjectOrgIDIntoHTTPRequest(ctx, req))
+
+			resp, err := tw(downstream).RoundTrip(req)
+			if tc.expectError {
+				require.Error(t, err)
+				if tc.expectAPIError {
+					require.True(t, apierror.IsAPIError(err))
+				}
+				if tc.expectErrorContains != "" {
+					require.Contains(t, err.Error(), tc.expectErrorContains)
+				}
+			} else {
+				require.NoError(t, err)
+				_, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+			}
 		})
 	}
 }
