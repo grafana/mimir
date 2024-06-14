@@ -35,6 +35,7 @@ func previousVersionImages(t *testing.T) map[string]e2emimir.FlagMapper {
 		for key, mapper := range overrides {
 			overrides[key] = e2emimir.ChainFlagMappers(mapper, defaultPreviousVersionGlobalOverrides)
 		}
+		return overrides
 	}
 
 	return DefaultPreviousVersionImages
