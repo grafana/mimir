@@ -118,17 +118,6 @@ func IsAPIError(err error) bool {
 	return errors.As(err, &apiErr)
 }
 
-// AddDetails adds details to an existing apiError, but keeps the type and handling.
-// If the error is not an apiError, it will wrap the error with the details.
-func AddDetails(err error, details string) error {
-	apiErr := &apiError{}
-	if !errors.As(err, &apiErr) {
-		return errors.Wrap(err, details)
-	}
-	apiErr.Message = fmt.Sprintf("%s: %s", details, apiErr.Message)
-	return apiErr
-}
-
 // IsNonRetryableAPIError returns true if err is an apiError which should be failed and not retried.
 func IsNonRetryableAPIError(err error) bool {
 	apiErr := &apiError{}
