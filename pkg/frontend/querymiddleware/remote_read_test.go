@@ -190,3 +190,38 @@ func generateTestRemoteReadRequest() *http.Request {
 
 	return request
 }
+
+// This is not a full test yet, only tests what's needed for the query blocker.
+func TestRemoteReadToMetricsQueryRequest(t *testing.T) {
+	remoteReadRequest := &prompb.ReadRequest{
+		Queries: []*prompb.Query{
+			{
+				Matchers: []*prompb.LabelMatcher{
+					{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "some_metric"},
+					{Name: "foo", Type: prompb.LabelMatcher_RE, Value: ".*bar.*"},
+				},
+				StartTimestampMs: 10,
+				EndTimestampMs:   20,
+			},
+			{
+				Matchers: []*prompb.LabelMatcher{
+					{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "up"},
+				},
+				Hints: &prompb.ReadHints{
+					StepMs: 1000,
+				},
+			},
+		},
+	}
+
+	expectedGetQuery := []string{
+		"{__name__=\"some_metric\",foo=~\".*bar.*\"}",
+		"{__name__=\"up\"}",
+	}
+
+	for i, query := range remoteReadRequest.Queries {
+		metricsQR, err := remoteReadToMetricsQueryRequest("something", query)
+		require.NoError(t, err)
+		require.Equal(t, expectedGetQuery[i], metricsQR.GetQuery())
+	}
+}
