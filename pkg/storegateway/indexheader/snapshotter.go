@@ -31,14 +31,14 @@ type Snapshotter struct {
 	logger log.Logger
 	conf   SnapshotterConfig
 
-	done chan struct{}
+	stop chan struct{}
 }
 
 func NewSnapshotter(logger log.Logger, conf SnapshotterConfig) *Snapshotter {
 	return &Snapshotter{
 		logger: logger,
 		conf:   conf,
-		done:   make(chan struct{}),
+		stop:   make(chan struct{}),
 	}
 }
 
@@ -60,7 +60,7 @@ func (s *Snapshotter) Start(ctx context.Context, bl blocksLoader) error {
 			select {
 			case <-ctx.Done():
 				return
-			case <-s.done:
+			case <-s.stop:
 				return
 			case <-tick.C:
 				if err := s.PersistLoadedBlocks(bl); err != nil {
@@ -74,7 +74,7 @@ func (s *Snapshotter) Start(ctx context.Context, bl blocksLoader) error {
 }
 
 func (s *Snapshotter) Stop() {
-	close(s.done)
+	close(s.stop)
 }
 
 func (s *Snapshotter) PersistLoadedBlocks(bl blocksLoader) error {

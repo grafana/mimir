@@ -81,16 +81,18 @@ type BucketStoreStats struct {
 // This makes them smaller, but takes extra CPU and memory.
 // When used with in-memory cache, memory usage should decrease overall, thanks to postings being smaller.
 type BucketStore struct {
-	userID                  string
-	logger                  log.Logger
-	metrics                 *BucketStoreMetrics
-	bkt                     objstore.InstrumentedBucketReader
-	fetcher                 block.MetadataFetcher
-	dir                     string
-	indexCache              indexcache.IndexCache
-	indexReaderPool         *indexheader.ReaderPool
-	indexHeadersSnapshotter *indexheader.Snapshotter
-	seriesHashCache         *hashcache.SeriesHashCache
+	userID          string
+	logger          log.Logger
+	metrics         *BucketStoreMetrics
+	bkt             objstore.InstrumentedBucketReader
+	fetcher         block.MetadataFetcher
+	dir             string
+	indexCache      indexcache.IndexCache
+	indexReaderPool *indexheader.ReaderPool
+	seriesHashCache *hashcache.SeriesHashCache
+
+	snapshotter          *indexheader.Snapshotter
+	snapshotterStartOnce sync.Once
 
 	// Sets of blocks that have the same labels. They are indexed by a hash over their label set.
 	blocksMx sync.RWMutex
@@ -243,11 +245,11 @@ func NewBucketStore(
 		Path:   dir,
 		UserID: userID,
 	}
-	s.indexHeadersSnapshotter = indexheader.NewSnapshotter(s.logger, snapConfig)
+	s.snapshotter = indexheader.NewSnapshotter(s.logger, snapConfig)
 
 	var lazyLoadedBlocks map[ulid.ULID]int64
 	if bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled {
-		lazyLoadedBlocks = s.indexHeadersSnapshotter.RestoreLoadedBlocks()
+		lazyLoadedBlocks = s.snapshotter.RestoreLoadedBlocks()
 	}
 	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics, lazyLoadedBlocks)
 
@@ -263,7 +265,7 @@ func (s *BucketStore) RemoveBlocksAndClose() error {
 	err := s.removeAllBlocks()
 
 	// Release other resources even if it failed to close some blocks.
-	s.indexHeadersSnapshotter.Stop()
+	s.snapshotter.Stop()
 	s.indexReaderPool.Close()
 
 	return err
@@ -358,6 +360,16 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 		level.Info(s.logger).Log("msg", "dropped outdated block", "block", id)
 	}
 
+	// Start snapshotter in the end of the sync, but do that only once per BucketStore's life time.
+	// We do that here so the snapshotter watched after blocks from both initial sync and those discovered later.
+	var err error
+	s.snapshotterStartOnce.Do(func() {
+		err = s.snapshotter.Start(ctx, s.indexReaderPool)
+	})
+	if err != nil {
+		return errors.Wrap(err, "start index headers snapshotter")
+	}
+
 	return nil
 }
 
@@ -366,10 +378,6 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 func (s *BucketStore) InitialSync(ctx context.Context) error {
 	if err := s.syncBlocks(ctx, true); err != nil {
 		return errors.Wrap(err, "sync block")
-	}
-
-	if err := s.indexHeadersSnapshotter.Start(ctx, s.indexReaderPool); err != nil {
-		return errors.Wrap(err, "start index headers snapshotter")
 	}
 
 	fis, err := os.ReadDir(s.dir)
