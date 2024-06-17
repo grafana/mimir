@@ -242,7 +242,7 @@ func TestIngester_StartReadRequest(t *testing.T) {
 		utilizationLimiter   = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 	)
 
-	setupIngester := func(tc testCase) *failingIngester {
+	setupIngester := func(testCase) *failingIngester {
 		cfg := defaultIngesterTestConfig(t)
 		cfg.ReadCircuitBreaker = CircuitBreakerConfig{
 			Enabled:        true,

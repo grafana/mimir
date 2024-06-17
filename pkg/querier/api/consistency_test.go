@@ -34,7 +34,7 @@ func BenchmarkReadConsistencyServerUnaryInterceptor(b *testing.B) {
 			ctx := metadata.NewIncomingContext(context.Background(), md)
 
 			for n := 0; n < b.N; n++ {
-				_, _ = ReadConsistencyServerUnaryInterceptor(ctx, nil, nil, func(ctx context.Context, req any) (any, error) {
+				_, _ = ReadConsistencyServerUnaryInterceptor(ctx, nil, nil, func(context.Context, any) (any, error) {
 					return nil, nil
 				})
 			}
