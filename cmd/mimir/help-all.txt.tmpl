@@ -1537,8 +1537,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Period with which to update the per-tenant TSDB configuration. (default 15s)
   -ingester.use-ingester-owned-series-for-limits
     	[experimental] When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.
-  -log.buffered
-    	[deprecated] Use a buffered logger to reduce write contention. (default true)
   -log.format string
     	Output log messages in the given format. Valid formats: [logfmt, json] (default "logfmt")
   -log.level value
