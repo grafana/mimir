@@ -531,10 +531,10 @@ func buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.T
 
 func buildGrafanaReceiverIntegrations(rcv *definition.PostableApiReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
 	loggerFactory := newLoggerFactory(logger)
-	whFn := func(n alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
+	whFn := func(alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
 		return NewSender(logger), nil
 	}
-	emailFn := func(n alertingReceivers.Metadata) (alertingReceivers.EmailSender, error) {
+	emailFn := func(alertingReceivers.Metadata) (alertingReceivers.EmailSender, error) {
 		return NewSender(logger), nil
 	}
 

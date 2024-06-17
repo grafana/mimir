@@ -30,14 +30,14 @@ func TestFunctionOverInstantVector(t *testing.T) {
 	}
 
 	metadataFuncCalled := false
-	mustBeCalledMetadata := func(seriesMetadata []types.SeriesMetadata, pool *pooling.LimitingPool) ([]types.SeriesMetadata, error) {
+	mustBeCalledMetadata := func(seriesMetadata []types.SeriesMetadata, _ *pooling.LimitingPool) ([]types.SeriesMetadata, error) {
 		require.Equal(t, len(inner.series), len(seriesMetadata))
 		metadataFuncCalled = true
 		return nil, nil
 	}
 
 	seriesDataFuncCalledTimes := 0
-	mustBeCalledSeriesData := func(seriesData types.InstantVectorSeriesData, pool *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
+	mustBeCalledSeriesData := func(types.InstantVectorSeriesData, *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
 		seriesDataFuncCalledTimes++
 		return types.InstantVectorSeriesData{}, nil
 	}

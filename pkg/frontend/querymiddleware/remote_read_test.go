@@ -121,7 +121,7 @@ func TestRemoteReadRoundTripperCallsDownstreamOnAll(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			roundTripper := &mockRoundTripper{}
 			countMiddleWareCalls := 0
-			middleware := MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+			middleware := MetricsQueryMiddlewareFunc(func(MetricsQueryHandler) MetricsQueryHandler {
 				countMiddleWareCalls++
 				return tc.handler
 			})

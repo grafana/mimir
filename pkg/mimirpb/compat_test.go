@@ -8,7 +8,6 @@ package mimirpb
 import (
 	stdlibjson "encoding/json"
 	"math"
-	"reflect"
 	"strconv"
 	"testing"
 	"unsafe"
@@ -197,9 +196,7 @@ func TestFromLabelAdaptersToLabelsWithCopy(t *testing.T) {
 
 	// All strings must be copied.
 	actualValue := actual.Get("hello")
-	hInputValue := (*reflect.StringHeader)(unsafe.Pointer(&input[0].Value))
-	hActualValue := (*reflect.StringHeader)(unsafe.Pointer(&actualValue))
-	assert.NotEqual(t, hInputValue.Data, hActualValue.Data)
+	assert.NotSame(t, unsafe.StringData(input[0].Value), unsafe.StringData(actualValue))
 }
 
 func BenchmarkFromLabelAdaptersToLabelsWithCopy(b *testing.B) {
