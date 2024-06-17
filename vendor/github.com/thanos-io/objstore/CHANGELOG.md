@@ -45,7 +45,9 @@ We use *breaking :warning:* to mark changes that are not backward compatible (re
 - [#86](https://github.com/thanos-io/objstore/pull/86) GCS: Add HTTP Config to GCS
 - [#99](https://github.com/thanos-io/objstore/pull/99) Swift: Add HTTP_Config
 - [#108](https://github.com/thanos-io/objstore/pull/108) Metrics: Add native histogram definitions to histograms
+- [#112](https://github.com/thanos-io/objstore/pull/112) S3: Add `DisableDualstack option.
 - [#100](https://github.com/thanos-io/objstore/pull/100) s3: add DisableMultipart option
+- [#116](https://github.com/thanos-io/objstore/pull/116) Azure: Add new storage_create_container configuration property
 
 ### Changed
 - [#38](https://github.com/thanos-io/objstore/pull/38) *: Upgrade minio-go version to `v7.0.45`.

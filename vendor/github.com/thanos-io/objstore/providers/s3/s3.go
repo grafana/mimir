@@ -117,6 +117,7 @@ type Config struct {
 	Bucket             string             `yaml:"bucket"`
 	Endpoint           string             `yaml:"endpoint"`
 	Region             string             `yaml:"region"`
+	DisableDualstack   bool               `yaml:"disable_dualstack"`
 	AWSSDKAuth         bool               `yaml:"aws_sdk_auth"`
 	AccessKey          string             `yaml:"access_key"`
 	Insecure           bool               `yaml:"insecure"`
@@ -300,6 +301,11 @@ func NewBucketWithConfig(logger log.Logger, config Config, component string) (*B
 			sseErrMsg := errors.Errorf("Unsupported type %q was provided. Supported types are SSE-S3, SSE-KMS, SSE-C", config.SSEConfig.Type)
 			return nil, errors.Wrap(sseErrMsg, "Initialize s3 client SSE Config")
 		}
+	}
+
+	if config.DisableDualstack {
+		// The value in the config is inverted for backward compatibility
+		client.SetS3EnableDualstack(false)
 	}
 
 	if config.TraceConfig.Enable {
