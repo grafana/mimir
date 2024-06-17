@@ -55,10 +55,6 @@ The following features are currently experimental:
   - Enable cleanup of remaining files in the tenant bucket when there are no blocks remaining in the bucket index.
     - `-compactor.no-blocks-file-cleanup-enabled`
 - Ruler
-  - Tenant federation
-  - Disable alerting and recording rules evaluation on a per-tenant basis
-    - `-ruler.recording-rules-evaluation-enabled`
-    - `-ruler.alerting-rules-evaluation-enabled`
   - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
 - Distributor
   - Metrics relabeling
@@ -152,7 +148,7 @@ The following features are currently experimental:
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
-  - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters)
+  - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
   - Max number of tenants that may be queried at once (`-tenant-federation.max-tenants`)
