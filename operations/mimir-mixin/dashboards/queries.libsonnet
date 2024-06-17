@@ -420,6 +420,7 @@ local filename = 'mimir-queries.json';
           '{{stage}}'
         ) +
         $.stack +
+        $.showAllTooltip +
         { fieldConfig+: { defaults+: { unit: 's' } } },
       )
       .addPanel(
@@ -431,6 +432,7 @@ local filename = 'mimir-queries.json';
           '{{stage}}'
         ) +
         $.stack +
+        $.showAllTooltip +
         { fieldConfig+: { defaults+: { unit: 's' } } },
       )
       .addPanel(

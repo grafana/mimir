@@ -515,13 +515,13 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 	}
 }
 
-func TestStreamingPromQLEngine(t *testing.T) {
+func TestMimirPromQLEngine(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
 
 	flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-		"-querier.promql-engine": "streaming",
+		"-querier.promql-engine": "mimir",
 	})
 
 	consul := e2edb.NewConsul()

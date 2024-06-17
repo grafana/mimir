@@ -10,6 +10,10 @@ keywords:
 cascade:
   MIMIR_DOCS_VERSION: "v2.12.x"
   gem_docs_version: "v2.12.x"
+refs:
+  grafana-mimir:
+    - pattern: /
+      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/
 ---
 
 # Grafana mimir-distributed Helm chart documentation
@@ -19,7 +23,3 @@ The mimir-distributed Helm chart for [Grafana Mimir] and [Grafana Enterprise Met
 > **Note:** By default, the mimir-distributed Helm chart documentation applies to both Grafana Mimir and GEM. If it only applies to GEM, it is explicitly stated.
 
 {{< section menuTitle="true" >}}
-
-{{% docs/reference %}}
-[Grafana Mimir]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>"
-{{% /docs/reference %}}

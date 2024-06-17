@@ -19,7 +19,7 @@ type AlertConfigDescs struct {
 
 // ToProto transforms a yaml Alertmanager config and map of template files to an AlertConfigDesc.
 func ToProto(cfg string, templates map[string]string, user string) AlertConfigDesc {
-	tmpls := []*TemplateDesc{}
+	tmpls := make([]*TemplateDesc, 0, len(templates))
 	for fn, body := range templates {
 		tmpls = append(tmpls, &TemplateDesc{
 			Body:     body,

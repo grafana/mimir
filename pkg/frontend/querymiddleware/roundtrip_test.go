@@ -12,12 +12,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/api"
@@ -29,6 +32,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -115,9 +119,9 @@ func TestInstantTripperware(t *testing.T) {
 	codec := newTestPrometheusCodec()
 
 	tw, err := NewTripperware(
-		Config{
-			ShardedQueries: true,
-		},
+		makeTestConfig(func(cfg *Config) {
+			cfg.ShardedQueries = true
+		}),
 		log.NewNopLogger(),
 		mockLimits{totalShards: totalShards},
 		codec,
@@ -435,6 +439,99 @@ func TestTripperware_Metrics(t *testing.T) {
 	}
 }
 
+// TestMiddlewaresConsistency ensures that we don't forget to add a middleware to a given type of request
+// (e.g. range query, remote read, ...) when a new middleware is added. By default, it expects that a middleware
+// is added to each type of request, and then it allows to define exceptions when we intentionally don't
+// want a given middleware to be used for a specific request.
+func TestMiddlewaresConsistency(t *testing.T) {
+	cfg := makeTestConfig()
+	cfg.CacheResults = true
+	cfg.ShardedQueries = true
+
+	// Ensure all features are enabled, so that we assert on all middlewares.
+	require.NotZero(t, cfg.CacheResults)
+	require.NotZero(t, cfg.ShardedQueries)
+	require.NotZero(t, cfg.SplitQueriesByInterval)
+	require.NotZero(t, cfg.MaxRetries)
+
+	queryRangeMiddlewares, queryInstantMiddlewares, remoteReadMiddlewares := newQueryMiddlewares(
+		cfg,
+		log.NewNopLogger(),
+		mockLimits{
+			alignQueriesWithStep: true,
+		},
+		newTestPrometheusCodec(),
+		nil,
+		nil,
+		nil,
+		promql.NewEngine(promql.EngineOpts{}),
+		nil,
+	)
+
+	middlewaresByRequestType := map[string]struct {
+		instances  []MetricsQueryMiddleware
+		exceptions []string
+	}{
+		"instant query": {
+			instances:  queryInstantMiddlewares,
+			exceptions: []string{"splitAndCacheMiddleware", "stepAlignMiddleware"},
+		},
+		"range query": {
+			instances:  queryRangeMiddlewares,
+			exceptions: []string{"splitInstantQueryByIntervalMiddleware"},
+		},
+		"remote read": {
+			instances:  remoteReadMiddlewares,
+			exceptions: []string{"instrumentMiddleware", "limitsMiddleware", "querySharding", "queryStatsMiddleware", "retry", "splitAndCacheMiddleware", "splitInstantQueryByIntervalMiddleware", "stepAlignMiddleware"},
+		},
+	}
+
+	// Utility to get the name of the struct.
+	getName := func(i interface{}) string {
+		t := reflect.TypeOf(i)
+		if t.Kind() == reflect.Ptr {
+			t = t.Elem()
+		}
+		return t.Name()
+	}
+
+	// Utility to get the names of middlewares.
+	getMiddlewareNames := func(middlewares []MetricsQueryMiddleware) (names []string) {
+		for _, middleware := range middlewares {
+			handler := middleware.Wrap(&mockHandler{})
+			name := getName(handler)
+
+			names = append(names, name)
+		}
+
+		// Unique names.
+		slices.Sort(names)
+		names = slices.Compact(names)
+
+		return
+	}
+
+	// Get the (unique) names of all middlewares.
+	var allNames []string
+	for _, middlewares := range middlewaresByRequestType {
+		allNames = append(allNames, getMiddlewareNames(middlewares.instances)...)
+	}
+	slices.Sort(allNames)
+	allNames = slices.Compact(allNames)
+
+	// Ensure that all request types implements all middlewares, except exclusions.
+	for requestType, middlewares := range middlewaresByRequestType {
+		t.Run(requestType, func(t *testing.T) {
+			actualNames := getMiddlewareNames(middlewares.instances)
+			expectedNames := slices.DeleteFunc(slices.Clone(allNames), func(s string) bool {
+				return slices.Contains(middlewares.exceptions, s)
+			})
+
+			assert.ElementsMatch(t, expectedNames, actualNames)
+		})
+	}
+}
+
 func TestConfig_Validate(t *testing.T) {
 	tests := map[string]struct {
 		config        Config
@@ -503,6 +600,84 @@ func TestIsLabelsQuery(t *testing.T) {
 	}
 }
 
+func TestRemoteReadMiddleware(t *testing.T) {
+	testCases := map[string]struct {
+		makeRequest         func() *http.Request
+		limits              mockLimits
+		expectError         bool
+		expectAPIError      bool
+		expectErrorContains string
+	}{
+		"valid query": {
+			makeRequest: generateTestRemoteReadRequest,
+			limits:      mockLimits{},
+		},
+	}
+
+	s := httptest.NewServer(
+		middleware.AuthenticateUser.Wrap(
+			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", jsonMimeType)
+				_, err := w.Write([]byte("{}"))
+				require.NoError(t, err)
+			}),
+		),
+	)
+	defer s.Close()
+
+	u, err := url.Parse(s.URL)
+	require.NoError(t, err)
+
+	downstream := singleHostRoundTripper{
+		host: u.Host,
+		next: http.DefaultTransport,
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			tw, err := NewTripperware(
+				makeTestConfig(),
+				log.NewNopLogger(),
+				tc.limits,
+				newTestPrometheusCodec(),
+				nil,
+				promql.EngineOpts{
+					Logger:     log.NewNopLogger(),
+					Reg:        nil,
+					MaxSamples: 1000,
+					Timeout:    time.Minute,
+				},
+				true,
+				reg,
+			)
+			require.NoError(t, err)
+
+			req := tc.makeRequest()
+			require.NoError(t, err)
+
+			ctx := user.InjectOrgID(context.Background(), "user-1")
+			req = req.WithContext(ctx)
+			require.NoError(t, user.InjectOrgIDIntoHTTPRequest(ctx, req))
+
+			resp, err := tw(downstream).RoundTrip(req)
+			if tc.expectError {
+				require.Error(t, err)
+				if tc.expectAPIError {
+					require.True(t, apierror.IsAPIError(err))
+				}
+				if tc.expectErrorContains != "" {
+					require.Contains(t, err.Error(), tc.expectErrorContains)
+				}
+			} else {
+				require.NoError(t, err)
+				_, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 type singleHostRoundTripper struct {
 	host string
 	next http.RoundTripper
@@ -512,4 +687,18 @@ func (s singleHostRoundTripper) RoundTrip(r *http.Request) (*http.Response, erro
 	r.URL.Scheme = "http"
 	r.URL.Host = s.host
 	return s.next.RoundTrip(r)
+}
+
+func makeTestConfig(overrides ...func(*Config)) Config {
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+
+	// Enable remote read limits by default, in order to exercise the code in tests.
+	cfg.RemoteReadLimitsEnabled = true
+
+	for _, override := range overrides {
+		override(&cfg)
+	}
+
+	return cfg
 }

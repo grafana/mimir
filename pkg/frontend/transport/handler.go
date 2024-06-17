@@ -185,7 +185,15 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Limit the read body size.
 	r.Body = http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize)
 
-	params, err := util.ParseRequestFormWithoutConsumingBody(r)
+	var params url.Values
+	var err error
+
+	if r.Header.Get("Content-Type") == "application/x-protobuf" && querymiddleware.IsRemoteReadQuery(r.URL.Path) {
+		params, err = querymiddleware.ParseRemoteReadRequestWithoutConsumingBody(r)
+	} else {
+		params, err = util.ParseRequestFormWithoutConsumingBody(r)
+	}
+
 	if err != nil {
 		writeError(w, apierror.New(apierror.TypeBadData, err.Error()))
 		return

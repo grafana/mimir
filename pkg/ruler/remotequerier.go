@@ -97,6 +97,7 @@ func DialQueryFrontend(cfg QueryFrontendConfig) (httpgrpc.HTTPClient, error) {
 	}
 	opts = append(opts, grpc.WithDefaultServiceConfig(serviceConfig))
 
+	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(cfg.Address, opts...)
 	if err != nil {
 		return nil, err

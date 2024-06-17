@@ -59,9 +59,9 @@ func randAdditionalQueueDimension(allowEmpty bool) []string {
 // used by the queue mechanics, in order get a more meaningful % delta between competing queue implementations.
 func makeSchedulerRequest(tenantID string, additionalQueueDimensions []string) *SchedulerRequest {
 	return &SchedulerRequest{
-		Ctx:             context.Background(),
-		FrontendAddress: "http://query-frontend:8007",
-		UserID:          tenantID,
+		Ctx:          context.Background(),
+		FrontendAddr: "http://query-frontend:8007",
+		UserID:       tenantID,
 		Request: &httpgrpc.HTTPRequest{
 			Method: "GET",
 			Headers: []*httpgrpc.Header{
@@ -341,7 +341,7 @@ func queueProduce(
 	}
 	req := makeSchedulerRequest(tenantID, additionalQueueDimensions)
 	for {
-		err := queue.EnqueueRequestToDispatcher(tenantID, req, maxQueriersPerTenant, func() {})
+		err := queue.SubmitRequestToEnqueue(tenantID, req, maxQueriersPerTenant, func() {})
 		if err == nil {
 			break
 		}
@@ -388,7 +388,7 @@ type consumeRequest func(request Request) error
 func queueConsume(
 	ctx context.Context, queue *RequestQueue, querierID string, lastTenantIndex TenantIndex, consumeFunc consumeRequest,
 ) (TenantIndex, error) {
-	request, idx, err := queue.GetNextRequestForQuerier(ctx, lastTenantIndex, querierID)
+	request, idx, err := queue.WaitForRequestForQuerier(ctx, lastTenantIndex, querierID)
 	if err != nil {
 		return lastTenantIndex, err
 	}
@@ -435,7 +435,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	querier2wg.Add(1)
 	go func() {
 		defer querier2wg.Done()
-		_, _, err := queue.GetNextRequestForQuerier(ctx, FirstTenant(), "querier-2")
+		_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), "querier-2")
 		require.NoError(t, err)
 	}()
 
@@ -450,7 +450,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: randAdditionalQueueDimension(true),
 	}
-	require.NoError(t, queue.EnqueueRequestToDispatcher("user-1", req, 1, nil))
+	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, 1, nil))
 
 	startTime := time.Now()
 	done := make(chan struct{})
@@ -517,7 +517,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 	querier2wg.Add(1)
 	go func() {
 		defer querier2wg.Done()
-		_, _, err := queue.GetNextRequestForQuerier(ctx, FirstTenant(), "querier-2")
+		_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), "querier-2")
 		require.NoError(t, err)
 	}()
 
@@ -533,7 +533,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: randAdditionalQueueDimension(true),
 	}
-	require.NoError(t, queue.EnqueueRequestToDispatcher("user-1", req, 2, nil))
+	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, 2, nil))
 
 	startTime := time.Now()
 	done := make(chan struct{})
@@ -578,11 +578,11 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
-		_, _, err := queue.GetNextRequestForQuerier(ctx, FirstTenant(), querierID)
+		_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), querierID)
 		errChan <- err
 	}()
 
-	time.Sleep(20 * time.Millisecond) // Wait for GetNextRequestForQuerier to be waiting for a query.
+	time.Sleep(20 * time.Millisecond) // Wait for WaitForRequestForQuerier to be waiting for a query.
 	cancel()
 
 	select {
@@ -618,7 +618,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 	queue.SubmitRegisterQuerierConnection(querierID)
 	queue.SubmitNotifyQuerierShutdown(querierID)
 
-	_, _, err = queue.GetNextRequestForQuerier(context.Background(), FirstTenant(), querierID)
+	_, _, err = queue.WaitForRequestForQuerier(context.Background(), FirstTenant(), querierID)
 	require.EqualError(t, err, "querier has informed the scheduler it is shutting down")
 }
 
@@ -639,7 +639,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	require.NoError(t, err)
 
 	// bypassing queue dispatcher loop for direct usage of the queueBroker and
-	// passing a nextRequestForQuerierCall for a canceled querier connection
+	// passing a waitingQuerierConn for a canceled querier connection
 	queueBroker := newQueueBroker(queue.maxOutstandingPerTenant, queue.additionalQueueDimensionsEnabled, queue.forgetDelay)
 	queueBroker.addQuerierConnection(querierID)
 
@@ -659,16 +659,16 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	require.False(t, queueBroker.tenantQueuesTree.getNode(QueuePath{"tenant-1"}).IsEmpty())
 
 	ctx, cancel := context.WithCancel(context.Background())
-	call := &nextRequestForQuerierCall{
-		ctx:             ctx,
+	call := &waitingQuerierConn{
+		querierConnCtx:  ctx,
 		querierID:       QuerierID(querierID),
 		lastTenantIndex: FirstTenant(),
-		resultChan:      make(chan nextRequestForQuerier),
+		recvChan:        make(chan requestForQuerier),
 	}
 	cancel() // ensure querier context done before send is attempted
 
 	// send to querier will fail but method returns true,
-	// indicating not to re-submit a request for nextRequestForQuerierCall for the querier
+	// indicating not to re-submit a request for waitingQuerierConn for the querier
 	require.True(t, queue.trySendNextRequestForQuerier(call))
 	// assert request was re-enqueued for tenant after failed send
 	require.False(t, queueBroker.tenantQueuesTree.getNode(QueuePath{"tenant-1"}).IsEmpty())

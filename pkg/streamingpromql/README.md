@@ -52,7 +52,7 @@ flowchart TB
     max --> output
 ```
 
-Each of these operators satisfies the `InstantVectorOperator` interface, defined [here](./operator/operator.go).
+Each of these operators satisfies the `InstantVectorOperator` interface, defined [here](./types/operator.go).
 The two key methods of this interface are `SeriesMetadata()` and `NextSeries()`:
 
 `SeriesMetadata()` returns the list of all series' labels that will be returned by the operator[^2].

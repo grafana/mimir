@@ -315,22 +315,27 @@ func (c *MemcachedClient) Name() string {
 }
 
 func (c *MemcachedClient) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
-	c.setMultiAsync(data, ttl, func(key string, buf []byte, ttl time.Duration) error {
-		return c.client.Set(&memcache.Item{
-			Key:        key,
-			Value:      buf,
-			Expiration: int32(ttl.Seconds()),
-		})
-	})
+	c.setMultiAsync(data, ttl, c.setSingleItem)
 }
 
 func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration) {
-	c.setAsync(key, value, ttl, func(key string, buf []byte, ttl time.Duration) error {
-		return c.client.Set(&memcache.Item{
-			Key:        key,
-			Value:      buf,
-			Expiration: int32(ttl.Seconds()),
-		})
+	c.setAsync(key, value, ttl, c.setSingleItem)
+}
+
+func (c *MemcachedClient) setSingleItem(key string, value []byte, ttl time.Duration) error {
+	ttlSeconds := int32(ttl.Seconds())
+	// If a TTL of exactly 0 is passed, we honor it and pass it to Memcached which will
+	// interpret it as an infinite TTL. However, if we get a non-zero TTL that is truncated
+	// to 0 seconds, we discard the update since the caller didn't intend to set an infinite
+	// TTL.
+	if ttl != 0 && ttlSeconds <= 0 {
+		return nil
+	}
+
+	return c.client.Set(&memcache.Item{
+		Key:        key,
+		Value:      value,
+		Expiration: ttlSeconds,
 	})
 }
 

@@ -96,6 +96,7 @@ local filename = 'mimir-tenants.json';
             '{{pod}}',
           ],
         ) +
+        $.showAllTooltip +
         {
           fieldConfig+: {
             defaults+: { custom+: { fillOpacity: 0 } },
@@ -107,10 +108,6 @@ local filename = 'mimir-tenants.json';
             ],
           },
           options+: {
-            tooltip+: {
-              mode: 'multi',
-              sort: 'desc',
-            },
             legend+: { showLegend: false },
           },
         } +
@@ -144,6 +141,7 @@ local filename = 'mimir-tenants.json';
             '{{pod}}',
           ],
         ) +
+        $.showAllTooltip +
         {
           fieldConfig+: {
             defaults+: { custom+: { fillOpacity: 0 } },
@@ -155,10 +153,6 @@ local filename = 'mimir-tenants.json';
             ],
           },
           options+: {
-            tooltip+: {
-              mode: 'multi',
-              sort: 'desc',
-            },
             legend+: { showLegend: false },
           },
         } +
@@ -762,18 +756,14 @@ local filename = 'mimir-tenants.json';
             (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{%s}[$__rate_interval])) == 0)
           ||| % [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)],
           '{{ job }}',
-        ) + {
+        ) +
+        $.showAllTooltip + {
           fieldConfig+: {
             defaults+: {
               custom+: {
                 fillOpacity: 50,
                 stacking+: { mode: 'normal' },
               },
-            },
-          },
-          options+: {
-            tooltip+: {
-              mode: 'multi',
             },
           },
         } +

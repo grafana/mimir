@@ -30,7 +30,9 @@ spec:
     type: OnDelete
   serviceName: scheduler-name-values-mimir-ingester-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -163,7 +165,9 @@ spec:
     type: OnDelete
   serviceName: scheduler-name-values-mimir-ingester-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -296,7 +300,9 @@ spec:
     type: OnDelete
   serviceName: scheduler-name-values-mimir-ingester-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:

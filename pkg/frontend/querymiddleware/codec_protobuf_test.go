@@ -21,7 +21,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-var expectedProtobufResponseHeaders = []*PrometheusResponseHeader{
+var expectedProtobufResponseHeaders = []*PrometheusHeader{
 	{
 		Name:   "Content-Type",
 		Values: []string{mimirpb.QueryResponseMimeType},
