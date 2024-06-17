@@ -131,7 +131,7 @@ func TestRemoteReadRoundTripperCallsDownstreamOnAll(t *testing.T) {
 			}
 
 			actualMiddleWareCalls := 0
-			middleware := MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+			middleware := MetricsQueryMiddlewareFunc(func(_ MetricsQueryHandler) MetricsQueryHandler {
 				actualMiddleWareCalls++
 				return tc.handler
 			})
@@ -240,8 +240,8 @@ func TestRemoteReadRoundTripper_ShouldAllowMiddlewaresToManipulateRequest(t *tes
 
 func TestRemoteReadRoundTripper_ShouldAllowMiddlewaresToReturnEmptyResponse(t *testing.T) {
 	// Create a middleware that return an empty response.
-	middleware := MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
-		return HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+	middleware := MetricsQueryMiddlewareFunc(func(_ MetricsQueryHandler) MetricsQueryHandler {
+		return HandlerFunc(func(_ context.Context, _ MetricsQueryRequest) (Response, error) {
 			return newEmptyPrometheusResponse(), nil
 		})
 	})

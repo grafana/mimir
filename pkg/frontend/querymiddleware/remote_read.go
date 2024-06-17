@@ -68,7 +68,7 @@ func (r *remoteReadRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 
 		// Run the query through the middlewares.
 		var updatedQueryReq *remoteReadQueryRequest
-		handler := r.middleware.Wrap(HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+		handler := r.middleware.Wrap(HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
 			var ok bool
 
 			// The middlewares are used only for validation, but some middlewares may manipulate
