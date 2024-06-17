@@ -283,6 +283,11 @@ func (c *Client) RemoteRead(metricName string, start, end time.Time) (_ *http.Re
 			return resp, queryResult, nil, fmt.Errorf("parsing remote read response: %w", err)
 		}
 		return resp, queryResult, nil, nil
+	case "application/json":
+		// The remote read protocol does not have a way to return an error message
+		// in the response body, thus the error message is returned as a Prometheus
+		// JSON results response.
+		fallthrough
 	case "text/plain; charset=utf-8":
 		respBytes, err := io.ReadAll(resp.Body)
 		return resp, nil, respBytes, err

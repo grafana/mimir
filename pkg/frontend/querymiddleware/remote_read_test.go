@@ -5,7 +5,6 @@ package querymiddleware
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +15,8 @@ import (
 	"github.com/golang/snappy"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
+
+	apierror "github.com/grafana/mimir/pkg/api/error"
 )
 
 var _ = MetricsQueryRequest(&remoteReadQueryRequest{})
@@ -94,7 +95,7 @@ type errorMiddleware struct {
 }
 
 func (s *errorMiddleware) Do(_ context.Context, _ MetricsQueryRequest) (Response, error) {
-	return nil, fmt.Errorf("TestErrorMiddleware")
+	return nil, apierror.New(apierror.TypeBadData, "TestErrorMiddleware")
 }
 
 func TestRemoteReadRoundTripperCallsDownstreamOnAll(t *testing.T) {
@@ -130,6 +131,17 @@ func TestRemoteReadRoundTripperCallsDownstreamOnAll(t *testing.T) {
 			if tc.expectError != "" {
 				require.Error(t, err)
 				require.Equal(t, tc.expectError, err.Error())
+				// The error has to be an apiError to have the correct formatting
+				// in the HTTP transport handler. Otherwise the wrapper error
+				// is lost. So we check the conversion to HTTP error here.
+				response, ok := apierror.HTTPResponseFromError(err)
+				require.True(t, ok)
+				require.Equal(t, http.StatusBadRequest, int(response.Code))
+				apiErr := apiResponse{}
+				require.NoError(t, json.Unmarshal(response.Body, &apiErr))
+				require.Equal(t, "error", apiErr.Status)
+				require.Equal(t, apierror.TypeBadData, apiErr.ErrorType)
+				require.Equal(t, tc.expectError, apiErr.Error)
 			} else {
 				require.NoError(t, err)
 			}
@@ -137,6 +149,12 @@ func TestRemoteReadRoundTripperCallsDownstreamOnAll(t *testing.T) {
 			require.Equal(t, tc.expectMiddlewareCalled, countMiddleWareCalls)
 		})
 	}
+}
+
+type apiResponse struct {
+	Status    string        `json:"status"`
+	ErrorType apierror.Type `json:"errorType,omitempty"`
+	Error     string        `json:"error,omitempty"`
 }
 
 func generateTestRemoteReadRequest() *http.Request {
@@ -171,4 +189,39 @@ func generateTestRemoteReadRequest() *http.Request {
 	request.Body = io.NopCloser(bytes.NewReader(compressed))
 
 	return request
+}
+
+// This is not a full test yet, only tests what's needed for the query blocker.
+func TestRemoteReadToMetricsQueryRequest(t *testing.T) {
+	remoteReadRequest := &prompb.ReadRequest{
+		Queries: []*prompb.Query{
+			{
+				Matchers: []*prompb.LabelMatcher{
+					{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "some_metric"},
+					{Name: "foo", Type: prompb.LabelMatcher_RE, Value: ".*bar.*"},
+				},
+				StartTimestampMs: 10,
+				EndTimestampMs:   20,
+			},
+			{
+				Matchers: []*prompb.LabelMatcher{
+					{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "up"},
+				},
+				Hints: &prompb.ReadHints{
+					StepMs: 1000,
+				},
+			},
+		},
+	}
+
+	expectedGetQuery := []string{
+		"{__name__=\"some_metric\",foo=~\".*bar.*\"}",
+		"{__name__=\"up\"}",
+	}
+
+	for i, query := range remoteReadRequest.Queries {
+		metricsQR, err := remoteReadToMetricsQueryRequest("something", query)
+		require.NoError(t, err)
+		require.Equal(t, expectedGetQuery[i], metricsQR.GetQuery())
+	}
 }

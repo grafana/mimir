@@ -308,6 +308,8 @@ func newQueryMiddlewares(
 	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
 
+	remoteReadMiddleware = append(remoteReadMiddleware, queryBlockerMiddleware)
+
 	queryRangeMiddleware = append(queryRangeMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		queryStatsMiddleware,
