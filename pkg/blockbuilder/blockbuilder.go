@@ -198,17 +198,14 @@ func (b *BlockBuilder) stopping(_ error) error {
 func (b *BlockBuilder) running(ctx context.Context) error {
 	// Do initial consumption on start using current time as the point up to which we are consuming.
 	// To avoid small blocks at startup, we consume until the last hour boundary + buffer.
-	cycleEnd := time.Now().Truncate(b.cfg.ConsumeInterval).Add(b.cfg.ConsumeIntervalBuffer)
-	if cycleEnd.After(time.Now()) {
-		cycleEnd = cycleEnd.Add(-b.cfg.ConsumeInterval)
-	}
+	cycleEnd := cycleEndAtStartup(b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
 	err := b.nextConsumeCycle(ctx, cycleEnd)
 	if err != nil {
 		return err
 	}
 
-	nextBlockTime := time.Now().Truncate(b.cfg.ConsumeInterval).Add(b.cfg.ConsumeInterval)
-	waitTime := time.Until(nextBlockTime)
+	nextCycleTime := time.Now().Truncate(b.cfg.ConsumeInterval).Add(b.cfg.ConsumeInterval + b.cfg.ConsumeIntervalBuffer)
+	waitTime := time.Until(nextCycleTime)
 
 	for {
 		select {
@@ -220,16 +217,23 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 
 			// If we took more than consumptionItvl time to consume the records, this
 			// will immediately start the next consumption.
-			nextBlockTime = nextBlockTime.Add(b.cfg.ConsumeInterval)
-			waitTime = time.Until(nextBlockTime)
+			nextCycleTime = nextCycleTime.Add(b.cfg.ConsumeInterval)
+			waitTime = time.Until(nextCycleTime)
 			if waitTime < 0 {
-				// TODO(codesome): track "-waitTime", which is the time we ran over. Or something better that lets us alert
-				// if it goes beyond a certain point consistently.
+				// TODO(codesome): track "-waitTime", which is the time we ran over. Should have an alert on this.
 			}
 		case <-ctx.Done():
 			return nil
 		}
 	}
+}
+
+func cycleEndAtStartup(interval, buffer time.Duration) time.Time {
+	cycleEnd := time.Now().Truncate(interval).Add(buffer)
+	if cycleEnd.After(time.Now()) {
+		cycleEnd = cycleEnd.Add(-interval)
+	}
+	return cycleEnd
 }
 
 // nextConsumeCycle manages consumption of currently assigned partitions.
@@ -239,7 +243,6 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 	b.assignmentMu.Lock()
 	assignment := b.assignment
 	b.assignmentMu.Unlock()
-
 	assignmentParts, ok := assignment[b.cfg.Kafka.Topic]
 	if !ok || len(assignmentParts) == 0 {
 		return fmt.Errorf("no partitions assigned in %+v, topic %s", assignment, b.cfg.Kafka.Topic)
@@ -296,13 +299,20 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 			level.Debug(b.logger).Log("part", offset.Partition, "offset", offset.At, "meta", offset.Metadata)
 			commitRecTs, seenTillTs, lastBlockEnd, err = unmarshallCommitMeta(offset.Metadata)
 			if err != nil {
-				return err
+				// If there is an error in unmarshalling the metadata, treat it as if
+				// we have no commit. There is no reason to stop the cycle for this.
+				level.Warn(b.logger).Log("msg", "error unmarshalling commit metadata", "part", part, "offset", offset.At, "metadata", offset.Metadata)
+				ok = false
 			}
 			commitRecTime = time.UnixMilli(commitRecTs)
 		} else {
 			level.Warn(b.logger).Log("msg", "didn't find partition", "part", part, "offsets", fmt.Sprintf("%+v", offsets))
 		}
 
+		// TODO(codesome): when we deploy it first, we will not have any kafka commit and we will
+		// be lagging. Add an option to block builder to start consuming from the end for the first rollout.
+		// 		TODO Optionally also explore a way to consume in parts without the presence of commit
+		//      so that we don't go into a crash loop (because of low resources) in worst case.
 		lagging := ok && cycleEnd.Sub(commitRecTime) > 3*b.cfg.ConsumeInterval/2
 		if !lagging {
 			// Either we did not find a commit offset or we are not lagging behind by
@@ -322,7 +332,6 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 		}
 
 		// We are lagging behind. We need to consume the partition in parts.
-
 		// We iterate through all the cycleEnds starting from the first one after commit until the cycleEnd.
 		cycleEndStartAt := commitRecTime.Truncate(b.cfg.ConsumeInterval).Add(b.cfg.ConsumeInterval + b.cfg.ConsumeIntervalBuffer)
 		for ce := cycleEndStartAt; cycleEnd.Sub(ce) >= 0; ce = ce.Add(b.cfg.ConsumeInterval) {
@@ -389,7 +398,8 @@ func (b *BlockBuilder) consumePartition(
 	)
 	for !done {
 		// Limit time client waits for a new batch. Otherwise, the client will hang if it lands on an inactive partition.
-		ctx1, cancel := context.WithTimeout(ctx, 5*time.Second)
+		// TODO: make it 5 seconds after writing tests. Made it less to run tests quickly during development.
+		ctx1, cancel := context.WithTimeout(ctx, 1*time.Second)
 		fetches := b.kafkaClient.PollFetches(ctx1)
 		cancel()
 		if fetches.IsClientClosed() {
@@ -439,6 +449,11 @@ func (b *BlockBuilder) consumePartition(
 			}
 			lastRec = rec
 		}
+		if lag <= 0 {
+			// TODO(codesome): Verify with Vladimir if this is okay. This makes tests go faster because
+			// otherwise the fetch waits until timeout for the next one.
+			break
+		}
 	}
 
 	if err := builder.compactAndUpload(ctx, b.blockUploaderForUser); err != nil {
@@ -451,10 +466,19 @@ func (b *BlockBuilder) consumePartition(
 		commitRec = lastRec
 	}
 
-	if lastRec != nil {
-		retSeenTillTs = lastRec.Timestamp.UnixMilli()
+	// We should take the max of "seen till" timestamp. If the partition was lagging
+	// due to some record not being processed because of a future sample, we might be
+	// coming back to the same consume cycle again.
+	if lastRec != nil && seenTillTs < lastRec.Timestamp.UnixMilli() {
+		seenTillTs = lastRec.Timestamp.UnixMilli()
 	}
-	return lag, retSeenTillTs, blockMax, commitRecord(ctx, b.logger, b.kafkaClient, b.cfg.Kafka.Topic, commitRec, lastRec, blockMax)
+	// Take the max of block max times because of same reasons above.
+	commitBlockMax := blockMax
+	if lastBlockMax > blockMax {
+		commitBlockMax = lastBlockMax
+	}
+	err = commitRecord(ctx, b.logger, b.kafkaClient, b.cfg.Kafka.Topic, commitRec, seenTillTs, commitBlockMax)
+	return lag, seenTillTs, commitBlockMax, err
 }
 
 func (b *BlockBuilder) blockUploaderForUser(ctx context.Context, userID string) blockUploader {
@@ -483,7 +507,7 @@ func (b *BlockBuilder) blockUploaderForUser(ctx context.Context, userID string) 
 	}
 }
 
-func commitRecord(ctx context.Context, l log.Logger, kc *kgo.Client, topic string, commitRec, lastReadRec *kgo.Record, blockEnd int64) error {
+func commitRecord(ctx context.Context, l log.Logger, kc *kgo.Client, topic string, commitRec *kgo.Record, readTillTs, blockEnd int64) error {
 	if commitRec == nil {
 		return nil
 	}
@@ -499,7 +523,7 @@ func commitRecord(ctx context.Context, l log.Logger, kc *kgo.Client, topic strin
 	})
 
 	ctx = kgo.PreCommitFnContext(ctx, func(req *kmsg.OffsetCommitRequest) error {
-		meta := marshallCommitMeta(commitRec.Timestamp.UnixMilli(), lastReadRec.Timestamp.UnixMilli(), blockEnd)
+		meta := marshallCommitMeta(commitRec.Timestamp.UnixMilli(), readTillTs, blockEnd)
 		for ti := range req.Topics {
 			if req.Topics[ti].Topic != topic {
 				continue
