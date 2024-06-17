@@ -66,3 +66,18 @@ func (m LimitsMap[T]) updateMap(newMap map[string]T) error {
 func (m LimitsMap[T]) MarshalYAML() (interface{}, error) {
 	return m.data, nil
 }
+
+// Equal compares two LimitsMap. This is needed to allow cmp.Equal to compare two LimitsMap.
+func (m LimitsMap[T]) Equal(other LimitsMap[T]) bool {
+	if len(m.data) != len(other.data) {
+		return false
+	}
+
+	for k, v := range m.data {
+		if other.data[k] != v {
+			return false
+		}
+	}
+
+	return true
+}
