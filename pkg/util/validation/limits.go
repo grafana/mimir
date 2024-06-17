@@ -435,7 +435,7 @@ func (l *Limits) validate() error {
 }
 
 func (l *Limits) copyNotificationIntegrationLimits(defaults LimitsMap[float64]) {
-	l.NotificationRateLimitPerIntegration = NotificationRateLimitMap() // TODO: We need to itnialise the map with the old length.
+	l.NotificationRateLimitPerIntegration = NotificationRateLimitMap()
 	for k, v := range defaults.data {
 		l.NotificationRateLimitPerIntegration.data[k] = v
 	}
@@ -854,7 +854,7 @@ func (o *Overrides) RulerMaxRulesPerRuleGroup(userID, namespace string) int {
 	u := o.getOverridesForUser(userID)
 
 	if namespaceLimit, ok := u.RulerMaxRulesPerRuleGroupByNamespace.data[namespace]; ok {
-		return int(namespaceLimit) // TODO: perhaps this should just be int.
+		return int(namespaceLimit)
 	}
 
 	return u.RulerMaxRulesPerRuleGroup
