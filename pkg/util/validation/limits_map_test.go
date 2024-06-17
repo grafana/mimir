@@ -11,7 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var fakeValidator = func(k string, v float64) error {
+var fakeValidator = func(_ string, v float64) error {
 	if v < 0 {
 		return errors.New("value cannot be negative")
 	}

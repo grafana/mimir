@@ -11,7 +11,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-var integrationsValidation = func(k string, v float64) error {
+var integrationsValidation = func(k string, _ float64) error {
 	if !util.StringsContain(allowedIntegrationNames, k) {
 		return errors.Errorf("unknown integration name: %s", k)
 	}
