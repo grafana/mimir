@@ -650,7 +650,10 @@ func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]Me
 		if err != nil {
 			return nil, err
 		}
-		splitReq = splitReq.WithStartEnd(start, end)
+		splitReq, err = splitReq.WithStartEnd(start, end)
+		if err != nil {
+			return nil, err
+		}
 		reqs = append(reqs, splitReq)
 
 		start = end + splitReq.GetStep()
