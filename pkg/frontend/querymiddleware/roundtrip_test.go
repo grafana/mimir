@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,7 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-func TestRangeTripperware(t *testing.T) {
+func TestTripperware_RangeQuery(t *testing.T) {
 	var (
 		query        = "/api/v1/query_range?end=1536716880&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&step=120"
 		responseBody = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[1536673680,"137"],[1536673780,"137"]]}]}}`
@@ -112,7 +113,7 @@ func TestRangeTripperware(t *testing.T) {
 	}
 }
 
-func TestInstantTripperware(t *testing.T) {
+func TestTripperware_InstantQuery(t *testing.T) {
 	const totalShards = 8
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
@@ -482,7 +483,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 		},
 		"remote read": {
 			instances:  remoteReadMiddlewares,
-			exceptions: []string{"instrumentMiddleware", "limitsMiddleware", "querySharding", "queryStatsMiddleware", "retry", "splitAndCacheMiddleware", "splitInstantQueryByIntervalMiddleware", "stepAlignMiddleware"},
+			exceptions: []string{"instrumentMiddleware", "querySharding", "queryStatsMiddleware", "retry", "splitAndCacheMiddleware", "splitInstantQueryByIntervalMiddleware", "stepAlignMiddleware"},
 		},
 	}
 
@@ -600,7 +601,7 @@ func TestIsLabelsQuery(t *testing.T) {
 	}
 }
 
-func TestRemoteReadMiddleware(t *testing.T) {
+func TestTripperware_RemoteRead(t *testing.T) {
 	testCases := map[string]struct {
 		makeRequest         func() *http.Request
 		limits              mockLimits
@@ -609,8 +610,29 @@ func TestRemoteReadMiddleware(t *testing.T) {
 		expectErrorContains string
 	}{
 		"valid query": {
-			makeRequest: generateTestRemoteReadRequest,
-			limits:      mockLimits{},
+			makeRequest: func() *http.Request {
+				return makeTestHTTPRequestFromRemoteRead(makeTestRemoteReadRequest())
+			},
+			limits: mockLimits{},
+		},
+		"max total query length limit exceeded": {
+			makeRequest: func() *http.Request {
+				return makeTestHTTPRequestFromRemoteRead(&prompb.ReadRequest{
+					Queries: []*prompb.Query{
+						{
+							Matchers:         []*prompb.LabelMatcher{{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "some_metric"}},
+							StartTimestampMs: time.Now().Add(-60 * 24 * time.Hour).UnixMilli(),
+							EndTimestampMs:   time.Now().UnixMilli(),
+						},
+					},
+				})
+			},
+			limits: mockLimits{
+				maxTotalQueryLength: 30 * 24 * time.Hour,
+			},
+			expectError:         true,
+			expectAPIError:      true,
+			expectErrorContains: "the total query time range exceeds the limit",
 		},
 	}
 

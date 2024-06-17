@@ -189,7 +189,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	if r.Header.Get("Content-Type") == "application/x-protobuf" && querymiddleware.IsRemoteReadQuery(r.URL.Path) {
-		params, err = querymiddleware.ParseRemoteReadRequestWithoutConsumingBody(r)
+		params, err = querymiddleware.ParseRemoteReadRequestValuesWithoutConsumingBody(r)
 	} else {
 		params, err = util.ParseRequestFormWithoutConsumingBody(r)
 	}

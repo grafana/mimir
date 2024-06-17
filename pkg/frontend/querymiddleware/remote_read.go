@@ -5,12 +5,14 @@ package querymiddleware
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 
+	"github.com/golang/snappy"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -43,47 +45,91 @@ func newRemoteReadRoundTripper(next http.RoundTripper, middlewares ...MetricsQue
 }
 
 func (r *remoteReadRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	remoteReadRequest, err := getRemoteReadRequestWithoutConsumingBody(req)
+	if req.Body == nil {
+		return r.next.RoundTrip(req)
+	}
+
+	// Parse the request body consuming it! From now on we can't call the next http.RoundTrigger without
+	// replacing the Body.
+	remoteReadReq, err := unmarshalRemoteReadRequest(req.Context(), req.Body, int(req.ContentLength))
 	if err != nil {
 		return nil, err
 	}
 
-	if remoteReadRequest == nil {
-		return r.next.RoundTrip(req)
-	}
+	// Run each query through the middlewares.
+	queries := remoteReadReq.GetQueries()
 
-	queries := remoteReadRequest.GetQueries()
 	for i, query := range queries {
-		metricsRequest, err := remoteReadToMetricsQueryRequest(req.URL.Path, query)
+		// Parse the original query.
+		origQueryReq, err := remoteReadToMetricsQueryRequest(req.URL.Path, query)
 		if err != nil {
 			return nil, err
 		}
-		handler := r.middleware.Wrap(HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
-			// We do not need to do anything here as this middleware is used for
-			// validation only and previous middlewares would have already returned errors.
+
+		// Run the query through the middlewares.
+		var updatedQueryReq *remoteReadQueryRequest
+		handler := r.middleware.Wrap(HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
+			var ok bool
+
+			// The middlewares are used only for validation, but some middlewares may manipulate
+			// the request to enforce some limits (e.g. time range limit). For this reason, we
+			// capture the final request in case it was manipulated.
+			if updatedQueryReq, ok = req.(*remoteReadQueryRequest); !ok {
+				// This should never happen.
+				return nil, errors.New("unexpected logic bug: remote read roundtripper received an unexpected data type")
+			}
+
 			return nil, nil
 		}))
-		_, err = handler.Do(req.Context(), metricsRequest)
+
+		_, err = handler.Do(req.Context(), origQueryReq)
 		if err != nil {
-			return nil, apierror.AddDetails(err, fmt.Sprintf("remote read error (%s_%d: %s)", matchersLogKey, i, metricsRequest.GetQuery()))
+			return nil, apierror.AddDetails(err, fmt.Sprintf("remote read error (%s_%d: %s)", matchersLogKey, i, origQueryReq.GetQuery()))
+		}
+
+		// The query may have been manipulated. We always replace it (if it wasn't manipulated, then
+		// we're just overwriting it with the same exact ref).
+		//
+		// NOTE: updatedQueryReq may be nil if a middleware interrupted the middlewares execution without
+		//       returning an error. It could happen in middlewares returning an empty response under some
+		//       conditions. In such case, since we don't have a way to return an empty response for the
+		//       selected query, we simply keep the original one and let it pass-through the downstream.
+		if updatedQueryReq != nil {
+			queries[i] = updatedQueryReq.query
 		}
 	}
+
+	// At this point the queries may have been manipulated by the middlewares. We marshal the remote request again
+	// in order to inject the manipulated queries. We always do it, even if the queries haven't been manipulated by
+	// middlewares, so that we always exercise this code.
+	remoteReadReq.Queries = queries
+
+	// Marshal the (maybe modified) remote read request and replace the request body.
+	encodedData, err := marshalRemoteReadRequest(remoteReadReq)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Body = io.NopCloser(bytes.NewBuffer(encodedData))
+	req.Header.Set("Content-Length", strconv.Itoa(len(encodedData)))
+	req.Header.Set("Content-Encoding", "snappy")
+	req.ContentLength = int64(len(encodedData))
 
 	return r.next.RoundTrip(req)
 }
 
-// ParseRemoteReadRequestWithoutConsumingBody parses a remote read request
+// ParseRemoteReadRequestValuesWithoutConsumingBody parses a remote read request
 // without consuming the body. It does not check the req.Body size, so it is
 // the caller's responsibility to ensure that the body is not too large.
-func ParseRemoteReadRequestWithoutConsumingBody(req *http.Request) (url.Values, error) {
-	remoteReadRequest, err := getRemoteReadRequestWithoutConsumingBody(req)
+func ParseRemoteReadRequestValuesWithoutConsumingBody(req *http.Request) (url.Values, error) {
+	remoteReadRequest, err := parseRemoteReadRequestWithoutConsumingBody(req)
 	if err != nil {
 		return nil, err
 	}
-	return parseRemoteReadRequest(remoteReadRequest)
+	return parseRemoteReadRequestValues(remoteReadRequest)
 }
 
-func getRemoteReadRequestWithoutConsumingBody(req *http.Request) (*prompb.ReadRequest, error) {
+func parseRemoteReadRequestWithoutConsumingBody(req *http.Request) (*prompb.ReadRequest, error) {
 	if req.Body == nil {
 		return nil, nil
 	}
@@ -93,9 +139,15 @@ func getRemoteReadRequestWithoutConsumingBody(req *http.Request) (*prompb.ReadRe
 		return nil, err
 	}
 
+	return unmarshalRemoteReadRequest(req.Context(), io.NopCloser(bytes.NewReader(bodyBytes)), int(req.ContentLength))
+}
+
+// unmarshalRemoteReadRequest reads from the input read and unmarshals the content into a prompb.ReadRequest.
+// This function either returns prompb.ReadRequest or an error, but never nil to both.
+func unmarshalRemoteReadRequest(ctx context.Context, reader io.ReadCloser, contentLength int) (*prompb.ReadRequest, error) {
 	remoteReadRequest := &prompb.ReadRequest{}
 
-	_, err = util.ParseProtoReader(req.Context(), io.NopCloser(bytes.NewReader(bodyBytes)), int(req.ContentLength), querier.MaxRemoteReadQuerySize, nil, remoteReadRequest, util.RawSnappy)
+	_, err := util.ParseProtoReader(ctx, reader, contentLength, querier.MaxRemoteReadQuerySize, nil, remoteReadRequest, util.RawSnappy)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +155,17 @@ func getRemoteReadRequestWithoutConsumingBody(req *http.Request) (*prompb.ReadRe
 	return remoteReadRequest, nil
 }
 
-func parseRemoteReadRequest(remoteReadRequest *prompb.ReadRequest) (url.Values, error) {
+// marshalRemoteReadRequest marshals the input prompb.ReadRequest protobuf and encode it with snappy.
+func marshalRemoteReadRequest(req *prompb.ReadRequest) ([]byte, error) {
+	data, err := req.Marshal()
+	if err != nil {
+		return nil, err
+	}
+
+	return snappy.Encode(nil, data), nil
+}
+
+func parseRemoteReadRequestValues(remoteReadRequest *prompb.ReadRequest) (url.Values, error) {
 	if remoteReadRequest == nil {
 		return nil, nil
 	}
@@ -229,14 +291,49 @@ func (r *remoteReadQueryRequest) WithQuery(_ string) (MetricsQueryRequest, error
 	panic("not implemented")
 }
 
-func (r *remoteReadQueryRequest) WithHeaders([]*PrometheusHeader) MetricsQueryRequest {
+func (r *remoteReadQueryRequest) WithHeaders(_ []*PrometheusHeader) MetricsQueryRequest {
 	panic("not implemented")
 }
 
-func (r *remoteReadQueryRequest) WithStartEnd(_ int64, _ int64) MetricsQueryRequest {
-	panic("not implemented")
+// WithStartEnd clones the current remoteReadQueryRequest with a new start and end timestamp.
+func (r *remoteReadQueryRequest) WithStartEnd(start int64, end int64) (MetricsQueryRequest, error) {
+	clonedQuery, err := cloneRemoteReadQuery(r.query)
+	if err != nil {
+		return nil, err
+	}
+
+	clonedQuery.StartTimestampMs = start
+	clonedQuery.EndTimestampMs = end
+
+	// We only clamp the hints time range (and not extend it). If, for any reason, the hints start/end
+	// time range is shorter than the query start/end range, then we manipulate only to clamp it to keep
+	// it within the requested range.
+	if clonedQuery.Hints != nil && clonedQuery.Hints.StartMs < start {
+		clonedQuery.Hints.StartMs = start
+	}
+	if clonedQuery.Hints != nil && clonedQuery.Hints.EndMs > end {
+		clonedQuery.Hints.EndMs = end
+	}
+
+	return remoteReadToMetricsQueryRequest(r.path, clonedQuery)
 }
 
 func (r *remoteReadQueryRequest) WithTotalQueriesHint(_ int32) MetricsQueryRequest {
 	panic("not implemented")
+}
+
+// cloneRemoteReadQuery returns a deep copy of the input prompb.Query. To keep this function safe,
+// this function does a full marshal and then unmarshal of the prompb.Query.
+func cloneRemoteReadQuery(orig *prompb.Query) (*prompb.Query, error) {
+	data, err := orig.Marshal()
+	if err != nil {
+		return nil, err
+	}
+
+	cloned := &prompb.Query{}
+	if err := cloned.Unmarshal(data); err != nil {
+		return nil, err
+	}
+
+	return cloned, nil
 }

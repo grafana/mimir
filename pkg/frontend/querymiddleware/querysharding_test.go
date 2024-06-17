@@ -1686,7 +1686,7 @@ func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
 	}{
 		{
 			"range query",
-			req.WithStartEnd(util.TimeToMillis(start), util.TimeToMillis(end)).WithEstimatedSeriesCountHint(55_000),
+			mustSucceed(req.WithStartEnd(util.TimeToMillis(start), util.TimeToMillis(end))).WithEstimatedSeriesCountHint(55_000),
 			6,
 		},
 		{

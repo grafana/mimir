@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"time"
 	"unsafe"
 
@@ -150,13 +151,15 @@ func (r *PrometheusRangeQueryRequest) GetHints() *Hints {
 // WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
 func (r *PrometheusRangeQueryRequest) WithID(id int64) MetricsQueryRequest {
 	newRequest := *r
+	newRequest.headers = cloneHeaders(r.headers)
 	newRequest.id = id
 	return &newRequest
 }
 
 // WithStartEnd clones the current `PrometheusRangeQueryRequest` with a new `start` and `end` timestamp.
-func (r *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) MetricsQueryRequest {
+func (r *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) (MetricsQueryRequest, error) {
 	newRequest := *r
+	newRequest.headers = cloneHeaders(r.headers)
 	newRequest.start = start
 	newRequest.end = end
 	if newRequest.queryExpr != nil {
@@ -164,7 +167,7 @@ func (r *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) Metri
 			newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
 		)
 	}
-	return &newRequest
+	return &newRequest, nil
 }
 
 // WithQuery clones the current `PrometheusRangeQueryRequest` with a new query; returns error if query parse fails.
@@ -175,6 +178,7 @@ func (r *PrometheusRangeQueryRequest) WithQuery(query string) (MetricsQueryReque
 	}
 
 	newRequest := *r
+	newRequest.headers = cloneHeaders(r.headers)
 	newRequest.queryExpr = queryExpr
 	if newRequest.queryExpr != nil {
 		newRequest.minT, newRequest.maxT = decodeQueryMinMaxTime(
@@ -187,13 +191,14 @@ func (r *PrometheusRangeQueryRequest) WithQuery(query string) (MetricsQueryReque
 // WithHeaders clones the current `PrometheusRangeQueryRequest` with new headers.
 func (r *PrometheusRangeQueryRequest) WithHeaders(headers []*PrometheusHeader) MetricsQueryRequest {
 	newRequest := *r
-	newRequest.headers = headers
+	newRequest.headers = cloneHeaders(headers)
 	return &newRequest
 }
 
 // WithExpr clones the current `PrometheusRangeQueryRequest` with a new query expression.
 func (r *PrometheusRangeQueryRequest) WithExpr(queryExpr parser.Expr) MetricsQueryRequest {
 	newRequest := *r
+	newRequest.headers = cloneHeaders(r.headers)
 	newRequest.queryExpr = queryExpr
 	if newRequest.queryExpr != nil {
 		newRequest.minT, newRequest.maxT = decodeQueryMinMaxTime(
@@ -207,6 +212,7 @@ func (r *PrometheusRangeQueryRequest) WithExpr(queryExpr parser.Expr) MetricsQue
 // added Hint value for TotalQueries.
 func (r *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
 	newRequest := *r
+	newRequest.headers = cloneHeaders(r.headers)
 	if newRequest.hints == nil {
 		newRequest.hints = &Hints{TotalQueries: totalQueries}
 	} else {
@@ -220,6 +226,7 @@ func (r *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) M
 // with an added Hint value for EstimatedCardinality.
 func (r *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
 	newRequest := *r
+	newRequest.headers = cloneHeaders(r.headers)
 	if newRequest.hints == nil {
 		newRequest.hints = &Hints{
 			CardinalityEstimate: &EstimatedSeriesCount{count},
@@ -350,20 +357,22 @@ func (r *PrometheusInstantQueryRequest) GetHints() *Hints {
 
 func (r *PrometheusInstantQueryRequest) WithID(id int64) MetricsQueryRequest {
 	newRequest := *r
+	newRequest.headers = cloneHeaders(r.headers)
 	newRequest.id = id
 	return &newRequest
 }
 
 // WithStartEnd clones the current `PrometheusInstantQueryRequest` with a new `time` timestamp.
-func (r *PrometheusInstantQueryRequest) WithStartEnd(time int64, _ int64) MetricsQueryRequest {
+func (r *PrometheusInstantQueryRequest) WithStartEnd(time int64, _ int64) (MetricsQueryRequest, error) {
 	newRequest := *r
+	newRequest.headers = cloneHeaders(r.headers)
 	newRequest.time = time
 	if newRequest.queryExpr != nil {
 		newRequest.minT, newRequest.maxT = decodeQueryMinMaxTime(
 			newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
 		)
 	}
-	return &newRequest
+	return &newRequest, nil
 }
 
 // WithQuery clones the current `PrometheusInstantQueryRequest` with a new query; returns error if query parse fails.
@@ -374,6 +383,7 @@ func (r *PrometheusInstantQueryRequest) WithQuery(query string) (MetricsQueryReq
 	}
 
 	newRequest := *r
+	newRequest.headers = cloneHeaders(r.headers)
 	newRequest.queryExpr = queryExpr
 	if newRequest.queryExpr != nil {
 		newRequest.minT, newRequest.maxT = decodeQueryMinMaxTime(
@@ -386,13 +396,14 @@ func (r *PrometheusInstantQueryRequest) WithQuery(query string) (MetricsQueryReq
 // WithHeaders clones the current `PrometheusRangeQueryRequest` with new headers.
 func (r *PrometheusInstantQueryRequest) WithHeaders(headers []*PrometheusHeader) MetricsQueryRequest {
 	newRequest := *r
-	newRequest.headers = headers
+	newRequest.headers = cloneHeaders(headers)
 	return &newRequest
 }
 
 // WithExpr clones the current `PrometheusInstantQueryRequest` with a new query expression.
 func (r *PrometheusInstantQueryRequest) WithExpr(queryExpr parser.Expr) MetricsQueryRequest {
 	newRequest := *r
+	newRequest.headers = cloneHeaders(r.headers)
 	newRequest.queryExpr = queryExpr
 	if newRequest.queryExpr != nil {
 		newRequest.minT, newRequest.maxT = decodeQueryMinMaxTime(
@@ -404,6 +415,7 @@ func (r *PrometheusInstantQueryRequest) WithExpr(queryExpr parser.Expr) MetricsQ
 
 func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
 	newRequest := *r
+	newRequest.headers = cloneHeaders(r.headers)
 	if newRequest.hints == nil {
 		newRequest.hints = &Hints{TotalQueries: totalQueries}
 	} else {
@@ -415,6 +427,7 @@ func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32)
 
 func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
 	newRequest := *r
+	newRequest.headers = cloneHeaders(r.headers)
 	if newRequest.hints == nil {
 		newRequest.hints = &Hints{
 			CardinalityEstimate: &EstimatedSeriesCount{count},
@@ -892,4 +905,18 @@ func DecodeCachedHTTPResponse(res *CachedHTTPResponse) *http.Response {
 		Header:        headers,
 		ContentLength: int64(len(res.Body)),
 	}
+}
+
+// cloneHeaders makes a deep copy of the passed headers parameters.
+// This function is designed to be used in MetricsQueryRequest cloning method to avoid modifying
+// original request headers, which may cause undesired side effects during the processing in the middleware chain.
+func cloneHeaders(headers []*PrometheusHeader) []*PrometheusHeader {
+	if headers == nil {
+		return nil
+	}
+	cp := make([]*PrometheusHeader, len(headers))
+	for i, h := range headers {
+		cp[i] = &PrometheusHeader{Name: h.Name, Values: slices.Clone(h.Values)}
+	}
+	return cp
 }

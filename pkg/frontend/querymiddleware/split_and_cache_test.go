@@ -330,7 +330,9 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 	assert.Equal(t, uint32(1), queryStats.LoadSplitQueries())
 
 	// Doing request with new end time should do one more query.
-	req = req.WithStartEnd(req.GetStart(), req.GetEnd()+step)
+	req, err = req.WithStartEnd(req.GetStart(), req.GetEnd()+step)
+	require.NoError(t, err)
+
 	_, err = rc.Do(ctx, req)
 	require.NoError(t, err)
 	require.Equal(t, 2, downstreamReqs)
@@ -558,7 +560,9 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 	assert.Equal(t, uint32(1), queryStats.LoadSplitQueries())
 
 	// New request with slightly different Start time will not reuse the cached result.
-	req = req.WithStartEnd(parseTimeRFC3339(t, "2021-10-15T10:00:05Z").Unix()*1000, parseTimeRFC3339(t, "2021-10-15T12:00:05Z").Unix()*1000)
+	req, err = req.WithStartEnd(parseTimeRFC3339(t, "2021-10-15T10:00:05Z").Unix()*1000, parseTimeRFC3339(t, "2021-10-15T12:00:05Z").Unix()*1000)
+	require.NoError(t, err)
+
 	resp, err = rc.Do(ctx, req)
 	require.NoError(t, err)
 	require.Equal(t, 2, downstreamReqs)

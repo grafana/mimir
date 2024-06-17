@@ -73,10 +73,13 @@ type Config struct {
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
 	CacheKeyGenerator CacheKeyGenerator `yaml:"-"`
 
-	// ExtraMiddlewares allows to inject custom middlewares into the middleware chain.
-	// These middlewares will be placed right after default middlewares and before the query sharding middleware,
-	// in order to avoid interfering with core functionality.
-	ExtraMiddlewares []MetricsQueryMiddleware `yaml:"-"`
+	// ExtraInstantQueryMiddlewares and ExtraRangeQueryMiddlewares allows to
+	// inject custom middlewares into the middleware chain of instant and
+	// range queries. These middlewares will be placed right after default
+	// middlewares and before the query sharding middleware, in order to avoid
+	// interfering with core functionality.
+	ExtraInstantQueryMiddlewares []MetricsQueryMiddleware `yaml:"-"`
+	ExtraRangeQueryMiddlewares   []MetricsQueryMiddleware `yaml:"-"`
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
 }
@@ -308,7 +311,9 @@ func newQueryMiddlewares(
 	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
 
-	remoteReadMiddleware = append(remoteReadMiddleware, queryBlockerMiddleware)
+	remoteReadMiddleware = append(remoteReadMiddleware,
+		newLimitsMiddleware(limits, log),
+		queryBlockerMiddleware)
 
 	queryRangeMiddleware = append(queryRangeMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
@@ -348,9 +353,13 @@ func newQueryMiddlewares(
 		queryBlockerMiddleware,
 	)
 
-	if len(cfg.ExtraMiddlewares) > 0 {
-		queryRangeMiddleware = append(queryRangeMiddleware, cfg.ExtraMiddlewares...)
-		queryInstantMiddleware = append(queryInstantMiddleware, cfg.ExtraMiddlewares...)
+	// Inject the extra middlewares provided by the user before the query sharding middleware.
+	if len(cfg.ExtraInstantQueryMiddlewares) > 0 {
+		queryInstantMiddleware = append(queryInstantMiddleware, cfg.ExtraInstantQueryMiddlewares...)
+	}
+	// Inject the extra middlewares provided by the user before the query sharding middleware.
+	if len(cfg.ExtraRangeQueryMiddlewares) > 0 {
+		queryRangeMiddleware = append(queryRangeMiddleware, cfg.ExtraRangeQueryMiddlewares...)
 	}
 
 	if cfg.ShardedQueries {
