@@ -907,6 +907,9 @@ func DecodeCachedHTTPResponse(res *CachedHTTPResponse) *http.Response {
 	}
 }
 
+// cloneHeaders makes a deep copy of the passed headers parameters.
+// This function is designed to be used in MetricsQueryRequest cloning method to avoid modifying
+// original request headers, which may cause undesired side effects during the processing in the middleware chain.
 func cloneHeaders(headers []*PrometheusHeader) []*PrometheusHeader {
 	cp := make([]*PrometheusHeader, len(headers))
 	for i, h := range headers {
