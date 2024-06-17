@@ -305,10 +305,13 @@ func (r *remoteReadQueryRequest) WithStartEnd(start int64, end int64) (MetricsQu
 	clonedQuery.StartTimestampMs = start
 	clonedQuery.EndTimestampMs = end
 
-	if clonedQuery.Hints != nil && clonedQuery.Hints.StartMs != 0 {
+	// We only clamp the hints time range (and not extend it). If, for any reason, the hints start/end
+	// time range is shorter than the query start/end range, then we manipulate only to clamp it to keep
+	// it within the requested range.
+	if clonedQuery.Hints != nil && clonedQuery.Hints.StartMs < start {
 		clonedQuery.Hints.StartMs = start
 	}
-	if clonedQuery.Hints != nil && clonedQuery.Hints.EndMs != 0 {
+	if clonedQuery.Hints != nil && clonedQuery.Hints.EndMs > end {
 		clonedQuery.Hints.EndMs = end
 	}
 

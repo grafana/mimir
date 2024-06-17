@@ -270,8 +270,8 @@ func TestRemoteReadRoundTripper_ShouldAllowMiddlewaresToReturnEmptyResponse(t *t
 
 func TestRemoteReadQueryRequest_WithStartEnd(t *testing.T) {
 	const (
-		updatedStartMs = 1
-		updatedEndMs   = 2
+		updatedStartMs = 1100
+		updatedEndMs   = 1200
 	)
 
 	tests := map[string]struct {
@@ -283,8 +283,8 @@ func TestRemoteReadQueryRequest_WithStartEnd(t *testing.T) {
 				path:      remoteReadPathSuffix,
 				promQuery: `{pod="pod-1"}`,
 				query: &prompb.Query{
-					StartTimestampMs: 1000,
-					EndTimestampMs:   2000,
+					StartTimestampMs: updatedStartMs - 100,
+					EndTimestampMs:   updatedEndMs + 100,
 					Matchers:         []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: "pod", Value: "pod-1"}},
 				},
 			},
@@ -298,19 +298,19 @@ func TestRemoteReadQueryRequest_WithStartEnd(t *testing.T) {
 				},
 			},
 		},
-		"with hints": {
+		"with hints with start/end range larger than the new requested start/end range": {
 			input: &remoteReadQueryRequest{
 				path:      remoteReadPathSuffix,
 				promQuery: `{pod="pod-1"}`,
 				query: &prompb.Query{
-					StartTimestampMs: 1000,
-					EndTimestampMs:   2000,
+					StartTimestampMs: updatedStartMs - 100,
+					EndTimestampMs:   updatedEndMs + 100,
 					Matchers:         []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: "pod", Value: "pod-1"}},
 					Hints: &prompb.ReadHints{
 						StepMs:   123,
 						Func:     "series",
-						StartMs:  1000,
-						EndMs:    2000,
+						StartMs:  updatedStartMs - 100,
+						EndMs:    updatedEndMs + 100,
 						Grouping: []string{"cluster"},
 						By:       true,
 					},
@@ -328,6 +328,42 @@ func TestRemoteReadQueryRequest_WithStartEnd(t *testing.T) {
 						Func:     "series",
 						StartMs:  updatedStartMs,
 						EndMs:    updatedEndMs,
+						Grouping: []string{"cluster"},
+						By:       true,
+					},
+				},
+			},
+		},
+		"with hints with start/end range smaller than the new requested start/end range": {
+			input: &remoteReadQueryRequest{
+				path:      remoteReadPathSuffix,
+				promQuery: `{pod="pod-1"}`,
+				query: &prompb.Query{
+					StartTimestampMs: updatedStartMs - 100,
+					EndTimestampMs:   updatedEndMs + 100,
+					Matchers:         []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: "pod", Value: "pod-1"}},
+					Hints: &prompb.ReadHints{
+						StepMs:   123,
+						Func:     "series",
+						StartMs:  updatedStartMs + 10,
+						EndMs:    updatedEndMs - 10,
+						Grouping: []string{"cluster"},
+						By:       true,
+					},
+				},
+			},
+			expected: &remoteReadQueryRequest{
+				path:      remoteReadPathSuffix,
+				promQuery: `{pod="pod-1"}`,
+				query: &prompb.Query{
+					StartTimestampMs: updatedStartMs,
+					EndTimestampMs:   updatedEndMs,
+					Matchers:         []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: "pod", Value: "pod-1"}},
+					Hints: &prompb.ReadHints{
+						StepMs:   123,
+						Func:     "series",
+						StartMs:  updatedStartMs + 10,
+						EndMs:    updatedEndMs - 10,
 						Grouping: []string{"cluster"},
 						By:       true,
 					},
