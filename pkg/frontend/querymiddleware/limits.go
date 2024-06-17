@@ -158,7 +158,10 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 				"maxQueryLookback", maxQueryLookback,
 				"blocksRetentionPeriod", blocksRetentionPeriod)
 
-			r = r.WithStartEnd(minStartTime, r.GetEnd())
+			r, err = r.WithStartEnd(minStartTime, r.GetEnd())
+			if err != nil {
+				return nil, apierror.New(apierror.TypeInternal, err.Error())
+			}
 		}
 	}
 

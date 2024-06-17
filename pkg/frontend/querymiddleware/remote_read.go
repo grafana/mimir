@@ -233,7 +233,7 @@ func (r *remoteReadQueryRequest) WithHeaders([]*PrometheusHeader) MetricsQueryRe
 	panic("not implemented")
 }
 
-func (r *remoteReadQueryRequest) WithStartEnd(_ int64, _ int64) MetricsQueryRequest {
+func (r *remoteReadQueryRequest) WithStartEnd(_ int64, _ int64) (MetricsQueryRequest, error) {
 	panic("not implemented")
 }
 

@@ -155,7 +155,7 @@ func (r *PrometheusRangeQueryRequest) WithID(id int64) MetricsQueryRequest {
 }
 
 // WithStartEnd clones the current `PrometheusRangeQueryRequest` with a new `start` and `end` timestamp.
-func (r *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) MetricsQueryRequest {
+func (r *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.start = start
 	newRequest.end = end
@@ -164,7 +164,7 @@ func (r *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) Metri
 			newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
 		)
 	}
-	return &newRequest
+	return &newRequest, nil
 }
 
 // WithQuery clones the current `PrometheusRangeQueryRequest` with a new query; returns error if query parse fails.
@@ -355,7 +355,7 @@ func (r *PrometheusInstantQueryRequest) WithID(id int64) MetricsQueryRequest {
 }
 
 // WithStartEnd clones the current `PrometheusInstantQueryRequest` with a new `time` timestamp.
-func (r *PrometheusInstantQueryRequest) WithStartEnd(time int64, _ int64) MetricsQueryRequest {
+func (r *PrometheusInstantQueryRequest) WithStartEnd(time int64, _ int64) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.time = time
 	if newRequest.queryExpr != nil {
@@ -363,7 +363,7 @@ func (r *PrometheusInstantQueryRequest) WithStartEnd(time int64, _ int64) Metric
 			newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
 		)
 	}
-	return &newRequest
+	return &newRequest, nil
 }
 
 // WithQuery clones the current `PrometheusInstantQueryRequest` with a new query; returns error if query parse fails.

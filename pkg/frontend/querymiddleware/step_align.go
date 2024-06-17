@@ -68,7 +68,12 @@ func (s *stepAlignMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Re
 				"step", r.GetStep(),
 			)
 
-			return s.next.Do(ctx, r.WithStartEnd(start, end))
+			updatedReq, err := r.WithStartEnd(start, end)
+			if err != nil {
+				return nil, err
+			}
+
+			return s.next.Do(ctx, updatedReq)
 		}
 	}
 
