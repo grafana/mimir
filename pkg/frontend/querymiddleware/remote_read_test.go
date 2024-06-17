@@ -168,8 +168,8 @@ type apiResponse struct {
 
 func TestRemoteReadRoundTripper_ShouldAllowMiddlewaresToManipulateRequest(t *testing.T) {
 	const (
-		expectedStartMs = 1
-		expectedEndMs   = 2
+		expectedStartMs = 11
+		expectedEndMs   = 19
 	)
 
 	origRemoteReadReq := makeTestRemoteReadRequest()
