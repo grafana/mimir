@@ -3279,7 +3279,7 @@ gateway:
       # -- Allows appending custom configuration to the http block
       httpSnippet: ""
       # -- Allow to set client_max_body_size in the nginx configuration
-      clientMaxBodySize: null
+      clientMaxBodySize: 540M
       # -- Allows to set a custom resolver
       resolver: null
       # -- Configures whether or not NGINX bind IPv6
