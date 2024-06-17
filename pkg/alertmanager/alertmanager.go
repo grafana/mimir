@@ -11,6 +11,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	htmlTemplate "html/template"
 	"net/http"
 	"net/url"
 	"path"
@@ -313,6 +314,11 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	}
 
 	am.dispatcherMetrics = dispatch.NewDispatcherMetrics(true, am.registry)
+
+	mailTemplates = htmlTemplate.New("name")
+	if _, err := mailTemplates.Parse(defaultEmail); err != nil {
+		return nil, err
+	}
 
 	//TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
 	return am, nil

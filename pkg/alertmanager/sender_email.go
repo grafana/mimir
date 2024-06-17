@@ -9,17 +9,15 @@ import (
 	"io"
 	"net"
 	"net/mail"
-	"os/user"
 	"strconv"
 	"strings"
 
 	alertingReceivers "github.com/grafana/alerting/receivers"
 	"github.com/grafana/mimir/pkg/util/version"
-	"github.com/pkg/errors"
 	gomail "gopkg.in/mail.v2"
 )
 
-var ErrInvalidEmailCode = errors.New("invalid or expired email code")
+var mailTemplates *template.Template
 
 // AttachedFile is a definition of the attached files without path
 type AttachedFile struct {
@@ -46,7 +44,7 @@ type Message struct {
 	SingleEmail   bool
 	From          string
 	Subject       string
-	Body          map[string]string
+	Body          string
 	Info          string
 	ReplyTo       []string
 	EmbeddedFiles []string
@@ -107,23 +105,12 @@ func (s *Sender) buildEmailMessage(cmd *SendEmailCommand) (*Message, error) {
 		data = make(map[string]any, 10)
 	}
 
-	setDefaultTemplateData(s.smtp.ExternalURL, data, nil)
+	setDefaultTemplateData(s.smtp.ExternalURL, data)
 
-	body := make(map[string]string)
-	// TODO: what?
-	// for _, contentType := range ns.Cfg.Smtp.ContentTypes {
-	// 	fileExtension, err := getFileExtensionByContentType(contentType)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// 	var buffer bytes.Buffer
-	// 	err = mailTemplates.ExecuteTemplate(&buffer, cmd.Template+fileExtension, data)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-
-	// 	body[contentType] = buffer.String()
-	// }
+	var buffer bytes.Buffer
+	if err := mailTemplates.ExecuteTemplate(&buffer, cmd.Template, data); err != nil {
+		return nil, err
+	}
 
 	subject := cmd.Subject
 	if cmd.Subject == "" {
@@ -160,23 +147,17 @@ func (s *Sender) buildEmailMessage(cmd *SendEmailCommand) (*Message, error) {
 		SingleEmail:   cmd.SingleEmail,
 		From:          addr.String(),
 		Subject:       subject,
-		Body:          body,
+		Body:          buffer.String(),
 		EmbeddedFiles: cmd.EmbeddedFiles,
 		AttachedFiles: cmd.AttachedFiles,
 		ReplyTo:       cmd.ReplyTo,
 	}, nil
 }
 
-func setDefaultTemplateData(externalURL string, data map[string]any, u *user.User) {
+func setDefaultTemplateData(externalURL string, data map[string]any) {
 	data["AppUrl"] = externalURL
 	data["BuildVersion"] = version.Version
-	// TODO: what?
-	// data["EmailCodeValidHours"] = cfg.EmailCodeValidMinutes / 60
 	data["Subject"] = map[string]any{}
-	// TODO: what?
-	// if u != nil {
-	// 	data["Name"] = u.NameOrFallback()
-	// }
 	dataCopy := map[string]any{}
 	for k, v := range data {
 		dataCopy[k] = v
@@ -253,7 +234,6 @@ func (s *Sender) createDialer() (*gomail.Dialer, error) {
 
 	d := gomail.NewDialer(host, iPort, s.smtp.AuthUser, s.smtp.AuthPassword)
 	d.TLSConfig = tlsconfig
-	d.StartTLSPolicy = getStartTLSPolicy(s.smtp.StartTLSPolicy)
 	d.LocalName = s.smtp.EhloIdentity
 
 	return d, nil
@@ -278,28 +258,9 @@ func (s *Sender) buildEmail(ctx context.Context, msg *Message) *gomail.Message {
 	for _, replyTo := range msg.ReplyTo {
 		m.SetAddressHeader("Reply-To", replyTo, "")
 	}
-	// loop over content types from settings in reverse order as they are ordered in according to descending
-	// preference while the alternatives should be ordered according to ascending preference
-	for i := len(s.smtp.ContentTypes) - 1; i >= 0; i-- {
-		if i == len(s.smtp.ContentTypes)-1 {
-			m.SetBody(s.smtp.ContentTypes[i], msg.Body[s.smtp.ContentTypes[i]])
-		} else {
-			m.AddAlternative(s.smtp.ContentTypes[i], msg.Body[s.smtp.ContentTypes[i]])
-		}
-	}
+	m.SetBody("text/html", msg.Body)
 
 	return m
-}
-
-func getStartTLSPolicy(policy string) gomail.StartTLSPolicy {
-	switch policy {
-	case "NoStartTLS":
-		return -1
-	case "MandatoryStartTLS":
-		return 1
-	default:
-		return 0
-	}
 }
 
 // setFiles attaches files in various forms.
