@@ -251,7 +251,7 @@ func (s *Sender) createDialer() (*gomail.Dialer, error) {
 		tlsconfig.Certificates = []tls.Certificate{cert}
 	}
 
-	d := gomail.NewDialer(host, iPort, s.smtp.User, s.smtp.Password)
+	d := gomail.NewDialer(host, iPort, s.smtp.AuthUser, s.smtp.AuthPassword)
 	d.TLSConfig = tlsconfig
 	d.StartTLSPolicy = getStartTLSPolicy(s.smtp.StartTLSPolicy)
 	d.LocalName = s.smtp.EhloIdentity

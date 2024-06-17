@@ -9,13 +9,14 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/grafana/alerting/definition"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
 
-// parseGrafanaConfig creates an AlertConfigDesc from a GrafanaAlertConfigDesc.
-func parseGrafanaConfig(cfg alertspb.GrafanaAlertConfigDesc) (alertspb.AlertConfigDesc, error) {
+// parseGrafanaConfig crexates an AlertConfigDesc from a GrafanaAlertConfigDesc.
+func parseGrafanaConfig(gCfg alertspb.GrafanaAlertConfigDesc, mCfg *alertspb.AlertConfigDesc) (alertspb.AlertConfigDesc, error) {
 	var amCfg GrafanaAlertmanagerConfig
-	if err := json.Unmarshal([]byte(cfg.RawConfig), &amCfg); err != nil {
+	if err := json.Unmarshal([]byte(gCfg.RawConfig), &amCfg); err != nil {
 		return alertspb.AlertConfigDesc{}, fmt.Errorf("failed to unmarshal Grafana Alertmanager configuration %w", err)
 	}
 
@@ -24,5 +25,14 @@ func parseGrafanaConfig(cfg alertspb.GrafanaAlertConfigDesc) (alertspb.AlertConf
 		return alertspb.AlertConfigDesc{}, fmt.Errorf("failed to marshal Grafana Alertmanager configuration %w", err)
 	}
 
-	return alertspb.ToProto(string(rawCfg), amCfg.Templates, cfg.User), nil
+	// Use the global section from the Mimir config.
+	if mCfg != nil {
+		cfg, err := definition.LoadCompat([]byte(mCfg.RawConfig))
+		if err != nil {
+			return alertspb.AlertConfigDesc{}, err
+		}
+		amCfg.AlertmanagerConfig.Config = cfg.Config
+	}
+
+	return alertspb.ToProto(string(rawCfg), amCfg.Templates, gCfg.User), nil
 }

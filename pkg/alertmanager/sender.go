@@ -29,20 +29,19 @@ var (
 )
 
 type SmtpConfig struct {
-	SmtpEnabled    bool
+	AuthPassword   string
+	AuthUser       string
+	CertFile       string
+	ContentTypes   []string
+	EhloIdentity   string
 	ExternalURL    string
 	FromName       string
 	FromAddress    string
 	Host           string
-	SkipVerify     bool
-	CertFile       string
 	KeyFile        string
-	User           string
-	Password       string
-	EhloIdentity   string
+	SkipVerify     bool
 	StartTLSPolicy string
 	StaticHeaders  map[string]string
-	ContentTypes   []string
 }
 
 type Sender struct {

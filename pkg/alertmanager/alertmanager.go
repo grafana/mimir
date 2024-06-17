@@ -400,7 +400,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(userID, am.cfg.Limits))
 
-	integrationsMap, err := buildIntegrationsMap(conf.Receivers, tmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
+	integrationsMap, err := buildIntegrationsMap(cfg.Global, am.cfg.ExternalURL.String(), conf.Receivers, tmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
 		if am.cfg.Limits != nil {
 			rl := &tenantRateLimits{
 				tenant:      userID,
@@ -509,13 +509,13 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]*nfstatus.Integration, error) {
+func buildIntegrationsMap(gCfg *config.GlobalConfig, externalURL string, nc []*definition.PostableApiReceiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]*nfstatus.Integration, error) {
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
 		var integrations []*nfstatus.Integration
 		var err error
 		if rcv.Type() == definition.GrafanaReceiverType {
-			integrations, err = buildGrafanaReceiverIntegrations(rcv, tmpl, logger)
+			integrations, err = buildGrafanaReceiverIntegrations(gCfg, externalURL, rcv, tmpl, logger)
 		} else {
 			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, logger, notifierWrapper)
 		}
@@ -529,22 +529,24 @@ func buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.T
 	return integrationsMap, nil
 }
 
-func buildGrafanaReceiverIntegrations(rcv *definition.PostableApiReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
+func buildGrafanaReceiverIntegrations(gCfg *config.GlobalConfig, externalURL string, rcv *definition.PostableApiReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
 	loggerFactory := newLoggerFactory(logger)
 	smtpCfg := SmtpConfig{
-		SmtpEnabled:    true,
-		ExternalURL:    "http://test.test",
-		FromName:       "Erich From",
-		FromAddress:    "erichfrom@test.com",
-		Host:           "mailhog:1025",
-		SkipVerify:     true,
-		User:           "",
-		Password:       "",
-		EhloIdentity:   "",
-		StartTLSPolicy: "",
-		StaticHeaders:  map[string]string{"header-key-1:": "header-value-1"},
-		ContentTypes:   []string{},
+		AuthPassword:   string(gCfg.SMTPAuthPassword),
+		AuthUser:       gCfg.SMTPAuthUsername,
+		CertFile:       gCfg.HTTPConfig.TLSConfig.CertFile,
+		ContentTypes:   []string{}, // (?)
+		EhloIdentity:   gCfg.SMTPHello,
+		ExternalURL:    externalURL,
+		FromAddress:    gCfg.SMTPFrom,
+		FromName:       "Grafana",
+		Host:           gCfg.SMTPSmarthost.String(),
+		KeyFile:        gCfg.HTTPConfig.TLSConfig.KeyFile,
+		SkipVerify:     !gCfg.SMTPRequireTLS,
+		StartTLSPolicy: "",                  // (?)
+		StaticHeaders:  map[string]string{}, // (?)
 	}
+
 	whFn := func(n alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
 		return NewSender(logger, smtpCfg), nil
 	}
