@@ -45,12 +45,12 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Smoke-test: remove the `smoke_test.image` and `continuous_test.image` sections and reuse the main Mimir image from the top `image` section using the new `-target=continuous-test` CLI flag. #7923
 * [ENHANCEMENT] Dashboards: allow switching between using classic of native histograms in dashboards. #7627
   * Overview dashboard, Status panel, `cortex_request_duration_seconds` metric.
-* [ENHANCEMENT] Rollout-operator: upgrade to v0.14.0. #7886
 * [ENHANCEMENT] Alerts: exclude `529` and `598` status codes from failure codes in `MimirRequestsError`. #7889
 * [ENHANCEMENT] The new value `metaMonitoring.grafanaAgent.logs.clusterLabel` controls whether to add a `cluster` label and with what content to PodLogs logs. #7764
 * [ENHANCEMENT] The new values `global.extraVolumes` and `global.extraVolumeMounts` adds volumes and volumeMounts to all pods directly managed by mimir-distributed. #7922
 * [ENHANCEMENT] Smoke-test: Parameterized `backoffLimit` for smoke tests in Helm chart to accommodate slower startup environments like k3d. #8025
 * [ENHANCEMENT] Add a volumeClaimTemplates section to the `chunks-cache`, `index-cache`, `metadata-cache`, and `results-cache` components. #8016
+* [ENHANCEMENT] Update rollout-operator to `v0.17.0`. #8399
 * [BUGFIX] Helm: Allowed setting static NodePort for nginx gateway via `gateway.service.nodePort`. #6966
 * [BUGFIX] Helm: Expose AM configs in the `gateway` NGINX configuration. #8248
 * [BUGFIX] Helm: fix ServiceMonitor and PVC template to not show diff in ArgoCD. #8829
