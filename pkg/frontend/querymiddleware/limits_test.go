@@ -27,7 +27,9 @@ import (
 
 func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 	const (
-		thirtyDays = 30 * 24 * time.Hour
+		fifteenDays = 15 * 24 * time.Hour
+		thirtyDays  = 30 * 24 * time.Hour
+		sixtyDays   = 60 * 24 * time.Hour
 	)
 
 	now := time.Now()
@@ -65,16 +67,54 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 			expectedStartTime:     now.Add(-thirtyDays).Add(time.Hour),
 			expectedEndTime:       now,
 		},
-		"should manipulate a query on large time range over the limit": {
+		"should manipulate a query on large time range over the maxQueryLookback limit, and blocksRetentionPeriod is not set": {
 			maxQueryLookback:      thirtyDays,
+			blocksRetentionPeriod: 0,
+			reqStartTime:          now.Add(-thirtyDays).Add(-100 * time.Hour),
+			reqEndTime:            now,
+			expectedStartTime:     now.Add(-thirtyDays),
+			expectedEndTime:       now,
+		},
+		"should manipulate a query on large time range over the blocksRetentionPeriod, and maxQueryLookback limit is not set": {
+			maxQueryLookback:      0,
 			blocksRetentionPeriod: thirtyDays,
 			reqStartTime:          now.Add(-thirtyDays).Add(-100 * time.Hour),
 			reqEndTime:            now,
 			expectedStartTime:     now.Add(-thirtyDays),
 			expectedEndTime:       now,
 		},
-		"should skip executing a query outside the allowed time range": {
+		"should manipulate a query on large time range over the maxQueryLookback limit, and blocksRetentionPeriod is set to an higher value": {
 			maxQueryLookback:      thirtyDays,
+			blocksRetentionPeriod: sixtyDays,
+			reqStartTime:          now.Add(-thirtyDays).Add(-100 * time.Hour),
+			reqEndTime:            now,
+			expectedStartTime:     now.Add(-thirtyDays),
+			expectedEndTime:       now,
+		},
+		"should manipulate a query on large time range over the blocksRetentionPeriod, and maxQueryLookback limit is set to an higher value": {
+			maxQueryLookback:      sixtyDays,
+			blocksRetentionPeriod: thirtyDays,
+			reqStartTime:          now.Add(-thirtyDays).Add(-100 * time.Hour),
+			reqEndTime:            now,
+			expectedStartTime:     now.Add(-thirtyDays),
+			expectedEndTime:       now,
+		},
+		"should skip executing a query outside the allowed maxQueryLookback limit, and blocksRetentionPeriod is not set": {
+			maxQueryLookback:      thirtyDays,
+			blocksRetentionPeriod: 0,
+			reqStartTime:          now.Add(-thirtyDays).Add(-100 * time.Hour),
+			reqEndTime:            now.Add(-thirtyDays).Add(-90 * time.Hour),
+			expectedSkipped:       true,
+		},
+		"should skip executing a query outside the allowed maxQueryLookback limit, and blocksRetentionPeriod is set to an higher value": {
+			maxQueryLookback:      thirtyDays,
+			blocksRetentionPeriod: sixtyDays,
+			reqStartTime:          now.Add(-thirtyDays).Add(-100 * time.Hour),
+			reqEndTime:            now.Add(-thirtyDays).Add(-90 * time.Hour),
+			expectedSkipped:       true,
+		},
+		"should skip executing a query outside the blocksRetentionPeriod, and maxQueryLookback limit is set to an higher value": {
+			maxQueryLookback:      sixtyDays,
 			blocksRetentionPeriod: thirtyDays,
 			reqStartTime:          now.Add(-thirtyDays).Add(-100 * time.Hour),
 			reqEndTime:            now.Add(-thirtyDays).Add(-90 * time.Hour),
@@ -727,4 +767,13 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 			})
 		}
 	}
+}
+
+func TestSmallestPositiveNonZeroDuration(t *testing.T) {
+	assert.Equal(t, time.Duration(0), smallestPositiveNonZeroDuration())
+	assert.Equal(t, time.Duration(0), smallestPositiveNonZeroDuration(0))
+	assert.Equal(t, time.Duration(0), smallestPositiveNonZeroDuration(-1))
+
+	assert.Equal(t, time.Duration(1), smallestPositiveNonZeroDuration(0, 1, -1))
+	assert.Equal(t, time.Duration(1), smallestPositiveNonZeroDuration(0, 2, 1))
 }
