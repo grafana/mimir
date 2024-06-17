@@ -4045,8 +4045,7 @@
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "ruler.recording-rules-evaluation-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
@@ -4056,8 +4055,7 @@
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "ruler.alerting-rules-evaluation-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
