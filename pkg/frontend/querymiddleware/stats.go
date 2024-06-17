@@ -98,8 +98,12 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 	if details == nil {
 		return
 	}
-	details.Start = time.UnixMilli(req.GetStart())
-	details.End = time.UnixMilli(req.GetEnd())
+	if details.Start.IsZero() || details.Start.After(time.UnixMilli(req.GetStart())) {
+		details.Start = time.UnixMilli(req.GetStart())
+	}
+	if details.End.IsZero() || details.End.Before(time.UnixMilli(req.GetEnd())) {
+		details.End = time.UnixMilli(req.GetEnd())
+	}
 	details.Step = time.Duration(req.GetStep()) * time.Millisecond
 
 	query, err := newQuery(ctx, req, s.engine, queryStatsErrQueryable)
@@ -113,10 +117,10 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 		return
 	}
 	minT, maxT := promql.FindMinMaxTime(evalStmt)
-	if minT != 0 {
+	if minT != 0 && (details.MinT.IsZero() || details.MinT.After(time.UnixMilli(minT))) {
 		details.MinT = time.UnixMilli(minT)
 	}
-	if maxT != 0 {
+	if maxT != 0 && (details.MaxT.IsZero() || details.MaxT.Before(time.UnixMilli(maxT))) {
 		details.MaxT = time.UnixMilli(maxT)
 	}
 }

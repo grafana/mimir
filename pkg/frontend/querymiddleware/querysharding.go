@@ -194,7 +194,16 @@ func newQuery(ctx context.Context, r MetricsQueryRequest, engine *promql.Engine,
 			r.GetQuery(),
 			util.TimeFromMillis(r.GetTime()),
 		)
-
+	case *remoteReadQueryRequest:
+		return engine.NewRangeQuery(
+			ctx,
+			queryable,
+			nil,
+			r.GetQuery(),
+			util.TimeFromMillis(r.GetStart()),
+			util.TimeFromMillis(r.GetEnd()),
+			time.Duration(r.GetStep())*time.Millisecond,
+		)
 	default:
 		return nil, fmt.Errorf("unsupported query type %T", r)
 	}
