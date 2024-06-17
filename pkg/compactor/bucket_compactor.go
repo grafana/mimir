@@ -245,18 +245,18 @@ type Compactor interface {
 func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shouldRerun bool, compIDs []ulid.ULID, rerr error) {
 	jobBeginTime := time.Now()
 
-	jobLogger := log.With(c.logger, "groupKey", job.Key())
+	jobType := "merge"
+	if job.UseSplitting() {
+		jobType = "split"
+	}
+
+	jobLogger := log.With(c.logger, "groupKey", job.Key(), "job_type", jobType)
 	subDir := filepath.Join(c.compactDir, job.Key())
 
 	blockCount := len(job.metasByMinTime)
 
 	defer func() {
 		elapsed := time.Since(jobBeginTime)
-
-		jobType := "merge"
-		if job.UseSplitting() {
-			jobType = "split"
-		}
 
 		if rerr == nil {
 			c.metrics.compactionJobDuration.WithLabelValues(jobType).Observe(elapsed.Seconds())
