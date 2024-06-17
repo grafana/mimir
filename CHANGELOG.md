@@ -97,6 +97,7 @@
 * [BUGFIX] Ingester: fix context cancellation handling when a query is busy looking up series in the TSDB index and `-blocks-storage.tsdb.head-postings-for-matchers-cache*` or `-blocks-storage.tsdb.block-postings-for-matchers-cache*` are in use. #8337
 * [BUGFIX] Querier: fix edge case where bucket indexes are sometimes cached forever instead of with the expected TTL. #8343
 * [BUGFIX] OTLP handler: fix errors returned by OTLP handler when used via httpgrpc tunneling. #8363
+* [BUGFIX] Query-frontend: fix `-querier.max-query-lookback` enforcement when `-compactor.blocks-retention-period` is not set, and viceversa.
 
 ### Mixin
 
