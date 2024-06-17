@@ -777,7 +777,7 @@ github.com/klauspost/compress/s2
 github.com/klauspost/compress/zlib
 github.com/klauspost/compress/zstd
 github.com/klauspost/compress/zstd/internal/xxhash
-# github.com/klauspost/cpuid/v2 v2.2.6
+# github.com/klauspost/cpuid/v2 v2.2.7
 ## explicit; go 1.15
 github.com/klauspost/cpuid/v2
 # github.com/kylelemons/godebug v1.1.0
@@ -1091,8 +1091,8 @@ github.com/stretchr/objx
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/mock
 github.com/stretchr/testify/require
-# github.com/thanos-io/objstore v0.0.0-20240512204237-71ef2d0cf7c4
-## explicit; go 1.20
+# github.com/thanos-io/objstore v0.0.0-20240617083302-124528d695c2
+## explicit; go 1.21
 github.com/thanos-io/objstore
 github.com/thanos-io/objstore/exthttp
 github.com/thanos-io/objstore/providers/azure
