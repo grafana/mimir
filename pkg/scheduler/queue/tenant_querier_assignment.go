@@ -337,15 +337,20 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) (*Node, bool)
 		tqa.tenantOrderIndex = localQueueIndex
 	}
 
-	// no children
+	// no children or local queue reached
 	if len(node.queueMap) == 0 || tqa.tenantOrderIndex == localQueueIndex {
 		return node, checkedAllNodes
 	}
 
 	checkIndex := tqa.tenantOrderIndex
 
+	// iterate through the tenant order until we find a tenant that is assigned to the current querier, or
+	// have checked the entire tenantIDOrder, whichever comes first
 	for iters := 0; iters < len(tqa.tenantIDOrder); iters++ {
 		if checkIndex >= len(tqa.tenantIDOrder) {
+			// do not use modulo to wrap this index; tenantOrderIndex is provided from an outer process
+			// which does not know if the tenant list has changed since the last dequeue
+			// wrapping with modulo after shrinking the list could cause us to skip tenants
 			checkIndex = 0
 		}
 		tenantID := tqa.tenantIDOrder[checkIndex]
@@ -357,7 +362,9 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) (*Node, bool)
 			continue
 		}
 
-		// increment nodes checked even if not in tenant-querier map
+		// childrenChecked is used to determine when we can stop looking for a dequeueable node. At this point,
+		// tenantID _must_ exist in the node's children, even if currentQuerier isn't assigned to it, so we increment
+		// childrenChecked regardless of whether currentQuerier exists in tenantQuerierIDs for tenantID.
 		node.childrenChecked++
 		checkedAllNodes = node.childrenChecked == len(node.queueMap)+1
 
@@ -366,6 +373,7 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) (*Node, bool)
 			tqa.tenantOrderIndex = checkIndex
 			return node.queueMap[tenantName], checkedAllNodes
 		}
+		// otherwise, check if the querier is assigned to this tenant
 		if tenantQuerierSet, ok := tqa.tenantQuerierIDs[tenantID]; ok {
 			if _, ok := tenantQuerierSet[*tqa.currentQuerier]; ok {
 				tqa.tenantOrderIndex = checkIndex
