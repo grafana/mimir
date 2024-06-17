@@ -902,7 +902,7 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 	srv, err := dskit_server.New(cfg)
 	require.NoError(t, err)
 
-	push := func(ctx context.Context, req *Request) error {
+	push := func(_ context.Context, req *Request) error {
 		// Trigger conversion of incoming request to WriteRequest.
 		wr, err := req.WriteRequest()
 		if err != nil {

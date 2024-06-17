@@ -58,7 +58,7 @@ func (r *remoteReadRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 		if err != nil {
 			return nil, err
 		}
-		handler := r.middleware.Wrap(HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+		handler := r.middleware.Wrap(HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 			// We do not need to do anything here as this middleware is used for
 			// validation only and previous middlewares would have already returned errors.
 			return nil, nil
