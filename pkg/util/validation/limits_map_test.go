@@ -25,31 +25,28 @@ func TestNewLimitsMap(t *testing.T) {
 }
 
 func TestLimitsMap_SetAndString(t *testing.T) {
-	tc := []struct {
-		name     string
+	tc := map[string]struct {
 		input    string
 		expected map[string]float64
 		error    string
 	}{
-		{
-			name:     "set without error",
+
+		"set without error": {
 			input:    `{"key1":10,"key2":20}`,
 			expected: map[string]float64{"key1": 10, "key2": 20},
 		},
-		{
-			name:  "set with parsing error",
+		"set with parsing error": {
 			input: `{"key1": 10, "key2": 20`,
 			error: "unexpected end of JSON input",
 		},
-		{
-			name:  "set with validation error",
+		"set with validation error": {
 			input: `{"key1": -10, "key2": 20}`,
 			error: "value cannot be negative",
 		},
 	}
 
-	for _, tt := range tc {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
 			lm := NewLimitsMap(fakeValidator)
 			err := lm.Set(tt.input)
 			if tt.error != "" {
@@ -124,40 +121,35 @@ func TestLimitsMap_MarshalYAML(t *testing.T) {
 }
 
 func TestLimitsMap_Equal(t *testing.T) {
-	tc := []struct {
-		name     string
+	tc := map[string]struct {
 		map1     LimitsMap[float64]
 		map2     LimitsMap[float64]
 		expected bool
 	}{
-		{
-			name:     "Equal maps with same key-value pairs",
+		"Equal maps with same key-value pairs": {
 			map1:     LimitsMap[float64]{data: map[string]float64{"key1": 1.1, "key2": 2.2}},
 			map2:     LimitsMap[float64]{data: map[string]float64{"key1": 1.1, "key2": 2.2}},
 			expected: true,
 		},
-		{
-			name:     "Different maps with different lengths",
+		"Different maps with different lengths": {
 			map1:     LimitsMap[float64]{data: map[string]float64{"key1": 1.1}},
 			map2:     LimitsMap[float64]{data: map[string]float64{"key1": 1.1, "key2": 2.2}},
 			expected: false,
 		},
-		{
-			name:     "Different maps with same keys but different values",
+		"Different maps with same keys but different values": {
 			map1:     LimitsMap[float64]{data: map[string]float64{"key1": 1.1}},
 			map2:     LimitsMap[float64]{data: map[string]float64{"key1": 1.2}},
 			expected: false,
 		},
-		{
-			name:     "Equal empty maps",
+		"Equal empty maps": {
 			map1:     LimitsMap[float64]{data: map[string]float64{}},
 			map2:     LimitsMap[float64]{data: map[string]float64{}},
 			expected: true,
 		},
 	}
 
-	for _, tt := range tc {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
 			require.Equal(t, tt.expected, tt.map1.Equal(LimitsMap[float64]{data: tt.map2.data}))
 			require.Equal(t, tt.expected, cmp.Equal(tt.map1, tt.map2))
 		})

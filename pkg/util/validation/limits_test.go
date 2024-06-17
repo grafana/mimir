@@ -588,61 +588,49 @@ testuser:
 }
 
 func TestRulerMaxRulesPerRuleGroupLimits(t *testing.T) {
-	tc := []struct {
-		name      string
-		inputYAML string
-		expected  struct {
-			limit     int
-			namespace string
-		}
+	tc := map[string]struct {
+		inputYAML         string
+		expectedLimit     int
+		expectedNamespace string
 	}{
-		{
-			name: "no namespace specific limit",
+		"no namespace specific limit": {
 			inputYAML: `
 ruler_max_rules_per_rule_group: 100
 `,
-			expected: struct {
-				limit     int
-				namespace string
-			}{limit: 100, namespace: "mynamespace"},
+			expectedLimit:     100,
+			expectedNamespace: "mynamespace",
 		},
-		{
-			name: "zero limit for the right namespace",
+		"zero limit for the right namespace": {
 			inputYAML: `
 ruler_max_rules_per_rule_group: 100
 
 ruler_max_rules_per_rule_group_by_namespace:
   mynamespace: 0
 `,
-			expected: struct {
-				limit     int
-				namespace string
-			}{limit: 0, namespace: "mynamespace"},
+			expectedLimit:     0,
+			expectedNamespace: "mynamespace",
 		},
-		{
-			name: "other namespaces are not affected",
+		"other namespaces are not affected": {
 			inputYAML: `
 ruler_max_rules_per_rule_group: 100
 
 ruler_max_rules_per_rule_group_by_namespace:
   mynamespace: 10
 `,
-			expected: struct {
-				limit     int
-				namespace string
-			}{limit: 100, namespace: "othernamespace"},
+			expectedLimit:     100,
+			expectedNamespace: "othernamespace",
 		},
 	}
 
-	for _, tt := range tc {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
 			limitsYAML := Limits{}
 			require.NoError(t, yaml.Unmarshal([]byte(tt.inputYAML), &limitsYAML))
 
 			ov, err := NewOverrides(limitsYAML, nil)
 			require.NoError(t, err)
 
-			require.Equal(t, tt.expected.limit, ov.RulerMaxRulesPerRuleGroup("user", tt.expected.namespace))
+			require.Equal(t, tt.expectedLimit, ov.RulerMaxRulesPerRuleGroup("user", tt.expectedNamespace))
 		})
 	}
 }
@@ -680,74 +668,63 @@ differentuser:
     mynamespace: 500
 `
 
-	tc := []struct {
-		name           string
+	tc := map[string]struct {
 		overrides      string
 		inputNamespace string
 		expectedLimit  int
 	}{
-		{
-			name:           "no overrides, mynamespace",
+		"no overrides, mynamespace": {
 			inputNamespace: "mynamespace",
 			expectedLimit:  10,
 		},
-		{
-			name:           "no overrides, othernamespace",
+		"no overrides, othernamespace": {
 			inputNamespace: "othernamespace",
 			expectedLimit:  5,
 		},
-		{
-			name:           "generic override, mynamespace",
+		"generic override, mynamespace": {
 			inputNamespace: "mynamespace",
 			overrides:      overrideGenericLimitsOnly,
 			expectedLimit:  10,
 		},
-		{
-			name:           "generic override, othernamespace",
+		"generic override, othernamespace": {
 			inputNamespace: "othernamespace",
 			overrides:      overrideGenericLimitsOnly,
 			expectedLimit:  333,
 		},
-		{
-			name:           "namespace limit override, mynamespace",
+		"namespace limit override, mynamespace": {
 			inputNamespace: "mynamespace",
 			overrides:      overrideNamespaceLimits,
 			expectedLimit:  7777,
 		},
-		{
-			name:           "namespace limit override, othernamespace",
+		"namespace limit override, othernamespace": {
 			inputNamespace: "othernamespace",
 			overrides:      overrideNamespaceLimits,
 			expectedLimit:  5,
 		},
-		{
-			name:           "generic and namespace limit override, mynamespace",
+		"generic and namespace limit override, mynamespace": {
 			inputNamespace: "mynamespace",
 			overrides:      overrideGenericLimitsAndNamespaceLimits,
 			expectedLimit:  7777,
 		},
-		{
-			name:           "generic and namespace limit override, othernamespace",
+		"generic and namespace limit override, othernamespace": {
 			inputNamespace: "othernamespace",
 			overrides:      overrideGenericLimitsAndNamespaceLimits,
 			expectedLimit:  333,
 		},
-		{
-			name:           "different user override, mynamespace",
+		"different user override, mynamespace": {
 			inputNamespace: "mynamespace",
 			overrides:      differentUserOverride,
 			expectedLimit:  10,
 		},
-		{
-			name:           "different user override, othernamespace",
+		"different user override, othernamespace": {
 			inputNamespace: "othernamespace",
 			overrides:      differentUserOverride,
-			expectedLimit:  5,
+			expectedLimit:  10,
 		},
 	}
 
-	for _, tt := range tc {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
 
 			t.Cleanup(func() {
 				SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())

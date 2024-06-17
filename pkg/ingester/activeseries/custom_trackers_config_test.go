@@ -256,21 +256,18 @@ func TestTrackersConfigs_SerializeDeserialize(t *testing.T) {
 }
 
 func TestCustomTrackersConfig_Equal(t *testing.T) {
-	tc := []struct {
-		name     string
+	tc := map[string]struct {
 		cfg1     CustomTrackersConfig
 		cfg2     CustomTrackersConfig
 		expected bool
 	}{
 
-		{
-			name:     "Equal configurations",
+		"Equal configurations": {
 			cfg1:     mustNewCustomTrackersConfigFromString(t, `foo:{foo="bar"};baz:{baz="bar"}`),
 			cfg2:     mustNewCustomTrackersConfigFromString(t, `foo:{foo="bar"};baz:{baz="bar"}`),
 			expected: true,
 		},
-		{
-			name: "Different descriptions",
+		"Different descriptions": {
 			cfg1: func() CustomTrackersConfig {
 				c := mustNewCustomTrackersConfigFromString(t, `foo:{foo="bar"};baz:{baz="bar"}`)
 				c.string = "cfg1"
@@ -283,8 +280,7 @@ func TestCustomTrackersConfig_Equal(t *testing.T) {
 			}(),
 			expected: false,
 		},
-		{
-			name: "Different source maps",
+		"Different source maps": {
 			cfg1: func() CustomTrackersConfig {
 				c := mustNewCustomTrackersConfigFromString(t, `foo:{foo="bar"};baz:{baz="bar"}`)
 				c.source = map[string]string{"a": "source1"}
@@ -297,8 +293,7 @@ func TestCustomTrackersConfig_Equal(t *testing.T) {
 			}(),
 			expected: false,
 		},
-		{
-			name: "Different config maps",
+		"Different config maps": {
 			cfg1: func() CustomTrackersConfig {
 				c := mustNewCustomTrackersConfigFromString(t, `foo:{foo="bar"};baz:{baz="bar"}`)
 				c.config = map[string]labelsMatchers{"a": nil}
@@ -311,8 +306,7 @@ func TestCustomTrackersConfig_Equal(t *testing.T) {
 			}(),
 			expected: false,
 		},
-		{
-			name: "Different keys in source maps",
+		"Different keys in source maps": {
 			cfg1: CustomTrackersConfig{
 				source: map[string]string{"a": "source1"},
 				config: map[string]labelsMatchers{"b": nil},
@@ -325,8 +319,7 @@ func TestCustomTrackersConfig_Equal(t *testing.T) {
 			},
 			expected: false,
 		},
-		{
-			name: "Different keys in config maps",
+		"Different keys in config maps": {
 			cfg1: CustomTrackersConfig{
 				source: map[string]string{"a": "source1"},
 				config: map[string]labelsMatchers{"b": nil},
@@ -341,8 +334,8 @@ func TestCustomTrackersConfig_Equal(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tc {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
 			assert.Equal(t, tt.expected, tt.cfg1.Equal(tt.cfg2))
 			assert.Equal(t, tt.expected, cmp.Equal(tt.cfg1, tt.cfg2))
 		})
