@@ -21,6 +21,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -85,7 +86,7 @@ func TestBlockBuilder(t *testing.T) {
 		parentT        = t
 	)
 
-	bb, err := New(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry(), overrides)
+	bb, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides)
 	require.NoError(t, err)
 
 	bb.tsdbBuilder = func() builder {
@@ -394,6 +395,7 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 
 	_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, testTopic)
 	writeClient := newKafkaProduceClient(t, addr)
+
 	cfg, overrides := blockBuilderConfig(t, addr)
 	kafkaTime := time.Now().Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
 	var expSamples []mimirpb.Sample
@@ -408,7 +410,9 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 
 	opts := []kgo.Opt{
 		kgo.ClientID("1"), kgo.SeedBrokers(addr), kgo.ConsumeTopics(testTopic),
-		kgo.ConsumerGroup(testGroup), kgo.DisableAutoCommit(),
+		kgo.ConsumerGroup(testGroup),
+		kgo.Balancers(kgo.RoundRobinBalancer()),
+		kgo.DisableAutoCommit(),
 	}
 	kc, err := kgo.NewClient(opts...)
 	require.NoError(t, err)
@@ -433,7 +437,7 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 	// only after the commit.
 	expSamples = expSamples[1+(len(expSamples)/2):]
 
-	bb, err := New(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry(), overrides)
+	bb, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides)
 	require.NoError(t, err)
 	compactCalled := make(chan struct{}, 10)
 	bb.tsdbBuilder = func() builder {
@@ -444,20 +448,12 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 		return testBuilder
 	}
 
-	// TODO(codesome): BB is not getting any partition assigned because of the above kafka client used for commit. Fix it.
 	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
 	})
-LL:
-	for {
-		time.Sleep(time.Second)
-		select {
-		case <-compactCalled:
-		default:
-			break LL
-		}
-	}
+
+	<-compactCalled
 
 	bucketDir := path.Join(cfg.BlocksStorageConfig.Bucket.Filesystem.Directory, "1")
 	db, err := tsdb.Open(bucketDir, log.NewNopLogger(), nil, nil, nil)
