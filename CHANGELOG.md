@@ -65,7 +65,6 @@
 * [ENHANCEMENT] Ingester: reduce the amount of locks taken during the Head compaction's garbage-collection process, improving the write latency and compaction speed. #8327
 * [ENHANCEMENT] Query-frontend: log the start, end time and matchers for remote read requests to the query stats logs. #8326 #8370 #8373
 * [ENHANCEMENT] Query-frontend: be able to block remote read queries via the per tenant runtime override `blocked_queries`. #8372
-* [ENHANCEMENT] Store-gateway: keep index headers that were loaded before the previous shutdown. #8281
 * [BUGFIX] Distributor: prometheus retry on 5xx and 429 errors, while otlp collector only retry on 429, 502, 503 and 504, mapping other 5xx errors to the retryable ones in otlp endpoint. #8324 #8339
 * [BUGFIX] Distributor: make OTLP endpoint return marshalled proto bytes as response body for 4xx/5xx errors. #8227
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
@@ -108,6 +107,7 @@
 * [BUGFIX] Ingester: fix sporadic `not found` error causing an internal server error if label names are queried with matchers during head compaction. #8391
 * [BUGFIX] Ingester, store-gateway: fix case insensitive regular expressions not matching correctly some Unicode characters. #8391
 * [BUGFIX] Query-frontend: "query stats" log now includes the actual `status_code` when the request fails due to an error occurring in the query-frontend itself. #8407
+* [BUGFIX] Store-gateway: fixed a case where, on a quick subsequent restart, the previous lazy-loaded index header snapshot was overwritten by a partially loaded one. #8281
 
 ### Mixin
 
