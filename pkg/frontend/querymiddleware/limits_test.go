@@ -348,8 +348,7 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 					end:   util.TimeToMillis(testData.reqEndTime),
 				},
 				"remote read": &remoteReadQueryRequest{
-					path:      remoteReadPathSuffix,
-					promQuery: "",
+					path: remoteReadPathSuffix,
 					query: &prompb.Query{
 						StartTimestampMs: util.TimeToMillis(testData.reqStartTime),
 						EndTimestampMs:   util.TimeToMillis(testData.reqEndTime),
