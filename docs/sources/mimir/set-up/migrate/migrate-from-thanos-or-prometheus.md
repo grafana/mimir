@@ -73,7 +73,7 @@ Only blocks from Thanos use labels.
 If you encounter the HTTP error 413 "Request Entity Too Large" when uploading blocks using mimirtool, and if Nginx is being used as a reverse proxy, the uploaded block size may be exceeding Nginx's default maximum allowed request body size.
 To resolve this issue:
 
-Determine the current size of the blocks you are trying to upload by running the following command:
+Determine the current size of the blocks you are trying to upload by running the following command(by default the blocks are sized around 500MB, but it can vary depending on the configuration of Prometheus or Thanos.)
 
 ```bash
 find <path/to/blocks> -name 'chunks' -printf '%s\n' | numfmt --to=iec-i
@@ -87,7 +87,7 @@ For manual Nginx deployments, open the Nginx configuration file (e.g., /etc/ngin
 ```
 server {
     ...
-    client_max_body_size 95M;
+    client_max_body_size 540M;
     ...
 }
 ```
@@ -95,7 +95,7 @@ server {
 ```
 location / {
     ...
-    client_max_body_size 95M;
+    client_max_body_size 540M;
     ...
 }
 ```
@@ -106,7 +106,7 @@ For Helm deployments of Mimir, you can set the `gateway.nginx.config.clientMaxBo
 gateway:
   nginx:
     config:
-      clientMaxBodySize: 95M
+      clientMaxBodySize: 540M
 ```
 
 Apply the configuration changes:
