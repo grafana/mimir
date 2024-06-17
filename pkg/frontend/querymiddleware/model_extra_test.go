@@ -123,8 +123,6 @@ func TestMetricQueryRequestCloneHeaders(t *testing.T) {
 
 			t.Run("WithID", func(t *testing.T) {
 				r := originalReq.WithID(1234)
-				require.NoError(t, err)
-
 				validateClonedHeaders(t, r.GetHeaders(), originalReq.GetHeaders())
 			})
 			t.Run("WithHeaders", func(t *testing.T) {
@@ -134,12 +132,10 @@ func TestMetricQueryRequestCloneHeaders(t *testing.T) {
 				}
 
 				r := originalReq.WithHeaders(newHeaders)
-				require.NoError(t, err)
-
 				validateClonedHeaders(t, r.GetHeaders(), newHeaders)
 			})
 			t.Run("WithStartEnd", func(t *testing.T) {
-				r := originalReq.WithStartEnd(100, 200)
+				r, err := originalReq.WithStartEnd(100, 200)
 				require.NoError(t, err)
 
 				validateClonedHeaders(t, r.GetHeaders(), originalReq.GetHeaders())
@@ -152,20 +148,14 @@ func TestMetricQueryRequestCloneHeaders(t *testing.T) {
 			})
 			t.Run("WithTotalQueriesHint", func(t *testing.T) {
 				r := originalReq.WithTotalQueriesHint(10)
-				require.NoError(t, err)
-
 				validateClonedHeaders(t, r.GetHeaders(), originalReq.GetHeaders())
 			})
 			t.Run("WithExpr", func(t *testing.T) {
 				r := originalReq.WithExpr(nil)
-				require.NoError(t, err)
-
 				validateClonedHeaders(t, r.GetHeaders(), originalReq.GetHeaders())
 			})
 			t.Run("WithEstimatedSeriesCountHint", func(t *testing.T) {
 				r := originalReq.WithEstimatedSeriesCountHint(10)
-				require.NoError(t, err)
-
 				validateClonedHeaders(t, r.GetHeaders(), originalReq.GetHeaders())
 			})
 		})
