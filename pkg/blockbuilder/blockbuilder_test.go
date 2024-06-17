@@ -184,7 +184,7 @@ func TestBlockBuilder(t *testing.T) {
 		nextConsumeCycleWithChecks = func(cycleEnd time.Time, expBlocksCreated, expCompacts int) {
 			blocksBefore := numBlocksInBucket(t)
 
-			require.NoError(t, bb.nextConsumeCycle(ctx, cycleEnd))
+			require.NoError(t, bb.NextConsumeCycle(ctx, cycleEnd))
 			require.Equal(t, expCompacts, collectCompacts(), "mismatch in compact calls")
 
 			blocksAfter := numBlocksInBucket(t)
@@ -260,7 +260,7 @@ func TestBlockBuilder(t *testing.T) {
 
 		cycleEnd = kafkaTime.Add(-cfg.ConsumeInterval).Truncate(cfg.ConsumeInterval).Add(cfg.ConsumeInterval + cfg.ConsumeIntervalBuffer)
 
-		require.NoError(t, bb.nextConsumeCycle(ctx, cycleEnd))
+		require.NoError(t, bb.NextConsumeCycle(ctx, cycleEnd))
 
 		// We want number of cycles to be at least 3 per partition. But not more than 4 because of any
 		// time calculation differences because of when the test was called.
