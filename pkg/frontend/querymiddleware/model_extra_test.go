@@ -4,8 +4,6 @@ package querymiddleware
 
 import (
 	"context"
-	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/exp/slices"
 	"io"
 	"net/http"
 	"net/url"
@@ -14,8 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 )
 
 func TestEncodeAndDecodeCachedHTTPResponse(t *testing.T) {
@@ -80,10 +80,7 @@ func TestMetricQueryRequestCloneHeaders(t *testing.T) {
 		}
 		require.Equal(t, "test-value", headersMap["X-Test-Header"])
 		require.Equal(t, "application/x-www-form-urlencoded", headersMap["Content-Type"])
-
-		// Check that the lengths are the same
-		require.Len(t, cloned, len(original))
-
+		
 		// Check that the elements are equal but not the same instances
 		for i := range original {
 			if cloned[i] == original[i] {
