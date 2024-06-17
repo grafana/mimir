@@ -719,7 +719,7 @@ differentuser:
 		"different user override, othernamespace": {
 			inputNamespace: "othernamespace",
 			overrides:      differentUserOverride,
-			expectedLimit:  10,
+			expectedLimit:  5,
 		},
 	}
 

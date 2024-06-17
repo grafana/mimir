@@ -40,6 +40,15 @@ func (m LimitsMap[T]) Set(s string) error {
 	return m.updateMap(newMap)
 }
 
+// Clone returns a copy of the LimitsMap.
+func (m LimitsMap[T]) Clone() LimitsMap[T] {
+	newMap := make(map[string]T, len(m.data))
+	for k, v := range m.data {
+		newMap[k] = v
+	}
+	return LimitsMap[T]{data: newMap, validator: m.validator}
+}
+
 // UnmarshalYAML implements yaml.Unmarshaler.
 func (m LimitsMap[T]) UnmarshalYAML(value *yaml.Node) error {
 	newMap := make(map[string]T)

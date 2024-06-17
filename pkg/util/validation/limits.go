@@ -383,9 +383,10 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	// We want to set l to the defaults and then overwrite it with the input.
 	if defaultLimits != nil {
 		*l = *defaultLimits
+
 		// Make copy of default limits, otherwise unmarshalling would modify map in default limits.
-		l.copyNotificationIntegrationLimits(defaultLimits.NotificationRateLimitPerIntegration)
-		l.copyMaxRulesPerRuleGroupByNamespaceLimits(defaultLimits.RulerMaxRulesPerRuleGroupByNamespace)
+		l.NotificationRateLimitPerIntegration = defaultLimits.NotificationRateLimitPerIntegration.Clone()
+		l.RulerMaxRulesPerRuleGroupByNamespace = defaultLimits.RulerMaxRulesPerRuleGroupByNamespace.Clone()
 	}
 
 	// Decode into a reflection-crafted struct that has fields for the extensions.

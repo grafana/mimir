@@ -155,3 +155,25 @@ func TestLimitsMap_Equal(t *testing.T) {
 		})
 	}
 }
+
+func TestLimitsMap_Clone(t *testing.T) {
+	// Create an initial LimitsMap with some data.
+	original := NewLimitsMap[float64](fakeValidator)
+	original.data["limit1"] = 1.0
+	original.data["limit2"] = 2.0
+
+	// Clone the original LimitsMap.
+	cloned := original.Clone()
+
+	// Check that the cloned LimitsMap is equal to the original.
+	require.True(t, original.Equal(cloned), "expected cloned LimitsMap to be different from original")
+
+	// Modify the original LimitsMap and ensure the cloned map is not affected.
+	original.data["limit1"] = 10.0
+	require.False(t, cloned.data["limit1"] == 10.0, "expected cloned LimitsMap to be unaffected by changes to original")
+
+	// Modify the cloned LimitsMap and ensure the original map is not affected.
+	cloned.data["limit3"] = 3.0
+	_, exists := original.data["limit3"]
+	require.False(t, exists, "expected original LimitsMap to be unaffected by changes to cloned")
+}
