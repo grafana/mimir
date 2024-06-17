@@ -36,6 +36,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -54,12 +55,17 @@ func TestWriteError(t *testing.T) {
 	}{
 		{http.StatusInternalServerError, errors.New("unknown")},
 		{http.StatusGatewayTimeout, context.DeadlineExceeded},
+		{http.StatusGatewayTimeout, errors.Wrap(context.DeadlineExceeded, "an error occurred")},
 		{StatusClientClosedRequest, context.Canceled},
+		{StatusClientClosedRequest, errors.Wrap(context.Canceled, "an error occurred")},
 		{http.StatusBadRequest, httpgrpc.Errorf(http.StatusBadRequest, "")},
+		{http.StatusBadRequest, errors.Wrap(httpgrpc.Errorf(http.StatusBadRequest, ""), "an error occurred")},
+		{http.StatusBadRequest, apierror.New(apierror.TypeBadData, "")},
+		{http.StatusBadRequest, errors.Wrap(apierror.New(apierror.TypeBadData, "invalid request"), "an error occurred")},
 	} {
 		t.Run(test.err.Error(), func(t *testing.T) {
 			w := httptest.NewRecorder()
-			writeError(w, test.err)
+			require.Equal(t, test.status, writeError(w, test.err))
 			require.Equal(t, test.status, w.Result().StatusCode)
 		})
 	}
