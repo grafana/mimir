@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -80,14 +81,15 @@ func TestMetricQueryRequestCloneHeaders(t *testing.T) {
 		}
 		require.Equal(t, "test-value", headersMap["X-Test-Header"])
 		require.Equal(t, "application/x-www-form-urlencoded", headersMap["Content-Type"])
-		
+
 		// Check that the elements are equal but not the same instances
 		for i := range original {
-			if cloned[i] == original[i] {
-				t.Errorf("expected element %d to be a different instance, but it is the same", i)
-			}
+			require.NotSame(t, cloned[i], original[i])
+
 			require.Equalf(t, original[i].Name, cloned[i].Name, "expected element %d to have Name %s, got %s", i, original[i].Name, cloned[i].Name)
+
 			require.True(t, slices.Equal(original[i].Values, cloned[i].Values), "expected values to be equal")
+			require.NotSame(t, unsafe.SliceData(original[i].Values), unsafe.SliceData(cloned[i].Values), "expected values to be different instances")
 		}
 	}
 
@@ -119,6 +121,12 @@ func TestMetricQueryRequestCloneHeaders(t *testing.T) {
 			originalReq, err := c.DecodeMetricsQueryRequest(context.Background(), httpReq)
 			require.NoError(t, err)
 
+			t.Run("WithID", func(t *testing.T) {
+				r := originalReq.WithID(1234)
+				require.NoError(t, err)
+
+				validateClonedHeaders(t, r.GetHeaders(), originalReq.GetHeaders())
+			})
 			t.Run("WithHeaders", func(t *testing.T) {
 				newHeaders := []*PrometheusHeader{
 					{Name: "Content-Type", Values: []string{"application/x-www-form-urlencoded"}},
@@ -130,8 +138,8 @@ func TestMetricQueryRequestCloneHeaders(t *testing.T) {
 
 				validateClonedHeaders(t, r.GetHeaders(), newHeaders)
 			})
-			t.Run("WithID", func(t *testing.T) {
-				r := originalReq.WithID(1234)
+			t.Run("WithStartEnd", func(t *testing.T) {
+				r := originalReq.WithStartEnd(100, 200)
 				require.NoError(t, err)
 
 				validateClonedHeaders(t, r.GetHeaders(), originalReq.GetHeaders())
