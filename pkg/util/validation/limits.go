@@ -435,21 +435,6 @@ func (l *Limits) validate() error {
 	return nil
 }
 
-func (l *Limits) copyNotificationIntegrationLimits(defaults LimitsMap[float64]) {
-	l.NotificationRateLimitPerIntegration = NotificationRateLimitMap()
-	for k, v := range defaults.data {
-		l.NotificationRateLimitPerIntegration.data[k] = v
-	}
-}
-
-func (l *Limits) copyMaxRulesPerRuleGroupByNamespaceLimits(defaults LimitsMap[int64]) {
-	l.RulerMaxRulesPerRuleGroupByNamespace = NewLimitsMap[int64](nil)
-	for k, v := range defaults.data {
-		l.RulerMaxRulesPerRuleGroupByNamespace.data[k] = v
-	}
-
-}
-
 // When we load YAML from disk, we want the various per-customer limits
 // to default to any values specified on the command line, not default
 // command line values.  This global contains those values.  I (Tom) cannot
