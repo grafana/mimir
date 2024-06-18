@@ -360,7 +360,7 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 		level.Info(s.logger).Log("msg", "dropped outdated block", "block", id)
 	}
 
-	// Start snapshotter in the end of the sync, but do that only once per BucketStore's life time.
+	// Start snapshotter in the end of the sync, but do that only once per BucketStore's lifetime.
 	// We do that here so the snapshotter watched after blocks from both initial sync and those discovered later.
 	var err error
 	s.snapshotterStartOnce.Do(func() {

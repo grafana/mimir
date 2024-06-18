@@ -102,8 +102,7 @@ func (s *Snapshotter) RestoreLoadedBlocks() map[ulid.ULID]int64 {
 	err := loadIndexHeadersSnapshot(fileName, &snapshot)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// We didn't find the snapshot. Could be because we crashed after restoring it last time
-			// or because the previous binary didn't support eager loading.
+			// We didn't find the snapshot. Could be because the previous binary didn't support eager loading.
 			return nil
 		}
 		level.Warn(s.logger).Log(
