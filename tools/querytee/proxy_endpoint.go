@@ -184,6 +184,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 			lvl := level.Debug
 			if !res.succeeded() {
 				lvl = level.Warn
+				logger.Error(err)
 			}
 
 			lvl(logger).Log("msg", "Backend response", "status", status, "elapsed", elapsed)
