@@ -10416,8 +10416,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "tenant-federation.max-tenants",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldType": "int"
         }
       ],
       "fieldValue": null,

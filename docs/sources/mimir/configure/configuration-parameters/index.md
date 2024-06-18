@@ -216,8 +216,8 @@ tenant_federation:
   # CLI flag: -tenant-federation.max-concurrent
   [max_concurrent: <int> | default = 16]
 
-  # (experimental) The max number of tenant IDs that may be supplied for a
-  # federated query if enabled. 0 to disable the limit.
+  # The max number of tenant IDs that may be supplied for a federated query if
+  # enabled. 0 to disable the limit.
   # CLI flag: -tenant-federation.max-tenants
   [max_tenants: <int> | default = 0]
 

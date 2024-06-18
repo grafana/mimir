@@ -151,7 +151,6 @@ The following features are currently experimental:
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
-  - Max number of tenants that may be queried at once (`-tenant-federation.max-tenants`)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
   - Remote read request limits (`-query-frontend.remote-read-limits-enabled`)
