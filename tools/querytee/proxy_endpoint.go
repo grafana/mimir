@@ -99,6 +99,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 		logger.SetSpanAndLogTag("query", query)
 		logger.SetSpanAndLogTag("route_name", p.routeName)
 		logger.SetSpanAndLogTag("user", req.Header.Get("X-Scope-OrgID"))
+		logger.SetSpanAndLogTag("user_agent", req.Header.Get("User-Agent"))
 	}
 
 	setSpanAndLogTags(logger)
