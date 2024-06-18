@@ -24,6 +24,29 @@ func TestNewLimitsMap(t *testing.T) {
 	require.Len(t, lm.data, 1)
 }
 
+func TestLimitsMap_IsNil(t *testing.T) {
+	tc := map[string]struct {
+		input    LimitsMap[float64]
+		expected bool
+	}{
+
+		"when the map is initialised": {
+			input:    LimitsMap[float64]{data: map[string]float64{"key1": 10}},
+			expected: true,
+		},
+		"when the map is not initialised": {
+			input:    LimitsMap[float64]{data: nil},
+			expected: false,
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tt.input.IsInitialized(), tt.expected)
+		})
+	}
+}
+
 func TestLimitsMap_SetAndString(t *testing.T) {
 	tc := map[string]struct {
 		input    string

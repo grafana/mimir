@@ -22,6 +22,11 @@ func NewLimitsMap[T float64 | int](validator func(k string, v T) error) LimitsMa
 	}
 }
 
+// IsInitialized returns true if the map is initialized.
+func (m LimitsMap[T]) IsInitialized() bool {
+	return m.data != nil
+}
+
 // String implements flag.Value
 func (m LimitsMap[T]) String() string {
 	out, err := json.Marshal(m.data)
