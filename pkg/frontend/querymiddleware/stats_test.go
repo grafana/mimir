@@ -174,7 +174,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				QuerierStats: &querier_stats.Stats{},
 				Start:        start.Truncate(time.Millisecond).Add(-30 * time.Minute),
 				End:          end.Truncate(time.Millisecond).Add(10 * time.Minute),
-				MinT:         start.Truncate(time.Millisecond).Add(-30 * time.Minute).Add(-5 * time.Minute), // 5 minute is the Promql engine lookback duration.
+				MinT:         start.Truncate(time.Millisecond).Add(-30 * time.Minute),
 				MaxT:         end.Truncate(time.Millisecond).Add(10 * time.Minute),
 			},
 		},
