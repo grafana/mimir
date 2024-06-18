@@ -220,19 +220,23 @@ type Planner interface {
 // This is similar to tsdb.Compactor just without the Plan method.
 // TODO(bwplotka): Split the Planner from Compactor on upstream as well, so we can import it.
 type Compactor interface {
-	// Write persists a Block into a directory.
-	// No Block is written when the resulting Block has 0 samples, and returns an empty ulid.ULID.
-	Write(dest string, b tsdb.BlockReader, mint, maxt int64, parent *tsdb.BlockMeta) (ulid.ULID, error)
+	// Write persists one or more Blocks into a directory.
+	// No Block is written when resulting Block has 0 samples and returns an empty slice.
+	// Prometheus always return one or no block. The interface allows returning more than one
+	// block for downstream users to experiment with compactor.
+	Write(dest string, b tsdb.BlockReader, mint, maxt int64, parent *tsdb.BlockMeta) ([]ulid.ULID, error)
 
 	// Compact runs compaction against the provided directories. Must
 	// only be called concurrently with results of Plan().
 	// Can optionally pass a list of already open blocks,
 	// to avoid having to reopen them.
-	// When resulting Block has 0 samples
+	// Prometheus always return one or no block. The interface allows returning more than one
+	// block for downstream users to experiment with compactor.
+	// When one resulting Block has 0 samples
 	//  * No block is written.
 	//  * The source dirs are marked Deletable.
-	//  * Returns empty ulid.ULID{}.
-	Compact(dest string, dirs []string, open []*tsdb.Block) (ulid.ULID, error)
+	//  * Block is not included in the result.
+	Compact(dest string, dirs []string, open []*tsdb.Block) ([]ulid.ULID, error)
 
 	// CompactWithSplitting merges and splits the source blocks into shardCount number of compacted blocks,
 	// and returns a slice of block IDs. The position of the returned block ID in the result slice corresponds to the shard index.
@@ -358,9 +362,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	if job.UseSplitting() {
 		compIDs, err = c.comp.CompactWithSplitting(subDir, blocksToCompactDirs, nil, uint64(job.SplittingShards()))
 	} else {
-		var compID ulid.ULID
-		compID, err = c.comp.Compact(subDir, blocksToCompactDirs, nil)
-		compIDs = append(compIDs, compID)
+		compIDs, err = c.comp.Compact(subDir, blocksToCompactDirs, nil)
 	}
 	if err != nil {
 		return false, nil, errors.Wrapf(err, "compact blocks %s", toCompactStr)
