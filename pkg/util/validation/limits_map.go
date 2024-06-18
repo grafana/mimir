@@ -9,13 +9,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// LimitsMap is a generic map that can hold either float64 or int64 as values.
-type LimitsMap[T float64 | int64] struct {
+// LimitsMap is a generic map that can hold either float64 or int as values.
+type LimitsMap[T float64 | int] struct {
 	data      map[string]T
 	validator func(k string, v T) error
 }
 
-func NewLimitsMap[T float64 | int64](validator func(k string, v T) error) LimitsMap[T] {
+func NewLimitsMap[T float64 | int](validator func(k string, v T) error) LimitsMap[T] {
 	return LimitsMap[T]{
 		data:      make(map[string]T),
 		validator: validator,

@@ -345,8 +345,8 @@ func getFieldCustomType(t reflect.Type) (string, bool) {
 	switch t.String() {
 	case reflect.TypeOf(validation.LimitsMap[float64]{}).String():
 		return "map of string to float64", true
-	case reflect.TypeOf(validation.LimitsMap[int64]{}).String():
-		return "map of string to int64", true
+	case reflect.TypeOf(validation.LimitsMap[int]{}).String():
+		return "map of string to int", true
 	case reflect.TypeOf(&url.URL{}).String():
 		return "url", true
 	case reflect.TypeOf(time.Duration(0)).String():
@@ -431,8 +431,8 @@ func getCustomFieldType(t reflect.Type) (string, bool) {
 	switch t.String() {
 	case reflect.TypeOf(validation.LimitsMap[float64]{}).String():
 		return "map of string to float64", true
-	case reflect.TypeOf(validation.LimitsMap[int64]{}).String():
-		return "map of string to int64", true
+	case reflect.TypeOf(validation.LimitsMap[int]{}).String():
+		return "map of string to int", true
 	case reflect.TypeOf(&url.URL{}).String():
 		return "url", true
 	case reflect.TypeOf(time.Duration(0)).String():
@@ -480,8 +480,8 @@ func ReflectType(typ string) reflect.Type {
 		return reflect.TypeOf([]*validation.BlockedQuery{})
 	case "map of string to float64":
 		return reflect.TypeOf(validation.LimitsMap[float64]{})
-	case "map of string to int64":
-		return reflect.TypeOf(validation.LimitsMap[int64]{})
+	case "map of string to int":
+		return reflect.TypeOf(validation.LimitsMap[int]{})
 	case "list of durations":
 		return reflect.TypeOf(tsdb.DurationList{})
 	default:

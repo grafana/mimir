@@ -3437,7 +3437,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # -ruler.max-rules-per-rule-group, but only applies for the specific namespace.
 # If specified, it supersedes -ruler.max-rules-per-rule-group.
 # CLI flag: -ruler.max-rules-per-rule-group-by-namespace
-[ruler_max_rules_per_rule_group_by_namespace: <map of string to int64> | default = {}]
+[ruler_max_rules_per_rule_group_by_namespace: <map of string to int> | default = {}]
 
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
