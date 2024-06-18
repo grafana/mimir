@@ -90,7 +90,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 		responsesMtx = sync.Mutex{}
 		timingMtx    = sync.Mutex{}
 		query        = req.URL.RawQuery
-		logger, ctx  = spanlogger.NewWithLogger(req.Context(), p.logger, "Incoming request")
+		logger, ctx  = spanlogger.NewWithLogger(req.Context(), p.logger, "Incoming proxied request")
 	)
 
 	defer logger.Finish()
@@ -142,7 +142,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 			// Don't cancel the child request's context when the parent context (from the incoming HTTP request) is cancelled after we return a response.
 			// This allows us to continue running slower requests after returning a response to the caller.
 			ctx := context.WithoutCancel(ctx)
-			logger, ctx := spanlogger.NewWithLogger(ctx, p.logger, fmt.Sprintf("Outgoing request to %s", b.Name()))
+			logger, ctx := spanlogger.NewWithLogger(ctx, p.logger, "Outgoing proxied request")
 			defer logger.Finish()
 			setSpanAndLogTags(logger)
 			logger.SetSpanAndLogTag("backend", b.Name())
