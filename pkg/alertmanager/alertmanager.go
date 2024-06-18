@@ -6,13 +6,11 @@
 package alertmanager
 
 import (
-	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	htmlTemplate "html/template"
 	"net/http"
 	"net/url"
 	"path"
@@ -21,7 +19,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Masterminds/sprig/v3"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
@@ -29,6 +26,7 @@ import (
 	alertingNotify "github.com/grafana/alerting/notify"
 	"github.com/grafana/alerting/notify/nfstatus"
 	alertingReceivers "github.com/grafana/alerting/receivers"
+	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/api"
@@ -317,19 +315,6 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	am.dispatcherMetrics = dispatch.NewDispatcherMetrics(true, am.registry)
 
-	mailTemplates = htmlTemplate.New("name")
-	mailTemplates.Funcs(htmlTemplate.FuncMap{
-		"Subject":                 subjectTemplateFunc,
-		"HiddenSubject":           hiddenSubjectTemplateFunc,
-		"__dangerouslyInjectHTML": __dangerouslyInjectHTML,
-	})
-	mailTemplates.Funcs(sprig.FuncMap())
-	if _, err := mailTemplates.ParseFiles("./templates/ng_alert_notification.html"); err != nil {
-		return nil, err
-	}
-
-	fmt.Println("Parsed:", mailTemplates.Templates())
-
 	//TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
 	return am, nil
 }
@@ -388,6 +373,10 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 		return err
 	}
 	tmpl.ExternalURL = am.cfg.ExternalURL
+
+	if err := tmpl.Parse(strings.NewReader(alertingTemplates.DefaultTemplateString)); err != nil {
+		return err
+	}
 
 	cfg := definition.GrafanaToUpstreamConfig(conf)
 	am.api.Update(&cfg, func(_ model.LabelSet) {})
@@ -547,27 +536,22 @@ func buildIntegrationsMap(gCfg *config.GlobalConfig, externalURL string, nc []*d
 
 func buildGrafanaReceiverIntegrations(gCfg *config.GlobalConfig, externalURL string, rcv *definition.PostableApiReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
 	loggerFactory := newLoggerFactory(logger)
-	smtpCfg := SmtpConfig{
-		AuthPassword:   string(gCfg.SMTPAuthPassword),
-		AuthUser:       gCfg.SMTPAuthUsername,
-		CertFile:       gCfg.HTTPConfig.TLSConfig.CertFile,
-		ContentTypes:   []string{}, // (?)
-		EhloIdentity:   gCfg.SMTPHello,
-		ExternalURL:    externalURL,
-		FromAddress:    gCfg.SMTPFrom,
-		FromName:       "Grafana",
-		Host:           gCfg.SMTPSmarthost.String(),
-		KeyFile:        gCfg.HTTPConfig.TLSConfig.KeyFile,
-		SkipVerify:     !gCfg.SMTPRequireTLS,
-		StartTLSPolicy: "",                  // (?)
-		StaticHeaders:  map[string]string{}, // (?)
+	emailCfg := alertingReceivers.EmailSenderConfig{
+		AuthPassword:  string(gCfg.SMTPAuthPassword),
+		AuthUser:      gCfg.SMTPAuthUsername,
+		CertFile:      gCfg.HTTPConfig.TLSConfig.CertFile,
+		EhloIdentity:  gCfg.SMTPHello,
+		ExternalURL:   externalURL,
+		FromAddress:   gCfg.SMTPFrom,
+		FromName:      "Grafana",
+		Host:          gCfg.SMTPSmarthost.String(),
+		KeyFile:       gCfg.HTTPConfig.TLSConfig.KeyFile,
+		SkipVerify:    !gCfg.SMTPRequireTLS,
+		StaticHeaders: map[string]string{}, // (?)
 	}
 
 	whFn := func(n alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
-		return NewSender(logger, smtpCfg), nil
-	}
-	emailFn := func(n alertingReceivers.Metadata) (alertingReceivers.EmailSender, error) {
-		return NewSender(logger, smtpCfg), nil
+		return NewSender(logger), nil
 	}
 
 	// The decrypt functions and the context are used to decrypt the configuration.
@@ -583,7 +567,7 @@ func buildGrafanaReceiverIntegrations(gCfg *config.GlobalConfig, externalURL str
 		&images.UnavailableProvider{}, // TODO: include images in notifications
 		loggerFactory,
 		whFn,
-		emailFn,
+		alertingReceivers.NewEmailSenderFactory(emailCfg),
 		1, // orgID is always 1.
 		version.Version,
 	)
@@ -859,44 +843,4 @@ func alertSize(alert model.Alert) int {
 	}
 	size += len(alert.GeneratorURL)
 	return size
-}
-
-// hiddenSubjectTemplateFunc sets the subject template (value) on the map represented by `.Subject.` (obj) so that it can be compiled and executed later.
-// It returns a blank string, so there will be no resulting value left in place of the template.
-func hiddenSubjectTemplateFunc(obj map[string]any, value string) string {
-	obj["value"] = value
-	return ""
-}
-
-// subjectTemplateFunc does the same thing has hiddenSubjectTemplateFunc, but in addition it executes and returns the subject template using the data represented in `.TemplateData` (data)
-// This results in the template being replaced by the subject string.
-func subjectTemplateFunc(obj map[string]any, data map[string]any, value string) string {
-	obj["value"] = value
-
-	titleTmpl, err := htmlTemplate.New("title").Parse(value)
-	if err != nil {
-		return ""
-	}
-
-	var buf bytes.Buffer
-	err = titleTmpl.ExecuteTemplate(&buf, "title", data)
-	if err != nil {
-		return ""
-	}
-
-	subj := buf.String()
-	// Since we have already executed the template, save it to subject data so we don't have to do it again later on
-	obj["executed_template"] = subj
-	return subj
-}
-
-// __dangerouslyInjectHTML allows marking areas of am email template as HTML safe, this will _not_ sanitize the string and will allow HTML snippets to be rendered verbatim.
-// Use with absolute care as this _could_ allow for XSS attacks when used in an insecure context.
-//
-// It's safe to ignore gosec warning G203 when calling this function in an HTML template because we assume anyone who has write access
-// to the email templates folder is an administrator.
-//
-// nolint:gosec
-func __dangerouslyInjectHTML(s string) htmlTemplate.HTML {
-	return htmlTemplate.HTML(s)
 }

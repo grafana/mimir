@@ -47,11 +47,9 @@ type SmtpConfig struct {
 type Sender struct {
 	c   *http.Client
 	log log.Logger
-
-	smtp SmtpConfig
 }
 
-func NewSender(log log.Logger, cfg SmtpConfig) *Sender {
+func NewSender(log log.Logger) *Sender {
 	netTransport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			Renegotiation: tls.RenegotiateFreelyAsClient,
@@ -67,9 +65,8 @@ func NewSender(log log.Logger, cfg SmtpConfig) *Sender {
 		Transport: netTransport,
 	}
 	return &Sender{
-		c:    c,
-		log:  log,
-		smtp: cfg,
+		c:   c,
+		log: log,
 	}
 }
 

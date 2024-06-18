@@ -26,7 +26,7 @@ func TestSendWebhook(t *testing.T) {
 		got = r
 		w.WriteHeader(http.StatusOK)
 	}))
-	s := NewSender(alertingLogging.FakeLogger{}, SmtpConfig{})
+	s := NewSender(alertingLogging.FakeLogger{})
 
 	// The method should be either POST or PUT.
 	cmd := alertingReceivers.SendWebhookSettings{
