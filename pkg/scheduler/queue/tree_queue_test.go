@@ -27,21 +27,21 @@ func newTenantQuerierAssignments() *tenantQuerierAssignments {
 func Test_NewTree(t *testing.T) {
 	tests := []struct {
 		name      string
-		treeAlgos []DequeueAlgorithm
+		treeAlgos []QueuingAlgorithm
 		state     *tenantQuerierAssignments
 		expectErr bool
 	}{
 		{
 			name:      "create round-robin tree",
-			treeAlgos: []DequeueAlgorithm{&roundRobinState{}},
+			treeAlgos: []QueuingAlgorithm{&roundRobinState{}},
 		},
 		{
-			name:      "create shuffle-shard tree",
-			treeAlgos: []DequeueAlgorithm{&tenantQuerierAssignments{}},
+			name:      "create tenant-querier tree",
+			treeAlgos: []QueuingAlgorithm{&tenantQuerierAssignments{}},
 		},
 		{
 			name:      "fail to create tree without defined dequeuing algorithm",
-			treeAlgos: []DequeueAlgorithm{nil},
+			treeAlgos: []QueuingAlgorithm{nil},
 			expectErr: true,
 		},
 	}
@@ -61,23 +61,23 @@ func Test_NewTree(t *testing.T) {
 func Test_EnqueueBackByPath(t *testing.T) {
 	tests := []struct {
 		name                string
-		treeAlgosByDepth    []DequeueAlgorithm
+		treeAlgosByDepth    []QueuingAlgorithm
 		childPathsToEnqueue []QueuePath
 		expectErr           bool
 	}{
 		{
 			name:                "enqueue tenant-querier node to round-robin node",
-			treeAlgosByDepth:    []DequeueAlgorithm{&roundRobinState{}, &roundRobinState{}},
+			treeAlgosByDepth:    []QueuingAlgorithm{&roundRobinState{}, &roundRobinState{}},
 			childPathsToEnqueue: []QueuePath{{"child-1"}},
 		},
 		{
 			name:                "enqueue tenant-querier node to round-robin node",
-			treeAlgosByDepth:    []DequeueAlgorithm{&roundRobinState{}, &tenantQuerierAssignments{tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{}}},
+			treeAlgosByDepth:    []QueuingAlgorithm{&roundRobinState{}, &tenantQuerierAssignments{tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{}}},
 			childPathsToEnqueue: []QueuePath{{"child-1"}, {"child-2"}},
 		},
 		{
 			name: "enqueue round-robin node to tenant-querier node",
-			treeAlgosByDepth: []DequeueAlgorithm{
+			treeAlgosByDepth: []QueuingAlgorithm{
 				newTenantQuerierAssignments(),
 				&roundRobinState{},
 			},
@@ -85,7 +85,7 @@ func Test_EnqueueBackByPath(t *testing.T) {
 		},
 		{
 			name: "enqueue tenant-querier node to tenant-querier node",
-			treeAlgosByDepth: []DequeueAlgorithm{
+			treeAlgosByDepth: []QueuingAlgorithm{
 				newTenantQuerierAssignments(),
 				newTenantQuerierAssignments(),
 			},
@@ -93,7 +93,7 @@ func Test_EnqueueBackByPath(t *testing.T) {
 		},
 		{
 			name: "enqueue grandchildren to a tree with max-depth of 2",
-			treeAlgosByDepth: []DequeueAlgorithm{
+			treeAlgosByDepth: []QueuingAlgorithm{
 				newTenantQuerierAssignments(),
 				&roundRobinState{},
 				newTenantQuerierAssignments(),
@@ -102,7 +102,7 @@ func Test_EnqueueBackByPath(t *testing.T) {
 		},
 		{
 			name:                "enqueue beyond max-depth",
-			treeAlgosByDepth:    []DequeueAlgorithm{&roundRobinState{}},
+			treeAlgosByDepth:    []QueuingAlgorithm{&roundRobinState{}},
 			childPathsToEnqueue: []QueuePath{{"child"}, {"child, grandchild"}},
 			expectErr:           true,
 		},
@@ -128,13 +128,13 @@ func Test_EnqueueFrontByPath(t *testing.T) {
 	someQuerier := QuerierID("placeholder")
 	tests := []struct {
 		name             string
-		treeAlgosByDepth []DequeueAlgorithm
+		treeAlgosByDepth []QueuingAlgorithm
 		enqueueObjs      []enqueueObj
 		expected         []any
 	}{
 		{
 			name:             "enqueue to front of round-robin node",
-			treeAlgosByDepth: []DequeueAlgorithm{&roundRobinState{}},
+			treeAlgosByDepth: []QueuingAlgorithm{&roundRobinState{}},
 			enqueueObjs: []enqueueObj{
 				{"query-1", QueuePath{}},
 				{"query-2", QueuePath{}},
@@ -142,8 +142,8 @@ func Test_EnqueueFrontByPath(t *testing.T) {
 			expected: []any{"query-2", "query-1"},
 		},
 		{
-			name: "enqueue to front of shuffle-shard node",
-			treeAlgosByDepth: []DequeueAlgorithm{&tenantQuerierAssignments{
+			name: "enqueue to front of tenant-querier node",
+			treeAlgosByDepth: []QueuingAlgorithm{&tenantQuerierAssignments{
 				currentQuerier: &someQuerier,
 			}},
 			enqueueObjs: []enqueueObj{
@@ -176,7 +176,7 @@ func Test_EnqueueFrontByPath(t *testing.T) {
 func Test_Dequeue_RootNode(t *testing.T) {
 	tests := []struct {
 		name          string
-		rootAlgo      DequeueAlgorithm
+		rootAlgo      QueuingAlgorithm
 		enqueueToRoot []any
 	}{
 		{
@@ -184,7 +184,7 @@ func Test_Dequeue_RootNode(t *testing.T) {
 			rootAlgo: &roundRobinState{},
 		},
 		{
-			name:     "dequeue from empty shuffle-shard root node",
+			name:     "dequeue from empty tenant-querier root node",
 			rootAlgo: newTenantQuerierAssignments(),
 		},
 		{
@@ -193,7 +193,7 @@ func Test_Dequeue_RootNode(t *testing.T) {
 			enqueueToRoot: []any{"something-in-root"},
 		},
 		{
-			name:          "dequeue from non-empty shuffle-shard root node",
+			name:          "dequeue from non-empty tenant-querier root node",
 			rootAlgo:      newTenantQuerierAssignments(),
 			enqueueToRoot: []any{"something-else-in-root"},
 		},
@@ -325,12 +325,12 @@ func Test_DequeueOrderAfterEnqueue(t *testing.T) {
 
 	tests := []struct {
 		name             string
-		treeAlgosByDepth []DequeueAlgorithm
+		treeAlgosByDepth []QueuingAlgorithm
 		operationOrder   []op
 	}{
 		{
 			name:             "round-robin node should dequeue from first child one more time after new node added",
-			treeAlgosByDepth: []DequeueAlgorithm{&roundRobinState{}, &roundRobinState{}},
+			treeAlgosByDepth: []QueuingAlgorithm{&roundRobinState{}, &roundRobinState{}},
 			operationOrder: []op{
 				{enqueue, QueuePath{"child-1"}, "obj-1"},
 				{enqueue, QueuePath{"child-1"}, "obj-2"},
@@ -342,8 +342,8 @@ func Test_DequeueOrderAfterEnqueue(t *testing.T) {
 			},
 		},
 		{
-			name: "should dequeue from new (next-in-queue) shuffle-shard child immediately after it is added",
-			treeAlgosByDepth: []DequeueAlgorithm{
+			name: "should dequeue from new (next-in-queue) tenant-querier child immediately after it is added",
+			treeAlgosByDepth: []QueuingAlgorithm{
 				&tenantQuerierAssignments{
 					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{},
 					tenantNodes:      map[string][]*Node{},
@@ -390,7 +390,7 @@ func Test_DequeueOrderAfterEnqueue(t *testing.T) {
 func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 	tests := []struct {
 		name             string
-		treeAlgosByDepth []DequeueAlgorithm
+		treeAlgosByDepth []QueuingAlgorithm
 		state            *tenantQuerierAssignments
 		currQuerier      []QuerierID
 		enqueueObjs      []enqueueObj
@@ -399,7 +399,7 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 	}{
 		{
 			name: "happy path - tenant found in tenant-querier map under first child",
-			treeAlgosByDepth: []DequeueAlgorithm{
+			treeAlgosByDepth: []QueuingAlgorithm{
 				&roundRobinState{},
 				newTenantQuerierAssignments(),
 				&roundRobinState{},
@@ -416,7 +416,7 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 		},
 		{
 			name: "tenant exists, but not for querier",
-			treeAlgosByDepth: []DequeueAlgorithm{
+			treeAlgosByDepth: []QueuingAlgorithm{
 				&roundRobinState{},
 				newTenantQuerierAssignments(),
 				&roundRobinState{},
@@ -433,7 +433,7 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 		},
 		{
 			name: "1 of 3 tenants exist for querier",
-			treeAlgosByDepth: []DequeueAlgorithm{
+			treeAlgosByDepth: []QueuingAlgorithm{
 				&roundRobinState{},
 				newTenantQuerierAssignments(),
 				&roundRobinState{},
@@ -451,7 +451,7 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 		},
 		{
 			name: "tenant exists for querier on next parent node",
-			treeAlgosByDepth: []DequeueAlgorithm{
+			treeAlgosByDepth: []QueuingAlgorithm{
 				&roundRobinState{},
 				newTenantQuerierAssignments(),
 				&roundRobinState{},
@@ -470,7 +470,7 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 		},
 		{
 			name: "2 of 3 tenants exist for querier",
-			treeAlgosByDepth: []DequeueAlgorithm{
+			treeAlgosByDepth: []QueuingAlgorithm{
 				&roundRobinState{},
 				newTenantQuerierAssignments(),
 				&roundRobinState{},
@@ -488,8 +488,8 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 			expected: []any{"query-1", "query-3", nil},
 		},
 		{
-			name: "root node is shuffle-shard node",
-			treeAlgosByDepth: []DequeueAlgorithm{
+			name: "root node is tenant-querier node",
+			treeAlgosByDepth: []QueuingAlgorithm{
 				&tenantQuerierAssignments{tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{}},
 				&roundRobinState{},
 				&roundRobinState{},
@@ -508,7 +508,7 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 		},
 		{
 			name: "dequeuing for one querier returns nil, but does return for a different querier",
-			treeAlgosByDepth: []DequeueAlgorithm{
+			treeAlgosByDepth: []QueuingAlgorithm{
 				&tenantQuerierAssignments{tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{}},
 				&roundRobinState{},
 				&roundRobinState{},
@@ -525,7 +525,7 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 		},
 		{
 			name: "no querier set in state",
-			treeAlgosByDepth: []DequeueAlgorithm{
+			treeAlgosByDepth: []QueuingAlgorithm{
 				&tenantQuerierAssignments{tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{}},
 				&tenantQuerierAssignments{tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{}},
 				&roundRobinState{},
@@ -543,7 +543,7 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 		{
 			// This also dequeues if the tenant _is not_ in the tenant querier map; is this expected? (probably)
 			name: "dequeue from a tenant with a nil tenant-querier map",
-			treeAlgosByDepth: []DequeueAlgorithm{
+			treeAlgosByDepth: []QueuingAlgorithm{
 				&tenantQuerierAssignments{tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{}},
 				&roundRobinState{},
 				&roundRobinState{},
@@ -828,7 +828,7 @@ func Test_EnqueueDuringDequeueRespectsRoundRobin(t *testing.T) {
 func Test_NodeCannotDeleteItself(t *testing.T) {
 	tests := []struct {
 		name     string
-		nodeType DequeueAlgorithm
+		nodeType QueuingAlgorithm
 	}{
 		{"round robin", &roundRobinState{}},
 		{"tenant querier assignment", &tenantQuerierAssignments{}},

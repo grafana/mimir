@@ -53,7 +53,7 @@ func (s querierIDSlice) Search(x QuerierID) int {
 	return sort.Search(len(s), func(i int) bool { return s[i] >= x })
 }
 
-// tenantQuerierAssignments implements DequeueAlgorithm. In the context of a TreeQueue, it maintains a mapping of
+// tenantQuerierAssignments implements QueuingAlgorithm. In the context of a TreeQueue, it maintains a mapping of
 // tenants to queriers in order to support dequeuing from an appropriate tenant if shuffle-sharding is enabled.
 type tenantQuerierAssignments struct {
 	// a tenant has many queriers
@@ -312,7 +312,7 @@ func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID TenantID, sc
 	return true
 }
 
-// dequeueGetNode chooses the next node to dequeue from based on tenantIDOrder and tenantOrderIndex, which are
+// dequeueSelectNode chooses the next node to dequeue from based on tenantIDOrder and tenantOrderIndex, which are
 // shared across all nodes to maintain an O(n) (where n = # tenants) time-to-dequeue for each tenant.
 // If tenant order were maintained by individual nodes, we would end up with O(mn) (where m = # query components)
 // time-to-dequeue for a given tenant.
@@ -362,10 +362,6 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) (*Node, bool)
 			continue
 		}
 
-		// childrenChecked is used to determine when we can stop looking for a dequeueable node. At this point,
-		// tenantID _must_ exist in the node's children, even if currentQuerier isn't assigned to it, so we increment
-		// childrenChecked regardless of whether currentQuerier exists in tenantQuerierIDs for tenantID.
-		node.childrenChecked++
 		checkedAllNodes = node.childrenChecked == len(node.queueMap)+1
 
 		// if the tenant-querier set is nil, any querier can serve this tenant

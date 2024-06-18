@@ -14,7 +14,7 @@ const localQueueIndex = -1
 
 // TreeQueue holds metadata and a pointer to the root node of a hierarchical queue implementation.
 // The root Node maintains a localQueue and an arbitrary number of child nodes (which themselves
-// may have local queues and children). Each Node in TreeQueue uses a DequeueAlgorithm (determined by
+// may have local queues and children). Each Node in TreeQueue uses a QueuingAlgorithm (determined by
 // node depth) to determine dequeue order of that Node's subtree.
 //
 // Each queuing dimension is modeled as a node in the tree, internally reachable through a QueuePath.
@@ -22,27 +22,27 @@ const localQueueIndex = -1
 // The QueuePath is an ordered array of strings describing the path from the tree root to a Node.
 // In addition to child Nodes, each Node contains a local queue (FIFO) of items.
 //
-// When dequeuing from a given node, a Node will use its DequeueAlgorithm to choose either itself
-// or a child node to dequeue from recursively (i.e., a child Node will use its own DequeueAlgorithm
+// When dequeuing from a given node, a Node will use its QueuingAlgorithm to choose either itself
+// or a child node to dequeue from recursively (i.e., a child Node will use its own QueuingAlgorithm
 // to determine how to proceed). TreeQueue will not dequeue from two different Nodes at the same depth
 // consecutively, unless the previously-checked Node was empty down to the leaf node.
 type TreeQueue struct {
 	rootNode     *Node
-	algosByDepth []DequeueAlgorithm
+	algosByDepth []QueuingAlgorithm
 }
 
-func NewTree(dequeueAlgorithms ...DequeueAlgorithm) (*TreeQueue, error) {
-	if len(dequeueAlgorithms) == 0 {
-		return nil, fmt.Errorf("cannot create a tree without defined DequeueAlgorithm")
+func NewTree(queuingAlgorithms ...QueuingAlgorithm) (*TreeQueue, error) {
+	if len(queuingAlgorithms) == 0 {
+		return nil, fmt.Errorf("cannot create a tree without defined QueuingAlgorithm")
 	}
-	root, err := newNode("root", 0, dequeueAlgorithms[0])
+	root, err := newNode("root", 0, queuingAlgorithms[0])
 	if err != nil {
 		return nil, err
 	}
 	root.depth = 0
 	return &TreeQueue{
 		rootNode:     root,
-		algosByDepth: dequeueAlgorithms,
+		algosByDepth: queuingAlgorithms,
 	}, nil
 }
 
@@ -53,7 +53,7 @@ func (t *TreeQueue) IsEmpty() bool {
 // Dequeue removes and returns an item from the front of the next appropriate Node in the TreeQueue, as
 // well as the path to the Node which that item was dequeued from.
 //
-// Either the root/self node or a child node is chosen according to the Node's DequeueAlgorithm. If
+// Either the root/self node or a child node is chosen according to the Node's QueuingAlgorithm. If
 // the root node is chosen, an item will be dequeued from the front of its localQueue. If a child
 // node is chosen, it is recursively dequeued from until a node selects its localQueue.
 //
@@ -100,7 +100,7 @@ func (t *TreeQueue) GetNode(path QueuePath) *Node {
 
 // Node maintains node-specific information used to enqueue and dequeue to itself, such as a local
 // queue, node depth, references to its children, and position in queue.
-// Note that the tenantQuerierAssignments DequeueAlgorithm largely disregards Node's queueOrder and
+// Note that the tenantQuerierAssignments QueuingAlgorithm largely disregards Node's queueOrder and
 // queuePosition, managing analogous state instead, because shuffle-sharding + fairness  requirements
 // necessitate input from the querier.
 type Node struct {
@@ -110,13 +110,13 @@ type Node struct {
 	queueOrder       []string // order for dequeuing from self/children
 	queueMap         map[string]*Node
 	depth            int
-	dequeueAlgorithm DequeueAlgorithm
+	queuingAlgorithm QueuingAlgorithm
 	childrenChecked  int
 }
 
-func newNode(name string, depth int, da DequeueAlgorithm) (*Node, error) {
+func newNode(name string, depth int, da QueuingAlgorithm) (*Node, error) {
 	if da == nil {
-		return nil, fmt.Errorf("cannot create a node without a defined DequeueAlgorithm")
+		return nil, fmt.Errorf("cannot create a node without a defined QueuingAlgorithm")
 	}
 	if tqa, ok := da.(*tenantQuerierAssignments); ok {
 		tqa.tenantOrderIndex = localQueueIndex - 1 // start from -2 so that we first check local queue
@@ -131,7 +131,7 @@ func newNode(name string, depth int, da DequeueAlgorithm) (*Node, error) {
 		queueOrder:       make([]string, 0),
 		queueMap:         make(map[string]*Node, 1),
 		depth:            depth,
-		dequeueAlgorithm: da,
+		queuingAlgorithm: da,
 	}, nil
 }
 
@@ -197,7 +197,7 @@ func (n *Node) dequeue() (QueuePath, any) {
 	var dequeueNode *Node
 	// continue until we've found a value or checked all nodes that need checking
 	for v == nil && !checkedAllNodes {
-		dequeueNode, checkedAllNodes = n.dequeueAlgorithm.dequeueSelectNode(n)
+		dequeueNode, checkedAllNodes = n.queuingAlgorithm.dequeueSelectNode(n)
 		switch dequeueNode {
 		// dequeuing from local queue
 		case n:
@@ -222,9 +222,9 @@ func (n *Node) dequeue() (QueuePath, any) {
 			n.childrenChecked++
 		}
 
-		n.dequeueAlgorithm.dequeueUpdateState(n, dequeueNode)
+		n.queuingAlgorithm.dequeueUpdateState(n, dequeueNode)
 	}
-	// reset children checked to 0 before completing this dequeue
+	// reset childrenChecked to 0 before completing this dequeue
 	n.childrenChecked = 0
 	return append(path, childPath...), v
 }
@@ -248,7 +248,7 @@ func (n *Node) getNode(pathFromNode QueuePath) *Node {
 
 // getOrAddNode recursively gets or adds tree queue nodes based on given relative child path. It
 // checks whether the first node in pathFromNode exists in the Node's children; if no node exists,
-// one is created and added to the Node's queueOrder, according to the Node's DequeueAlgorithm.
+// one is created and added to the Node's queueOrder, according to the Node's QueuingAlgorithm.
 //
 // pathFromNode must be relative to the receiver node; providing a QueuePath beginning with
 // the receiver/parent node name will create a child node of the same name as the parent.
@@ -270,7 +270,7 @@ func (n *Node) getOrAddNode(pathFromNode QueuePath, tree *TreeQueue) (*Node, err
 			return nil, err
 		}
 		// add the newly created child to the node
-		n.dequeueAlgorithm.addChildNode(n, childNode)
+		n.queuingAlgorithm.addChildNode(n, childNode)
 
 	}
 	return childNode.getOrAddNode(pathFromNode[1:], tree)

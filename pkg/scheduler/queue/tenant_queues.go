@@ -55,15 +55,15 @@ func newQueueBroker(
 	// with query components at one level above tenants; if it is false,
 	// tenant nodes will each maintain their own query component subtree.
 	tree, err := NewTree(
-		tqas,               // root; DequeueAlgorithm selects tenants
-		&roundRobinState{}, // tenant queues; DequeueAlgorithm selects query component
-		&roundRobinState{}, // query components; DequeueAlgorithm selects query from local queue
+		tqas,               // root; QueuingAlgorithm selects tenants
+		&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
+		&roundRobinState{}, // query components; QueuingAlgorithm selects query from local queue
 	)
 	if prioritizeQueryComponents {
 		tree, err = NewTree(
-			&roundRobinState{}, // root; DequeueAlgorithm selects query component
-			tqas,               // query components; DequeueAlgorithm selects tenant
-			&roundRobinState{}, // tenant queues; DequeueAlgorithm selects query from local queue
+			&roundRobinState{}, // root; QueuingAlgorithm selects query component
+			tqas,               // query components; QueuingAlgorithm selects tenant
+			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query from local queue
 		)
 	}
 
