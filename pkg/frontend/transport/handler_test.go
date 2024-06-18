@@ -62,6 +62,8 @@ func TestWriteError(t *testing.T) {
 		{http.StatusBadRequest, errors.Wrap(httpgrpc.Errorf(http.StatusBadRequest, ""), "an error occurred")},
 		{http.StatusBadRequest, apierror.New(apierror.TypeBadData, "")},
 		{http.StatusBadRequest, errors.Wrap(apierror.New(apierror.TypeBadData, "invalid request"), "an error occurred")},
+		{http.StatusNotFound, apierror.New(apierror.TypeNotFound, "")},
+		{http.StatusNotFound, errors.Wrap(apierror.New(apierror.TypeNotFound, "invalid request"), "an error occurred")},
 	} {
 		t.Run(test.err.Error(), func(t *testing.T) {
 			w := httptest.NewRecorder()
