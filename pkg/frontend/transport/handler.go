@@ -220,7 +220,6 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	queryResponseTime := time.Since(startTime)
 
 	if err != nil {
-		// TODO unit test it
 		statusCode := writeError(w, err)
 		f.reportQueryStats(r, params, startTime, queryResponseTime, 0, queryDetails, statusCode, err)
 		return
@@ -443,20 +442,20 @@ func writeError(w http.ResponseWriter, err error) (statusCode int) {
 	}
 
 	var (
-		res *httpgrpc.HTTPResponse
-		ok  bool
+		res      *httpgrpc.HTTPResponse
+		resFound bool
 	)
 
 	// If the error is an APIError, ensure it gets written as a JSON response.
 	// Otherwise, check if there's a response encoded in the gRPC error.
-	res, ok = apierror.HTTPResponseFromError(err)
-	if !ok {
-		res, ok = httpgrpc.HTTPResponseFromError(err)
+	res, resFound = apierror.HTTPResponseFromError(err)
+	if !resFound {
+		res, resFound = httpgrpc.HTTPResponseFromError(err)
 	}
 
 	// If we've been able to get the HTTP response from the error, then we send
 	// it with the right status code and response body content.
-	if res != nil {
+	if resFound {
 		statusCode = int(res.Code)
 		_ = httpgrpc.WriteResponse(w, res)
 		return
