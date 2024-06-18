@@ -113,10 +113,13 @@ func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Regist
 		Name: "cortex_query_frontend_enqueue_duration_seconds",
 		Help: "Time spent by requests waiting to join the queue or be rejected.",
 	})
-	querierInflightRequests := promauto.With(registerer).NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "cortex_query_frontend_querier_inflight_requests",
-			Help: "Number of inflight requests being processed on all querier-scheduler connections.",
+	querierInflightRequests := promauto.With(registerer).NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "cortex_query_scheduler_querier_inflight_requests",
+			Help:       "Number of inflight requests being processed on all querier-scheduler connections. . Quantile buckets keep track of inflight requests over the last 60s.",
+			Objectives: map[float64]float64{0.5: 0.05, 0.75: 0.02, 0.8: 0.02, 0.9: 0.01, 0.95: 0.01, 0.99: 0.001},
+			MaxAge:     time.Minute,
+			AgeBuckets: 6,
 		},
 		[]string{"query_component"},
 	)

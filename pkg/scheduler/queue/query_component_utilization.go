@@ -56,7 +56,7 @@ type QueryComponentUtilization struct {
 	storeGatewayInflightRequests int
 	querierInflightRequestsTotal int
 
-	querierInflightRequestsGauge *prometheus.GaugeVec
+	querierInflightRequestsMetric *prometheus.SummaryVec
 }
 
 // DefaultReservedQueryComponentCapacity reserves 1 / 3 of querier-worker connections
@@ -73,7 +73,7 @@ const MaxReservedQueryComponentCapacity = 0.5
 
 func NewQueryComponentUtilization(
 	targetReservedCapacity float64,
-	querierInflightRequests *prometheus.GaugeVec,
+	querierInflightRequestsMetric *prometheus.SummaryVec,
 ) (*QueryComponentUtilization, error) {
 
 	if targetReservedCapacity >= MaxReservedQueryComponentCapacity {
@@ -87,7 +87,7 @@ func NewQueryComponentUtilization(
 		storeGatewayInflightRequests: 0,
 		querierInflightRequestsTotal: 0,
 
-		querierInflightRequestsGauge: querierInflightRequests,
+		querierInflightRequestsMetric: querierInflightRequestsMetric,
 	}, nil
 }
 
@@ -163,12 +163,13 @@ func (qcl *QueryComponentUtilization) updateForComponentName(expectedQueryCompon
 
 	if isIngester {
 		qcl.ingesterInflightRequests += increment
-		qcl.querierInflightRequestsGauge.WithLabelValues(string(Ingester)).Add(float64(increment))
 	}
 	if isStoreGateway {
 		qcl.storeGatewayInflightRequests += increment
-		qcl.querierInflightRequestsGauge.WithLabelValues(string(StoreGateway)).Add(float64(increment))
 	}
+
+	qcl.querierInflightRequestsMetric.WithLabelValues(string(Ingester)).Observe(float64(qcl.ingesterInflightRequests))
+	qcl.querierInflightRequestsMetric.WithLabelValues(string(StoreGateway)).Observe(float64(qcl.storeGatewayInflightRequests))
 	qcl.querierInflightRequestsTotal += increment
 }
 
