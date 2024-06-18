@@ -188,6 +188,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 
 			lvl(logger).Log("msg", "Backend response", "status", status, "elapsed", elapsed)
 			p.metrics.requestDuration.WithLabelValues(res.backend.Name(), req.Method, p.routeName, strconv.Itoa(res.statusCode())).Observe(elapsed.Seconds())
+			logger.SetTag("status", status)
 
 			// Keep track of the response if required.
 			if p.comparator != nil {
