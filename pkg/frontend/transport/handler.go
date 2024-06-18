@@ -429,7 +429,7 @@ func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []any) 
 }
 
 // writeError writes the error response to http.ResponseWriter, and returns the response HTTP status code.
-func writeError(w http.ResponseWriter, err error) (statusCode int) {
+func writeError(w http.ResponseWriter, err error) int {
 	switch {
 	case errors.Is(err, context.Canceled):
 		err = errCanceled
@@ -456,16 +456,15 @@ func writeError(w http.ResponseWriter, err error) (statusCode int) {
 	// If we've been able to get the HTTP response from the error, then we send
 	// it with the right status code and response body content.
 	if resFound {
-		statusCode = int(res.Code)
 		_ = httpgrpc.WriteResponse(w, res)
-		return
+		return int(res.Code)
 	}
 
 	// Otherwise, we do fallback to a 5xx error, returning the non-formatted error
 	// message in the response body.
-	statusCode = http.StatusInternalServerError
+	statusCode := http.StatusInternalServerError
 	http.Error(w, err.Error(), statusCode)
-	return
+	return statusCode
 }
 
 func writeServiceTimingHeader(queryResponseTime time.Duration, headers http.Header, stats *querier_stats.Stats) {
