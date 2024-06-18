@@ -59,15 +59,19 @@ func (m LimitsMap[T]) UnmarshalYAML(value *yaml.Node) error {
 }
 
 func (m LimitsMap[T]) updateMap(newMap map[string]T) error {
-	for k, v := range newMap {
-		if m.validator != nil {
+	// Validate first, as we don't want to allow partial updates.
+	if m.validator != nil {
+		for k, v := range newMap {
 			if err := m.validator(k, v); err != nil {
 				return err
 			}
 		}
+	}
 
+	for k, v := range newMap {
 		m.data[k] = v
 	}
+
 	return nil
 }
 

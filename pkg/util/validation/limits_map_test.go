@@ -177,3 +177,18 @@ func TestLimitsMap_Clone(t *testing.T) {
 	_, exists := original.data["limit3"]
 	require.False(t, exists, "expected original LimitsMap to be unaffected by changes to cloned")
 }
+
+func TestLimitsMap_updateMap(t *testing.T) {
+	initialData := map[string]float64{"a": 1.0, "b": 2.0}
+	updateData := map[string]float64{"a": 3.0, "b": -3.0, "c": 5.0}
+
+	limitsMap := LimitsMap[float64]{data: initialData, validator: fakeValidator}
+
+	err := limitsMap.updateMap(updateData)
+	require.Error(t, err)
+
+	// Verify that no partial updates were applied.
+	// Because maps in Go are accessed in random order, there's a chance that the validation will fail on the first invalid element of the map thus not asserting partial updates.
+	expectedData := map[string]float64{"a": 1.0, "b": 2.0}
+	require.Equal(t, expectedData, limitsMap.data)
+}
