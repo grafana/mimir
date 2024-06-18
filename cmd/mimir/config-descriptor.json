@@ -4074,7 +4074,7 @@
           "kind": "field",
           "name": "ruler_max_rules_per_rule_group_by_namespace",
           "required": false,
-          "desc": "Maximum number of rules per rule group by namespace. Value is a map, where each key is the namespace and value is the number of rules allowed in the namespace (int64). On the command line, this map is given in a JSON format. The number of rules specified has the same meaning as -ruler.max-rules-per-rule-group, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rules-per-rule-group.",
+          "desc": "Maximum number of rules per rule group by namespace. Value is a map, where each key is the namespace and value is the number of rules allowed in the namespace (int). On the command line, this map is given in a JSON format. The number of rules specified has the same meaning as -ruler.max-rules-per-rule-group, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rules-per-rule-group.",
           "fieldValue": null,
           "fieldDefaultValue": {},
           "fieldFlag": "ruler.max-rules-per-rule-group-by-namespace",
