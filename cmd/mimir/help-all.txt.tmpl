@@ -2428,7 +2428,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.swift.username string
     	OpenStack Swift username.
   -ruler.alerting-rules-evaluation-enabled
-    	[experimental] Controls whether alerting rules evaluation is enabled. This configuration option can be used to forcefully disable alerting rules evaluation on a per-tenant basis. (default true)
+    	Controls whether alerting rules evaluation is enabled. This configuration option can be used to forcefully disable alerting rules evaluation on a per-tenant basis. (default true)
   -ruler.alertmanager-client.basic-auth-password string
     	HTTP Basic authentication password. It overrides the password set in the URL (if any).
   -ruler.alertmanager-client.basic-auth-username string
@@ -2574,7 +2574,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.query-stats-enabled
     	Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.
   -ruler.recording-rules-evaluation-enabled
-    	[experimental] Controls whether recording rules evaluation is enabled. This configuration option can be used to forcefully disable recording rules evaluation on a per-tenant basis. (default true)
+    	Controls whether recording rules evaluation is enabled. This configuration option can be used to forcefully disable recording rules evaluation on a per-tenant basis. (default true)
   -ruler.resend-delay duration
     	Minimum amount of time to wait before resending an alert to Alertmanager. (default 1m0s)
   -ruler.ring.consul.acl-token string
@@ -2850,7 +2850,7 @@ Usage of ./cmd/mimir/mimir:
   -tenant-federation.max-concurrent int
     	[experimental] The number of workers used for each tenant federated query. This setting limits the maximum number of per-tenant queries executed at a time for a tenant federated query. (default 16)
   -tenant-federation.max-tenants int
-    	[experimental] The max number of tenant IDs that may be supplied for a federated query if enabled. 0 to disable the limit.
+    	The max number of tenant IDs that may be supplied for a federated query if enabled. 0 to disable the limit.
   -tests.basic-auth-password string
     	The password to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)
   -tests.basic-auth-user string
