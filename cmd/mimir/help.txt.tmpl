@@ -629,6 +629,8 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift user ID.
   -ruler-storage.swift.username string
     	OpenStack Swift username.
+  -ruler.alerting-rules-evaluation-enabled
+    	Controls whether alerting rules evaluation is enabled. This configuration option can be used to forcefully disable alerting rules evaluation on a per-tenant basis. (default true)
   -ruler.alertmanager-client.basic-auth-password string
     	HTTP Basic authentication password. It overrides the password set in the URL (if any).
   -ruler.alertmanager-client.basic-auth-username string
@@ -649,6 +651,8 @@ Usage of ./cmd/mimir/mimir:
     	GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.
   -ruler.query-frontend.query-result-response-format string
     	Format to use when retrieving query results from query-frontends. Supported values: json, protobuf (default "protobuf")
+  -ruler.recording-rules-evaluation-enabled
+    	Controls whether recording rules evaluation is enabled. This configuration option can be used to forcefully disable recording rules evaluation on a per-tenant basis. (default true)
   -ruler.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -ruler.ring.etcd.endpoints string
@@ -723,6 +727,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of components to include in the instantiated process. The default value 'all' includes all components that are required to form a functional Grafana Mimir instance in single-binary mode. Use the '-modules' command line flag to get a list of available components, and to see which components are included with 'all'. (default all)
   -tenant-federation.enabled
     	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
+  -tenant-federation.max-tenants int
+    	The max number of tenant IDs that may be supplied for a federated query if enabled. 0 to disable the limit.
   -tests.basic-auth-password string
     	The password to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)
   -tests.basic-auth-user string

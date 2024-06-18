@@ -216,8 +216,8 @@ tenant_federation:
   # CLI flag: -tenant-federation.max-concurrent
   [max_concurrent: <int> | default = 16]
 
-  # (experimental) The max number of tenant IDs that may be supplied for a
-  # federated query if enabled. 0 to disable the limit.
+  # The max number of tenant IDs that may be supplied for a federated query if
+  # enabled. 0 to disable the limit.
   # CLI flag: -tenant-federation.max-tenants
   [max_tenants: <int> | default = 0]
 
@@ -3415,15 +3415,15 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ruler.max-rule-groups-per-tenant
 [ruler_max_rule_groups_per_tenant: <int> | default = 70]
 
-# (experimental) Controls whether recording rules evaluation is enabled. This
-# configuration option can be used to forcefully disable recording rules
-# evaluation on a per-tenant basis.
+# Controls whether recording rules evaluation is enabled. This configuration
+# option can be used to forcefully disable recording rules evaluation on a
+# per-tenant basis.
 # CLI flag: -ruler.recording-rules-evaluation-enabled
 [ruler_recording_rules_evaluation_enabled: <boolean> | default = true]
 
-# (experimental) Controls whether alerting rules evaluation is enabled. This
-# configuration option can be used to forcefully disable alerting rules
-# evaluation on a per-tenant basis.
+# Controls whether alerting rules evaluation is enabled. This configuration
+# option can be used to forcefully disable alerting rules evaluation on a
+# per-tenant basis.
 # CLI flag: -ruler.alerting-rules-evaluation-enabled
 [ruler_alerting_rules_evaluation_enabled: <boolean> | default = true]
 

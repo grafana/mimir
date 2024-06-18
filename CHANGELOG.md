@@ -17,7 +17,10 @@
 * [CHANGE] Added new metric `cortex_compactor_disk_out_of_space_errors_total` which counts how many times a compaction failed due to the compactor being out of disk. #8237
 * [CHANGE] Anonymous usage statistics tracking: report active series in addition to in-memory series. #8279
 * [CHANGE] Ruler: `evaluation_delay` field in the rule group configuration has been deprecated. Please use `query_offset` instead (it has the same exact meaning and behaviour). #8295
-* [CHANGE] General: remove `-log.buffered`. The configuration option has been enabled by default and deprecated since Mimir 2.11.
+* [CHANGE] General: remove `-log.buffered`. The configuration option has been enabled by default and deprecated since Mimir 2.11. #8395
+* [CHANGE] Ruler: promote tenant federation from experimental to stable. #8400
+* [CHANGE] Ruler: promote `-ruler.recording-rules-evaluation-enabled` and `-ruler.alerting-rules-evaluation-enabled` from experimental to stable. #8400
+* [CHANGE] General: promote `-tenant-federation.max-tenants` from experimental to stable. #8400
 * [FEATURE] Continuous-test: now runable as a module with `mimir -target=continuous-test`. #7747
 * [FEATURE] Store-gateway: Allow specific tenants to be enabled or disabled via `-store-gateway.enabled-tenants` or `-store-gateway.disabled-tenants` CLI flags or their corresponding YAML settings. #7653
 * [FEATURE] New `-<prefix>.s3.bucket-lookup-type` flag configures lookup style type, used to access bucket in s3 compatible providers. #7684
