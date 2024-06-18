@@ -25,7 +25,7 @@ func TestNotificationLimitsMap(t *testing.T) {
 		"basic test": {
 			args: []string{"-map-flag", "{\"email\": 100 }"},
 			expected: LimitsMap[float64]{
-				validator: integrationsValidation,
+				validator: validateIntegrationLimit,
 				data: map[string]float64{
 					"email": 100,
 				},

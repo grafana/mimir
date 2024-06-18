@@ -11,7 +11,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-var integrationsValidation = func(k string, _ float64) error {
+func validateIntegrationLimit(k string, _ float64) error {
 	if !util.StringsContain(allowedIntegrationNames, k) {
 		return errors.Errorf("unknown integration name: %s", k)
 	}
@@ -25,5 +25,5 @@ var allowedIntegrationNames = []string{
 
 // NotificationRateLimitMap returns a map that can be used as a flag for setting notification rate limits.
 func NotificationRateLimitMap() LimitsMap[float64] {
-	return NewLimitsMap[float64](integrationsValidation)
+	return NewLimitsMap[float64](validateIntegrationLimit)
 }
