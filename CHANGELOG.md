@@ -102,6 +102,7 @@
 * [BUGFIX] Query-frontend: fix `-querier.max-query-lookback` enforcement when `-compactor.blocks-retention-period` is not set, and viceversa. #8388
 * [BUGFIX] Ingester: fix sporadic `not found` error causing an internal server error if label names are queried with matchers during head compaction. #8391
 * [BUGFIX] Ingester, store-gateway: fix case insensitive regular expressions not matching correctly some Unicode characters. #8391
+* [BUGFIX] Query-frontend: "query stats" log now includes the actual `status_code` when the request fails due to an error occurring in the query-frontend itself. #8408
 
 ### Mixin
 
