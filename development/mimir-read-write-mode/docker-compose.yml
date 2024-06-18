@@ -24,6 +24,7 @@
       - "8006:8080"
     "volumes":
       - "./config:/mimir/config"
+      - "./templates:/mimir/templates"
       - "./activity:/activity"
   "mimir-backend-2":
     "build":
@@ -43,6 +44,7 @@
       - "8007:8080"
     "volumes":
       - "./config:/mimir/config"
+      - "./templates:/mimir/templates"
       - "./activity:/activity"
   "mimir-read-1":
     "build":
@@ -62,6 +64,7 @@
       - "8004:8080"
     "volumes":
       - "./config:/mimir/config"
+      - "./templates:/mimir/templates"
       - "./activity:/activity"
   "mimir-read-2":
     "build":
@@ -81,6 +84,7 @@
       - "8005:8080"
     "volumes":
       - "./config:/mimir/config"
+      - "./templates:/mimir/templates"
       - "./activity:/activity"
   "mimir-write-1":
     "build":
@@ -100,6 +104,7 @@
       - "8001:8080"
     "volumes":
       - "./config:/mimir/config"
+      - "./templates:/mimir/templates"
       - "./activity:/activity"
       - ".data-mimir-write-1:/data:delegated"
   "mimir-write-2":
@@ -120,6 +125,7 @@
       - "8002:8080"
     "volumes":
       - "./config:/mimir/config"
+      - "./templates:/mimir/templates"
       - "./activity:/activity"
       - ".data-mimir-write-2:/data:delegated"
   "mimir-write-3":
@@ -140,6 +146,7 @@
       - "8003:8080"
     "volumes":
       - "./config:/mimir/config"
+      - "./templates:/mimir/templates"
       - "./activity:/activity"
       - ".data-mimir-write-3:/data:delegated"
   "minio":
