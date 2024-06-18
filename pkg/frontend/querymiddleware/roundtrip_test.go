@@ -260,11 +260,7 @@ func TestTripperware_Metrics(t *testing.T) {
 		expectedMetrics  string
 	}{
 		"range query, start/end is aligned to step": {
-			request: func() *http.Request {
-				req, err := http.NewRequest("GET", "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=120", http.NoBody)
-				require.NoError(t, err)
-				return req
-			}(),
+			request: httptest.NewRequest("GET", "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=120", http.NoBody),
 			expectedMetrics: `
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
@@ -276,11 +272,7 @@ func TestTripperware_Metrics(t *testing.T) {
 			`,
 		},
 		"range query, start/end is not aligned to step, aligning disabled": {
-			request: func() *http.Request {
-				req, err := http.NewRequest("GET", "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=7", http.NoBody)
-				require.NoError(t, err)
-				return req
-			}(),
+			request: httptest.NewRequest("GET", "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=7", http.NoBody),
 			expectedMetrics: `
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
@@ -292,11 +284,7 @@ func TestTripperware_Metrics(t *testing.T) {
 			`,
 		},
 		"range query, start/end is not aligned to step, aligning enabled": {
-			request: func() *http.Request {
-				req, err := http.NewRequest("GET", "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=7", http.NoBody)
-				require.NoError(t, err)
-				return req
-			}(),
+			request:          httptest.NewRequest("GET", "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=7", http.NoBody),
 			stepAlignEnabled: true,
 			expectedMetrics: `
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
@@ -309,11 +297,7 @@ func TestTripperware_Metrics(t *testing.T) {
 			`,
 		},
 		"instant query": {
-			request: func() *http.Request {
-				req, err := http.NewRequest("GET", "/api/v1/query?query=up&time=1536673680", http.NoBody)
-				require.NoError(t, err)
-				return req
-			}(),
+			request: httptest.NewRequest("GET", "/api/v1/query?query=up&time=1536673680", http.NoBody),
 			expectedMetrics: `
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
@@ -409,11 +393,7 @@ func TestTripperware_Metrics(t *testing.T) {
 			`,
 		},
 		"label names": {
-			request: func() *http.Request {
-				req, err := http.NewRequest("GET", "/api/v1/labels?start=1536673680&end=1536716880", http.NoBody)
-				require.NoError(t, err)
-				return req
-			}(),
+			request: httptest.NewRequest("GET", "/api/v1/labels?start=1536673680&end=1536716880", http.NoBody),
 			expectedMetrics: `
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
@@ -425,11 +405,7 @@ func TestTripperware_Metrics(t *testing.T) {
 			`,
 		},
 		"label values": {
-			request: func() *http.Request {
-				req, err := http.NewRequest("GET", "/api/v1/label/test/values?start=1536673680&end=1536716880", http.NoBody)
-				require.NoError(t, err)
-				return req
-			}(),
+			request: httptest.NewRequest("GET", "/api/v1/label/test/values?start=1536673680&end=1536716880", http.NoBody),
 			expectedMetrics: `
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
@@ -441,11 +417,7 @@ func TestTripperware_Metrics(t *testing.T) {
 			`,
 		},
 		"cardinality label names": {
-			request: func() *http.Request {
-				req, err := http.NewRequest("GET", "/api/v1/cardinality/label_names?selector=%7Bjob%3D%22test%22%7D", http.NoBody)
-				require.NoError(t, err)
-				return req
-			}(),
+			request: httptest.NewRequest("GET", "/api/v1/cardinality/label_names?selector=%7Bjob%3D%22test%22%7D", http.NoBody),
 			expectedMetrics: `
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
@@ -457,11 +429,7 @@ func TestTripperware_Metrics(t *testing.T) {
 			`,
 		},
 		"cardinality active series": {
-			request: func() *http.Request {
-				req, err := http.NewRequest("GET", "/api/v1/cardinality/active_series?selector=%7Bjob%3D%22test%22%7D", http.NoBody)
-				require.NoError(t, err)
-				return req
-			}(),
+			request: httptest.NewRequest("GET", "/api/v1/cardinality/active_series?selector=%7Bjob%3D%22test%22%7D", http.NoBody),
 			expectedMetrics: `
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
@@ -473,11 +441,7 @@ func TestTripperware_Metrics(t *testing.T) {
 			`,
 		},
 		"cardinality active native histogram metrics": {
-			request: func() *http.Request {
-				req, err := http.NewRequest("GET", "/api/v1/cardinality/active_native_histogram_metrics?selector=%7Bjob%3D%22test%22%7D", http.NoBody)
-				require.NoError(t, err)
-				return req
-			}(),
+			request: httptest.NewRequest("GET", "/api/v1/cardinality/active_native_histogram_metrics?selector=%7Bjob%3D%22test%22%7D", http.NoBody),
 			expectedMetrics: `
 			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
@@ -489,11 +453,7 @@ func TestTripperware_Metrics(t *testing.T) {
 			`,
 		},
 		"unknown query type": {
-			request: func() *http.Request {
-				req, err := http.NewRequest("GET", "/api/v1/unknown", http.NoBody)
-				require.NoError(t, err)
-				return req
-			}(),
+			request: httptest.NewRequest("GET", "/api/v1/unknown", http.NoBody),
 			expectedMetrics: `
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
