@@ -194,6 +194,15 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 			expectedBlocked: true,
 		},
 		{
+			name: "blocks query via regex pattern, with begin/end curly brackets used as a trick to match only remote read requests",
+			limits: mockLimits{
+				blockedQueries: []*validation.BlockedQuery{
+					{Pattern: "\\{.*metric_counter.*\\}", Regex: true},
+				},
+			},
+			expectedBlocked: true,
+		},
+		{
 			name: "not blocks query via regex pattern",
 			limits: mockLimits{
 				blockedQueries: []*validation.BlockedQuery{
