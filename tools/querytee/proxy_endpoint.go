@@ -7,6 +7,7 @@ package querytee
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -121,12 +122,17 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 
 		go func() {
 			defer wg.Done()
+
+			// Don't cancel the child request's context when the parent context (from the incoming HTTP request) is cancelled after we return a response.
+			// This allows us to continue running slower requests after returning a response to the caller.
+			requestCtx := context.WithoutCancel(req.Context())
+
 			var bodyReader io.ReadCloser
 			if len(body) > 0 {
 				bodyReader = io.NopCloser(bytes.NewReader(body))
 			}
 
-			elapsed, status, body, resp, err := b.ForwardRequest(req, bodyReader)
+			elapsed, status, body, resp, err := b.ForwardRequest(requestCtx, req, bodyReader)
 			contentType := ""
 
 			if p.slowResponseThreshold > 0 {

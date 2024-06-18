@@ -7,6 +7,7 @@ package querytee
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -762,7 +763,7 @@ func (b *mockProxyBackend) Preferred() bool {
 	return b.preferred
 }
 
-func (b *mockProxyBackend) ForwardRequest(_ *http.Request, _ io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
+func (b *mockProxyBackend) ForwardRequest(_ context.Context, _ *http.Request, _ io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
 	resp := &http.Response{
 		StatusCode: 200,
 		Header:     make(http.Header),
