@@ -17,6 +17,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type ResponsesComparator interface {
@@ -87,26 +89,38 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 		responsesMtx = sync.Mutex{}
 		timingMtx    = sync.Mutex{}
 		query        = req.URL.RawQuery
+		logger, ctx  = spanlogger.NewWithLogger(req.Context(), p.logger, "Incoming request")
 	)
+
+	defer logger.Finish()
+
+	setSpanAndLogTags := func(logger *spanlogger.SpanLogger) {
+		logger.SetSpanAndLogTag("path", req.URL.Path)
+		logger.SetSpanAndLogTag("query", query)
+		logger.SetSpanAndLogTag("route_name", p.routeName)
+		logger.SetSpanAndLogTag("user", req.Header.Get("X-Scope-OrgID"))
+	}
+
+	setSpanAndLogTags(logger)
 
 	if req.Body != nil {
 		body, err = io.ReadAll(req.Body)
 		if err != nil {
-			level.Warn(p.logger).Log("msg", "Unable to read request body", "err", err)
+			level.Warn(logger).Log("msg", "Unable to read request body", "err", err)
 			return
 		}
 		if err := req.Body.Close(); err != nil {
-			level.Warn(p.logger).Log("msg", "Unable to close request body", "err", err)
+			level.Warn(logger).Log("msg", "Unable to close request body", "err", err)
 		}
 
 		req.Body = io.NopCloser(bytes.NewReader(body))
 		if err := req.ParseForm(); err != nil {
-			level.Warn(p.logger).Log("msg", "Unable to parse form", "err", err)
+			level.Warn(logger).Log("msg", "Unable to parse form", "err", err)
 		}
 		query = req.Form.Encode()
 	}
 
-	level.Debug(p.logger).Log("msg", "Received request", "path", req.URL.Path, "query", query)
+	level.Debug(logger).Log("msg", "Received request")
 
 	// Keep track of the fastest and slowest backends
 	var (
@@ -125,14 +139,18 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 
 			// Don't cancel the child request's context when the parent context (from the incoming HTTP request) is cancelled after we return a response.
 			// This allows us to continue running slower requests after returning a response to the caller.
-			requestCtx := context.WithoutCancel(req.Context())
+			ctx := context.WithoutCancel(ctx)
+			logger, ctx := spanlogger.NewWithLogger(ctx, p.logger, fmt.Sprintf("Outgoing request to %s", b.Name()))
+			defer logger.Finish()
+			setSpanAndLogTags(logger)
+			logger.SetSpanAndLogTag("backend", b.Name())
 
 			var bodyReader io.ReadCloser
 			if len(body) > 0 {
 				bodyReader = io.NopCloser(bytes.NewReader(body))
 			}
 
-			elapsed, status, body, resp, err := b.ForwardRequest(requestCtx, req, bodyReader)
+			elapsed, status, body, resp, err := b.ForwardRequest(ctx, req, bodyReader)
 			contentType := ""
 
 			if p.slowResponseThreshold > 0 {
@@ -167,7 +185,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 				lvl = level.Warn
 			}
 
-			lvl(p.logger).Log("msg", "Backend response", "path", req.URL.Path, "query", query, "backend", b.Name(), "status", status, "elapsed", elapsed)
+			lvl(logger).Log("msg", "Backend response", "status", status, "elapsed", elapsed)
 			p.metrics.requestDuration.WithLabelValues(res.backend.Name(), req.Method, p.routeName, strconv.Itoa(res.statusCode())).Observe(elapsed.Seconds())
 
 			// Keep track of the response if required.
@@ -195,21 +213,15 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 
 		result, err := p.compareResponses(expectedResponse, actualResponse)
 		if result == ComparisonFailed {
-			level.Error(p.logger).Log(
+			level.Error(logger).Log(
 				"msg", "response comparison failed",
-				"route_name", p.routeName,
-				"query", query,
-				"user", req.Header.Get("X-Scope-OrgID"),
 				"err", err,
 				"expected_response_duration", expectedResponse.elapsedTime,
 				"actual_response_duration", actualResponse.elapsedTime,
 			)
 		} else if result == ComparisonSkipped {
-			level.Warn(p.logger).Log(
+			level.Warn(logger).Log(
 				"msg", "response comparison skipped",
-				"route_name", p.routeName,
-				"query", query,
-				"user", req.Header.Get("X-Scope-OrgID"),
 				"err", err,
 				"expected_response_duration", expectedResponse.elapsedTime,
 				"actual_response_duration", actualResponse.elapsedTime,
@@ -218,11 +230,8 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 
 		// Log queries that are slower in some backends than others
 		if p.slowResponseThreshold > 0 && slowestDuration-fastestDuration >= p.slowResponseThreshold {
-			level.Warn(p.logger).Log(
+			level.Warn(logger).Log(
 				"msg", "response time difference between backends exceeded threshold",
-				"route_name", p.routeName,
-				"query", query,
-				"user", req.Header.Get("X-Scope-OrgID"),
 				"slowest_duration", slowestDuration,
 				"slowest_backend", slowestBackend.Name(),
 				"fastest_duration", fastestDuration,
