@@ -8,13 +8,16 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/log"
+	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
+	jaegercfg "github.com/uber/jaeger-client-go/config"
 
 	"github.com/grafana/mimir/pkg/util/instrumentation"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -44,6 +47,10 @@ func main() {
 
 	util_log.InitLogger(log.LogfmtFormat, cfg.LogLevel, false, util_log.RateLimitedLoggerCfg{})
 
+	if closer := initTracing(); closer != nil {
+		defer closer.Close()
+	}
+
 	// Run the instrumentation server.
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(collectors.NewGoCollector())
@@ -70,6 +77,21 @@ func main() {
 	}
 
 	proxy.Await()
+}
+
+func initTracing() io.Closer {
+	name := os.Getenv("JAEGER_SERVICE_NAME")
+	if name == "" {
+		name = "query-tee"
+	}
+
+	trace, err := tracing.NewFromEnv(name, jaegercfg.MaxTagValueLength(16e3))
+	if err != nil {
+		level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
+		return nil
+	}
+
+	return trace
 }
 
 func mimirReadRoutes(cfg Config) []querytee.Route {
