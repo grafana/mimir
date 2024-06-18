@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -46,13 +45,15 @@ type blocksLoader interface {
 	LoadedBlocks() map[ulid.ULID]int64
 }
 
-func (s *Snapshotter) Start(ctx context.Context, bl blocksLoader) error {
-	err := s.PersistLoadedBlocks(bl)
-	if err != nil {
-		return fmt.Errorf("persist initial list of lazy-loaded index headers: %w", err)
-	}
-
+// Start spawns a background job that periodically persists the list of lazy-loaded index headers.
+func (s *Snapshotter) Start(ctx context.Context, bl blocksLoader) {
 	go func() {
+		err := s.PersistLoadedBlocks(bl)
+		if err != nil {
+			// Note, the decision here is to only log the error but not failing the job. We may reconsider that later.
+			level.Warn(s.logger).Log("msg", "failed to persist initial list of lazy-loaded index headers", "err", err)
+		}
+
 		tick := time.NewTicker(time.Minute)
 		defer tick.Stop()
 
@@ -69,8 +70,6 @@ func (s *Snapshotter) Start(ctx context.Context, bl blocksLoader) error {
 			}
 		}
 	}()
-
-	return nil
 }
 
 func (s *Snapshotter) Stop() {

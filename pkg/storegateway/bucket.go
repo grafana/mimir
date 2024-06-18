@@ -361,14 +361,10 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 	}
 
 	// Start snapshotter in the end of the sync, but do that only once per BucketStore's lifetime.
-	// We do that here so the snapshotter watched after blocks from both initial sync and those discovered later.
-	var err error
+	// We do that here, so the snapshotter watched after blocks from both initial sync and those discovered later.
 	s.snapshotterStartOnce.Do(func() {
-		err = s.snapshotter.Start(ctx, s.indexReaderPool)
+		s.snapshotter.Start(ctx, s.indexReaderPool)
 	})
-	if err != nil {
-		return errors.Wrap(err, "start index headers snapshotter")
-	}
 
 	return nil
 }
