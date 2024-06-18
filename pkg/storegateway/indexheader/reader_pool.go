@@ -195,8 +195,9 @@ func (p *ReaderPool) LoadedBlocks() map[ulid.ULID]int64 {
 
 	blocks := make(map[ulid.ULID]int64, len(p.lazyReaders))
 	for r := range p.lazyReaders {
-		if r.reader != nil {
-			blocks[r.blockID] = r.usedAt.Load() / int64(time.Millisecond)
+		usedAt := r.usedAt.Load()
+		if usedAt != 0 {
+			blocks[r.blockID] = usedAt / int64(time.Millisecond)
 		}
 	}
 
