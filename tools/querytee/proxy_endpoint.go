@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/opentracing/opentracing-go/ext"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -184,10 +185,17 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 			lvl := level.Debug
 			if !res.succeeded() {
 				lvl = level.Warn
-				logger.Error(err)
 			}
 
-			lvl(logger).Log("msg", "Backend response", "status", status, "elapsed", elapsed)
+			l := lvl(logger)
+
+			// If we got an error (rather than just a non-2xx response), log that and mark the span as failed.
+			if err != nil {
+				l = log.With(l, "err", err)
+				ext.Error.Set(logger.Span, true)
+			}
+
+			l.Log("msg", "Backend response", "status", status, "elapsed", elapsed)
 			p.metrics.requestDuration.WithLabelValues(res.backend.Name(), req.Method, p.routeName, strconv.Itoa(res.statusCode())).Observe(elapsed.Seconds())
 			logger.SetTag("status", status)
 
