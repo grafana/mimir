@@ -307,7 +307,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.RulerAlertingRulesEvaluationEnabled, "ruler.alerting-rules-evaluation-enabled", true, "Controls whether alerting rules evaluation is enabled. This configuration option can be used to forcefully disable alerting rules evaluation on a per-tenant basis.")
 	f.BoolVar(&l.RulerSyncRulesOnChangesEnabled, "ruler.sync-rules-on-changes-enabled", true, "True to enable a re-sync of the configured rule groups as soon as they're changed via ruler's config API. This re-sync is in addition of the periodic syncing. When enabled, it may take up to few tens of seconds before a configuration change triggers the re-sync.")
 	// Needs to be initialised to a value so that the documentation can pick up the default value of `{}` because this is set as JSON from the command-line.
-	if l.RulerMaxRulesPerRuleGroupByNamespace.IsInitialized() {
+	if !l.RulerMaxRulesPerRuleGroupByNamespace.IsInitialized() {
 		l.RulerMaxRulesPerRuleGroupByNamespace = NewLimitsMap[int](nil)
 	}
 	f.Var(&l.RulerMaxRulesPerRuleGroupByNamespace, "ruler.max-rules-per-rule-group-by-namespace", "Maximum number of rules per rule group by namespace. Value is a map, where each key is the namespace and value is the number of rules allowed in the namespace (int). On the command line, this map is given in a JSON format. The number of rules specified has the same meaning as -ruler.max-rules-per-rule-group, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rules-per-rule-group.")
@@ -345,7 +345,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Float64Var(&l.NotificationRateLimit, "alertmanager.notification-rate-limit", 0, "Per-tenant rate limit for sending notifications from Alertmanager in notifications/sec. 0 = rate limit disabled. Negative value = no notifications are allowed.")
 
 	// Needs to be initialised to a value so that the documentation can pick up the default value of `{}` because this is set as JSON from the command-line.
-	if l.NotificationRateLimitPerIntegration.IsInitialized() {
+	if !l.NotificationRateLimitPerIntegration.IsInitialized() {
 		l.NotificationRateLimitPerIntegration = NotificationRateLimitMap()
 	}
 	f.Var(&l.NotificationRateLimitPerIntegration, "alertmanager.notification-rate-limit-per-integration", "Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: "+strings.Join(allowedIntegrationNames, ", ")+".")
