@@ -62,19 +62,23 @@ type Compactor interface {
 	// Results returned when compactions are in progress are undefined.
 	Plan(dir string) ([]string, error)
 
-	// Write persists a Block into a directory.
-	// No Block is written when resulting Block has 0 samples, and returns empty ulid.ULID{}.
-	Write(dest string, b BlockReader, mint, maxt int64, base *BlockMeta) (ulid.ULID, error)
+	// Write persists one or more Blocks into a directory.
+	// No Block is written when resulting Block has 0 samples and returns an empty slice.
+	// Prometheus always return one or no block. The interface allows returning more than one
+	// block for downstream users to experiment with compactor.
+	Write(dest string, b BlockReader, mint, maxt int64, base *BlockMeta) ([]ulid.ULID, error)
 
 	// Compact runs compaction against the provided directories. Must
 	// only be called concurrently with results of Plan().
 	// Can optionally pass a list of already open blocks,
 	// to avoid having to reopen them.
-	// When resulting Block has 0 samples
+	// Prometheus always return one or no block. The interface allows returning more than one
+	// block for downstream users to experiment with compactor.
+	// When one resulting Block has 0 samples
 	//  * No block is written.
 	//  * The source dirs are marked Deletable.
-	//  * Returns empty ulid.ULID{}.
-	Compact(dest string, dirs []string, open []*Block) (ulid.ULID, error)
+	//  * Block is not included in the result.
+	Compact(dest string, dirs []string, open []*Block) ([]ulid.ULID, error)
 
 	// CompactOOO creates a new block per possible block range in the compactor's directory from the OOO Head given.
 	// Each ULID in the result corresponds to a block in a unique time range.
@@ -471,18 +475,24 @@ func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 // CompactWithSplitting merges and splits the input blocks into shardCount number of output blocks,
 // and returns slice of block IDs. Position of returned block ID in the result slice corresponds to the shard index.
 // If given output block has no series, corresponding block ID will be zero ULID value.
+//
+// Note that this is different from Compact, which *removes* empty blocks from the result instead.
 func (c *LeveledCompactor) CompactWithSplitting(dest string, dirs []string, open []*Block, shardCount uint64) (result []ulid.ULID, _ error) {
 	return c.CompactWithBlockPopulator(dest, dirs, open, DefaultBlockPopulator{}, shardCount)
 }
 
 // Compact creates a new block in the compactor's directory from the blocks in the
 // provided directories.
-func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (uid ulid.ULID, err error) {
+func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) ([]ulid.ULID, error) {
 	ulids, err := c.CompactWithBlockPopulator(dest, dirs, open, DefaultBlockPopulator{}, 1)
 	if err != nil {
-		return ulid.ULID{}, err
+		return nil, err
 	}
-	return ulids[0], nil
+	// Updated contract for Compact says that empty blocks are not returned.
+	if ulids[0] == (ulid.ULID{}) {
+		return nil, nil
+	}
+	return ulids, nil
 }
 
 // shardedBlock describes single *output* block during compaction. This struct is passed between
@@ -716,7 +726,7 @@ func (c *LeveledCompactor) compactOOO(dest string, oooHead *OOOCompactionHead, s
 	return ulids, nil
 }
 
-func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, base *BlockMeta) (ulid.ULID, error) {
+func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, base *BlockMeta) ([]ulid.ULID, error) {
 	start := time.Now()
 
 	uid := ulid.MustNew(ulid.Now(), rand.Reader)
@@ -740,7 +750,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 
 	err := c.write(dest, []shardedBlock{{meta: meta}}, DefaultBlockPopulator{}, b)
 	if err != nil {
-		return uid, err
+		return nil, err
 	}
 
 	if meta.Stats.NumSamples == 0 {
@@ -750,7 +760,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 			"maxt", meta.MaxTime,
 			"duration", time.Since(start),
 		)
-		return ulid.ULID{}, nil
+		return nil, nil
 	}
 
 	level.Info(c.logger).Log(
@@ -761,7 +771,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 		"duration", time.Since(start),
 		"ooo", meta.Compaction.FromOutOfOrder(),
 	)
-	return uid, nil
+	return []ulid.ULID{uid}, nil
 }
 
 // instrumentedChunkWriter is used for level 1 compactions to record statistics

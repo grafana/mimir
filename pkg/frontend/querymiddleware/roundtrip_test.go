@@ -255,12 +255,12 @@ func TestTripperware_InstantQuery(t *testing.T) {
 
 func TestTripperware_Metrics(t *testing.T) {
 	tests := map[string]struct {
-		path             string
+		request          *http.Request
 		stepAlignEnabled bool
 		expectedMetrics  string
 	}{
 		"range query, start/end is aligned to step": {
-			path: "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=120",
+			request: httptest.NewRequest("GET", "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=120", http.NoBody),
 			expectedMetrics: `
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
@@ -272,7 +272,7 @@ func TestTripperware_Metrics(t *testing.T) {
 			`,
 		},
 		"range query, start/end is not aligned to step, aligning disabled": {
-			path: "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=7",
+			request: httptest.NewRequest("GET", "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=7", http.NoBody),
 			expectedMetrics: `
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
@@ -284,7 +284,7 @@ func TestTripperware_Metrics(t *testing.T) {
 			`,
 		},
 		"range query, start/end is not aligned to step, aligning enabled": {
-			path:             "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=7",
+			request:          httptest.NewRequest("GET", "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=7", http.NoBody),
 			stepAlignEnabled: true,
 			expectedMetrics: `
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
@@ -297,7 +297,7 @@ func TestTripperware_Metrics(t *testing.T) {
 			`,
 		},
 		"instant query": {
-			path: "/api/v1/query?query=up&time=1536673680",
+			request: httptest.NewRequest("GET", "/api/v1/query?query=up&time=1536673680", http.NoBody),
 			expectedMetrics: `
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
@@ -308,8 +308,92 @@ func TestTripperware_Metrics(t *testing.T) {
 				cortex_query_frontend_queries_total{op="query",user="user-1"} 1
 			`,
 		},
+		"remote read, start/end is aligned to step": {
+			request: func() *http.Request {
+				return makeTestHTTPRequestFromRemoteRead(&prompb.ReadRequest{
+					Queries: []*prompb.Query{
+						{
+							Matchers:         []*prompb.LabelMatcher{{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "some_metric"}},
+							StartTimestampMs: 1536673680,
+							EndTimestampMs:   1536716880,
+							Hints: &prompb.ReadHints{
+								StepMs:  120,
+								StartMs: 1536673680,
+								EndMs:   1536716880,
+							},
+						},
+					},
+				})
+			}(),
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="remote_read",user="user-1"} 1
+			`,
+		},
+		"remote read, start/end is not aligned to step, aligning disabled": {
+			request: func() *http.Request {
+				return makeTestHTTPRequestFromRemoteRead(&prompb.ReadRequest{
+					Queries: []*prompb.Query{
+						{
+							Matchers:         []*prompb.LabelMatcher{{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "some_metric"}},
+							StartTimestampMs: 1536673680,
+							EndTimestampMs:   1536716880,
+							Hints: &prompb.ReadHints{
+								StepMs:  7,
+								StartMs: 1536673680,
+								EndMs:   1536716880,
+							},
+						},
+					},
+				})
+			}(),
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="remote_read",user="user-1"} 1
+			`,
+		},
+		"remote read, start/end is not aligned to step, aligning enabled": {
+			request: func() *http.Request {
+				return makeTestHTTPRequestFromRemoteRead(&prompb.ReadRequest{
+					Queries: []*prompb.Query{
+						{
+							Matchers:         []*prompb.LabelMatcher{{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "some_metric"}},
+							StartTimestampMs: 1536673680,
+							EndTimestampMs:   1536716880,
+							Hints: &prompb.ReadHints{
+								StepMs:  7,
+								StartMs: 1536673680,
+								EndMs:   1536716880,
+							},
+						},
+					},
+				})
+			}(),
+			stepAlignEnabled: true,
+			// Even if forced aligning is enabled, the step will not be aligned because in Mimir we don't take
+			// in account the step when processing remote read requests.
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="remote_read",user="user-1"} 1
+			`,
+		},
 		"label names": {
-			path: "/api/v1/labels?start=1536673680&end=1536716880",
+			request: httptest.NewRequest("GET", "/api/v1/labels?start=1536673680&end=1536716880", http.NoBody),
 			expectedMetrics: `
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
@@ -321,7 +405,7 @@ func TestTripperware_Metrics(t *testing.T) {
 			`,
 		},
 		"label values": {
-			path: "/api/v1/label/test/values?start=1536673680&end=1536716880",
+			request: httptest.NewRequest("GET", "/api/v1/label/test/values?start=1536673680&end=1536716880", http.NoBody),
 			expectedMetrics: `
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
@@ -333,7 +417,7 @@ func TestTripperware_Metrics(t *testing.T) {
 			`,
 		},
 		"cardinality label names": {
-			path: "/api/v1/cardinality/label_names?selector=%7Bjob%3D%22test%22%7D",
+			request: httptest.NewRequest("GET", "/api/v1/cardinality/label_names?selector=%7Bjob%3D%22test%22%7D", http.NoBody),
 			expectedMetrics: `
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
@@ -345,7 +429,7 @@ func TestTripperware_Metrics(t *testing.T) {
 			`,
 		},
 		"cardinality active series": {
-			path: "/api/v1/cardinality/active_series?selector=%7Bjob%3D%22test%22%7D",
+			request: httptest.NewRequest("GET", "/api/v1/cardinality/active_series?selector=%7Bjob%3D%22test%22%7D", http.NoBody),
 			expectedMetrics: `
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
@@ -357,7 +441,7 @@ func TestTripperware_Metrics(t *testing.T) {
 			`,
 		},
 		"cardinality active native histogram metrics": {
-			path: "/api/v1/cardinality/active_native_histogram_metrics?selector=%7Bjob%3D%22test%22%7D",
+			request: httptest.NewRequest("GET", "/api/v1/cardinality/active_native_histogram_metrics?selector=%7Bjob%3D%22test%22%7D", http.NoBody),
 			expectedMetrics: `
 			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
@@ -369,7 +453,7 @@ func TestTripperware_Metrics(t *testing.T) {
 			`,
 		},
 		"unknown query type": {
-			path: "/api/v1/unknown",
+			request: httptest.NewRequest("GET", "/api/v1/unknown", http.NoBody),
 			expectedMetrics: `
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
@@ -405,9 +489,11 @@ func TestTripperware_Metrics(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			tw, err := NewTripperware(
-				Config{DeprecatedAlignQueriesWithStep: testData.stepAlignEnabled},
+				Config{},
 				log.NewNopLogger(),
-				mockLimits{},
+				mockLimits{
+					alignQueriesWithStep: testData.stepAlignEnabled,
+				},
 				newTestPrometheusCodec(),
 				nil,
 				promql.EngineOpts{
@@ -421,11 +507,8 @@ func TestTripperware_Metrics(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			req, err := http.NewRequest("GET", testData.path, http.NoBody)
-			require.NoError(t, err)
-
 			ctx := user.InjectOrgID(context.Background(), "user-1")
-			req = req.WithContext(ctx)
+			req := testData.request.WithContext(ctx)
 			require.NoError(t, user.InjectOrgIDIntoHTTPRequest(ctx, req))
 
 			resp, err := tw(downstream).RoundTrip(req)
@@ -482,8 +565,16 @@ func TestMiddlewaresConsistency(t *testing.T) {
 			exceptions: []string{"splitInstantQueryByIntervalMiddleware"},
 		},
 		"remote read": {
-			instances:  remoteReadMiddlewares,
-			exceptions: []string{"instrumentMiddleware", "querySharding", "queryStatsMiddleware", "retry", "splitAndCacheMiddleware", "splitInstantQueryByIntervalMiddleware", "stepAlignMiddleware"},
+			instances: remoteReadMiddlewares,
+			exceptions: []string{
+				"instrumentMiddleware",
+				"querySharding", // No query sharding support.
+				"queryStatsMiddleware",
+				"retry",
+				"splitAndCacheMiddleware",               // No time splitting and results cache support.
+				"splitInstantQueryByIntervalMiddleware", // Not applicable because specific to instant queries.
+				"stepAlignMiddleware",                   // Not applicable because remote read requests don't take step in account when running in Mimir.
+			},
 		},
 	}
 

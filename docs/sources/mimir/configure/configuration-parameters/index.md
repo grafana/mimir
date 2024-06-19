@@ -216,8 +216,8 @@ tenant_federation:
   # CLI flag: -tenant-federation.max-concurrent
   [max_concurrent: <int> | default = 16]
 
-  # (experimental) The max number of tenant IDs that may be supplied for a
-  # federated query if enabled. 0 to disable the limit.
+  # The max number of tenant IDs that may be supplied for a federated query if
+  # enabled. 0 to disable the limit.
   # CLI flag: -tenant-federation.max-tenants
   [max_tenants: <int> | default = 0]
 
@@ -1389,15 +1389,15 @@ store_gateway_client:
 # respond with a stream of chunks if the target store-gateway supports this, and
 # this preference will be ignored by store-gateways that do not support this.
 # CLI flag: -querier.prefer-streaming-chunks-from-store-gateways
-[prefer_streaming_chunks_from_store_gateways: <boolean> | default = false]
+[prefer_streaming_chunks_from_store_gateways: <boolean> | default = true]
 
 # (advanced) Number of series to buffer per ingester when streaming chunks from
 # ingesters.
 # CLI flag: -querier.streaming-chunks-per-ingester-buffer-size
 [streaming_chunks_per_ingester_series_buffer_size: <int> | default = 256]
 
-# (experimental) Number of series to buffer per store-gateway when streaming
-# chunks from store-gateways.
+# (advanced) Number of series to buffer per store-gateway when streaming chunks
+# from store-gateways.
 # CLI flag: -querier.streaming-chunks-per-store-gateway-buffer-size
 [streaming_chunks_per_store_gateway_series_buffer_size: <int> | default = 256]
 
@@ -3415,15 +3415,15 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ruler.max-rule-groups-per-tenant
 [ruler_max_rule_groups_per_tenant: <int> | default = 70]
 
-# (experimental) Controls whether recording rules evaluation is enabled. This
-# configuration option can be used to forcefully disable recording rules
-# evaluation on a per-tenant basis.
+# Controls whether recording rules evaluation is enabled. This configuration
+# option can be used to forcefully disable recording rules evaluation on a
+# per-tenant basis.
 # CLI flag: -ruler.recording-rules-evaluation-enabled
 [ruler_recording_rules_evaluation_enabled: <boolean> | default = true]
 
-# (experimental) Controls whether alerting rules evaluation is enabled. This
-# configuration option can be used to forcefully disable alerting rules
-# evaluation on a per-tenant basis.
+# Controls whether alerting rules evaluation is enabled. This configuration
+# option can be used to forcefully disable alerting rules evaluation on a
+# per-tenant basis.
 # CLI flag: -ruler.alerting-rules-evaluation-enabled
 [ruler_alerting_rules_evaluation_enabled: <boolean> | default = true]
 

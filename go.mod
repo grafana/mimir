@@ -34,7 +34,7 @@ require (
 	github.com/prometheus/alertmanager v0.27.0
 	github.com/prometheus/client_golang v1.19.1
 	github.com/prometheus/client_model v0.6.1
-	github.com/prometheus/common v0.54.1-0.20240608102853-1c9da3533702
+	github.com/prometheus/common v0.54.1-0.20240615204547-04635d2962f9
 	github.com/prometheus/prometheus v1.99.0
 	github.com/segmentio/fasthash v1.0.3
 	github.com/sirupsen/logrus v1.9.3
@@ -265,7 +265,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240617090647-26c8bacacf85
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240618115521-86ae072cdc80
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:

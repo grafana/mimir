@@ -36,7 +36,6 @@ const (
 				"http_config": {
 					"enable_http2": true,
 					"follow_redirects": true,
-					"http_headers": null,
 					"proxy_url": null,
 					"tls_config": {
 						"insecure_skip_verify": true
