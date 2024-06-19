@@ -60,6 +60,8 @@ The following features are currently experimental:
     - `-ruler.recording-rules-evaluation-enabled`
     - `-ruler.alerting-rules-evaluation-enabled`
   - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
+  -  Allow defining a limit on the maximum number of rules allowed in a rule group by namespace. If set, this supersedes the `-ruler.max-rules-per-rule-group` limit.
+    - `-ruler.max-rules-per-rule-group-by-namespace`
 - Distributor
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`

@@ -3430,7 +3430,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ruler.sync-rules-on-changes-enabled
 [ruler_sync_rules_on_changes_enabled: <boolean> | default = true]
 
-# (advanced) Maximum number of rules per rule group by namespace. Value is a
+# (experimental) Maximum number of rules per rule group by namespace. Value is a
 # map, where each key is the namespace and value is the number of rules allowed
 # in the namespace (int). On the command line, this map is given in a JSON
 # format. The number of rules specified has the same meaning as

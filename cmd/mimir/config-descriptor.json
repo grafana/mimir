@@ -4079,7 +4079,7 @@
           "fieldDefaultValue": {},
           "fieldFlag": "ruler.max-rules-per-rule-group-by-namespace",
           "fieldType": "map of string to int",
-          "fieldCategory": "advanced"
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
