@@ -3445,7 +3445,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (experimental) Maximum number of rule groups per tenant by namespace. Value is
 # a map, where each key is the namespace and value is the number of rule groups
-# allowed in the namespace (int64). On the command line, this map is given in a
+# allowed in the namespace (int). On the command line, this map is given in a
 # JSON format. The number of rule groups specified has the same meaning as
 # -ruler.max-rule-groups-per-tenant, but only applies for the specific
 # namespace. If specified, it supersedes -ruler.max-rule-groups-per-tenant.
