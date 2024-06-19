@@ -2145,7 +2145,10 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	streamingChunkBatchSize := req.StreamingChunksBatchSize
 
-	return i.queryStream(ctx, userID, mint, maxt, matchers, streamingChunkBatchSize, spanlog, stream)
+	pprof.Do(ctx, pprof.Labels("method", "Ingester.QueryStream", "userID", userID, "matchers", util.MatchersStringer(matchers).String()), func(ctx context.Context) {
+		err = i.queryStream(ctx, userID, mint, maxt, matchers, streamingChunkBatchSize, spanlog, stream)
+	})
+	return err
 }
 
 func (i *Ingester) queryStream(ctx context.Context, userID string, mint model.Time, maxt model.Time, matchers []*labels.Matcher, streamingChunkBatchSize uint64, spanlog *spanlogger.SpanLogger, stream client.Ingester_QueryStreamServer) error {
