@@ -587,3 +587,51 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 		}
 	})
 }
+
+func TestQueryFromRemoteReadQuery(t *testing.T) {
+	tests := map[string]struct {
+		query            *prompb.Query
+		expectedFrom     model.Time
+		expectedTo       model.Time
+		expectedMatchers []*labels.Matcher
+	}{
+		"remote read request query without hints": {
+			query: &prompb.Query{
+				StartTimestampMs: 1000,
+				EndTimestampMs:   2000,
+				Matchers: []*prompb.LabelMatcher{
+					{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "metric"},
+				},
+			},
+			expectedFrom:     1000,
+			expectedTo:       2000,
+			expectedMatchers: []*labels.Matcher{{Type: labels.MatchEqual, Name: labels.MetricName, Value: "metric"}},
+		},
+		"remote read request query with hints": {
+			query: &prompb.Query{
+				StartTimestampMs: 1000,
+				EndTimestampMs:   2000,
+				Matchers: []*prompb.LabelMatcher{
+					{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "metric"},
+				},
+				Hints: &prompb.ReadHints{
+					StartMs: 500,
+					EndMs:   1500,
+				},
+			},
+			expectedFrom:     1000, // Hints are currently ignored.
+			expectedTo:       2000, // Hints are currently ignored.
+			expectedMatchers: []*labels.Matcher{{Type: labels.MatchEqual, Name: labels.MetricName, Value: "metric"}},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			actualFrom, actualTo, actualMatchers, err := queryFromRemoteReadQuery(testData.query)
+			require.NoError(t, err)
+			require.Equal(t, testData.expectedFrom, actualFrom)
+			require.Equal(t, testData.expectedTo, actualTo)
+			require.Equal(t, testData.expectedMatchers, actualMatchers)
+		})
+	}
+}

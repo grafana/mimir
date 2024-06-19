@@ -88,7 +88,7 @@ func remoteReadSamples(
 
 	for i, qr := range req.Queries {
 		go func(i int, qr *prompb.Query) {
-			from, to, matchers, err := fromRemoteReadQuery(qr)
+			from, to, matchers, err := queryFromRemoteReadQuery(qr)
 			if err != nil {
 				errCh <- err
 				return
@@ -185,7 +185,7 @@ func processReadStreamedQueryRequest(
 	f http.Flusher,
 	maxBytesInFrame int,
 ) error {
-	from, to, matchers, err := fromRemoteReadQuery(queryReq)
+	from, to, matchers, err := queryFromRemoteReadQuery(queryReq)
 	if err != nil {
 		return err
 	}
@@ -342,19 +342,21 @@ func initializedFrameBytesRemaining(maxBytesInFrame int, lbls []prompb.Label) in
 	return frameBytesLeft
 }
 
-// TODO what's the right package for this utility?
-// TODO unit test
-func fromRemoteReadQuery(req *prompb.Query) (model.Time, model.Time, []*labels.Matcher, error) {
-	matchers, err := prom_remote.FromLabelMatchers(req.Matchers)
+// queryFromRemoteReadQuery returns the queried time range and label matchers for the given remote
+// read request query.
+func queryFromRemoteReadQuery(query *prompb.Query) (from, to model.Time, matchers []*labels.Matcher, err error) {
+	matchers, err = prom_remote.FromLabelMatchers(query.Matchers)
 	if err != nil {
-		return 0, 0, nil, err
+		return
 	}
-	from := model.Time(req.StartTimestampMs)
-	to := model.Time(req.EndTimestampMs)
-	return from, to, matchers, nil
+	from = model.Time(query.StartTimestampMs)
+	to = model.Time(query.EndTimestampMs)
+	return
 }
 
-// TODO copied from Prometheus. We could export it too.
+// labelsToLabelsProto converts labels.Labels into a slice of prompb.Label. This function
+// has been copied by Prometheus and will be replaced with the Prometheus once
+// https://github.com/prometheus/prometheus/pull/14316 will be merged.
 func labelsToLabelsProto(lbls labels.Labels, buf []prompb.Label) []prompb.Label {
 	result := buf[:0]
 	lbls.Range(func(l labels.Label) {
