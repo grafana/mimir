@@ -1179,9 +1179,10 @@ func (r *Ruler) AssertMaxRuleGroups(userID string, rg int) error {
 }
 
 // AssertMaxRulesPerRuleGroup limit has not been reached compared to the current
-// number of rules in a rule group in input and returns an error if so.
-func (r *Ruler) AssertMaxRulesPerRuleGroup(userID string, rules int) error {
-	limit := r.limits.RulerMaxRulesPerRuleGroup(userID)
+// number of rules in a rule group and namespace combination in input, returns an error if so.
+// If the limit is set to 0 (or less), then there is no limit.
+func (r *Ruler) AssertMaxRulesPerRuleGroup(userID, namespace string, rules int) error {
+	limit := r.limits.RulerMaxRulesPerRuleGroup(userID, namespace)
 
 	if limit <= 0 {
 		return nil

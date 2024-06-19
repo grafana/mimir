@@ -3434,6 +3434,15 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ruler.sync-rules-on-changes-enabled
 [ruler_sync_rules_on_changes_enabled: <boolean> | default = true]
 
+# (experimental) Maximum number of rules per rule group by namespace. Value is a
+# map, where each key is the namespace and value is the number of rules allowed
+# in the namespace (int). On the command line, this map is given in a JSON
+# format. The number of rules specified has the same meaning as
+# -ruler.max-rules-per-rule-group, but only applies for the specific namespace.
+# If specified, it supersedes -ruler.max-rules-per-rule-group.
+# CLI flag: -ruler.max-rules-per-rule-group-by-namespace
+[ruler_max_rules_per_rule_group_by_namespace: <map of string to int> | default = {}]
+
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
 # sharded across all store-gateway replicas.

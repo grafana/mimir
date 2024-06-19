@@ -185,6 +185,7 @@ type Limits struct {
 	RulerRecordingRulesEvaluationEnabled bool           `yaml:"ruler_recording_rules_evaluation_enabled" json:"ruler_recording_rules_evaluation_enabled"`
 	RulerAlertingRulesEvaluationEnabled  bool           `yaml:"ruler_alerting_rules_evaluation_enabled" json:"ruler_alerting_rules_evaluation_enabled"`
 	RulerSyncRulesOnChangesEnabled       bool           `yaml:"ruler_sync_rules_on_changes_enabled" json:"ruler_sync_rules_on_changes_enabled" category:"advanced"`
+	RulerMaxRulesPerRuleGroupByNamespace LimitsMap[int] `yaml:"ruler_max_rules_per_rule_group_by_namespace" json:"ruler_max_rules_per_rule_group_by_namespace" category:"experimental"`
 
 	// Store-gateway.
 	StoreGatewayTenantShardSize int `yaml:"store_gateway_tenant_shard_size" json:"store_gateway_tenant_shard_size"`
@@ -210,8 +211,8 @@ type Limits struct {
 	AlertmanagerReceiversBlockCIDRNetworks     flagext.CIDRSliceCSV `yaml:"alertmanager_receivers_firewall_block_cidr_networks" json:"alertmanager_receivers_firewall_block_cidr_networks"`
 	AlertmanagerReceiversBlockPrivateAddresses bool                 `yaml:"alertmanager_receivers_firewall_block_private_addresses" json:"alertmanager_receivers_firewall_block_private_addresses"`
 
-	NotificationRateLimit               float64                  `yaml:"alertmanager_notification_rate_limit" json:"alertmanager_notification_rate_limit"`
-	NotificationRateLimitPerIntegration NotificationRateLimitMap `yaml:"alertmanager_notification_rate_limit_per_integration" json:"alertmanager_notification_rate_limit_per_integration"`
+	NotificationRateLimit               float64            `yaml:"alertmanager_notification_rate_limit" json:"alertmanager_notification_rate_limit"`
+	NotificationRateLimitPerIntegration LimitsMap[float64] `yaml:"alertmanager_notification_rate_limit_per_integration" json:"alertmanager_notification_rate_limit_per_integration"`
 
 	AlertmanagerMaxConfigSizeBytes             int `yaml:"alertmanager_max_config_size_bytes" json:"alertmanager_max_config_size_bytes"`
 	AlertmanagerMaxSilencesCount               int `yaml:"alertmanager_max_silences_count" json:"alertmanager_max_silences_count"`
@@ -305,6 +306,11 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.RulerRecordingRulesEvaluationEnabled, "ruler.recording-rules-evaluation-enabled", true, "Controls whether recording rules evaluation is enabled. This configuration option can be used to forcefully disable recording rules evaluation on a per-tenant basis.")
 	f.BoolVar(&l.RulerAlertingRulesEvaluationEnabled, "ruler.alerting-rules-evaluation-enabled", true, "Controls whether alerting rules evaluation is enabled. This configuration option can be used to forcefully disable alerting rules evaluation on a per-tenant basis.")
 	f.BoolVar(&l.RulerSyncRulesOnChangesEnabled, "ruler.sync-rules-on-changes-enabled", true, "True to enable a re-sync of the configured rule groups as soon as they're changed via ruler's config API. This re-sync is in addition of the periodic syncing. When enabled, it may take up to few tens of seconds before a configuration change triggers the re-sync.")
+	// Needs to be initialised to a value so that the documentation can pick up the default value of `{}` because this is set as JSON from the command-line.
+	if !l.RulerMaxRulesPerRuleGroupByNamespace.IsInitialized() {
+		l.RulerMaxRulesPerRuleGroupByNamespace = NewLimitsMap[int](nil)
+	}
+	f.Var(&l.RulerMaxRulesPerRuleGroupByNamespace, "ruler.max-rules-per-rule-group-by-namespace", "Maximum number of rules per rule group by namespace. Value is a map, where each key is the namespace and value is the number of rules allowed in the namespace (int). On the command line, this map is given in a JSON format. The number of rules specified has the same meaning as -ruler.max-rules-per-rule-group, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rules-per-rule-group.")
 
 	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period. 0 to disable.")
 	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")
@@ -338,8 +344,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.Float64Var(&l.NotificationRateLimit, "alertmanager.notification-rate-limit", 0, "Per-tenant rate limit for sending notifications from Alertmanager in notifications/sec. 0 = rate limit disabled. Negative value = no notifications are allowed.")
 
-	if l.NotificationRateLimitPerIntegration == nil {
-		l.NotificationRateLimitPerIntegration = NotificationRateLimitMap{}
+	// Needs to be initialised to a value so that the documentation can pick up the default value of `{}` because this is set as JSON from the command-line.
+	if !l.NotificationRateLimitPerIntegration.IsInitialized() {
+		l.NotificationRateLimitPerIntegration = NotificationRateLimitMap()
 	}
 	f.Var(&l.NotificationRateLimitPerIntegration, "alertmanager.notification-rate-limit-per-integration", "Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: "+strings.Join(allowedIntegrationNames, ", ")+".")
 	f.IntVar(&l.AlertmanagerMaxConfigSizeBytes, "alertmanager.max-config-size-bytes", 0, "Maximum size of configuration file for Alertmanager that tenant can upload via Alertmanager API. 0 = no limit.")
@@ -378,8 +385,10 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	// We want to set l to the defaults and then overwrite it with the input.
 	if defaultLimits != nil {
 		*l = *defaultLimits
+
 		// Make copy of default limits, otherwise unmarshalling would modify map in default limits.
-		l.copyNotificationIntegrationLimits(defaultLimits.NotificationRateLimitPerIntegration)
+		l.NotificationRateLimitPerIntegration = defaultLimits.NotificationRateLimitPerIntegration.Clone()
+		l.RulerMaxRulesPerRuleGroupByNamespace = defaultLimits.RulerMaxRulesPerRuleGroupByNamespace.Clone()
 	}
 
 	// Decode into a reflection-crafted struct that has fields for the extensions.
@@ -426,13 +435,6 @@ func (l *Limits) validate() error {
 	}
 
 	return nil
-}
-
-func (l *Limits) copyNotificationIntegrationLimits(defaults NotificationRateLimitMap) {
-	l.NotificationRateLimitPerIntegration = make(map[string]float64, len(defaults))
-	for k, v := range defaults {
-		l.NotificationRateLimitPerIntegration[k] = v
-	}
 }
 
 // When we load YAML from disk, we want the various per-customer limits
@@ -831,8 +833,19 @@ func (o *Overrides) RulerTenantShardSize(userID string) int {
 }
 
 // RulerMaxRulesPerRuleGroup returns the maximum number of rules per rule group for a given user.
-func (o *Overrides) RulerMaxRulesPerRuleGroup(userID string) int {
-	return o.getOverridesForUser(userID).RulerMaxRulesPerRuleGroup
+// This limit is special. Limits are returned in the following order:
+// 1. Per tenant limit for the given namespace.
+// 2. Default limit for the given namespace.
+// 3. Per tenant limit set by RulerMaxRulesPerRuleGroup
+// 4. Default limit set by RulerMaxRulesPerRuleGroup
+func (o *Overrides) RulerMaxRulesPerRuleGroup(userID, namespace string) int {
+	u := o.getOverridesForUser(userID)
+
+	if namespaceLimit, ok := u.RulerMaxRulesPerRuleGroupByNamespace.data[namespace]; ok {
+		return namespaceLimit
+	}
+
+	return u.RulerMaxRulesPerRuleGroup
 }
 
 // RulerMaxRuleGroupsPerTenant returns the maximum number of rule groups for a given user.
@@ -899,7 +912,7 @@ func (o *Overrides) AlertmanagerReceiversBlockPrivateAddresses(user string) bool
 // 4. default limits
 func (o *Overrides) getNotificationLimitForUser(user, integration string) float64 {
 	u := o.getOverridesForUser(user)
-	if n, ok := u.NotificationRateLimitPerIntegration[integration]; ok {
+	if n, ok := u.NotificationRateLimitPerIntegration.data[integration]; ok {
 		return n
 	}
 

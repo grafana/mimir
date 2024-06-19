@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
@@ -127,7 +128,7 @@ max_partial_query_length: 1s
 	err = json.Unmarshal([]byte(inputJSON), &limitsJSON)
 	require.NoError(t, err, "expected to be able to unmarshal from JSON")
 
-	assert.Equal(t, limitsYAML, limitsJSON)
+	assert.True(t, cmp.Equal(limitsYAML, limitsJSON, cmp.AllowUnexported(Limits{})), "expected YAML and JSON to match")
 }
 
 func TestLimitsAlwaysUsesPromDuration(t *testing.T) {
@@ -582,6 +583,170 @@ testuser:
 
 			require.Equal(t, tc.expectedRateLimit, ov.NotificationRateLimit("testuser", tc.testedIntegration))
 			require.Equal(t, tc.expectedBurstSize, ov.NotificationBurstSize("testuser", tc.testedIntegration))
+		})
+	}
+}
+
+func TestRulerMaxRulesPerRuleGroupLimits(t *testing.T) {
+	tc := map[string]struct {
+		inputYAML         string
+		expectedLimit     int
+		expectedNamespace string
+	}{
+		"no namespace specific limit": {
+			inputYAML: `
+ruler_max_rules_per_rule_group: 100
+`,
+			expectedLimit:     100,
+			expectedNamespace: "mynamespace",
+		},
+		"zero limit for the right namespace": {
+			inputYAML: `
+ruler_max_rules_per_rule_group: 100
+
+ruler_max_rules_per_rule_group_by_namespace:
+  mynamespace: 0
+`,
+			expectedLimit:     0,
+			expectedNamespace: "mynamespace",
+		},
+		"other namespaces are not affected": {
+			inputYAML: `
+ruler_max_rules_per_rule_group: 100
+
+ruler_max_rules_per_rule_group_by_namespace:
+  mynamespace: 10
+`,
+			expectedLimit:     100,
+			expectedNamespace: "othernamespace",
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			limitsYAML := Limits{}
+			require.NoError(t, yaml.Unmarshal([]byte(tt.inputYAML), &limitsYAML))
+
+			ov, err := NewOverrides(limitsYAML, nil)
+			require.NoError(t, err)
+
+			require.Equal(t, tt.expectedLimit, ov.RulerMaxRulesPerRuleGroup("user", tt.expectedNamespace))
+		})
+	}
+}
+
+func TestRulerMaxRulesPerRuleGroupLimitsOverrides(t *testing.T) {
+	baseYaml := `
+ruler_max_rules_per_rule_group: 5
+
+ruler_max_rules_per_rule_group_by_namespace:
+  mynamespace: 10
+`
+
+	overrideGenericLimitsOnly := `
+testuser:
+  ruler_max_rules_per_rule_group: 333
+`
+
+	overrideNamespaceLimits := `
+testuser:
+  ruler_max_rules_per_rule_group_by_namespace:
+    mynamespace: 7777
+`
+
+	overrideGenericLimitsAndNamespaceLimits := `
+testuser:
+  ruler_max_rules_per_rule_group: 333
+
+  ruler_max_rules_per_rule_group_by_namespace:
+    mynamespace: 7777
+`
+
+	differentUserOverride := `
+differentuser:
+  ruler_max_rules_per_rule_group_by_namespace:
+    mynamespace: 500
+`
+
+	tc := map[string]struct {
+		overrides      string
+		inputNamespace string
+		expectedLimit  int
+	}{
+		"no overrides, mynamespace": {
+			inputNamespace: "mynamespace",
+			expectedLimit:  10,
+		},
+		"no overrides, othernamespace": {
+			inputNamespace: "othernamespace",
+			expectedLimit:  5,
+		},
+		"generic override, mynamespace": {
+			inputNamespace: "mynamespace",
+			overrides:      overrideGenericLimitsOnly,
+			expectedLimit:  10,
+		},
+		"generic override, othernamespace": {
+			inputNamespace: "othernamespace",
+			overrides:      overrideGenericLimitsOnly,
+			expectedLimit:  333,
+		},
+		"namespace limit override, mynamespace": {
+			inputNamespace: "mynamespace",
+			overrides:      overrideNamespaceLimits,
+			expectedLimit:  7777,
+		},
+		"namespace limit override, othernamespace": {
+			inputNamespace: "othernamespace",
+			overrides:      overrideNamespaceLimits,
+			expectedLimit:  5,
+		},
+		"generic and namespace limit override, mynamespace": {
+			inputNamespace: "mynamespace",
+			overrides:      overrideGenericLimitsAndNamespaceLimits,
+			expectedLimit:  7777,
+		},
+		"generic and namespace limit override, othernamespace": {
+			inputNamespace: "othernamespace",
+			overrides:      overrideGenericLimitsAndNamespaceLimits,
+			expectedLimit:  333,
+		},
+		"different user override, mynamespace": {
+			inputNamespace: "mynamespace",
+			overrides:      differentUserOverride,
+			expectedLimit:  10,
+		},
+		"different user override, othernamespace": {
+			inputNamespace: "othernamespace",
+			overrides:      differentUserOverride,
+			expectedLimit:  5,
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+
+			t.Cleanup(func() {
+				SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+			})
+
+			SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+
+			var limitsYAML Limits
+			err := yaml.Unmarshal([]byte(baseYaml), &limitsYAML)
+			require.NoError(t, err)
+
+			SetDefaultLimitsForYAMLUnmarshalling(limitsYAML)
+
+			overrides := map[string]*Limits{}
+			err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+			require.NoError(t, err)
+
+			tl := NewMockTenantLimits(overrides)
+			ov, err := NewOverrides(limitsYAML, tl)
+			require.NoError(t, err)
+
+			require.Equal(t, tt.expectedLimit, ov.RulerMaxRulesPerRuleGroup("testuser", tt.inputNamespace))
 		})
 	}
 }
