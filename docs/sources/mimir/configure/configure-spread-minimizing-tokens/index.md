@@ -18,10 +18,10 @@ The ingester time series replication should be [configured with enabled zone-awa
 {{% admonition type="note" %}}Spread-mimizing tokens are recommended if [shuffle-sharding](https://grafana.com/docs/mimir/latest/configure/configure-shuffle-sharding/#ingesters-shuffle-sharding) is disabled on the [write path](https://grafana.com/docs/mimir/latest/configure/configure-shuffle-sharding/#ingesters-write-path) of your ingesters, or, if it is enabled, but most of the tenants of your system use all available ingesters.
 {{% /admonition %}}
 
-{{% admonition type="note" %}}In order to prevent incorrect query results, [shuffle-sharding](https://grafana.com/docs/mimir/latest/configure/configure-shuffle-sharding/#ingesters-shuffle-sharding) on the [read path](https://grafana.com/docs/mimir/latest/configure/configure-shuffle-sharding/#ingesters-read-path) of your ingesters **must** be disabled before migrating ingesters to the spread-minimizing tokens. Shuffle-sharding on ingester's read path can be re-enabled at least `-querier.query-store-after` time after the last ingester zone was migrated to the spread-minimizing tokens.
+{{% admonition type="note" %}}In order to prevent incorrect query results, [shuffle-sharding](https://grafana.com/docs/mimir/latest/configure/configure-shuffle-sharding/#ingesters-shuffle-sharding) on the [read path](https://grafana.com/docs/mimir/latest/configure/configure-shuffle-sharding/#ingesters-read-path) of your ingesters must be disabled before migrating ingesters to the spread-minimizing tokens. Shuffle-sharding on ingester's read path can be re-enabled at least `-querier.query-store-after` time after the last ingester zone was migrated to the spread-minimizing tokens.
 {{% /admonition %}}
 
-If ingesters are configured with a non-empty value of `-ingester.ring.tokens-file-path`, this is the file where ingesters store the tokens at shutdown and restore them at startup. Keep track of this value, because it will be needed in the last step.
+If ingesters are configured with a non-empty value of `-ingester.ring.tokens-file-path`, this is the file where ingesters store the tokens at shutdown and restore them at startup. Keep track of this value, because you need it in the last step.
 
 For simplicity, let’s assume that there are three configured availability zones named `zone-a`, `zone-b`, and `zone-c`. Migration to the _spread-minimizing token generation strategy_ is a complex process performed zone by zone to prevent any data loss.
 
@@ -114,9 +114,9 @@ Repeat steps 1 to 4, replacing all the occurrences of `zone-a` with `zone-c`.
 
 ## Step 7: Delete the old token files
 
-If before the migration ingesters were configured to store their tokens under `-ingester.ring.tokens-file-path`, these files must be deleted once all ingester zones are migrated to the spread-minimizing tokens.
+If, before the migration, you configured ingesters to store their tokens under `-ingester.ring.tokens-file-path`, you must delete these files after migrating all ingester zones to spread-minimizing tokens.
 
-For example, assuming that an ingester pod `ingester-zone-a` from a namespace `mimir-prod` used to store its tokens in a file `/data/tokens`, the latter can be deleted by executing:
+For example, if an ingester pod called `ingester-zone-a` from a namespace called `mimir-prod` used to store its tokens in a file called `/data/tokens`, you can run the following command to delete the `/data/tokens` file:
 
 ```
 kubectl -n mimir-prod exec ingester-zone-a-0 -- rm /data/tokens
