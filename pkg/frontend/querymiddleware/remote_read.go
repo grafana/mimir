@@ -337,35 +337,3 @@ func cloneRemoteReadQuery(orig *prompb.Query) (*prompb.Query, error) {
 
 	return cloned, nil
 }
-
-type remoteReadSanitizerMiddleware struct {
-	next MetricsQueryHandler
-}
-
-func newRemoteReadSanitizerMiddleware() MetricsQueryMiddleware {
-	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
-		return &remoteReadSanitizerMiddleware{
-			next: next,
-		}
-	})
-}
-
-func (r *remoteReadSanitizerMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
-	query, ok := req.(*remoteReadQueryRequest)
-	if !ok {
-		return nil, apierror.New(apierror.TypeInternal, "unexpected data type")
-	}
-	if query.query.Hints == nil || query.query.Hints.StepMs == 0 {
-		return r.next.Do(ctx, req)
-	}
-	clonedQuery, err := cloneRemoteReadQuery(query.query)
-	if err != nil {
-		return nil, err
-	}
-	clonedQuery.Hints.StepMs = 0
-	req, err = remoteReadToMetricsQueryRequest(query.path, clonedQuery)
-	if err != nil {
-		return nil, err
-	}
-	return r.next.Do(ctx, req)
-}

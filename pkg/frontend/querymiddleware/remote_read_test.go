@@ -438,13 +438,9 @@ func makeTestRemoteReadRequest() *prompb.ReadRequest {
 
 // This is not a full test yet, only tests what's needed for the query blocker.
 func TestRemoteReadToMetricsQueryRequest(t *testing.T) {
-	testCases := map[string]struct {
-		query         *prompb.Query
-		expectedQuery string
-		expectedStep  int64
-	}{
-		"query without hints": {
-			query: &prompb.Query{
+	remoteReadRequest := &prompb.ReadRequest{
+		Queries: []*prompb.Query{
+			{
 				Matchers: []*prompb.LabelMatcher{
 					{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "some_metric"},
 					{Name: "foo", Type: prompb.LabelMatcher_RE, Value: ".*bar.*"},
@@ -452,103 +448,25 @@ func TestRemoteReadToMetricsQueryRequest(t *testing.T) {
 				StartTimestampMs: 10,
 				EndTimestampMs:   20,
 			},
-			expectedQuery: "{__name__=\"some_metric\",foo=~\".*bar.*\"}",
-			expectedStep:  0,
-		},
-		"query with hints": {
-			query: &prompb.Query{
+			{
 				Matchers: []*prompb.LabelMatcher{
 					{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "up"},
 				},
-				StartTimestampMs: 10,
-				EndTimestampMs:   20,
 				Hints: &prompb.ReadHints{
-					StartMs: 5,
-					EndMs:   20,
-					StepMs:  1000,
+					StepMs: 1000,
 				},
 			},
-			expectedQuery: "{__name__=\"up\"}",
-			expectedStep:  1000,
 		},
 	}
 
-	for name, tc := range testCases {
-		t.Run(name, func(t *testing.T) {
-			metricsQR, err := remoteReadToMetricsQueryRequest("something", tc.query)
-			require.NoError(t, err)
-			require.Equal(t, tc.expectedQuery, metricsQR.GetQuery())
-			require.Equal(t, tc.expectedStep, metricsQR.GetStep())
-		})
+	expectedGetQuery := []string{
+		"{__name__=\"some_metric\",foo=~\".*bar.*\"}",
+		"{__name__=\"up\"}",
 	}
-}
 
-func TestRemoteReadSanitizerMiddleware_ClearsStepHint(t *testing.T) {
-	testCases := map[string]struct {
-		query        *prompb.Query
-		expectChange bool
-	}{
-		"query without hints": {
-			query: &prompb.Query{
-				Matchers: []*prompb.LabelMatcher{
-					{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "some_metric"},
-					{Name: "foo", Type: prompb.LabelMatcher_RE, Value: ".*bar.*"},
-				},
-				StartTimestampMs: 10,
-				EndTimestampMs:   20,
-			},
-		},
-		"query with hints and zero step": {
-			query: &prompb.Query{
-				Matchers: []*prompb.LabelMatcher{
-					{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "some_metric"},
-					{Name: "foo", Type: prompb.LabelMatcher_RE, Value: ".*bar.*"},
-				},
-				StartTimestampMs: 10,
-				EndTimestampMs:   20,
-				Hints: &prompb.ReadHints{
-					StartMs: 10,
-					EndMs:   20,
-					StepMs:  0,
-				},
-			},
-		},
-		"query with hints and non zero step": {
-			query: &prompb.Query{
-				Matchers: []*prompb.LabelMatcher{
-					{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "some_metric"},
-					{Name: "foo", Type: prompb.LabelMatcher_RE, Value: ".*bar.*"},
-				},
-				StartTimestampMs: 10,
-				EndTimestampMs:   20,
-				Hints: &prompb.ReadHints{
-					StartMs: 10,
-					EndMs:   20,
-					StepMs:  1000,
-				},
-			},
-			expectChange: true,
-		},
-	}
-	for name, tc := range testCases {
-		t.Run(name, func(t *testing.T) {
-			var downstreamReq MetricsQueryRequest
-			capture := HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
-				downstreamReq = req
-				return nil, nil
-			})
-			middleware := remoteReadSanitizerMiddleware{next: capture}
-			req, err := remoteReadToMetricsQueryRequest("/read", tc.query)
-			require.NoError(t, err)
-			_, err = middleware.Do(context.Background(), req)
-			require.NoError(t, err)
-			require.NotNil(t, downstreamReq)
-			require.Zero(t, downstreamReq.GetStep())
-			if tc.expectChange {
-				require.NotSame(t, req, downstreamReq)
-			} else {
-				require.Same(t, req, downstreamReq)
-			}
-		})
+	for i, query := range remoteReadRequest.Queries {
+		metricsQR, err := remoteReadToMetricsQueryRequest("something", query)
+		require.NoError(t, err)
+		require.Equal(t, expectedGetQuery[i], metricsQR.GetQuery())
 	}
 }
