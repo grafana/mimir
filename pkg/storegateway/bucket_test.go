@@ -1505,9 +1505,12 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 			NewBucketStoreMetrics(reg),
 			testData.options...,
 		)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		t.Run(testName, func(t test.TB) {
+			t.Cleanup(func() {
+				st.RemoveBlocksAndClose()
+			})
 			runTestWithStore(t, st, reg)
 		})
 	}
@@ -1635,6 +1638,10 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 					)
 					require.NoError(t, err)
 					require.NoError(t, store.SyncBlocks(ctx))
+
+					t.Cleanup(func() {
+						store.RemoveBlocksAndClose()
+					})
 
 					// Run workers.
 					wg := sync.WaitGroup{}
@@ -1778,7 +1785,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		indexReaderPool: indexheader.NewReaderPool(log.NewNopLogger(), indexheader.Config{
 			LazyLoadingEnabled:     false,
 			LazyLoadingIdleTimeout: 0,
-		}, gate.NewNoop(), indexheader.NewReaderPoolMetrics(nil), indexheader.LazyLoadedHeadersSnapshotConfig{}),
+		}, gate.NewNoop(), indexheader.NewReaderPoolMetrics(nil), nil),
 		metrics:  NewBucketStoreMetrics(nil),
 		blockSet: &bucketBlockSet{blocks: []*bucketBlock{b1, b2}},
 		blocks: map[ulid.ULID]*bucketBlock{
@@ -2014,7 +2021,7 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 		WithLogger(logger),
 		WithQueryGate(gate.NewBlocking(0)),
 	)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
 
 	req := &storepb.SeriesRequest{

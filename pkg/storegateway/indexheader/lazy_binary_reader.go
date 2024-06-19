@@ -127,7 +127,7 @@ func NewLazyBinaryReader(
 		logger:          logger,
 		filepath:        path,
 		metrics:         metrics,
-		usedAt:          atomic.NewInt64(time.Now().UnixNano()),
+		usedAt:          atomic.NewInt64(0),
 		onClosed:        onClosed,
 		readerFactory:   readerFactory,
 		blockID:         id,
