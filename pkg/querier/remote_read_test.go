@@ -20,6 +20,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	prom_remote "github.com/prometheus/prometheus/storage/remote"
@@ -27,7 +28,6 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/series"
@@ -116,8 +116,8 @@ func TestSampledRemoteRead(t *testing.T) {
 	}
 	handler := RemoteReadHandler(q, log.NewNopLogger())
 
-	requestBody, err := proto.Marshal(&client.ReadRequest{
-		Queries: []*client.QueryRequest{
+	requestBody, err := proto.Marshal(&prompb.ReadRequest{
+		Queries: []*prompb.Query{
 			{StartTimestampMs: 0, EndTimestampMs: 10},
 		},
 	})
@@ -131,31 +131,31 @@ func TestSampledRemoteRead(t *testing.T) {
 	handler.ServeHTTP(recorder, request)
 
 	require.Equal(t, 200, recorder.Result().StatusCode)
-	require.Equal(t, []string([]string{"application/x-protobuf"}), recorder.Result().Header["Content-Type"])
+	require.Equal(t, []string{"application/x-protobuf"}, recorder.Result().Header["Content-Type"])
 	responseBody, err := io.ReadAll(recorder.Result().Body)
 	require.NoError(t, err)
 	responseBody, err = snappy.Decode(nil, responseBody)
 	require.NoError(t, err)
-	var response client.ReadResponse
+	var response prompb.ReadResponse
 	err = proto.Unmarshal(responseBody, &response)
 	require.NoError(t, err)
 
-	expected := client.ReadResponse{
-		Results: []*client.QueryResponse{
+	expected := prompb.ReadResponse{
+		Results: []*prompb.QueryResult{
 			{
-				Timeseries: []mimirpb.TimeSeries{
+				Timeseries: []*prompb.TimeSeries{
 					{
-						Labels: []mimirpb.LabelAdapter{
+						Labels: []prompb.Label{
 							{Name: "foo", Value: "bar"},
 						},
-						Samples: []mimirpb.Sample{
-							{Value: 0, TimestampMs: 0},
-							{Value: 1, TimestampMs: 1},
-							{Value: 2, TimestampMs: 2},
-							{Value: 3, TimestampMs: 3},
+						Samples: []prompb.Sample{
+							{Value: 0, Timestamp: 0},
+							{Value: 1, Timestamp: 1},
+							{Value: 2, Timestamp: 2},
+							{Value: 3, Timestamp: 3},
 						},
-						Histograms: []mimirpb.Histogram{
-							mimirpb.FromHistogramToHistogramProto(4, test.GenerateTestHistogram(4)),
+						Histograms: []prompb.Histogram{
+							prom_remote.HistogramToHistogramProto(4, test.GenerateTestHistogram(4)),
 						},
 					},
 				},
@@ -169,20 +169,20 @@ func TestStreamedRemoteRead(t *testing.T) {
 	tcs := map[string]struct {
 		samples         []model.SamplePair
 		histograms      []mimirpb.Histogram
-		expectedResults []*client.StreamReadResponse
+		expectedResults []*prompb.ChunkedReadResponse
 	}{
 		"with 120 samples, we expect 1 frame with 1 chunk": {
 			samples: getNSamples(120),
-			expectedResults: []*client.StreamReadResponse{
+			expectedResults: []*prompb.ChunkedReadResponse{
 				{
-					ChunkedSeries: []*client.StreamChunkedSeries{
+					ChunkedSeries: []*prompb.ChunkedSeries{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
-							Chunks: []client.StreamChunk{
+							Labels: []prompb.Label{{Name: "foo", Value: "bar"}},
+							Chunks: []prompb.Chunk{
 								{
 									MinTimeMs: 0,
 									MaxTimeMs: 119,
-									Type:      client.XOR,
+									Type:      prompb.Chunk_XOR,
 									Data:      getIndexedChunk(0, 120, chunkenc.EncXOR),
 								},
 							},
@@ -194,22 +194,22 @@ func TestStreamedRemoteRead(t *testing.T) {
 		},
 		"with 121 samples, we expect 1 frame with 2 chunks": {
 			samples: getNSamples(121),
-			expectedResults: []*client.StreamReadResponse{
+			expectedResults: []*prompb.ChunkedReadResponse{
 				{
-					ChunkedSeries: []*client.StreamChunkedSeries{
+					ChunkedSeries: []*prompb.ChunkedSeries{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
-							Chunks: []client.StreamChunk{
+							Labels: []prompb.Label{{Name: "foo", Value: "bar"}},
+							Chunks: []prompb.Chunk{
 								{
 									MinTimeMs: 0,
 									MaxTimeMs: 119,
-									Type:      client.XOR,
+									Type:      prompb.Chunk_XOR,
 									Data:      getIndexedChunk(0, 121, chunkenc.EncXOR),
 								},
 								{
 									MinTimeMs: 120,
 									MaxTimeMs: 120,
-									Type:      client.XOR,
+									Type:      prompb.Chunk_XOR,
 									Data:      getIndexedChunk(1, 121, chunkenc.EncXOR),
 								},
 							},
@@ -221,22 +221,22 @@ func TestStreamedRemoteRead(t *testing.T) {
 		},
 		"with 481 samples, we expect 2 frames with 2 chunks, and 1 frame with 1 chunk due to frame limit": {
 			samples: getNSamples(481),
-			expectedResults: []*client.StreamReadResponse{
+			expectedResults: []*prompb.ChunkedReadResponse{
 				{
-					ChunkedSeries: []*client.StreamChunkedSeries{
+					ChunkedSeries: []*prompb.ChunkedSeries{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
-							Chunks: []client.StreamChunk{
+							Labels: []prompb.Label{{Name: "foo", Value: "bar"}},
+							Chunks: []prompb.Chunk{
 								{
 									MinTimeMs: 0,
 									MaxTimeMs: 119,
-									Type:      client.XOR,
+									Type:      prompb.Chunk_XOR,
 									Data:      getIndexedChunk(0, 481, chunkenc.EncXOR),
 								},
 								{
 									MinTimeMs: 120,
 									MaxTimeMs: 239,
-									Type:      client.XOR,
+									Type:      prompb.Chunk_XOR,
 									Data:      getIndexedChunk(1, 481, chunkenc.EncXOR),
 								},
 							},
@@ -244,20 +244,20 @@ func TestStreamedRemoteRead(t *testing.T) {
 					},
 				},
 				{
-					ChunkedSeries: []*client.StreamChunkedSeries{
+					ChunkedSeries: []*prompb.ChunkedSeries{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
-							Chunks: []client.StreamChunk{
+							Labels: []prompb.Label{{Name: "foo", Value: "bar"}},
+							Chunks: []prompb.Chunk{
 								{
 									MinTimeMs: 240,
 									MaxTimeMs: 359,
-									Type:      client.XOR,
+									Type:      prompb.Chunk_XOR,
 									Data:      getIndexedChunk(2, 481, chunkenc.EncXOR),
 								},
 								{
 									MinTimeMs: 360,
 									MaxTimeMs: 479,
-									Type:      client.XOR,
+									Type:      prompb.Chunk_XOR,
 									Data:      getIndexedChunk(3, 481, chunkenc.EncXOR),
 								},
 							},
@@ -265,14 +265,14 @@ func TestStreamedRemoteRead(t *testing.T) {
 					},
 				},
 				{
-					ChunkedSeries: []*client.StreamChunkedSeries{
+					ChunkedSeries: []*prompb.ChunkedSeries{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
-							Chunks: []client.StreamChunk{
+							Labels: []prompb.Label{{Name: "foo", Value: "bar"}},
+							Chunks: []prompb.Chunk{
 								{
 									MinTimeMs: 480,
 									MaxTimeMs: 480,
-									Type:      client.XOR,
+									Type:      prompb.Chunk_XOR,
 									Data:      getIndexedChunk(4, 481, chunkenc.EncXOR),
 								},
 							},
@@ -283,16 +283,16 @@ func TestStreamedRemoteRead(t *testing.T) {
 		},
 		"120 native histograms": {
 			histograms: getNHistogramSamples(120),
-			expectedResults: []*client.StreamReadResponse{
+			expectedResults: []*prompb.ChunkedReadResponse{
 				{
-					ChunkedSeries: []*client.StreamChunkedSeries{
+					ChunkedSeries: []*prompb.ChunkedSeries{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
-							Chunks: []client.StreamChunk{
+							Labels: []prompb.Label{{Name: "foo", Value: "bar"}},
+							Chunks: []prompb.Chunk{
 								{
 									MinTimeMs: 0,
 									MaxTimeMs: 119,
-									Type:      client.HISTOGRAM,
+									Type:      prompb.Chunk_HISTOGRAM,
 									Data:      getIndexedChunk(0, 120, chunkenc.EncHistogram),
 								},
 							},
@@ -304,16 +304,16 @@ func TestStreamedRemoteRead(t *testing.T) {
 		},
 		"120 native float histograms": {
 			histograms: getNFloatHistogramSamples(120),
-			expectedResults: []*client.StreamReadResponse{
+			expectedResults: []*prompb.ChunkedReadResponse{
 				{
-					ChunkedSeries: []*client.StreamChunkedSeries{
+					ChunkedSeries: []*prompb.ChunkedSeries{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
-							Chunks: []client.StreamChunk{
+							Labels: []prompb.Label{{Name: "foo", Value: "bar"}},
+							Chunks: []prompb.Chunk{
 								{
 									MinTimeMs: 0,
 									MaxTimeMs: 119,
-									Type:      client.FLOAT_HISTOGRAM,
+									Type:      prompb.Chunk_FLOAT_HISTOGRAM,
 									Data:      getIndexedChunk(0, 120, chunkenc.EncFloatHistogram),
 								},
 							},
@@ -344,11 +344,11 @@ func TestStreamedRemoteRead(t *testing.T) {
 
 			handler := remoteReadHandler(q, maxBytesInFrame, log.NewNopLogger())
 
-			requestBody, err := proto.Marshal(&client.ReadRequest{
-				Queries: []*client.QueryRequest{
+			requestBody, err := proto.Marshal(&prompb.ReadRequest{
+				Queries: []*prompb.Query{
 					{StartTimestampMs: 0, EndTimestampMs: 10},
 				},
-				AcceptedResponseTypes: []client.ReadRequest_ResponseType{client.STREAMED_XOR_CHUNKS},
+				AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
 			})
 			require.NoError(t, err)
 			requestBody = snappy.Encode(nil, requestBody)
@@ -366,7 +366,7 @@ func TestStreamedRemoteRead(t *testing.T) {
 
 			i := 0
 			for {
-				var res client.StreamReadResponse
+				var res prompb.ChunkedReadResponse
 				err := stream.NextProto(&res)
 				if errors.Is(err, io.EOF) {
 					break
@@ -527,11 +527,11 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 				}
 				handler := remoteReadHandler(q, 1024*1024, log.NewNopLogger())
 
-				requestBody, err := proto.Marshal(&client.ReadRequest{
-					Queries: []*client.QueryRequest{
+				requestBody, err := proto.Marshal(&prompb.ReadRequest{
+					Queries: []*prompb.Query{
 						{StartTimestampMs: 0, EndTimestampMs: 10},
 					},
-					AcceptedResponseTypes: []client.ReadRequest_ResponseType{client.SAMPLES},
+					AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_SAMPLES},
 				})
 				require.NoError(t, err)
 				requestBody = snappy.Encode(nil, requestBody)
@@ -563,11 +563,11 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 				}
 				handler := remoteReadHandler(q, 1024*1024, log.NewNopLogger())
 
-				requestBody, err := proto.Marshal(&client.ReadRequest{
-					Queries: []*client.QueryRequest{
+				requestBody, err := proto.Marshal(&prompb.ReadRequest{
+					Queries: []*prompb.Query{
 						{StartTimestampMs: 0, EndTimestampMs: 10},
 					},
-					AcceptedResponseTypes: []client.ReadRequest_ResponseType{client.STREAMED_XOR_CHUNKS},
+					AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
 				})
 				require.NoError(t, err)
 				requestBody = snappy.Encode(nil, requestBody)
