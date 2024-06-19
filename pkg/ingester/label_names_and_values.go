@@ -27,14 +27,13 @@ type labelValueCountResult struct {
 // labelNamesAndValues streams the messages with the labels and values of the labels matching the `matchers` param.
 // Messages are immediately sent as soon they reach message size threshold defined in `messageSizeThreshold` param.
 func labelNamesAndValues(
+	ctx context.Context,
 	index tsdb.IndexReader,
 	matchers []*labels.Matcher,
 	messageSizeThreshold int,
 	stream client.Ingester_LabelNamesAndValuesServer,
 	filter func(name, value string) (bool, error),
 ) error {
-	ctx := stream.Context()
-
 	labelNames, err := index.LabelNames(ctx, matchers...)
 	if err != nil {
 		return err
@@ -114,6 +113,7 @@ func labelNamesAndValues(
 // labelValuesCardinality returns all values and series total count for label_names labels that match the matchers.
 // Messages are immediately sent as soon they reach message size threshold.
 func labelValuesCardinality(
+	ctx context.Context,
 	lbNames []string,
 	matchers []*labels.Matcher,
 	idxReader tsdb.IndexReader,
@@ -121,8 +121,6 @@ func labelValuesCardinality(
 	msgSizeThreshold int,
 	srv client.Ingester_LabelValuesCardinalityServer,
 ) error {
-	ctx := srv.Context()
-
 	resp := client.LabelValuesCardinalityResponse{}
 	respSize := 0
 

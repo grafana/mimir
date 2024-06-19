@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
 	"sync"
 	"time"
@@ -1639,11 +1640,19 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 		return nil, err
 	}
 
-	from, through, matchers, err := client.FromExemplarQueryRequest(req)
+	mint, maxt, matchers, err := client.FromExemplarQueryRequest(req)
 	if err != nil {
 		return nil, err
 	}
 
+	pprof.Do(ctx, pprof.Labels("method", "Ingester.QueryExemplars", "userID", userID, "matchers", matchersSetString(matchers)), func(ctx context.Context) {
+		resp, err = i.queryExemplars(ctx, userID, mint, maxt, matchers)
+	})
+
+	return resp, err
+}
+
+func (i *Ingester) queryExemplars(ctx context.Context, userID string, mint int64, maxt int64, matchers [][]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
 	i.metrics.queries.Inc()
 
 	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
@@ -1662,8 +1671,8 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 		return nil, err
 	}
 
-	// It's not required to sort series from a single ingester because series are sorted by the Exemplar Storage before returning from Select.
-	res, err := q.Select(from, through, matchers...)
+	// It's not required to sort series mint a single ingester because series are sorted by the Exemplar Storage before returning mint Select.
+	res, err := q.Select(mint, maxt, matchers...)
 	if err != nil {
 		return nil, err
 	}
@@ -1694,16 +1703,24 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 	}
 	defer func() { finishReadRequest(err) }()
 
-	labelName, startTimestampMs, endTimestampMs, matchers, err := client.FromLabelValuesRequest(req)
-	if err != nil {
-		return nil, err
-	}
-
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	labelName, startTimestampMs, endTimestampMs, matchers, err := client.FromLabelValuesRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	pprof.Do(ctx, pprof.Labels("method", "Ingester.LabelValues", "userID", userID, "labelName", labelName, "matchers", util.MatchersStringer(matchers).String()), func(ctx context.Context) {
+		resp, err = i.labelValues(ctx, userID, labelName, startTimestampMs, endTimestampMs, matchers)
+	})
+
+	return resp, err
+}
+
+func (i *Ingester) labelValues(ctx context.Context, userID string, labelName string, mint int64, maxt int64, matchers []*labels.Matcher) (resp *client.LabelValuesResponse, err error) {
 	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
 	// in this ingester yet, but there's some to ingest in the backlog).
 	if err := i.enforceReadConsistency(ctx, userID); err != nil {
@@ -1715,7 +1732,7 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 		return &client.LabelValuesResponse{}, nil
 	}
 
-	q, err := db.Querier(startTimestampMs, endTimestampMs)
+	q, err := db.Querier(mint, maxt)
 	if err != nil {
 		return nil, err
 	}
@@ -1751,6 +1768,19 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 		return nil, err
 	}
 
+	mint, maxt, matchers, err := client.FromLabelNamesRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	pprof.Do(ctx, pprof.Labels("method", "Ingester.LabelNames", "userID", userID, "matchers", util.MatchersStringer(matchers).String()), func(ctx context.Context) {
+		resp, err = i.labelNames(ctx, userID, mint, maxt, matchers)
+	})
+
+	return resp, err
+}
+
+func (i *Ingester) labelNames(ctx context.Context, userID string, mint, maxt int64, matchers []*labels.Matcher) (resp *client.LabelNamesResponse, err error) {
 	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
 	// in this ingester yet, but there's some to ingest in the backlog).
 	if err := i.enforceReadConsistency(ctx, userID); err != nil {
@@ -1760,11 +1790,6 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 	db := i.getTSDB(userID)
 	if db == nil {
 		return &client.LabelNamesResponse{}, nil
-	}
-
-	mint, maxt, matchers, err := client.FromLabelNamesRequest(req)
-	if err != nil {
-		return nil, err
 	}
 
 	q, err := db.Querier(mint, maxt)
@@ -1797,6 +1822,20 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 		return nil, err
 	}
 
+	// Parse the request
+	matchersSet, err := client.FromMetricsForLabelMatchersRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	pprof.Do(ctx, pprof.Labels("method", "Ingester.MetricsForLabelMatchers", "userID", userID, "matchersSet", matchersSetString(matchersSet)), func(ctx context.Context) {
+		resp, err = i.metricsForLabelMatchers(ctx, userID, req.StartTimestampMs, req.EndTimestampMs, matchersSet)
+	})
+
+	return resp, err
+}
+
+func (i *Ingester) metricsForLabelMatchers(ctx context.Context, userID string, mint, maxt int64, matchersSet [][]*labels.Matcher) (resp *client.MetricsForLabelMatchersResponse, err error) {
 	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
 	// in this ingester yet, but there's some to ingest in the backlog).
 	if err := i.enforceReadConsistency(ctx, userID); err != nil {
@@ -1808,13 +1847,6 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 		return &client.MetricsForLabelMatchersResponse{}, nil
 	}
 
-	// Parse the request
-	matchersSet, err := client.FromMetricsForLabelMatchersRequest(req)
-	if err != nil {
-		return nil, err
-	}
-
-	mint, maxt := req.StartTimestampMs, req.EndTimestampMs
 	q, err := db.Querier(mint, maxt)
 	if err != nil {
 		return nil, err
@@ -1873,6 +1905,14 @@ func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) 
 		return nil, err
 	}
 
+	pprof.Do(ctx, pprof.Labels("method", "Ingester.UserStats", "userID", userID), func(ctx context.Context) {
+		resp, err = i.userStats(ctx, userID, req.GetCountMethod())
+	})
+
+	return resp, err
+}
+
+func (i *Ingester) userStats(ctx context.Context, userID string, countMethod client.CountMethod) (resp *client.UserStatsResponse, err error) {
 	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
 	// in this ingester yet, but there's some to ingest in the backlog).
 	if err := i.enforceReadConsistency(ctx, userID); err != nil {
@@ -1884,7 +1924,7 @@ func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) 
 		return &client.UserStatsResponse{}, nil
 	}
 
-	return createUserStats(db, req)
+	return createUserStats(db, countMethod)
 }
 
 // AllUserStats returns some per-tenant statistics about the data ingested in this ingester.
@@ -1908,7 +1948,7 @@ func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest)
 		Stats: make([]*client.UserIDStatsResponse, 0, len(users)),
 	}
 	for userID, db := range users {
-		userStats, err := createUserStats(db, req)
+		userStats, err := createUserStats(db, req.GetCountMethod())
 		if err != nil {
 			return nil, err
 		}
@@ -1937,9 +1977,21 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 		return err
 	}
 
+	matchers, err := client.FromLabelMatchers(request.GetMatchers())
+	if err != nil {
+		return err
+	}
+
+	pprof.Do(stream.Context(), pprof.Labels("method", "Ingester.LabelNamesAndValues", "userID", userID, "matchers", util.MatchersStringer(matchers).String()), func(ctx context.Context) {
+		err = i.labelNamesAndValues(ctx, userID, matchers, request.GetCountMethod(), stream)
+	})
+	return err
+}
+
+func (i *Ingester) labelNamesAndValues(ctx context.Context, userID string, matchers []*labels.Matcher, countMethod client.CountMethod, stream client.Ingester_LabelNamesAndValuesServer) (err error) {
 	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
 	// in this ingester yet, but there's some to ingest in the backlog).
-	if err := i.enforceReadConsistency(stream.Context(), userID); err != nil {
+	if err := i.enforceReadConsistency(ctx, userID); err != nil {
 		return err
 	}
 
@@ -1952,13 +2004,9 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 		return err
 	}
 	defer index.Close()
-	matchers, err := client.FromLabelMatchers(request.GetMatchers())
-	if err != nil {
-		return err
-	}
 
 	var valueFilter func(name, value string) (bool, error)
-	switch request.GetCountMethod() {
+	switch countMethod {
 	case client.IN_MEMORY:
 		valueFilter = func(string, string) (bool, error) {
 			return true, nil
@@ -1968,10 +2016,10 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 			return activeseries.IsLabelValueActive(stream.Context(), index, db.activeSeries, name, value)
 		}
 	default:
-		return fmt.Errorf("unknown count method %q", request.GetCountMethod())
+		return fmt.Errorf("unknown count method %q", countMethod)
 	}
 
-	return labelNamesAndValues(index, matchers, labelNamesAndValuesTargetSizeBytes, stream, valueFilter)
+	return labelNamesAndValues(ctx, index, matchers, labelNamesAndValuesTargetSizeBytes, stream, valueFilter)
 }
 
 // labelValuesCardinalityTargetSizeBytes is the maximum allowed size in bytes for label cardinality response.
@@ -1991,6 +2039,19 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 		return err
 	}
 
+	matchers, err := client.FromLabelMatchers(req.GetMatchers())
+	if err != nil {
+		return err
+	}
+
+	pprof.Do(srv.Context(), pprof.Labels("method", "Ingester.LabelValuesCardinality", "userID", userID, "matchers", util.MatchersStringer(matchers).String()), func(ctx context.Context) {
+		err = i.labelValuesCardinality(ctx, userID, req.GetLabelNames(), matchers, req.GetCountMethod(), srv)
+	})
+
+	return err
+}
+
+func (i *Ingester) labelValuesCardinality(ctx context.Context, userID string, labelNames []string, matchers []*labels.Matcher, countMethod client.CountMethod, srv client.Ingester_LabelValuesCardinalityServer) (err error) {
 	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
 	// in this ingester yet, but there's some to ingest in the backlog).
 	if err := i.enforceReadConsistency(srv.Context(), userID); err != nil {
@@ -2007,13 +2068,8 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	}
 	defer idx.Close()
 
-	matchers, err := client.FromLabelMatchers(req.GetMatchers())
-	if err != nil {
-		return err
-	}
-
 	var postingsForMatchersFn func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error)
-	switch req.GetCountMethod() {
+	switch countMethod {
 	case client.IN_MEMORY:
 		postingsForMatchersFn = tsdb.PostingsForMatchers
 	case client.ACTIVE:
@@ -2025,11 +2081,12 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 			return activeseries.NewPostings(db.activeSeries, postings), nil
 		}
 	default:
-		return fmt.Errorf("unknown count method %q", req.GetCountMethod())
+		return fmt.Errorf("unknown count method %q", countMethod)
 	}
 
 	return labelValuesCardinality(
-		req.GetLabelNames(),
+		ctx,
+		labelNames,
 		matchers,
 		idx,
 		postingsForMatchersFn,
@@ -2038,19 +2095,19 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	)
 }
 
-func createUserStats(db *userTSDB, req *client.UserStatsRequest) (*client.UserStatsResponse, error) {
+func createUserStats(db *userTSDB, countMethod client.CountMethod) (*client.UserStatsResponse, error) {
 	apiRate := db.ingestedAPISamples.Rate()
 	ruleRate := db.ingestedRuleSamples.Rate()
 
 	var series uint64
-	switch req.GetCountMethod() {
+	switch countMethod {
 	case client.IN_MEMORY:
 		series = db.Head().NumSeries()
 	case client.ACTIVE:
 		activeSeries, _, _ := db.activeSeries.Active()
 		series = uint64(activeSeries)
 	default:
-		return nil, fmt.Errorf("unknown count method %q", req.GetCountMethod())
+		return nil, fmt.Errorf("unknown count method %q", countMethod)
 	}
 
 	return &client.UserStatsResponse{
@@ -2081,13 +2138,19 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return err
 	}
 
-	from, through, matchers, err := client.FromQueryRequest(req)
+	mint, maxt, matchers, err := client.FromQueryRequest(req)
 	if err != nil {
 		return err
 	}
 
+	streamingChunkBatchSize := req.StreamingChunksBatchSize
+
+	return i.queryStream(ctx, userID, mint, maxt, matchers, streamingChunkBatchSize, spanlog, stream)
+}
+
+func (i *Ingester) queryStream(ctx context.Context, userID string, mint model.Time, maxt model.Time, matchers []*labels.Matcher, streamingChunkBatchSize uint64, spanlog *spanlogger.SpanLogger, stream client.Ingester_QueryStreamServer) error {
 	// Check if query sharding is enabled for this query. If so, we need to remove the
-	// query sharding label from matchers and pass the shard info down the query execution path.
+	// query sharding label mint matchers and pass the shard info down the query execution path.
 	shard, matchers, err := sharding.RemoveShardFromMatchers(matchers)
 	if err != nil {
 		return err
@@ -2122,21 +2185,21 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		case QueryStreamSamples:
 			streamType = QueryStreamSamples
 		default:
-			// no change from config value.
+			// no change mint config value.
 		}
 	}
 
 	if streamType == QueryStreamChunks {
-		if req.StreamingChunksBatchSize > 0 {
+		if streamingChunkBatchSize > 0 {
 			spanlog.DebugLog("msg", "using executeStreamingQuery")
-			numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
+			numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(mint), int64(maxt), matchers, shard, stream, streamingChunkBatchSize, spanlog)
 		} else {
 			spanlog.DebugLog("msg", "using executeChunksQuery")
-			numSeries, numSamples, err = i.executeChunksQuery(ctx, db, int64(from), int64(through), matchers, shard, stream)
+			numSeries, numSamples, err = i.executeChunksQuery(ctx, db, int64(mint), int64(maxt), matchers, shard, stream)
 		}
 	} else {
 		spanlog.DebugLog("msg", "using executeSamplesQuery")
-		numSeries, numSamples, err = i.executeSamplesQuery(ctx, db, int64(from), int64(through), matchers, shard, stream)
+		numSeries, numSamples, err = i.executeSamplesQuery(ctx, db, int64(mint), int64(maxt), matchers, shard, stream)
 	}
 	if err != nil {
 		return err
@@ -4002,7 +4065,10 @@ func (i *Ingester) MetricsMetadata(ctx context.Context, req *client.MetricsMetad
 		return nil, err
 	}
 
-	userMetadata := i.getUserMetadata(userID)
+	var userMetadata *userMetricsMetadata
+	pprof.Do(ctx, pprof.Labels("ingester", "MetricsMetadata", "userID", userID), func(context.Context) {
+		userMetadata = i.getUserMetadata(userID)
+	})
 
 	if userMetadata == nil {
 		return &client.MetricsMetadataResponse{}, nil
@@ -4139,4 +4205,15 @@ func createManagerThenStartAndAwaitHealthy(ctx context.Context, srvs ...services
 	}
 
 	return manager, nil
+}
+
+func matchersSetString(matchersSet [][]*labels.Matcher) string {
+	var b strings.Builder
+	for i, matchers := range matchersSet {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(util.MatchersStringer(matchers).String())
+	}
+	return b.String()
 }

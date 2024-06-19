@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"runtime/pprof"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
@@ -17,6 +18,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/tracing"
 )
@@ -47,6 +49,14 @@ func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream clie
 		return fmt.Errorf("error parsing label matchers: %w", err)
 	}
 
+	isNativeHistogram := request.GetType() == client.NATIVE_HISTOGRAM_SERIES
+	pprof.Do(ctx, pprof.Labels("method", "Ingester.ActiveSeries", "userID", userID, "matchers", util.MatchersStringer(matchers).String()), func(ctx context.Context) {
+		err = i.activeSeries(ctx, userID, matchers, isNativeHistogram, stream)
+	})
+	return err
+}
+
+func (i *Ingester) activeSeries(ctx context.Context, userID string, matchers []*labels.Matcher, isNativeHistogram bool, stream client.Ingester_ActiveSeriesServer) (err error) {
 	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
 	// in this ingester yet, but there's some to ingest in the backlog).
 	if err := i.enforceReadConsistency(ctx, userID); err != nil {
@@ -64,7 +74,6 @@ func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream clie
 		return fmt.Errorf("error getting index: %w", err)
 	}
 
-	isNativeHistogram := request.GetType() == client.NATIVE_HISTOGRAM_SERIES
 	postings, err := getPostings(ctx, db, idx, matchers, isNativeHistogram)
 	if err != nil {
 		return fmt.Errorf("error listing active series: %w", err)

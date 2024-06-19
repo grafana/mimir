@@ -59,7 +59,7 @@ func TestLabelNamesAndValuesAreSentInBatches(t *testing.T) {
 	var valueFilter = func(string, string) (bool, error) {
 		return true, nil
 	}
-	require.NoError(t, labelNamesAndValues(&mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, stream, valueFilter))
+	require.NoError(t, labelNamesAndValues(context.Background(), &mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, stream, valueFilter))
 
 	require.Len(t, mockServer.SentResponses, 7)
 
@@ -98,7 +98,7 @@ func TestLabelNamesAndValues_FilteredValues(t *testing.T) {
 	var valueFilter = func(_, value string) (bool, error) {
 		return strings.Contains(value, "0"), nil
 	}
-	require.NoError(t, labelNamesAndValues(&mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, stream, valueFilter))
+	require.NoError(t, labelNamesAndValues(context.Background(), &mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, stream, valueFilter))
 
 	require.Len(t, mockServer.SentResponses, 2)
 
@@ -292,6 +292,7 @@ func TestLabelNamesAndValues_ContextCancellation(t *testing.T) {
 	doneCh := make(chan error, 1)
 	go func() {
 		err := labelNamesAndValues(
+			context.Background(),
 			idxReader,
 			[]*labels.Matcher{},
 			1*1024*1024, // 1MB
