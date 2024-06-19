@@ -122,7 +122,8 @@ func TestMetricQueryRequestCloneHeaders(t *testing.T) {
 			require.NoError(t, err)
 
 			t.Run("WithID", func(t *testing.T) {
-				r := originalReq.WithID(1234)
+				r, err := originalReq.WithID(1234)
+				require.NoError(t, err)
 				validateClonedHeaders(t, r.GetHeaders(), originalReq.GetHeaders())
 			})
 			t.Run("WithHeaders", func(t *testing.T) {

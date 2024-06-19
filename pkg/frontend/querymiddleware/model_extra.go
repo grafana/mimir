@@ -149,11 +149,11 @@ func (r *PrometheusRangeQueryRequest) GetHints() *Hints {
 }
 
 // WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
-func (r *PrometheusRangeQueryRequest) WithID(id int64) MetricsQueryRequest {
+func (r *PrometheusRangeQueryRequest) WithID(id int64) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(r.headers)
 	newRequest.id = id
-	return &newRequest
+	return &newRequest, nil
 }
 
 // WithStartEnd clones the current `PrometheusRangeQueryRequest` with a new `start` and `end` timestamp.
@@ -355,11 +355,11 @@ func (r *PrometheusInstantQueryRequest) GetHints() *Hints {
 	return r.hints
 }
 
-func (r *PrometheusInstantQueryRequest) WithID(id int64) MetricsQueryRequest {
+func (r *PrometheusInstantQueryRequest) WithID(id int64) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(r.headers)
 	newRequest.id = id
-	return &newRequest
+	return &newRequest, nil
 }
 
 // WithStartEnd clones the current `PrometheusInstantQueryRequest` with a new `time` timestamp.

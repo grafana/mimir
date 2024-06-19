@@ -277,8 +277,8 @@ func (r *remoteReadQueryRequest) GetHeaders() []*PrometheusHeader {
 	return nil
 }
 
-func (r *remoteReadQueryRequest) WithID(_ int64) MetricsQueryRequest {
-	panic("not implemented")
+func (r *remoteReadQueryRequest) WithID(_ int64) (MetricsQueryRequest, error) {
+	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithID not implemented")
 }
 
 func (r *remoteReadQueryRequest) WithEstimatedSeriesCountHint(_ uint64) MetricsQueryRequest {
