@@ -94,16 +94,6 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 
 	defer logger.Finish()
 
-	setSpanAndLogTags := func(logger *spanlogger.SpanLogger) {
-		logger.SetSpanAndLogTag("path", req.URL.Path)
-		logger.SetSpanAndLogTag("query", query)
-		logger.SetSpanAndLogTag("route_name", p.route.RouteName)
-		logger.SetSpanAndLogTag("user", req.Header.Get("X-Scope-OrgID"))
-		logger.SetSpanAndLogTag("user_agent", req.Header.Get("User-Agent"))
-	}
-
-	setSpanAndLogTags(logger)
-
 	if req.Body != nil {
 		body, err = io.ReadAll(req.Body)
 		if err != nil {
@@ -122,6 +112,16 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 		}
 		query = req.Form.Encode()
 	}
+
+	setSpanAndLogTags := func(logger *spanlogger.SpanLogger) {
+		logger.SetSpanAndLogTag("path", req.URL.Path)
+		logger.SetSpanAndLogTag("query", query)
+		logger.SetSpanAndLogTag("route_name", p.route.RouteName)
+		logger.SetSpanAndLogTag("user", req.Header.Get("X-Scope-OrgID"))
+		logger.SetSpanAndLogTag("user_agent", req.Header.Get("User-Agent"))
+	}
+
+	setSpanAndLogTags(logger)
 
 	level.Debug(logger).Log("msg", "Received request")
 
