@@ -171,15 +171,15 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 	s.metrics.splitQueriesPerQuery.Observe(float64(mapperStats.GetSplitQueries()))
 
 	// Send hint with number of embedded queries to the sharding middleware
-	newRequest, err := req.WithExpr(instantSplitQuery)
+	req, err = req.WithExpr(instantSplitQuery)
 	if err != nil {
 		return nil, err
 	}
-	newRequest, err = newRequest.WithTotalQueriesHint(int32(mapperStats.GetSplitQueries()))
+	req, err = req.WithTotalQueriesHint(int32(mapperStats.GetSplitQueries()))
 	if err != nil {
 		return nil, err
 	}
-	shardedQueryable := newShardedQueryable(newRequest, s.next)
+	shardedQueryable := newShardedQueryable(req, s.next)
 
 	qry, err := newQuery(ctx, req, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
 	if err != nil {
