@@ -191,6 +191,7 @@
 * [ENHANCEMENT] ulidtime: add option to show random part of ULID, timestamp in milliseconds and header. #7615
 * [ENHANCEMENT] copyblocks: add a flag to configure part-size for multipart uploads in s3 client-side copying. #8292
 * [ENHANCEMENT] copyblocks: enable pprof HTTP endpoints. #8292
+* [BUGFIX] objtools: use a multipart upload to server-side copy objects greater than 5GiB in size on S3. #8427
 
 ## 2.12.0
 

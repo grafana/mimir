@@ -77,22 +77,59 @@ func (bkt *s3Bucket) Get(ctx context.Context, objectName string, options GetOpti
 	return obj, nil
 }
 
+const maxSingleCopySize int64 = 5 * (1024 * 1024 * 1024) // 5 GiB
+
 func (bkt *s3Bucket) ServerSideCopy(ctx context.Context, objectName string, dstBucket Bucket, options CopyOptions) error {
 	d, ok := dstBucket.(*s3Bucket)
 	if !ok {
 		return errors.New("destination Bucket wasn't an S3 Bucket")
 	}
-	_, err := d.client.CopyObject(ctx,
-		minio.CopyDestOptions{
-			Bucket: d.bucketName,
-			Object: options.destinationObjectName(objectName),
-		},
-		minio.CopySrcOptions{
+
+	stat, err := bkt.client.StatObject(ctx, bkt.bucketName, objectName, minio.StatObjectOptions{
+		VersionID: options.SourceVersionID,
+	})
+	if err != nil {
+		return err
+	}
+
+	dstOptions := minio.CopyDestOptions{
+		Bucket: d.bucketName,
+		Object: options.destinationObjectName(objectName),
+	}
+
+	if stat.Size <= maxSingleCopySize {
+		_, err := d.client.CopyObject(
+			ctx,
+			dstOptions,
+			minio.CopySrcOptions{
+				Bucket:    bkt.bucketName,
+				Object:    objectName,
+				VersionID: options.SourceVersionID,
+			},
+		)
+		return err
+	}
+
+	parts := stat.Size / maxSingleCopySize
+	if stat.Size%maxSingleCopySize != 0 {
+		parts += 1
+	}
+	srcOptions := make([]minio.CopySrcOptions, 0, parts)
+	start := int64(0)
+	end := maxSingleCopySize - 1
+	for start < stat.Size {
+		srcOptions = append(srcOptions, minio.CopySrcOptions{
 			Bucket:    bkt.bucketName,
 			Object:    objectName,
 			VersionID: options.SourceVersionID,
-		},
-	)
+			Start:     start,
+			End:       end,
+		})
+		start = end + 1
+		end += maxSingleCopySize
+	}
+	srcOptions[len(srcOptions)-1].End = stat.Size - 1
+	_, err = d.client.ComposeObject(ctx, dstOptions, srcOptions...)
 	return err
 }
 
