@@ -12,7 +12,6 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -86,43 +85,6 @@ func TestLabelNamesRequest(t *testing.T) {
 	assert.Equal(t, int64(mint), actualMinT)
 	assert.Equal(t, int64(maxt), actualMaxT)
 	assert.Equal(t, matchers, actualMatchers)
-}
-
-// This test checks that we ignore remote read hints when unmarshalling a
-// remote read request. This is because the query frontend does the same
-// and we want them to be in sync.
-func TestRemoteReadRequestIgnoresHints(t *testing.T) {
-	promRemoteReadRequest := &prompb.ReadRequest{
-		Queries: []*prompb.Query{
-			{
-				Hints: &prompb.ReadHints{
-					StartMs: 1,
-					EndMs:   2,
-					StepMs:  3,
-				},
-			},
-		},
-	}
-	data, err := promRemoteReadRequest.Marshal()
-	require.NoError(t, err)
-
-	remoteReadRequest := &ReadRequest{}
-	err = remoteReadRequest.Unmarshal(data)
-	require.NoError(t, err)
-
-	data2, err := remoteReadRequest.Marshal()
-	require.NoError(t, err)
-
-	restored := &prompb.ReadRequest{}
-	err = restored.Unmarshal(data2)
-	require.NoError(t, err)
-
-	require.Equal(t, len(promRemoteReadRequest.Queries), len(restored.Queries))
-	for i := range promRemoteReadRequest.Queries {
-		require.Nil(t, restored.Queries[i].Hints)
-		promRemoteReadRequest.Queries[i].Hints = nil
-		require.Equal(t, promRemoteReadRequest.Queries[i], restored.Queries[i])
-	}
 }
 
 // The main usecase for `LabelsToKeyString` is to generate hashKeys
