@@ -250,14 +250,22 @@ func (r *remoteReadQueryRequest) GetID() int64 {
 }
 
 func (r *remoteReadQueryRequest) GetMaxT() int64 {
-	// MaxT hint is ignored when the remote read query is executed.
-	// Therefore we return the end time.
+	// Mimir honors the start/end timerange defined in the read hints, but protects from the case
+	// the passed read hints are zero values (because unintentionally initialised but not set).
+	if r.query.Hints != nil && r.query.Hints.EndMs > 0 {
+		return r.query.Hints.EndMs
+	}
+
 	return r.GetEnd()
 }
 
 func (r *remoteReadQueryRequest) GetMinT() int64 {
-	// MinT hint is ignored when the remote read query is executed.
-	// Therefore we return the start time.
+	// Mimir honors the start/end timerange defined in the read hints, but protects from the case
+	// the passed read hints are zero values (because unintentionally initialised but not set).
+	if r.query.Hints != nil && r.query.Hints.StartMs > 0 {
+		return r.query.Hints.StartMs
+	}
+
 	return r.GetStart()
 }
 

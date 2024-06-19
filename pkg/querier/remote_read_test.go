@@ -127,8 +127,8 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 					EndMs:   9,
 				},
 			},
-			expectedQueriedStart: 1,  // Hints are currently ignored.
-			expectedQueriedEnd:   10, // Hints are currently ignored.
+			expectedQueriedStart: 2,
+			expectedQueriedEnd:   9,
 		},
 	}
 
@@ -387,8 +387,8 @@ func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
 					EndMs:   9,
 				},
 			},
-			expectedQueriedStart: 1,  // Hints are currently ignored.
-			expectedQueriedEnd:   10, // Hints are currently ignored.
+			expectedQueriedStart: 2,
+			expectedQueriedEnd:   9,
 		},
 	}
 
@@ -680,9 +680,10 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 func TestQueryFromRemoteReadQuery(t *testing.T) {
 	tests := map[string]struct {
 		query            *prompb.Query
-		expectedFrom     model.Time
-		expectedTo       model.Time
+		expectedStart    model.Time
+		expectedEnd      model.Time
 		expectedMatchers []*labels.Matcher
+		expectedHints    *storage.SelectHints
 	}{
 		"remote read request query without hints": {
 			query: &prompb.Query{
@@ -692,9 +693,13 @@ func TestQueryFromRemoteReadQuery(t *testing.T) {
 					{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "metric"},
 				},
 			},
-			expectedFrom:     1000,
-			expectedTo:       2000,
+			expectedStart:    1000,
+			expectedEnd:      2000,
 			expectedMatchers: []*labels.Matcher{{Type: labels.MatchEqual, Name: labels.MetricName, Value: "metric"}},
+			expectedHints: &storage.SelectHints{
+				Start: 1000,
+				End:   2000,
+			},
 		},
 		"remote read request query with hints": {
 			query: &prompb.Query{
@@ -708,19 +713,42 @@ func TestQueryFromRemoteReadQuery(t *testing.T) {
 					EndMs:   1500,
 				},
 			},
-			expectedFrom:     1000, // Hints are currently ignored.
-			expectedTo:       2000, // Hints are currently ignored.
+			expectedStart:    1000,
+			expectedEnd:      2000,
 			expectedMatchers: []*labels.Matcher{{Type: labels.MatchEqual, Name: labels.MetricName, Value: "metric"}},
+			expectedHints: &storage.SelectHints{
+				Start: 500,
+				End:   1500,
+			},
+		},
+		"remote read request query with zero-value hints": {
+			query: &prompb.Query{
+				StartTimestampMs: 1000,
+				EndTimestampMs:   2000,
+				Matchers: []*prompb.LabelMatcher{
+					{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "metric"},
+				},
+				Hints: &prompb.ReadHints{},
+			},
+			expectedStart:    1000,
+			expectedEnd:      2000,
+			expectedMatchers: []*labels.Matcher{{Type: labels.MatchEqual, Name: labels.MetricName, Value: "metric"}},
+			expectedHints: &storage.SelectHints{
+				// Fallback to start/end time range given the read hints are zero values.
+				Start: 1000,
+				End:   2000,
+			},
 		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			actualFrom, actualTo, actualMatchers, err := queryFromRemoteReadQuery(testData.query)
+			actualStart, actualEnd, actualMatchers, actualHints, err := queryFromRemoteReadQuery(testData.query)
 			require.NoError(t, err)
-			require.Equal(t, testData.expectedFrom, actualFrom)
-			require.Equal(t, testData.expectedTo, actualTo)
+			require.Equal(t, testData.expectedStart, actualStart)
+			require.Equal(t, testData.expectedEnd, actualEnd)
 			require.Equal(t, testData.expectedMatchers, actualMatchers)
+			require.Equal(t, testData.expectedHints, actualHints)
 		})
 	}
 }
