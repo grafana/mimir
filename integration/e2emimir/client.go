@@ -20,6 +20,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	alertingmodels "github.com/grafana/alerting/models"
 	"github.com/klauspost/compress/s2"
 	alertConfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/types"
@@ -282,6 +283,11 @@ func (c *Client) RemoteRead(metricName string, start, end time.Time) (_ *http.Re
 			return resp, queryResult, nil, fmt.Errorf("parsing remote read response: %w", err)
 		}
 		return resp, queryResult, nil, nil
+	case "application/json":
+		// The remote read protocol does not have a way to return an error message
+		// in the response body, thus the error message is returned as a Prometheus
+		// JSON results response.
+		fallthrough
 	case "text/plain; charset=utf-8":
 		respBytes, err := io.ReadAll(resp.Body)
 		return resp, nil, respBytes, err
@@ -1450,6 +1456,35 @@ func (c *Client) GetReceivers(ctx context.Context) ([]string, error) {
 		receivers = append(receivers, v.Name)
 	}
 	return receivers, nil
+}
+
+func (c *Client) GetReceiversExperimental(ctx context.Context) ([]alertingmodels.Receiver, error) {
+	u := c.alertmanagerClient.URL("api/v1/grafana/receivers", nil)
+
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("getting receivers failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	decoded := []alertingmodels.Receiver{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return nil, err
+	}
+
+	return decoded, nil
 }
 
 // DoGet performs a HTTP GET request towards the supplied URL. The request

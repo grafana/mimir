@@ -1209,7 +1209,7 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
-        image: grafana/rollout-operator:v0.14.0
+        image: grafana/rollout-operator:v0.17.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -1968,6 +1968,7 @@ spec:
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.consumer-group=ingester-zone-a-<partition>
+        - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
         - -ingester.max-global-metadata-per-metric=10
@@ -2241,6 +2242,7 @@ spec:
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.consumer-group=ingester-zone-b-<partition>
+        - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
         - -ingester.max-global-metadata-per-metric=10
@@ -2508,6 +2510,7 @@ spec:
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.consumer-group=ingester-zone-c-<partition>
+        - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
         - -ingester.max-global-metadata-per-metric=10

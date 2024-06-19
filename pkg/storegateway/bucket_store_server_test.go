@@ -256,6 +256,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 }
 
 func (s *storeTestServer) dialConn() (*grpc.ClientConn, error) {
+	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	return grpc.Dial(s.serverListener.Addr().String(),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(1024*1024*1024)),

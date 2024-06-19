@@ -475,6 +475,8 @@ func TestProxyHTTPGRPC(t *testing.T) {
 
 		// gRPC connection to proxy
 		grpcAddress := getServerAddress("grpc", p.server)
+
+		// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 		conn, err := grpc.Dial(grpcAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		require.NoError(t, err)
 		grpcClient := httpgrpc.NewHTTPClient(conn)

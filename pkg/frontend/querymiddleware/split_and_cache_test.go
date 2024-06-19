@@ -330,7 +330,9 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 	assert.Equal(t, uint32(1), queryStats.LoadSplitQueries())
 
 	// Doing request with new end time should do one more query.
-	req = req.WithStartEnd(req.GetStart(), req.GetEnd()+step)
+	req, err = req.WithStartEnd(req.GetStart(), req.GetEnd()+step)
+	require.NoError(t, err)
+
 	_, err = rc.Do(ctx, req)
 	require.NoError(t, err)
 	require.Equal(t, 2, downstreamReqs)
@@ -558,7 +560,9 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 	assert.Equal(t, uint32(1), queryStats.LoadSplitQueries())
 
 	// New request with slightly different Start time will not reuse the cached result.
-	req = req.WithStartEnd(parseTimeRFC3339(t, "2021-10-15T10:00:05Z").Unix()*1000, parseTimeRFC3339(t, "2021-10-15T12:00:05Z").Unix()*1000)
+	req, err = req.WithStartEnd(parseTimeRFC3339(t, "2021-10-15T10:00:05Z").Unix()*1000, parseTimeRFC3339(t, "2021-10-15T12:00:05Z").Unix()*1000)
+	require.NoError(t, err)
+
 	resp, err = rc.Do(ctx, req)
 	require.NoError(t, err)
 	require.Equal(t, 2, downstreamReqs)
@@ -1620,6 +1624,10 @@ func TestSplitQueryByInterval(t *testing.T) {
 	queryFooAtStartExpr, _ := parser.ParseExpr(queryFooAtStart)
 	queryFooAtZero := "foo @ 0.000"
 	queryFooAtZeroExpr, _ := parser.ParseExpr(queryFooAtZero)
+	queryFooSubqueryAtStart := "sum_over_time(foo[1d:] @ start())"
+	queryFooSubqueryAtStartExpr, _ := parser.ParseExpr(queryFooSubqueryAtStart)
+	queryFooSubqueryAtZero := "sum_over_time(foo[1d:] @ 0.000)"
+	queryFooSubqueryAtZeroExpr, _ := parser.ParseExpr(queryFooSubqueryAtZero)
 
 	for i, tc := range []struct {
 		input    MetricsQueryRequest
@@ -1659,6 +1667,14 @@ func TestSplitQueryByInterval(t *testing.T) {
 			expected: []MetricsQueryRequest{
 				&PrometheusRangeQueryRequest{start: 0, end: (24 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooAtZeroExpr},
 				&PrometheusRangeQueryRequest{start: 24 * 3600 * seconds, end: 2 * 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooAtZeroExpr},
+			},
+			interval: day,
+		},
+		{
+			input: &PrometheusRangeQueryRequest{minT: -(24 * 3600 * seconds), start: 0, end: 2 * 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooSubqueryAtStartExpr},
+			expected: []MetricsQueryRequest{
+				&PrometheusRangeQueryRequest{minT: -(24 * 3600 * seconds), start: 0, end: (24 * 3600 * seconds) - (15 * seconds), step: 15 * seconds, queryExpr: queryFooSubqueryAtZeroExpr},
+				&PrometheusRangeQueryRequest{minT: -(24 * 3600 * seconds), start: 24 * 3600 * seconds, end: 2 * 24 * 3600 * seconds, step: 15 * seconds, queryExpr: queryFooSubqueryAtZeroExpr},
 			},
 			interval: day,
 		},
@@ -1797,6 +1813,8 @@ func Test_evaluateAtModifier(t *testing.T) {
 		{"topk(5, rate(http_requests_total[1h] @ start()))", "topk(5, rate(http_requests_total[1h] @ 1546300.800))", nil},
 		{"topk(5, rate(http_requests_total[1h] @ 0))", "topk(5, rate(http_requests_total[1h] @ 0.000))", nil},
 		{"http_requests_total[1h] @ 10.001", "http_requests_total[1h] @ 10.001", nil},
+		{"sum_over_time(http_requests_total[1h:] @ start())", "sum_over_time(http_requests_total[1h:] @ 1546300.800)", nil},
+		{"sum_over_time((http_requests_total @ end())[1h:] @ start())", "sum_over_time((http_requests_total @ 1646300.800)[1h:] @ 1546300.800)", nil},
 		{
 			`min_over_time(
 				sum by(cluster) (

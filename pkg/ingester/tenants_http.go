@@ -82,12 +82,16 @@ func (i *Ingester) TenantsHandler(w http.ResponseWriter, req *http.Request) {
 		s := tenantStats{}
 		s.Tenant = t
 		s.Blocks = len(db.Blocks())
+		minMillis := db.Head().MinTime()
 		s.MinTime = formatMillisTime(db.Head().MinTime())
 		maxMillis := db.Head().MaxTime()
 		s.MaxTime = formatMillisTime(maxMillis)
 
 		if maxMillis-nowMillis > i.limits.CreationGracePeriod(t).Milliseconds() {
 			s.Warning = "TSDB Head max timestamp too far in the future"
+		}
+		if i.limits.PastGracePeriod(t) > 0 && nowMillis-minMillis > (i.limits.PastGracePeriod(t)+i.limits.OutOfOrderTimeWindow(t)).Milliseconds() {
+			s.Warning = "TSDB Head min timestamp too far in the past"
 		}
 
 		tss = append(tss, s)

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -252,4 +253,91 @@ func TestTrackersConfigs_SerializeDeserialize(t *testing.T) {
 		require.NoError(t, err, "Failed to deserialize serialized object")
 		assert.Equal(t, obj, reSerialized)
 	})
+}
+
+func TestCustomTrackersConfig_Equal(t *testing.T) {
+	tc := map[string]struct {
+		cfg1     CustomTrackersConfig
+		cfg2     CustomTrackersConfig
+		expected bool
+	}{
+
+		"Equal configurations": {
+			cfg1:     mustNewCustomTrackersConfigFromString(t, `foo:{foo="bar"};baz:{baz="bar"}`),
+			cfg2:     mustNewCustomTrackersConfigFromString(t, `foo:{foo="bar"};baz:{baz="bar"}`),
+			expected: true,
+		},
+		"Different descriptions": {
+			cfg1: func() CustomTrackersConfig {
+				c := mustNewCustomTrackersConfigFromString(t, `foo:{foo="bar"};baz:{baz="bar"}`)
+				c.string = "cfg1"
+				return c
+			}(),
+			cfg2: func() CustomTrackersConfig {
+				c := mustNewCustomTrackersConfigFromString(t, `foo:{foo="bar"};baz:{baz="bar"}`)
+				c.string = "cfg2"
+				return c
+			}(),
+			expected: false,
+		},
+		"Different source maps": {
+			cfg1: func() CustomTrackersConfig {
+				c := mustNewCustomTrackersConfigFromString(t, `foo:{foo="bar"};baz:{baz="bar"}`)
+				c.source = map[string]string{"a": "source1"}
+				return c
+			}(),
+			cfg2: func() CustomTrackersConfig {
+				c := mustNewCustomTrackersConfigFromString(t, `foo:{foo="bar"};baz:{baz="bar"}`)
+				c.source = map[string]string{"b": "source2"}
+				return c
+			}(),
+			expected: false,
+		},
+		"Different config maps": {
+			cfg1: func() CustomTrackersConfig {
+				c := mustNewCustomTrackersConfigFromString(t, `foo:{foo="bar"};baz:{baz="bar"}`)
+				c.config = map[string]labelsMatchers{"a": nil}
+				return c
+			}(),
+			cfg2: func() CustomTrackersConfig {
+				c := mustNewCustomTrackersConfigFromString(t, `foo:{foo="bar"};baz:{baz="bar"}`)
+				c.config = map[string]labelsMatchers{"b": nil}
+				return c
+			}(),
+			expected: false,
+		},
+		"Different keys in source maps": {
+			cfg1: CustomTrackersConfig{
+				source: map[string]string{"a": "source1"},
+				config: map[string]labelsMatchers{"b": nil},
+				string: "cfg1",
+			},
+			cfg2: CustomTrackersConfig{
+				source: map[string]string{"c": "source1"},
+				config: map[string]labelsMatchers{"b": nil},
+				string: "cfg1",
+			},
+			expected: false,
+		},
+		"Different keys in config maps": {
+			cfg1: CustomTrackersConfig{
+				source: map[string]string{"a": "source1"},
+				config: map[string]labelsMatchers{"b": nil},
+				string: "cfg1",
+			},
+			cfg2: CustomTrackersConfig{
+				source: map[string]string{"a": "source1"},
+				config: map[string]labelsMatchers{"c": nil},
+				string: "cfg1",
+			},
+			expected: false,
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, tt.cfg1.Equal(tt.cfg2))
+			assert.Equal(t, tt.expected, cmp.Equal(tt.cfg1, tt.cfg2))
+		})
+	}
 }

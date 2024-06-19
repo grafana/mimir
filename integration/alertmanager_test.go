@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	alertingmodels "github.com/grafana/alerting/models"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
@@ -32,11 +33,18 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 )
 
-const simpleAlertmanagerConfig = `route:
+const simpleAlertmanagerConfig = `
+global:
+  smtp_smarthost: 'localhost:25'
+  smtp_from: 'youraddress@example.org'
+route:
   receiver: dummy
   group_by: [group]
 receivers:
-  - name: dummy`
+  - name: dummy
+    email_configs:
+    - to: 'youraddress@example.org'
+`
 
 // uploadAlertmanagerConfig uploads the provided config to the minio bucket for the specified user.
 // Uses default test minio credentials.
@@ -460,7 +468,9 @@ func TestAlertmanagerSharding(t *testing.T) {
 			require.NoError(t, err)
 			defer s.Close()
 
-			flags := mergeFlags(AlertmanagerFlags(), AlertmanagerS3Flags())
+			flags := mergeFlags(AlertmanagerFlags(),
+				AlertmanagerS3Flags(),
+				AlertmanagerGrafanaCompatibilityFlags())
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
@@ -630,6 +640,26 @@ func TestAlertmanagerSharding(t *testing.T) {
 					list, err := c.GetReceivers(context.Background())
 					assert.NoError(t, err)
 					assert.ElementsMatch(t, list, []string{"dummy"})
+				}
+			}
+
+			// Endpoint: GET /api/v1/grafana/receivers
+			{
+				for _, c := range clients {
+					list, err := c.GetReceiversExperimental(context.Background())
+					assert.NoError(t, err)
+					assert.ElementsMatch(t, list, []alertingmodels.Receiver{
+						{
+							Name:   "dummy",
+							Active: true,
+							Integrations: []alertingmodels.Integration{
+								{
+									LastNotifyAttemptDuration: "0s",
+									Name:                      "email",
+								},
+							},
+						},
+					})
 				}
 			}
 
@@ -1013,7 +1043,7 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 	flags := mergeFlags(AlertmanagerFlags(),
 		AlertmanagerS3Flags(),
 		AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
-		map[string]string{"-alertmanager.grafana-alertmanager-compatibility-enabled": "true"})
+		AlertmanagerGrafanaCompatibilityFlags())
 
 	am := e2emimir.NewAlertmanager(
 		"alertmanager",

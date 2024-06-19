@@ -167,12 +167,21 @@ func handler(
 				msg  string
 			)
 			if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
+				// TODO: This code is needed for backwards compatibility,
+				// and can be removed once -ingester.return-only-grpc-errors
+				// is removed.
 				code, msg = int(resp.Code), string(resp.Body)
 			} else {
-				code, msg = toHTTPStatus(ctx, err, limits), err.Error()
+				code = toHTTPStatus(ctx, err, limits)
+				msg = err.Error()
 			}
 			if code != 202 {
-				level.Error(logger).Log("msg", "push error", "err", err)
+				// This error message is consistent with error message in OTLP handler, and ingester's ingest-storage pushToStorage method.
+				msgs := []interface{}{"msg", "detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)", "httpCode", code, "err", err}
+				if code/100 == 4 {
+					msgs = append(msgs, "insight", true)
+				}
+				level.Error(logger).Log(msgs...)
 			}
 			addHeaders(w, err, r, code, retryCfg)
 			http.Error(w, msg, code)
@@ -208,34 +217,12 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 
 	var distributorErr Error
 	if errors.As(pushErr, &distributorErr) {
-		switch distributorErr.Cause() {
-		case mimirpb.BAD_DATA:
-			return http.StatusBadRequest
-		case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
-			serviceOverloadErrorEnabled := false
-			userID, err := tenant.TenantID(ctx)
-			if err == nil {
-				serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
-			}
-			// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
-			// Client may discard the data or slow down and re-send.
-			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-			if serviceOverloadErrorEnabled {
-				return StatusServiceOverloaded
-			}
-			return http.StatusTooManyRequests
-		case mimirpb.REPLICAS_DID_NOT_MATCH:
-			return http.StatusAccepted
-		case mimirpb.TOO_MANY_CLUSTERS:
-			return http.StatusBadRequest
-		case mimirpb.TSDB_UNAVAILABLE:
-			return http.StatusServiceUnavailable
-		case mimirpb.CIRCUIT_BREAKER_OPEN:
-			return http.StatusServiceUnavailable
-		case mimirpb.METHOD_NOT_ALLOWED:
-			// Return a 501 (and not 405) to explicitly signal a misconfiguration and to possibly track that amongst other 5xx errors.
-			return http.StatusNotImplemented
+		serviceOverloadErrorEnabled := false
+		userID, err := tenant.TenantID(ctx)
+		if err == nil {
+			serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
 		}
+		return errorCauseToHTTPStatusCode(distributorErr.Cause(), serviceOverloadErrorEnabled)
 	}
 
 	return http.StatusInternalServerError

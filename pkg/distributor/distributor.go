@@ -136,6 +136,8 @@ type Distributor struct {
 	dedupedSamples                   *prometheus.CounterVec
 	labelsHistogram                  prometheus.Histogram
 	sampleDelayHistogram             prometheus.Histogram
+	incomingSamplesPerRequest        *prometheus.HistogramVec
+	incomingExemplarsPerRequest      *prometheus.HistogramVec
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
 	hashCollisionCount               prometheus.Counter
 
@@ -219,6 +221,9 @@ type Config struct {
 	WriteRequestsBufferPoolingEnabled           bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
 	LimitInflightRequestsUsingGrpcMethodLimiter bool `yaml:"limit_inflight_requests_using_grpc_method_limiter" category:"deprecated"` // TODO Remove the configuration option in Mimir 2.14, keeping the same behavior as if it's enabled
 	ReusableIngesterPushWorkers                 int  `yaml:"reusable_ingester_push_workers" category:"advanced"`
+
+	// DirectOTLPTranslationEnabled allows reverting to the older way of translating from OTLP write requests via Prometheus, in case of problems.
+	DirectOTLPTranslationEnabled bool `yaml:"direct_otlp_translation_enabled" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -237,6 +242,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", true, "Enable pooling of buffers used for marshaling write requests.")
 	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "distributor.limit-inflight-requests-using-grpc-method-limiter", true, "When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed.")
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
+	f.BoolVar(&cfg.DirectOTLPTranslationEnabled, "distributor.direct-otlp-translation-enabled", true, "When enabled, OTLP write requests are directly translated to Mimir equivalents, for optimum performance.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -406,6 +412,20 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 				60 * 60 * 24, // 24h
 			},
 		}),
+		incomingSamplesPerRequest: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_samples_per_request",
+			Help:                            "Number of samples per request before deduplication and validation.",
+			NativeHistogramBucketFactor:     2,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"user"}),
+		incomingExemplarsPerRequest: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_exemplars_per_request",
+			Help:                            "Number of exemplars per request before deduplication and validation.",
+			NativeHistogramBucketFactor:     2,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"user"}),
 		latestSeenSampleTimestampPerUser: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_distributor_latest_seen_sample_timestamp_seconds",
 			Help: "Unix timestamp of latest received sample per user.",
@@ -645,6 +665,8 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.incomingSamples.DeleteLabelValues(userID)
 	d.incomingExemplars.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
+	d.incomingSamplesPerRequest.DeleteLabelValues(userID)
+	d.incomingExemplarsPerRequest.DeleteLabelValues(userID)
 	d.nonHASamples.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
 
@@ -753,22 +775,21 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 	for i := 0; i < len(ts.Exemplars); {
 		e := ts.Exemplars[i]
 		if err := validateExemplar(d.exemplarValidationMetrics, userID, ts.Labels, e); err != nil {
-			// An exemplar validation error prevents ingesting samples
-			// in the same series object. However because the current Prometheus
-			// remote write implementation only populates one or the other,
-			// there never will be any.
-			return err
+			// OTel sends empty exemplars by default which aren't useful and are discarded by TSDB, so let's just skip invalid ones and ingest the data we can instead of returning an error.
+			ts.DeleteExemplarByMovingLast(i)
+			// Don't increase index i. After moving the last exemplar to this index, we want to check it again.
+			continue
 		}
 		if !validateExemplarTimestamp(d.exemplarValidationMetrics, userID, minExemplarTS, maxExemplarTS, e) {
 			ts.DeleteExemplarByMovingLast(i)
-			// Don't increase index i. After moving last exemplar to this index, we want to check it again.
+			// Don't increase index i. After moving the last exemplar to this index, we want to check it again.
 			continue
 		}
 		// We want to check if exemplars are in order. If they are not, we will sort them and invalidate the cache.
-		if isInOrder && previousExemplarTS > ts.Exemplars[i].TimestampMs {
+		if isInOrder && previousExemplarTS > e.TimestampMs {
 			isInOrder = false
 		}
-		previousExemplarTS = ts.Exemplars[i].TimestampMs
+		previousExemplarTS = e.TimestampMs
 		i++
 	}
 	if !isInOrder {
@@ -1017,6 +1038,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		var minExemplarTS int64
 		if earliestSampleTimestampMs != math.MaxInt64 {
 			minExemplarTS = earliestSampleTimestampMs - 5*time.Minute.Milliseconds()
+
+			if d.limits.PastGracePeriod(userID) > 0 {
+				minExemplarTS = max(minExemplarTS, now.Add(-d.limits.PastGracePeriod(userID)).Add(-d.limits.OutOfOrderTimeWindow(userID)).UnixMilli())
+			}
 		}
 
 		// Enforce the creation grace period on exemplars too.
@@ -1024,7 +1049,11 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 		var firstPartialErr error
 		var removeIndexes []int
+		totalSamples, totalExemplars := 0, 0
+
 		for tsIdx, ts := range req.Timeseries {
+			totalSamples += len(ts.Samples)
+			totalExemplars += len(ts.Exemplars)
 			if len(ts.Labels) == 0 {
 				removeIndexes = append(removeIndexes, tsIdx)
 				continue
@@ -1050,6 +1079,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			validatedSamples += len(ts.Samples) + len(ts.Histograms)
 			validatedExemplars += len(ts.Exemplars)
 		}
+
+		d.incomingSamplesPerRequest.WithLabelValues(userID).Observe(float64(totalSamples))
+		d.incomingExemplarsPerRequest.WithLabelValues(userID).Observe(float64(totalExemplars))
+
 		if len(removeIndexes) > 0 {
 			for _, removeIndex := range removeIndexes {
 				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeIndex])
@@ -1381,7 +1414,7 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 	if err == nil {
 		serviceOverloadErrorEnabled = d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
 	}
-	return toGRPCError(pushErr, serviceOverloadErrorEnabled)
+	return toErrorWithGRPCStatus(pushErr, serviceOverloadErrorEnabled)
 }
 
 // push takes a write request and distributes it to ingesters using the ring.
@@ -1494,7 +1527,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 
 	batchOptions := ring.DoBatchOptions{
 		Cleanup:       batchCleanup,
-		IsClientError: isIngesterClientError,
+		IsClientError: isIngestionClientError,
 		Go:            d.doBatchPushWorkers,
 	}
 

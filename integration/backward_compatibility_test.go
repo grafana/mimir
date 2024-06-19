@@ -32,6 +32,9 @@ import (
 // see TestParsePreviousImageVersionOverrides for the JSON format to use.
 func previousVersionImages(t *testing.T) map[string]e2emimir.FlagMapper {
 	if overrides := previousImageVersionOverrides(t); len(overrides) > 0 {
+		for key, mapper := range overrides {
+			overrides[key] = e2emimir.ChainFlagMappers(mapper, defaultPreviousVersionGlobalOverrides)
+		}
 		return overrides
 	}
 

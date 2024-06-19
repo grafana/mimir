@@ -43,6 +43,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       perClusterLabel: $._config.per_cluster_label,
       recordingRulePrefix: $.recordingRulePrefix($.jobSelector('any')),  // The job name does not matter here.
       groupPrefixJobs: $._config.group_prefix_jobs,
+      instance: $._config.per_instance_label,
     },
 
     write_http_routes_regex: 'api_(v1|prom)_push|otlp_v1_metrics',
@@ -232,6 +233,33 @@ local utils = import 'mixin-utils/utils.libsonnet';
         /
         sum(rate(thanos_objstore_bucket_operations_total{%(namespaceMatcher)s}[$__rate_interval]))
       ||| % variables,
+    },
+
+    ingester: {
+      ingestOrClassicDeduplicatedQuery(perIngesterQuery, groupByLabels=''):: |||
+        ( # Classic storage
+          sum by (%(groupByCluster)s, %(groupByLabels)s) (%(perIngesterQuery)s)
+          / on (%(groupByCluster)s) group_left()
+          max by (%(groupByCluster)s) (cortex_distributor_replication_factor{%(distributor)s})
+        )
+        or
+        ( # Ingest storage
+          sum by (%(groupByCluster)s, %(groupByLabels)s) (
+            max by (ingester_id, %(groupByCluster)s, %(groupByLabels)s) (
+              label_replace(
+                %(perIngesterQuery)s,
+                "ingester_id", "$1", "%(instance)s", ".*-([0-9]+)$"
+              )
+            )
+          )
+        )
+      ||| % {
+        perIngesterQuery: perIngesterQuery,
+        instance: variables.instance,
+        groupByLabels: groupByLabels,
+        groupByCluster: $._config.group_by_cluster,
+        distributor: variables.distributorMatcher,
+      },
     },
   },
 }

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
@@ -193,6 +194,9 @@ func newExemplarMissingSeriesError(timestamp model.Time, seriesLabels, exemplarL
 
 func newExemplarTimestampTooFarInFutureError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
 	return newExemplarError(globalerror.ExemplarTooFarInFuture, "received an exemplar whose timestamp is too far in the future", timestamp, seriesLabels, exemplarLabels)
+}
+func newExemplarTimestampTooFarInPastError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
+	return newExemplarError(globalerror.ExemplarTooFarInPast, "received an exemplar whose timestamp is too far in the past", timestamp, seriesLabels, exemplarLabels)
 }
 
 // tsdbIngestExemplarErr is an ingesterError indicating a problem with an exemplar.
@@ -489,6 +493,25 @@ func (e ingesterPushGrpcDisabledError) errorCause() mimirpb.ErrorCause {
 // Ensure that ingesterPushGrpcDisabledError is an ingesterError.
 var _ ingesterError = ingesterPushGrpcDisabledError{}
 
+type circuitBreakerOpenError struct {
+	requestType    string
+	remainingDelay time.Duration
+}
+
+func newCircuitBreakerOpenError(requestType string, remainingDelay time.Duration) circuitBreakerOpenError {
+	return circuitBreakerOpenError{requestType: requestType, remainingDelay: remainingDelay}
+}
+
+func (e circuitBreakerOpenError) Error() string {
+	return fmt.Sprintf("%s on %s request type with remaining delay %s", circuitbreaker.ErrOpen.Error(), e.requestType, e.remainingDelay.String())
+}
+
+func (e circuitBreakerOpenError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.CIRCUIT_BREAKER_OPEN
+}
+
+var _ ingesterError = circuitBreakerOpenError{}
+
 type ingesterErrSamplers struct {
 	sampleTimestampTooOld             *log.Sampler
 	sampleTimestampTooOldOOOEnabled   *log.Sampler
@@ -537,6 +560,8 @@ func mapPushErrorToErrorWithStatus(err error) error {
 			errCode = codes.Internal
 		case mimirpb.METHOD_NOT_ALLOWED:
 			errCode = codes.Unimplemented
+		case mimirpb.CIRCUIT_BREAKER_OPEN:
+			errCode = codes.Unavailable
 		}
 	}
 	return newErrorWithStatus(wrappedErr, errCode)
@@ -558,6 +583,8 @@ func mapPushErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
 		case mimirpb.METHOD_NOT_ALLOWED:
 			return newErrorWithStatus(err, codes.Unimplemented)
+		case mimirpb.CIRCUIT_BREAKER_OPEN:
+			return newErrorWithStatus(err, codes.Unavailable)
 		}
 	}
 	return err
@@ -577,6 +604,8 @@ func mapReadErrorToErrorWithStatus(err error) error {
 			errCode = codes.Unavailable
 		case mimirpb.METHOD_NOT_ALLOWED:
 			return newErrorWithStatus(err, codes.Unimplemented)
+		case mimirpb.CIRCUIT_BREAKER_OPEN:
+			return newErrorWithStatus(err, codes.Unavailable)
 		}
 	}
 	return newErrorWithStatus(err, errCode)
@@ -596,6 +625,8 @@ func mapReadErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 			return newErrorWithStatus(err, codes.Unavailable)
 		case mimirpb.METHOD_NOT_ALLOWED:
 			return newErrorWithStatus(err, codes.Unimplemented)
+		case mimirpb.CIRCUIT_BREAKER_OPEN:
+			return newErrorWithStatus(err, codes.Unavailable)
 		}
 	}
 	return err

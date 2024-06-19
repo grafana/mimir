@@ -95,6 +95,8 @@ type MetricsQueryRequest interface {
 	GetID() int64
 	// GetPath returns the URL Path of the request
 	GetPath() string
+	// GetHeaders returns the HTTP headers in the request.
+	GetHeaders() []*PrometheusHeader
 	// GetStart returns the start timestamp of the request in milliseconds.
 	GetStart() int64
 	// GetEnd returns the end timestamp of the request in milliseconds.
@@ -118,10 +120,12 @@ type MetricsQueryRequest interface {
 	WithID(id int64) MetricsQueryRequest
 	// WithStartEnd clone the current request with different start and end timestamp.
 	// Implementations must ensure minT and maxT are recalculated when the start and end timestamp change.
-	WithStartEnd(startTime int64, endTime int64) MetricsQueryRequest
+	WithStartEnd(startTime int64, endTime int64) (MetricsQueryRequest, error)
 	// WithQuery clones the current request with a different query; returns error if query parse fails.
 	// Implementations must ensure minT and maxT are recalculated when the query changes.
 	WithQuery(string) (MetricsQueryRequest, error)
+	// WithHeaders clones the current request with different headers.
+	WithHeaders([]*PrometheusHeader) MetricsQueryRequest
 	// WithExpr clones the current `PrometheusRangeQueryRequest` with a new query expression.
 	// Implementations must ensure minT and maxT are recalculated when the query changes.
 	WithExpr(parser.Expr) MetricsQueryRequest
@@ -163,7 +167,7 @@ type LabelsQueryRequest interface {
 type Response interface {
 	proto.Message
 	// GetHeaders returns the HTTP headers in the response.
-	GetHeaders() []*PrometheusResponseHeader
+	GetHeaders() []*PrometheusHeader
 }
 
 type prometheusCodecMetrics struct {
@@ -284,6 +288,12 @@ func (c prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryR
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
+	headers := make([]*PrometheusHeader, 0, len(r.Header))
+	for h, hv := range r.Header {
+		headers = append(headers, &PrometheusHeader{Name: h, Values: slices.Clone(hv)})
+	}
+	sort.Slice(headers, func(i, j int) bool { return headers[i].Name < headers[j].Name })
+
 	start, end, step, err := DecodeRangeQueryTimeParams(&reqValues)
 	if err != nil {
 		return nil, err
@@ -299,7 +309,7 @@ func (c prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryR
 	decodeOptions(r, &options)
 
 	req := NewPrometheusRangeQueryRequest(
-		r.URL.Path, start, end, step, c.lookbackDelta, queryExpr, options, nil,
+		r.URL.Path, headers, start, end, step, c.lookbackDelta, queryExpr, options, nil,
 	)
 	return req, nil
 }
@@ -309,6 +319,12 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (MetricsQuer
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
+
+	headers := make([]*PrometheusHeader, 0, len(r.Header))
+	for h, hv := range r.Header {
+		headers = append(headers, &PrometheusHeader{Name: h, Values: slices.Clone(hv)})
+	}
+	sort.Slice(headers, func(i, j int) bool { return headers[i].Name < headers[j].Name })
 
 	time, err := DecodeInstantQueryTimeParams(&reqValues, time.Now)
 	if err != nil {
@@ -325,7 +341,7 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (MetricsQuer
 	decodeOptions(r, &options)
 
 	req := NewPrometheusInstantQueryRequest(
-		r.URL.Path, time, c.lookbackDelta, queryExpr, options, nil,
+		r.URL.Path, headers, time, c.lookbackDelta, queryExpr, options, nil,
 	)
 	return req, nil
 }
@@ -699,7 +715,7 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 	}
 
 	for h, hv := range r.Header {
-		resp.Headers = append(resp.Headers, &PrometheusResponseHeader{Name: h, Values: hv})
+		resp.Headers = append(resp.Headers, &PrometheusHeader{Name: h, Values: hv})
 	}
 	return resp, nil
 }

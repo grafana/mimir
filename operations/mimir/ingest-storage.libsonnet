@@ -74,8 +74,15 @@
     $.ingest_storage_kafka_producer_args,
 
   ingest_storage_ingester_args+:: {
-    'ingester.push-grpc-method-enabled': false,  // Disallow Push gRPC API; everything must come from ingest storage.
-    'ingest-storage.kafka.last-produced-offset-poll-interval': '500ms',  // Reduce the LPO polling interval to improve latency of strong consistency reads.
+    // Disallow Push gRPC API; everything must come from ingest storage.
+    'ingester.push-grpc-method-enabled': false,
+
+    // Reduce the LPO polling interval to improve latency of strong consistency reads.
+    'ingest-storage.kafka.last-produced-offset-poll-interval': '500ms',
+
+    // Reduce the OffsetCommit pressure, at the cost of replaying few seconds of already-ingested data in case an ingester abruptly terminates
+    // (in case of a graceful shutdown, the ingester will commit the offset at shutdown too).
+    'ingest-storage.kafka.consumer-group-offset-commit-interval': '5s',
   },
 
   ingest_storage_ingester_ring_client_args+:: {

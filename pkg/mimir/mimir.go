@@ -76,6 +76,7 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
+	"github.com/grafana/mimir/pkg/util/tracing"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 	"github.com/grafana/mimir/pkg/vault"
@@ -278,7 +279,7 @@ func (c *Config) Validate(log log.Logger) error {
 		if c.isAnyModuleEnabled(Ingester, Write, All) || !errors.Is(err, ingester.ErrSpreadMinimizingValidation) {
 			return errors.Wrap(err, "invalid ingester config")
 		}
-		level.Debug(log).Log("ingester config is invalid; moving on because the \"ingester\" module is not in this process's targets", "err", err.Error())
+		level.Debug(log).Log("msg", "ingester config is invalid; moving on because the \"ingester\" module is not in this process's targets", "err", err.Error())
 	}
 	if err := c.Worker.Validate(); err != nil {
 		return errors.Wrap(err, "invalid frontend_worker config")
@@ -790,7 +791,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	// We are passing the wrapped tracer to both opentracing and opentelemetry until after the ecosystem
 	// gets converged into the latter.
 	opentracing.SetGlobalTracer(tracer)
-	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(tracer))
+	otel.SetTracerProvider(tracing.NewOpenTelemetryProviderBridge(tracer))
 
 	mimir.Cfg.Server.Router = mux.NewRouter()
 
