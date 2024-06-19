@@ -36,11 +36,10 @@ type ProxyEndpoint struct {
 	// Whether for this endpoint there's a preferred backend configured.
 	hasPreferredBackend bool
 
-	// The route name used to track metrics.
-	routeName string
+	route Route
 }
 
-func NewProxyEndpoint(backends []ProxyBackendInterface, routeName string, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, slowResponseThreshold time.Duration) *ProxyEndpoint {
+func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, slowResponseThreshold time.Duration) *ProxyEndpoint {
 	hasPreferredBackend := false
 	for _, backend := range backends {
 		if backend.Preferred() {
@@ -51,7 +50,7 @@ func NewProxyEndpoint(backends []ProxyBackendInterface, routeName string, metric
 
 	return &ProxyEndpoint{
 		backends:              backends,
-		routeName:             routeName,
+		route:                 route,
 		metrics:               metrics,
 		logger:                logger,
 		comparator:            comparator,
@@ -78,7 +77,7 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	p.metrics.responsesTotal.WithLabelValues(downstreamRes.backend.Name(), r.Method, p.routeName).Inc()
+	p.metrics.responsesTotal.WithLabelValues(downstreamRes.backend.Name(), r.Method, p.route.RouteName).Inc()
 }
 
 func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *backendResponse) {
@@ -98,7 +97,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 	setSpanAndLogTags := func(logger *spanlogger.SpanLogger) {
 		logger.SetSpanAndLogTag("path", req.URL.Path)
 		logger.SetSpanAndLogTag("query", query)
-		logger.SetSpanAndLogTag("route_name", p.routeName)
+		logger.SetSpanAndLogTag("route_name", p.route.RouteName)
 		logger.SetSpanAndLogTag("user", req.Header.Get("X-Scope-OrgID"))
 		logger.SetSpanAndLogTag("user_agent", req.Header.Get("User-Agent"))
 	}
@@ -109,6 +108,8 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 		body, err = io.ReadAll(req.Body)
 		if err != nil {
 			level.Warn(logger).Log("msg", "Unable to read request body", "err", err)
+			resCh <- &backendResponse{err: err}
+			close(resCh)
 			return
 		}
 		if err := req.Body.Close(); err != nil {
@@ -123,6 +124,23 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 	}
 
 	level.Debug(logger).Log("msg", "Received request")
+
+	for _, transform := range p.route.RequestTransformers {
+		req, body, err = transform(req, body, logger)
+
+		if err != nil {
+			level.Error(logger).Log("msg", "Transforming request failed", "err", err)
+			resCh <- &backendResponse{err: err}
+			close(resCh)
+			return
+		}
+
+		// Update the query used in logging based on the updated request.
+		query = req.URL.RawQuery
+		if body != nil {
+			query = req.Form.Encode()
+		}
+	}
 
 	// Keep track of the fastest and slowest backends
 	var (
@@ -196,7 +214,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 			}
 
 			l.Log("msg", "Backend response", "status", status, "elapsed", elapsed)
-			p.metrics.requestDuration.WithLabelValues(res.backend.Name(), req.Method, p.routeName, strconv.Itoa(res.statusCode())).Observe(elapsed.Seconds())
+			p.metrics.requestDuration.WithLabelValues(res.backend.Name(), req.Method, p.route.RouteName, strconv.Itoa(res.statusCode())).Observe(elapsed.Seconds())
 			logger.SetTag("status", status)
 
 			// Keep track of the response if required.
@@ -252,9 +270,9 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 
 		relativeDuration := actualResponse.elapsedTime - expectedResponse.elapsedTime
 		proportionalDurationDifference := relativeDuration.Seconds() / expectedResponse.elapsedTime.Seconds()
-		p.metrics.relativeDuration.WithLabelValues(p.routeName).Observe(relativeDuration.Seconds())
-		p.metrics.proportionalDuration.WithLabelValues(p.routeName).Observe(proportionalDurationDifference)
-		p.metrics.responsesComparedTotal.WithLabelValues(p.routeName, string(result)).Inc()
+		p.metrics.relativeDuration.WithLabelValues(p.route.RouteName).Observe(relativeDuration.Seconds())
+		p.metrics.proportionalDuration.WithLabelValues(p.route.RouteName).Observe(proportionalDurationDifference)
+		p.metrics.responsesComparedTotal.WithLabelValues(p.route.RouteName, string(result)).Inc()
 	}
 }
 
