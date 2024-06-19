@@ -277,24 +277,24 @@ func (r *remoteReadQueryRequest) GetHeaders() []*PrometheusHeader {
 	return nil
 }
 
-func (r *remoteReadQueryRequest) WithID(_ int64) MetricsQueryRequest {
-	panic("not implemented")
+func (r *remoteReadQueryRequest) WithID(_ int64) (MetricsQueryRequest, error) {
+	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithID not implemented")
 }
 
-func (r *remoteReadQueryRequest) WithEstimatedSeriesCountHint(_ uint64) MetricsQueryRequest {
-	panic("not implemented")
+func (r *remoteReadQueryRequest) WithEstimatedSeriesCountHint(_ uint64) (MetricsQueryRequest, error) {
+	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithEstimatedSeriesCountHint not implemented")
 }
 
-func (r *remoteReadQueryRequest) WithExpr(_ parser.Expr) MetricsQueryRequest {
-	panic("not implemented")
+func (r *remoteReadQueryRequest) WithExpr(_ parser.Expr) (MetricsQueryRequest, error) {
+	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithExpr not implemented")
 }
 
 func (r *remoteReadQueryRequest) WithQuery(_ string) (MetricsQueryRequest, error) {
-	panic("not implemented")
+	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithQuery not implemented")
 }
 
-func (r *remoteReadQueryRequest) WithHeaders(_ []*PrometheusHeader) MetricsQueryRequest {
-	panic("not implemented")
+func (r *remoteReadQueryRequest) WithHeaders(_ []*PrometheusHeader) (MetricsQueryRequest, error) {
+	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithHeaders not implemented")
 }
 
 // WithStartEnd clones the current remoteReadQueryRequest with a new start and end timestamp.
@@ -320,8 +320,8 @@ func (r *remoteReadQueryRequest) WithStartEnd(start int64, end int64) (MetricsQu
 	return remoteReadToMetricsQueryRequest(r.path, clonedQuery)
 }
 
-func (r *remoteReadQueryRequest) WithTotalQueriesHint(_ int32) MetricsQueryRequest {
-	panic("not implemented")
+func (r *remoteReadQueryRequest) WithTotalQueriesHint(_ int32) (MetricsQueryRequest, error) {
+	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithTotalQueriesHint not implemented")
 }
 
 // cloneRemoteReadQuery returns a deep copy of the input prompb.Query. To keep this function safe,

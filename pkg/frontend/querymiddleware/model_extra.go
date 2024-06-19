@@ -149,11 +149,11 @@ func (r *PrometheusRangeQueryRequest) GetHints() *Hints {
 }
 
 // WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
-func (r *PrometheusRangeQueryRequest) WithID(id int64) MetricsQueryRequest {
+func (r *PrometheusRangeQueryRequest) WithID(id int64) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(r.headers)
 	newRequest.id = id
-	return &newRequest
+	return &newRequest, nil
 }
 
 // WithStartEnd clones the current `PrometheusRangeQueryRequest` with a new `start` and `end` timestamp.
@@ -189,14 +189,14 @@ func (r *PrometheusRangeQueryRequest) WithQuery(query string) (MetricsQueryReque
 }
 
 // WithHeaders clones the current `PrometheusRangeQueryRequest` with new headers.
-func (r *PrometheusRangeQueryRequest) WithHeaders(headers []*PrometheusHeader) MetricsQueryRequest {
+func (r *PrometheusRangeQueryRequest) WithHeaders(headers []*PrometheusHeader) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(headers)
-	return &newRequest
+	return &newRequest, nil
 }
 
 // WithExpr clones the current `PrometheusRangeQueryRequest` with a new query expression.
-func (r *PrometheusRangeQueryRequest) WithExpr(queryExpr parser.Expr) MetricsQueryRequest {
+func (r *PrometheusRangeQueryRequest) WithExpr(queryExpr parser.Expr) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(r.headers)
 	newRequest.queryExpr = queryExpr
@@ -205,12 +205,12 @@ func (r *PrometheusRangeQueryRequest) WithExpr(queryExpr parser.Expr) MetricsQue
 			newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
 		)
 	}
-	return &newRequest
+	return &newRequest, nil
 }
 
 // WithTotalQueriesHint clones the current `PrometheusRangeQueryRequest` with an
 // added Hint value for TotalQueries.
-func (r *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
+func (r *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(r.headers)
 	if newRequest.hints == nil {
@@ -219,12 +219,12 @@ func (r *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) M
 		*newRequest.hints = *(r.hints)
 		newRequest.hints.TotalQueries = totalQueries
 	}
-	return &newRequest
+	return &newRequest, nil
 }
 
 // WithEstimatedSeriesCountHint clones the current `PrometheusRangeQueryRequest`
 // with an added Hint value for EstimatedCardinality.
-func (r *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
+func (r *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(r.headers)
 	if newRequest.hints == nil {
@@ -235,7 +235,7 @@ func (r *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64)
 		*newRequest.hints = *(r.hints)
 		newRequest.hints.CardinalityEstimate = &EstimatedSeriesCount{count}
 	}
-	return &newRequest
+	return &newRequest, nil
 }
 
 // AddSpanTags writes the current `PrometheusRangeQueryRequest` parameters to the specified span tags
@@ -355,11 +355,11 @@ func (r *PrometheusInstantQueryRequest) GetHints() *Hints {
 	return r.hints
 }
 
-func (r *PrometheusInstantQueryRequest) WithID(id int64) MetricsQueryRequest {
+func (r *PrometheusInstantQueryRequest) WithID(id int64) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(r.headers)
 	newRequest.id = id
-	return &newRequest
+	return &newRequest, nil
 }
 
 // WithStartEnd clones the current `PrometheusInstantQueryRequest` with a new `time` timestamp.
@@ -394,14 +394,14 @@ func (r *PrometheusInstantQueryRequest) WithQuery(query string) (MetricsQueryReq
 }
 
 // WithHeaders clones the current `PrometheusRangeQueryRequest` with new headers.
-func (r *PrometheusInstantQueryRequest) WithHeaders(headers []*PrometheusHeader) MetricsQueryRequest {
+func (r *PrometheusInstantQueryRequest) WithHeaders(headers []*PrometheusHeader) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(headers)
-	return &newRequest
+	return &newRequest, nil
 }
 
 // WithExpr clones the current `PrometheusInstantQueryRequest` with a new query expression.
-func (r *PrometheusInstantQueryRequest) WithExpr(queryExpr parser.Expr) MetricsQueryRequest {
+func (r *PrometheusInstantQueryRequest) WithExpr(queryExpr parser.Expr) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(r.headers)
 	newRequest.queryExpr = queryExpr
@@ -410,10 +410,10 @@ func (r *PrometheusInstantQueryRequest) WithExpr(queryExpr parser.Expr) MetricsQ
 			newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
 		)
 	}
-	return &newRequest
+	return &newRequest, nil
 }
 
-func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
+func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(r.headers)
 	if newRequest.hints == nil {
@@ -422,10 +422,10 @@ func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32)
 		*newRequest.hints = *(r.hints)
 		newRequest.hints.TotalQueries = totalQueries
 	}
-	return &newRequest
+	return &newRequest, nil
 }
 
-func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
+func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint64) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(r.headers)
 	if newRequest.hints == nil {
@@ -436,7 +436,7 @@ func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint6
 		*newRequest.hints = *(r.hints)
 		newRequest.hints.CardinalityEstimate = &EstimatedSeriesCount{count}
 	}
-	return &newRequest
+	return &newRequest, nil
 }
 
 // AddSpanTags writes query information about the current `PrometheusInstantQueryRequest`
