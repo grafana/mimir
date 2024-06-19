@@ -247,6 +247,7 @@
 * [ENHANCEMENT] `tsdb-series`: Added `-min-time` and `-max-time` options to filter samples that are used for computing data-points per minute. #8844
 * [ENHANCEMENT] `mimir-rules-action`: Added new input to support matching target namespaces by regex. #9244
 * [ENHANCEMENT] `mimir-rules-action`: Added new inputs to support ignoring namespaces and ignoring namespaces by regex. #9258 #9324
+* [BUGFIX] `copyblocks`, `undelete-blocks`, `copyprefix`: use a multipart upload to server-side copy objects greater than 5GiB in size on S3. #9357
 
 ## 2.13.0
 
