@@ -533,7 +533,7 @@ func TestRemoteReadSanitizerMiddleware_ClearsStepHint(t *testing.T) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			var downstreamReq MetricsQueryRequest
-			capture := HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+			capture := HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
 				downstreamReq = req
 				return nil, nil
 			})
