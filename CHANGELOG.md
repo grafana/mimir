@@ -174,6 +174,11 @@
 * [ENHANCEMENT] Add two new metrics for measuring the relative duration between backends: #7782 #8013 #8330
   * `cortex_querytee_backend_response_relative_duration_seconds`
   * `cortex_querytee_backend_response_relative_duration_proportional`
+* [ENHANCEMENT] Emit trace spans from query-tee. #8419
+* [ENHANCEMENT] Log trace ID (if present) with all log messages written while processing a request. #8419
+* [ENHANCEMENT] Log user agent when processing a request. #8419
+* [ENHANCEMENT] Add `time` parameter to proxied instant queries if it is not included in the incoming request. This is optional but enabled by default, and can be disabled with `-proxy.add-missing-time-parameter-to-instant-queries=false`. #8419
+* [BUGFIX] Ensure any errors encountered while forwarding a request to a backend (eg. DNS resolution failures) are logged. #8419
 
 ### Documentation
 
