@@ -77,11 +77,6 @@ message LabelValueSeriesCount {
 }
 
 message QueryRequest {
-  // This QueryRequest message is also used for remote read requests, which includes a hints field we don't support.
-  // TODO update this comment
-  reserved 4;
-  reserved "hints";
-
   int64 start_timestamp_ms = 1;
   int64 end_timestamp_ms = 2;
   repeated LabelMatcher matchers = 3;
