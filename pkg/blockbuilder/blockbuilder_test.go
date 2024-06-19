@@ -389,14 +389,16 @@ func TestBlockBuilder(t *testing.T) {
 
 // Testing block builder starting up with an existing kafka commit.
 func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
-	// TODO(codesome): cleanup the test after fixing the kafka client bug
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	logger := test.NewTestingLogger(t)
 
 	_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, testTopic)
 	writeClient := newKafkaProduceClient(t, addr)
 
 	cfg, overrides := blockBuilderConfig(t, addr)
+
 	kafkaTime := time.Now().Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
 	var expSamples []mimirpb.Sample
 	for i := int64(0); i < 12; i++ {
@@ -429,15 +431,14 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 	lastRec := commitRec
 	blockEnd := commitRec.Timestamp.Truncate(cfg.ConsumeInterval).Add(cfg.ConsumeInterval)
 
-	err = commitRecord(ctx, log.NewNopLogger(), kc, testTopic, commitRec, lastRec.Timestamp.UnixMilli(), blockEnd.UnixMilli())
+	err = commitRecord(ctx, logger, kc, testTopic, commitRec, lastRec.Timestamp.UnixMilli(), blockEnd.UnixMilli())
 	require.NoError(t, err)
 	kc.CloseAllowingRebalance()
 
-	// Because there is a commit, on startup, the block builder should consume samples
-	// only after the commit.
+	// Because there is a commit, on startup, the block builder should consume samples only after the commit.
 	expSamples = expSamples[1+(len(expSamples)/2):]
 
-	bb, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides)
+	bb, err := New(cfg, logger, prometheus.NewPedanticRegistry(), overrides)
 	require.NoError(t, err)
 	compactCalled := make(chan struct{}, 10)
 	bb.tsdbBuilder = func() builder {
@@ -453,7 +454,10 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
 	})
 
-	<-compactCalled
+	// We expect at least N cycles for a lagging block-builder to catch up from the last commit to the partition's high watermark.
+	for i := 0; i < 4; i++ {
+		<-compactCalled
+	}
 
 	bucketDir := path.Join(cfg.BlocksStorageConfig.Bucket.Filesystem.Directory, "1")
 	db, err := tsdb.Open(bucketDir, log.NewNopLogger(), nil, nil, nil)

@@ -356,8 +356,7 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 			// in the next iteration.
 			lag, seenTillTs, lastBlockEnd, err = b.consumePartition(ctx, pl.Partition, lag, seenTillTs, lastBlockEnd, ce)
 			if err != nil {
-				level.Error(b.logger).Log("msg", "failed to consume partition", "err", err, "part", pl.Partition)
-				return err
+				level.Error(b.logger).Log("msg", "failed to consume partition", "err", err, "part")
 			}
 			// If adding the ConsumeInterval takes it beyond the cycleEnd, we set it to the cycleEnd to not
 			// exit the loop without consuming until cycleEnd.
@@ -409,11 +408,16 @@ func (b *BlockBuilder) consumePartition(
 	var (
 		done       bool
 		commitRec  *kgo.Record
+		firstRec   *kgo.Record
 		lastRec    *kgo.Record
 		blockEndAt = cycleEnd.Truncate(b.cfg.ConsumeInterval)
 		blockMax   = blockEndAt.UnixMilli()
 	)
 	for !done {
+		if ctx.Err() != nil {
+			break
+		}
+
 		// Limit time client waits for a new batch. Otherwise, the client will hang if it lands on an inactive partition.
 		// TODO: make it 5 seconds after writing tests. Made it less to run tests quickly during development.
 		ctx1, cancel := context.WithTimeout(ctx, 1*time.Second)
@@ -439,6 +443,12 @@ func (b *BlockBuilder) consumePartition(
 		for !recIter.Done() {
 			rec := recIter.Next()
 
+			if firstRec == nil {
+				firstRec = rec
+			}
+
+			level.Debug(b.logger).Log("msg", "process record", "offset", rec.Offset, "rec", rec.Timestamp, "last_bmax", lastBlockMax, "bmax", blockMax)
+
 			// Stop consuming after we reached the cycleEnd marker.
 			// NOTE: the timestamp of the record is when the record was produced relative to distributor's time.
 			if rec.Timestamp.After(cycleEnd) {
@@ -447,8 +457,6 @@ func (b *BlockBuilder) consumePartition(
 			}
 
 			lag--
-
-			level.Debug(b.logger).Log("msg", "process record", "offset", rec.Offset, "rec", rec.Timestamp, "last_bmax", lastBlockMax, "bmax", blockMax)
 
 			recProcessedBefore := rec.Timestamp.UnixMilli() <= seenTillTs
 			allSamplesProcessed, err := builder.process(ctx, rec, lastBlockMax, blockMax, recProcessedBefore)
@@ -466,11 +474,6 @@ func (b *BlockBuilder) consumePartition(
 			}
 			lastRec = rec
 		}
-		if lag <= 0 {
-			// TODO(codesome): Verify with Vladimir if this is okay. This makes tests go faster because
-			// otherwise the fetch waits until timeout for the next one.
-			break
-		}
 	}
 
 	if err := builder.compactAndUpload(ctx, b.blockUploaderForUser); err != nil {
@@ -478,15 +481,42 @@ func (b *BlockBuilder) consumePartition(
 		return lag, seenTillTs, lastBlockMax, err
 	}
 
+	// Nothing was processed.
+	if lastRec == nil && firstRec == nil {
+		return lag, seenTillTs, lastBlockMax, nil
+	}
+
+	// If the very first record fetched was from the next cycle, i.e. no lastRec, we must rewind partition's
+	// offset and re-consume this record again on the next cycle.
+	if lastRec == nil {
+		rec := kgo.EpochOffset{
+			Epoch:  firstRec.LeaderEpoch,
+			Offset: firstRec.Offset,
+		}
+		b.seekPartition(ctx, part, rec)
+		return lag, seenTillTs, lastBlockMax, nil
+	}
+
+	// All samples in all records were processed. We can commit the last record's offset.
 	if commitRec == nil {
-		// All samples in all records were processed. We can commit the last record's offset.
 		commitRec = lastRec
 	}
+
+	// If there were records that we consumed but didn't process, we must rewind the partition's offset
+	// to the commit record. This is so on the next cycle, when the partition is read again, the consumer
+	// starts at the commit point.
+	defer func() {
+		rec := kgo.EpochOffset{
+			Epoch:  commitRec.LeaderEpoch,
+			Offset: commitRec.Offset + 1, // offset+1 means everything up (including) to commitRec was processed
+		}
+		b.seekPartition(ctx, part, rec)
+	}()
 
 	// We should take the max of "seen till" timestamp. If the partition was lagging
 	// due to some record not being processed because of a future sample, we might be
 	// coming back to the same consume cycle again.
-	if lastRec != nil && seenTillTs < lastRec.Timestamp.UnixMilli() {
+	if seenTillTs < lastRec.Timestamp.UnixMilli() {
 		seenTillTs = lastRec.Timestamp.UnixMilli()
 	}
 	// Take the max of block max times because of same reasons above.
@@ -496,6 +526,15 @@ func (b *BlockBuilder) consumePartition(
 	}
 	err = commitRecord(ctx, b.logger, b.kafkaClient, b.cfg.Kafka.Topic, commitRec, seenTillTs, commitBlockMax)
 	return lag, seenTillTs, commitBlockMax, err
+}
+
+func (b *BlockBuilder) seekPartition(ctx context.Context, part int32, rec kgo.EpochOffset) {
+	offsets := map[string]map[int32]kgo.EpochOffset{
+		b.cfg.Kafka.Topic: {
+			part: rec,
+		},
+	}
+	b.kafkaClient.SetOffsets(offsets)
 }
 
 func (b *BlockBuilder) blockUploaderForUser(ctx context.Context, userID string) blockUploader {
@@ -528,16 +567,6 @@ func commitRecord(ctx context.Context, l log.Logger, kc *kgo.Client, topic strin
 	if commitRec == nil {
 		return nil
 	}
-	// Rewind the offset to the commit record so that when the partition is read again by this
-	// block builder, it starts at the commit point.
-	kc.SetOffsets(map[string]map[int32]kgo.EpochOffset{
-		topic: {
-			commitRec.Partition: {
-				Epoch:  commitRec.LeaderEpoch,
-				Offset: commitRec.Offset,
-			},
-		},
-	})
 
 	ctx = kgo.PreCommitFnContext(ctx, func(req *kmsg.OffsetCommitRequest) error {
 		meta := marshallCommitMeta(commitRec.Timestamp.UnixMilli(), readTillTs, blockEnd)
