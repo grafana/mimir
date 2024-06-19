@@ -241,9 +241,7 @@ func (r *remoteReadQueryRequest) GetHints() *Hints {
 }
 
 func (r *remoteReadQueryRequest) GetStep() int64 {
-	if r.query.Hints != nil {
-		return r.query.Hints.GetStepMs()
-	}
+	// Step is ignored when the remote read query is executed.
 	return 0
 }
 

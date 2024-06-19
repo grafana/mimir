@@ -436,11 +436,19 @@ func makeTestRemoteReadRequest() *prompb.ReadRequest {
 	}
 }
 
-// This is not a full test yet, only tests what's needed for the query blocker.
+// This is not a full test yet, only tests what's needed for the query blocker and stats.
 func TestRemoteReadToMetricsQueryRequest(t *testing.T) {
-	remoteReadRequest := &prompb.ReadRequest{
-		Queries: []*prompb.Query{
-			{
+	testCases := map[string]struct {
+		query         *prompb.Query
+		expectedQuery string
+		expectedStep  int64
+		expectedStart int64
+		expectedEnd   int64
+		expectedMinT  int64
+		expectedMaxT  int64
+	}{
+		"query without hints": {
+			query: &prompb.Query{
 				Matchers: []*prompb.LabelMatcher{
 					{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "some_metric"},
 					{Name: "foo", Type: prompb.LabelMatcher_RE, Value: ".*bar.*"},
@@ -448,25 +456,45 @@ func TestRemoteReadToMetricsQueryRequest(t *testing.T) {
 				StartTimestampMs: 10,
 				EndTimestampMs:   20,
 			},
-			{
+			expectedQuery: "{__name__=\"some_metric\",foo=~\".*bar.*\"}",
+			expectedStep:  0,
+			expectedStart: 10,
+			expectedEnd:   20,
+			expectedMinT:  10,
+			expectedMaxT:  20,
+		},
+		"query with hints": {
+			query: &prompb.Query{
 				Matchers: []*prompb.LabelMatcher{
 					{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "up"},
 				},
+				StartTimestampMs: 10,
+				EndTimestampMs:   20,
 				Hints: &prompb.ReadHints{
-					StepMs: 1000,
+					StartMs: 5,
+					EndMs:   25,
+					StepMs:  1000,
 				},
 			},
+			expectedQuery: "{__name__=\"up\"}",
+			expectedStep:  0,
+			expectedStart: 10,
+			expectedEnd:   20,
+			expectedMinT:  10,
+			expectedMaxT:  20,
 		},
 	}
 
-	expectedGetQuery := []string{
-		"{__name__=\"some_metric\",foo=~\".*bar.*\"}",
-		"{__name__=\"up\"}",
-	}
-
-	for i, query := range remoteReadRequest.Queries {
-		metricsQR, err := remoteReadToMetricsQueryRequest("something", query)
-		require.NoError(t, err)
-		require.Equal(t, expectedGetQuery[i], metricsQR.GetQuery())
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			metricsQR, err := remoteReadToMetricsQueryRequest("something", tc.query)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedQuery, metricsQR.GetQuery())
+			require.Equal(t, tc.expectedStep, metricsQR.GetStep())
+			require.Equal(t, tc.expectedStart, metricsQR.GetStart())
+			require.Equal(t, tc.expectedEnd, metricsQR.GetEnd())
+			require.Equal(t, tc.expectedMinT, metricsQR.GetMinT())
+			require.Equal(t, tc.expectedMaxT, metricsQR.GetMaxT())
+		})
 	}
 }
