@@ -44,6 +44,7 @@ const (
 
 	queryTypeInstant                      = "query"
 	queryTypeRange                        = "query_range"
+	queryTypeRemoteRead                   = "remote_read"
 	queryTypeCardinality                  = "cardinality"
 	queryTypeLabels                       = "label_names_and_values"
 	queryTypeActiveSeries                 = "active_series"
@@ -451,6 +452,8 @@ func newQueryCountTripperware(registerer prometheus.Registerer) Tripperware {
 				op = queryTypeRange
 			case IsInstantQuery(r.URL.Path):
 				op = queryTypeInstant
+			case IsRemoteReadQuery(r.URL.Path):
+				op = queryTypeRemoteRead
 			case IsCardinalityQuery(r.URL.Path):
 				op = queryTypeCardinality
 			case IsActiveSeriesQuery(r.URL.Path):

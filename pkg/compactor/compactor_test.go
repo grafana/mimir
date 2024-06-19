@@ -1299,7 +1299,7 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 		require.NoError(t, err)
 		defer f.Close()
 
-		mockCall.ReturnArguments = mock.Arguments{compactedMeta.ULID, nil}
+		mockCall.ReturnArguments = mock.Arguments{[]ulid.ULID{compactedMeta.ULID}, nil}
 	}
 
 	// Start the compactor
@@ -1848,14 +1848,14 @@ func (m *tsdbCompactorMock) Plan(dir string) ([]string, error) {
 	return args.Get(0).([]string), args.Error(1)
 }
 
-func (m *tsdbCompactorMock) Write(dest string, b tsdb.BlockReader, mint, maxt int64, parent *tsdb.BlockMeta) (ulid.ULID, error) {
+func (m *tsdbCompactorMock) Write(dest string, b tsdb.BlockReader, mint, maxt int64, parent *tsdb.BlockMeta) ([]ulid.ULID, error) {
 	args := m.Called(dest, b, mint, maxt, parent)
-	return args.Get(0).(ulid.ULID), args.Error(1)
+	return args.Get(0).([]ulid.ULID), args.Error(1)
 }
 
-func (m *tsdbCompactorMock) Compact(dest string, dirs []string, open []*tsdb.Block) (ulid.ULID, error) {
+func (m *tsdbCompactorMock) Compact(dest string, dirs []string, open []*tsdb.Block) ([]ulid.ULID, error) {
 	args := m.Called(dest, dirs, open)
-	return args.Get(0).(ulid.ULID), args.Error(1)
+	return args.Get(0).([]ulid.ULID), args.Error(1)
 }
 
 func (m *tsdbCompactorMock) CompactWithSplitting(dest string, dirs []string, open []*tsdb.Block, shardCount uint64) (result []ulid.ULID, _ error) {

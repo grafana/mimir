@@ -323,7 +323,7 @@ type HTTPClientConfig struct {
 	ProxyConfig `yaml:",inline"`
 	// HTTPHeaders specify headers to inject in the requests. Those headers
 	// could be marshalled back to the users.
-	HTTPHeaders *Headers `yaml:"http_headers" json:"http_headers"`
+	HTTPHeaders *Headers `yaml:"http_headers,omitempty" json:"http_headers,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
