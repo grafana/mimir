@@ -12,13 +12,10 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/dskit/concurrency"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 )
@@ -540,10 +537,7 @@ func TestRemoteReadSanitizerMiddleware_ClearsStepHint(t *testing.T) {
 				downstreamReq = req
 				return nil, nil
 			})
-
-			logs := &concurrency.SyncBuffer{}
-			logger := log.NewLogfmtLogger(logs)
-			middleware := remoteReadSanitizerMiddleware{next: capture, logger: logger}
+			middleware := remoteReadSanitizerMiddleware{next: capture}
 			req, err := remoteReadToMetricsQueryRequest("/read", tc.query)
 			require.NoError(t, err)
 			_, err = middleware.Do(context.Background(), req)
@@ -552,11 +546,8 @@ func TestRemoteReadSanitizerMiddleware_ClearsStepHint(t *testing.T) {
 			require.Zero(t, downstreamReq.GetStep())
 			if tc.expectChange {
 				require.NotSame(t, req, downstreamReq)
-				require.Contains(t, logs.String(), "setting the step to 0 for remote read query")
-				require.Contains(t, logs.String(), strconv.Quote(req.GetQuery()))
 			} else {
 				require.Same(t, req, downstreamReq)
-				require.Empty(t, logs.String())
 			}
 		})
 	}

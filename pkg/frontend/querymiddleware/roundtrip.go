@@ -314,7 +314,7 @@ func newQueryMiddlewares(
 
 	remoteReadMiddleware = append(remoteReadMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
-		newRemoteReadSanitizerMiddleware(log),
+		newRemoteReadSanitizerMiddleware(),
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware)
