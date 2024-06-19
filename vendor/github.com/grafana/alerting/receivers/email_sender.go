@@ -14,14 +14,13 @@ import (
 	"strings"
 
 	"github.com/Masterminds/sprig/v3"
-	"github.com/grafana/alerting/templates"
 	gomail "gopkg.in/mail.v2"
 )
 
-type defaultEmailSender struct {
-	cfg  EmailSenderConfig
-	tmpl *template.Template
-}
+var (
+	//go:embed templates/ng_alert_notification.html
+	defaultEmailTemplate string
+)
 
 type EmailSenderConfig struct {
 	AuthPassword  string
@@ -38,19 +37,19 @@ type EmailSenderConfig struct {
 	Version       string
 }
 
-//go:embed templates/ng_alert_notification.html
-var defaultEmailTemplate string
+type defaultEmailSender struct {
+	cfg  EmailSenderConfig
+	tmpl *template.Template
+}
 
 // NewEmailSenderFactory takes a configuration and returns a new EmailSender factory function.
-func NewEmailSenderFactory(cfg EmailSenderConfig) func(n Metadata) (EmailSender, error) {
+func NewEmailSenderFactory(cfg EmailSenderConfig) func(Metadata) (EmailSender, error) {
 	return func(n Metadata) (EmailSender, error) {
 		tmpl, err := template.New("ng_alert_notification").
 			Funcs(template.FuncMap{
 				"Subject":                 subjectTemplateFunc,
-				"HiddenSubject":           hiddenSubjectTemplateFunc,
 				"__dangerouslyInjectHTML": __dangerouslyInjectHTML,
 			}).
-			Funcs(template.FuncMap(templates.DefaultFuncs)).
 			Funcs(sprig.FuncMap()).
 			Parse(defaultEmailTemplate)
 		if err != nil {
@@ -64,26 +63,7 @@ func NewEmailSenderFactory(cfg EmailSenderConfig) func(n Metadata) (EmailSender,
 	}
 }
 
-// AttachedFile is a definition of the attached files without path
-type AttachedFile struct {
-	Name    string
-	Content []byte
-}
-
-// SendEmailCommand is the command for sending emails
-type SendEmailCommand struct {
-	To            []string
-	SingleEmail   bool
-	Template      string
-	Subject       string
-	Data          map[string]any
-	Info          string
-	ReplyTo       []string
-	EmbeddedFiles []string
-	AttachedFiles []*AttachedFile
-}
-
-// Message is representation of the email message.
+// Message representats an email message.
 type Message struct {
 	To            []string
 	SingleEmail   bool
@@ -93,57 +73,21 @@ type Message struct {
 	Info          string
 	ReplyTo       []string
 	EmbeddedFiles []string
-	AttachedFiles []*AttachedFile
+	AttachedFiles []*SendEmailAttachedFile
 }
 
-// SendEmail implements alertingReceivers.EmailSender.
-func (s *defaultEmailSender) SendEmail(ctx context.Context, cmd *SendEmailSettings) error {
-	var attached []*AttachedFile
-	if cmd.AttachedFiles != nil {
-		attached = make([]*AttachedFile, 0, len(cmd.AttachedFiles))
-		for _, file := range cmd.AttachedFiles {
-			attached = append(attached, &AttachedFile{
-				Name:    file.Name,
-				Content: file.Content,
-			})
-		}
-	}
-
-	return s.SendEmailCommandHandlerSync(ctx, &SendEmailCommand{
-		To:            cmd.To,
-		SingleEmail:   cmd.SingleEmail,
-		Template:      cmd.Template,
-		Subject:       cmd.Subject,
-		Data:          cmd.Data,
-		Info:          cmd.Info,
-		ReplyTo:       cmd.ReplyTo,
-		EmbeddedFiles: cmd.EmbeddedFiles,
-		AttachedFiles: attached,
-	})
-}
-
-func (s *defaultEmailSender) SendEmailCommandHandlerSync(ctx context.Context, cmd *SendEmailCommand) error {
-	message, err := s.buildEmailMessage(&SendEmailCommand{
-		Data:          cmd.Data,
-		Info:          cmd.Info,
-		Template:      cmd.Template,
-		To:            cmd.To,
-		SingleEmail:   cmd.SingleEmail,
-		EmbeddedFiles: cmd.EmbeddedFiles,
-		AttachedFiles: cmd.AttachedFiles,
-		Subject:       cmd.Subject,
-		ReplyTo:       cmd.ReplyTo,
-	})
-
+// SendEmail implements the EmailSender interface.
+func (s *defaultEmailSender) SendEmail(_ context.Context, cmd *SendEmailSettings) error {
+	message, err := s.buildEmailMessage(cmd)
 	if err != nil {
 		return err
 	}
 
-	_, err = s.Send(ctx, message)
+	_, err = s.Send(message)
 	return err
 }
 
-func (s *defaultEmailSender) buildEmailMessage(cmd *SendEmailCommand) (*Message, error) {
+func (s *defaultEmailSender) buildEmailMessage(cmd *SendEmailSettings) (*Message, error) {
 	data := cmd.Data
 	if data == nil {
 		data = make(map[string]any, 10)
@@ -160,29 +104,10 @@ func (s *defaultEmailSender) buildEmailMessage(cmd *SendEmailCommand) (*Message,
 	if cmd.Subject == "" {
 		subjectData := data["Subject"].(map[string]any)
 		subjectText, hasSubject := subjectData["executed_template"].(string)
-		if hasSubject {
-			// first check to see if the template has already been executed in a template func
-			subject = subjectText
-		} else {
-			subjectTemplate, hasSubject := subjectData["value"]
-
-			if !hasSubject {
-				return nil, fmt.Errorf("missing subject in template %s", cmd.Template)
-			}
-
-			subjectTmpl, err := template.New("subject").Parse(subjectTemplate.(string))
-			if err != nil {
-				return nil, err
-			}
-
-			var subjectBuffer bytes.Buffer
-			err = subjectTmpl.ExecuteTemplate(&subjectBuffer, "subject", data)
-			if err != nil {
-				return nil, err
-			}
-
-			subject = subjectBuffer.String()
+		if !hasSubject {
+			return nil, fmt.Errorf("missing subject in template %s", cmd.Template)
 		}
+		subject = subjectText
 	}
 
 	addr := mail.Address{Name: s.cfg.FromName, Address: s.cfg.FromAddress}
@@ -209,13 +134,7 @@ func (s *defaultEmailSender) setDefaultTemplateData(data map[string]any) {
 	data["TemplateData"] = dataCopy
 }
 
-func (s *defaultEmailSender) Send(ctx context.Context, messages ...*Message) (int, error) {
-	// TODO: add
-	// ctx, span := tracer.Start(ctx, "notifications.SmtpClient.Send",
-	// 	trace.WithAttributes(attribute.Int("messages", len(messages))),
-	// )
-	// defer span.End()
-
+func (s *defaultEmailSender) Send(messages ...*Message) (int, error) {
 	sentEmailsCount := 0
 	dialer, err := s.createDialer()
 	if err != nil {
@@ -223,27 +142,11 @@ func (s *defaultEmailSender) Send(ctx context.Context, messages ...*Message) (in
 	}
 
 	for _, msg := range messages {
-		// span.SetAttributes(
-		// 	attribute.String("smtp.sender", msg.From),
-		// 	attribute.StringSlice("smtp.recipients", msg.To),
-		// )
-
-		m := s.buildEmail(ctx, msg)
+		m := s.buildEmail(msg)
 
 		innerError := dialer.DialAndSend(m)
-		// emailsSentTotal.Inc()
 		if innerError != nil {
-			// As gomail does not return typed errors we have to parse the error
-			// to catch invalid error when the address is invalid.
-			// https://github.com/go-gomail/gomail/blob/81ebce5c23dfd25c6c67194b37d3dd3f338c98b1/send.go#L113
-			if !strings.HasPrefix(innerError.Error(), "gomail: invalid address") {
-				// emailsSentFailed.Inc()
-			}
-
 			err = fmt.Errorf("failed to send notification to email addresses: %s: %w", strings.Join(msg.To, ";"), innerError)
-			// span.RecordError(err)
-			// span.SetStatus(codes.Error, err.Error())
-
 			continue
 		}
 
@@ -284,9 +187,9 @@ func (s *defaultEmailSender) createDialer() (*gomail.Dialer, error) {
 }
 
 // buildEmail converts the Message DTO to a gomail message.
-func (s *defaultEmailSender) buildEmail(ctx context.Context, msg *Message) *gomail.Message {
+func (s *defaultEmailSender) buildEmail(msg *Message) *gomail.Message {
 	m := gomail.NewMessage()
-	// add all static headers to the email message
+	// Add all static headers to the email message.
 	for h, val := range s.cfg.StaticHeaders {
 		m.SetHeader(h, val)
 	}
@@ -294,14 +197,12 @@ func (s *defaultEmailSender) buildEmail(ctx context.Context, msg *Message) *goma
 	m.SetHeader("To", msg.To...)
 	m.SetHeader("Subject", msg.Subject)
 
-	// if s.enableTracing {
-	// 	otel.GetTextMapPropagator().Inject(ctx, gomailHeaderCarrier{m})
-	// }
-
 	setFiles(m, msg)
-	for _, replyTo := range msg.ReplyTo {
-		m.SetAddressHeader("Reply-To", replyTo, "")
+	replyTo := make([]string, 0, len(msg.ReplyTo))
+	for _, address := range msg.ReplyTo {
+		replyTo = append(replyTo, m.FormatAddress(address, ""))
 	}
+	m.SetHeader("Reply-To", strings.Join(replyTo, ", "))
 	m.SetBody("text/html", msg.Body)
 
 	return m
@@ -323,13 +224,6 @@ func setFiles(
 			return err
 		}))
 	}
-}
-
-// hiddenSubjectTemplateFunc sets the subject template (value) on the map represented by `.Subject.` (obj) so that it can be compiled and executed later.
-// It returns a blank string, so there will be no resulting value left in place of the template.
-func hiddenSubjectTemplateFunc(obj map[string]any, value string) string {
-	obj["value"] = value
-	return ""
 }
 
 // subjectTemplateFunc does the same thing has hiddenSubjectTemplateFunc, but in addition it executes and returns the subject template using the data represented in `.TemplateData` (data)
@@ -360,7 +254,7 @@ func subjectTemplateFunc(obj map[string]any, data map[string]any, value string) 
 // It's safe to ignore gosec warning G203 when calling this function in an HTML template because we assume anyone who has write access
 // to the email templates folder is an administrator.
 //
-// nolint:gosec
+// nolint:gosec,revive
 func __dangerouslyInjectHTML(s string) template.HTML {
 	return template.HTML(s)
 }
