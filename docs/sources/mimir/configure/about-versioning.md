@@ -56,8 +56,9 @@ The following features are currently experimental:
     - `-compactor.no-blocks-file-cleanup-enabled`
 - Ruler
   - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
-  - Allow defining a limit on the maximum number of rules allowed in a rule group by namespace. If set, this supersedes the `-ruler.max-rules-per-rule-group` limit.
+  - Allow defining limits on the maximum number of rules allowed in a rule group by namespace and the maximum number of rule groups by namespace. If set, this supersedes the `-ruler.max-rules-per-rule-group` and `-ruler.max-rule-groups-per-tenant` limits.
   - `-ruler.max-rules-per-rule-group-by-namespace`
+  - `-ruler.max-rule-groups-per-tenant-by-namespace`
 - Distributor
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`
