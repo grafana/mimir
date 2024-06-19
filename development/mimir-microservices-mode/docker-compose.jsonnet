@@ -30,6 +30,9 @@ std.manifestYamlDoc({
     enable_grafana_agent: false,
     enable_prometheus: true,  // If Prometheus is disabled, recording rules will not be evaluated and so dashboards in Grafana that depend on these recorded series will display no data.
     enable_otel_collector: false,
+
+    // If true, a query-tee instance with a single backend is started.
+    enable_query_tee: false,
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -51,6 +54,7 @@ std.manifestYamlDoc({
     (if $._config.ring == 'consul' || $._config.ring == 'multi' then self.consul else {}) +
     (if $._config.cache_backend == 'redis' then self.redis else self.memcached + self.memcached_exporter) +
     (if $._config.enable_load_generator then self.load_generator else {}) +
+    (if $._config.enable_query_tee then self.query_tee else {}) +
     {},
 
   distributor:: {
@@ -175,6 +179,21 @@ std.manifestYamlDoc({
 
   local all_rings = ['-ingester.ring', '-distributor.ring', '-compactor.ring', '-store-gateway.sharding-ring', '-ruler.ring', '-alertmanager.sharding-ring'],
 
+  local jaegerEnv(appName) = {
+    JAEGER_AGENT_HOST: 'jaeger',
+    JAEGER_AGENT_PORT: 6831,
+    JAEGER_SAMPLER_TYPE: 'const',
+    JAEGER_SAMPLER_PARAM: 1,
+    JAEGER_TAGS: 'app=%s' % appName,
+    JAEGER_REPORTER_MAX_QUEUE_SIZE: 1000,
+  },
+
+  local formatEnv(env) = [
+    '%s=%s' % [key, env[key]]
+    for key in std.objectFields(env)
+    if env[key] != null
+  ],
+
   // This function builds docker-compose declaration for Mimir service.
   // Default grpcPort is (httpPort + 1000), and default debug port is (httpPort + 10000)
   local mimirService(serviceOptions) = {
@@ -189,14 +208,7 @@ std.manifestYamlDoc({
       // Extra arguments passed to Mimir command line.
       extraArguments: '',
       dependsOn: ['minio'] + (if $._config.ring == 'consul' || $._config.ring == 'multi' then ['consul'] else if s.target != 'distributor' then ['distributor-1'] else []),
-      env: {
-        JAEGER_AGENT_HOST: 'jaeger',
-        JAEGER_AGENT_PORT: 6831,
-        JAEGER_SAMPLER_TYPE: 'const',
-        JAEGER_SAMPLER_PARAM: 1,
-        JAEGER_TAGS: 'app=%s' % s.jaegerApp,
-        JAEGER_REPORTER_MAX_QUEUE_SIZE: 1000,
-      },
+      env: jaegerEnv(s.jaegerApp),
       extraVolumes: [],
       memberlistNodeName: self.jaegerApp,
       memberlistBindPort: self.httpPort + 2000,
@@ -223,11 +235,7 @@ std.manifestYamlDoc({
         std.join(' ', if $._config.cache_backend == 'redis' then [x + '.backend=redis' for x in all_caches] + [x + '.redis.endpoint=redis:6379' for x in all_caches] else [x + '.backend=memcached' for x in all_caches] + [x + '.memcached.addresses=dns+memcached:11211' for x in all_caches]),
       ]),
     ],
-    environment: [
-      '%s=%s' % [key, options.env[key]]
-      for key in std.objectFields(options.env)
-      if options.env[key] != null
-    ],
+    environment: formatEnv(options.env),
     hostname: options.name,
     // Only publish HTTP and debug port, but not gRPC one.
     ports: ['%d:%d' % [options.httpPort, options.httpPort]] +
@@ -382,6 +390,21 @@ std.manifestYamlDoc({
         '--server-metrics-port=9900',
       ],
       ports: ['9900:9900'],
+    },
+  },
+
+  query_tee:: {
+    'query-tee': {
+      local env = jaegerEnv('query-tee'),
+
+      image: 'query-tee',
+      build: {
+        context: '../../cmd/query-tee',
+      },
+      command: '-backend.endpoints=http://nginx:8080 -backend.preferred=nginx -proxy.passthrough-non-registered-routes=true -server.path-prefix=/prometheus',
+      environment: formatEnv(env),
+      hostname: 'query-tee',
+      ports: ['9999:80'],
     },
   },
 
