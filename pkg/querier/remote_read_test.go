@@ -49,26 +49,30 @@ func (m mockSampleAndChunkQueryable) ChunkQuerier(mint, maxt int64) (storage.Chu
 
 type mockQuerier struct {
 	storage.Querier
-	seriesSet storage.SeriesSet
+
+	selectFn func(ctx context.Context, sorted bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet
 }
 
-func (m mockQuerier) Select(_ context.Context, _ bool, sp *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
-	if sp == nil {
-		panic("mockQuerier: select params must be set")
+func (m mockQuerier) Select(ctx context.Context, sorted bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	if m.selectFn != nil {
+		return m.selectFn(ctx, sorted, hints, matchers...)
 	}
-	return m.seriesSet
+
+	return storage.ErrSeriesSet(errors.New("the Select() function has not been mocked in the test"))
 }
 
 type mockChunkQuerier struct {
 	storage.ChunkQuerier
-	seriesSet storage.SeriesSet
+
+	selectFn func(ctx context.Context, sorted bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet
 }
 
-func (m mockChunkQuerier) Select(_ context.Context, _ bool, sp *storage.SelectHints, _ ...*labels.Matcher) storage.ChunkSeriesSet {
-	if sp == nil {
-		panic("mockChunkQuerier: select params must be set")
+func (m mockChunkQuerier) Select(ctx context.Context, sorted bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
+	if m.selectFn != nil {
+		return m.selectFn(ctx, sorted, hints, matchers...)
 	}
-	return storage.NewSeriesSetToChunkSet(m.seriesSet)
+
+	return storage.ErrChunkSeriesSet(errors.New("the Select() function has not been mocked in the test"))
 }
 
 type partiallyFailingSeriesSet struct {
@@ -100,73 +104,110 @@ func (p *partiallyFailingSeriesSet) Warnings() annotations.Annotations {
 	return p.ss.Warnings()
 }
 
-func TestSampledRemoteRead(t *testing.T) {
-	q := &mockSampleAndChunkQueryable{
-		queryableFn: func(int64, int64) (storage.Querier, error) {
-			return mockQuerier{
-				seriesSet: series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
-					series.NewConcreteSeries(
-						labels.FromStrings("foo", "bar"),
-						[]model.SamplePair{{Timestamp: 0, Value: 0}, {Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
-						[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, test.GenerateTestHistogram(4))},
-					),
-				}),
-			}, nil
+func TestRemoteReadHandler_Samples(t *testing.T) {
+	queries := map[string]struct {
+		query                *prompb.Query
+		expectedQueriedStart int64
+		expectedQueriedEnd   int64
+	}{
+		"query without hints": {
+			query: &prompb.Query{
+				StartTimestampMs: 1,
+				EndTimestampMs:   10,
+			},
+			expectedQueriedStart: 1,
+			expectedQueriedEnd:   10,
+		},
+		"query with hints": {
+			query: &prompb.Query{
+				StartTimestampMs: 1,
+				EndTimestampMs:   10,
+				Hints: &prompb.ReadHints{
+					StartMs: 2,
+					EndMs:   9,
+				},
+			},
+			expectedQueriedStart: 1,  // Hints are currently ignored.
+			expectedQueriedEnd:   10, // Hints are currently ignored.
 		},
 	}
-	handler := RemoteReadHandler(q, log.NewNopLogger())
 
-	requestBody, err := proto.Marshal(&prompb.ReadRequest{
-		Queries: []*prompb.Query{
-			{StartTimestampMs: 0, EndTimestampMs: 10},
-		},
-	})
-	require.NoError(t, err)
-	requestBody = snappy.Encode(nil, requestBody)
-	request, err := http.NewRequest(http.MethodPost, "/api/v1/read", bytes.NewReader(requestBody))
-	require.NoError(t, err)
-	request.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
+	for queryType, queryData := range queries {
+		t.Run(queryType, func(t *testing.T) {
+			var actualQueriedStart, actualQueriedEnd int64
 
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, request)
+			q := &mockSampleAndChunkQueryable{
+				queryableFn: func(mint, maxt int64) (storage.Querier, error) {
+					return mockQuerier{
+						selectFn: func(_ context.Context, _ bool, hints *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+							require.NotNil(t, hints, "select hints must be set")
+							actualQueriedStart, actualQueriedEnd = hints.Start, hints.End
 
-	require.Equal(t, 200, recorder.Result().StatusCode)
-	require.Equal(t, []string{"application/x-protobuf"}, recorder.Result().Header["Content-Type"])
-	responseBody, err := io.ReadAll(recorder.Result().Body)
-	require.NoError(t, err)
-	responseBody, err = snappy.Decode(nil, responseBody)
-	require.NoError(t, err)
-	var response prompb.ReadResponse
-	err = proto.Unmarshal(responseBody, &response)
-	require.NoError(t, err)
+							return series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+								series.NewConcreteSeries(
+									labels.FromStrings("foo", "bar"),
+									[]model.SamplePair{{Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
+									[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, test.GenerateTestHistogram(4))},
+								),
+							})
+						},
+					}, nil
+				},
+			}
+			handler := RemoteReadHandler(q, log.NewNopLogger())
 
-	expected := prompb.ReadResponse{
-		Results: []*prompb.QueryResult{
-			{
-				Timeseries: []*prompb.TimeSeries{
+			requestBody, err := proto.Marshal(&prompb.ReadRequest{Queries: []*prompb.Query{queryData.query}})
+			require.NoError(t, err)
+			requestBody = snappy.Encode(nil, requestBody)
+			request, err := http.NewRequest(http.MethodPost, "/api/v1/read", bytes.NewReader(requestBody))
+			require.NoError(t, err)
+			request.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, request)
+
+			require.Equal(t, 200, recorder.Result().StatusCode)
+			require.Equal(t, []string{"application/x-protobuf"}, recorder.Result().Header["Content-Type"])
+			responseBody, err := io.ReadAll(recorder.Result().Body)
+			require.NoError(t, err)
+			responseBody, err = snappy.Decode(nil, responseBody)
+			require.NoError(t, err)
+			var response prompb.ReadResponse
+			err = proto.Unmarshal(responseBody, &response)
+			require.NoError(t, err)
+
+			expected := prompb.ReadResponse{
+				Results: []*prompb.QueryResult{
 					{
-						Labels: []prompb.Label{
-							{Name: "foo", Value: "bar"},
-						},
-						Samples: []prompb.Sample{
-							{Value: 0, Timestamp: 0},
-							{Value: 1, Timestamp: 1},
-							{Value: 2, Timestamp: 2},
-							{Value: 3, Timestamp: 3},
-						},
-						Histograms: []prompb.Histogram{
-							prom_remote.HistogramToHistogramProto(4, test.GenerateTestHistogram(4)),
+						Timeseries: []*prompb.TimeSeries{
+							{
+								Labels: []prompb.Label{
+									{Name: "foo", Value: "bar"},
+								},
+								Samples: []prompb.Sample{
+									{Value: 1, Timestamp: 1},
+									{Value: 2, Timestamp: 2},
+									{Value: 3, Timestamp: 3},
+								},
+								Histograms: []prompb.Histogram{
+									prom_remote.HistogramToHistogramProto(4, test.GenerateTestHistogram(4)),
+								},
+							},
 						},
 					},
 				},
-			},
-		},
+			}
+			require.Equal(t, expected, response)
+
+			// Ensure the time range passed down to the queryable is the expected one.
+			require.Equal(t, queryData.expectedQueriedStart, actualQueriedStart)
+			require.Equal(t, queryData.expectedQueriedEnd, actualQueriedEnd)
+		})
 	}
-	require.Equal(t, expected, response)
 }
 
-func TestStreamedRemoteRead(t *testing.T) {
-	tcs := map[string]struct {
+func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
+	tests := map[string]struct {
 		samples         []model.SamplePair
 		histograms      []mimirpb.Histogram
 		expectedResults []*prompb.ChunkedReadResponse
@@ -323,63 +364,106 @@ func TestStreamedRemoteRead(t *testing.T) {
 			},
 		},
 	}
-	for tn, tc := range tcs {
-		t.Run(tn, func(t *testing.T) {
-			q := &mockSampleAndChunkQueryable{
-				chunkQueryableFn: func(int64, int64) (storage.ChunkQuerier, error) {
-					return mockChunkQuerier{
-						seriesSet: series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
-							series.NewConcreteSeries(
-								labels.FromStrings("foo", "bar"),
-								tc.samples,
-								tc.histograms,
-							),
-						}),
-					}, nil
+
+	queries := map[string]struct {
+		query                *prompb.Query
+		expectedQueriedStart int64
+		expectedQueriedEnd   int64
+	}{
+		"query without hints": {
+			query: &prompb.Query{
+				StartTimestampMs: 1,
+				EndTimestampMs:   10,
+			},
+			expectedQueriedStart: 1,
+			expectedQueriedEnd:   10,
+		},
+		"query with hints": {
+			query: &prompb.Query{
+				StartTimestampMs: 1,
+				EndTimestampMs:   10,
+				Hints: &prompb.ReadHints{
+					StartMs: 2,
+					EndMs:   9,
 				},
+			},
+			expectedQueriedStart: 1,  // Hints are currently ignored.
+			expectedQueriedEnd:   10, // Hints are currently ignored.
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			for queryType, queryData := range queries {
+				t.Run(queryType, func(t *testing.T) {
+					var actualQueriedStart, actualQueriedEnd int64
+
+					q := &mockSampleAndChunkQueryable{
+						chunkQueryableFn: func(int64, int64) (storage.ChunkQuerier, error) {
+							return mockChunkQuerier{
+								selectFn: func(_ context.Context, _ bool, hints *storage.SelectHints, _ ...*labels.Matcher) storage.ChunkSeriesSet {
+									require.NotNil(t, hints, "select hints must be set")
+									actualQueriedStart, actualQueriedEnd = hints.Start, hints.End
+
+									return storage.NewSeriesSetToChunkSet(
+										series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+											series.NewConcreteSeries(
+												labels.FromStrings("foo", "bar"),
+												testData.samples,
+												testData.histograms,
+											),
+										}),
+									)
+								},
+							}, nil
+						},
+					}
+					// The labelset for this test has 10 bytes and a full chunk is roughly 165 bytes; for this test we want a
+					// frame to contain at most 2 chunks.
+					maxBytesInFrame := 10 + 165*2
+
+					handler := remoteReadHandler(q, maxBytesInFrame, log.NewNopLogger())
+
+					requestBody, err := proto.Marshal(&prompb.ReadRequest{
+						Queries:               []*prompb.Query{queryData.query},
+						AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+					})
+					require.NoError(t, err)
+					requestBody = snappy.Encode(nil, requestBody)
+					request, err := http.NewRequest(http.MethodPost, "/api/v1/read", bytes.NewReader(requestBody))
+					require.NoError(t, err)
+					request.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
+
+					recorder := httptest.NewRecorder()
+					handler.ServeHTTP(recorder, request)
+
+					require.Equal(t, 200, recorder.Result().StatusCode)
+					require.Equal(t, []string{api.ContentTypeRemoteReadStreamedChunks}, recorder.Result().Header["Content-Type"])
+
+					stream := prom_remote.NewChunkedReader(recorder.Result().Body, prom_remote.DefaultChunkedReadLimit, nil)
+
+					i := 0
+					for {
+						var res prompb.ChunkedReadResponse
+						err := stream.NextProto(&res)
+						if errors.Is(err, io.EOF) {
+							break
+						}
+						require.NoError(t, err)
+
+						if len(testData.expectedResults) < i+1 {
+							require.Fail(t, "unexpected result message")
+						}
+						require.Equal(t, testData.expectedResults[i], &res)
+						i++
+					}
+					require.Len(t, testData.expectedResults, i)
+
+					// Ensure the time range passed down to the queryable is the expected one.
+					require.Equal(t, queryData.expectedQueriedStart, actualQueriedStart)
+					require.Equal(t, queryData.expectedQueriedEnd, actualQueriedEnd)
+				})
 			}
-			// The labelset for this test has 10 bytes and a full chunk is roughly 165 bytes; for this test we want a
-			// frame to contain at most 2 chunks.
-			maxBytesInFrame := 10 + 165*2
-
-			handler := remoteReadHandler(q, maxBytesInFrame, log.NewNopLogger())
-
-			requestBody, err := proto.Marshal(&prompb.ReadRequest{
-				Queries: []*prompb.Query{
-					{StartTimestampMs: 0, EndTimestampMs: 10},
-				},
-				AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
-			})
-			require.NoError(t, err)
-			requestBody = snappy.Encode(nil, requestBody)
-			request, err := http.NewRequest(http.MethodPost, "/api/v1/read", bytes.NewReader(requestBody))
-			require.NoError(t, err)
-			request.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
-
-			recorder := httptest.NewRecorder()
-			handler.ServeHTTP(recorder, request)
-
-			require.Equal(t, 200, recorder.Result().StatusCode)
-			require.Equal(t, []string{api.ContentTypeRemoteReadStreamedChunks}, recorder.Result().Header["Content-Type"])
-
-			stream := prom_remote.NewChunkedReader(recorder.Result().Body, prom_remote.DefaultChunkedReadLimit, nil)
-
-			i := 0
-			for {
-				var res prompb.ChunkedReadResponse
-				err := stream.NextProto(&res)
-				if errors.Is(err, io.EOF) {
-					break
-				}
-				require.NoError(t, err)
-
-				if len(tc.expectedResults) < i+1 {
-					require.Fail(t, "unexpected result message")
-				}
-				require.Equal(t, tc.expectedResults[i], &res)
-				i++
-			}
-			require.Len(t, tc.expectedResults, i)
 		})
 	}
 }
@@ -521,7 +605,10 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 				q := &mockSampleAndChunkQueryable{
 					queryableFn: func(int64, int64) (storage.Querier, error) {
 						return mockQuerier{
-							seriesSet: tc.seriesSet,
+							selectFn: func(_ context.Context, _ bool, hints *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+								require.NotNil(t, hints, "select hints must be set")
+								return tc.seriesSet
+							},
 						}, tc.getQuerierErr
 					},
 				}
@@ -557,7 +644,9 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 				q := &mockSampleAndChunkQueryable{
 					chunkQueryableFn: func(int64, int64) (storage.ChunkQuerier, error) {
 						return mockChunkQuerier{
-							seriesSet: tc.seriesSet,
+							selectFn: func(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.ChunkSeriesSet {
+								return storage.NewSeriesSetToChunkSet(tc.seriesSet)
+							},
 						}, tc.getQuerierErr
 					},
 				}
