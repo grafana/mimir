@@ -316,7 +316,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	if !l.RulerMaxRuleGroupsPerTenantByNamespace.IsInitialized() {
 		l.RulerMaxRuleGroupsPerTenantByNamespace = NewLimitsMap[int](nil)
 	}
-	f.Var(&l.RulerMaxRuleGroupsPerTenantByNamespace, "ruler.max-rule-groups-per-tenant-by-namespace", "Maximum number of rule groups per tenant by namespace. Value is a map, where each key is the namespace and value is the number of rule groups allowed in the namespace (int64). On the command line, this map is given in a JSON format. The number of rule groups specified has the same meaning as -ruler.max-rule-groups-per-tenant, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rule-groups-per-tenant.")
+	f.Var(&l.RulerMaxRuleGroupsPerTenantByNamespace, "ruler.max-rule-groups-per-tenant-by-namespace", "Maximum number of rule groups per tenant by namespace. Value is a map, where each key is the namespace and value is the number of rule groups allowed in the namespace (int). On the command line, this map is given in a JSON format. The number of rule groups specified has the same meaning as -ruler.max-rule-groups-per-tenant, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rule-groups-per-tenant.")
 
 	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period. 0 to disable.")
 	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")
@@ -865,7 +865,7 @@ func (o *Overrides) RulerMaxRuleGroupsPerTenant(userID, namespace string) int {
 	u := o.getOverridesForUser(userID)
 
 	if namespaceLimit, ok := u.RulerMaxRuleGroupsPerTenantByNamespace.data[namespace]; ok {
-		return int(namespaceLimit)
+		return namespaceLimit
 	}
 
 	return u.RulerMaxRuleGroupsPerTenant
