@@ -112,7 +112,7 @@ func (bkt *s3Bucket) ServerSideCopy(ctx context.Context, objectName string, dstB
 
 	parts := stat.Size / maxSingleCopySize
 	if stat.Size%maxSingleCopySize != 0 {
-		parts += 1
+		parts++
 	}
 	srcOptions := make([]minio.CopySrcOptions, 0, parts)
 	start := int64(0)
