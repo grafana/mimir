@@ -569,7 +569,6 @@ func TestMiddlewaresConsistency(t *testing.T) {
 			exceptions: []string{
 				"instrumentMiddleware",
 				"querySharding", // No query sharding support.
-				"queryStatsMiddleware",
 				"retry",
 				"splitAndCacheMiddleware",               // No time splitting and results cache support.
 				"splitInstantQueryByIntervalMiddleware", // Not applicable because specific to instant queries.
