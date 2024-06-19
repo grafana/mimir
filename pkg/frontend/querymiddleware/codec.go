@@ -125,10 +125,10 @@ type MetricsQueryRequest interface {
 	// Implementations must ensure minT and maxT are recalculated when the query changes.
 	WithQuery(string) (MetricsQueryRequest, error)
 	// WithHeaders clones the current request with different headers.
-	WithHeaders([]*PrometheusHeader) MetricsQueryRequest
+	WithHeaders([]*PrometheusHeader) (MetricsQueryRequest, error)
 	// WithExpr clones the current `PrometheusRangeQueryRequest` with a new query expression.
 	// Implementations must ensure minT and maxT are recalculated when the query changes.
-	WithExpr(parser.Expr) MetricsQueryRequest
+	WithExpr(parser.Expr) (MetricsQueryRequest, error)
 	// WithTotalQueriesHint adds the number of total queries to this request's Hints.
 	WithTotalQueriesHint(int32) MetricsQueryRequest
 	// WithEstimatedSeriesCountHint WithEstimatedCardinalityHint adds a cardinality estimate to this request's Hints.

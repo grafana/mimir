@@ -459,7 +459,7 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 
 			// test WithExpr on the same query as WithQuery
 			queryExpr, err := parser.ParseExpr(testCase.updatedQuery)
-			updatedMetricsQuery = testCase.initialMetricsQuery.WithExpr(queryExpr)
+			updatedMetricsQuery = mustSucceed(testCase.initialMetricsQuery.WithExpr(queryExpr))
 
 			if err != nil || testCase.expectedErr != nil {
 				require.IsType(t, testCase.expectedErr, err)

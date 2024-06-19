@@ -189,14 +189,14 @@ func (r *PrometheusRangeQueryRequest) WithQuery(query string) (MetricsQueryReque
 }
 
 // WithHeaders clones the current `PrometheusRangeQueryRequest` with new headers.
-func (r *PrometheusRangeQueryRequest) WithHeaders(headers []*PrometheusHeader) MetricsQueryRequest {
+func (r *PrometheusRangeQueryRequest) WithHeaders(headers []*PrometheusHeader) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(headers)
-	return &newRequest
+	return &newRequest, nil
 }
 
 // WithExpr clones the current `PrometheusRangeQueryRequest` with a new query expression.
-func (r *PrometheusRangeQueryRequest) WithExpr(queryExpr parser.Expr) MetricsQueryRequest {
+func (r *PrometheusRangeQueryRequest) WithExpr(queryExpr parser.Expr) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(r.headers)
 	newRequest.queryExpr = queryExpr
@@ -205,7 +205,7 @@ func (r *PrometheusRangeQueryRequest) WithExpr(queryExpr parser.Expr) MetricsQue
 			newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
 		)
 	}
-	return &newRequest
+	return &newRequest, nil
 }
 
 // WithTotalQueriesHint clones the current `PrometheusRangeQueryRequest` with an
@@ -394,14 +394,14 @@ func (r *PrometheusInstantQueryRequest) WithQuery(query string) (MetricsQueryReq
 }
 
 // WithHeaders clones the current `PrometheusRangeQueryRequest` with new headers.
-func (r *PrometheusInstantQueryRequest) WithHeaders(headers []*PrometheusHeader) MetricsQueryRequest {
+func (r *PrometheusInstantQueryRequest) WithHeaders(headers []*PrometheusHeader) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(headers)
-	return &newRequest
+	return &newRequest, nil
 }
 
 // WithExpr clones the current `PrometheusInstantQueryRequest` with a new query expression.
-func (r *PrometheusInstantQueryRequest) WithExpr(queryExpr parser.Expr) MetricsQueryRequest {
+func (r *PrometheusInstantQueryRequest) WithExpr(queryExpr parser.Expr) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(r.headers)
 	newRequest.queryExpr = queryExpr
@@ -410,7 +410,7 @@ func (r *PrometheusInstantQueryRequest) WithExpr(queryExpr parser.Expr) MetricsQ
 			newRequest.queryExpr, newRequest.GetStart(), newRequest.GetEnd(), newRequest.GetStep(), newRequest.lookbackDelta,
 		)
 	}
-	return &newRequest
+	return &newRequest, nil
 }
 
 func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {

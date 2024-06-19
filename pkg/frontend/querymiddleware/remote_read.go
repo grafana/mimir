@@ -285,16 +285,16 @@ func (r *remoteReadQueryRequest) WithEstimatedSeriesCountHint(_ uint64) MetricsQ
 	panic("not implemented")
 }
 
-func (r *remoteReadQueryRequest) WithExpr(_ parser.Expr) MetricsQueryRequest {
-	panic("not implemented")
+func (r *remoteReadQueryRequest) WithExpr(_ parser.Expr) (MetricsQueryRequest, error) {
+	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithExpr not implemented")
 }
 
 func (r *remoteReadQueryRequest) WithQuery(_ string) (MetricsQueryRequest, error) {
 	panic("not implemented")
 }
 
-func (r *remoteReadQueryRequest) WithHeaders(_ []*PrometheusHeader) MetricsQueryRequest {
-	panic("not implemented")
+func (r *remoteReadQueryRequest) WithHeaders(_ []*PrometheusHeader) (MetricsQueryRequest, error) {
+	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithHeaders not implemented")
 }
 
 // WithStartEnd clones the current remoteReadQueryRequest with a new start and end timestamp.
