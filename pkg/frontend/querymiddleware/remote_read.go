@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strconv"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/golang/snappy"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/prometheus/prompb"
@@ -21,6 +23,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // To keep logs and error messages in sync, we define the following keys:
@@ -339,13 +342,15 @@ func cloneRemoteReadQuery(orig *prompb.Query) (*prompb.Query, error) {
 }
 
 type remoteReadSanitizerMiddleware struct {
-	next MetricsQueryHandler
+	next   MetricsQueryHandler
+	logger log.Logger
 }
 
-func newRemoteReadSanitizerMiddleware() MetricsQueryMiddleware {
+func newRemoteReadSanitizerMiddleware(logger log.Logger) MetricsQueryMiddleware {
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &remoteReadSanitizerMiddleware{
-			next: next,
+			next:   next,
+			logger: logger,
 		}
 	})
 }
@@ -358,6 +363,12 @@ func (r *remoteReadSanitizerMiddleware) Do(ctx context.Context, req MetricsQuery
 	if query.query.Hints == nil || query.query.Hints.StepMs == 0 {
 		return r.next.Do(ctx, req)
 	}
+	log, ctx := spanlogger.NewWithLogger(ctx, r.logger, "remoteReadSanitizer")
+	level.Debug(log).Log(
+		"msg", "setting the step to 0 for remote read query",
+		"query", req.GetQuery(),
+	)
+	defer log.Finish()
 	clonedQuery, err := cloneRemoteReadQuery(query.query)
 	if err != nil {
 		return nil, err
