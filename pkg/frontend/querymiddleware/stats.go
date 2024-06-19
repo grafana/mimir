@@ -98,6 +98,9 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 	if details == nil {
 		return
 	}
+	// This middleware may run multiple times for the same request in case of a remote read request
+	// (once for each query in the request). In such case, we compute the start/end time as the min/max
+	// timestamp we see across all queries in the request.
 	if details.Start.IsZero() || details.Start.After(time.UnixMilli(req.GetStart())) {
 		details.Start = time.UnixMilli(req.GetStart())
 	}
@@ -117,6 +120,9 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 		return
 	}
 	minT, maxT := promql.FindMinMaxTime(evalStmt)
+	// This middleware may run multiple times for the same request in case of a remote read request
+	// (once for each query in the request). In such case, we compute the minT/maxT time as the min/max
+	// timestamp we see across all queries in the request.
 	if minT != 0 && (details.MinT.IsZero() || details.MinT.After(time.UnixMilli(minT))) {
 		details.MinT = time.UnixMilli(minT)
 	}

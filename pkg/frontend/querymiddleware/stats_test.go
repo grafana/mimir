@@ -126,7 +126,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				MaxT:         start.Truncate(time.Millisecond),
 			},
 		},
-		"remote read queries without hint": {
+		"remote read queries without hints": {
 			args: args{
 				req: []MetricsQueryRequest{
 					mustSucceed(remoteReadToMetricsQueryRequest(
@@ -140,6 +140,63 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 									Name:  "app",
 									Value: "test",
 								},
+							},
+						},
+					)),
+					mustSucceed(remoteReadToMetricsQueryRequest(
+						"/read",
+						&prompb.Query{
+							StartTimestampMs: start.Truncate(time.Millisecond).Add(-30 * time.Minute).UnixMilli(),
+							EndTimestampMs:   end.Truncate(time.Millisecond).UnixMilli(),
+							Matchers: []*prompb.LabelMatcher{
+								{
+									Type:  prompb.LabelMatcher_RE,
+									Name:  "app",
+									Value: "test",
+								},
+							},
+						},
+					)),
+				},
+			},
+			expectedMetrics: strings.NewReader(`
+			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+			cortex_query_frontend_non_step_aligned_queries_total 0
+			# HELP cortex_query_frontend_regexp_matcher_count Total number of regexp matchers
+			# TYPE cortex_query_frontend_regexp_matcher_count counter
+			cortex_query_frontend_regexp_matcher_count 2
+			# HELP cortex_query_frontend_regexp_matcher_optimized_count Total number of optimized regexp matchers
+			# TYPE cortex_query_frontend_regexp_matcher_optimized_count counter
+			cortex_query_frontend_regexp_matcher_optimized_count 2
+			`),
+			expectedQueryDetails: QueryDetails{
+				QuerierStats: &querier_stats.Stats{},
+				Start:        start.Truncate(time.Millisecond).Add(-30 * time.Minute),
+				End:          end.Truncate(time.Millisecond).Add(10 * time.Minute),
+				MinT:         start.Truncate(time.Millisecond).Add(-30 * time.Minute),
+				MaxT:         end.Truncate(time.Millisecond).Add(10 * time.Minute),
+			},
+		},
+		"remote read queries with hints": {
+			args: args{
+				req: []MetricsQueryRequest{
+					mustSucceed(remoteReadToMetricsQueryRequest(
+						"/read",
+						&prompb.Query{
+							StartTimestampMs: start.Truncate(time.Millisecond).UnixMilli(),
+							EndTimestampMs:   end.Truncate(time.Millisecond).Add(10 * time.Minute).UnixMilli(),
+							Matchers: []*prompb.LabelMatcher{
+								{
+									Type:  prompb.LabelMatcher_RE,
+									Name:  "app",
+									Value: "test",
+								},
+							},
+							Hints: &prompb.ReadHints{
+								// These are ignored in queries, we expect no effect on statistics.
+								StartMs: 42,
+								EndMs:   2 * 42,
 							},
 						},
 					)),

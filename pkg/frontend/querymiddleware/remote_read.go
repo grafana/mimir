@@ -250,10 +250,14 @@ func (r *remoteReadQueryRequest) GetID() int64 {
 }
 
 func (r *remoteReadQueryRequest) GetMaxT() int64 {
+	// MaxT hint is ignored when the remote read query is executed.
+	// Therefore we return the end time.
 	return r.GetEnd()
 }
 
 func (r *remoteReadQueryRequest) GetMinT() int64 {
+	// MinT hint is ignored when the remote read query is executed.
+	// Therefore we return the start time.
 	return r.GetStart()
 }
 

@@ -198,12 +198,14 @@ func newQuery(ctx context.Context, r MetricsQueryRequest, engine *promql.Engine,
 		return engine.NewRangeQuery(
 			ctx,
 			queryable,
-			// We are setting the lookback period to 1 minute and add that amount to
-			// the start time so that query stats are accurate - remote read does not
-			// apply lookback period.
-			promql.NewPrometheusQueryOpts(false, 1*time.Minute),
+			// Lookback period is not applied to remote read queries in the same way
+			// as regular queries. However we cannot set a zero lookback period
+			// because the engine will just use the default 5 minutes instead. So we
+			// set a lookback period of 1ns and add that amount to the start time so
+			// the engine will calculate an effective 0 lookback period.
+			promql.NewPrometheusQueryOpts(false, 1*time.Nanosecond),
 			r.GetQuery(),
-			util.TimeFromMillis(r.GetStart()).Add(1*time.Minute),
+			util.TimeFromMillis(r.GetStart()).Add(1*time.Nanosecond),
 			util.TimeFromMillis(r.GetEnd()),
 			time.Duration(r.GetStep())*time.Millisecond,
 		)
