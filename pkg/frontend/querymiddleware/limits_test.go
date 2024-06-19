@@ -200,19 +200,19 @@ func TestLimitsMiddleware_MaxQueryLookback_InstantQuery(t *testing.T) {
 		expectedSkipped       bool
 		expectedTime          time.Time
 	}{
-		"should not manipulate request time if maxQueryLookback and blocksRetentionPeriod are both disabled": {
+		"should allow executing a query if maxQueryLookback and blocksRetentionPeriod are both disabled": {
 			maxQueryLookback:      0,
 			blocksRetentionPeriod: 0,
 			reqTime:               time.Unix(0, 0),
 			expectedTime:          time.Unix(0, 0),
 		},
-		"should not manipulate request time for a query within maxQueryLookback and blocksRetentionPeriod": {
+		"should allow executing a query with time within maxQueryLookback and blocksRetentionPeriod": {
 			maxQueryLookback:      thirtyDays,
 			blocksRetentionPeriod: thirtyDays,
 			reqTime:               now.Add(-time.Hour),
 			expectedTime:          now.Add(-time.Hour),
 		},
-		"should not manipulate request time for a query close to maxQueryLookback and blocksRetentionPeriod": {
+		"should allow executing a query with time close to maxQueryLookback and blocksRetentionPeriod": {
 			maxQueryLookback:      thirtyDays,
 			blocksRetentionPeriod: thirtyDays,
 			reqTime:               now.Add(-thirtyDays).Add(time.Hour),
