@@ -558,11 +558,11 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	}{
 		"instant query": {
 			instances:  queryInstantMiddlewares,
-			exceptions: []string{"splitAndCacheMiddleware", "stepAlignMiddleware"},
+			exceptions: []string{"remoteReadSanitizerMiddleware", "splitAndCacheMiddleware", "stepAlignMiddleware"},
 		},
 		"range query": {
 			instances:  queryRangeMiddlewares,
-			exceptions: []string{"splitInstantQueryByIntervalMiddleware"},
+			exceptions: []string{"remoteReadSanitizerMiddleware", "splitInstantQueryByIntervalMiddleware"},
 		},
 		"remote read": {
 			instances: remoteReadMiddlewares,
