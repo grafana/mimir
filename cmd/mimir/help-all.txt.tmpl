@@ -2515,6 +2515,8 @@ Usage of ./cmd/mimir/mimir:
     	Max time to tolerate outage for restoring "for" state of alert. (default 1h0m0s)
   -ruler.max-rule-groups-per-tenant int
     	Maximum number of rule groups per-tenant. 0 to disable. (default 70)
+  -ruler.max-rule-groups-per-tenant-by-namespace value
+    	Maximum number of rule groups per tenant by namespace. Value is a map, where each key is the namespace and value is the number of rule groups allowed in the namespace (int64). On the command line, this map is given in a JSON format. The number of rule groups specified has the same meaning as -ruler.max-rule-groups-per-tenant, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rule-groups-per-tenant. (default {})
   -ruler.max-rules-per-rule-group int
     	Maximum number of rules per rule group per-tenant. 0 to disable. (default 20)
   -ruler.max-rules-per-rule-group-by-namespace value
