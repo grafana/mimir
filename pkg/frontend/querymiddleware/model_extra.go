@@ -210,7 +210,7 @@ func (r *PrometheusRangeQueryRequest) WithExpr(queryExpr parser.Expr) (MetricsQu
 
 // WithTotalQueriesHint clones the current `PrometheusRangeQueryRequest` with an
 // added Hint value for TotalQueries.
-func (r *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
+func (r *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(r.headers)
 	if newRequest.hints == nil {
@@ -219,12 +219,12 @@ func (r *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) M
 		*newRequest.hints = *(r.hints)
 		newRequest.hints.TotalQueries = totalQueries
 	}
-	return &newRequest
+	return &newRequest, nil
 }
 
 // WithEstimatedSeriesCountHint clones the current `PrometheusRangeQueryRequest`
 // with an added Hint value for EstimatedCardinality.
-func (r *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
+func (r *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(r.headers)
 	if newRequest.hints == nil {
@@ -235,7 +235,7 @@ func (r *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64)
 		*newRequest.hints = *(r.hints)
 		newRequest.hints.CardinalityEstimate = &EstimatedSeriesCount{count}
 	}
-	return &newRequest
+	return &newRequest, nil
 }
 
 // AddSpanTags writes the current `PrometheusRangeQueryRequest` parameters to the specified span tags
@@ -413,7 +413,7 @@ func (r *PrometheusInstantQueryRequest) WithExpr(queryExpr parser.Expr) (Metrics
 	return &newRequest, nil
 }
 
-func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32) MetricsQueryRequest {
+func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(r.headers)
 	if newRequest.hints == nil {
@@ -422,10 +422,10 @@ func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32)
 		*newRequest.hints = *(r.hints)
 		newRequest.hints.TotalQueries = totalQueries
 	}
-	return &newRequest
+	return &newRequest, nil
 }
 
-func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint64) MetricsQueryRequest {
+func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint64) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(r.headers)
 	if newRequest.hints == nil {
@@ -436,7 +436,7 @@ func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint6
 		*newRequest.hints = *(r.hints)
 		newRequest.hints.CardinalityEstimate = &EstimatedSeriesCount{count}
 	}
-	return &newRequest
+	return &newRequest, nil
 }
 
 // AddSpanTags writes query information about the current `PrometheusInstantQueryRequest`

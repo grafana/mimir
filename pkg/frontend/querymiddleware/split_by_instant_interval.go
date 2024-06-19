@@ -175,8 +175,11 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 	if err != nil {
 		return nil, err
 	}
-	req = newRequest.WithTotalQueriesHint(int32(mapperStats.GetSplitQueries()))
-	shardedQueryable := newShardedQueryable(req, s.next)
+	newRequest, err = newRequest.WithTotalQueriesHint(int32(mapperStats.GetSplitQueries()))
+	if err != nil {
+		return nil, err
+	}
+	shardedQueryable := newShardedQueryable(newRequest, s.next)
 
 	qry, err := newQuery(ctx, req, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
 	if err != nil {

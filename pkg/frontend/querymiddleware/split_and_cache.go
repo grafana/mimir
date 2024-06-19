@@ -542,7 +542,11 @@ func (s *splitRequests) prepareDownstreamRequests() ([]MetricsQueryRequest, erro
 			if err != nil {
 				return nil, err
 			}
-			splitReq.downstreamRequests[i] = newRequest.WithTotalQueriesHint(int32(numDownstreamRequests))
+			newRequest, err = newRequest.WithTotalQueriesHint(int32(numDownstreamRequests))
+			if err != nil {
+				return nil, err
+			}
+			splitReq.downstreamRequests[i] = newRequest
 			nextReqID++
 		}
 

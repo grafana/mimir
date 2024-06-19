@@ -130,9 +130,9 @@ type MetricsQueryRequest interface {
 	// Implementations must ensure minT and maxT are recalculated when the query changes.
 	WithExpr(parser.Expr) (MetricsQueryRequest, error)
 	// WithTotalQueriesHint adds the number of total queries to this request's Hints.
-	WithTotalQueriesHint(int32) MetricsQueryRequest
+	WithTotalQueriesHint(int32) (MetricsQueryRequest, error)
 	// WithEstimatedSeriesCountHint WithEstimatedCardinalityHint adds a cardinality estimate to this request's Hints.
-	WithEstimatedSeriesCountHint(uint64) MetricsQueryRequest
+	WithEstimatedSeriesCountHint(uint64) (MetricsQueryRequest, error)
 	// AddSpanTags writes information about this request to an OpenTracing span
 	AddSpanTags(opentracing.Span)
 }
