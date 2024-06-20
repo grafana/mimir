@@ -3756,7 +3756,7 @@
           "kind": "field",
           "name": "max_query_lookback",
           "required": false,
-          "desc": "Limit how long back data (series and metadata) can be queried, up until \u003clookback\u003e duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.",
+          "desc": "Limit how long back data (series and metadata) can be queried, up until \u003clookback\u003e duration ago. This limit is enforced in the query-frontend, querier and ruler for instant, range, series metadata and remote read queries. For label name and value queries the limit is enforced in the querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "querier.max-query-lookback",
