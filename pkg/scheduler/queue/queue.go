@@ -443,8 +443,14 @@ func (q *RequestQueue) WaitForRequestForQuerier(ctx context.Context, last Tenant
 	select {
 	case q.waitingQuerierConns <- waitingConn:
 		select {
-		case reqForQuerier := <-waitingConn.recvChan:
+		case reqForQuerier, ok := <-waitingConn.recvChan:
+			if !ok {
+				// Channel was closed without having a value written to it. This can happen if
+				// the write context was canceled.
+				return nil, last, ErrStopped
+			}
 			return reqForQuerier.req, reqForQuerier.lastTenantIndex, reqForQuerier.err
+
 		case <-ctx.Done():
 			return nil, last, ctx.Err()
 		}
