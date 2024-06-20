@@ -791,7 +791,7 @@ func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 			continue
 		}
 		for _, stream := range resp.Data.Result {
-			metric := mimirpb.FromLabelAdaptersToLabels(stream.Labels).String()
+			metric := mimirpb.FromLabelAdaptersToKeyString(stream.Labels)
 			existing, ok := output[metric]
 			if !ok {
 				existing = &SampleStream{
