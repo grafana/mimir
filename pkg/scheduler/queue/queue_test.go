@@ -622,8 +622,8 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 	require.EqualError(t, err, "querier has informed the scheduler it is shutting down")
 }
 
-func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnErrorIfChanClosed(t *testing.T) {
-	// This tests a rare (~5 in 100K test runs) race where a closed querier
+func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnErrorIfCtxCanceled(t *testing.T) {
+	// This tests a rare (~5 in 100K test runs) race where a canceled querier
 	// context results in WaitForRequestForQuerier returning no error yet a nil
 	// request.
 
@@ -660,9 +660,8 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnErrorIfChanClosed(t *
 	cctx, cancel := context.WithCancel(ctx)
 	cancel() // Cancel it right away.
 	r, _, qerr := queue.WaitForRequestForQuerier(cctx, FirstTenant(), "querier-1")
-	if qerr == nil && r == nil {
-		t.Error("queue returned nil request with no error")
-	}
+	require.Error(t, qerr)
+	require.Nil(t, r)
 }
 
 func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSendToQuerier(t *testing.T) {
