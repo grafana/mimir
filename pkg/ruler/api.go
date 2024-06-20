@@ -321,7 +321,12 @@ var (
 	ErrBadRuleGroup = errors.New("unable to decode rule group")
 )
 
-func marshalAndSend(output interface{}, w http.ResponseWriter, logger log.Logger) {
+type HTTPHeader struct {
+	Key   string
+	Value string
+}
+
+func marshalAndSend(output interface{}, w http.ResponseWriter, logger log.Logger, headers ...HTTPHeader) {
 	d, err := yaml.Marshal(&output)
 	if err != nil {
 		level.Error(logger).Log("msg", "error marshalling yaml rule groups", "err", err)
@@ -330,13 +335,19 @@ func marshalAndSend(output interface{}, w http.ResponseWriter, logger log.Logger
 	}
 
 	w.Header().Set("Content-Type", "application/yaml")
+	if len(headers) > 0 {
+		for _, v := range headers {
+			w.Header().Set(v.Key, v.Value)
+		}
+	}
+
 	if _, err := w.Write(d); err != nil {
 		level.Error(logger).Log("msg", "error writing yaml response", "err", err)
 		return
 	}
 }
 
-func respondAccepted(w http.ResponseWriter, logger log.Logger) {
+func respondAccepted(w http.ResponseWriter, logger log.Logger, headers ...HTTPHeader) {
 	b, err := json.Marshal(&response{
 		Status: "success",
 	})
@@ -349,6 +360,12 @@ func respondAccepted(w http.ResponseWriter, logger log.Logger) {
 
 	// Return a status accepted because the rule has been stored and queued for polling, but is not currently active
 	w.WriteHeader(http.StatusAccepted)
+	if len(headers) > 0 {
+		for _, v := range headers {
+			w.Header().Set(v.Key, v.Value)
+		}
+	}
+
 	if n, err := w.Write(b); err != nil {
 		level.Error(logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
 	}
@@ -451,14 +468,19 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 	}
 
 	numRules := 0
+	ProtectedNamespaces := map[string]struct{}{}
 	for _, rg := range rgs {
 		numRules += len(rg.Rules)
+
+		if a.ruler.IsNamespaceProtected(userID, rg.Namespace) {
+			ProtectedNamespaces[rg.Namespace] = struct{}{}
+		}
 	}
 
 	level.Debug(logger).Log("msg", "retrieved rules for rule groups from rule store", "userID", userID, "num_groups", len(rgs), "num_rules", numRules)
 
 	formatted := rgs.Formatted()
-	marshalAndSend(formatted, w, logger)
+	marshalAndSend(formatted, w, logger, ProtectedNamespacesHeaderFromSet(ProtectedNamespaces))
 }
 
 func (a *API) GetRuleGroup(w http.ResponseWriter, req *http.Request) {
@@ -481,8 +503,13 @@ func (a *API) GetRuleGroup(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	var header HTTPHeader
+	if a.ruler.IsNamespaceProtected(userID, namespace) {
+		header = ProtectedNamespaceHeaderFromString(namespace)
+	}
+
 	formatted := rulespb.FromProto(rg)
-	marshalAndSend(formatted, w, logger)
+	marshalAndSend(formatted, w, logger, header)
 }
 
 func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
@@ -493,6 +520,14 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		respondServerError(logger, w, err.Error())
 		return
+	}
+
+	if a.ruler.IsNamespaceProtected(userID, namespace) {
+		if err = AllowProtectionOverride(req.Context(), namespace); err != nil {
+			level.Error(logger).Log("msg", "unable to create rule group under namespace", "err", err.Error())
+			http.Error(w, "namespace is protected, no modification allowed", http.StatusForbidden)
+			return
+		}
 	}
 
 	payload, err := io.ReadAll(req.Body)
@@ -571,6 +606,14 @@ func (a *API) DeleteNamespace(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if a.ruler.IsNamespaceProtected(userID, namespace) {
+		if err = AllowProtectionOverride(req.Context(), namespace); err != nil {
+			level.Error(logger).Log("msg", "unable to create rule group under namespace", "err", err.Error())
+			http.Error(w, "namespace is protected, no modification allowed", http.StatusForbidden)
+			return
+		}
+	}
+
 	err = a.store.DeleteNamespace(ctx, userID, namespace)
 	if err != nil {
 		if errors.Is(err, rulestore.ErrGroupNamespaceNotFound) {
@@ -594,6 +637,14 @@ func (a *API) DeleteRuleGroup(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		respondServerError(logger, w, err.Error())
 		return
+	}
+
+	if a.ruler.IsNamespaceProtected(userID, namespace) {
+		if err = AllowProtectionOverride(req.Context(), namespace); err != nil {
+			level.Error(logger).Log("msg", "unable to create rule group under namespace", "err", err.Error())
+			http.Error(w, "namespace is protected, no modification allowed", http.StatusForbidden)
+			return
+		}
 	}
 
 	err = a.store.DeleteRuleGroup(ctx, userID, namespace, groupName)
