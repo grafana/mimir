@@ -242,7 +242,7 @@ func seriesSetToQueryResult(s storage.SeriesSet) (*prompb.QueryResult, error) {
 		}
 
 		ts := &prompb.TimeSeries{
-			Labels:     labelsToLabelsProto(series.Labels(), nil),
+			Labels:     prom_remote.LabelsToLabelsProto(series.Labels(), nil),
 			Samples:    samples,
 			Histograms: histograms,
 		}
@@ -281,7 +281,7 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 	for ss.Next() {
 		series := ss.At()
 		iter = series.Iterator(iter)
-		lbls = labelsToLabelsProto(series.Labels(), nil)
+		lbls = prom_remote.LabelsToLabelsProto(series.Labels(), nil)
 
 		frameBytesRemaining := initializedFrameBytesRemaining(maxBytesInFrame, lbls)
 		isNext := iter.Next()
@@ -352,18 +352,4 @@ func queryFromRemoteReadQuery(query *prompb.Query) (from, to model.Time, matcher
 	from = model.Time(query.StartTimestampMs)
 	to = model.Time(query.EndTimestampMs)
 	return
-}
-
-// labelsToLabelsProto converts labels.Labels into a slice of prompb.Label. This function
-// has been copied by Prometheus and will be replaced with the Prometheus once
-// https://github.com/prometheus/prometheus/pull/14316 will be merged.
-func labelsToLabelsProto(lbls labels.Labels, buf []prompb.Label) []prompb.Label {
-	result := buf[:0]
-	lbls.Range(func(l labels.Label) {
-		result = append(result, prompb.Label{
-			Name:  l.Name,
-			Value: l.Value,
-		})
-	})
-	return result
 }
