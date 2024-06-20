@@ -3603,6 +3603,14 @@ func Test_Ingester_LabelValues(t *testing.T) {
 	})
 }
 
+func l2m(lbls labels.Labels) model.Metric {
+	m := make(model.Metric, 16)
+	lbls.Range(func(l labels.Label) {
+		m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+	})
+	return m
+}
+
 func Test_Ingester_Query(t *testing.T) {
 	series := []series{
 		{labels.FromStrings(labels.MetricName, "test_1", "status", "200", "route", "get_user"), 1, 100000},
@@ -3631,8 +3639,8 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
-				&model.SampleStream{Metric: util.LabelsToMetric(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: l2m(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: l2m(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by != matcher": {
@@ -3642,7 +3650,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.NOT_EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
+				&model.SampleStream{Metric: l2m(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
 			},
 		},
 		"should filter series by =~ matcher": {
@@ -3652,8 +3660,8 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".*_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
-				&model.SampleStream{Metric: util.LabelsToMetric(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: l2m(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: l2m(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by !~ matcher": {
@@ -3663,7 +3671,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.REGEX_NO_MATCH, Name: model.MetricNameLabel, Value: ".*_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
+				&model.SampleStream{Metric: l2m(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
 			},
 		},
 		"should filter series by multiple matchers": {
@@ -3674,7 +3682,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.REGEX_MATCH, Name: "status", Value: "5.."},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: l2m(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by matcher and time range": {
@@ -3684,7 +3692,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: l2m(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
 			},
 		},
 	}
