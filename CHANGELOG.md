@@ -189,7 +189,7 @@
 * [ENHANCEMENT] Clarify Compactor and its storage volume when configured under Kubernetes. #7675
 * [ENHANCEMENT] Add OTLP route to _Mimir routes by path_ runbooks section. #8074
 * [ENHANCEMENT] Document option server.log-source-ips-full. #8268
-* [ENHANCEMENT] Specify in which component the configuration flags `compactor.blocks-retention-period`, `querier.max-query-lookback`, `query-frontend.max-total-query-length`, `query-frontend.max-query-expression-size-bytes` are applied and that they are applied to remote read as well. #8433
+* [ENHANCEMENT] Specify in which component the configuration flags `-compactor.blocks-retention-period`, `-querier.max-query-lookback`, `-query-frontend.max-total-query-length`, `-query-frontend.max-query-expression-size-bytes` are applied and that they are applied to remote read as well. #8433
 
 ### Tools
 
