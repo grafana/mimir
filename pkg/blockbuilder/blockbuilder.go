@@ -36,6 +36,8 @@ type BlockBuilder struct {
 	kafkaClient *kgo.Client
 	bucket      objstore.Bucket
 
+	metrics blockBuilderMetrics
+
 	// for testing
 	tsdbBuilder func() builder
 
@@ -54,6 +56,7 @@ func New(
 		logger:   logger,
 		register: reg,
 		limits:   limits,
+		metrics:  newBlockBuilderMetrics(reg),
 	}
 
 	b.tsdbBuilder = func() builder {
@@ -133,6 +136,10 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 func (b *BlockBuilder) handlePartitionsAssigned(_ context.Context, _ *kgo.Client, assignment map[string][]int32) {
 	level.Info(b.logger).Log("msg", "partition assigned", "assignment", fmt.Sprintf("%+v", assignment))
 
+	for topic, parts := range assignment {
+		b.metrics.assignedPartitions.WithLabelValues(topic).Set(float64(len(parts)))
+	}
+
 	// Pause fetching for all assigned partitions. We manage the order and the pace of the consumption ourself.
 	// TODO(codesome): how does this behave when there is a block building cycle in progress? Should we not pause the
 	// ones being consumed at the moment by this BB?
@@ -143,8 +150,6 @@ func (b *BlockBuilder) handlePartitionsAssigned(_ context.Context, _ *kgo.Client
 	b.assignmentMu.Unlock()
 }
 
-// TODO(codesome): question: is handlePartitionsAssigned also called by kafka client when partitions are revoked?
-// TODO(codesome): how does this behave when there is a block building cycle in progress?
 func (b *BlockBuilder) handlePartitionsLost(_ context.Context, _ *kgo.Client, lostAssignment map[string][]int32) {
 	level.Info(b.logger).Log("msg", "partition lost", "lost", fmt.Sprintf("%+v", lostAssignment))
 
@@ -212,6 +217,7 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 		case cycleEnd := <-time.After(waitTime):
 			err := b.NextConsumeCycle(ctx, cycleEnd.Add(-time.Second))
 			if err != nil {
+				b.metrics.consumeCycleFailures.Inc()
 				level.Error(b.logger).Log("msg", "consume cycle failed", "cycle_end", cycleEnd, "err", err)
 			}
 
@@ -257,6 +263,10 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 		return fmt.Errorf("no partitions assigned in %+v, topic %s", assignment, b.cfg.Kafka.Topic)
 	}
 
+	defer func(t time.Time) {
+		b.metrics.consumeCycleDuration.Observe(time.Since(t).Seconds())
+	}(time.Now())
+
 	kadmClient := kadm.NewClient(b.kafkaClient)
 
 	lags, err := kadmClient.Lag(ctx, b.cfg.Kafka.ConsumerGroup)
@@ -301,6 +311,8 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 			level.Warn(b.logger).Log("msg", "error unmarshalling commit metadata", "err", err, "part", part, "offset", offset.At, "metadata", offset.Metadata)
 		}
 
+		b.metrics.consumerLag.WithLabelValues(pl.Topic, fmt.Sprintf("%d", pl.Partition)).Set(float64(pl.Lag))
+
 		parts[part] = partitionLag{
 			Partition: part,
 			Lag:       pl.Lag,
@@ -317,8 +329,7 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 	}
 
 	// TODO(v): rebalancing can happen between the calls to consumePartition; if that happens, the instance may loose
-	// the ownership of some of its partitions
-	// TODO(v): test for this case
+	// the ownership of some of its partitions. Add a test for this case.
 
 	for _, pl := range parts {
 		// TODO(codesome): when we deploy it first, we will not have any kafka commit and we will
@@ -343,7 +354,6 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 
 			// Make sure to unblock rebalance of the group after the partition was consumed AND after we (potentially) committed
 			// this partition's offset to the group.
-			// TODO(v): test for this case
 			b.kafkaClient.AllowRebalance()
 			continue
 		}
@@ -367,7 +377,6 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 
 		// Make sure to unblock rebalance of the group after the partition was consumed AND after we (potentially) committed
 		// this partition's offset to the group.
-		// TODO(v): test for this case
 		b.kafkaClient.AllowRebalance()
 	}
 
@@ -399,7 +408,9 @@ func (b *BlockBuilder) consumePartition(
 	level.Info(b.logger).Log("msg", "consume partition", "part", part, "lag", lag, "cycle_end", cycleEnd)
 
 	defer func(t time.Time) {
-		level.Info(b.logger).Log("msg", "done consuming partition", "part", part, "dur", time.Since(t))
+		dur := time.Since(t)
+		b.metrics.processPartitionDuration.Observe(dur.Seconds())
+		level.Info(b.logger).Log("msg", "done consuming partition", "part", part, "dur", dur)
 	}(time.Now())
 
 	builder := b.tsdbBuilder()
@@ -431,10 +442,14 @@ func (b *BlockBuilder) consumePartition(
 		fetches.EachError(func(_ string, part int32, err error) {
 			if !errors.Is(err, context.DeadlineExceeded) {
 				level.Error(b.logger).Log("msg", "failed to fetch records", "part", part, "err", err)
+				b.metrics.fetchErrors.Inc()
 			}
 		})
 
-		if fetches.Empty() && lag <= 0 {
+		numRecs := fetches.NumRecords()
+		b.metrics.fetchRecordsTotal.Add(float64(numRecs))
+
+		if numRecs == 0 && lag <= 0 {
 			level.Warn(b.logger).Log("msg", "got empty fetches from broker", "part", part)
 			break
 		}
@@ -461,10 +476,9 @@ func (b *BlockBuilder) consumePartition(
 			recProcessedBefore := rec.Timestamp.UnixMilli() <= seenTillTs
 			allSamplesProcessed, err := builder.process(ctx, rec, lastBlockMax, blockMax, recProcessedBefore)
 			if err != nil {
+				// TODO(codesome): do we just ignore this? What if it was Mimir's issue and this leading to data loss?
 				level.Error(b.logger).Log("msg", "failed to process record", "part", part, "key", string(rec.Key), "err", err)
 				continue
-				// TODO(codesome): do we just ignore this? What if it was Mimir's issue and this leading to data loss?
-				// TODO(codesome): add metric
 			}
 			if !allSamplesProcessed && commitRec == nil {
 				// If block builder restarts, it will start consuming from the record after this from kafka.
@@ -477,7 +491,6 @@ func (b *BlockBuilder) consumePartition(
 	}
 
 	if err := builder.compactAndUpload(ctx, b.blockUploaderForUser); err != nil {
-		// TODO(codesome): add metric
 		return lag, seenTillTs, lastBlockMax, err
 	}
 
