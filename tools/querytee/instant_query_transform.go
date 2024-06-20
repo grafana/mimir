@@ -17,7 +17,7 @@ var timeNow = time.Now // Interception point to allow tests to set the current t
 // AddMissingTimeParam adds a 'time' parameter to any query request that does not have one.
 //
 // Instant queries without a 'time' parameter use the current time on the executing backend.
-// However, this can vary between backends for the same request, which can comparison failures.
+// However, this can vary between backends for the same request, which can cause comparison failures.
 //
 // So, to make comparisons more reliable, we add the 'time' parameter in the proxy to ensure all
 // backends use the same value.
