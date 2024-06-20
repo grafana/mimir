@@ -4775,6 +4775,11 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # CLI flag: -<prefix>.s3.bucket-lookup-type
 [bucket_lookup_type: <string> | default = "auto"]
 
+# (experimental) When enabled, direct all AWS S3 requests to the dual-stack
+# IPv4/IPv6 endpoint for the configured region.
+# CLI flag: -<prefix>.s3.dualstack-enabled
+[dualstack_enabled: <boolean> | default = true]
+
 # (experimental) The S3 storage class to use, not set by default. Details can be
 # found at https://aws.amazon.com/s3/storage-classes/. Supported values are:
 # STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA,
