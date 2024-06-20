@@ -162,7 +162,7 @@ std.manifestYamlDoc({
     // Only publish HTTP port, but not gRPC one.
     ports: ['%d:8080' % options.publishedHttpPort],
     depends_on: options.dependsOn,
-    volumes: ['./config:/mimir/config', './templates:/mimir/templates', './activity:/activity'] + options.extraVolumes,
+    volumes: ['./config:/mimir/config', './activity:/activity'] + options.extraVolumes,
   },
 
   // docker-compose YAML output version.
