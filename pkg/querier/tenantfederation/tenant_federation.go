@@ -22,7 +22,7 @@ type Config struct {
 	// Enabled switches on support for multi tenant query federation
 	Enabled       bool `yaml:"enabled"`
 	MaxConcurrent int  `yaml:"max_concurrent" category:"experimental"`
-	MaxTenants    int  `yaml:"max_tenants" category:"experimental"`
+	MaxTenants    int  `yaml:"max_tenants"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {

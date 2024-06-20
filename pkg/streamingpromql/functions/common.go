@@ -21,7 +21,7 @@ type InstantVectorFunction func(seriesData types.InstantVectorSeriesData, pool *
 
 // floatTransformationFunc is not needed elsewhere, so it is not exported yet
 func floatTransformationFunc(transform func(f float64) float64) InstantVectorFunction {
-	return func(seriesData types.InstantVectorSeriesData, pool *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
+	return func(seriesData types.InstantVectorSeriesData, _ *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
 		for i := range seriesData.Floats {
 			seriesData.Floats[i].F = transform(seriesData.Floats[i].F)
 		}

@@ -77,7 +77,7 @@ func extractPrometheusStrings(t *testing.T, constantType string) []string {
 // FloatHistogram types converted into each other with unsafe.Pointer
 // are compatible
 func TestFloatHistogramProtobufTypeRemainsInSyncWithPrometheus(t *testing.T) {
-	test.RequireSameShape(t, histogram.FloatHistogram{}, FloatHistogram{}, false)
+	test.RequireSameShape(t, histogram.FloatHistogram{}, FloatHistogram{}, false, false)
 }
 
 // This example is from an investigation into a bug in the ruler. Keeping it here for future reference.

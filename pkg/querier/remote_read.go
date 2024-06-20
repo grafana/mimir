@@ -15,14 +15,15 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	prom_remote "github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 
-	"github.com/grafana/mimir/pkg/ingester/client"
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -49,7 +50,7 @@ func RemoteReadHandler(q storage.SampleAndChunkQueryable, logger log.Logger) htt
 func remoteReadHandler(q storage.SampleAndChunkQueryable, maxBytesInFrame int, lg log.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		var req client.ReadRequest
+		var req prompb.ReadRequest
 		logger := util_log.WithContext(r.Context(), lg)
 		if _, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), MaxRemoteReadQuerySize, nil, &req, util.RawSnappy); err != nil {
 			level.Error(logger).Log("msg", "failed to parse proto", "err", err.Error())
@@ -64,7 +65,7 @@ func remoteReadHandler(q storage.SampleAndChunkQueryable, maxBytesInFrame int, l
 		}
 
 		switch respType {
-		case client.STREAMED_XOR_CHUNKS:
+		case prompb.ReadRequest_STREAMED_XOR_CHUNKS:
 			remoteReadStreamedXORChunks(ctx, q, w, &req, maxBytesInFrame, logger)
 		default:
 			remoteReadSamples(ctx, q, w, &req, logger)
@@ -76,18 +77,18 @@ func remoteReadSamples(
 	ctx context.Context,
 	q storage.Queryable,
 	w http.ResponseWriter,
-	req *client.ReadRequest,
+	req *prompb.ReadRequest,
 	logger log.Logger,
 ) {
-	resp := client.ReadResponse{
-		Results: make([]*client.QueryResponse, len(req.Queries)),
+	resp := prompb.ReadResponse{
+		Results: make([]*prompb.QueryResult, len(req.Queries)),
 	}
 	// Fetch samples for all queries in parallel.
 	errCh := make(chan error)
 
 	for i, qr := range req.Queries {
-		go func(i int, qr *client.QueryRequest) {
-			from, to, matchers, err := client.FromQueryRequest(qr)
+		go func(i int, qr *prompb.Query) {
+			from, to, matchers, err := queryFromRemoteReadQuery(qr)
 			if err != nil {
 				errCh <- err
 				return
@@ -104,7 +105,7 @@ func remoteReadSamples(
 				End:   int64(to),
 			}
 			seriesSet := querier.Select(ctx, false, params, matchers...)
-			resp.Results[i], err = seriesSetToQueryResponse(seriesSet)
+			resp.Results[i], err = seriesSetToQueryResult(seriesSet)
 			errCh <- err
 		}(i, qr)
 	}
@@ -136,7 +137,7 @@ func remoteReadStreamedXORChunks(
 	ctx context.Context,
 	q storage.ChunkQueryable,
 	w http.ResponseWriter,
-	req *client.ReadRequest,
+	req *prompb.ReadRequest,
 	maxBytesInFrame int,
 	logger log.Logger,
 ) {
@@ -178,13 +179,13 @@ func remoteReadErrorStatusCode(err error) int {
 func processReadStreamedQueryRequest(
 	ctx context.Context,
 	idx int,
-	queryReq *client.QueryRequest,
+	queryReq *prompb.Query,
 	q storage.ChunkQueryable,
 	w http.ResponseWriter,
 	f http.Flusher,
 	maxBytesInFrame int,
 ) error {
-	from, to, matchers, err := client.FromQueryRequest(queryReq)
+	from, to, matchers, err := queryFromRemoteReadQuery(queryReq)
 	if err != nil {
 		return err
 	}
@@ -208,29 +209,29 @@ func processReadStreamedQueryRequest(
 	)
 }
 
-func seriesSetToQueryResponse(s storage.SeriesSet) (*client.QueryResponse, error) {
-	result := &client.QueryResponse{}
+func seriesSetToQueryResult(s storage.SeriesSet) (*prompb.QueryResult, error) {
+	result := &prompb.QueryResult{}
 
 	var it chunkenc.Iterator
 	for s.Next() {
 		series := s.At()
-		samples := []mimirpb.Sample{}
-		histograms := []mimirpb.Histogram{}
+		samples := []prompb.Sample{}
+		histograms := []prompb.Histogram{}
 		it = series.Iterator(it)
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 			switch valType {
 			case chunkenc.ValFloat:
 				t, v := it.At()
-				samples = append(samples, mimirpb.Sample{
-					TimestampMs: t,
-					Value:       v,
+				samples = append(samples, prompb.Sample{
+					Timestamp: t,
+					Value:     v,
 				})
 			case chunkenc.ValHistogram:
 				t, h := it.AtHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
-				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(t, h))
+				histograms = append(histograms, prom_remote.HistogramToHistogramProto(t, h))
 			case chunkenc.ValFloatHistogram:
 				t, h := it.AtFloatHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
-				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(t, h))
+				histograms = append(histograms, prom_remote.FloatHistogramToHistogramProto(t, h))
 			default:
 				return nil, fmt.Errorf("unsupported value type: %v", valType)
 			}
@@ -240,8 +241,8 @@ func seriesSetToQueryResponse(s storage.SeriesSet) (*client.QueryResponse, error
 			return nil, err
 		}
 
-		ts := mimirpb.TimeSeries{
-			Labels:     mimirpb.FromLabelsToLabelAdapters(series.Labels()),
+		ts := &prompb.TimeSeries{
+			Labels:     prom_remote.LabelsToLabelsProto(series.Labels(), nil),
 			Samples:    samples,
 			Histograms: histograms,
 		}
@@ -252,14 +253,14 @@ func seriesSetToQueryResponse(s storage.SeriesSet) (*client.QueryResponse, error
 	return result, s.Err()
 }
 
-func negotiateResponseType(accepted []client.ReadRequest_ResponseType) (client.ReadRequest_ResponseType, error) {
+func negotiateResponseType(accepted []prompb.ReadRequest_ResponseType) (prompb.ReadRequest_ResponseType, error) {
 	if len(accepted) == 0 {
-		return client.SAMPLES, nil
+		return prompb.ReadRequest_SAMPLES, nil
 	}
 
-	supported := map[client.ReadRequest_ResponseType]struct{}{
-		client.SAMPLES:             {},
-		client.STREAMED_XOR_CHUNKS: {},
+	supported := map[prompb.ReadRequest_ResponseType]struct{}{
+		prompb.ReadRequest_SAMPLES:             {},
+		prompb.ReadRequest_STREAMED_XOR_CHUNKS: {},
 	}
 
 	for _, resType := range accepted {
@@ -272,15 +273,15 @@ func negotiateResponseType(accepted []client.ReadRequest_ResponseType) (client.R
 
 func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, queryIndex, maxBytesInFrame int) error {
 	var (
-		chks []client.StreamChunk
-		lbls []mimirpb.LabelAdapter
+		chks []prompb.Chunk
+		lbls []prompb.Label
 	)
 
 	var iter chunks.Iterator
 	for ss.Next() {
 		series := ss.At()
 		iter = series.Iterator(iter)
-		lbls = mimirpb.FromLabelsToLabelAdapters(series.Labels())
+		lbls = prom_remote.LabelsToLabelsProto(series.Labels(), nil)
 
 		frameBytesRemaining := initializedFrameBytesRemaining(maxBytesInFrame, lbls)
 		isNext := iter.Next()
@@ -293,10 +294,10 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 			}
 
 			// Cut the chunk.
-			chks = append(chks, client.StreamChunk{
+			chks = append(chks, prompb.Chunk{
 				MinTimeMs: chk.MinTime,
 				MaxTimeMs: chk.MaxTime,
-				Type:      client.StreamChunk_Encoding(chk.Chunk.Encoding()),
+				Type:      prompb.Chunk_Encoding(chk.Chunk.Encoding()),
 				Data:      chk.Chunk.Bytes(),
 			})
 			frameBytesRemaining -= chks[len(chks)-1].Size()
@@ -307,8 +308,8 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 				continue
 			}
 
-			b, err := proto.Marshal(&client.StreamReadResponse{
-				ChunkedSeries: []*client.StreamChunkedSeries{
+			b, err := proto.Marshal(&prompb.ChunkedReadResponse{
+				ChunkedSeries: []*prompb.ChunkedSeries{
 					{
 						Labels: lbls,
 						Chunks: chks,
@@ -333,10 +334,22 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 	return ss.Err()
 }
 
-func initializedFrameBytesRemaining(maxBytesInFrame int, lbls []mimirpb.LabelAdapter) int {
+func initializedFrameBytesRemaining(maxBytesInFrame int, lbls []prompb.Label) int {
 	frameBytesLeft := maxBytesInFrame
 	for _, lbl := range lbls {
 		frameBytesLeft -= lbl.Size()
 	}
 	return frameBytesLeft
+}
+
+// queryFromRemoteReadQuery returns the queried time range and label matchers for the given remote
+// read request query.
+func queryFromRemoteReadQuery(query *prompb.Query) (from, to model.Time, matchers []*labels.Matcher, err error) {
+	matchers, err = prom_remote.FromLabelMatchers(query.Matchers)
+	if err != nil {
+		return
+	}
+	from = model.Time(query.StartTimestampMs)
+	to = model.Time(query.EndTimestampMs)
+	return
 }

@@ -330,7 +330,9 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 	assert.Equal(t, uint32(1), queryStats.LoadSplitQueries())
 
 	// Doing request with new end time should do one more query.
-	req = req.WithStartEnd(req.GetStart(), req.GetEnd()+step)
+	req, err = req.WithStartEnd(req.GetStart(), req.GetEnd()+step)
+	require.NoError(t, err)
+
 	_, err = rc.Do(ctx, req)
 	require.NoError(t, err)
 	require.Equal(t, 2, downstreamReqs)
@@ -558,7 +560,9 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 	assert.Equal(t, uint32(1), queryStats.LoadSplitQueries())
 
 	// New request with slightly different Start time will not reuse the cached result.
-	req = req.WithStartEnd(parseTimeRFC3339(t, "2021-10-15T10:00:05Z").Unix()*1000, parseTimeRFC3339(t, "2021-10-15T12:00:05Z").Unix()*1000)
+	req, err = req.WithStartEnd(parseTimeRFC3339(t, "2021-10-15T10:00:05Z").Unix()*1000, parseTimeRFC3339(t, "2021-10-15T12:00:05Z").Unix()*1000)
+	require.NoError(t, err)
+
 	resp, err = rc.Do(ctx, req)
 	require.NoError(t, err)
 	require.Equal(t, 2, downstreamReqs)
@@ -1315,9 +1319,9 @@ func TestSplitRequests_prepareDownstreamRequests(t *testing.T) {
 				{downstreamRequests: []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 3}}},
 			},
 			expected: []MetricsQueryRequest{
-				(&PrometheusRangeQueryRequest{start: 1}).WithID(1).WithTotalQueriesHint(3),
-				(&PrometheusRangeQueryRequest{start: 2}).WithID(2).WithTotalQueriesHint(3),
-				(&PrometheusRangeQueryRequest{start: 3}).WithID(3).WithTotalQueriesHint(3),
+				mustSucceed(mustSucceed((&PrometheusRangeQueryRequest{start: 1}).WithID(1)).WithTotalQueriesHint(3)),
+				mustSucceed(mustSucceed((&PrometheusRangeQueryRequest{start: 2}).WithID(2)).WithTotalQueriesHint(3)),
+				mustSucceed(mustSucceed((&PrometheusRangeQueryRequest{start: 3}).WithID(3)).WithTotalQueriesHint(3)),
 			},
 		},
 	}
@@ -1329,7 +1333,7 @@ func TestSplitRequests_prepareDownstreamRequests(t *testing.T) {
 				require.Empty(t, req.downstreamResponses)
 			}
 
-			assert.Equal(t, testData.expected, testData.input.prepareDownstreamRequests())
+			assert.Equal(t, testData.expected, mustSucceed(testData.input.prepareDownstreamRequests()))
 
 			// Ensure responses slices have been initialized.
 			for _, req := range testData.input {

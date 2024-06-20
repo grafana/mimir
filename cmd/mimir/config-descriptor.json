@@ -1860,7 +1860,7 @@
           "required": false,
           "desc": "Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "querier.prefer-streaming-chunks-from-store-gateways",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
@@ -1885,7 +1885,7 @@
           "fieldDefaultValue": 256,
           "fieldFlag": "querier.streaming-chunks-per-store-gateway-buffer-size",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -3756,7 +3756,7 @@
           "kind": "field",
           "name": "max_query_lookback",
           "required": false,
-          "desc": "Limit how long back data (series and metadata) can be queried, up until \u003clookback\u003e duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.",
+          "desc": "Limit how long back data (series and metadata) can be queried, up until \u003clookback\u003e duration ago. This limit is enforced in the query-frontend, querier and ruler for instant, range and remote read queries. For metadata queries like series, label names, label values queries the limit is enforced in the querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "querier.max-query-lookback",
@@ -3869,7 +3869,7 @@
           "kind": "field",
           "name": "max_total_query_length",
           "required": false,
-          "desc": "Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query.",
+          "desc": "Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received instant, range or remote read query.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.max-total-query-length",
@@ -3930,7 +3930,7 @@
           "kind": "field",
           "name": "max_query_expression_size_bytes",
           "required": false,
-          "desc": "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.",
+          "desc": "Max size of the raw query, in bytes. This limit is enforced by the query-frontend for instant, range and remote read queries. 0 to not apply a limit to the size of the query.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.max-query-expression-size-bytes",
@@ -4045,8 +4045,7 @@
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "ruler.recording-rules-evaluation-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
@@ -4056,8 +4055,7 @@
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "ruler.alerting-rules-evaluation-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
@@ -4069,6 +4067,28 @@
           "fieldFlag": "ruler.sync-rules-on-changes-enabled",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "ruler_max_rules_per_rule_group_by_namespace",
+          "required": false,
+          "desc": "Maximum number of rules per rule group by namespace. Value is a map, where each key is the namespace and value is the number of rules allowed in the namespace (int). On the command line, this map is given in a JSON format. The number of rules specified has the same meaning as -ruler.max-rules-per-rule-group, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rules-per-rule-group.",
+          "fieldValue": null,
+          "fieldDefaultValue": {},
+          "fieldFlag": "ruler.max-rules-per-rule-group-by-namespace",
+          "fieldType": "map of string to int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "ruler_max_rule_groups_per_tenant_by_namespace",
+          "required": false,
+          "desc": "Maximum number of rule groups per tenant by namespace. Value is a map, where each key is the namespace and value is the number of rule groups allowed in the namespace (int). On the command line, this map is given in a JSON format. The number of rule groups specified has the same meaning as -ruler.max-rule-groups-per-tenant, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rule-groups-per-tenant.",
+          "fieldValue": null,
+          "fieldDefaultValue": {},
+          "fieldFlag": "ruler.max-rule-groups-per-tenant-by-namespace",
+          "fieldType": "map of string to int",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -4084,7 +4104,7 @@
           "kind": "field",
           "name": "compactor_blocks_retention_period",
           "required": false,
-          "desc": "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period. 0 to disable.",
+          "desc": "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period by instant, range or remote read queries. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "compactor.blocks-retention-period",
@@ -5988,6 +6008,17 @@
         },
         {
           "kind": "field",
+          "name": "remote_read_limits_enabled",
+          "required": false,
+          "desc": "True to enable limits enforcement for remote read requests.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.remote-read-limits-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "query_result_response_format",
           "required": false,
           "desc": "Format to use when retrieving query results from queriers. Supported values: json, protobuf",
@@ -6126,6 +6157,17 @@
               "fieldFlag": "blocks-storage.s3.bucket-lookup-type",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "dualstack_enabled",
+              "required": false,
+              "desc": "When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "blocks-storage.s3.dualstack-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -10407,8 +10449,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "tenant-federation.max-tenants",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldType": "int"
         }
       ],
       "fieldValue": null,
@@ -12077,6 +12118,17 @@
               "fieldFlag": "ruler-storage.s3.bucket-lookup-type",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "dualstack_enabled",
+              "required": false,
+              "desc": "When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "ruler-storage.s3.dualstack-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -14206,6 +14258,17 @@
               "fieldFlag": "alertmanager-storage.s3.bucket-lookup-type",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "dualstack_enabled",
+              "required": false,
+              "desc": "When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "alertmanager-storage.s3.dualstack-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -16568,6 +16631,17 @@
                   "fieldFlag": "common.storage.s3.bucket-lookup-type",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "dualstack_enabled",
+                  "required": false,
+                  "desc": "When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": true,
+                  "fieldFlag": "common.storage.s3.dualstack-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",

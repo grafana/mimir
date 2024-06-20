@@ -5,6 +5,7 @@ package activeseries
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"strings"
 
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
@@ -41,6 +42,31 @@ func (c CustomTrackersConfig) Empty() bool {
 // String is also needed to implement flag.Value.
 func (c CustomTrackersConfig) String() string {
 	return c.string
+}
+
+// Equal compares two CustomTrackersConfig. This is needed to allow cmp.Equal to compare two CustomTrackersConfig.
+func (c CustomTrackersConfig) Equal(other CustomTrackersConfig) bool {
+	if c.string != other.string {
+		return false
+	}
+
+	if len(c.source) != len(other.source) {
+		return false
+	}
+
+	if len(c.config) != len(other.config) {
+		return false
+	}
+
+	if !reflect.DeepEqual(c.source, other.source) {
+		return false
+	}
+
+	if !reflect.DeepEqual(c.config, other.config) {
+		return false
+	}
+
+	return true
 }
 
 func customTrackersConfigString(cfg map[string]string) string {

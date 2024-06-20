@@ -1414,7 +1414,7 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 	if err == nil {
 		serviceOverloadErrorEnabled = d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
 	}
-	return toGRPCError(pushErr, serviceOverloadErrorEnabled)
+	return toErrorWithGRPCStatus(pushErr, serviceOverloadErrorEnabled)
 }
 
 // push takes a write request and distributes it to ingesters using the ring.

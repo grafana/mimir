@@ -308,7 +308,7 @@ func TestIsResponseCachable(t *testing.T) {
 		{
 			name: "does not contain the cacheControl header",
 			response: Response(&PrometheusResponse{
-				Headers: []*PrometheusResponseHeader{
+				Headers: []*PrometheusHeader{
 					{
 						Name:   "meaninglessheader",
 						Values: []string{},
@@ -320,7 +320,7 @@ func TestIsResponseCachable(t *testing.T) {
 		{
 			name: "does contain the cacheControl header which has the value",
 			response: Response(&PrometheusResponse{
-				Headers: []*PrometheusResponseHeader{
+				Headers: []*PrometheusHeader{
 					{
 						Name:   cacheControlHeader,
 						Values: []string{noStoreValue},
@@ -332,7 +332,7 @@ func TestIsResponseCachable(t *testing.T) {
 		{
 			name: "cacheControl header contains extra values but still good",
 			response: Response(&PrometheusResponse{
-				Headers: []*PrometheusResponseHeader{
+				Headers: []*PrometheusHeader{
 					{
 						Name:   cacheControlHeader,
 						Values: []string{"foo", noStoreValue},
@@ -349,14 +349,14 @@ func TestIsResponseCachable(t *testing.T) {
 		{
 			name: "nil headers",
 			response: Response(&PrometheusResponse{
-				Headers: []*PrometheusResponseHeader{nil},
+				Headers: []*PrometheusHeader{nil},
 			}),
 			expected: true,
 		},
 		{
 			name: "had cacheControl header but no values",
 			response: Response(&PrometheusResponse{
-				Headers: []*PrometheusResponseHeader{{Name: cacheControlHeader}},
+				Headers: []*PrometheusHeader{{Name: cacheControlHeader}},
 			}),
 			expected: true,
 		},
