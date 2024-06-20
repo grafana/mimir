@@ -7,7 +7,6 @@ import (
 	_ "embed"
 	"fmt"
 	"html/template"
-	"io"
 	"net"
 	"net/mail"
 	"strconv"
@@ -17,10 +16,8 @@ import (
 	gomail "gopkg.in/mail.v2"
 )
 
-var (
-	//go:embed templates/ng_alert_notification.html
-	defaultEmailTemplate string
-)
+//go:embed templates/ng_alert_notification.html
+var defaultEmailTemplate string
 
 type EmailSenderConfig struct {
 	AuthPassword  string
@@ -66,14 +63,12 @@ func NewEmailSenderFactory(cfg EmailSenderConfig) func(Metadata) (EmailSender, e
 // Message representats an email message.
 type Message struct {
 	To            []string
-	SingleEmail   bool
 	From          string
 	Subject       string
 	Body          string
-	Info          string
-	ReplyTo       []string
 	EmbeddedFiles []string
-	AttachedFiles []*SendEmailAttachedFile
+	ReplyTo       []string
+	SingleEmail   bool
 }
 
 // SendEmail implements the EmailSender interface.
@@ -113,13 +108,12 @@ func (s *defaultEmailSender) buildEmailMessage(cmd *SendEmailSettings) (*Message
 	addr := mail.Address{Name: s.cfg.FromName, Address: s.cfg.FromAddress}
 	return &Message{
 		To:            cmd.To,
-		SingleEmail:   cmd.SingleEmail,
 		From:          addr.String(),
 		Subject:       subject,
 		Body:          buffer.String(),
 		EmbeddedFiles: cmd.EmbeddedFiles,
-		AttachedFiles: cmd.AttachedFiles,
 		ReplyTo:       cmd.ReplyTo,
+		SingleEmail:   cmd.SingleEmail,
 	}, nil
 }
 
@@ -197,36 +191,24 @@ func (s *defaultEmailSender) buildEmail(msg *Message) *gomail.Message {
 	m.SetHeader("To", msg.To...)
 	m.SetHeader("Subject", msg.Subject)
 
-	setFiles(m, msg)
+	// Add embedded files.
+	for _, file := range msg.EmbeddedFiles {
+		m.Embed(file)
+	}
+
+	// Add reply-to addresses to the email message.
 	replyTo := make([]string, 0, len(msg.ReplyTo))
 	for _, address := range msg.ReplyTo {
 		replyTo = append(replyTo, m.FormatAddress(address, ""))
 	}
 	m.SetHeader("Reply-To", strings.Join(replyTo, ", "))
-	m.SetBody("text/html", msg.Body)
 
+	m.SetBody("text/html", msg.Body)
 	return m
 }
 
-// setFiles attaches files in various forms.
-func setFiles(
-	m *gomail.Message,
-	msg *Message,
-) {
-	for _, file := range msg.EmbeddedFiles {
-		m.Embed(file)
-	}
-
-	for _, file := range msg.AttachedFiles {
-		file := file
-		m.Attach(file.Name, gomail.SetCopyFunc(func(writer io.Writer) error {
-			_, err := writer.Write(file.Content)
-			return err
-		}))
-	}
-}
-
-// subjectTemplateFunc does the same thing has hiddenSubjectTemplateFunc, but in addition it executes and returns the subject template using the data represented in `.TemplateData` (data)
+// subjectTemplateFunc sets the subject template (value) on the map represented by `.Subject.` (obj) so that it can be compiled and executed later.
+// In addition, it executes and returns the subject template using the data represented in `.TemplateData` (data).
 // This results in the template being replaced by the subject string.
 func subjectTemplateFunc(obj map[string]any, data map[string]any, value string) string {
 	obj["value"] = value

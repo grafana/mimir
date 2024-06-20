@@ -577,7 +577,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/alerting v0.0.0-20240619163616-34ac496baa26 => ../alerting
+# github.com/grafana/alerting v0.0.0-20240620112544-8ddaa5e9e08f
 ## explicit; go 1.21
 github.com/grafana/alerting/cluster
 github.com/grafana/alerting/definition
@@ -1650,4 +1650,3 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240605141526-70d9d63f74fc
-# github.com/grafana/alerting => ../alerting
