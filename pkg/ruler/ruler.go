@@ -1157,15 +1157,15 @@ func (r *Ruler) getLocalRules(ctx context.Context, userID string, req RulesReque
 }
 
 // IsMaxRuleGroupsLimited returns true if there is a limit set for the max
-// number of rule groups for the tenant.
-func (r *Ruler) IsMaxRuleGroupsLimited(userID string) bool {
-	return r.limits.RulerMaxRuleGroupsPerTenant(userID) > 0
+// number of rule groups for the tenant and namespace.
+func (r *Ruler) IsMaxRuleGroupsLimited(userID, namespace string) bool {
+	return r.limits.RulerMaxRuleGroupsPerTenant(userID, namespace) > 0
 }
 
 // AssertMaxRuleGroups limit has not been reached compared to the current
 // number of total rule groups in input and returns an error if so.
-func (r *Ruler) AssertMaxRuleGroups(userID string, rg int) error {
-	limit := r.limits.RulerMaxRuleGroupsPerTenant(userID)
+func (r *Ruler) AssertMaxRuleGroups(userID, namespace string, rg int) error {
+	limit := r.limits.RulerMaxRuleGroupsPerTenant(userID, namespace)
 
 	if limit <= 0 {
 		return nil
@@ -1179,9 +1179,10 @@ func (r *Ruler) AssertMaxRuleGroups(userID string, rg int) error {
 }
 
 // AssertMaxRulesPerRuleGroup limit has not been reached compared to the current
-// number of rules in a rule group in input and returns an error if so.
-func (r *Ruler) AssertMaxRulesPerRuleGroup(userID string, rules int) error {
-	limit := r.limits.RulerMaxRulesPerRuleGroup(userID)
+// number of rules in a rule group and namespace combination in input, returns an error if so.
+// If the limit is set to 0 (or less), then there is no limit.
+func (r *Ruler) AssertMaxRulesPerRuleGroup(userID, namespace string, rules int) error {
+	limit := r.limits.RulerMaxRulesPerRuleGroup(userID, namespace)
 
 	if limit <= 0 {
 		return nil

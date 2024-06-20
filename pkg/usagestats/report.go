@@ -81,9 +81,9 @@ func buildReport(seed ClusterSeed, reportAt time.Time, reportInterval time.Durat
 func buildMetrics() map[string]interface{} {
 	result := map[string]interface{}{
 		"memstats":      buildMemstats(),
-		"num_cpu":       runtime.NumCPU(),
 		"num_goroutine": runtime.NumGoroutine(),
 	}
+	defer cpuUsage.Set(0)
 
 	expvar.Do(func(kv expvar.KeyValue) {
 		if !strings.HasPrefix(kv.Key, statsPrefix) || kv.Key == statsPrefix+targetKey || kv.Key == statsPrefix+editionKey {
@@ -95,6 +95,8 @@ func buildMetrics() map[string]interface{} {
 		case *expvar.Int:
 			value = v.Value()
 		case *expvar.String:
+			value = v.Value()
+		case *expvar.Float:
 			value = v.Value()
 		case *Counter:
 			v.updateRate()

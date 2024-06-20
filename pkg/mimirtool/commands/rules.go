@@ -39,6 +39,8 @@ const (
 var (
 	backends = []string{rules.MimirBackend}      // list of supported backend types
 	formats  = []string{"json", "yaml", "table"} // list of supported formats for the list command
+	// disallowedNamespaceChars is a regex pattern that matches characters that are not allowed in namespaces. They are characters not allow in Linux and Windows file names.
+	disallowedNamespaceChars = regexp.MustCompile(`[<>:"/\\|?*\x00-\x1F]`)
 )
 
 // ruleCommandClient defines the interface that should be implemented by the API client used by
@@ -72,6 +74,7 @@ type RuleCommand struct {
 	// Get Rule Groups Configs
 	Namespace string
 	RuleGroup string
+	OutputDir string
 
 	// Load Rules Config
 	RuleFilesList []string
@@ -204,11 +207,13 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 
 	// Print Rules Command
 	printRulesCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
+	printRulesCmd.Flag("output-dir", "The directory where the rules will be written to.").ExistingDirVar(&r.OutputDir)
 
 	// Get RuleGroup Command
 	getRuleGroupCmd.Arg("namespace", "Namespace of the rulegroup to retrieve.").Required().StringVar(&r.Namespace)
 	getRuleGroupCmd.Arg("group", "Name of the rulegroup to retrieve.").Required().StringVar(&r.RuleGroup)
 	getRuleGroupCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
+	getRuleGroupCmd.Flag("output-dir", "The directory where the rules will be written to.").ExistingDirVar(&r.OutputDir)
 
 	// Delete RuleGroup Command
 	deleteRuleGroupCmd.Arg("namespace", "Namespace of the rulegroup to delete.").Required().StringVar(&r.Namespace)
@@ -402,7 +407,7 @@ func (r *RuleCommand) listRules(_ *kingpin.ParseContext) error {
 }
 
 func (r *RuleCommand) printRules(_ *kingpin.ParseContext) error {
-	rules, err := r.cli.ListRules(context.Background(), "")
+	ruleNS, err := r.cli.ListRules(context.Background(), "")
 	if err != nil {
 		if errors.Is(err, client.ErrResourceNotFound) {
 			log.Infof("no rule groups currently exist for this user")
@@ -412,7 +417,45 @@ func (r *RuleCommand) printRules(_ *kingpin.ParseContext) error {
 	}
 
 	p := printer.New(r.DisableColor)
-	return p.PrintRuleGroups(rules)
+
+	if r.OutputDir != "" {
+		log.Infof("Output dir detected writing rules to directory: %s", r.OutputDir)
+		for namespace, rule := range ruleNS {
+			if err = saveNamespaceRuleGroup(namespace, rule, r.OutputDir); err != nil {
+				return err
+			}
+		}
+
+		// Don't print the rule set if we've specified an output directory to save the rule files. It gets too noisy.
+		return nil
+	}
+
+	return p.PrintRuleGroups(ruleNS)
+}
+
+func saveNamespaceRuleGroup(ns string, ruleGroup []rwrulefmt.RuleGroup, dir string) error {
+	baseDir, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+
+	if disallowedNamespaceChars.Match([]byte(ns)) {
+		oldNs := ns
+		ns = strings.TrimSpace(disallowedNamespaceChars.ReplaceAllString(ns, "_"))
+		log.Warnf("We found disallowed characters in the namespace name '%s', replacing them with underscores '%s'", oldNs, ns)
+	}
+
+	file := filepath.Join(baseDir, fmt.Sprintf("%s.yaml", ns))
+	rule := map[string]rules.RuleNamespace{ns: {
+		Namespace: ns,
+		Filepath:  file,
+		Groups:    ruleGroup,
+	}}
+	log.Infof("Saving namespace group rules to file %s", file)
+	if err := save(rule, true); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *RuleCommand) getRuleGroup(_ *kingpin.ParseContext) error {
@@ -423,6 +466,13 @@ func (r *RuleCommand) getRuleGroup(_ *kingpin.ParseContext) error {
 			return nil
 		}
 		log.Fatalf("Unable to read rules from Grafana Mimir, %v", err)
+	}
+
+	if r.OutputDir != "" {
+		log.Infof("Output dir detected, writing group '%s' of namespace '%s' to directory: %s", r.RuleGroup, r.Namespace, r.OutputDir)
+		err := saveNamespaceRuleGroup(r.Namespace, []rwrulefmt.RuleGroup{*group}, r.OutputDir)
+
+		return err
 	}
 
 	p := printer.New(r.DisableColor)
@@ -513,7 +563,7 @@ func (r *RuleCommand) diffRules(_ *kingpin.ParseContext) error {
 	}
 
 	currentNamespaceMap, err := r.cli.ListRules(context.Background(), "")
-	//TODO: Skipping the 404s here might end up in an unsual scenario.
+	// TODO: Skipping the 404s here might end up in an unsual scenario.
 	// If we're unable to reach the Mimir API due to a bad URL, we'll assume no rules are
 	// part of the namespace and provide a diff of the whole ruleset.
 	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
@@ -581,7 +631,7 @@ func (r *RuleCommand) syncRules(_ *kingpin.ParseContext) error {
 	}
 
 	currentNamespaceMap, err := r.cli.ListRules(context.Background(), "")
-	//TODO: Skipping the 404s here might end up in an unsual scenario.
+	// TODO: Skipping the 404s here might end up in an unsual scenario.
 	// If we're unable to reach the Mimir API due to a bad URL, we'll assume no rules are
 	// part of the namespace and provide a diff of the whole ruleset.
 	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {

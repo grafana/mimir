@@ -91,6 +91,9 @@ type BucketStore struct {
 	indexReaderPool *indexheader.ReaderPool
 	seriesHashCache *hashcache.SeriesHashCache
 
+	snapshotter          *indexheader.Snapshotter
+	snapshotterStartOnce sync.Once
+
 	// Sets of blocks that have the same labels. They are indexed by a hash over their label set.
 	blocksMx sync.RWMutex
 	blocks   map[ulid.ULID]*bucketBlock
@@ -238,12 +241,17 @@ func NewBucketStore(
 		option(s)
 	}
 
-	lazyLoadedSnapshotConfig := indexheader.LazyLoadedHeadersSnapshotConfig{
+	snapConfig := indexheader.SnapshotterConfig{
 		Path:   dir,
 		UserID: userID,
 	}
-	// Depend on the options
-	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics, lazyLoadedSnapshotConfig)
+	s.snapshotter = indexheader.NewSnapshotter(s.logger, snapConfig)
+
+	var lazyLoadedBlocks map[ulid.ULID]int64
+	if bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled {
+		lazyLoadedBlocks = s.snapshotter.RestoreLoadedBlocks()
+	}
+	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics, lazyLoadedBlocks)
 
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create dir")
@@ -257,6 +265,7 @@ func (s *BucketStore) RemoveBlocksAndClose() error {
 	err := s.removeAllBlocks()
 
 	// Release other resources even if it failed to close some blocks.
+	s.snapshotter.Stop()
 	s.indexReaderPool.Close()
 
 	return err
@@ -350,6 +359,12 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 		}
 		level.Info(s.logger).Log("msg", "dropped outdated block", "block", id)
 	}
+
+	// Start snapshotter in the end of the sync, but do that only once per BucketStore's lifetime.
+	// We do that here, so the snapshotter watched after blocks from both initial sync and those discovered later.
+	s.snapshotterStartOnce.Do(func() {
+		s.snapshotter.Start(ctx, s.indexReaderPool)
+	})
 
 	return nil
 }

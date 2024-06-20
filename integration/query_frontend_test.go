@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -473,8 +474,19 @@ func TestQueryFrontendErrorMessageParity(t *testing.T) {
 	runtimeConfig := "runtime-config.yaml"
 	require.NoError(t, writeFileToSharedDir(s, runtimeConfig, []byte(`
 overrides:
+  fake:
+    blocked_queries:
+    - pattern: ".*blocked_series.*"
+      regex: true
+    - pattern: "{__name__=\"blocked_selector\"}"
+      regex: false
   query-sharding:
     query_sharding_total_shards: 8
+    blocked_queries:
+    - pattern: ".*blocked_series.*"
+      regex: true
+    - pattern: "{__name__=\"blocked_selector\"}"
+      regex: false
 `)))
 
 	flags = mergeFlags(flags, map[string]string{
@@ -548,10 +560,67 @@ overrides:
 	for _, tc := range []struct {
 		name          string
 		query         func(*e2emimir.Client) (*http.Response, []byte, error)
+		exclude       []string
 		expStatusCode int
 		expJSON       string
 		expBody       string
 	}{
+		{
+			name: "query blocked via regex for instant query",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRaw("blocked_series{foo=\"bar\"}")
+			},
+			exclude:       []string{"querier"},
+			expStatusCode: http.StatusBadRequest,
+			expJSON:       `{"error":"the request has been blocked by the cluster administrator (err-mimir-query-blocked)", "errorType":"bad_data", "status":"error"}`,
+		},
+		{
+			name: "query blocked via regex for range query",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRangeRaw("blocked_series{foo=\"bar\"}", now.Add(-time.Hour), now, time.Minute)
+			},
+			exclude:       []string{"querier"},
+			expStatusCode: http.StatusBadRequest,
+			expJSON:       `{"error":"the request has been blocked by the cluster administrator (err-mimir-query-blocked)", "errorType":"bad_data", "status":"error"}`,
+		},
+		{
+			name: "query blocked via regex for remote read",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				httpR, _, respBytes, err := c.RemoteRead(`blocked_series`, now.Add(-time.Hour*24*32), now)
+				return httpR, respBytes, err
+			},
+			exclude:       []string{"querier"},
+			expStatusCode: http.StatusBadRequest,
+			expJSON:       `{"error":"remote read error (matchers_0: {__name__=\"blocked_series\"}): the request has been blocked by the cluster administrator (err-mimir-query-blocked)", "errorType":"bad_data", "status":"error"}`,
+		},
+		{
+			name: "query blocked via equality for instant query",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRaw("{__name__=\"blocked_selector\"}")
+			},
+			exclude:       []string{"querier"},
+			expStatusCode: http.StatusBadRequest,
+			expJSON:       `{"error":"the request has been blocked by the cluster administrator (err-mimir-query-blocked)", "errorType":"bad_data", "status":"error"}`,
+		},
+		{
+			name: "query blocked via equality for range query",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRangeRaw("{__name__=\"blocked_selector\"}", now.Add(-time.Hour), now, time.Minute)
+			},
+			exclude:       []string{"querier"},
+			expStatusCode: http.StatusBadRequest,
+			expJSON:       `{"error":"the request has been blocked by the cluster administrator (err-mimir-query-blocked)", "errorType":"bad_data", "status":"error"}`,
+		},
+		{
+			name: "query blocked via equality for remote read",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				httpR, _, respBytes, err := c.RemoteRead(`blocked_selector`, now.Add(-time.Hour*24*32), now)
+				return httpR, respBytes, err
+			},
+			exclude:       []string{"querier"},
+			expStatusCode: http.StatusBadRequest,
+			expJSON:       `{"error":"remote read error (matchers_0: {__name__=\"blocked_selector\"}): the request has been blocked by the cluster administrator (err-mimir-query-blocked)", "errorType":"bad_data", "status":"error"}`,
+		},
 		{
 			name: "maximum resolution error",
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
@@ -679,6 +748,9 @@ overrides:
 			}
 
 			for name, c := range queryClients {
+				if slices.Contains(tc.exclude, name) {
+					continue
+				}
 				resp, body, err := tc.query(c)
 				require.NoError(t, err)
 				assert.Equal(t, tc.expStatusCode, resp.StatusCode, "querier returns unexpected statusCode for "+name)

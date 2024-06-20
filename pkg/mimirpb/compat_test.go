@@ -8,7 +8,6 @@ package mimirpb
 import (
 	stdlibjson "encoding/json"
 	"math"
-	"reflect"
 	"strconv"
 	"testing"
 	"unsafe"
@@ -197,9 +196,7 @@ func TestFromLabelAdaptersToLabelsWithCopy(t *testing.T) {
 
 	// All strings must be copied.
 	actualValue := actual.Get("hello")
-	hInputValue := (*reflect.StringHeader)(unsafe.Pointer(&input[0].Value))
-	hActualValue := (*reflect.StringHeader)(unsafe.Pointer(&actualValue))
-	assert.NotEqual(t, hInputValue.Data, hActualValue.Data)
+	assert.NotSame(t, unsafe.StringData(input[0].Value), unsafe.StringData(actualValue))
 }
 
 func BenchmarkFromLabelAdaptersToLabelsWithCopy(b *testing.B) {
@@ -223,7 +220,7 @@ func TestFromFPointsToSamples(t *testing.T) {
 // Check that Prometheus FPoint and Mimir Sample types converted
 // into each other with unsafe.Pointer are compatible
 func TestPrometheusFPointInSyncWithMimirPbSample(t *testing.T) {
-	test.RequireSameShape(t, promql.FPoint{}, Sample{}, true)
+	test.RequireSameShape(t, promql.FPoint{}, Sample{}, true, false)
 }
 
 func BenchmarkFromFPointsToSamples(b *testing.B) {
@@ -251,7 +248,7 @@ func TestFromHPointsToHistograms(t *testing.T) {
 // Check that Prometheus HPoint and Mimir FloatHistogramPair types converted
 // into each other with unsafe.Pointer are compatible
 func TestPrometheusHPointInSyncWithMimirPbFloatHistogramPair(t *testing.T) {
-	test.RequireSameShape(t, promql.HPoint{}, FloatHistogramPair{}, true)
+	test.RequireSameShape(t, promql.HPoint{}, FloatHistogramPair{}, true, false)
 }
 
 func BenchmarkFromHPointsToHistograms(b *testing.B) {
@@ -628,7 +625,7 @@ func TestFromFloatHistogramToPromHistogram(t *testing.T) {
 // Check that Prometheus and Mimir SampleHistogram types converted
 // into each other with unsafe.Pointer are compatible
 func TestPrometheusSampleHistogramInSyncWithMimirPbSampleHistogram(t *testing.T) {
-	test.RequireSameShape(t, model.SampleHistogram{}, SampleHistogram{}, false)
+	test.RequireSameShape(t, model.SampleHistogram{}, SampleHistogram{}, false, false)
 }
 
 // Check that Prometheus Label and MimirPb LabelAdapter types
@@ -741,4 +738,8 @@ func TestCompareLabelAdapters(t *testing.T) {
 		got = CompareLabelAdapters(test.compared, labels)
 		require.Equal(t, -sign(test.expected), sign(got), "unexpected comparison result for reverse test case %d", i)
 	}
+}
+
+func TestRemoteWriteV1HistogramEquivalence(t *testing.T) {
+	test.RequireSameShape(t, prompb.Histogram{}, Histogram{}, false, true)
 }

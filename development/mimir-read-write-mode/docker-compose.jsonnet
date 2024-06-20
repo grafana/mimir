@@ -9,6 +9,7 @@ std.manifestYamlDoc({
     self.grafana +
     self.grafana_agent +
     self.memcached +
+    self.prometheus +
     {},
 
   write:: {
@@ -116,6 +117,21 @@ std.manifestYamlDoc({
       command: ['-config.file=/etc/agent-config/grafana-agent.yaml', '-metrics.wal-directory=/tmp', '-server.http.address=127.0.0.1:9091'],
       volumes: ['./config:/etc/agent-config'],
       ports: ['9091:9091'],
+    },
+  },
+
+  prometheus:: {
+    prometheus: {
+      image: 'prom/prometheus:v2.53.0',
+      command: [
+        '--config.file=/etc/prometheus/prometheus.yaml',
+        '--enable-feature=exemplar-storage',
+        '--enable-feature=native-histograms',
+      ],
+      volumes: [
+        './config:/etc/prometheus',
+      ],
+      ports: ['9090:9090'],
     },
   },
 

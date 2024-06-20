@@ -81,7 +81,7 @@ func TestSendWebhook(t *testing.T) {
 	testErr := errors.New("test")
 	cmd = alertingReceivers.SendWebhookSettings{
 		URL:        server.URL,
-		Validation: func(body []byte, statusCode int) error { return testErr },
+		Validation: func([]byte, int) error { return testErr },
 	}
 
 	require.ErrorIs(t, s.SendWebhook(context.Background(), &cmd), testErr)
