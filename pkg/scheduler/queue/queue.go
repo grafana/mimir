@@ -443,14 +443,8 @@ func (q *RequestQueue) WaitForRequestForQuerier(ctx context.Context, last Tenant
 	select {
 	case q.waitingQuerierConns <- waitingConn:
 		select {
-		case reqForQuerier, ok := <-waitingConn.recvChan:
-			if !ok {
-				// Channel was closed without having a value written to it. This can happen if
-				// the write context was canceled.
-				return nil, last, ErrStopped
-			}
+		case reqForQuerier := <-waitingConn.recvChan:
 			return reqForQuerier.req, reqForQuerier.lastTenantIndex, reqForQuerier.err
-
 		case <-ctx.Done():
 			return nil, last, ctx.Err()
 		}
@@ -603,8 +597,6 @@ func (wqc *waitingQuerierConn) sendError(err error) {
 // send sends req to the waitingQuerierConn result channel that is waiting for a new query.
 // Returns true if sending succeeds, or false if req context is timed out or canceled.
 func (wqc *waitingQuerierConn) send(req requestForQuerier) bool {
-	defer close(wqc.recvChan)
-
 	select {
 	case wqc.recvChan <- req:
 		return true
