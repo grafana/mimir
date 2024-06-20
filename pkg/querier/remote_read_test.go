@@ -137,7 +137,7 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 			var actualQueriedStart, actualQueriedEnd int64
 
 			q := &mockSampleAndChunkQueryable{
-				queryableFn: func(mint, maxt int64) (storage.Querier, error) {
+				queryableFn: func(_, _ int64) (storage.Querier, error) {
 					return mockQuerier{
 						selectFn: func(_ context.Context, _ bool, hints *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
 							require.NotNil(t, hints, "select hints must be set")
