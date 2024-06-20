@@ -4,7 +4,6 @@ package querytee
 
 import (
 	"net/http"
-	"net/url"
 	"strconv"
 	"time"
 
@@ -22,31 +21,28 @@ var timeNow = time.Now // Interception point to allow tests to set the current t
 // So, to make comparisons more reliable, we add the 'time' parameter in the proxy to ensure all
 // backends use the same value.
 func AddMissingTimeParam(r *http.Request, body []byte, logger *spanlogger.SpanLogger) (*http.Request, []byte, error) {
-	parsedBody, err := url.ParseQuery(string(body))
-	if err != nil {
+	// ParseForm should have already been called, but we call it again to be sure.
+	// ParseForm is idempotent.
+	if err := r.ParseForm(); err != nil {
 		return nil, nil, err
 	}
 
-	if parsedBody.Has("time") {
-		return r, body, nil
-	}
-
-	queryParams := r.URL.Query()
-
-	if queryParams.Has("time") {
+	if r.Form.Has("time") {
 		return r, body, nil
 	}
 
 	// No 'time' parameter in either the body or URL. Add it.
-	level.Debug(logger).Log("msg", "instant query had no explicit time parameter, adding it based on the current time")
+	t := timeNow().Format(time.RFC3339)
+	level.Debug(logger).Log("msg", "instant query had no explicit time parameter, adding it based on the current time", "time", t)
+
+	// Form should contain URL parameters + parameters from the body, and isn't updated automatically when we set PostForm or URL below,
+	// so update it here to ensure everything remains consistent.
+	r.Form.Set("time", t)
 
 	if len(body) > 0 {
 		// Request has a body, add the 'time' parameter there.
-		parsedBody.Set("time", timeNow().Format(time.RFC3339))
-		body = []byte(parsedBody.Encode())
-
-		// Outgoing requests should only rely on the request body, but we update Form here for consistency.
-		r.Form = parsedBody
+		r.PostForm.Set("time", t)
+		body = []byte(r.PostForm.Encode())
 
 		// Update the content length to reflect the new body.
 		r.ContentLength = int64(len(body))
@@ -56,7 +52,8 @@ func AddMissingTimeParam(r *http.Request, body []byte, logger *spanlogger.SpanLo
 	}
 
 	// Otherwise, add it to the URL.
-	queryParams.Set("time", timeNow().Format(time.RFC3339))
+	queryParams := r.URL.Query()
+	queryParams.Set("time", t)
 	r.URL.RawQuery = queryParams.Encode()
 	return r, body, nil
 }
