@@ -193,7 +193,7 @@ func TestCircuitBreaker_RecordResult(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 1
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
 			`,
@@ -207,7 +207,7 @@ func TestCircuitBreaker_RecordResult(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 1
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
 			`,
@@ -221,7 +221,7 @@ func TestCircuitBreaker_RecordResult(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 1
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 1
 			`,
@@ -235,7 +235,7 @@ func TestCircuitBreaker_RecordResult(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 1
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 1
 			`,
@@ -278,7 +278,7 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 1
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
 			`,
@@ -293,7 +293,7 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
 			`,
@@ -309,7 +309,7 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 1
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 1
 			`,
@@ -325,7 +325,7 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
 			`,
@@ -341,7 +341,7 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
 			`,
@@ -357,7 +357,7 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
 			`,
@@ -373,7 +373,7 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 1
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
 			`,
@@ -389,7 +389,7 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 1
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 1
 			`,
@@ -443,7 +443,7 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 1
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 2
 			`,
@@ -467,7 +467,7 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
         	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 1
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
 			`,
@@ -593,7 +593,7 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 1
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 0
-						# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+						# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 						# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 						cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
     				`
@@ -680,7 +680,7 @@ func TestIngester_FinishPushRequest(t *testing.T) {
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 1
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
 			`,
@@ -695,7 +695,7 @@ func TestIngester_FinishPushRequest(t *testing.T) {
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
 			`,
@@ -710,7 +710,7 @@ func TestIngester_FinishPushRequest(t *testing.T) {
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 1
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 1
 			`,
@@ -725,7 +725,7 @@ func TestIngester_FinishPushRequest(t *testing.T) {
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
 			`,
@@ -740,7 +740,7 @@ func TestIngester_FinishPushRequest(t *testing.T) {
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 1
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
 			`,
@@ -755,7 +755,7 @@ func TestIngester_FinishPushRequest(t *testing.T) {
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 1
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 1
 			`,
@@ -770,7 +770,7 @@ func TestIngester_FinishPushRequest(t *testing.T) {
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
 			`,
@@ -785,7 +785,7 @@ func TestIngester_FinishPushRequest(t *testing.T) {
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
 			`,
@@ -956,7 +956,7 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 1
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 0
-						# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+						# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 						# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 						cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
     				`
@@ -977,7 +977,7 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 1
-						# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+						# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 						# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 						cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 2
     				`
@@ -1058,7 +1058,7 @@ func TestPRCircuitBreaker_NewPRCircuitBreaker(t *testing.T) {
 		cortex_ingester_circuit_breaker_current_state{request_type="read",state="half-open"} 0
 		cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 1
 		cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 1
-		# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times a circuit breaker request reached a timeout.
+		# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 		# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 		cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
 		cortex_ingester_circuit_breaker_request_timeouts_total{request_type="read"} 0

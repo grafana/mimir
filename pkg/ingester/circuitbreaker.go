@@ -51,7 +51,7 @@ func newCircuitBreakerMetrics(r prometheus.Registerer, currentState func() circu
 		}, []string{"result"}),
 		circuitBreakerRequestTimeouts: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name:        "cortex_ingester_circuit_breaker_request_timeouts_total",
-			Help:        "Number of times a circuit breaker request reached a timeout.",
+			Help:        "Number of times the circuit breaker recorded a request that reached timeout.",
 			ConstLabels: map[string]string{circuitBreakerRequestTypeLabel: requestType},
 		}),
 	}
