@@ -3,6 +3,7 @@
 package indexheader
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"os"
@@ -48,6 +49,50 @@ func TestSnapshotter_PersistAndRestoreLoadedBlocks(t *testing.T) {
 
 	restoredBlocks := s2.RestoreLoadedBlocks()
 	require.Equal(t, origBlocks, restoredBlocks)
+}
+
+func TestSnapshotter_StartStop(t *testing.T) {
+	t.Run("stop after start", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		testBlocksLoader := testBlocksLoaderFunc(func() map[ulid.ULID]int64 {
+			// We don't care about the content of the index header in this test.
+			return map[ulid.ULID]int64{
+				ulid.MustNew(ulid.Now(), rand.Reader): time.Now().UnixMilli(),
+			}
+		})
+
+		config := SnapshotterConfig{
+			Path:   tmpDir,
+			UserID: "anonymous",
+		}
+		s := NewSnapshotter(log.NewNopLogger(), config)
+
+		s.Start(context.Background(), testBlocksLoader)
+		s.Stop()
+
+		persistedFile := filepath.Join(tmpDir, lazyLoadedHeadersListFileName)
+		data, err := os.ReadFile(persistedFile)
+		require.NoError(t, err)
+		require.NotEmpty(t, data)
+	})
+
+	t.Run("stop but no start", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		config := SnapshotterConfig{
+			Path:   tmpDir,
+			UserID: "anonymous",
+		}
+		s := NewSnapshotter(log.NewNopLogger(), config)
+
+		// Nothing was started but an attempt to stop shouldn't hang.
+		s.Stop()
+
+		persistedFile := filepath.Join(tmpDir, lazyLoadedHeadersListFileName)
+		_, err := os.ReadFile(persistedFile)
+		require.ErrorIs(t, err, os.ErrNotExist)
+	})
 }
 
 type testBlocksLoaderFunc func() map[ulid.ULID]int64
