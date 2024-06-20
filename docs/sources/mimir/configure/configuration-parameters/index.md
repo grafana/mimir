@@ -3262,11 +3262,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # Limit how long back data (series and metadata) can be queried, up until
 # <lookback> duration ago. This limit is enforced in the query-frontend, querier
-# and ruler for instant, range, series metadata and remote read queries. For
-# label name and value queries the limit is enforced in the querier and ruler.
-# If the requested time range is outside the allowed range, the request will not
-# fail but will be manipulated to only query data within the allowed time range.
-# 0 to disable.
+# and ruler for instant, range and remote read queries. For metadata queries
+# like series, label names, label values queries the limit is enforced in the
+# querier and ruler. If the requested time range is outside the allowed range,
+# the request will not fail but will be manipulated to only query data within
+# the allowed time range. 0 to disable.
 # CLI flag: -querier.max-query-lookback
 [max_query_lookback: <duration> | default = 0s]
 
