@@ -402,21 +402,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 		return d + waitFunc()
 	}
 
-	// Create a firewall binded to the per-tenant config.
-	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(userID, am.cfg.Limits))
-
-	integrationsMap, err := buildIntegrationsMap(cfg.Global, am.cfg.ExternalURL.String(), conf.Receivers, tmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
-		if am.cfg.Limits != nil {
-			rl := &tenantRateLimits{
-				tenant:      userID,
-				limits:      am.cfg.Limits,
-				integration: integrationName,
-			}
-
-			return newRateLimitedNotifier(notifier, rl, 10*time.Second, am.rateLimitedNotifications.WithLabelValues(integrationName))
-		}
-		return notifier
-	})
+	integrationsMap, err := am.buildIntegrationsMap(userID, cfg.Global, conf.Receivers, tmpl)
 	if err != nil {
 		return err
 	}
@@ -514,15 +500,32 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func buildIntegrationsMap(gCfg *config.GlobalConfig, externalURL string, nc []*definition.PostableApiReceiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(userID string, gCfg *config.GlobalConfig, nc []*definition.PostableApiReceiver, tmpl *template.Template) (map[string][]*nfstatus.Integration, error) {
+	// Create a firewall binded to the per-tenant config.
+	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(userID, am.cfg.Limits))
+
+	// Create a function that wraps a notifier with rate limiting.
+	notifierWrapper := func(integrationName string, notifier notify.Notifier) notify.Notifier {
+		if am.cfg.Limits != nil {
+			rl := &tenantRateLimits{
+				tenant:      userID,
+				limits:      am.cfg.Limits,
+				integration: integrationName,
+			}
+			return newRateLimitedNotifier(notifier, rl, 10*time.Second, am.rateLimitedNotifications.WithLabelValues(integrationName))
+		}
+		return notifier
+	}
+
+	externalURL := am.cfg.ExternalURL.String()
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
 		var integrations []*nfstatus.Integration
 		var err error
 		if rcv.Type() == definition.GrafanaReceiverType {
-			integrations, err = buildGrafanaReceiverIntegrations(gCfg, externalURL, rcv, tmpl, logger)
+			integrations, err = buildGrafanaReceiverIntegrations(gCfg, externalURL, rcv, tmpl, am.logger)
 		} else {
-			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, logger, notifierWrapper)
+			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, notifierWrapper)
 		}
 		if err != nil {
 			return nil, err
