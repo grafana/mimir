@@ -203,7 +203,9 @@ func TestIngester_StartPushRequest(t *testing.T) {
 		},
 	}
 	for testName, tc := range testCases {
+		tc := tc
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
 			failingIng := setupIngester(tc)
 			defer services.StopAndAwaitTerminated(context.Background(), failingIng) //nolint:errcheck
 
@@ -4207,7 +4209,9 @@ func TestIngester_LabelNames_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 
 func TestIngester_Push_ShouldNotCreateTSDBIngesterServiceIsNotInRunningState(t *testing.T) {
 	for _, grpcLimitEnabled := range []bool{false, true} {
+		grpcLimitEnabled := grpcLimitEnabled
 		t.Run(fmt.Sprintf("gRPC limit enabled: %t", grpcLimitEnabled), func(t *testing.T) {
+			t.Parallel()
 			cfg := defaultIngesterTestConfig(t)
 			cfg.LimitInflightRequestsUsingGrpcMethodLimiter = grpcLimitEnabled
 
@@ -5793,6 +5797,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 		testName := name
 		testData := test
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
 			limits := defaultLimitsTestConfig()
 
 			overrides, err := validation.NewOverrides(limits, nil)
@@ -6465,7 +6470,9 @@ func TestIngester_flushing(t *testing.T) {
 			},
 		},
 	} {
+		tc := tc
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			cfg := defaultIngesterTestConfig(t)
 			cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 1
 			cfg.BlocksStorageConfig.TSDB.ShipInterval = 1 * time.Minute // Long enough to not be reached during the test.
@@ -7478,9 +7485,13 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
+		testData := testData
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
 			for _, grpcLimiterEnabled := range []bool{false, true} {
+				grpcLimiterEnabled := grpcLimiterEnabled
 				t.Run(fmt.Sprintf("with gRPC limiter: %t", grpcLimiterEnabled), func(t *testing.T) {
+					t.Parallel()
 
 					// Create a mocked ingester
 					cfg := defaultIngesterTestConfig(t)
@@ -7963,7 +7974,9 @@ func testIngesterInflightPushRequests(t *testing.T, i *Ingester, reg prometheus.
 
 func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 	for _, grpcLimitEnabled := range []bool{false, true} {
+		grpcLimitEnabled := grpcLimitEnabled
 		t.Run(fmt.Sprintf("gRPC limit enabled: %t", grpcLimitEnabled), func(t *testing.T) {
+			t.Parallel()
 			var limitsMx sync.Mutex
 			limits := InstanceLimits{MaxInflightPushRequestsBytes: 0}
 
@@ -9010,7 +9023,9 @@ func TestIngesterActiveSeries(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
+		testData := testData
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
 			registry := prometheus.NewRegistry()
 
 			// Create a mocked ingester
@@ -9532,7 +9547,9 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
+		testData := testData
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
 			registry := prometheus.NewRegistry()
 
 			// Create a mocked ingester
@@ -10013,8 +10030,11 @@ func TestIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T) {
 		},
 	}
 	for testName, testCfg := range tests {
+		testCfg := testCfg
 		for _, streamChunks := range []bool{false, true} {
+			streamChunks := streamChunks
 			t.Run(fmt.Sprintf("%s/streamChunks=%v", testName, streamChunks), func(t *testing.T) {
+				t.Parallel()
 				testIngesterCanEnableIngestAndQueryNativeHistograms(t, testCfg.sampleHistograms, testCfg.expectHistogram, streamChunks)
 			})
 		}
@@ -10498,7 +10518,9 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
+		testData := testData
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
 			registry := prometheus.NewRegistry()
 
 			ingesterCfg := defaultIngesterTestConfig(t)
@@ -10960,7 +10982,9 @@ func TestIngester_Starting(t *testing.T) {
 
 	for testName, testCase := range tests {
 		cfg := defaultIngesterTestConfig(t)
+		testCase := testCase
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
 			var checkInitalRingState func(context.Context, *failingIngester)
 			var checkFinalRingState func(context.Context, *failingIngester)
 			if testCase.isIngesterInTheRing {

@@ -461,6 +461,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 
 	for r := 0; r < numRuns; r++ {
 		t.Run(fmt.Sprintf("Run %d", r), func(t *testing.T) {
+			t.Parallel()
 			var (
 				ctx         = context.Background()
 				ctxWithUser = user.InjectOrgID(ctx, userID)

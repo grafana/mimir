@@ -702,7 +702,9 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 	}
 
 	for name, tc := range testCases {
+		tc := tc
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			c := ownedSeriesWithIngesterRingTestContext{
 				ownedSeriesTestContextBase: ownedSeriesTestContextBase{
 					user:          ownedServiceTestUser,
@@ -1430,7 +1432,9 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 	}
 
 	for name, tc := range testCases {
+		tc := tc
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			c := ownedSeriesWithPartitionsRingTestContext{
 				ownedSeriesTestContextBase: ownedSeriesTestContextBase{
 					user:          ownedServiceTestUserPartitionsRing,

@@ -356,7 +356,9 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 		},
 	}
 	for testName, testCase := range testCases {
+		testCase := testCase
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
 			registry := prometheus.NewRegistry()
 			cfg := CircuitBreakerConfig{
 				Enabled:        true,
@@ -395,7 +397,9 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
 
 	for initialDelayEnabled, initialDelayStatus := range map[bool]string{false: "disabled", true: "enabled"} {
 		for testName, testCase := range tests {
+			testCase := testCase
 			t.Run(fmt.Sprintf("%s with initial delay %s", testName, initialDelayStatus), func(t *testing.T) {
+				t.Parallel()
 				metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
 				metricNames := []string{
 					"cortex_ingester_circuit_breaker_results_total",
@@ -698,7 +702,9 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 		},
 	}
 	for testName, testCase := range testCases {
+		testCase := testCase
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
 			reg := prometheus.NewPedanticRegistry()
 			cfg := defaultIngesterTestConfig(t)
 			cfg.PushCircuitBreaker = CircuitBreakerConfig{
