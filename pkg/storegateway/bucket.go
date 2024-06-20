@@ -262,10 +262,28 @@ func NewBucketStore(
 
 // RemoveBlocksAndClose remove all blocks from local disk and releases all resources associated with the BucketStore.
 func (s *BucketStore) RemoveBlocksAndClose() error {
+	return s.removeBlocksAndClose(context.Background(), false)
+}
+
+// RemoveBlocksCloseAndWait remove all blocks from local disk, releases all resources associated with the BucketStore
+// and waits until all dependencies have been stopped.
+func (s *BucketStore) RemoveBlocksCloseAndWait(ctx context.Context) error {
+	return s.removeBlocksAndClose(ctx, true)
+}
+
+func (s *BucketStore) removeBlocksAndClose(ctx context.Context, wait bool) error {
 	err := s.removeAllBlocks()
 
 	// Release other resources even if it failed to close some blocks.
-	s.snapshotter.Stop()
+	if wait {
+		if stopErr := s.snapshotter.Stop(ctx); stopErr != nil && err == nil {
+			// Do not return a multi error so that we're sure the unwrapping works fine.
+			err = stopErr
+		}
+	} else {
+		s.snapshotter.StopAsync()
+	}
+
 	s.indexReaderPool.Close()
 
 	return err

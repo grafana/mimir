@@ -30,14 +30,16 @@ type Snapshotter struct {
 	logger log.Logger
 	conf   SnapshotterConfig
 
-	stop chan struct{}
+	stop    chan struct{} // Closed to signal the Snapshotter should be stopped.
+	stopped chan struct{} // Closed one the Snapshotter has been successfully stopped.
 }
 
 func NewSnapshotter(logger log.Logger, conf SnapshotterConfig) *Snapshotter {
 	return &Snapshotter{
-		logger: logger,
-		conf:   conf,
-		stop:   make(chan struct{}),
+		logger:  logger,
+		conf:    conf,
+		stop:    make(chan struct{}),
+		stopped: make(chan struct{}),
 	}
 }
 
@@ -48,6 +50,8 @@ type blocksLoader interface {
 // Start spawns a background job that periodically persists the list of lazy-loaded index headers.
 func (s *Snapshotter) Start(ctx context.Context, bl blocksLoader) {
 	go func() {
+		defer close(s.stopped)
+
 		err := s.PersistLoadedBlocks(bl)
 		if err != nil {
 			// Note, the decision here is to only log the error but not failing the job. We may reconsider that later.
@@ -72,8 +76,22 @@ func (s *Snapshotter) Start(ctx context.Context, bl blocksLoader) {
 	}()
 }
 
-func (s *Snapshotter) Stop() {
+// StopAsync stops the Snapshotter but doesn't wait until stopped.
+func (s *Snapshotter) StopAsync() {
 	close(s.stop)
+}
+
+// Stop stops the Snapshotter and waits until stopped.
+func (s *Snapshotter) Stop(ctx context.Context) error {
+	s.StopAsync()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+
+	case <-s.stopped:
+		return nil
+	}
 }
 
 func (s *Snapshotter) PersistLoadedBlocks(bl blocksLoader) error {

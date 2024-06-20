@@ -207,7 +207,9 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	)
 	assert.NoError(t, err)
 	t.Cleanup(func() {
-		assert.NoError(t, s.store.RemoveBlocksAndClose())
+		// Make sure to wait until all store dependencies have been stopped / closed
+		// in order to avoid flaky tests.
+		assert.NoError(t, s.store.RemoveBlocksCloseAndWait(context.Background()))
 	})
 
 	s.store = store
