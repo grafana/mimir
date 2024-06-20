@@ -211,6 +211,7 @@
 * [CHANGE] `-server.metrics-port` flag is no longer available for use in the module run of mimir-continuous-test, including the grafana/mimir-continuous-test Docker image which uses the new module. Configuring this port is still possible in the binary, which is deprecated. #7747
 * [CHANGE] Allowed authenticatication to Mimir using both Tenant ID and basic/bearer auth #7619.
 * [BUGFIX] Set `User-Agent` header for all requests sent from the testing client. #7607
+* [ENHANCEMENT] Added new flag `-tests.write-read-series-test.additional-labels` to add additional labels to the series written and read in the write-read-series test. #8449
 
 ### Query-tee
 
