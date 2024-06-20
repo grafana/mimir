@@ -20,14 +20,13 @@ import (
 )
 
 func TestEngineWithFallback(t *testing.T) {
-	ctx := context.Background()
 	logger := log.NewNopLogger()
 
-	generators := map[string]func(engine promql.QueryEngine, expr string) (promql.Query, error){
-		"instant query": func(engine promql.QueryEngine, expr string) (promql.Query, error) {
+	generators := map[string]func(ctx context.Context, engine promql.QueryEngine, expr string) (promql.Query, error){
+		"instant query": func(ctx context.Context, engine promql.QueryEngine, expr string) (promql.Query, error) {
 			return engine.NewInstantQuery(ctx, nil, nil, expr, time.Now())
 		},
-		"range query": func(engine promql.QueryEngine, expr string) (promql.Query, error) {
+		"range query": func(ctx context.Context, engine promql.QueryEngine, expr string) (promql.Query, error) {
 			return engine.NewRangeQuery(ctx, nil, nil, expr, time.Now(), time.Now().Add(-time.Minute), time.Second)
 		},
 	}
@@ -35,12 +34,13 @@ func TestEngineWithFallback(t *testing.T) {
 	for name, createQuery := range generators {
 		t.Run(name, func(t *testing.T) {
 			t.Run("should not fall back for supported expressions", func(t *testing.T) {
+				ctx := context.Background()
 				reg := prometheus.NewPedanticRegistry()
 				preferredEngine := newFakeEngineThatSupportsLimitedQueries()
 				fallbackEngine := newFakeEngineThatSupportsAllQueries()
 				engineWithFallback := NewEngineWithFallback(preferredEngine, fallbackEngine, reg, logger)
 
-				query, err := createQuery(engineWithFallback, "a_supported_expression")
+				query, err := createQuery(ctx, engineWithFallback, "a_supported_expression")
 				require.NoError(t, err)
 				require.Equal(t, preferredEngine.query, query, "should return query from preferred engine")
 				require.False(t, fallbackEngine.wasCalled, "should not call fallback engine if expression is supported by preferred engine")
@@ -53,12 +53,13 @@ func TestEngineWithFallback(t *testing.T) {
 			})
 
 			t.Run("should fall back for unsupported expressions", func(t *testing.T) {
+				ctx := context.Background()
 				reg := prometheus.NewPedanticRegistry()
 				preferredEngine := newFakeEngineThatSupportsLimitedQueries()
 				fallbackEngine := newFakeEngineThatSupportsAllQueries()
 				engineWithFallback := NewEngineWithFallback(preferredEngine, fallbackEngine, reg, logger)
 
-				query, err := createQuery(engineWithFallback, "a_non_supported_expression")
+				query, err := createQuery(ctx, engineWithFallback, "a_non_supported_expression")
 				require.NoError(t, err)
 				require.Equal(t, fallbackEngine.query, query, "should return query from fallback engine if expression is not supported by preferred engine")
 
@@ -73,14 +74,36 @@ func TestEngineWithFallback(t *testing.T) {
 			})
 
 			t.Run("should not fall back if creating query fails for another reason", func(t *testing.T) {
+				ctx := context.Background()
 				reg := prometheus.NewPedanticRegistry()
 				preferredEngine := newFakeEngineThatSupportsLimitedQueries()
 				fallbackEngine := newFakeEngineThatSupportsAllQueries()
 				engineWithFallback := NewEngineWithFallback(preferredEngine, fallbackEngine, reg, logger)
 
-				_, err := createQuery(engineWithFallback, "an_invalid_expression")
+				_, err := createQuery(ctx, engineWithFallback, "an_invalid_expression")
 				require.EqualError(t, err, "the query is invalid")
 				require.False(t, fallbackEngine.wasCalled, "should not call fallback engine if creating query fails for another reason")
+			})
+
+			t.Run("should fall back if falling back has been explicitly requested, even if the expression is supported", func(t *testing.T) {
+				ctx := withForceFallbackEnabled(context.Background())
+				reg := prometheus.NewPedanticRegistry()
+				preferredEngine := newFakeEngineThatSupportsLimitedQueries()
+				fallbackEngine := newFakeEngineThatSupportsAllQueries()
+				engineWithFallback := NewEngineWithFallback(preferredEngine, fallbackEngine, reg, logger)
+
+				query, err := createQuery(ctx, engineWithFallback, "a_supported_expression")
+				require.NoError(t, err)
+				require.Equal(t, fallbackEngine.query, query, "should return query from fallback engine if expression is not supported by preferred engine")
+
+				require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+					# HELP cortex_mimir_query_engine_supported_queries_total Total number of queries that were supported by the Mimir query engine.
+					# TYPE cortex_mimir_query_engine_supported_queries_total counter
+					cortex_mimir_query_engine_supported_queries_total 0
+					# HELP cortex_mimir_query_engine_unsupported_queries_total Total number of queries that were not supported by the Mimir query engine and so fell back to Prometheus' engine.
+					# TYPE cortex_mimir_query_engine_unsupported_queries_total counter
+					cortex_mimir_query_engine_unsupported_queries_total{reason="fallback forced by HTTP header"} 1
+				`), "cortex_mimir_query_engine_supported_queries_total", "cortex_mimir_query_engine_unsupported_queries_total"))
 			})
 		})
 	}

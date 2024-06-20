@@ -27,6 +27,8 @@ type EngineWithFallback struct {
 	logger log.Logger
 }
 
+var errFallbackForcedByHTTPHeader = NotSupportedError{"fallback forced by HTTP header"}
+
 func NewEngineWithFallback(preferred, fallback promql.QueryEngine, reg prometheus.Registerer, logger log.Logger) promql.QueryEngine {
 	return &EngineWithFallback{
 		preferred: preferred,
@@ -46,17 +48,22 @@ func NewEngineWithFallback(preferred, fallback promql.QueryEngine, reg prometheu
 }
 
 func (e EngineWithFallback) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
-	query, err := e.preferred.NewInstantQuery(ctx, q, opts, qs, ts)
-
-	if err == nil {
-		e.supportedQueries.Inc()
-		return query, nil
-	}
-
 	notSupportedErr := NotSupportedError{}
-	if !errors.As(err, &notSupportedErr) {
-		// Don't bother trying the fallback engine if we failed for a reason other than the expression not being supported.
-		return nil, err
+
+	if isForceFallbackEnabled(ctx) {
+		notSupportedErr = errFallbackForcedByHTTPHeader
+	} else {
+		query, err := e.preferred.NewInstantQuery(ctx, q, opts, qs, ts)
+
+		if err == nil {
+			e.supportedQueries.Inc()
+			return query, nil
+		}
+
+		if !errors.As(err, &notSupportedErr) {
+			// Don't bother trying the fallback engine if we failed for a reason other than the expression not being supported.
+			return nil, err
+		}
 	}
 
 	logger := spanlogger.FromContext(ctx, e.logger)
@@ -67,17 +74,22 @@ func (e EngineWithFallback) NewInstantQuery(ctx context.Context, q storage.Query
 }
 
 func (e EngineWithFallback) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
-	query, err := e.preferred.NewRangeQuery(ctx, q, opts, qs, start, end, interval)
-
-	if err == nil {
-		e.supportedQueries.Inc()
-		return query, nil
-	}
-
 	notSupportedErr := NotSupportedError{}
-	if !errors.As(err, &notSupportedErr) {
-		// Don't bother trying the fallback engine if we failed for a reason other than the expression not being supported.
-		return nil, err
+
+	if isForceFallbackEnabled(ctx) {
+		notSupportedErr = errFallbackForcedByHTTPHeader
+	} else {
+		query, err := e.preferred.NewRangeQuery(ctx, q, opts, qs, start, end, interval)
+
+		if err == nil {
+			e.supportedQueries.Inc()
+			return query, nil
+		}
+
+		if !errors.As(err, &notSupportedErr) {
+			// Don't bother trying the fallback engine if we failed for a reason other than the expression not being supported.
+			return nil, err
+		}
 	}
 
 	logger := spanlogger.FromContext(ctx, e.logger)
