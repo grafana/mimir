@@ -166,11 +166,11 @@ func TestIngester_LabelValuesCardinality_SentInBatches(t *testing.T) {
 	require.Equalf(t, maxBatchLabelValues, len(mockServer.SentResponses[0].Items[0].LabelValueSeries), "First label of first response should contain max amount of labels %d", maxBatchLabelValues)
 
 	require.Equal(t, 2, len(mockServer.SentResponses[1].Items), "Second server response should contain two label names")
-	require.Equal(t, 1, len(mockServer.SentResponses[1].Items[0].LabelValueSeries), "First label of second response should contain one value")
+	require.Equal(t, 2, len(mockServer.SentResponses[1].Items[0].LabelValueSeries), "First label of second response should contain two values")
 	require.Equalf(t, maxBatchLabelValues-1, len(mockServer.SentResponses[1].Items[1].LabelValueSeries), "Second label of second response should contain %d values", maxBatchLabelValues-1)
 
 	require.Equal(t, 1, len(mockServer.SentResponses[2].Items), "Third response should contain only one label")
-	require.Equal(t, 1, len(mockServer.SentResponses[2].Items[0].LabelValueSeries), "First label of third response should contain one label")
+	require.Equal(t, 2, len(mockServer.SentResponses[2].Items[0].LabelValueSeries), "First label of third response should contain two values")
 }
 
 func TestIngester_LabelValuesCardinality_AllValuesToBeReturnedInSingleMessage(t *testing.T) {
@@ -194,6 +194,8 @@ func TestIngester_LabelValuesCardinality_AllValuesToBeReturnedInSingleMessage(t 
 			},
 			expectedItems: []*client.LabelValueSeriesCount{
 				{LabelName: "label-a", LabelValueSeries: map[string]uint64{"a-0": 1}},
+				// label-b is not present, but it was requested, so it should be returned with an empty value.
+				{LabelName: "label-b", LabelValueSeries: map[string]uint64{"": 1}},
 			},
 		},
 		"all values returned in a single message if response size is less then batch size": {
@@ -206,11 +208,11 @@ func TestIngester_LabelValuesCardinality_AllValuesToBeReturnedInSingleMessage(t 
 			expectedItems: []*client.LabelValueSeriesCount{
 				{
 					LabelName:        "label-a",
-					LabelValueSeries: map[string]uint64{"a-0": 1, "a-1": 2, "a-2": 3},
+					LabelValueSeries: map[string]uint64{"a-0": 1, "a-1": 2, "a-2": 3, "": 3},
 				},
 				{
 					LabelName:        "label-b",
-					LabelValueSeries: map[string]uint64{"b-0": 1, "b-1": 2},
+					LabelValueSeries: map[string]uint64{"b-0": 1, "b-1": 2, "": 6},
 				},
 			},
 		},
@@ -225,6 +227,10 @@ func TestIngester_LabelValuesCardinality_AllValuesToBeReturnedInSingleMessage(t 
 				{
 					LabelName:        "label-a",
 					LabelValueSeries: map[string]uint64{"a-1": 2, "a-2": 3},
+				},
+				{
+					LabelName:        "label-b",
+					LabelValueSeries: map[string]uint64{"": 5},
 				},
 			},
 		},
