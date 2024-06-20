@@ -622,6 +622,49 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 	require.EqualError(t, err, "querier has informed the scheduler it is shutting down")
 }
 
+func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnErrorIfChanClosed(t *testing.T) {
+	// This tests a rare (~5 in 100K test runs) race where a closed querier
+	// context results in WaitForRequestForQuerier returning no error yet a nil
+	// request.
+
+	const forgetDelay = 3 * time.Second
+
+	queue, err := NewRequestQueue(
+		log.NewNopLogger(),
+		1, true,
+		forgetDelay,
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+	)
+	require.NoError(t, err)
+
+	// Start the queue service.
+	ctx := context.Background()
+	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
+	})
+
+	queue.SubmitRegisterQuerierConnection("querier-1")
+	queue.SubmitUnregisterQuerierConnection("querier-1")
+
+	req := &SchedulerRequest{
+		Ctx:                       context.Background(),
+		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		AdditionalQueueDimensions: randAdditionalQueueDimension(true),
+	}
+	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, 2, nil))
+
+	cctx, cancel := context.WithCancel(ctx)
+	cancel() // Cancel it right away.
+	r, _, qerr := queue.WaitForRequestForQuerier(cctx, FirstTenant(), "querier-1")
+	if qerr == nil && r == nil {
+		t.Error("queue returned nil request with no error")
+	}
+}
+
 func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSendToQuerier(t *testing.T) {
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
