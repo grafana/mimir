@@ -3364,8 +3364,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.cache-unaligned-requests
 [cache_unaligned_requests: <boolean> | default = false]
 
-# Max size of the raw query, in bytes. 0 to not apply a limit to the size of the
-# query.
+# Max size of the raw query, in bytes. This limit is enforced by the
+# query-frontend for instant, range and remote read queries. 0 to not apply a
+# limit to the size of the query.
 # CLI flag: -query-frontend.max-query-expression-size-bytes
 [max_query_expression_size_bytes: <int> | default = 0]
 

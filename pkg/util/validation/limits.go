@@ -338,7 +338,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.ResultsCacheTTLForCardinalityQuery, "query-frontend.results-cache-ttl-for-cardinality-query", "Time to live duration for cached cardinality query results. The value 0 disables the cache.")
 	f.Var(&l.ResultsCacheTTLForLabelsQuery, "query-frontend.results-cache-ttl-for-labels-query", "Time to live duration for cached label names and label values query results. The value 0 disables the cache.")
 	f.BoolVar(&l.ResultsCacheForUnalignedQueryEnabled, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
-	f.IntVar(&l.MaxQueryExpressionSizeBytes, MaxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.")
+	f.IntVar(&l.MaxQueryExpressionSizeBytes, MaxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. This limit is enforced by the query-frontend for instant, range and remote read queries. 0 to not apply a limit to the size of the query.")
 	f.BoolVar(&l.AlignQueriesWithStep, alignQueriesWithStepFlag, false, "Mutate incoming queries to align their start and end with their step to improve result caching.")
 
 	// Store-gateway.
