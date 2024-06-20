@@ -194,6 +194,7 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 			idx := (p.T - start) / interval
 			if thisSeriesGroup.histogramSums[idx] == nil {
 				// We copy here because we modify the histogram through Add later on.
+				// It is necessary to preserve the original Histogram in case of any range-queries using lookback.
 				thisSeriesGroup.histogramSums[idx] = p.H.Copy()
 				thisSeriesGroup.histogramPointCount++
 			} else {
