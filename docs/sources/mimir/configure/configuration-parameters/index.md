@@ -3262,9 +3262,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # Limit how long back data (series and metadata) can be queried, up until
 # <lookback> duration ago. This limit is enforced in the query-frontend, querier
-# and ruler. If the requested time range is outside the allowed range, the
-# request will not fail but will be manipulated to only query data within the
-# allowed time range. 0 to disable.
+# and ruler for instant, range and remote read queries. For metadata queries
+# like series, label names, label values queries the limit is enforced in the
+# querier and ruler. If the requested time range is outside the allowed range,
+# the request will not fail but will be manipulated to only query data within
+# the allowed time range. 0 to disable.
 # CLI flag: -querier.max-query-lookback
 [max_query_lookback: <duration> | default = 0s]
 
@@ -3330,7 +3332,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 [query_ingesters_within: <duration> | default = 13h]
 
 # Limit the total query time range (end - start time). This limit is enforced in
-# the query-frontend on the received query.
+# the query-frontend on the received instant, range or remote read query.
 # CLI flag: -query-frontend.max-total-query-length
 [max_total_query_length: <duration> | default = 0s]
 
@@ -3362,8 +3364,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.cache-unaligned-requests
 [cache_unaligned_requests: <boolean> | default = false]
 
-# Max size of the raw query, in bytes. 0 to not apply a limit to the size of the
-# query.
+# Max size of the raw query, in bytes. This limit is enforced by the
+# query-frontend for instant, range and remote read queries. 0 to not apply a
+# limit to the size of the query.
 # CLI flag: -query-frontend.max-query-expression-size-bytes
 [max_query_expression_size_bytes: <int> | default = 0]
 
@@ -3459,8 +3462,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 [store_gateway_tenant_shard_size: <int> | default = 0]
 
 # Delete blocks containing samples older than the specified retention period.
-# Also used by query-frontend to avoid querying beyond the retention period. 0
-# to disable.
+# Also used by query-frontend to avoid querying beyond the retention period by
+# instant, range or remote read queries. 0 to disable.
 # CLI flag: -compactor.blocks-retention-period
 [compactor_blocks_retention_period: <duration> | default = 0s]
 
