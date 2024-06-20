@@ -13,7 +13,7 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
 
-// parseGrafanaConfig crexates an AlertConfigDesc from a GrafanaAlertConfigDesc.
+// parseGrafanaConfig creates an AlertConfigDesc from a GrafanaAlertConfigDesc.
 func parseGrafanaConfig(gCfg alertspb.GrafanaAlertConfigDesc, mCfg *alertspb.AlertConfigDesc) (alertspb.AlertConfigDesc, error) {
 	var amCfg GrafanaAlertmanagerConfig
 	if err := json.Unmarshal([]byte(gCfg.RawConfig), &amCfg); err != nil {

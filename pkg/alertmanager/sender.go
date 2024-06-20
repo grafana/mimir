@@ -28,22 +28,6 @@ var (
 	ErrInvalidMethod = errors.New("webhook only supports HTTP methods PUT or POST")
 )
 
-type SmtpConfig struct {
-	AuthPassword   string
-	AuthUser       string
-	CertFile       string
-	ContentTypes   []string
-	EhloIdentity   string
-	ExternalURL    string
-	FromName       string
-	FromAddress    string
-	Host           string
-	KeyFile        string
-	SkipVerify     bool
-	StartTLSPolicy string
-	StaticHeaders  map[string]string
-}
-
 type Sender struct {
 	c   *http.Client
 	log log.Logger
