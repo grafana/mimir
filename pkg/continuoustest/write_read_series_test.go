@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -128,7 +129,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, now, 2))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, now, 2, []prompb.Label{}))
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
@@ -162,7 +163,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(980, 0), 2))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(980, 0), 2, []prompb.Label{}))
 			assert.Equal(t, int64(980), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(980, 0), time.Unix(980, 0), writeInterval, mock.Anything)
@@ -201,9 +202,9 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2))
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(980, 0), 2))
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(1000, 0), 2))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2, []prompb.Label{}))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(980, 0), 2, []prompb.Label{}))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(1000, 0), 2, []prompb.Label{}))
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(960, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
@@ -237,7 +238,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2, []prompb.Label{}))
 			assert.Equal(t, int64(940), records.lastWrittenTimestamp.Unix())
 		}
 
@@ -267,7 +268,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2, []prompb.Label{}))
 			assert.Equal(t, int64(940), records.lastWrittenTimestamp.Unix())
 		}
 
@@ -298,9 +299,9 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2))
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(980, 0), 2))
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(1000, 0), 2))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2, []prompb.Label{}))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(980, 0), 2, []prompb.Label{}))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(1000, 0), 2, []prompb.Label{}))
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 		}
 
@@ -347,7 +348,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, now, 2))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, now, 2, []prompb.Label{}))
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
@@ -398,7 +399,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, now, 2))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, now, 2, []prompb.Label{}))
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
@@ -982,4 +983,49 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		require.GreaterOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.floatMetric.queryMinTime.Unix())
 		require.LessOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.floatMetric.queryMaxTime.Unix())
 	})
+}
+func TestParseLabels(t *testing.T) {
+	tests := []struct {
+		name       string
+		labelsStr  string
+		wantLabels []prompb.Label
+		wantErr    bool
+	}{
+		{
+			name:       "Valid labels",
+			labelsStr:  "foo=bar,baz=qux",
+			wantLabels: []prompb.Label{{Name: "foo", Value: "bar"}, {Name: "baz", Value: "qux"}},
+			wantErr:    false,
+		},
+		{
+			name:       "Valid labels trimmed",
+			labelsStr:  "foo=bar, baz = qux",
+			wantLabels: []prompb.Label{{Name: "foo", Value: "bar"}, {Name: "baz", Value: "qux"}},
+			wantErr:    false,
+		},
+		{
+			name:       "Invalid label format",
+			labelsStr:  "foo=bar=baz",
+			wantLabels: nil,
+			wantErr:    true,
+		},
+		{
+			name:       "Empty labels",
+			labelsStr:  "",
+			wantLabels: nil,
+			wantErr:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotLabels, err := parseLabels(tt.labelsStr)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseLabels() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			assert.ElementsMatch(t, tt.wantLabels, gotLabels)
+		})
+	}
 }

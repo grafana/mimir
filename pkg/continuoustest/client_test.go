@@ -67,7 +67,7 @@ func TestOTLPHttpClient_WriteSeries(t *testing.T) {
 		receivedRequests = nil
 		nextStatusCode = http.StatusOK
 
-		series := generateSineWaveSeries("test", now, 10)
+		series := generateSineWaveSeries("test", now, 10, []prompb.Label{})
 		statusCode, err := c.WriteSeries(ctx, series)
 		require.NoError(t, err)
 		assert.Equal(t, 200, statusCode)
@@ -80,7 +80,7 @@ func TestOTLPHttpClient_WriteSeries(t *testing.T) {
 		receivedRequests = nil
 		nextStatusCode = http.StatusOK
 
-		series := generateSineWaveSeries("test", now, 22)
+		series := generateSineWaveSeries("test", now, 22, []prompb.Label{})
 		statusCode, err := c.WriteSeries(ctx, series)
 		require.NoError(t, err)
 		assert.Equal(t, 200, statusCode)
@@ -95,7 +95,7 @@ func TestOTLPHttpClient_WriteSeries(t *testing.T) {
 		receivedRequests = nil
 		nextStatusCode = http.StatusBadRequest
 
-		series := generateSineWaveSeries("test", now, 1)
+		series := generateSineWaveSeries("test", now, 1, []prompb.Label{})
 		statusCode, err := c.WriteSeries(ctx, series)
 		require.Error(t, err)
 		assert.Equal(t, 400, statusCode)
@@ -105,7 +105,7 @@ func TestOTLPHttpClient_WriteSeries(t *testing.T) {
 		receivedRequests = nil
 		nextStatusCode = http.StatusInternalServerError
 
-		series := generateSineWaveSeries("test", now, 1)
+		series := generateSineWaveSeries("test", now, 1, []prompb.Label{})
 		statusCode, err := c.WriteSeries(ctx, series)
 		require.Error(t, err)
 		assert.Equal(t, 500, statusCode)
@@ -152,7 +152,7 @@ func TestPromWriterClient_WriteSeries(t *testing.T) {
 		receivedRequests = nil
 		nextStatusCode = http.StatusOK
 
-		series := generateSineWaveSeries("test", now, 10)
+		series := generateSineWaveSeries("test", now, 10, []prompb.Label{})
 		statusCode, err := c.WriteSeries(ctx, series)
 		require.NoError(t, err)
 		assert.Equal(t, 200, statusCode)
@@ -165,7 +165,7 @@ func TestPromWriterClient_WriteSeries(t *testing.T) {
 		receivedRequests = nil
 		nextStatusCode = http.StatusOK
 
-		series := generateSineWaveSeries("test", now, 22)
+		series := generateSineWaveSeries("test", now, 22, []prompb.Label{})
 		statusCode, err := c.WriteSeries(ctx, series)
 		require.NoError(t, err)
 		assert.Equal(t, 200, statusCode)
@@ -180,7 +180,7 @@ func TestPromWriterClient_WriteSeries(t *testing.T) {
 		receivedRequests = nil
 		nextStatusCode = http.StatusBadRequest
 
-		series := generateSineWaveSeries("test", now, 1)
+		series := generateSineWaveSeries("test", now, 1, []prompb.Label{})
 		statusCode, err := c.WriteSeries(ctx, series)
 		require.Error(t, err)
 		assert.Equal(t, 400, statusCode)
@@ -190,7 +190,7 @@ func TestPromWriterClient_WriteSeries(t *testing.T) {
 		receivedRequests = nil
 		nextStatusCode = http.StatusInternalServerError
 
-		series := generateSineWaveSeries("test", now, 1)
+		series := generateSineWaveSeries("test", now, 1, []prompb.Label{})
 		statusCode, err := c.WriteSeries(ctx, series)
 		require.Error(t, err)
 		assert.Equal(t, 500, statusCode)

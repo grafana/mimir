@@ -4,11 +4,13 @@ package continuoustest
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -389,5 +391,32 @@ func TestFormatExpectedAndActualValuesComparison(t *testing.T) {
 			output := formatExpectedAndActualValuesComparison(matrix, testCase.series, generateSineWaveValue)
 			require.Equal(t, testCase.expectedOutput, output)
 		})
+	}
+}
+func TestGenerateSineWaveSeries(t *testing.T) {
+	timestamp := time.Now()
+	numSeries := 5
+	additionalLabels := []prompb.Label{
+		{Name: "label1", Value: "value1"},
+		{Name: "label2", Value: "value2"},
+	}
+
+	series := generateSineWaveSeries("test_metric", timestamp, numSeries, additionalLabels)
+
+	assert.Equal(t, numSeries, len(series))
+
+	for i, s := range series {
+		expectedValue := generateSineWaveValue(timestamp)
+		expectedTimestamp := timestamp.UnixMilli()
+
+		assert.Equal(t, "__name__", s.Labels[0].Name)
+		assert.Equal(t, "test_metric", s.Labels[0].Value)
+		assert.Equal(t, "series_id", s.Labels[1].Name)
+		assert.Equal(t, strconv.Itoa(i), s.Labels[1].Value)
+		assert.Equal(t, additionalLabels, s.Labels[2:])
+
+		assert.Equal(t, 1, len(s.Samples))
+		assert.Equal(t, expectedValue, s.Samples[0].Value)
+		assert.Equal(t, expectedTimestamp, s.Samples[0].Timestamp)
 	}
 }

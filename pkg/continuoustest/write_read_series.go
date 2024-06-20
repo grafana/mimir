@@ -6,6 +6,7 @@ import (
 	"context"
 	"flag"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -25,11 +26,49 @@ const (
 	writeMaxAge   = 50 * time.Minute
 )
 
+func parseLabels(labelsStr string) ([]prompb.Label, error) {
+	labels := []prompb.Label{}
+	if strings.TrimSpace(labelsStr) == "" {
+		return labels, nil
+	}
+	for _, labelStr := range strings.Split(labelsStr, ",") {
+		labelParts := strings.Split(labelStr, "=")
+		if len(labelParts) != 2 {
+			return nil, errors.Errorf("invalid label format: %s", labelStr)
+		}
+		labels = append(labels, prompb.Label{
+			Name:  strings.TrimSpace(labelParts[0]),
+			Value: strings.TrimSpace(labelParts[1]),
+		})
+	}
+	return labels, nil
+}
+
+type labelsFlag []prompb.Label
+
+func (i *labelsFlag) String() string {
+	labels := make([]string, 0, len(*i))
+	for _, label := range *i {
+		labels = append(labels, label.Name+"="+label.Value)
+	}
+	return strings.Join(labels, ",")
+}
+
+func (i *labelsFlag) Set(value string) error {
+	labels, err := parseLabels(value)
+	if err != nil {
+		return err
+	}
+	*i = append(*i, labels...)
+	return nil
+}
+
 type WriteReadSeriesTestConfig struct {
-	NumSeries      int
-	MaxQueryAge    time.Duration
-	WithFloats     bool
-	WithHistograms bool
+	NumSeries        int
+	MaxQueryAge      time.Duration
+	WithFloats       bool
+	WithHistograms   bool
+	AdditionalLabels labelsFlag
 }
 
 func (cfg *WriteReadSeriesTestConfig) RegisterFlags(f *flag.FlagSet) {
@@ -37,14 +76,16 @@ func (cfg *WriteReadSeriesTestConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.MaxQueryAge, "tests.write-read-series-test.max-query-age", 7*24*time.Hour, "How back in the past metrics can be queried at most.")
 	f.BoolVar(&cfg.WithFloats, "tests.write-read-series-test.float-samples-enabled", true, "Set to true to use float samples")
 	f.BoolVar(&cfg.WithHistograms, "tests.write-read-series-test.histogram-samples-enabled", false, "Set to true to use native histogram samples")
+	f.Var(&cfg.AdditionalLabels, "tests.write-read-series-test.additional-labels", "Optional additional labels to add to the generated metrics in format of label1=value1,label2=value2")
 }
 
 type WriteReadSeriesTest struct {
-	name    string
-	cfg     WriteReadSeriesTestConfig
-	client  MimirClient
-	logger  log.Logger
-	metrics *TestMetrics
+	name             string
+	cfg              WriteReadSeriesTestConfig
+	client           MimirClient
+	logger           log.Logger
+	metrics          *TestMetrics
+	additionalLabels []prompb.Label
 
 	floatMetric MetricHistory
 	histMetrics []MetricHistory
@@ -60,12 +101,13 @@ func NewWriteReadSeriesTest(cfg WriteReadSeriesTestConfig, client MimirClient, l
 	const name = "write-read-series"
 
 	return &WriteReadSeriesTest{
-		name:        name,
-		cfg:         cfg,
-		client:      client,
-		logger:      log.With(logger, "test", name),
-		metrics:     NewTestMetrics(name, reg),
-		histMetrics: make([]MetricHistory, len(histogramProfiles)),
+		name:             name,
+		cfg:              cfg,
+		client:           client,
+		logger:           log.With(logger, "test", name),
+		metrics:          NewTestMetrics(name, reg),
+		histMetrics:      make([]MetricHistory, len(histogramProfiles)),
+		additionalLabels: cfg.AdditionalLabels,
 	}
 }
 
@@ -147,7 +189,7 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 			return
 		}
 
-		series := generateSeries(metricName, timestamp, t.cfg.NumSeries)
+		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, t.additionalLabels)
 		if err := t.writeSamples(ctx, typeLabel, timestamp, series, records); err != nil {
 			errs.Add(err)
 			break
