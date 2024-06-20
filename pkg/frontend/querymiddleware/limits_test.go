@@ -7,7 +7,6 @@ package querymiddleware
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -17,9 +16,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -345,7 +344,7 @@ func TestLimitsMiddleware_MaxQueryExpressionSizeBytes(t *testing.T) {
 							require.Len(t, v.selectors, 1)
 							require.NotEmpty(t, v.selectors[0].LabelMatchers)
 
-							matchers, err := toLabelMatchers(v.selectors[0].LabelMatchers)
+							matchers, err := remote.ToLabelMatchers(v.selectors[0].LabelMatchers)
 							require.NoError(t, err)
 
 							return matchers
@@ -950,31 +949,4 @@ func (v *findVectorSelectorsVisitor) Visit(node parser.Node, _ []parser.Node) (p
 
 	v.selectors = append(v.selectors, selector)
 	return v, nil
-}
-
-// This function has been copied from:
-// https://github.com/prometheus/prometheus/blob/5efc8dd27b6e68d5102b77bc708e52c9821c5101/storage/remote/codec.go#L569
-func toLabelMatchers(matchers []*labels.Matcher) ([]*prompb.LabelMatcher, error) {
-	pbMatchers := make([]*prompb.LabelMatcher, 0, len(matchers))
-	for _, m := range matchers {
-		var mType prompb.LabelMatcher_Type
-		switch m.Type {
-		case labels.MatchEqual:
-			mType = prompb.LabelMatcher_EQ
-		case labels.MatchNotEqual:
-			mType = prompb.LabelMatcher_NEQ
-		case labels.MatchRegexp:
-			mType = prompb.LabelMatcher_RE
-		case labels.MatchNotRegexp:
-			mType = prompb.LabelMatcher_NRE
-		default:
-			return nil, errors.New("invalid matcher type")
-		}
-		pbMatchers = append(pbMatchers, &prompb.LabelMatcher{
-			Type:  mType,
-			Name:  m.Name,
-			Value: m.Value,
-		})
-	}
-	return pbMatchers, nil
 }

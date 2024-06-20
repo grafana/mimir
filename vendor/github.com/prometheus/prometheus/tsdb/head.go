@@ -1597,7 +1597,7 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, chunksRemoved, actualInOrderMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef)
+	deleted, affected, chunksRemoved, actualInOrderMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
@@ -1606,7 +1606,7 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	h.numSeries.Sub(uint64(seriesRemoved))
 
 	// Remove deleted series IDs from the postings lists.
-	h.postings.Delete(deleted)
+	h.postings.Delete(deleted, affected)
 
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
@@ -1920,9 +1920,10 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 // but the returned map goes into postings.Delete() which expects a map[storage.SeriesRef]struct
 // and there's no easy way to cast maps.
 // minMmapFile is the min mmap file number seen in the series (in-order and out-of-order) after gc'ing the series.
-func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ int, _, _ int64, minMmapFile int) {
+func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _ int, _, _ int64, minMmapFile int) {
 	var (
 		deleted          = map[storage.SeriesRef]struct{}{}
+		affected         = map[labels.Label]struct{}{}
 		rmChunks         = 0
 		actualMint int64 = math.MaxInt64
 		minOOOTime int64 = math.MaxInt64
@@ -1978,6 +1979,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 		s.hashes[hashShard].del(hash, series.ref)
 		delete(s.series[refShard], series.ref)
 		deletedForCallback[series.ref] = series.lset
@@ -1989,7 +1991,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		actualMint = mint
 	}
 
-	return deleted, rmChunks, actualMint, minOOOTime, minMmapFile
+	return deleted, affected, rmChunks, actualMint, minOOOTime, minMmapFile
 }
 
 // The iterForDeletion function iterates through all series, invoking the checkDeletedFunc for each.
