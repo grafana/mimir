@@ -330,7 +330,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Int64Var(&l.CompactorBlockUploadMaxBlockSizeBytes, "compactor.block-upload-max-block-size-bytes", 0, "Maximum size in bytes of a block that is allowed to be uploaded or validated. 0 = no limit.")
 
 	// Query-frontend.
-	f.Var(&l.MaxTotalQueryLength, MaxTotalQueryLengthFlag, "Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query.")
+	f.Var(&l.MaxTotalQueryLength, MaxTotalQueryLengthFlag, "Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received instant, range or remote read query.")
 	_ = l.ResultsCacheTTL.Set("7d")
 	f.Var(&l.ResultsCacheTTL, resultsCacheTTLFlag, fmt.Sprintf("Time to live duration for cached query results. If query falls into out-of-order time window, -%s is used instead.", resultsCacheTTLForOutOfOrderWindowFlag))
 	_ = l.ResultsCacheTTLForOutOfOrderTimeWindow.Set("10m")
