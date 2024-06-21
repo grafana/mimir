@@ -521,7 +521,7 @@ func TestMimirPromQLEngine(t *testing.T) {
 	defer s.Close()
 
 	flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-		"-querier.promql-engine": "mimir",
+		"-querier.query-engine": "mimir",
 	})
 
 	consul := e2edb.NewConsul()
