@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"os"
+	"time"
+
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
@@ -16,8 +19,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"os"
-	"time"
 )
 
 const (
@@ -97,6 +98,12 @@ func main() {
 		fmt.Println("No block directory specified.")
 		return
 	}
+
+	if err := cfg.validate(); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
+
 	ctx := context.Background()
 
 	var matchers []*labels.Matcher
@@ -239,11 +246,10 @@ func analyzeBlockForGaps(ctx context.Context, cfg config, blockDir string, match
 				continue
 			}
 			if iter != nil {
-				level.Error(logger).Log("msg", "failed to open chunk", "ref", meta.Ref, "got iterable")
+				level.Error(logger).Log("msg", "got iterable from ChunkorIterable", "ref", meta.Ref)
 				continue
-			} else {
-				it = ch.Iterator(nil)
 			}
+			it = ch.Iterator(nil)
 			for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 				t, _ := it.At()
 				if t < rangeStart {
@@ -280,6 +286,7 @@ func analyzeBlockForGaps(ctx context.Context, cfg config, blockDir string, match
 			if maxDiff > 2*minDiff {
 				gapsPresent = true
 			}
+			gapThreshold = 3 * mostCommonInterval * 1000 / 2
 		} else {
 			if maxDiff > gapThreshold {
 				gapsPresent = true
