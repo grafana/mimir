@@ -60,7 +60,7 @@ func (c *config) registerFlags(f *flag.FlagSet) {
 	f.IntVar(&c.minSingleGapTime, "min-single-gap-time", defaultMinSingleGapTime, "Minimum gap time in seconds for a single gap")
 	f.IntVar(&c.maxSingleGapTime, "max-single-gap-time", defaultMaxSingleGapTime, "Maximum gap time in seconds for a single gap")
 	f.IntVar(&c.scrapeInterval, "scrape-interval", defaultScrapeInterval, "Threshold for gap detection in seconds, set to 0 for automatic interval detection)")
-	f.StringVar(&c.selector, "select", "", "PromQL metric selector (default: all series)")
+	f.StringVar(&c.selector, "select", "", "PromQL metric selector (e.g. '{__name__=~\"some_metric_prefix_.*\"}'")
 }
 
 func (c *config) validate() error {
