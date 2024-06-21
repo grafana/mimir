@@ -110,8 +110,8 @@ If something is not clear, you can get back to this document to learn more about
   - _This is addressed by Grafana Labs_
 - [ ] Publish a `mimir-distributed` Helm chart release candidate. Follow the instructions in [Release process for a release candidate](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/RELEASE.md#release-process-for-a-release-candidate)
 - [ ] Promote experimental features to experimental and remove deprecated features for the **next** release:
-    - [ ] Open a PR for every experimental feature we want to promote to stable
-    - [ ] Open a PR to remove any deprecated feature or configuration option that should be removed in the next release
+  - [ ] Open a PR for every experimental feature we want to promote to stable
+  - [ ] Open a PR to remove any deprecated feature or configuration option that should be removed in the next release
 
 ### Publish the stable release
 
