@@ -79,14 +79,27 @@ func NewBucketAlertStore(cfg BucketAlertStoreConfig, bkt objstore.Bucket, cfgPro
 
 // ListAllUsers implements alertstore.AlertStore.
 func (s *BucketAlertStore) ListAllUsers(ctx context.Context) ([]string, error) {
-	var userIDs []string
+	userIDs := make(map[string]struct{})
 
 	err := s.alertsBucket.Iter(ctx, "", func(key string) error {
-		userIDs = append(userIDs, key)
+		userIDs[key] = struct{}{}
 		return nil
 	})
 
-	return userIDs, err
+	if s.fetchGrafanaCfg {
+		err = s.grafanaAMBucket.Iter(ctx, "", func(key string) error {
+			// Unlike standard configurations, for the Grafana bucket has a hierarchy per user.
+			userIDs[strings.TrimRight(key, "/")] = struct{}{}
+			return nil
+		})
+	}
+
+	result := make([]string, 0, len(userIDs))
+	for userID := range userIDs {
+		result = append(result, userID)
+	}
+
+	return result, err
 }
 
 // GetAlertConfigs implements alertstore.AlertStore.
