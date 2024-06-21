@@ -14,18 +14,18 @@ func TestEngineFallbackInjector(t *testing.T) {
 	testCases := map[string]struct {
 		headers http.Header
 
-		forceFallback bool
-		expectedError string
+		expectFallback bool
+		expectedError  string
 	}{
 		"no headers": {
-			headers:       http.Header{},
-			forceFallback: false,
+			headers:        http.Header{},
+			expectFallback: false,
 		},
 		"unrelated header": {
 			headers: http.Header{
 				"Content-Type": []string{"application/blah"},
 			},
-			forceFallback: false,
+			expectFallback: false,
 		},
 		"force fallback header is present, but does not have expected value": {
 			headers: http.Header{
@@ -37,7 +37,7 @@ func TestEngineFallbackInjector(t *testing.T) {
 			headers: http.Header{
 				"X-Mimir-Force-Prometheus-Engine": []string{"true"},
 			},
-			forceFallback: true,
+			expectFallback: true,
 		},
 	}
 
@@ -47,7 +47,7 @@ func TestEngineFallbackInjector(t *testing.T) {
 			handlerCalled := false
 			handler := injector.Wrap(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				handlerCalled = true
-				require.Equal(t, testCase.forceFallback, isForceFallbackEnabled(req.Context()))
+				require.Equal(t, testCase.expectFallback, isForceFallbackEnabled(req.Context()))
 				w.WriteHeader(http.StatusOK)
 			}))
 
