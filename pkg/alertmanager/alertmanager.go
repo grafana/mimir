@@ -374,7 +374,12 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 	}
 	tmpl.ExternalURL = am.cfg.ExternalURL
 
-	if err := tmpl.Parse(strings.NewReader(alertingTemplates.DefaultTemplateString)); err != nil {
+	gTmpl, err := template.FromGlobs(templateFiles, WithCustomFunctions(userID))
+	if err != nil {
+		return err
+	}
+
+	if err := gTmpl.Parse(strings.NewReader(alertingTemplates.DefaultTemplateString)); err != nil {
 		return err
 	}
 
@@ -405,7 +410,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(userID, am.cfg.Limits))
 
-	integrationsMap, err := buildIntegrationsMap(conf.Receivers, tmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
+	integrationsMap, err := buildIntegrationsMap(conf.Receivers, tmpl, gTmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
 		if am.cfg.Limits != nil {
 			rl := &tenantRateLimits{
 				tenant:      userID,
@@ -514,13 +519,13 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]*nfstatus.Integration, error) {
+func buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl, gTmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]*nfstatus.Integration, error) {
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
 		var integrations []*nfstatus.Integration
 		var err error
 		if rcv.Type() == definition.GrafanaReceiverType {
-			integrations, err = buildGrafanaReceiverIntegrations(rcv, tmpl, logger)
+			integrations, err = buildGrafanaReceiverIntegrations(rcv, gTmpl, logger)
 		} else {
 			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, logger, notifierWrapper)
 		}
