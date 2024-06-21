@@ -23,6 +23,12 @@ cd "$SCRIPT_DIR" && make
 # -gcflags "all=-N -l" disables optimizations that allow for better run with combination with Delve debugger.
 # GOARCH is not changed.
 CGO_ENABLED=0 GOOS=linux go build -mod=vendor -tags=netgo,stringlabels -gcflags "all=-N -l" -o "${SCRIPT_DIR}"/mimir "${SCRIPT_DIR}"/../../cmd/mimir
-
 docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build --build-arg BUILD_IMAGE="${BUILD_IMAGE}" distributor-1
+
+if [ "$(yq '.services.query-tee' "${SCRIPT_DIR}"/docker-compose.yml)" != "null" ]; then
+  # If query-tee is enabled, build its binary and image as well.
+  CGO_ENABLED=0 GOOS=linux go build -mod=vendor -tags=netgo,stringlabels -gcflags "all=-N -l" -o "${SCRIPT_DIR}"/../../cmd/query-tee "${SCRIPT_DIR}"/../../cmd/query-tee
+  docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build --build-arg BUILD_IMAGE="${BUILD_IMAGE}" query-tee
+fi
+
 docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml up "$@"

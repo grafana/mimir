@@ -25,16 +25,46 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 var testRoutes = []Route{
-	{Path: "/api/v1/query", RouteName: "api_v1_query", Methods: []string{"GET"}, ResponseComparator: &testComparator{}},
+	{
+		Path:               "/api/v1/query",
+		RouteName:          "api_v1_query",
+		Methods:            []string{"GET"},
+		ResponseComparator: &testComparator{},
+	},
+	{
+		Path:                "/api/v1/query_with_transform",
+		RouteName:           "api_v1_query_with_transform",
+		Methods:             []string{"POST"},
+		ResponseComparator:  &testComparator{},
+		RequestTransformers: []RequestTransformer{testRequestTransformer1, testRequestTransformer2},
+	},
 }
 
 type testComparator struct{}
 
 func (testComparator) Compare(_, _ []byte) (ComparisonResult, error) {
 	return ComparisonSuccess, nil
+}
+
+func testRequestTransformer1(r *http.Request, body []byte, _ *spanlogger.SpanLogger) (*http.Request, []byte, error) {
+	r = r.Clone(r.Context())
+	r.URL.Path = r.URL.Path + "/transformed_1"
+	body = append(body, []byte("from 1\n")...)
+
+	return r, body, nil
+}
+
+func testRequestTransformer2(r *http.Request, body []byte, _ *spanlogger.SpanLogger) (*http.Request, []byte, error) {
+	r = r.Clone(r.Context())
+	r.URL.Path = r.URL.Path + "/transformed_2"
+	body = append(body, []byte("from 2\n")...)
+
+	return r, body, nil
 }
 
 func Test_NewProxy(t *testing.T) {
@@ -57,12 +87,16 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 	}
 
 	tests := map[string]struct {
+		requestPath         string
+		requestMethod       string
 		backends            []mockedBackend
 		preferredBackendIdx int
 		expectedStatus      int
 		expectedRes         string
 	}{
 		"one backend returning 2xx": {
+			requestPath:   "/api/v1/query",
+			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
 				{handler: mockQueryResponse("/api/v1/query", 200, querySingleMetric1)},
 			},
@@ -70,6 +104,8 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			expectedRes:    querySingleMetric1,
 		},
 		"one backend returning 5xx": {
+			requestPath:   "/api/v1/query",
+			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
 				{handler: mockQueryResponse("/api/v1/query", 500, "")},
 			},
@@ -77,6 +113,8 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			expectedRes:    "",
 		},
 		"two backends without path prefix": {
+			requestPath:   "/api/v1/query",
+			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
 				{handler: mockQueryResponse("/api/v1/query", 200, querySingleMetric1)},
 				{handler: mockQueryResponse("/api/v1/query", 200, querySingleMetric2)},
@@ -86,6 +124,8 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			expectedRes:         querySingleMetric1,
 		},
 		"two backends with the same path prefix": {
+			requestPath:   "/api/v1/query",
+			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
 				{
 					pathPrefix: "/prometheus",
@@ -101,6 +141,8 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			expectedRes:         querySingleMetric1,
 		},
 		"two backends with different path prefix": {
+			requestPath:   "/api/v1/query",
+			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
 				{
 					pathPrefix: "/prefix-1",
@@ -116,6 +158,8 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			expectedRes:         querySingleMetric1,
 		},
 		"preferred backend returns 4xx": {
+			requestPath:   "/api/v1/query",
+			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
 				{handler: mockQueryResponse("/api/v1/query", 400, "")},
 				{handler: mockQueryResponse("/api/v1/query", 200, querySingleMetric1)},
@@ -125,6 +169,8 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			expectedRes:         "",
 		},
 		"preferred backend returns 5xx": {
+			requestPath:   "/api/v1/query",
+			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
 				{handler: mockQueryResponse("/api/v1/query", 500, "")},
 				{handler: mockQueryResponse("/api/v1/query", 200, querySingleMetric1)},
@@ -134,6 +180,8 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			expectedRes:         querySingleMetric1,
 		},
 		"non-preferred backend returns 5xx": {
+			requestPath:   "/api/v1/query",
+			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
 				{handler: mockQueryResponse("/api/v1/query", 200, querySingleMetric1)},
 				{handler: mockQueryResponse("/api/v1/query", 500, "")},
@@ -143,6 +191,8 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			expectedRes:         querySingleMetric1,
 		},
 		"all backends returns 5xx": {
+			requestPath:   "/api/v1/query",
+			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
 				{handler: mockQueryResponse("/api/v1/query", 500, "")},
 				{handler: mockQueryResponse("/api/v1/query", 500, "")},
@@ -150,6 +200,15 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			preferredBackendIdx: 0,
 			expectedStatus:      500,
 			expectedRes:         "",
+		},
+		"request to route with outgoing request transformer": {
+			requestPath:   "/api/v1/query_with_transform",
+			requestMethod: http.MethodPost,
+			backends: []mockedBackend{
+				{handler: mockQueryResponseWithExpectedBody("/api/v1/query_with_transform/transformed_1/transformed_2", "from 1\nfrom 2\n", 200, querySingleMetric1)},
+			},
+			expectedStatus: 200,
+			expectedRes:    querySingleMetric1,
 		},
 	}
 
@@ -188,8 +247,10 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			require.NoError(t, p.Start())
 
 			// Send a query request to the proxy.
-			endpoint := fmt.Sprintf("http://%s/api/v1/query", p.server.HTTPListenAddr())
-			res, err := http.Get(endpoint)
+			endpoint := fmt.Sprintf("http://%s"+testData.requestPath, p.server.HTTPListenAddr())
+			req, err := http.NewRequest(testData.requestMethod, endpoint, nil)
+			require.NoError(t, err)
+			res, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
 
 			defer res.Body.Close()
@@ -497,11 +558,28 @@ func TestProxyHTTPGRPC(t *testing.T) {
 }
 
 func mockQueryResponse(path string, status int, res string) http.HandlerFunc {
+	return mockQueryResponseWithExpectedBody(path, "", status, res)
+}
+
+func mockQueryResponseWithExpectedBody(path string, expectedBody string, status int, res string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Ensure the path is the expected one.
 		if r.URL.Path != path {
 			w.WriteHeader(http.StatusNotFound)
 			return
+		}
+
+		if expectedBody != "" {
+			actualBody, err := io.ReadAll(r.Body)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			if string(actualBody) != expectedBody {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
 		}
 
 		// Send back the mocked response.

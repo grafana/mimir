@@ -7,6 +7,7 @@ package querytee
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,6 +29,7 @@ import (
 )
 
 func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
+	testRoute := Route{RouteName: "test"}
 	backendURL1, err := url.Parse("http://backend-1/")
 	require.NoError(t, err)
 	backendURL2, err := url.Parse("http://backend-2/")
@@ -105,7 +107,7 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
-			endpoint := NewProxyEndpoint(testData.backends, "test", NewProxyMetrics(nil), log.NewNopLogger(), nil, 0)
+			endpoint := NewProxyEndpoint(testData.backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0)
 
 			// Send the responses from a dedicated goroutine.
 			resCh := make(chan *backendResponse)
@@ -130,6 +132,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 		testHandler  http.HandlerFunc
 	)
 
+	testRoute := Route{RouteName: "test"}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer wg.Done()
 		defer requestCount.Add(1)
@@ -149,7 +152,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 		NewProxyBackend("backend-1", backendURL1, time.Second, true, false),
 		NewProxyBackend("backend-2", backendURL2, time.Second, false, false),
 	}
-	endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(nil), log.NewNopLogger(), nil, 0)
+	endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0)
 
 	for _, tc := range []struct {
 		name    string
@@ -233,6 +236,8 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 }
 
 func Test_ProxyEndpoint_Comparison(t *testing.T) {
+	testRoute := Route{RouteName: "test"}
+
 	scenarios := map[string]struct {
 		preferredResponseStatusCode  int
 		secondaryResponseStatusCode  int
@@ -323,7 +328,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 				comparisonError:  scenario.comparatorError,
 			}
 
-			endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(reg), logger, comparator, 0)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0)
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -352,6 +357,8 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 }
 
 func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
+	testRoute := Route{RouteName: "test"}
+
 	scenarios := map[string]struct {
 		slowResponseThreshold         time.Duration
 		preferredResponseLatency      time.Duration
@@ -423,7 +430,7 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 				comparisonResult: ComparisonSuccess,
 			}
 
-			endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(reg), logger, comparator, scenario.slowResponseThreshold)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, scenario.slowResponseThreshold)
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -448,6 +455,8 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 }
 
 func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
+	testRoute := Route{RouteName: "test"}
+
 	scenarios := map[string]struct {
 		latencyPairs                  []latencyPair
 		expectedDurationSampleSum     float64
@@ -490,7 +499,7 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 				comparisonResult: ComparisonSuccess,
 			}
 
-			endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(reg), logger, comparator, 0)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0)
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -762,7 +771,7 @@ func (b *mockProxyBackend) Preferred() bool {
 	return b.preferred
 }
 
-func (b *mockProxyBackend) ForwardRequest(_ *http.Request, _ io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
+func (b *mockProxyBackend) ForwardRequest(_ context.Context, _ *http.Request, _ io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
 	resp := &http.Response{
 		StatusCode: 200,
 		Header:     make(http.Header),
