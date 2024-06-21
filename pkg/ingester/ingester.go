@@ -1420,7 +1420,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				if len(ts.Samples) > 0 {
 					firstTimestamp = ts.Samples[0].TimestampMs
 				}
-				if len(ts.Histograms) > 0 && ts.Histograms[0].Timestamp < firstTimestamp {
+				if len(ts.Histograms) > 0 && (firstTimestamp == 0 || ts.Histograms[0].Timestamp < firstTimestamp) {
 					firstTimestamp = ts.Histograms[0].Timestamp
 				}
 
