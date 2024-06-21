@@ -3278,6 +3278,8 @@ gateway:
       serverSnippet: ""
       # -- Allows appending custom configuration to the http block
       httpSnippet: ""
+      # -- Allow to set client_max_body_size in the nginx configuration
+      clientMaxBodySize: 540M
       # -- Allows to set a custom resolver
       resolver: null
       # -- Configures whether or not NGINX bind IPv6
@@ -3288,6 +3290,9 @@ gateway:
         error_log  /dev/stderr {{ .Values.gateway.nginx.config.errorLogLevel }};
         pid        /tmp/nginx.pid;
         worker_rlimit_nofile 8192;
+        {{- if .Values.gateway.nginx.config.clientMaxBodySize }}
+        client_max_body_size {{ .Values.gateway.nginx.config.clientMaxBodySize }};
+        {{- end }}
 
         events {
           worker_connections  4096;  ## Default: 1024
@@ -3344,6 +3349,10 @@ gateway:
             listen {{ include "mimir.serverHttpListenPort" . }};
             {{- if .Values.gateway.nginx.config.enableIPv6 }}
             listen [::]:{{ include "mimir.serverHttpListenPort" . }};
+            {{- end }}
+
+            {{- if .Values.gateway.nginx.config.clientMaxBodySize }}
+            client_max_body_size {{ .Values.gateway.nginx.config.clientMaxBodySize }};
             {{- end }}
 
             {{- if .Values.gateway.nginx.basicAuth.enabled }}
