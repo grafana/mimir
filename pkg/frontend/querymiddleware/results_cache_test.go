@@ -477,8 +477,8 @@ func TestPartitionCacheExtents(t *testing.T) {
 					start: 120,
 					end:   160,
 					step:  10,
-					minT:	 120,
-					maxT:	 160,
+					minT:  120,
+					maxT:  160,
 				},
 			},
 			expectedCachedResponse: []Response{
