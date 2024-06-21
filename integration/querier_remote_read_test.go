@@ -7,7 +7,6 @@
 package integration
 
 import (
-	"math/rand"
 	"net/http"
 	"testing"
 	"time"
@@ -35,7 +34,7 @@ func TestQuerierRemoteRead(t *testing.T) {
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
 		map[string]string{
-			// This test writes samples sparse in time.
+			// This test writes samples sparse in time. We don't want compaction to trigger while testing.
 			"-blocks-storage.tsdb.block-ranges-period": "2h",
 		},
 	)
@@ -152,126 +151,170 @@ func runTestPushSeriesForQuerierRemoteRead(t *testing.T, c *e2emimir.Client, que
 }
 
 func TestQuerierStreamingRemoteRead(t *testing.T) {
-	testCases := map[string]struct {
-		expectedValType chunkenc.ValueType
-		floats          func(startMs, endMs int64) []prompb.Sample
-		histograms      func(startMs, endMs int64) []prompb.Histogram
+	var (
+		now           = time.Now().Truncate(time.Minute) // Make assertions easier to debug.
+		pushedStartMs = now.Add(-time.Minute).UnixMilli()
+		pushedEndMs   = now.Add(time.Minute).UnixMilli()
+		pushedStepMs  = int64(100) // Simulate a high frequency scraping (10Hz).
+	)
+
+	const (
+		floatMetricName          = "series_float"
+		histogramMetricName      = "series_histogram"
+		floatHistogramMetricName = "series_float_histogram"
+	)
+
+	tests := map[string]struct {
+		valType         chunkenc.ValueType
+		metricName      string
+		query           *prompb.Query
+		expectedStartMs int64
+		expectedEndMs   int64
 	}{
-		"float samples": {
-			expectedValType: chunkenc.ValFloat,
-			floats: func(startMs, endMs int64) []prompb.Sample {
-				var samples []prompb.Sample
-				for i := startMs; i < endMs; i++ {
-					samples = append(samples, prompb.Sample{
-						Value:     rand.Float64(),
-						Timestamp: i,
-					})
-				}
-				return samples
+		"float samples, remote read request without hints": {
+			valType:    chunkenc.ValFloat,
+			metricName: floatMetricName,
+			query: &prompb.Query{
+				Matchers:         remoteReadQueryMatchersByMetricName(floatMetricName),
+				StartTimestampMs: pushedStartMs,
+				EndTimestampMs:   pushedEndMs,
 			},
+			expectedStartMs: pushedStartMs,
+			expectedEndMs:   pushedEndMs,
+		},
+		"float samples, with hints time range equal to query time range": {
+			valType:    chunkenc.ValFloat,
+			metricName: floatMetricName,
+			query: &prompb.Query{
+				Matchers:         remoteReadQueryMatchersByMetricName(floatMetricName),
+				StartTimestampMs: pushedStartMs,
+				EndTimestampMs:   pushedEndMs,
+				Hints: &prompb.ReadHints{
+					StartMs: pushedStartMs,
+					EndMs:   pushedEndMs,
+				},
+			},
+			expectedStartMs: pushedStartMs,
+			expectedEndMs:   pushedEndMs,
+		},
+		"float samples, with hints time range different than query time range": {
+			valType:    chunkenc.ValFloat,
+			metricName: floatMetricName,
+			query: &prompb.Query{
+				Matchers:         remoteReadQueryMatchersByMetricName(floatMetricName),
+				StartTimestampMs: pushedStartMs,
+				EndTimestampMs:   pushedEndMs,
+				Hints: &prompb.ReadHints{
+					StartMs: now.UnixMilli(),
+					EndMs:   now.Add(10 * time.Second).UnixMilli(),
+				},
+			},
+			// Mimir doesn't cut returned chunks to the requested time range for performance reasons. This means
+			// that we get the entire chunks in output. TSDB targets to cut chunks once every 120 samples, but
+			// it's based on estimation and math is not super accurate. That's why we get these not-perfectly-aligned
+			// chunk ranges. However, they're consistent, so tests are stable.
+			expectedStartMs: now.Add(-1500 * time.Millisecond).UnixMilli(),
+			expectedEndMs:   now.Add(10100 * time.Millisecond).UnixMilli(),
 		},
 		"histograms": {
-			expectedValType: chunkenc.ValHistogram,
-			histograms: func(startMs, endMs int64) []prompb.Histogram {
-				var hists []prompb.Histogram
-				for i := startMs; i < endMs; i++ {
-					h := test.GenerateTestHistogram(int(i))
-					hists = append(hists, remote.HistogramToHistogramProto(i, h))
-				}
-				return hists
-			},
+			valType:         chunkenc.ValHistogram,
+			metricName:      histogramMetricName,
+			query:           remoteReadQueryByMetricName(histogramMetricName, time.UnixMilli(pushedStartMs), time.UnixMilli(pushedEndMs)),
+			expectedStartMs: pushedStartMs,
+			expectedEndMs:   pushedEndMs,
 		},
 		"float histograms": {
-			expectedValType: chunkenc.ValFloatHistogram,
-			histograms: func(startMs, endMs int64) []prompb.Histogram {
-				var hists []prompb.Histogram
-				for i := startMs; i < endMs; i++ {
-					h := test.GenerateTestFloatHistogram(int(i))
-					hists = append(hists, remote.FloatHistogramToHistogramProto(i, h))
-				}
-				return hists
-			},
+			valType:         chunkenc.ValFloatHistogram,
+			metricName:      floatHistogramMetricName,
+			query:           remoteReadQueryByMetricName(floatHistogramMetricName, time.UnixMilli(pushedStartMs), time.UnixMilli(pushedEndMs)),
+			expectedStartMs: pushedStartMs,
+			expectedEndMs:   pushedEndMs,
 		},
 	}
 
-	for testName, tc := range testCases {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
+		"-distributor.ingestion-rate-limit": "1048576",
+		"-distributor.ingestion-burst-size": "1048576",
+		"-distributor.remote-timeout":       "10s",
+
+		// This test writes samples sparse in time. We don't want compaction to trigger while testing.
+		"-blocks-storage.tsdb.block-ranges-period": "2h",
+	})
+
+	// Start dependencies.
+	minio := e2edb.NewMinio(9000, blocksBucketName)
+	consul := e2edb.NewConsul()
+	require.NoError(t, s.StartAndWaitReady(minio, consul))
+
+	// Start Mimir components for the write path.
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester))
+
+	// Wait until the distributor has updated the ring.
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
+
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(querier))
+
+	// Wait until the querier has updated the ring.
+	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+
+	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", "user-1")
+	c.SetTimeout(10 * time.Second)
+	require.NoError(t, err)
+
+	// Generate all the samples and histograms.
+	var floats []prompb.Sample
+	var histograms []prompb.Histogram
+	var floatHistograms []prompb.Histogram
+
+	for ts := pushedStartMs; ts < pushedEndMs; ts += pushedStepMs {
+		floats = append(floats, prompb.Sample{Value: float64(ts), Timestamp: ts})
+		histograms = append(histograms, remote.HistogramToHistogramProto(ts, test.GenerateTestHistogram(int(ts))))
+		floatHistograms = append(floatHistograms, remote.FloatHistogramToHistogramProto(ts, test.GenerateTestFloatHistogram(int(ts))))
+	}
+
+	// Generate the series.
+	seriesToPush := []prompb.TimeSeries{
+		{
+			Labels:  []prompb.Label{{Name: labels.MetricName, Value: floatMetricName}},
+			Samples: floats,
+		}, {
+			Labels:     []prompb.Label{{Name: labels.MetricName, Value: histogramMetricName}},
+			Histograms: histograms,
+		}, {
+			Labels:     []prompb.Label{{Name: labels.MetricName, Value: floatHistogramMetricName}},
+			Histograms: floatHistograms,
+		},
+	}
+
+	// Push a series to Mimir.
+	res, err := c.Push(seriesToPush)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			s, err := e2e.NewScenario(networkName)
-			require.NoError(t, err)
-			defer s.Close()
+			expectedSamples := filterSamplesByTimestamp(floats, testData.expectedStartMs, testData.expectedEndMs)
+			expectedHistograms := filterHistogramsByTimestamp(histograms, testData.expectedStartMs, testData.expectedEndMs)
+			expectedFloatHistograms := filterHistogramsByTimestamp(floatHistograms, testData.expectedStartMs, testData.expectedEndMs)
 
-			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-				"-distributor.ingestion-rate-limit": "1048576",
-				"-distributor.ingestion-burst-size": "1048576",
-				"-distributor.remote-timeout":       "10s",
-			})
-
-			// Start dependencies.
-			minio := e2edb.NewMinio(9000, blocksBucketName)
-
-			consul := e2edb.NewConsul()
-			require.NoError(t, s.StartAndWaitReady(minio, consul))
-
-			// Start Mimir components for the write path.
-			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
-			ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
-			require.NoError(t, s.StartAndWaitReady(distributor, ingester))
-
-			// Wait until the distributor has updated the ring.
-			// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
-			require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
-
-			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
-			require.NoError(t, s.StartAndWaitReady(querier))
-
-			// Wait until the querier has updated the ring.
-			require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
-
-			// Push a series to Mimir.
-			now := time.Now()
-
-			c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
-			c.SetTimeout(10 * time.Second)
-			require.NoError(t, err)
-
-			// Generate the series
-			startMs := now.Add(-time.Minute)
-			endMs := now.Add(time.Minute)
-
-			var samples []prompb.Sample
-			if tc.floats != nil {
-				samples = tc.floats(startMs.UnixMilli(), endMs.UnixMilli())
-			}
-			var histograms []prompb.Histogram
-			if tc.histograms != nil {
-				histograms = tc.histograms(startMs.UnixMilli(), endMs.UnixMilli())
-			}
-
-			var series []prompb.TimeSeries
-			series = append(series, prompb.TimeSeries{
-				Labels: []prompb.Label{
-					{Name: labels.MetricName, Value: "series_1"},
-				},
-				Samples:    samples,
-				Histograms: histograms,
-			})
-
-			res, err := c.Push(series)
-			require.NoError(t, err)
-			require.Equal(t, 200, res.StatusCode)
-
-			client, err := e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "user-1")
-			require.NoError(t, err)
-			httpResp, results, _, err := client.RemoteReadChunks("series_1", startMs, endMs)
+			httpResp, results, _, err := c.RemoteReadChunks(testData.query)
 			require.Equal(t, http.StatusOK, httpResp.StatusCode)
 			require.NoError(t, err)
 
 			// Validate the returned remote read data
 			sampleIdx := 0
 			for _, result := range results {
-				// We're only expected a single series `series_1`.
+				// We expect only 1 series.
 				require.Len(t, result.ChunkedSeries, 1)
-				require.Equal(t, "series_1", result.ChunkedSeries[0].Labels[0].GetValue())
+				require.Equal(t, testData.metricName, result.ChunkedSeries[0].Labels[0].GetValue())
 
 				for _, rawChk := range result.ChunkedSeries[0].Chunks {
 					var enc chunkenc.Encoding
@@ -292,23 +335,23 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 					chkItr := chk.Iterator(nil)
 					chkIdx := 0
 					for valType := chkItr.Next(); valType != chunkenc.ValNone; valType = chkItr.Next() {
-						require.Equal(t, tc.expectedValType, valType)
+						require.Equal(t, testData.valType, valType)
 						switch valType {
 						case chunkenc.ValFloat:
 							ts, val := chkItr.At()
-							require.Equal(t, samples[sampleIdx].Timestamp, ts)
-							require.Equal(t, samples[sampleIdx].Value, val)
+							require.Equalf(t, expectedSamples[sampleIdx].Timestamp, ts, "index: %d", sampleIdx)
+							require.Equalf(t, expectedSamples[sampleIdx].Value, val, "index: %d", sampleIdx)
 						case chunkenc.ValHistogram:
 							ts, h := chkItr.AtHistogram(nil)
-							require.Equal(t, histograms[sampleIdx].Timestamp, ts)
+							require.Equalf(t, expectedHistograms[sampleIdx].Timestamp, ts, "index: %d", sampleIdx)
 
-							expected := remote.HistogramProtoToHistogram(histograms[sampleIdx])
+							expected := remote.HistogramProtoToHistogram(expectedHistograms[sampleIdx])
 							test.RequireHistogramEqual(t, expected, h)
 						case chunkenc.ValFloatHistogram:
 							ts, fh := chkItr.AtFloatHistogram(nil)
-							require.Equal(t, histograms[sampleIdx].Timestamp, ts)
+							require.Equalf(t, expectedFloatHistograms[sampleIdx].Timestamp, ts, "index: %d", sampleIdx)
 
-							expected := remote.FloatHistogramProtoToFloatHistogram(histograms[sampleIdx])
+							expected := remote.FloatHistogramProtoToFloatHistogram(expectedFloatHistograms[sampleIdx])
 							test.RequireFloatHistogramEqual(t, expected, fh)
 						default:
 							require.Fail(t, "unrecognized value type")
@@ -319,11 +362,12 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 				}
 			}
 
-			if samples != nil {
-				require.Len(t, samples, sampleIdx)
-			} else if histograms != nil {
-				require.Len(t, histograms, sampleIdx)
+			if expectedSamples != nil {
+				require.Len(t, expectedSamples, sampleIdx)
+			} else if expectedHistograms != nil {
+				require.Len(t, expectedHistograms, sampleIdx)
 			}
 		})
 	}
+
 }

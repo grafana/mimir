@@ -261,6 +261,30 @@ func GenerateNHistogramSeries(nSeries, nExemplars int, name func() string, ts ti
 	return
 }
 
+func filterSamplesByTimestamp(input []prompb.Sample, startMs, endMs int64) []prompb.Sample {
+	var filtered []prompb.Sample
+
+	for _, sample := range input {
+		if sample.Timestamp >= startMs && sample.Timestamp <= endMs {
+			filtered = append(filtered, sample)
+		}
+	}
+
+	return filtered
+}
+
+func filterHistogramsByTimestamp(input []prompb.Histogram, startMs, endMs int64) []prompb.Histogram {
+	var filtered []prompb.Histogram
+
+	for _, sample := range input {
+		if sample.Timestamp >= startMs && sample.Timestamp <= endMs {
+			filtered = append(filtered, sample)
+		}
+	}
+
+	return filtered
+}
+
 func prompbLabelsToMetric(pbLabels []prompb.Label) model.Metric {
 	metric := make(model.Metric, len(pbLabels))
 

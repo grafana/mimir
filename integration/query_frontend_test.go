@@ -719,7 +719,7 @@ overrides:
 		{
 			name: "query remote read time range exceeds the limit (streaming chunks)",
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
-				httpR, _, respBytes, err := c.RemoteReadChunks(`metric`, now.Add(-time.Hour*24*32), now)
+				httpR, _, respBytes, err := c.RemoteReadChunks(remoteReadQueryByMetricName(`metric`, now.Add(-time.Hour*24*32), now))
 				return httpR, respBytes, err
 			},
 			expStatusCode: http.StatusBadRequest,
