@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -30,7 +31,9 @@ type Snapshotter struct {
 	logger log.Logger
 	conf   SnapshotterConfig
 
-	stop chan struct{}
+	// when the running group is positive, this indicates the Snapshotter is active
+	running sync.WaitGroup
+	stop    chan struct{}
 }
 
 func NewSnapshotter(logger log.Logger, conf SnapshotterConfig) *Snapshotter {
@@ -47,7 +50,10 @@ type blocksLoader interface {
 
 // Start spawns a background job that periodically persists the list of lazy-loaded index headers.
 func (s *Snapshotter) Start(ctx context.Context, bl blocksLoader) {
+	s.running.Add(1)
 	go func() {
+		defer s.running.Done()
+
 		err := s.PersistLoadedBlocks(bl)
 		if err != nil {
 			// Note, the decision here is to only log the error but not failing the job. We may reconsider that later.
@@ -74,6 +80,7 @@ func (s *Snapshotter) Start(ctx context.Context, bl blocksLoader) {
 
 func (s *Snapshotter) Stop() {
 	close(s.stop)
+	s.running.Wait()
 }
 
 func (s *Snapshotter) PersistLoadedBlocks(bl blocksLoader) error {

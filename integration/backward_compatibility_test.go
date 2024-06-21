@@ -306,7 +306,7 @@ func checkQueries(
 
 				for _, req := range remoteReadRequests {
 					t.Run(fmt.Sprintf("%s: remote read: %s", endpoint, req.metricName), func(t *testing.T) {
-						httpRes, result, _, err := c.RemoteRead(req.metricName, req.startTime, req.endTime)
+						httpRes, result, _, err := c.RemoteRead(remoteReadQueryByMetricName(req.metricName, req.startTime, req.endTime))
 						require.NoError(t, err)
 						require.Equal(t, http.StatusOK, httpRes.StatusCode)
 						require.NotNil(t, result)

@@ -88,24 +88,23 @@ func remoteReadSamples(
 
 	for i, qr := range req.Queries {
 		go func(i int, qr *prompb.Query) {
-			from, to, matchers, err := queryFromRemoteReadQuery(qr)
+			start, end, minT, maxT, matchers, hints, err := queryFromRemoteReadQuery(qr)
 			if err != nil {
 				errCh <- err
 				return
 			}
 
-			querier, err := q.Querier(int64(from), int64(to))
+			querier, err := q.Querier(int64(start), int64(end))
 			if err != nil {
 				errCh <- err
 				return
 			}
 
-			params := &storage.SelectHints{
-				Start: int64(from),
-				End:   int64(to),
-			}
-			seriesSet := querier.Select(ctx, false, params, matchers...)
-			resp.Results[i], err = seriesSetToQueryResult(seriesSet)
+			seriesSet := querier.Select(ctx, false, hints, matchers...)
+
+			// We can over-read when querying, but we don't need to return samples
+			// outside the queried range, so can filter them out.
+			resp.Results[i], err = seriesSetToQueryResult(seriesSet, int64(minT), int64(maxT))
 			errCh <- err
 		}(i, qr)
 	}
@@ -185,31 +184,26 @@ func processReadStreamedQueryRequest(
 	f http.Flusher,
 	maxBytesInFrame int,
 ) error {
-	from, to, matchers, err := queryFromRemoteReadQuery(queryReq)
+	start, end, _, _, matchers, hints, err := queryFromRemoteReadQuery(queryReq)
 	if err != nil {
 		return err
 	}
 
-	querier, err := q.ChunkQuerier(int64(from), int64(to))
+	querier, err := q.ChunkQuerier(int64(start), int64(end))
 	if err != nil {
 		return err
-	}
-
-	params := &storage.SelectHints{
-		Start: int64(from),
-		End:   int64(to),
 	}
 
 	return streamChunkedReadResponses(
 		prom_remote.NewChunkedWriter(w, f),
 		// The streaming API has to provide the series sorted.
-		querier.Select(ctx, true, params, matchers...),
+		querier.Select(ctx, true, hints, matchers...),
 		idx,
 		maxBytesInFrame,
 	)
 }
 
-func seriesSetToQueryResult(s storage.SeriesSet) (*prompb.QueryResult, error) {
+func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int64) (*prompb.QueryResult, error) {
 	result := &prompb.QueryResult{}
 
 	var it chunkenc.Iterator
@@ -219,6 +213,11 @@ func seriesSetToQueryResult(s storage.SeriesSet) (*prompb.QueryResult, error) {
 		histograms := []prompb.Histogram{}
 		it = series.Iterator(it)
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+			// Ensure the sample is within the filtered time range.
+			if ts := it.AtT(); ts < filterStartMs || ts > filterEndMs {
+				continue
+			}
+
 			switch valType {
 			case chunkenc.ValFloat:
 				t, v := it.At()
@@ -344,12 +343,32 @@ func initializedFrameBytesRemaining(maxBytesInFrame int, lbls []prompb.Label) in
 
 // queryFromRemoteReadQuery returns the queried time range and label matchers for the given remote
 // read request query.
-func queryFromRemoteReadQuery(query *prompb.Query) (from, to model.Time, matchers []*labels.Matcher, err error) {
+func queryFromRemoteReadQuery(query *prompb.Query) (start, end, minT, maxT model.Time, matchers []*labels.Matcher, hints *storage.SelectHints, err error) {
 	matchers, err = prom_remote.FromLabelMatchers(query.Matchers)
 	if err != nil {
 		return
 	}
-	from = model.Time(query.StartTimestampMs)
-	to = model.Time(query.EndTimestampMs)
+
+	start = model.Time(query.StartTimestampMs)
+	end = model.Time(query.EndTimestampMs)
+	minT = start
+	maxT = end
+
+	hints = &storage.SelectHints{
+		Start: query.StartTimestampMs,
+		End:   query.EndTimestampMs,
+	}
+
+	// Honor the start/end timerange defined in the read hints, but protect from the case
+	// the passed read hints are zero values (because unintentionally initialised but not set).
+	if query.Hints != nil && query.Hints.StartMs > 0 {
+		hints.Start = query.Hints.StartMs
+		minT = model.Time(hints.Start)
+	}
+	if query.Hints != nil && query.Hints.EndMs > 0 {
+		hints.End = query.Hints.EndMs
+		maxT = model.Time(hints.End)
+	}
+
 	return
 }

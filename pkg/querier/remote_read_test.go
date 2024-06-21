@@ -109,6 +109,7 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 		query                *prompb.Query
 		expectedQueriedStart int64
 		expectedQueriedEnd   int64
+		expectedTimeseries   []*prompb.TimeSeries
 	}{
 		"query without hints": {
 			query: &prompb.Query{
@@ -117,6 +118,21 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 			},
 			expectedQueriedStart: 1,
 			expectedQueriedEnd:   10,
+			expectedTimeseries: []*prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "foo", Value: "bar"},
+					},
+					Samples: []prompb.Sample{
+						{Value: 1, Timestamp: 1},
+						{Value: 2, Timestamp: 2},
+						{Value: 3, Timestamp: 3},
+					},
+					Histograms: []prompb.Histogram{
+						prom_remote.HistogramToHistogramProto(4, test.GenerateTestHistogram(4)),
+					},
+				},
+			},
 		},
 		"query with hints": {
 			query: &prompb.Query{
@@ -124,11 +140,22 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 				EndTimestampMs:   10,
 				Hints: &prompb.ReadHints{
 					StartMs: 2,
-					EndMs:   9,
+					EndMs:   3,
 				},
 			},
-			expectedQueriedStart: 1,  // Hints are currently ignored.
-			expectedQueriedEnd:   10, // Hints are currently ignored.
+			expectedQueriedStart: 2,
+			expectedQueriedEnd:   3,
+			expectedTimeseries: []*prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "foo", Value: "bar"},
+					},
+					Samples: []prompb.Sample{
+						{Value: 2, Timestamp: 2},
+						{Value: 3, Timestamp: 3},
+					},
+				},
+			},
 		},
 	}
 
@@ -179,21 +206,7 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 			expected := prompb.ReadResponse{
 				Results: []*prompb.QueryResult{
 					{
-						Timeseries: []*prompb.TimeSeries{
-							{
-								Labels: []prompb.Label{
-									{Name: "foo", Value: "bar"},
-								},
-								Samples: []prompb.Sample{
-									{Value: 1, Timestamp: 1},
-									{Value: 2, Timestamp: 2},
-									{Value: 3, Timestamp: 3},
-								},
-								Histograms: []prompb.Histogram{
-									prom_remote.HistogramToHistogramProto(4, test.GenerateTestHistogram(4)),
-								},
-							},
-						},
+						Timeseries: queryData.expectedTimeseries,
 					},
 				},
 			}
@@ -387,8 +400,8 @@ func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
 					EndMs:   9,
 				},
 			},
-			expectedQueriedStart: 1,  // Hints are currently ignored.
-			expectedQueriedEnd:   10, // Hints are currently ignored.
+			expectedQueriedStart: 2,
+			expectedQueriedEnd:   9,
 		},
 	}
 
@@ -680,9 +693,12 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 func TestQueryFromRemoteReadQuery(t *testing.T) {
 	tests := map[string]struct {
 		query            *prompb.Query
-		expectedFrom     model.Time
-		expectedTo       model.Time
+		expectedStart    model.Time
+		expectedEnd      model.Time
+		expectedMinT     model.Time
+		expectedMaxT     model.Time
 		expectedMatchers []*labels.Matcher
+		expectedHints    *storage.SelectHints
 	}{
 		"remote read request query without hints": {
 			query: &prompb.Query{
@@ -692,9 +708,15 @@ func TestQueryFromRemoteReadQuery(t *testing.T) {
 					{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "metric"},
 				},
 			},
-			expectedFrom:     1000,
-			expectedTo:       2000,
+			expectedStart:    1000,
+			expectedEnd:      2000,
+			expectedMinT:     1000,
+			expectedMaxT:     2000,
 			expectedMatchers: []*labels.Matcher{{Type: labels.MatchEqual, Name: labels.MetricName, Value: "metric"}},
+			expectedHints: &storage.SelectHints{
+				Start: 1000,
+				End:   2000,
+			},
 		},
 		"remote read request query with hints": {
 			query: &prompb.Query{
@@ -708,19 +730,48 @@ func TestQueryFromRemoteReadQuery(t *testing.T) {
 					EndMs:   1500,
 				},
 			},
-			expectedFrom:     1000, // Hints are currently ignored.
-			expectedTo:       2000, // Hints are currently ignored.
+			expectedStart:    1000,
+			expectedEnd:      2000,
+			expectedMinT:     500,
+			expectedMaxT:     1500,
 			expectedMatchers: []*labels.Matcher{{Type: labels.MatchEqual, Name: labels.MetricName, Value: "metric"}},
+			expectedHints: &storage.SelectHints{
+				Start: 500,
+				End:   1500,
+			},
+		},
+		"remote read request query with zero-value hints": {
+			query: &prompb.Query{
+				StartTimestampMs: 1000,
+				EndTimestampMs:   2000,
+				Matchers: []*prompb.LabelMatcher{
+					{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "metric"},
+				},
+				Hints: &prompb.ReadHints{},
+			},
+			expectedStart:    1000,
+			expectedEnd:      2000,
+			expectedMinT:     1000,
+			expectedMaxT:     2000,
+			expectedMatchers: []*labels.Matcher{{Type: labels.MatchEqual, Name: labels.MetricName, Value: "metric"}},
+			expectedHints: &storage.SelectHints{
+				// Fallback to start/end time range given the read hints are zero values.
+				Start: 1000,
+				End:   2000,
+			},
 		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			actualFrom, actualTo, actualMatchers, err := queryFromRemoteReadQuery(testData.query)
+			actualStart, actualEnd, actualMinT, actualMaxT, actualMatchers, actualHints, err := queryFromRemoteReadQuery(testData.query)
 			require.NoError(t, err)
-			require.Equal(t, testData.expectedFrom, actualFrom)
-			require.Equal(t, testData.expectedTo, actualTo)
+			require.Equal(t, testData.expectedStart, actualStart)
+			require.Equal(t, testData.expectedEnd, actualEnd)
+			require.Equal(t, testData.expectedMinT, actualMinT)
+			require.Equal(t, testData.expectedMaxT, actualMaxT)
 			require.Equal(t, testData.expectedMatchers, actualMatchers)
+			require.Equal(t, testData.expectedHints, actualHints)
 		})
 	}
 }

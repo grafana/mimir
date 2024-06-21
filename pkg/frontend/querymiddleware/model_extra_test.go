@@ -14,6 +14,7 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
@@ -163,6 +164,214 @@ func TestMetricQueryRequestCloneHeaders(t *testing.T) {
 				require.NoError(t, err)
 				validateClonedHeaders(t, r.GetHeaders(), originalReq.GetHeaders())
 			})
+		})
+	}
+}
+
+// Check that With... functions of PrometheusRangeQueryRequest that affect
+// the query keep minT, maxT up to date.
+func TestPrometheusRangeQueryRequest_MinTMaxT(t *testing.T) {
+	now := time.Now()
+	start := now
+	end := now.Add(17 * time.Minute)
+	defaultLookback := 1 * time.Minute
+
+	testCases := map[string]struct {
+		query        string
+		withFn       func(req MetricsQueryRequest) (MetricsQueryRequest, error)
+		expectedMinT int64
+		expectedMaxT int64
+	}{
+		"instant vector selector, not modified": {
+			query:        "some_metric{}",
+			withFn:       func(req MetricsQueryRequest) (MetricsQueryRequest, error) { return req, nil },
+			expectedMinT: start.Add(-1 * defaultLookback).UnixMilli(), // Default lookback.
+			expectedMaxT: end.UnixMilli(),
+		},
+		"range vector selector, not modified": {
+			query:        "some_metric{}[10m]",
+			withFn:       func(req MetricsQueryRequest) (MetricsQueryRequest, error) { return req, nil },
+			expectedMinT: start.Add(-10 * time.Minute).UnixMilli(), // Lookback is overridden by the range.
+			expectedMaxT: end.UnixMilli(),
+		},
+		"instant vector query, WithStartEnd": {
+			query: "some_metric{}",
+			withFn: func(req MetricsQueryRequest) (MetricsQueryRequest, error) {
+				return req.WithStartEnd(start.Add(-1*time.Hour).UnixMilli(), end.Add(5*time.Minute).UnixMilli())
+			},
+			expectedMinT: start.Add(-1 * time.Hour).Add(-1 * defaultLookback).UnixMilli(),
+			expectedMaxT: end.Add(5 * time.Minute).UnixMilli(),
+		},
+		"range vector query, WithStartEnd": {
+			query: "some_metric{}[10m]",
+			withFn: func(req MetricsQueryRequest) (MetricsQueryRequest, error) {
+				return req.WithStartEnd(start.Add(-1*time.Hour).UnixMilli(), end.Add(5*time.Minute).UnixMilli())
+			},
+			expectedMinT: start.Add(-1 * time.Hour).Add(-10 * time.Minute).UnixMilli(),
+			expectedMaxT: end.Add(5 * time.Minute).UnixMilli(),
+		},
+		"instant vector query, WithQuery": {
+			query: "some_metric{}",
+			withFn: func(req MetricsQueryRequest) (MetricsQueryRequest, error) {
+				return req.WithQuery("other_metric{}")
+			},
+			expectedMinT: start.Add(-1 * defaultLookback).UnixMilli(), // Default lookback.
+			expectedMaxT: end.UnixMilli(),
+		},
+		"range vector query, WithQuery": {
+			query: "some_metric{}[10m]",
+			withFn: func(req MetricsQueryRequest) (MetricsQueryRequest, error) {
+				return req.WithQuery("some_metric{}[20m]")
+			},
+			expectedMinT: start.Add(-20 * time.Minute).UnixMilli(), // Lookback is overridden by the range.
+			expectedMaxT: end.UnixMilli(),
+		},
+		"instant vector query, WithExpr": {
+			query: "some_metric{}",
+			withFn: func(req MetricsQueryRequest) (MetricsQueryRequest, error) {
+				newExpr, err := parser.ParseExpr("other_metric{}")
+				if err != nil {
+					return nil, err
+				}
+				return req.WithExpr(newExpr)
+			},
+			expectedMinT: start.Add(-1 * defaultLookback).UnixMilli(), // Default lookback.
+			expectedMaxT: end.UnixMilli(),
+		},
+		"range vector query, WithExpr": {
+			query: "some_metric{}[10m]",
+			withFn: func(req MetricsQueryRequest) (MetricsQueryRequest, error) {
+				newExpr, err := parser.ParseExpr("some_metric{}[20m]")
+				if err != nil {
+					return nil, err
+				}
+				return req.WithExpr(newExpr)
+			},
+			expectedMinT: start.Add(-20 * time.Minute).UnixMilli(), // Lookback is overridden by the range.
+			expectedMaxT: end.UnixMilli(),
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			expr, err := parser.ParseExpr(tc.query)
+			require.NoError(t, err)
+			req := NewPrometheusRangeQueryRequest(
+				"/query",
+				nil,
+				start.UnixMilli(),
+				end.UnixMilli(),
+				1000,
+				defaultLookback,
+				expr,
+				Options{},
+				nil,
+			)
+			newReq, err := tc.withFn(req)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedMinT, newReq.GetMinT())
+			require.Equal(t, tc.expectedMaxT, newReq.GetMaxT())
+		})
+	}
+}
+
+// Check that With... functions of PrometheusInstantQueryRequest that affect
+// the query keep minT, maxT up to date.
+func TestPrometheusInstantQueryRequest_MinTMaxT(t *testing.T) {
+	now := time.Now()
+	defaultLookback := 1 * time.Minute
+
+	testCases := map[string]struct {
+		query        string
+		withFn       func(req MetricsQueryRequest) (MetricsQueryRequest, error)
+		expectedMinT int64
+		expectedMaxT int64
+	}{
+		"instant vector selector, not modified": {
+			query:        "some_metric{}",
+			withFn:       func(req MetricsQueryRequest) (MetricsQueryRequest, error) { return req, nil },
+			expectedMinT: now.Add(-1 * defaultLookback).UnixMilli(), // Default lookback.
+			expectedMaxT: now.UnixMilli(),
+		},
+		"range vector selector, not modified": {
+			query:        "some_metric{}[10m]",
+			withFn:       func(req MetricsQueryRequest) (MetricsQueryRequest, error) { return req, nil },
+			expectedMinT: now.Add(-10 * time.Minute).UnixMilli(), // Lookback is overridden by the range.
+			expectedMaxT: now.UnixMilli(),
+		},
+		"instant vector selector, WithStartEnd": {
+			query: "some_metric{}",
+			withFn: func(req MetricsQueryRequest) (MetricsQueryRequest, error) {
+				return req.WithStartEnd(now.Add(-1*time.Hour).UnixMilli(), 42) // 42 is ignored.
+			},
+			expectedMinT: now.Add(-1 * time.Hour).Add(-1 * defaultLookback).UnixMilli(),
+			expectedMaxT: now.Add(-1 * time.Hour).UnixMilli(),
+		},
+		"range vector selector, WithStartEnd": {
+			query: "some_metric{}[10m]",
+			withFn: func(req MetricsQueryRequest) (MetricsQueryRequest, error) {
+				return req.WithStartEnd(now.Add(-1*time.Hour).UnixMilli(), 42) // 42 is ignored.
+			},
+			expectedMinT: now.Add(-1 * time.Hour).Add(-10 * time.Minute).UnixMilli(),
+			expectedMaxT: now.Add(-1 * time.Hour).UnixMilli(),
+		},
+		"instant vector selector, WithQuery": {
+			query: "some_metric{}",
+			withFn: func(req MetricsQueryRequest) (MetricsQueryRequest, error) {
+				return req.WithQuery("other_metric{}")
+			},
+			expectedMinT: now.Add(-1 * defaultLookback).UnixMilli(), // Default lookback.
+			expectedMaxT: now.UnixMilli(),
+		},
+		"range vector selector, WithQuery": {
+			query: "some_metric{}[10m]",
+			withFn: func(req MetricsQueryRequest) (MetricsQueryRequest, error) {
+				return req.WithQuery("some_metric{}[20m]")
+			},
+			expectedMinT: now.Add(-20 * time.Minute).UnixMilli(), // Lookback is overridden by the range.
+			expectedMaxT: now.UnixMilli(),
+		},
+		"instant vector selector, WithExpr": {
+			query: "some_metric{}",
+			withFn: func(req MetricsQueryRequest) (MetricsQueryRequest, error) {
+				newExpr, err := parser.ParseExpr("other_metric{}")
+				if err != nil {
+					return nil, err
+				}
+				return req.WithExpr(newExpr)
+			},
+			expectedMinT: now.Add(-1 * defaultLookback).UnixMilli(), // Default lookback.
+			expectedMaxT: now.UnixMilli(),
+		},
+		"range vector selector, WithExpr": {
+			query: "some_metric{}[10m]",
+			withFn: func(req MetricsQueryRequest) (MetricsQueryRequest, error) {
+				newExpr, err := parser.ParseExpr("some_metric{}[20m]")
+				if err != nil {
+					return nil, err
+				}
+				return req.WithExpr(newExpr)
+			},
+			expectedMinT: now.Add(-20 * time.Minute).UnixMilli(), // Lookback is overridden by the range.
+			expectedMaxT: now.UnixMilli(),
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			expr, err := parser.ParseExpr(tc.query)
+			require.NoError(t, err)
+			req := NewPrometheusInstantQueryRequest(
+				"/query",
+				nil,
+				now.UnixMilli(),
+				defaultLookback,
+				expr,
+				Options{},
+				nil,
+			)
+			newReq, err := tc.withFn(req)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedMinT, newReq.GetMinT())
+			require.Equal(t, tc.expectedMaxT, newReq.GetMaxT())
 		})
 	}
 }

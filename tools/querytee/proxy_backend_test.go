@@ -6,6 +6,7 @@
 package querytee
 
 import (
+	"context"
 	"fmt"
 	"net/http/httptest"
 	"net/url"
@@ -88,7 +89,7 @@ func Test_ProxyBackend_createBackendRequest_HTTPBasicAuthentication(t *testing.T
 			if !ok {
 				t.Fatalf("Type assertion to *ProxyBackend failed")
 			}
-			r, err := bp.createBackendRequest(orig, nil)
+			r, err := bp.createBackendRequest(context.Background(), orig, nil)
 			require.NoError(t, err)
 
 			actualUser, actualPass, _ := r.BasicAuth()

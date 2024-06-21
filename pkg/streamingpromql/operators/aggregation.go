@@ -180,6 +180,11 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	}
 
 	// Construct the group and return it
+	// It would be possible to calculate the number of points when constructing
+	// the series groups. However, it requires checking each point at each input
+	// series which is more costly than looping again here and just checking each
+	// point of the already grouped series.
+	// See: https://github.com/grafana/mimir/pull/8442
 	pointCount := 0
 	for _, p := range thisGroup.present {
 		if p {

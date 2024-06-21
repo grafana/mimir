@@ -5,7 +5,6 @@ package querier
 import (
 	"fmt"
 
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
@@ -16,7 +15,6 @@ import (
 )
 
 type streamingChunkSeriesContext struct {
-	mint, maxt   int64
 	queryMetrics *stats.QueryMetrics
 	queryStats   *stats.Stats
 }
@@ -76,5 +74,5 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 		return series.NewErrIterator(err)
 	}
 
-	return batch.NewChunkMergeIterator(it, chunks, model.Time(s.context.mint), model.Time(s.context.maxt))
+	return batch.NewChunkMergeIterator(it, chunks)
 }

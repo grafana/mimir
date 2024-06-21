@@ -163,7 +163,7 @@ func TestMimir(t *testing.T) {
 			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 		}},
 		Querier: querier.Config{
-			PromQLEngine: "prometheus",
+			QueryEngine: "prometheus",
 		},
 	}
 	require.NoError(t, cfg.Server.LogLevel.Set("info"))

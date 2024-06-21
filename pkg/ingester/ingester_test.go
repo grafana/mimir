@@ -10216,7 +10216,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 	errorSampleRate := 5
 	now := time.Now()
 
-	users := []string{"test", "tset"}
+	users := []string{"user-1", "user-2"}
 
 	tests := map[string]struct {
 		reqs             []*mimirpb.WriteRequest
@@ -10251,8 +10251,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 4
-				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="tset"} 1
+				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="user-2"} 1
 			`,
 		},
 		"should soft fail on all samples out of bound in a write request": {
@@ -10284,11 +10284,45 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 8
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="tset"} 2
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-1"} 8
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-2"} 2
 			`,
 		},
-		"should soft fail on all samples with histograms out of bound in a write request": {
+		"should soft fail on all histograms out of bound in a write request": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
+					nil,
+					nil,
+					mimirpb.API,
+				),
+				// Write request with 1 series and 1 "too old" histogram.
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels:     metricLabelAdapters,
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), util_test.GenerateTestHistogram(0))},
+							},
+						},
+					},
+				},
+			},
+			expectedErrs: []globalerror.ErrorWithStatus{
+				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[0]), codes.FailedPrecondition),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[1]), codes.FailedPrecondition),
+			},
+			expectedSampling: true,
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-2"} 1
+			`,
+			nativeHistograms: true,
+		},
+		"should soft fail on all samples and histograms out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
@@ -10318,8 +10352,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 12
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="tset"} 3
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-1"} 12
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-2"} 3
 			`,
 			nativeHistograms: true,
 		},
@@ -10355,8 +10389,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 8
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="tset"} 2
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-1"} 8
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-2"} 2
 			`,
 		},
 		"should soft fail on some samples with timestamp too far in future in a write request": {
@@ -10389,8 +10423,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 4
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="tset"} 1
+				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="user-2"} 1
 			`,
 		},
 		"should soft fail on some histograms with timestamp too far in future in a write request": {
@@ -10417,8 +10451,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 4
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="tset"} 1
+				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="user-2"} 1
 			`,
 		},
 		"should soft fail on some exemplars with timestamp too far in future in a write request": {
@@ -10471,8 +10505,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 4
-				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="tset"} 1
+				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="user-2"} 1
 			`,
 		},
 		"should soft fail on exemplar with unknown series": {
