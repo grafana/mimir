@@ -25,6 +25,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	"github.com/grafana/mimir/pkg/ingester/ingestererr"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -79,10 +80,10 @@ func (r tsdbCloseCheckResult) shouldClose() bool {
 }
 
 var (
-	errTSDBForcedCompaction = NewTSDBUnavailableError("TSDB Head forced compaction in progress and no write request is currently allowed")
-	errTSDBEarlyCompaction  = NewTSDBUnavailableError("TSDB Head early compaction in progress and the write request contains samples overlapping with it")
-	errTSDBClosing          = NewTSDBUnavailableError("TSDB is closing")
-	errTSDBNotActive        = NewTSDBUnavailableError("TSDB is not active")
+	errTSDBForcedCompaction = ingestererr.NewTSDBUnavailableError("TSDB Head forced compaction in progress and no write request is currently allowed")
+	errTSDBEarlyCompaction  = ingestererr.NewTSDBUnavailableError("TSDB Head early compaction in progress and the write request contains samples overlapping with it")
+	errTSDBClosing          = ingestererr.NewTSDBUnavailableError("TSDB is closing")
+	errTSDBNotActive        = ingestererr.NewTSDBUnavailableError("TSDB is not active")
 )
 
 type ownedSeriesState struct {

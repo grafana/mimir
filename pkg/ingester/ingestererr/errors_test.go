@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package ingester
+package ingestererr
 
 import (
 	"context"
@@ -28,6 +28,7 @@ import (
 
 const (
 	timestamp = model.Time(1575043969)
+	userID    = "test-user"
 )
 
 func TestUnavailableError(t *testing.T) {
@@ -40,7 +41,7 @@ func TestUnavailableError(t *testing.T) {
 
 	wrappedErr := WrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
-	require.ErrorAs(t, wrappedErr, &unavailableError{})
+	require.ErrorAs(t, wrappedErr, &UnavailableError{})
 	checkIngesterError(t, wrappedErr, mimirpb.SERVICE_UNAVAILABLE, false)
 }
 
@@ -53,7 +54,7 @@ func TestInstanceLimitReachedError(t *testing.T) {
 
 	wrappedErr := WrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
-	require.ErrorAs(t, wrappedErr, &instanceLimitReachedError{})
+	require.ErrorAs(t, wrappedErr, &InstanceLimitReachedError{})
 	checkIngesterError(t, wrappedErr, mimirpb.INSTANCE_LIMIT, false)
 }
 
@@ -256,11 +257,11 @@ func TestNewCircuitBreakerOpenError(t *testing.T) {
 
 	wrappedErr := fmt.Errorf("wrapped: %w", err)
 	require.ErrorIs(t, wrappedErr, err)
-	require.ErrorAs(t, wrappedErr, &circuitBreakerOpenError{})
+	require.ErrorAs(t, wrappedErr, &CircuitBreakerOpenError{})
 
 	wrappedWithUserErr := WrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedWithUserErr, err)
-	require.ErrorAs(t, wrappedWithUserErr, &circuitBreakerOpenError{})
+	require.ErrorAs(t, wrappedWithUserErr, &CircuitBreakerOpenError{})
 	checkIngesterError(t, wrappedErr, mimirpb.CIRCUIT_BREAKER_OPEN, false)
 }
 
@@ -899,12 +900,13 @@ func (e mockIngesterErr) errorCause() mimirpb.ErrorCause {
 	return mimirpb.UNKNOWN_CAUSE
 }
 
-func checkIngesterError(t *testing.T, err error, expectedCause mimirpb.ErrorCause, isSoft bool) {
+func checkIngesterError(t *testing.T, err error, expectedCause mimirpb.ErrorCause, shouldBeSoft bool) {
+	t.Helper()
 	var ingesterErr IngesterError
 	require.ErrorAs(t, err, &ingesterErr)
-	require.Equal(t, expectedCause, ingesterErr.errorCause())
+	require.Equal(t, expectedCause, ingesterErr.ErrorCause())
 
-	if isSoft {
+	if shouldBeSoft {
 		var softErr SoftError
 		require.ErrorAs(t, err, &softErr)
 	}

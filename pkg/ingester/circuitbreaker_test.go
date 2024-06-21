@@ -24,6 +24,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/ingester/ingestererr"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -53,7 +54,7 @@ func TestCircuitBreaker_TryRecordFailure(t *testing.T) {
 	})
 
 	t.Run("gRPC unavailable with INSTANCE_LIMIT details", func(t *testing.T) {
-		err := NewInstanceLimitReachedError("broken")
+		err := ingestererr.NewInstanceLimitReachedError("broken")
 		require.True(t, cb.tryRecordFailure(err))
 		require.True(t, cb.tryRecordFailure(fmt.Errorf("%w", err)))
 	})
@@ -163,7 +164,7 @@ func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
 			testCase.circuitBreakerSetup(cb)
 			finish, err := cb.tryAcquirePermit()
 			if testCase.expectedCircuitBreakerError {
-				require.ErrorAs(t, err, &circuitBreakerOpenError{})
+				require.ErrorAs(t, err, &ingestererr.CircuitBreakerOpenError{})
 				require.Nil(t, finish)
 				assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(testCase.expectedMetrics), metricNames...))
 			} else {
@@ -259,7 +260,7 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 		"cortex_ingester_circuit_breaker_results_total",
 		"cortex_ingester_circuit_breaker_request_timeouts_total",
 	}
-	instanceLimitReachedErr := NewInstanceLimitReachedError("error")
+	instanceLimitReachedErr := ingestererr.NewInstanceLimitReachedError("error")
 	maxRequestDuration := 2 * time.Second
 	testCases := map[string]struct {
 		requestDuration time.Duration
@@ -449,7 +450,7 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
 			`,
 		},
 		"instance limit hit": {
-			expectedErrorWhenCircuitBreakerClosed: instanceLimitReachedError{},
+			expectedErrorWhenCircuitBreakerClosed: ingestererr.InstanceLimitReachedError{},
 			limits:                                InstanceLimits{MaxInMemoryTenants: 1},
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
@@ -568,7 +569,7 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
 									require.ErrorAs(t, err, &testCase.expectedErrorWhenCircuitBreakerClosed)
 								}
 							} else {
-								require.ErrorAs(t, err, &circuitBreakerOpenError{})
+								require.ErrorAs(t, err, &ingestererr.CircuitBreakerOpenError{})
 							}
 						}
 					}
@@ -632,7 +633,7 @@ func TestIngester_StartPushRequest_CircuitBreakerOpen(t *testing.T) {
 	i.circuitBreaker.push.cb.Open()
 	_, err = i.StartPushRequest(ctx, 0)
 	require.Error(t, err)
-	require.ErrorAs(t, err, &circuitBreakerOpenError{})
+	require.ErrorAs(t, err, &ingestererr.CircuitBreakerOpenError{})
 
 	metricNames := []string{
 		"cortex_ingester_circuit_breaker_results_total",
@@ -733,7 +734,7 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 		"with a permit acquired, pushRequestDuration higher than RequestTimeout and an input error relevant for the circuit breakers, FinishPushRequest records a failure": {
 			pushRequestDuration:          3 * time.Second,
 			acquiredCircuitBreakerPermit: true,
-			err:                          NewInstanceLimitReachedError("error"),
+			err:                          ingestererr.NewInstanceLimitReachedError("error"),
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
@@ -763,7 +764,7 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 		"with a permit not acquired, pushRequestDuration higher than RequestTimeout and an input error relevant for the circuit breakers, FinishPushRequest does nothing": {
 			pushRequestDuration:          3 * time.Second,
 			acquiredCircuitBreakerPermit: false,
-			err:                          NewInstanceLimitReachedError("error"),
+			err:                          ingestererr.NewInstanceLimitReachedError("error"),
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
@@ -932,7 +933,7 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
 					} else {
 						require.Equal(t, circuitbreaker.OpenState, i.circuitBreaker.push.cb.State())
 						require.Nil(t, ctx)
-						require.ErrorAs(t, err, &circuitBreakerOpenError{})
+						require.ErrorAs(t, err, &ingestererr.CircuitBreakerOpenError{})
 					}
 				}
 			}
@@ -1205,7 +1206,7 @@ func TestPRCircuitBreaker_TryPushAcquirePermit(t *testing.T) {
 			if testCase.expectedCircuitBreakerError {
 				require.Nil(t, finish)
 				require.Error(t, err)
-				require.ErrorAs(t, err, &circuitBreakerOpenError{})
+				require.ErrorAs(t, err, &ingestererr.CircuitBreakerOpenError{})
 				assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(testCase.expectedMetrics), metricNames...))
 			} else {
 				require.NoError(t, err)
@@ -1833,7 +1834,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			if testCase.expectedCircuitBreakerError {
 				require.Nil(t, finish)
 				require.Error(t, err)
-				require.ErrorAs(t, err, &circuitBreakerOpenError{})
+				require.ErrorAs(t, err, &ingestererr.CircuitBreakerOpenError{})
 				assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(testCase.expectedMetrics), metricNames...))
 			} else {
 				require.NoError(t, err)

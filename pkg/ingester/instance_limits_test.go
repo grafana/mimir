@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
+	"github.com/grafana/mimir/pkg/ingester/ingestererr"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -46,14 +47,26 @@ func TestInstanceLimitErr(t *testing.T) {
 		errMaxInflightRequestsReached,
 	}
 	for _, limitError := range limitErrors {
-		var instanceLimitErr instanceLimitReachedError
+		var instanceLimitErr ingestererr.InstanceLimitReachedError
 		require.Error(t, instanceLimitErr)
 		require.ErrorAs(t, limitError, &instanceLimitErr)
 		checkIngesterError(t, limitError, mimirpb.INSTANCE_LIMIT, false)
 
-		wrappedWithUserErr := WrapOrAnnotateWithUser(limitError, userID)
+		wrappedWithUserErr := ingestererr.WrapOrAnnotateWithUser(limitError, userID)
 		require.Error(t, wrappedWithUserErr)
 		require.ErrorIs(t, wrappedWithUserErr, limitError)
 		checkIngesterError(t, wrappedWithUserErr, mimirpb.INSTANCE_LIMIT, false)
+	}
+}
+
+func checkIngesterError(t *testing.T, err error, expectedCause mimirpb.ErrorCause, shouldBeSoft bool) {
+	t.Helper()
+	var ingesterErr ingestererr.IngesterError
+	require.ErrorAs(t, err, &ingesterErr)
+	require.Equal(t, expectedCause, ingesterErr.ErrorCause())
+
+	if shouldBeSoft {
+		var softErr ingestererr.SoftError
+		require.ErrorAs(t, err, &softErr)
 	}
 }

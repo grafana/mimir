@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package ingester
+package ingestererr
 
 import (
 	"errors"
@@ -46,7 +46,7 @@ func NewErrorWithStatus(originalErr error, code codes.Code) globalerror.ErrorWit
 		errorDetails *mimirpb.ErrorDetails
 	)
 	if errors.As(originalErr, &ingesterErr) {
-		errorDetails = &mimirpb.ErrorDetails{Cause: ingesterErr.errorCause()}
+		errorDetails = &mimirpb.ErrorDetails{Cause: ingesterErr.ErrorCause()}
 	}
 	return globalerror.WrapErrorWithGRPCStatus(originalErr, code, errorDetails)
 }
@@ -65,7 +65,7 @@ func NewErrorWithHTTPStatus(err error, code int) globalerror.ErrorWithStatus {
 // IngesterError is a marker interface for the errors returned by ingester, and that are safe to wrap.
 type IngesterError interface {
 	error
-	errorCause() mimirpb.ErrorCause
+	ErrorCause() mimirpb.ErrorCause
 }
 
 // SoftError is a marker interface for the errors on which ingester.Push should not stop immediately.
@@ -110,7 +110,7 @@ func (e sampleError) Error() string {
 	)
 }
 
-func (e sampleError) errorCause() mimirpb.ErrorCause {
+func (e sampleError) ErrorCause() mimirpb.ErrorCause {
 	return mimirpb.BAD_DATA
 }
 
@@ -164,7 +164,7 @@ func (e exemplarError) Error() string {
 	)
 }
 
-func (e exemplarError) errorCause() mimirpb.ErrorCause {
+func (e exemplarError) ErrorCause() mimirpb.ErrorCause {
 	return mimirpb.BAD_DATA
 }
 
@@ -208,7 +208,7 @@ func (e tsdbIngestExemplarErr) Error() string {
 	)
 }
 
-func (e tsdbIngestExemplarErr) errorCause() mimirpb.ErrorCause {
+func (e tsdbIngestExemplarErr) ErrorCause() mimirpb.ErrorCause {
 	return mimirpb.BAD_DATA
 }
 
@@ -242,7 +242,7 @@ func (e perUserSeriesLimitReachedError) Error() string {
 	)
 }
 
-func (e perUserSeriesLimitReachedError) errorCause() mimirpb.ErrorCause {
+func (e perUserSeriesLimitReachedError) ErrorCause() mimirpb.ErrorCause {
 	return mimirpb.BAD_DATA
 }
 
@@ -267,7 +267,7 @@ func (e perUserMetadataLimitReachedError) Error() string {
 	)
 }
 
-func (e perUserMetadataLimitReachedError) errorCause() mimirpb.ErrorCause {
+func (e perUserMetadataLimitReachedError) ErrorCause() mimirpb.ErrorCause {
 	return mimirpb.BAD_DATA
 }
 
@@ -297,7 +297,7 @@ func (e perMetricSeriesLimitReachedError) Error() string {
 	)
 }
 
-func (e perMetricSeriesLimitReachedError) errorCause() mimirpb.ErrorCause {
+func (e perMetricSeriesLimitReachedError) ErrorCause() mimirpb.ErrorCause {
 	return mimirpb.BAD_DATA
 }
 
@@ -327,7 +327,7 @@ func (e perMetricMetadataLimitReachedError) Error() string {
 	)
 }
 
-func (e perMetricMetadataLimitReachedError) errorCause() mimirpb.ErrorCause {
+func (e perMetricMetadataLimitReachedError) ErrorCause() mimirpb.ErrorCause {
 	return mimirpb.BAD_DATA
 }
 
@@ -358,45 +358,45 @@ func (e nativeHistogramValidationError) Error() string {
 	))
 }
 
-func (e nativeHistogramValidationError) errorCause() mimirpb.ErrorCause {
+func (e nativeHistogramValidationError) ErrorCause() mimirpb.ErrorCause {
 	return mimirpb.BAD_DATA
 }
 
 func (e nativeHistogramValidationError) soft() {}
 
-// unavailableError is an IngesterError indicating that the ingester is unavailable.
-type unavailableError struct {
+// UnavailableError is an IngesterError indicating that the ingester is unavailable.
+type UnavailableError struct {
 	state services.State
 }
 
-func (e unavailableError) Error() string {
+func (e UnavailableError) Error() string {
 	return fmt.Sprintf(integerUnavailableMsgFormat, e.state.String())
 }
 
-func (e unavailableError) errorCause() mimirpb.ErrorCause {
+func (e UnavailableError) ErrorCause() mimirpb.ErrorCause {
 	return mimirpb.SERVICE_UNAVAILABLE
 }
 
-// Ensure that unavailableError is an IngesterError.
-var _ IngesterError = unavailableError{}
+// Ensure that UnavailableError is an IngesterError.
+var _ IngesterError = UnavailableError{}
 
-func NewUnavailableError(state services.State) unavailableError {
-	return unavailableError{state: state}
+func NewUnavailableError(state services.State) UnavailableError {
+	return UnavailableError{state: state}
 }
 
-type instanceLimitReachedError struct {
+type InstanceLimitReachedError struct {
 	message string
 }
 
 func NewInstanceLimitReachedError(message string) IngesterError {
-	return instanceLimitReachedError{message: message}
+	return InstanceLimitReachedError{message: message}
 }
 
-func (e instanceLimitReachedError) Error() string {
+func (e InstanceLimitReachedError) Error() string {
 	return e.message
 }
 
-func (e instanceLimitReachedError) errorCause() mimirpb.ErrorCause {
+func (e InstanceLimitReachedError) ErrorCause() mimirpb.ErrorCause {
 	return mimirpb.INSTANCE_LIMIT
 }
 
@@ -413,7 +413,7 @@ func (e tsdbUnavailableError) Error() string {
 	return e.message
 }
 
-func (e tsdbUnavailableError) errorCause() mimirpb.ErrorCause {
+func (e tsdbUnavailableError) ErrorCause() mimirpb.ErrorCause {
 	return mimirpb.TSDB_UNAVAILABLE
 }
 
@@ -423,7 +423,7 @@ func (e ingesterTooBusyError) Error() string {
 	return ingesterTooBusyMsg
 }
 
-func (e ingesterTooBusyError) errorCause() mimirpb.ErrorCause {
+func (e ingesterTooBusyError) ErrorCause() mimirpb.ErrorCause {
 	return mimirpb.TOO_BUSY
 }
 
@@ -433,41 +433,41 @@ func (e ingesterPushGrpcDisabledError) Error() string {
 	return ingesterPushGrpcDisabledMsg
 }
 
-func (e ingesterPushGrpcDisabledError) errorCause() mimirpb.ErrorCause {
+func (e ingesterPushGrpcDisabledError) ErrorCause() mimirpb.ErrorCause {
 	return mimirpb.METHOD_NOT_ALLOWED
 }
 
 // Ensure that ingesterPushGrpcDisabledError is an IngesterError.
 var _ IngesterError = ingesterPushGrpcDisabledError{}
 
-type circuitBreakerOpenError struct {
+type CircuitBreakerOpenError struct {
 	requestType    string
 	remainingDelay time.Duration
 }
 
 func NewCircuitBreakerOpenError(requestType string, remainingDelay time.Duration) IngesterError {
-	return circuitBreakerOpenError{requestType: requestType, remainingDelay: remainingDelay}
+	return CircuitBreakerOpenError{requestType: requestType, remainingDelay: remainingDelay}
 }
 
-func (e circuitBreakerOpenError) Error() string {
+func (e CircuitBreakerOpenError) Error() string {
 	return fmt.Sprintf("%s on %s request type with remaining delay %s", circuitbreaker.ErrOpen.Error(), e.requestType, e.remainingDelay.String())
 }
 
-func (e circuitBreakerOpenError) errorCause() mimirpb.ErrorCause {
+func (e CircuitBreakerOpenError) ErrorCause() mimirpb.ErrorCause {
 	return mimirpb.CIRCUIT_BREAKER_OPEN
 }
 
 type ErrSamplers struct {
-	sampleTimestampTooOld             *log.Sampler
-	sampleTimestampTooOldOOOEnabled   *log.Sampler
-	sampleTimestampTooFarInFuture     *log.Sampler
-	sampleOutOfOrder                  *log.Sampler
-	sampleDuplicateTimestamp          *log.Sampler
-	maxSeriesPerMetricLimitExceeded   *log.Sampler
-	maxMetadataPerMetricLimitExceeded *log.Sampler
-	maxSeriesPerUserLimitExceeded     *log.Sampler
-	maxMetadataPerUserLimitExceeded   *log.Sampler
-	nativeHistogramValidationError    *log.Sampler
+	SampleTimestampTooOld             *log.Sampler
+	SampleTimestampTooOldOOOEnabled   *log.Sampler
+	SampleTimestampTooFarInFuture     *log.Sampler
+	SampleOutOfOrder                  *log.Sampler
+	SampleDuplicateTimestamp          *log.Sampler
+	MaxSeriesPerMetricLimitExceeded   *log.Sampler
+	MaxMetadataPerMetricLimitExceeded *log.Sampler
+	MaxSeriesPerUserLimitExceeded     *log.Sampler
+	MaxMetadataPerUserLimitExceeded   *log.Sampler
+	NativeHistogramValidationError    *log.Sampler
 }
 
 func NewErrSamplers(freq int64) ErrSamplers {
@@ -493,7 +493,7 @@ func MapPushErrorToErrorWithStatus(err error) error {
 		wrappedErr  = err
 	)
 	if errors.As(err, &ingesterErr) {
-		switch ingesterErr.errorCause() {
+		switch ingesterErr.ErrorCause() {
 		case mimirpb.BAD_DATA:
 			errCode = codes.FailedPrecondition
 		case mimirpb.SERVICE_UNAVAILABLE:
@@ -517,7 +517,7 @@ func MapPushErrorToErrorWithStatus(err error) error {
 func MapPushErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 	var ingesterErr IngesterError
 	if errors.As(err, &ingesterErr) {
-		switch ingesterErr.errorCause() {
+		switch ingesterErr.ErrorCause() {
 		case mimirpb.BAD_DATA:
 			return NewErrorWithHTTPStatus(err, http.StatusBadRequest)
 		case mimirpb.SERVICE_UNAVAILABLE:
@@ -542,7 +542,7 @@ func MapReadErrorToErrorWithStatus(err error) error {
 		errCode     = codes.Internal
 	)
 	if errors.As(err, &ingesterErr) {
-		switch ingesterErr.errorCause() {
+		switch ingesterErr.ErrorCause() {
 		case mimirpb.TOO_BUSY:
 			errCode = codes.ResourceExhausted
 		case mimirpb.SERVICE_UNAVAILABLE:
@@ -563,7 +563,7 @@ func MapReadErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 		ingesterErr IngesterError
 	)
 	if errors.As(err, &ingesterErr) {
-		switch ingesterErr.errorCause() {
+		switch ingesterErr.ErrorCause() {
 		case mimirpb.TOO_BUSY:
 			return NewErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
 		case mimirpb.SERVICE_UNAVAILABLE:

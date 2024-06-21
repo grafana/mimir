@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/ingester/ingestererr"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -21,7 +22,7 @@ func TestUserMetricsMetadata(t *testing.T) {
 		errContains string
 	}
 
-	errorSamplers := NewErrSamplers(0)
+	errorSamplers := ingestererr.NewErrSamplers(0)
 
 	tests := map[string]struct {
 		maxMetadataPerUser   int
@@ -147,7 +148,7 @@ func TestUserMetricsMetadataRequest(t *testing.T) {
 		nil, nil, nil,
 	)
 
-	mm := newMetadataMap(limiter, metrics, NewErrSamplers(0), "test")
+	mm := newMetadataMap(limiter, metrics, ingestererr.NewErrSamplers(0), "test")
 
 	inputMetadata := []mimirpb.MetricMetadata{
 		{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"},
