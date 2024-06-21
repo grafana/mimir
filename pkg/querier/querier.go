@@ -90,7 +90,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.StreamingChunksPerStoreGatewaySeriesBufferSize, "querier.streaming-chunks-per-store-gateway-buffer-size", 256, "Number of series to buffer per store-gateway when streaming chunks from store-gateways.")
 
 	f.StringVar(&cfg.PromQLEngine, "querier.promql-engine", prometheusPromQLEngine, fmt.Sprintf("PromQL engine to use, either '%v' or '%v'", prometheusPromQLEngine, mimirPromQLEngine))
-	f.BoolVar(&cfg.EnablePromQLEngineFallback, "querier.enable-promql-engine-fallback", true, "If set to true and the Mimir PromQL engine is in use, fall back to using the Prometheus PromQL engine for any queries not supported by the Mimir PromQL engine.")
+	f.BoolVar(&cfg.EnablePromQLEngineFallback, "querier.enable-promql-engine-fallback", true, "If set to true and the Mimir query engine is in use, fall back to using the Prometheus PromQL engine for any queries not supported by the Mimir query engine.")
 
 	cfg.EngineConfig.RegisterFlags(f)
 }

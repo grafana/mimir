@@ -1419,9 +1419,9 @@ store_gateway_client:
 # CLI flag: -querier.promql-engine
 [promql_engine: <string> | default = "prometheus"]
 
-# (experimental) If set to true and the Mimir PromQL engine is in use, fall back
+# (experimental) If set to true and the Mimir query engine is in use, fall back
 # to using the Prometheus PromQL engine for any queries not supported by the
-# Mimir PromQL engine.
+# Mimir query engine.
 # CLI flag: -querier.enable-promql-engine-fallback
 [enable_promql_engine_fallback: <boolean> | default = true]
 

@@ -1924,7 +1924,7 @@
           "kind": "field",
           "name": "enable_promql_engine_fallback",
           "required": false,
-          "desc": "If set to true and the Mimir PromQL engine is in use, fall back to using the Prometheus PromQL engine for any queries not supported by the Mimir PromQL engine.",
+          "desc": "If set to true and the Mimir query engine is in use, fall back to using the Prometheus PromQL engine for any queries not supported by the Mimir query engine.",
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "querier.enable-promql-engine-fallback",
