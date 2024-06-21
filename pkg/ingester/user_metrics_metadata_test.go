@@ -21,7 +21,7 @@ func TestUserMetricsMetadata(t *testing.T) {
 		errContains string
 	}
 
-	errorSamplers := newIngesterErrSamplers(0)
+	errorSamplers := NewErrSamplers(0)
 
 	tests := map[string]struct {
 		maxMetadataPerUser   int
@@ -147,7 +147,7 @@ func TestUserMetricsMetadataRequest(t *testing.T) {
 		nil, nil, nil,
 	)
 
-	mm := newMetadataMap(limiter, metrics, newIngesterErrSamplers(0), "test")
+	mm := newMetadataMap(limiter, metrics, NewErrSamplers(0), "test")
 
 	inputMetadata := []mimirpb.MetricMetadata{
 		{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric_1", Help: "foo"},

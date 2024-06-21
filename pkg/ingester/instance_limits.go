@@ -23,11 +23,11 @@ const (
 
 // We don't include values in the messages for per-instance limits to avoid leaking Mimir cluster configuration to users.
 var (
-	errMaxIngestionRateReached         = newInstanceLimitReachedError(globalerror.IngesterMaxIngestionRate.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the samples ingestion rate limit", maxIngestionRateFlag))
-	errMaxTenantsReached               = newInstanceLimitReachedError(globalerror.IngesterMaxTenants.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of tenants", maxInMemoryTenantsFlag))
-	errMaxInMemorySeriesReached        = newInstanceLimitReachedError(globalerror.IngesterMaxInMemorySeries.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of in-memory series", maxInMemorySeriesFlag))
-	errMaxInflightRequestsReached      = newInstanceLimitReachedError(globalerror.IngesterMaxInflightPushRequests.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag))
-	errMaxInflightRequestsBytesReached = newInstanceLimitReachedError(globalerror.IngesterMaxInflightPushRequestsBytes.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed total size in bytes of inflight push requests", maxInflightPushRequestsBytesFlag))
+	errMaxIngestionRateReached         = NewInstanceLimitReachedError(globalerror.IngesterMaxIngestionRate.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the samples ingestion rate limit", maxIngestionRateFlag))
+	errMaxTenantsReached               = NewInstanceLimitReachedError(globalerror.IngesterMaxTenants.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of tenants", maxInMemoryTenantsFlag))
+	errMaxInMemorySeriesReached        = NewInstanceLimitReachedError(globalerror.IngesterMaxInMemorySeries.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of in-memory series", maxInMemorySeriesFlag))
+	errMaxInflightRequestsReached      = NewInstanceLimitReachedError(globalerror.IngesterMaxInflightPushRequests.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag))
+	errMaxInflightRequestsBytesReached = NewInstanceLimitReachedError(globalerror.IngesterMaxInflightPushRequestsBytes.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed total size in bytes of inflight push requests", maxInflightPushRequestsBytesFlag))
 )
 
 // InstanceLimits describes limits used by ingester. Reaching any of these will result in Push method to return

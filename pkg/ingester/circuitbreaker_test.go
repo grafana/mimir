@@ -53,7 +53,7 @@ func TestCircuitBreaker_TryRecordFailure(t *testing.T) {
 	})
 
 	t.Run("gRPC unavailable with INSTANCE_LIMIT details", func(t *testing.T) {
-		err := newInstanceLimitReachedError("broken")
+		err := NewInstanceLimitReachedError("broken")
 		require.True(t, cb.tryRecordFailure(err))
 		require.True(t, cb.tryRecordFailure(fmt.Errorf("%w", err)))
 	})
@@ -259,7 +259,7 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 		"cortex_ingester_circuit_breaker_results_total",
 		"cortex_ingester_circuit_breaker_request_timeouts_total",
 	}
-	instanceLimitReachedErr := newInstanceLimitReachedError("error")
+	instanceLimitReachedErr := NewInstanceLimitReachedError("error")
 	maxRequestDuration := 2 * time.Second
 	testCases := map[string]struct {
 		requestDuration time.Duration
@@ -733,7 +733,7 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 		"with a permit acquired, pushRequestDuration higher than RequestTimeout and an input error relevant for the circuit breakers, FinishPushRequest records a failure": {
 			pushRequestDuration:          3 * time.Second,
 			acquiredCircuitBreakerPermit: true,
-			err:                          newInstanceLimitReachedError("error"),
+			err:                          NewInstanceLimitReachedError("error"),
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
@@ -763,7 +763,7 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 		"with a permit not acquired, pushRequestDuration higher than RequestTimeout and an input error relevant for the circuit breakers, FinishPushRequest does nothing": {
 			pushRequestDuration:          3 * time.Second,
 			acquiredCircuitBreakerPermit: false,
-			err:                          newInstanceLimitReachedError("error"),
+			err:                          NewInstanceLimitReachedError("error"),
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter

@@ -32,17 +32,17 @@ const (
 )
 
 var (
-	errTooBusy          = ingesterTooBusyError{}
-	errPushGrpcDisabled = newErrorWithStatus(ingesterPushGrpcDisabledError{}, codes.Unimplemented)
+	ErrTooBusy          IngesterError = ingesterTooBusyError{}
+	ErrPushGrpcDisabled               = NewErrorWithStatus(ingesterPushGrpcDisabledError{}, codes.Unimplemented)
 )
 
-// newErrorWithStatus creates a new ErrorWithStatus backed by the given error,
+// NewErrorWithStatus creates a new ErrorWithStatus backed by the given error,
 // and containing the given gRPC code. If the given error is an ingesterError,
 // the resulting ErrorWithStatus will be enriched by the details backed by
 // ingesterError.errorCause. These details are of type mimirpb.ErrorDetails.
-func newErrorWithStatus(originalErr error, code codes.Code) globalerror.ErrorWithStatus {
+func NewErrorWithStatus(originalErr error, code codes.Code) globalerror.ErrorWithStatus {
 	var (
-		ingesterErr  ingesterError
+		ingesterErr  IngesterError
 		errorDetails *mimirpb.ErrorDetails
 	)
 	if errors.As(originalErr, &ingesterErr) {
@@ -51,9 +51,9 @@ func newErrorWithStatus(originalErr error, code codes.Code) globalerror.ErrorWit
 	return globalerror.WrapErrorWithGRPCStatus(originalErr, code, errorDetails)
 }
 
-// newErrorWithHTTPStatus creates a new ErrorWithStatus backed by the given error,
+// NewErrorWithHTTPStatus creates a new ErrorWithStatus backed by the given error,
 // and containing the given HTTP status code.
-func newErrorWithHTTPStatus(err error, code int) globalerror.ErrorWithStatus {
+func NewErrorWithHTTPStatus(err error, code int) globalerror.ErrorWithStatus {
 	errWithHTTPStatus := httpgrpc.Errorf(code, err.Error())
 	stat, _ := grpcutil.ErrorToStatus(errWithHTTPStatus)
 	return globalerror.ErrorWithStatus{
@@ -62,25 +62,29 @@ func newErrorWithHTTPStatus(err error, code int) globalerror.ErrorWithStatus {
 	}
 }
 
-// ingesterError is a marker interface for the errors returned by ingester, and that are safe to wrap.
-type ingesterError interface {
+// IngesterError is a marker interface for the errors returned by ingester, and that are safe to wrap.
+type IngesterError interface {
+	error
 	errorCause() mimirpb.ErrorCause
 }
 
-// softError is a marker interface for the errors on which ingester.Push should not stop immediately.
-type softError interface {
+// SoftError is a marker interface for the errors on which ingester.Push should not stop immediately.
+type SoftError interface {
 	error
 	soft()
 }
 
-type softErrorFunction func() softError
+type SoftIngesterError interface {
+	SoftError
+	IngesterError
+}
 
-// wrapOrAnnotateWithUser prepends the given userID to the given error.
+// WrapOrAnnotateWithUser prepends the given userID to the given error.
 // If the given error matches one of the errors from this package, the
 // returned error retains a reference to the former.
-func wrapOrAnnotateWithUser(err error, userID string) error {
+func WrapOrAnnotateWithUser(err error, userID string) error {
 	// If err is an ingesterError, we wrap it with userID and return it.
-	var ingesterErr ingesterError
+	var ingesterErr IngesterError
 	if errors.As(err, &ingesterErr) {
 		return fmt.Errorf("user=%s: %w", userID, err)
 	}
@@ -89,7 +93,7 @@ func wrapOrAnnotateWithUser(err error, userID string) error {
 	return fmt.Errorf("user=%s: %s", userID, err)
 }
 
-// sampleError is an ingesterError indicating a problem with a sample.
+// sampleError is an IngesterError indicating a problem with a sample.
 type sampleError struct {
 	errID     globalerror.ID
 	errMsg    string
@@ -112,13 +116,7 @@ func (e sampleError) errorCause() mimirpb.ErrorCause {
 
 func (e sampleError) soft() {}
 
-// Ensure that sampleError is an ingesterError.
-var _ ingesterError = sampleError{}
-
-// Ensure that sampleError is a softError.
-var _ softError = sampleError{}
-
-func newSampleError(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
+func NewSampleError(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) SoftIngesterError {
 	return sampleError{
 		errID:     errID,
 		errMsg:    errMsg,
@@ -127,27 +125,27 @@ func newSampleError(errID globalerror.ID, errMsg string, timestamp model.Time, l
 	}
 }
 
-func newSampleTimestampTooOldError(timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
-	return newSampleError(globalerror.SampleTimestampTooOld, "the sample has been rejected because its timestamp is too old", timestamp, labels)
+func NewSampleTimestampTooOldError(timestamp model.Time, labels []mimirpb.LabelAdapter) SoftIngesterError {
+	return NewSampleError(globalerror.SampleTimestampTooOld, "the sample has been rejected because its timestamp is too old", timestamp, labels)
 }
 
-func newSampleTimestampTooOldOOOEnabledError(timestamp model.Time, labels []mimirpb.LabelAdapter, oooTimeWindow time.Duration) sampleError {
-	return newSampleError(globalerror.SampleTimestampTooOld, fmt.Sprintf("the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of %s", model.Duration(oooTimeWindow).String()), timestamp, labels)
+func NewSampleTimestampTooOldOOOEnabledError(timestamp model.Time, labels []mimirpb.LabelAdapter, oooTimeWindow time.Duration) SoftIngesterError {
+	return NewSampleError(globalerror.SampleTimestampTooOld, fmt.Sprintf("the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of %s", model.Duration(oooTimeWindow).String()), timestamp, labels)
 }
 
-func newSampleTimestampTooFarInFutureError(timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
-	return newSampleError(globalerror.SampleTooFarInFuture, "received a sample whose timestamp is too far in the future", timestamp, labels)
+func NewSampleTimestampTooFarInFutureError(timestamp model.Time, labels []mimirpb.LabelAdapter) SoftIngesterError {
+	return NewSampleError(globalerror.SampleTooFarInFuture, "received a sample whose timestamp is too far in the future", timestamp, labels)
 }
 
-func newSampleOutOfOrderError(timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
-	return newSampleError(globalerror.SampleOutOfOrder, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed", timestamp, labels)
+func NewSampleOutOfOrderError(timestamp model.Time, labels []mimirpb.LabelAdapter) SoftIngesterError {
+	return NewSampleError(globalerror.SampleOutOfOrder, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed", timestamp, labels)
 }
 
-func newSampleDuplicateTimestampError(timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
-	return newSampleError(globalerror.SampleDuplicateTimestamp, "the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested", timestamp, labels)
+func NewSampleDuplicateTimestampError(timestamp model.Time, labels []mimirpb.LabelAdapter) SoftIngesterError {
+	return NewSampleError(globalerror.SampleDuplicateTimestamp, "the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested", timestamp, labels)
 }
 
-// exemplarError is an ingesterError indicating a problem with an exemplar.
+// exemplarError is an IngesterError indicating a problem with an exemplar.
 type exemplarError struct {
 	errID          globalerror.ID
 	errMsg         string
@@ -172,13 +170,7 @@ func (e exemplarError) errorCause() mimirpb.ErrorCause {
 
 func (e exemplarError) soft() {}
 
-// Ensure that exemplarError is an ingesterError.
-var _ ingesterError = exemplarError{}
-
-// Ensure that exemplarError is an softError.
-var _ softError = exemplarError{}
-
-func newExemplarError(errID globalerror.ID, errMsg string, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
+func NewExemplarError(errID globalerror.ID, errMsg string, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) SoftIngesterError {
 	return exemplarError{
 		errID:          errID,
 		errMsg:         errMsg,
@@ -188,18 +180,18 @@ func newExemplarError(errID globalerror.ID, errMsg string, timestamp model.Time,
 	}
 }
 
-func newExemplarMissingSeriesError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
-	return newExemplarError(globalerror.ExemplarSeriesMissing, "the exemplar has been rejected because the related series has not been ingested yet", timestamp, seriesLabels, exemplarLabels)
+func NewExemplarMissingSeriesError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) SoftIngesterError {
+	return NewExemplarError(globalerror.ExemplarSeriesMissing, "the exemplar has been rejected because the related series has not been ingested yet", timestamp, seriesLabels, exemplarLabels)
 }
 
-func newExemplarTimestampTooFarInFutureError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
-	return newExemplarError(globalerror.ExemplarTooFarInFuture, "received an exemplar whose timestamp is too far in the future", timestamp, seriesLabels, exemplarLabels)
+func NewExemplarTimestampTooFarInFutureError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) SoftIngesterError {
+	return NewExemplarError(globalerror.ExemplarTooFarInFuture, "received an exemplar whose timestamp is too far in the future", timestamp, seriesLabels, exemplarLabels)
 }
-func newExemplarTimestampTooFarInPastError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
-	return newExemplarError(globalerror.ExemplarTooFarInPast, "received an exemplar whose timestamp is too far in the past", timestamp, seriesLabels, exemplarLabels)
+func NewExemplarTimestampTooFarInPastError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) SoftIngesterError {
+	return NewExemplarError(globalerror.ExemplarTooFarInPast, "received an exemplar whose timestamp is too far in the past", timestamp, seriesLabels, exemplarLabels)
 }
 
-// tsdbIngestExemplarErr is an ingesterError indicating a problem with an exemplar.
+// tsdbIngestExemplarErr is an IngesterError indicating a problem with an exemplar.
 type tsdbIngestExemplarErr struct {
 	originalErr    error
 	timestamp      model.Time
@@ -222,13 +214,7 @@ func (e tsdbIngestExemplarErr) errorCause() mimirpb.ErrorCause {
 
 func (e tsdbIngestExemplarErr) soft() {}
 
-// Ensure that tsdbIngestExemplarErr is an ingesterError.
-var _ ingesterError = tsdbIngestExemplarErr{}
-
-// Ensure that tsdbIngestExemplarErr is an softError.
-var _ softError = tsdbIngestExemplarErr{}
-
-func newTSDBIngestExemplarErr(ingestErr error, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) tsdbIngestExemplarErr {
+func NewTSDBIngestExemplarErr(ingestErr error, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) SoftIngesterError {
 	return tsdbIngestExemplarErr{
 		originalErr:    ingestErr,
 		timestamp:      timestamp,
@@ -237,13 +223,13 @@ func newTSDBIngestExemplarErr(ingestErr error, timestamp model.Time, seriesLabel
 	}
 }
 
-// perUserSeriesLimitReachedError is an ingesterError indicating that a per-user series limit has been reached.
+// perUserSeriesLimitReachedError is an IngesterError indicating that a per-user series limit has been reached.
 type perUserSeriesLimitReachedError struct {
 	limit int
 }
 
-// newPerUserSeriesLimitReachedError creates a new perUserMetadataLimitReachedError indicating that a per-user series limit has been reached.
-func newPerUserSeriesLimitReachedError(limit int) perUserSeriesLimitReachedError {
+// NewPerUserSeriesLimitReachedError creates a new perUserMetadataLimitReachedError indicating that a per-user series limit has been reached.
+func NewPerUserSeriesLimitReachedError(limit int) SoftIngesterError {
 	return perUserSeriesLimitReachedError{
 		limit: limit,
 	}
@@ -262,19 +248,13 @@ func (e perUserSeriesLimitReachedError) errorCause() mimirpb.ErrorCause {
 
 func (e perUserSeriesLimitReachedError) soft() {}
 
-// Ensure that perUserSeriesLimitReachedError is an ingesterError.
-var _ ingesterError = perUserSeriesLimitReachedError{}
-
-// Ensure that perUserSeriesLimitReachedError is an softError.
-var _ softError = perUserSeriesLimitReachedError{}
-
-// perUserMetadataLimitReachedError is an ingesterError indicating that a per-user metadata limit has been reached.
+// perUserMetadataLimitReachedError is an IngesterError indicating that a per-user metadata limit has been reached.
 type perUserMetadataLimitReachedError struct {
 	limit int
 }
 
-// newPerUserMetadataLimitReachedError creates a new perUserMetadataLimitReachedError indicating that a per-user metadata limit has been reached.
-func newPerUserMetadataLimitReachedError(limit int) perUserMetadataLimitReachedError {
+// NewPerUserMetadataLimitReachedError creates a new perUserMetadataLimitReachedError indicating that a per-user metadata limit has been reached.
+func NewPerUserMetadataLimitReachedError(limit int) SoftIngesterError {
 	return perUserMetadataLimitReachedError{
 		limit: limit,
 	}
@@ -293,20 +273,14 @@ func (e perUserMetadataLimitReachedError) errorCause() mimirpb.ErrorCause {
 
 func (e perUserMetadataLimitReachedError) soft() {}
 
-// Ensure that perUserMetadataLimitReachedError is an ingesterError.
-var _ ingesterError = perUserMetadataLimitReachedError{}
-
-// Ensure that perUserMetadataLimitReachedError is an softError.
-var _ softError = perUserMetadataLimitReachedError{}
-
-// perMetricSeriesLimitReachedError is an ingesterError indicating that a per-metric series limit has been reached.
+// perMetricSeriesLimitReachedError is an IngesterError indicating that a per-metric series limit has been reached.
 type perMetricSeriesLimitReachedError struct {
 	limit  int
 	series string
 }
 
-// newPerMetricSeriesLimitReachedError creates a new perMetricMetadataLimitReachedError indicating that a per-metric series limit has been reached.
-func newPerMetricSeriesLimitReachedError(limit int, labels []mimirpb.LabelAdapter) perMetricSeriesLimitReachedError {
+// NewPerMetricSeriesLimitReachedError creates a new perMetricMetadataLimitReachedError indicating that a per-metric series limit has been reached.
+func NewPerMetricSeriesLimitReachedError(limit int, labels []mimirpb.LabelAdapter) SoftIngesterError {
 	return perMetricSeriesLimitReachedError{
 		limit:  limit,
 		series: mimirpb.FromLabelAdaptersToString(labels),
@@ -329,20 +303,14 @@ func (e perMetricSeriesLimitReachedError) errorCause() mimirpb.ErrorCause {
 
 func (e perMetricSeriesLimitReachedError) soft() {}
 
-// Ensure that perMetricSeriesLimitReachedError is an ingesterError.
-var _ ingesterError = perMetricSeriesLimitReachedError{}
-
-// Ensure that perMetricSeriesLimitReachedError is an softError.
-var _ softError = perMetricSeriesLimitReachedError{}
-
-// perMetricMetadataLimitReachedError is an ingesterError indicating that a per-metric metadata limit has been reached.
+// perMetricMetadataLimitReachedError is an IngesterError indicating that a per-metric metadata limit has been reached.
 type perMetricMetadataLimitReachedError struct {
 	limit  int
 	family string
 }
 
-// newPerMetricMetadataLimitReachedError creates a new perMetricMetadataLimitReachedError indicating that a per-metric metadata limit has been reached.
-func newPerMetricMetadataLimitReachedError(limit int, family string) perMetricMetadataLimitReachedError {
+// NewPerMetricMetadataLimitReachedError creates a new perMetricMetadataLimitReachedError indicating that a per-metric metadata limit has been reached.
+func NewPerMetricMetadataLimitReachedError(limit int, family string) SoftIngesterError {
 	return perMetricMetadataLimitReachedError{
 		limit:  limit,
 		family: family,
@@ -365,12 +333,6 @@ func (e perMetricMetadataLimitReachedError) errorCause() mimirpb.ErrorCause {
 
 func (e perMetricMetadataLimitReachedError) soft() {}
 
-// Ensure that perMetricMetadataLimitReachedError is an ingesterError.
-var _ ingesterError = perMetricMetadataLimitReachedError{}
-
-// Ensure that perMetricMetadataLimitReachedError is an softError.
-var _ softError = perMetricMetadataLimitReachedError{}
-
 // nativeHistogramValidationError indicates that native histogram bucket counts did not add up to the overall count.
 type nativeHistogramValidationError struct {
 	id           globalerror.ID
@@ -379,7 +341,7 @@ type nativeHistogramValidationError struct {
 	timestamp    model.Time
 }
 
-func newNativeHistogramValidationError(id globalerror.ID, originalErr error, timestamp model.Time, seriesLabels []mimirpb.LabelAdapter) nativeHistogramValidationError {
+func NewNativeHistogramValidationError(id globalerror.ID, originalErr error, timestamp model.Time, seriesLabels []mimirpb.LabelAdapter) SoftIngesterError {
 	return nativeHistogramValidationError{
 		id:           id,
 		originalErr:  originalErr,
@@ -402,13 +364,7 @@ func (e nativeHistogramValidationError) errorCause() mimirpb.ErrorCause {
 
 func (e nativeHistogramValidationError) soft() {}
 
-// Ensure that histogramBucketCountMismatchError is an ingesterError.
-var _ ingesterError = nativeHistogramValidationError{}
-
-// Ensure that histogramBucketCountMismatchError is an softError.
-var _ softError = nativeHistogramValidationError{}
-
-// unavailableError is an ingesterError indicating that the ingester is unavailable.
+// unavailableError is an IngesterError indicating that the ingester is unavailable.
 type unavailableError struct {
 	state services.State
 }
@@ -421,10 +377,10 @@ func (e unavailableError) errorCause() mimirpb.ErrorCause {
 	return mimirpb.SERVICE_UNAVAILABLE
 }
 
-// Ensure that unavailableError is an ingesterError.
-var _ ingesterError = unavailableError{}
+// Ensure that unavailableError is an IngesterError.
+var _ IngesterError = unavailableError{}
 
-func newUnavailableError(state services.State) unavailableError {
+func NewUnavailableError(state services.State) unavailableError {
 	return unavailableError{state: state}
 }
 
@@ -432,7 +388,7 @@ type instanceLimitReachedError struct {
 	message string
 }
 
-func newInstanceLimitReachedError(message string) instanceLimitReachedError {
+func NewInstanceLimitReachedError(message string) IngesterError {
 	return instanceLimitReachedError{message: message}
 }
 
@@ -444,15 +400,12 @@ func (e instanceLimitReachedError) errorCause() mimirpb.ErrorCause {
 	return mimirpb.INSTANCE_LIMIT
 }
 
-// Ensure that instanceLimitReachedError is an ingesterError.
-var _ ingesterError = instanceLimitReachedError{}
-
-// tsdbUnavailableError is an ingesterError indicating that the TSDB is unavailable.
+// tsdbUnavailableError is an IngesterError indicating that the TSDB is unavailable.
 type tsdbUnavailableError struct {
 	message string
 }
 
-func newTSDBUnavailableError(message string) tsdbUnavailableError {
+func NewTSDBUnavailableError(message string) IngesterError {
 	return tsdbUnavailableError{message: message}
 }
 
@@ -464,9 +417,6 @@ func (e tsdbUnavailableError) errorCause() mimirpb.ErrorCause {
 	return mimirpb.TSDB_UNAVAILABLE
 }
 
-// Ensure that tsdbUnavailableError is an ingesterError.
-var _ ingesterError = tsdbUnavailableError{}
-
 type ingesterTooBusyError struct{}
 
 func (e ingesterTooBusyError) Error() string {
@@ -476,9 +426,6 @@ func (e ingesterTooBusyError) Error() string {
 func (e ingesterTooBusyError) errorCause() mimirpb.ErrorCause {
 	return mimirpb.TOO_BUSY
 }
-
-// Ensure that ingesterTooBusyError is an ingesterError.
-var _ ingesterError = ingesterTooBusyError{}
 
 type ingesterPushGrpcDisabledError struct{}
 
@@ -490,15 +437,15 @@ func (e ingesterPushGrpcDisabledError) errorCause() mimirpb.ErrorCause {
 	return mimirpb.METHOD_NOT_ALLOWED
 }
 
-// Ensure that ingesterPushGrpcDisabledError is an ingesterError.
-var _ ingesterError = ingesterPushGrpcDisabledError{}
+// Ensure that ingesterPushGrpcDisabledError is an IngesterError.
+var _ IngesterError = ingesterPushGrpcDisabledError{}
 
 type circuitBreakerOpenError struct {
 	requestType    string
 	remainingDelay time.Duration
 }
 
-func newCircuitBreakerOpenError(requestType string, remainingDelay time.Duration) circuitBreakerOpenError {
+func NewCircuitBreakerOpenError(requestType string, remainingDelay time.Duration) IngesterError {
 	return circuitBreakerOpenError{requestType: requestType, remainingDelay: remainingDelay}
 }
 
@@ -510,9 +457,7 @@ func (e circuitBreakerOpenError) errorCause() mimirpb.ErrorCause {
 	return mimirpb.CIRCUIT_BREAKER_OPEN
 }
 
-var _ ingesterError = circuitBreakerOpenError{}
-
-type ingesterErrSamplers struct {
+type ErrSamplers struct {
 	sampleTimestampTooOld             *log.Sampler
 	sampleTimestampTooOldOOOEnabled   *log.Sampler
 	sampleTimestampTooFarInFuture     *log.Sampler
@@ -525,8 +470,8 @@ type ingesterErrSamplers struct {
 	nativeHistogramValidationError    *log.Sampler
 }
 
-func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
-	return ingesterErrSamplers{
+func NewErrSamplers(freq int64) ErrSamplers {
+	return ErrSamplers{
 		log.NewSampler(freq),
 		log.NewSampler(freq),
 		log.NewSampler(freq),
@@ -540,10 +485,10 @@ func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
 	}
 }
 
-// mapPushErrorToErrorWithStatus maps the given error to the corresponding error of type globalerror.ErrorWithStatus.
-func mapPushErrorToErrorWithStatus(err error) error {
+// MapPushErrorToErrorWithStatus maps the given error to the corresponding error of type globalerror.ErrorWithStatus.
+func MapPushErrorToErrorWithStatus(err error) error {
 	var (
-		ingesterErr ingesterError
+		ingesterErr IngesterError
 		errCode     = codes.Internal
 		wrappedErr  = err
 	)
@@ -564,36 +509,36 @@ func mapPushErrorToErrorWithStatus(err error) error {
 			errCode = codes.Unavailable
 		}
 	}
-	return newErrorWithStatus(wrappedErr, errCode)
+	return NewErrorWithStatus(wrappedErr, errCode)
 }
 
-// mapPushErrorToErrorWithHTTPOrGRPCStatus maps ingesterError objects to an appropriate
+// MapPushErrorToErrorWithHTTPOrGRPCStatus maps IngesterError objects to an appropriate
 // globalerror.ErrorWithStatus, which may contain both HTTP and gRPC error codes.
-func mapPushErrorToErrorWithHTTPOrGRPCStatus(err error) error {
-	var ingesterErr ingesterError
+func MapPushErrorToErrorWithHTTPOrGRPCStatus(err error) error {
+	var ingesterErr IngesterError
 	if errors.As(err, &ingesterErr) {
 		switch ingesterErr.errorCause() {
 		case mimirpb.BAD_DATA:
-			return newErrorWithHTTPStatus(err, http.StatusBadRequest)
+			return NewErrorWithHTTPStatus(err, http.StatusBadRequest)
 		case mimirpb.SERVICE_UNAVAILABLE:
-			return newErrorWithStatus(err, codes.Unavailable)
+			return NewErrorWithStatus(err, codes.Unavailable)
 		case mimirpb.INSTANCE_LIMIT:
-			return newErrorWithStatus(middleware.DoNotLogError{Err: err}, codes.Unavailable)
+			return NewErrorWithStatus(middleware.DoNotLogError{Err: err}, codes.Unavailable)
 		case mimirpb.TSDB_UNAVAILABLE:
-			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
+			return NewErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
 		case mimirpb.METHOD_NOT_ALLOWED:
-			return newErrorWithStatus(err, codes.Unimplemented)
+			return NewErrorWithStatus(err, codes.Unimplemented)
 		case mimirpb.CIRCUIT_BREAKER_OPEN:
-			return newErrorWithStatus(err, codes.Unavailable)
+			return NewErrorWithStatus(err, codes.Unavailable)
 		}
 	}
 	return err
 }
 
-// mapReadErrorToErrorWithStatus maps the given error to the corresponding error of type globalerror.ErrorWithStatus.
-func mapReadErrorToErrorWithStatus(err error) error {
+// MapReadErrorToErrorWithStatus maps the given error to the corresponding error of type globalerror.ErrorWithStatus.
+func MapReadErrorToErrorWithStatus(err error) error {
 	var (
-		ingesterErr ingesterError
+		ingesterErr IngesterError
 		errCode     = codes.Internal
 	)
 	if errors.As(err, &ingesterErr) {
@@ -603,30 +548,30 @@ func mapReadErrorToErrorWithStatus(err error) error {
 		case mimirpb.SERVICE_UNAVAILABLE:
 			errCode = codes.Unavailable
 		case mimirpb.METHOD_NOT_ALLOWED:
-			return newErrorWithStatus(err, codes.Unimplemented)
+			return NewErrorWithStatus(err, codes.Unimplemented)
 		case mimirpb.CIRCUIT_BREAKER_OPEN:
-			return newErrorWithStatus(err, codes.Unavailable)
+			return NewErrorWithStatus(err, codes.Unavailable)
 		}
 	}
-	return newErrorWithStatus(err, errCode)
+	return NewErrorWithStatus(err, errCode)
 }
 
-// mapReadErrorToErrorWithHTTPOrGRPCStatus maps ingesterError objects to an appropriate
+// MapReadErrorToErrorWithHTTPOrGRPCStatus maps IngesterError objects to an appropriate
 // globalerror.ErrorWithStatus, which may contain both HTTP and gRPC error codes.
-func mapReadErrorToErrorWithHTTPOrGRPCStatus(err error) error {
+func MapReadErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 	var (
-		ingesterErr ingesterError
+		ingesterErr IngesterError
 	)
 	if errors.As(err, &ingesterErr) {
 		switch ingesterErr.errorCause() {
 		case mimirpb.TOO_BUSY:
-			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
+			return NewErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
 		case mimirpb.SERVICE_UNAVAILABLE:
-			return newErrorWithStatus(err, codes.Unavailable)
+			return NewErrorWithStatus(err, codes.Unavailable)
 		case mimirpb.METHOD_NOT_ALLOWED:
-			return newErrorWithStatus(err, codes.Unimplemented)
+			return NewErrorWithStatus(err, codes.Unimplemented)
 		case mimirpb.CIRCUIT_BREAKER_OPEN:
-			return newErrorWithStatus(err, codes.Unavailable)
+			return NewErrorWithStatus(err, codes.Unavailable)
 		}
 	}
 	return err

@@ -32,13 +32,13 @@ const (
 
 func TestUnavailableError(t *testing.T) {
 	state := services.Starting
-	err := newUnavailableError(state)
+	err := NewUnavailableError(state)
 	require.Error(t, err)
 	expectedMsg := fmt.Sprintf(integerUnavailableMsgFormat, state)
 	require.EqualError(t, err, expectedMsg)
 	checkIngesterError(t, err, mimirpb.SERVICE_UNAVAILABLE, false)
 
-	wrappedErr := wrapOrAnnotateWithUser(err, userID)
+	wrappedErr := WrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &unavailableError{})
 	checkIngesterError(t, wrappedErr, mimirpb.SERVICE_UNAVAILABLE, false)
@@ -46,12 +46,12 @@ func TestUnavailableError(t *testing.T) {
 
 func TestInstanceLimitReachedError(t *testing.T) {
 	limitErrorMessage := "this is a limit error message"
-	err := newInstanceLimitReachedError(limitErrorMessage)
+	err := NewInstanceLimitReachedError(limitErrorMessage)
 	require.Error(t, err)
 	require.EqualError(t, err, limitErrorMessage)
 	checkIngesterError(t, err, mimirpb.INSTANCE_LIMIT, false)
 
-	wrappedErr := wrapOrAnnotateWithUser(err, userID)
+	wrappedErr := WrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &instanceLimitReachedError{})
 	checkIngesterError(t, wrappedErr, mimirpb.INSTANCE_LIMIT, false)
@@ -59,7 +59,7 @@ func TestInstanceLimitReachedError(t *testing.T) {
 
 func TestNewTSDBUnavailableError(t *testing.T) {
 	tsdbErrMsg := "TSDB Head forced compaction in progress and no write request is currently allowed"
-	err := newTSDBUnavailableError(tsdbErrMsg)
+	err := NewTSDBUnavailableError(tsdbErrMsg)
 	require.Error(t, err)
 	require.EqualError(t, err, tsdbErrMsg)
 	checkIngesterError(t, err, mimirpb.TSDB_UNAVAILABLE, false)
@@ -68,7 +68,7 @@ func TestNewTSDBUnavailableError(t *testing.T) {
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &tsdbUnavailableError{})
 
-	wrappedWithUserErr := wrapOrAnnotateWithUser(err, userID)
+	wrappedWithUserErr := WrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedWithUserErr, err)
 	require.ErrorAs(t, wrappedWithUserErr, &tsdbUnavailableError{})
 	checkIngesterError(t, wrappedErr, mimirpb.TSDB_UNAVAILABLE, false)
@@ -76,7 +76,7 @@ func TestNewTSDBUnavailableError(t *testing.T) {
 
 func TestNewPerUserSeriesLimitError(t *testing.T) {
 	limit := 100
-	err := newPerUserSeriesLimitReachedError(limit)
+	err := NewPerUserSeriesLimitReachedError(limit)
 	expectedErrMsg := globalerror.MaxSeriesPerUser.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("per-user series limit of %d exceeded", limit),
 		validation.MaxSeriesPerUserFlag,
@@ -84,7 +84,7 @@ func TestNewPerUserSeriesLimitError(t *testing.T) {
 	require.Equal(t, expectedErrMsg, err.Error())
 	checkIngesterError(t, err, mimirpb.BAD_DATA, true)
 
-	wrappedErr := wrapOrAnnotateWithUser(err, userID)
+	wrappedErr := WrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &perUserSeriesLimitReachedError{})
 	checkIngesterError(t, wrappedErr, mimirpb.BAD_DATA, true)
@@ -92,7 +92,7 @@ func TestNewPerUserSeriesLimitError(t *testing.T) {
 
 func TestNewPerUserMetadataLimitError(t *testing.T) {
 	limit := 100
-	err := newPerUserMetadataLimitReachedError(limit)
+	err := NewPerUserMetadataLimitReachedError(limit)
 	expectedErrMsg := globalerror.MaxMetadataPerUser.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("per-user metric metadata limit of %d exceeded", limit),
 		validation.MaxMetadataPerUserFlag,
@@ -100,7 +100,7 @@ func TestNewPerUserMetadataLimitError(t *testing.T) {
 	require.Equal(t, expectedErrMsg, err.Error())
 	checkIngesterError(t, err, mimirpb.BAD_DATA, true)
 
-	wrappedErr := wrapOrAnnotateWithUser(err, userID)
+	wrappedErr := WrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &perUserMetadataLimitReachedError{})
 	checkIngesterError(t, wrappedErr, mimirpb.BAD_DATA, true)
@@ -109,7 +109,7 @@ func TestNewPerUserMetadataLimitError(t *testing.T) {
 func TestNewPerMetricSeriesLimitError(t *testing.T) {
 	limit := 100
 	labels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
-	err := newPerMetricSeriesLimitReachedError(limit, labels)
+	err := NewPerMetricSeriesLimitReachedError(limit, labels)
 	expectedErrMsg := fmt.Sprintf("%s This is for series %s",
 		globalerror.MaxSeriesPerMetric.MessageWithPerTenantLimitConfig(
 			fmt.Sprintf("per-metric series limit of %d exceeded", limit),
@@ -120,7 +120,7 @@ func TestNewPerMetricSeriesLimitError(t *testing.T) {
 	require.Equal(t, expectedErrMsg, err.Error())
 	checkIngesterError(t, err, mimirpb.BAD_DATA, true)
 
-	wrappedErr := wrapOrAnnotateWithUser(err, userID)
+	wrappedErr := WrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &perMetricSeriesLimitReachedError{})
 	checkIngesterError(t, wrappedErr, mimirpb.BAD_DATA, true)
@@ -129,7 +129,7 @@ func TestNewPerMetricSeriesLimitError(t *testing.T) {
 func TestNewPerMetricMetadataLimitError(t *testing.T) {
 	limit := 100
 	family := "testmetric"
-	err := newPerMetricMetadataLimitReachedError(limit, family)
+	err := NewPerMetricMetadataLimitReachedError(limit, family)
 	expectedErrMsg := fmt.Sprintf("%s This is for metric %s",
 		globalerror.MaxMetadataPerMetric.MessageWithPerTenantLimitConfig(
 			fmt.Sprintf("per-metric metadata limit of %d exceeded", limit),
@@ -140,7 +140,7 @@ func TestNewPerMetricMetadataLimitError(t *testing.T) {
 	require.Equal(t, expectedErrMsg, err.Error())
 	checkIngesterError(t, err, mimirpb.BAD_DATA, true)
 
-	wrappedErr := wrapOrAnnotateWithUser(err, userID)
+	wrappedErr := WrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &perMetricMetadataLimitReachedError{})
 	checkIngesterError(t, wrappedErr, mimirpb.BAD_DATA, true)
@@ -153,23 +153,23 @@ func TestNewSampleError(t *testing.T) {
 		expectedMsg string
 	}{
 		"newSampleTimestampTooOldError": {
-			err:         newSampleTimestampTooOldError(timestamp, seriesLabels),
+			err:         NewSampleTimestampTooOldError(timestamp, seriesLabels),
 			expectedMsg: `the sample has been rejected because its timestamp is too old (err-mimir-sample-timestamp-too-old). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series test`,
 		},
 		"newSampleTimestampTooOldOOOEnabledError": {
-			err:         newSampleTimestampTooOldOOOEnabledError(timestamp, seriesLabels, 2*time.Hour),
+			err:         NewSampleTimestampTooOldOOOEnabledError(timestamp, seriesLabels, 2*time.Hour),
 			expectedMsg: `the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of 2h (err-mimir-sample-timestamp-too-old). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series test`,
 		},
 		"newSampleTimestampTooFarInFutureError": {
-			err:         newSampleTimestampTooFarInFutureError(timestamp, seriesLabels),
+			err:         NewSampleTimestampTooFarInFutureError(timestamp, seriesLabels),
 			expectedMsg: `received a sample whose timestamp is too far in the future (err-mimir-too-far-in-future). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series test`,
 		},
 		"newSampleOutOfOrderError": {
-			err:         newSampleOutOfOrderError(timestamp, seriesLabels),
+			err:         NewSampleOutOfOrderError(timestamp, seriesLabels),
 			expectedMsg: `the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed (err-mimir-sample-out-of-order). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series test`,
 		},
 		"newSampleDuplicateTimestampError": {
-			err:         newSampleDuplicateTimestampError(timestamp, seriesLabels),
+			err:         NewSampleDuplicateTimestampError(timestamp, seriesLabels),
 			expectedMsg: `the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested (err-mimir-sample-duplicate-timestamp). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series test`,
 		},
 	}
@@ -179,7 +179,7 @@ func TestNewSampleError(t *testing.T) {
 			require.Equal(t, tc.expectedMsg, tc.err.Error())
 			checkIngesterError(t, tc.err, mimirpb.BAD_DATA, true)
 
-			wrappedErr := wrapOrAnnotateWithUser(tc.err, userID)
+			wrappedErr := WrapOrAnnotateWithUser(tc.err, userID)
 			require.ErrorIs(t, wrappedErr, tc.err)
 			var sampleErr sampleError
 			require.ErrorAs(t, wrappedErr, &sampleErr)
@@ -196,11 +196,11 @@ func TestNewExemplarError(t *testing.T) {
 		expectedMsg string
 	}{
 		"newExemplarMissingSeriesError": {
-			err:         newExemplarMissingSeriesError(timestamp, seriesLabels, exemplarsLabels),
+			err:         NewExemplarMissingSeriesError(timestamp, seriesLabels, exemplarsLabels),
 			expectedMsg: `the exemplar has been rejected because the related series has not been ingested yet (err-mimir-exemplar-series-missing). The affected exemplar is {traceID="123"} with timestamp 1970-01-19T05:30:43.969Z for series test`,
 		},
 		"newExemplarTimestampTooFarInFutureError": {
-			err:         newExemplarTimestampTooFarInFutureError(timestamp, seriesLabels, exemplarsLabels),
+			err:         NewExemplarTimestampTooFarInFutureError(timestamp, seriesLabels, exemplarsLabels),
 			expectedMsg: `received an exemplar whose timestamp is too far in the future (err-mimir-exemplar-too-far-in-future). The affected exemplar is {traceID="123"} with timestamp 1970-01-19T05:30:43.969Z for series test`,
 		},
 	}
@@ -210,7 +210,7 @@ func TestNewExemplarError(t *testing.T) {
 			require.Equal(t, tc.expectedMsg, tc.err.Error())
 			checkIngesterError(t, tc.err, mimirpb.BAD_DATA, true)
 
-			wrappedErr := wrapOrAnnotateWithUser(tc.err, userID)
+			wrappedErr := WrapOrAnnotateWithUser(tc.err, userID)
 			require.ErrorIs(t, wrappedErr, tc.err)
 			var exemplarErr exemplarError
 			require.ErrorAs(t, wrappedErr, &exemplarErr)
@@ -223,24 +223,24 @@ func TestNewTSDBIngestExemplarErr(t *testing.T) {
 	seriesLabels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	exemplarsLabels := []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}
 	anotherErr := errors.New("another error")
-	err := newTSDBIngestExemplarErr(anotherErr, timestamp, seriesLabels, exemplarsLabels)
+	err := NewTSDBIngestExemplarErr(anotherErr, timestamp, seriesLabels, exemplarsLabels)
 	expectedErrMsg := fmt.Sprintf("err: %v. timestamp=1970-01-19T05:30:43.969Z, series=test, exemplar={traceID=\"123\"}", anotherErr)
 	require.Equal(t, expectedErrMsg, err.Error())
 	checkIngesterError(t, err, mimirpb.BAD_DATA, true)
 
-	wrappedErr := wrapOrAnnotateWithUser(err, userID)
+	wrappedErr := WrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &tsdbIngestExemplarErr{})
 	checkIngesterError(t, wrappedErr, mimirpb.BAD_DATA, true)
 }
 
 func TestTooBusyError(t *testing.T) {
-	require.Error(t, errTooBusy)
-	require.Equal(t, "ingester is currently too busy to process queries, try again later", errTooBusy.Error())
-	checkIngesterError(t, errTooBusy, mimirpb.TOO_BUSY, false)
+	require.Error(t, ErrTooBusy)
+	require.Equal(t, "ingester is currently too busy to process queries, try again later", ErrTooBusy.Error())
+	checkIngesterError(t, ErrTooBusy, mimirpb.TOO_BUSY, false)
 
-	wrappedErr := wrapOrAnnotateWithUser(errTooBusy, userID)
-	require.ErrorIs(t, wrappedErr, errTooBusy)
+	wrappedErr := WrapOrAnnotateWithUser(ErrTooBusy, userID)
+	require.ErrorIs(t, wrappedErr, ErrTooBusy)
 	var anotherIngesterTooBusyErr ingesterTooBusyError
 	require.ErrorAs(t, wrappedErr, &anotherIngesterTooBusyErr)
 	checkIngesterError(t, wrappedErr, mimirpb.TOO_BUSY, false)
@@ -249,7 +249,7 @@ func TestTooBusyError(t *testing.T) {
 func TestNewCircuitBreakerOpenError(t *testing.T) {
 	remainingDelay := 1 * time.Second
 	expectedMsg := fmt.Sprintf("circuit breaker open on foo request type with remaining delay %s", remainingDelay.String())
-	err := newCircuitBreakerOpenError("foo", remainingDelay)
+	err := NewCircuitBreakerOpenError("foo", remainingDelay)
 	require.Error(t, err)
 	require.EqualError(t, err, expectedMsg)
 	checkIngesterError(t, err, mimirpb.CIRCUIT_BREAKER_OPEN, false)
@@ -258,7 +258,7 @@ func TestNewCircuitBreakerOpenError(t *testing.T) {
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &circuitBreakerOpenError{})
 
-	wrappedWithUserErr := wrapOrAnnotateWithUser(err, userID)
+	wrappedWithUserErr := WrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedWithUserErr, err)
 	require.ErrorAs(t, wrappedWithUserErr, &circuitBreakerOpenError{})
 	checkIngesterError(t, wrappedErr, mimirpb.CIRCUIT_BREAKER_OPEN, false)
@@ -298,7 +298,7 @@ func TestNewErrorWithStatus(t *testing.T) {
 
 	for name, data := range tests {
 		t.Run(name, func(t *testing.T) {
-			errWithStatus := newErrorWithStatus(data.originErr, data.statusCode)
+			errWithStatus := NewErrorWithStatus(data.originErr, data.statusCode)
 			require.Error(t, errWithStatus)
 			require.Errorf(t, errWithStatus, data.expectedErrorMessage)
 
@@ -342,8 +342,8 @@ func TestNewErrorWithStatus(t *testing.T) {
 
 func TestErrorWithHTTPStatus(t *testing.T) {
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
-	err := newSampleTimestampTooOldError(timestamp, metricLabelAdapters)
-	errWithHTTPStatus := newErrorWithHTTPStatus(err, http.StatusBadRequest)
+	err := NewSampleTimestampTooOldError(timestamp, metricLabelAdapters)
+	errWithHTTPStatus := NewErrorWithHTTPStatus(err, http.StatusBadRequest)
 	require.Error(t, errWithHTTPStatus)
 
 	// Ensure gogo's status.FromError recognizes errWithHTTPStatus.
@@ -378,16 +378,16 @@ func TestWrapOrAnnotateWithUser(t *testing.T) {
 	userID := "1"
 	annotatingErr := errors.New("this error will be annotated")
 	expectedAnnotatedErrMsg := fmt.Sprintf("user=%s: %s", userID, annotatingErr.Error())
-	annotatedUnsafeErr := wrapOrAnnotateWithUser(annotatingErr, userID)
+	annotatedUnsafeErr := WrapOrAnnotateWithUser(annotatingErr, userID)
 	require.Error(t, annotatedUnsafeErr)
 	require.EqualError(t, annotatedUnsafeErr, expectedAnnotatedErrMsg)
 	require.NotErrorIs(t, annotatedUnsafeErr, annotatingErr)
 	require.Nil(t, errors.Unwrap(annotatedUnsafeErr))
 
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
-	wrappingErr := newSampleTimestampTooOldError(timestamp, metricLabelAdapters)
+	wrappingErr := NewSampleTimestampTooOldError(timestamp, metricLabelAdapters)
 	expectedWrappedErrMsg := fmt.Sprintf("user=%s: %s", userID, wrappingErr.Error())
-	wrappedSafeErr := wrapOrAnnotateWithUser(wrappingErr, userID)
+	wrappedSafeErr := WrapOrAnnotateWithUser(wrappingErr, userID)
 	require.Error(t, wrappedSafeErr)
 	require.EqualError(t, wrappedSafeErr, expectedWrappedErrMsg)
 	require.ErrorIs(t, wrappedSafeErr, wrappingErr)
@@ -422,15 +422,15 @@ func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 			doNotLogExpected: true,
 		},
 		"an unavailableError gets translated into an ErrorWithStatus Unavailable error with details": {
-			err:             newUnavailableError(services.Stopping),
+			err:             NewUnavailableError(services.Stopping),
 			expectedCode:    codes.Unavailable,
-			expectedMessage: newUnavailableError(services.Stopping).Error(),
+			expectedMessage: NewUnavailableError(services.Stopping).Error(),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE},
 		},
 		"a wrapped unavailableError gets translated into an ErrorWithStatus Unavailable error": {
-			err:             fmt.Errorf("wrapped: %w", newUnavailableError(services.Stopping)),
+			err:             fmt.Errorf("wrapped: %w", NewUnavailableError(services.Stopping)),
 			expectedCode:    codes.Unavailable,
-			expectedMessage: fmt.Sprintf("wrapped: %s", newUnavailableError(services.Stopping).Error()),
+			expectedMessage: fmt.Sprintf("wrapped: %s", NewUnavailableError(services.Stopping).Error()),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE},
 		},
 		"an ingesterPushGrpcDisabledError gets translated into an ErrorWithStatus Unimplemented error with details": {
@@ -446,132 +446,132 @@ func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.METHOD_NOT_ALLOWED},
 		},
 		"an instanceLimitReachedError gets translated into a non-loggable ErrorWithStatus Unavailable error with details": {
-			err:              newInstanceLimitReachedError("instance limit reached"),
+			err:              NewInstanceLimitReachedError("instance limit reached"),
 			expectedCode:     codes.Unavailable,
-			expectedMessage:  newInstanceLimitReachedError("instance limit reached").Error(),
+			expectedMessage:  NewInstanceLimitReachedError("instance limit reached").Error(),
 			expectedDetails:  &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT},
 			doNotLogExpected: true,
 		},
 		"a wrapped instanceLimitReachedError gets translated into an ErrorWithStatus Unavailable error with details": {
-			err:              fmt.Errorf("wrapped: %w", newInstanceLimitReachedError("instance limit reached")),
+			err:              fmt.Errorf("wrapped: %w", NewInstanceLimitReachedError("instance limit reached")),
 			expectedCode:     codes.Unavailable,
-			expectedMessage:  fmt.Sprintf("wrapped: %s", newInstanceLimitReachedError("instance limit reached").Error()),
+			expectedMessage:  fmt.Sprintf("wrapped: %s", NewInstanceLimitReachedError("instance limit reached").Error()),
 			expectedDetails:  &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT},
 			doNotLogExpected: true,
 		},
 		"a tsdbUnavailableError gets translated into an ErrorWithStatus Internal error with details": {
-			err:             newTSDBUnavailableError("tsdb stopping"),
+			err:             NewTSDBUnavailableError("tsdb stopping"),
 			expectedCode:    codes.Internal,
-			expectedMessage: newTSDBUnavailableError("tsdb stopping").Error(),
+			expectedMessage: NewTSDBUnavailableError("tsdb stopping").Error(),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.TSDB_UNAVAILABLE},
 		},
 		"a wrapped tsdbUnavailableError gets translated into an ErrorWithStatus Internal error with details": {
-			err:             fmt.Errorf("wrapped: %w", newTSDBUnavailableError("tsdb stopping")),
+			err:             fmt.Errorf("wrapped: %w", NewTSDBUnavailableError("tsdb stopping")),
 			expectedCode:    codes.Internal,
-			expectedMessage: fmt.Sprintf("wrapped: %s", newTSDBUnavailableError("tsdb stopping").Error()),
+			expectedMessage: fmt.Sprintf("wrapped: %s", NewTSDBUnavailableError("tsdb stopping").Error()),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.TSDB_UNAVAILABLE},
 		},
 		"a sampleError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
-			err:             newSampleError("id", "sample error", timestamp, labelAdapters),
+			err:             NewSampleError("id", "sample error", timestamp, labelAdapters),
 			expectedCode:    codes.FailedPrecondition,
-			expectedMessage: newSampleError("id", "sample error", timestamp, labelAdapters).Error(),
+			expectedMessage: NewSampleError("id", "sample error", timestamp, labelAdapters).Error(),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a wrapped sampleError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
-			err:             fmt.Errorf("wrapped: %w", newSampleError("id", "sample error", timestamp, labelAdapters)),
+			err:             fmt.Errorf("wrapped: %w", NewSampleError("id", "sample error", timestamp, labelAdapters)),
 			expectedCode:    codes.FailedPrecondition,
-			expectedMessage: fmt.Sprintf("wrapped: %s", newSampleError("id", "sample error", timestamp, labelAdapters).Error()),
+			expectedMessage: fmt.Sprintf("wrapped: %s", NewSampleError("id", "sample error", timestamp, labelAdapters).Error()),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a exemplarError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
-			err:             newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters),
+			err:             NewExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters),
 			expectedCode:    codes.FailedPrecondition,
-			expectedMessage: newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters).Error(),
+			expectedMessage: NewExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters).Error(),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a wrapped exemplarError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
-			err:             fmt.Errorf("wrapped: %w", newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters)),
+			err:             fmt.Errorf("wrapped: %w", NewExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters)),
 			expectedCode:    codes.FailedPrecondition,
-			expectedMessage: fmt.Sprintf("wrapped: %s", newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters).Error()),
+			expectedMessage: fmt.Sprintf("wrapped: %s", NewExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters).Error()),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a tsdbIngestExemplarErr gets translated into an ErrorWithStatus FailedPrecondition error with details": {
-			err:             newTSDBIngestExemplarErr(originalErr, timestamp, labelAdapters, labelAdapters),
+			err:             NewTSDBIngestExemplarErr(originalErr, timestamp, labelAdapters, labelAdapters),
 			expectedCode:    codes.FailedPrecondition,
-			expectedMessage: newTSDBIngestExemplarErr(originalErr, timestamp, labelAdapters, labelAdapters).Error(),
+			expectedMessage: NewTSDBIngestExemplarErr(originalErr, timestamp, labelAdapters, labelAdapters).Error(),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a wrapped tsdbIngestExemplarErr gets translated into an ErrorWithStatus FailedPrecondition error with details": {
-			err:             fmt.Errorf("wrapped: %w", newTSDBIngestExemplarErr(originalErr, timestamp, labelAdapters, labelAdapters)),
+			err:             fmt.Errorf("wrapped: %w", NewTSDBIngestExemplarErr(originalErr, timestamp, labelAdapters, labelAdapters)),
 			expectedCode:    codes.FailedPrecondition,
-			expectedMessage: fmt.Sprintf("wrapped: %s", newTSDBIngestExemplarErr(originalErr, timestamp, labelAdapters, labelAdapters).Error()),
+			expectedMessage: fmt.Sprintf("wrapped: %s", NewTSDBIngestExemplarErr(originalErr, timestamp, labelAdapters, labelAdapters).Error()),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a perUserSeriesLimitReachedError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
-			err:             newPerUserSeriesLimitReachedError(10),
+			err:             NewPerUserSeriesLimitReachedError(10),
 			expectedCode:    codes.FailedPrecondition,
-			expectedMessage: newPerUserSeriesLimitReachedError(10).Error(),
+			expectedMessage: NewPerUserSeriesLimitReachedError(10).Error(),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a wrapped perUserSeriesLimitReachedError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
-			err:             fmt.Errorf("wrapped: %w", newPerUserSeriesLimitReachedError(10)),
+			err:             fmt.Errorf("wrapped: %w", NewPerUserSeriesLimitReachedError(10)),
 			expectedCode:    codes.FailedPrecondition,
-			expectedMessage: fmt.Sprintf("wrapped: %s", newPerUserSeriesLimitReachedError(10).Error()),
+			expectedMessage: fmt.Sprintf("wrapped: %s", NewPerUserSeriesLimitReachedError(10).Error()),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a perUserMetadataLimitReachedError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
-			err:             newPerUserMetadataLimitReachedError(10),
+			err:             NewPerUserMetadataLimitReachedError(10),
 			expectedCode:    codes.FailedPrecondition,
-			expectedMessage: newPerUserMetadataLimitReachedError(10).Error(),
+			expectedMessage: NewPerUserMetadataLimitReachedError(10).Error(),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a wrapped perUserMetadataLimitReachedError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
-			err:             fmt.Errorf("wrapped: %w", newPerUserMetadataLimitReachedError(10)),
+			err:             fmt.Errorf("wrapped: %w", NewPerUserMetadataLimitReachedError(10)),
 			expectedCode:    codes.FailedPrecondition,
-			expectedMessage: fmt.Sprintf("wrapped: %s", newPerUserMetadataLimitReachedError(10).Error()),
+			expectedMessage: fmt.Sprintf("wrapped: %s", NewPerUserMetadataLimitReachedError(10).Error()),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a perMetricSeriesLimitReachedError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
-			err:             newPerMetricSeriesLimitReachedError(10, labelAdapters),
+			err:             NewPerMetricSeriesLimitReachedError(10, labelAdapters),
 			expectedCode:    codes.FailedPrecondition,
-			expectedMessage: newPerMetricSeriesLimitReachedError(10, labelAdapters).Error(),
+			expectedMessage: NewPerMetricSeriesLimitReachedError(10, labelAdapters).Error(),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a wrapped perMetricSeriesLimitReachedError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
-			err:             fmt.Errorf("wrapped: %w", newPerMetricSeriesLimitReachedError(10, labelAdapters)),
+			err:             fmt.Errorf("wrapped: %w", NewPerMetricSeriesLimitReachedError(10, labelAdapters)),
 			expectedCode:    codes.FailedPrecondition,
-			expectedMessage: fmt.Sprintf("wrapped: %s", newPerMetricSeriesLimitReachedError(10, labelAdapters).Error()),
+			expectedMessage: fmt.Sprintf("wrapped: %s", NewPerMetricSeriesLimitReachedError(10, labelAdapters).Error()),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a perMetricMetadataLimitReachedError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
-			err:             newPerMetricMetadataLimitReachedError(10, family),
+			err:             NewPerMetricMetadataLimitReachedError(10, family),
 			expectedCode:    codes.FailedPrecondition,
-			expectedMessage: newPerMetricMetadataLimitReachedError(10, family).Error(),
+			expectedMessage: NewPerMetricMetadataLimitReachedError(10, family).Error(),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a wrapped perMetricMetadataLimitReachedError gets translated into an ErrorWithStatus FailedPrecondition error with details": {
-			err:             fmt.Errorf("wrapped: %w", newPerMetricMetadataLimitReachedError(10, family)),
+			err:             fmt.Errorf("wrapped: %w", NewPerMetricMetadataLimitReachedError(10, family)),
 			expectedCode:    codes.FailedPrecondition,
-			expectedMessage: fmt.Sprintf("wrapped: %s", newPerMetricMetadataLimitReachedError(10, family).Error()),
+			expectedMessage: fmt.Sprintf("wrapped: %s", NewPerMetricMetadataLimitReachedError(10, family).Error()),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a circuitBreakerOpenError gets translated into an ErrorWithStatus Unavailable error with details": {
-			err:             newCircuitBreakerOpenError("foo", 1*time.Second),
+			err:             NewCircuitBreakerOpenError("foo", 1*time.Second),
 			expectedCode:    codes.Unavailable,
-			expectedMessage: newCircuitBreakerOpenError("foo", 1*time.Second).Error(),
+			expectedMessage: NewCircuitBreakerOpenError("foo", 1*time.Second).Error(),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.CIRCUIT_BREAKER_OPEN},
 		},
 		"a wrapped circuitBreakerOpenError gets translated into an ErrorWithStatus Unavailable error with details": {
-			err:             fmt.Errorf("wrapped: %w", newCircuitBreakerOpenError("foo", 1*time.Second)),
+			err:             fmt.Errorf("wrapped: %w", NewCircuitBreakerOpenError("foo", 1*time.Second)),
 			expectedCode:    codes.Unavailable,
-			expectedMessage: fmt.Sprintf("wrapped: %s", newCircuitBreakerOpenError("foo", 1*time.Second).Error()),
+			expectedMessage: fmt.Sprintf("wrapped: %s", NewCircuitBreakerOpenError("foo", 1*time.Second).Error()),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.CIRCUIT_BREAKER_OPEN},
 		},
 	}
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			handledErr := mapPushErrorToErrorWithStatus(tc.err)
+			handledErr := MapPushErrorToErrorWithStatus(tc.err)
 			stat, ok := grpcutil.ErrorToStatus(handledErr)
 			require.True(t, ok)
 			require.Equal(t, tc.expectedCode, stat.Code())
@@ -610,155 +610,155 @@ func TestMapPushErrorToErrorWithHTTPOrGRPCStatus(t *testing.T) {
 			doNotLogExpected:    true,
 		},
 		"an unavailableError gets translated into an ErrorWithStatus Unavailable error": {
-			err:                 newUnavailableError(services.Stopping),
-			expectedTranslation: newErrorWithStatus(newUnavailableError(services.Stopping), codes.Unavailable),
+			err:                 NewUnavailableError(services.Stopping),
+			expectedTranslation: NewErrorWithStatus(NewUnavailableError(services.Stopping), codes.Unavailable),
 		},
 		"a wrapped unavailableError gets translated into a non-loggable ErrorWithStatus Unavailable error": {
-			err: fmt.Errorf("wrapped: %w", newUnavailableError(services.Stopping)),
-			expectedTranslation: newErrorWithStatus(
-				fmt.Errorf("wrapped: %w", newUnavailableError(services.Stopping)),
+			err: fmt.Errorf("wrapped: %w", NewUnavailableError(services.Stopping)),
+			expectedTranslation: NewErrorWithStatus(
+				fmt.Errorf("wrapped: %w", NewUnavailableError(services.Stopping)),
 				codes.Unavailable,
 			),
 		},
 		"an instanceLimitReachedError gets translated into a non-loggable ErrorWithStatus Unavailable error": {
-			err: newInstanceLimitReachedError("instance limit reached"),
-			expectedTranslation: newErrorWithStatus(
-				middleware.DoNotLogError{Err: newInstanceLimitReachedError("instance limit reached")},
+			err: NewInstanceLimitReachedError("instance limit reached"),
+			expectedTranslation: NewErrorWithStatus(
+				middleware.DoNotLogError{Err: NewInstanceLimitReachedError("instance limit reached")},
 				codes.Unavailable,
 			),
 			doNotLogExpected: true,
 		},
 		"a wrapped instanceLimitReachedError gets translated into a non-loggable ErrorWithStatus Unavailable error": {
-			err: fmt.Errorf("wrapped: %w", newInstanceLimitReachedError("instance limit reached")),
-			expectedTranslation: newErrorWithStatus(
-				middleware.DoNotLogError{Err: fmt.Errorf("wrapped: %w", newInstanceLimitReachedError("instance limit reached"))},
+			err: fmt.Errorf("wrapped: %w", NewInstanceLimitReachedError("instance limit reached")),
+			expectedTranslation: NewErrorWithStatus(
+				middleware.DoNotLogError{Err: fmt.Errorf("wrapped: %w", NewInstanceLimitReachedError("instance limit reached"))},
 				codes.Unavailable,
 			),
 			doNotLogExpected: true,
 		},
 		"a tsdbUnavailableError gets translated into an errorWithHTTPStatus 503 error": {
-			err: newTSDBUnavailableError("tsdb stopping"),
-			expectedTranslation: newErrorWithHTTPStatus(
-				newTSDBUnavailableError("tsdb stopping"),
+			err: NewTSDBUnavailableError("tsdb stopping"),
+			expectedTranslation: NewErrorWithHTTPStatus(
+				NewTSDBUnavailableError("tsdb stopping"),
 				http.StatusServiceUnavailable,
 			),
 		},
 		"a wrapped tsdbUnavailableError gets translated into an errorWithHTTPStatus 503 error": {
-			err: fmt.Errorf("wrapped: %w", newTSDBUnavailableError("tsdb stopping")),
-			expectedTranslation: newErrorWithHTTPStatus(
-				fmt.Errorf("wrapped: %w", newTSDBUnavailableError("tsdb stopping")),
+			err: fmt.Errorf("wrapped: %w", NewTSDBUnavailableError("tsdb stopping")),
+			expectedTranslation: NewErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", NewTSDBUnavailableError("tsdb stopping")),
 				http.StatusServiceUnavailable,
 			),
 		},
 		"a sampleError gets translated into an errorWithHTTPStatus 400 error": {
-			err: newSampleError("id", "sample error", timestamp, labelAdapters),
-			expectedTranslation: newErrorWithHTTPStatus(
-				newSampleError("id", "sample error", timestamp, labelAdapters),
+			err: NewSampleError("id", "sample error", timestamp, labelAdapters),
+			expectedTranslation: NewErrorWithHTTPStatus(
+				NewSampleError("id", "sample error", timestamp, labelAdapters),
 				http.StatusBadRequest,
 			),
 		},
 		"a wrapped sample gets translated into an errorWithHTTPStatus 400 error": {
-			err: fmt.Errorf("wrapped: %w", newSampleError("id", "sample error", timestamp, labelAdapters)),
-			expectedTranslation: newErrorWithHTTPStatus(
-				fmt.Errorf("wrapped: %w", newSampleError("id", "sample error", timestamp, labelAdapters)),
+			err: fmt.Errorf("wrapped: %w", NewSampleError("id", "sample error", timestamp, labelAdapters)),
+			expectedTranslation: NewErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", NewSampleError("id", "sample error", timestamp, labelAdapters)),
 				http.StatusBadRequest,
 			),
 		},
 		"a exemplarError gets translated into an errorWithHTTPStatus 400 error": {
-			err: newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters),
-			expectedTranslation: newErrorWithHTTPStatus(
-				newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters),
+			err: NewExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters),
+			expectedTranslation: NewErrorWithHTTPStatus(
+				NewExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters),
 				http.StatusBadRequest,
 			),
 		},
 		"a wrapped exemplarError gets translated into an errorWithHTTPStatus 400 error": {
-			err: fmt.Errorf("wrapped: %w", newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters)),
-			expectedTranslation: newErrorWithHTTPStatus(
-				fmt.Errorf("wrapped: %w", newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters)),
+			err: fmt.Errorf("wrapped: %w", NewExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters)),
+			expectedTranslation: NewErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", NewExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters)),
 				http.StatusBadRequest,
 			),
 		},
 		"a perUserSeriesLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
-			err: newPerUserSeriesLimitReachedError(10),
-			expectedTranslation: newErrorWithHTTPStatus(
-				newPerUserSeriesLimitReachedError(10),
+			err: NewPerUserSeriesLimitReachedError(10),
+			expectedTranslation: NewErrorWithHTTPStatus(
+				NewPerUserSeriesLimitReachedError(10),
 				http.StatusBadRequest,
 			),
 		},
 		"a wrapped perUserSeriesLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
-			err: fmt.Errorf("wrapped: %w", newPerUserSeriesLimitReachedError(10)),
-			expectedTranslation: newErrorWithHTTPStatus(
-				fmt.Errorf("wrapped: %w", newPerUserSeriesLimitReachedError(10)),
+			err: fmt.Errorf("wrapped: %w", NewPerUserSeriesLimitReachedError(10)),
+			expectedTranslation: NewErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", NewPerUserSeriesLimitReachedError(10)),
 				http.StatusBadRequest,
 			),
 		},
 		"a perMetricSeriesLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
-			err: newPerMetricSeriesLimitReachedError(10, labelAdapters),
-			expectedTranslation: newErrorWithHTTPStatus(
-				newPerMetricSeriesLimitReachedError(10, labelAdapters),
+			err: NewPerMetricSeriesLimitReachedError(10, labelAdapters),
+			expectedTranslation: NewErrorWithHTTPStatus(
+				NewPerMetricSeriesLimitReachedError(10, labelAdapters),
 				http.StatusBadRequest,
 			),
 		},
 		"a wrapped perMetricSeriesLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
-			err: fmt.Errorf("wrapped: %w", newPerMetricSeriesLimitReachedError(10, labelAdapters)),
-			expectedTranslation: newErrorWithHTTPStatus(
-				fmt.Errorf("wrapped: %w", newPerMetricSeriesLimitReachedError(10, labelAdapters)),
+			err: fmt.Errorf("wrapped: %w", NewPerMetricSeriesLimitReachedError(10, labelAdapters)),
+			expectedTranslation: NewErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", NewPerMetricSeriesLimitReachedError(10, labelAdapters)),
 				http.StatusBadRequest,
 			),
 		},
 		"a perUserMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
-			err: newPerUserMetadataLimitReachedError(10),
-			expectedTranslation: newErrorWithHTTPStatus(
-				newPerUserMetadataLimitReachedError(10),
+			err: NewPerUserMetadataLimitReachedError(10),
+			expectedTranslation: NewErrorWithHTTPStatus(
+				NewPerUserMetadataLimitReachedError(10),
 				http.StatusBadRequest,
 			),
 		},
 		"a wrapped perUserMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
-			err: fmt.Errorf("wrapped: %w", newPerUserMetadataLimitReachedError(10)),
-			expectedTranslation: newErrorWithHTTPStatus(
-				fmt.Errorf("wrapped: %w", newPerUserMetadataLimitReachedError(10)),
+			err: fmt.Errorf("wrapped: %w", NewPerUserMetadataLimitReachedError(10)),
+			expectedTranslation: NewErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", NewPerUserMetadataLimitReachedError(10)),
 				http.StatusBadRequest,
 			),
 		},
 		"a perMetricMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
-			err: newPerMetricMetadataLimitReachedError(10, family),
-			expectedTranslation: newErrorWithHTTPStatus(
-				newPerMetricMetadataLimitReachedError(10, family),
+			err: NewPerMetricMetadataLimitReachedError(10, family),
+			expectedTranslation: NewErrorWithHTTPStatus(
+				NewPerMetricMetadataLimitReachedError(10, family),
 				http.StatusBadRequest,
 			),
 		},
 		"a wrapped perMetricMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
-			err: fmt.Errorf("wrapped: %w", newPerMetricMetadataLimitReachedError(10, family)),
-			expectedTranslation: newErrorWithHTTPStatus(
-				fmt.Errorf("wrapped: %w", newPerMetricMetadataLimitReachedError(10, family)),
+			err: fmt.Errorf("wrapped: %w", NewPerMetricMetadataLimitReachedError(10, family)),
+			expectedTranslation: NewErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", NewPerMetricMetadataLimitReachedError(10, family)),
 				http.StatusBadRequest,
 			),
 		},
 		"an ingesterPushGrpcDisabledError gets translated into an ErrorWithStatus Unimplemented error": {
 			err: ingesterPushGrpcDisabledError{},
-			expectedTranslation: newErrorWithStatus(
+			expectedTranslation: NewErrorWithStatus(
 				ingesterPushGrpcDisabledError{},
 				codes.Unimplemented,
 			),
 		},
 		"a wrapped ingesterPushGrpcDisabledError gets translated into an ErrorWithStatus Unimplemented error": {
 			err: fmt.Errorf("wrapped: %w", ingesterPushGrpcDisabledError{}),
-			expectedTranslation: newErrorWithStatus(
+			expectedTranslation: NewErrorWithStatus(
 				fmt.Errorf("wrapped: %w", ingesterPushGrpcDisabledError{}),
 				codes.Unimplemented,
 			),
 		},
 		"a circuitBreakerOpenError gets translated into an ErrorWithStatus Unavailable error": {
-			err: newCircuitBreakerOpenError("foo", 1*time.Second),
-			expectedTranslation: newErrorWithStatus(
-				newCircuitBreakerOpenError("foo", 1*time.Second),
+			err: NewCircuitBreakerOpenError("foo", 1*time.Second),
+			expectedTranslation: NewErrorWithStatus(
+				NewCircuitBreakerOpenError("foo", 1*time.Second),
 				codes.Unavailable,
 			),
 		},
 		"a wrapped circuitBreakerOpenError gets translated into an ErrorWithStatus Unavailable error": {
-			err: fmt.Errorf("wrapped: %w", newCircuitBreakerOpenError("foo", 1*time.Second)),
-			expectedTranslation: newErrorWithStatus(
-				fmt.Errorf("wrapped: %w", newCircuitBreakerOpenError("foo", 1*time.Second)),
+			err: fmt.Errorf("wrapped: %w", NewCircuitBreakerOpenError("foo", 1*time.Second)),
+			expectedTranslation: NewErrorWithStatus(
+				fmt.Errorf("wrapped: %w", NewCircuitBreakerOpenError("foo", 1*time.Second)),
 				codes.Unavailable,
 			),
 		},
@@ -766,7 +766,7 @@ func TestMapPushErrorToErrorWithHTTPOrGRPCStatus(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			handledErr := mapPushErrorToErrorWithHTTPOrGRPCStatus(tc.err)
+			handledErr := MapPushErrorToErrorWithHTTPOrGRPCStatus(tc.err)
 			require.Equal(t, tc.expectedTranslation, handledErr)
 			if tc.doNotLogExpected {
 				var doNotLogError middleware.DoNotLogError
@@ -796,45 +796,45 @@ func TestMapReadErrorToErrorWithStatus(t *testing.T) {
 			expectedDetails: nil,
 		},
 		"an unavailableError gets translated into an ErrorWithStatus Unavailable error with details": {
-			err:             newUnavailableError(services.Stopping),
+			err:             NewUnavailableError(services.Stopping),
 			expectedCode:    codes.Unavailable,
-			expectedMessage: newUnavailableError(services.Stopping).Error(),
+			expectedMessage: NewUnavailableError(services.Stopping).Error(),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE},
 		},
 		"a wrapped unavailableError gets translated into an ErrorWithStatus Unavailable error": {
-			err:             fmt.Errorf("wrapped: %w", newUnavailableError(services.Stopping)),
+			err:             fmt.Errorf("wrapped: %w", NewUnavailableError(services.Stopping)),
 			expectedCode:    codes.Unavailable,
-			expectedMessage: fmt.Sprintf("wrapped: %s", newUnavailableError(services.Stopping).Error()),
+			expectedMessage: fmt.Sprintf("wrapped: %s", NewUnavailableError(services.Stopping).Error()),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE},
 		},
-		"errTooBusy gets translated into an ErrorWithStatus ResourceExhausted error with details": {
-			err:             errTooBusy,
+		"ErrTooBusy gets translated into an ErrorWithStatus ResourceExhausted error with details": {
+			err:             ErrTooBusy,
 			expectedCode:    codes.ResourceExhausted,
 			expectedMessage: ingesterTooBusyMsg,
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.TOO_BUSY},
 		},
-		"a wrapped errTooBusy gets translated into an ErrorWithStatus ResourceExhausted error with details": {
-			err:             fmt.Errorf("wrapped: %w", errTooBusy),
+		"a wrapped ErrTooBusy gets translated into an ErrorWithStatus ResourceExhausted error with details": {
+			err:             fmt.Errorf("wrapped: %w", ErrTooBusy),
 			expectedCode:    codes.ResourceExhausted,
 			expectedMessage: fmt.Sprintf("wrapped: %s", ingesterTooBusyMsg),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.TOO_BUSY},
 		},
 		"a circuitBreakerOpenError gets translated into an ErrorWithStatus Unavailable error with details": {
-			err:             newCircuitBreakerOpenError("foo", 1*time.Second),
+			err:             NewCircuitBreakerOpenError("foo", 1*time.Second),
 			expectedCode:    codes.Unavailable,
-			expectedMessage: newCircuitBreakerOpenError("foo", 1*time.Second).Error(),
+			expectedMessage: NewCircuitBreakerOpenError("foo", 1*time.Second).Error(),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.CIRCUIT_BREAKER_OPEN},
 		},
 		"a wrapped circuitBreakerOpenError gets translated into an ErrorWithStatus Unavailable error with details": {
-			err:             fmt.Errorf("wrapped: %w", newCircuitBreakerOpenError("foo", 1*time.Second)),
+			err:             fmt.Errorf("wrapped: %w", NewCircuitBreakerOpenError("foo", 1*time.Second)),
 			expectedCode:    codes.Unavailable,
-			expectedMessage: fmt.Sprintf("wrapped: %s", newCircuitBreakerOpenError("foo", 1*time.Second)),
+			expectedMessage: fmt.Sprintf("wrapped: %s", NewCircuitBreakerOpenError("foo", 1*time.Second)),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.CIRCUIT_BREAKER_OPEN},
 		},
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			handledErr := mapReadErrorToErrorWithStatus(tc.err)
+			handledErr := MapReadErrorToErrorWithStatus(tc.err)
 			stat, ok := grpcutil.ErrorToStatus(handledErr)
 			require.True(t, ok)
 			require.Equal(t, tc.expectedCode, stat.Code())
@@ -857,33 +857,33 @@ func TestMapReadErrorToErrorWithHTTPOrGRPCStatus(t *testing.T) {
 			expectedTranslation: originalErr,
 		},
 		"an unavailableError gets translated into an ErrorWithStatus Unavailable error with details": {
-			err:                 newUnavailableError(services.Stopping),
-			expectedTranslation: newErrorWithStatus(newUnavailableError(services.Stopping), codes.Unavailable),
+			err:                 NewUnavailableError(services.Stopping),
+			expectedTranslation: NewErrorWithStatus(NewUnavailableError(services.Stopping), codes.Unavailable),
 		},
 		"a wrapped unavailableError gets translated into an ErrorWithStatus Unavailable error": {
-			err:                 fmt.Errorf("wrapped: %w", newUnavailableError(services.Stopping)),
-			expectedTranslation: newErrorWithStatus(fmt.Errorf("wrapped: %w", newUnavailableError(services.Stopping)), codes.Unavailable),
+			err:                 fmt.Errorf("wrapped: %w", NewUnavailableError(services.Stopping)),
+			expectedTranslation: NewErrorWithStatus(fmt.Errorf("wrapped: %w", NewUnavailableError(services.Stopping)), codes.Unavailable),
 		},
-		"errTooBusy gets translated into an errorWithHTTPStatus with status code 503": {
-			err:                 errTooBusy,
-			expectedTranslation: newErrorWithHTTPStatus(errTooBusy, http.StatusServiceUnavailable),
+		"ErrTooBusy gets translated into an errorWithHTTPStatus with status code 503": {
+			err:                 ErrTooBusy,
+			expectedTranslation: NewErrorWithHTTPStatus(ErrTooBusy, http.StatusServiceUnavailable),
 		},
-		"a wrapped errTooBusy gets translated into an errorWithHTTPStatus with status code 503": {
-			err:                 fmt.Errorf("wrapped: %w", errTooBusy),
-			expectedTranslation: newErrorWithHTTPStatus(fmt.Errorf("wrapped: %w", errTooBusy), http.StatusServiceUnavailable),
+		"a wrapped ErrTooBusy gets translated into an errorWithHTTPStatus with status code 503": {
+			err:                 fmt.Errorf("wrapped: %w", ErrTooBusy),
+			expectedTranslation: NewErrorWithHTTPStatus(fmt.Errorf("wrapped: %w", ErrTooBusy), http.StatusServiceUnavailable),
 		},
 		"a circuitBreakerOpenError gets translated into an ErrorWithStatus Unavailable error": {
-			err:                 newCircuitBreakerOpenError("foo", 1*time.Second),
-			expectedTranslation: newErrorWithStatus(newCircuitBreakerOpenError("foo", 1*time.Second), codes.Unavailable),
+			err:                 NewCircuitBreakerOpenError("foo", 1*time.Second),
+			expectedTranslation: NewErrorWithStatus(NewCircuitBreakerOpenError("foo", 1*time.Second), codes.Unavailable),
 		},
 		"a wrapped circuitBreakerOpenError gets translated into an ErrorWithStatus Unavailable": {
-			err:                 fmt.Errorf("wrapped: %w", newCircuitBreakerOpenError("foo", 1*time.Second)),
-			expectedTranslation: newErrorWithStatus(fmt.Errorf("wrapped: %w", newCircuitBreakerOpenError("foo", 1*time.Second)), codes.Unavailable),
+			err:                 fmt.Errorf("wrapped: %w", NewCircuitBreakerOpenError("foo", 1*time.Second)),
+			expectedTranslation: NewErrorWithStatus(fmt.Errorf("wrapped: %w", NewCircuitBreakerOpenError("foo", 1*time.Second)), codes.Unavailable),
 		},
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			handledErr := mapReadErrorToErrorWithHTTPOrGRPCStatus(tc.err)
+			handledErr := MapReadErrorToErrorWithHTTPOrGRPCStatus(tc.err)
 			require.Equal(t, tc.expectedTranslation, handledErr)
 		})
 	}
@@ -900,12 +900,12 @@ func (e mockIngesterErr) errorCause() mimirpb.ErrorCause {
 }
 
 func checkIngesterError(t *testing.T, err error, expectedCause mimirpb.ErrorCause, isSoft bool) {
-	var ingesterErr ingesterError
+	var ingesterErr IngesterError
 	require.ErrorAs(t, err, &ingesterErr)
 	require.Equal(t, expectedCause, ingesterErr.errorCause())
 
 	if isSoft {
-		var softErr softError
+		var softErr SoftError
 		require.ErrorAs(t, err, &softErr)
 	}
 }

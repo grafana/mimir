@@ -79,10 +79,10 @@ func (r tsdbCloseCheckResult) shouldClose() bool {
 }
 
 var (
-	errTSDBForcedCompaction = newTSDBUnavailableError("TSDB Head forced compaction in progress and no write request is currently allowed")
-	errTSDBEarlyCompaction  = newTSDBUnavailableError("TSDB Head early compaction in progress and the write request contains samples overlapping with it")
-	errTSDBClosing          = newTSDBUnavailableError("TSDB is closing")
-	errTSDBNotActive        = newTSDBUnavailableError("TSDB is not active")
+	errTSDBForcedCompaction = NewTSDBUnavailableError("TSDB Head forced compaction in progress and no write request is currently allowed")
+	errTSDBEarlyCompaction  = NewTSDBUnavailableError("TSDB Head early compaction in progress and the write request contains samples overlapping with it")
+	errTSDBClosing          = NewTSDBUnavailableError("TSDB is closing")
+	errTSDBNotActive        = NewTSDBUnavailableError("TSDB is not active")
 )
 
 type ownedSeriesState struct {

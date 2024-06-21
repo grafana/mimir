@@ -183,7 +183,7 @@ func (cb *circuitBreaker) tryRecordFailure(err error) bool {
 		cb.metrics.circuitBreakerRequestTimeouts.Inc()
 		isFailure = true
 	} else {
-		var ingesterErr ingesterError
+		var ingesterErr IngesterError
 		if errors.As(err, &ingesterErr) {
 			isFailure = ingesterErr.errorCause() == mimirpb.INSTANCE_LIMIT
 		}
@@ -231,7 +231,7 @@ func (cb *circuitBreaker) tryAcquirePermit() (func(time.Duration, error), error)
 
 	if !cb.cb.TryAcquirePermit() {
 		cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultOpen).Inc()
-		return nil, newCircuitBreakerOpenError(cb.requestType, cb.cb.RemainingDelay())
+		return nil, NewCircuitBreakerOpenError(cb.requestType, cb.cb.RemainingDelay())
 	}
 
 	return func(duration time.Duration, err error) {
@@ -307,7 +307,7 @@ func (cb *ingesterCircuitBreaker) tryAcquireReadPermit() (func(time.Duration, er
 
 	// We don't want to allow read requests if the push circuit breaker is open.
 	if cb.push.isOpen() {
-		return nil, newCircuitBreakerOpenError(cb.push.requestType, cb.push.cb.RemainingDelay())
+		return nil, NewCircuitBreakerOpenError(cb.push.requestType, cb.push.cb.RemainingDelay())
 	}
 
 	return cb.read.tryAcquirePermit()

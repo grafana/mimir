@@ -51,7 +51,7 @@ func TestInstanceLimitErr(t *testing.T) {
 		require.ErrorAs(t, limitError, &instanceLimitErr)
 		checkIngesterError(t, limitError, mimirpb.INSTANCE_LIMIT, false)
 
-		wrappedWithUserErr := wrapOrAnnotateWithUser(limitError, userID)
+		wrappedWithUserErr := WrapOrAnnotateWithUser(limitError, userID)
 		require.Error(t, wrappedWithUserErr)
 		require.ErrorIs(t, wrappedWithUserErr, limitError)
 		checkIngesterError(t, wrappedWithUserErr, mimirpb.INSTANCE_LIMIT, false)
