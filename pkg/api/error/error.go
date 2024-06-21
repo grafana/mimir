@@ -31,17 +31,17 @@ const (
 	TypeNotAcceptable   Type = "not_acceptable"
 )
 
-type ApiError struct {
+type APIError struct {
 	Type    Type
 	Message string
 }
 
-func (e *ApiError) Error() string {
+func (e *APIError) Error() string {
 	return e.Message
 }
 
 // adapted from https://github.com/prometheus/prometheus/blob/fdbc40a9efcc8197a94f23f0e479b0b56e52d424/web/api/v1/api.go#L1508-L1521
-func (e *ApiError) StatusCode() int {
+func (e *APIError) StatusCode() int {
 	switch e.Type {
 	case TypeBadData:
 		return http.StatusBadRequest
@@ -67,7 +67,7 @@ func (e *ApiError) StatusCode() int {
 	return http.StatusInternalServerError
 }
 
-func (e *ApiError) EncodeJSON() ([]byte, error) {
+func (e *APIError) EncodeJSON() ([]byte, error) {
 	return json.Marshal(
 		struct {
 			Status    string `json:"status"`
@@ -81,9 +81,9 @@ func (e *ApiError) EncodeJSON() ([]byte, error) {
 	)
 }
 
-// HTTPResponseFromError converts an ApiError into a JSON HTTP response
+// HTTPResponseFromError converts an APIError into a JSON HTTP response
 func HTTPResponseFromError(err error) (*httpgrpc.HTTPResponse, bool) {
-	var apiErr *ApiError
+	var apiErr *APIError
 	if !errors.As(err, &apiErr) {
 		return nil, false
 	}
@@ -103,29 +103,29 @@ func HTTPResponseFromError(err error) (*httpgrpc.HTTPResponse, bool) {
 }
 
 // New creates a new apiError with a static string message
-func New(typ Type, msg string) *ApiError {
-	return &ApiError{
+func New(typ Type, msg string) *APIError {
+	return &APIError{
 		Message: msg,
 		Type:    typ,
 	}
 }
 
 // Newf creates a new apiError with a formatted message
-func Newf(typ Type, tmpl string, args ...interface{}) *ApiError {
+func Newf(typ Type, tmpl string, args ...interface{}) *APIError {
 	return New(typ, fmt.Sprintf(tmpl, args...))
 }
 
 // IsAPIError returns true if the error provided is an apiError.
 // This implies that HTTPResponseFromError will succeed.
 func IsAPIError(err error) bool {
-	apiErr := &ApiError{}
+	apiErr := &APIError{}
 	return errors.As(err, &apiErr)
 }
 
 // AddDetails adds details to an existing apiError, but keeps the type and handling.
 // If the error is not an apiError, it will wrap the error with the details.
 func AddDetails(err error, details string) error {
-	apiErr := &ApiError{}
+	apiErr := &APIError{}
 	if !errors.As(err, &apiErr) {
 		return errors.Wrap(err, details)
 	}
@@ -135,7 +135,7 @@ func AddDetails(err error, details string) error {
 
 // IsNonRetryableAPIError returns true if err is an apiError which should be failed and not retried.
 func IsNonRetryableAPIError(err error) bool {
-	apiErr := &ApiError{}
+	apiErr := &APIError{}
 	// Reasoning:
 	// TypeNone and TypeNotFound are not used anywhere in Mimir nor Prometheus;
 	// TypeTimeout, TypeTooManyRequests, TypeNotAcceptable, TypeUnavailable we presume a retry of the same request will fail in the same way.
