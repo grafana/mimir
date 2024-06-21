@@ -1,3 +1,5 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if eq (include "mimir.gateway.isEnabled" .) "true" -}}
 {{- include "mimir.lib.podDisruptionBudget" (dict "ctx" $ "component" "gateway") }}
 {{- end -}}
+{{- end }}

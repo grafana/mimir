@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if eq (include "mimir.gateway.isEnabled" .) "true" -}}
 {{- with .Values.gateway -}}
 apiVersion: v1
@@ -38,3 +39,4 @@ spec:
     {{- include "mimir.selectorLabels" (dict "ctx" $ "component" "gateway") | nindent 4 }}
 {{- end -}}
 {{- end -}}
+{{- end }}

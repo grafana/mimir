@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if .Values.ruler.enabled -}}
 apiVersion: apps/v1
 kind: Deployment
@@ -163,3 +164,4 @@ spec:
         - name: active-queries
           emptyDir: {}
 {{- end -}}
+{{- end }}

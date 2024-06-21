@@ -149,7 +149,13 @@
 {{- end -}}
 
 
-{{- if and .Values.ingester.zoneAwareReplication.enabled (not ((($calculatedConfig).ingester).ring).zone_awareness_enabled) -}}
+{{- if
+   and
+     (or
+       (and (eq .Values.deploymentMode "microservices") .Values.ingester.zoneAwareReplication.enabled)
+       (and (eq .Values.deploymentMode "monolithic") .Values.monolithic.zoneAwareReplication.enabled))
+     (not ((($calculatedConfig).ingester).ring).zone_awareness_enabled)
+}}
 {{- fail "You have set ingester.zoneAwareReplication.enabled=true. The mimir.config must include ingester.ring.zone_awareness_enabled=true. Please merge the latest mimir.config from the chart with your mimir.config."}}
 {{- end -}}
 
@@ -174,8 +180,13 @@
 {{- end -}}
 {{- end -}}
 
-
-{{- if and .Values.store_gateway.zoneAwareReplication.enabled (not ((($calculatedConfig).store_gateway).sharding_ring).zone_awareness_enabled) -}}
+{{- if
+  and
+    (or
+      (and (eq .Values.deploymentMode "microservices") .Values.store_gateway.zoneAwareReplication.enabled)
+      (and (eq .Values.deploymentMode "monolithic") .Values.monolithic.zoneAwareReplication.enabled))
+    (not ((($calculatedConfig).store_gateway).sharding_ring).zone_awareness_enabled)
+}}
 {{- fail "You have set store_gateway.zoneAwareReplication.enabled=true. The mimir.config must include store_gateway.sharding_ring.zone_awareness_enabled=true. Please merge the latest mimir.config from the chart with your mimir.config."}}
 {{- end -}}
 
@@ -201,15 +212,15 @@
 {{- end -}}
 {{- end -}}
 
-{{- if and .Values.alertmanager.zoneAwareReplication.enabled (not .Values.alertmanager.statefulSet.enabled) -}}
+{{- if and .Values.alertmanager.enabled .Values.alertmanager.zoneAwareReplication.enabled (not .Values.alertmanager.statefulSet.enabled) -}}
 {{- fail "You have set alertmanager.zoneAwareReplication.enabled=true, but alertmanager.statefulSet.enabled=false. This is not a supported configuration." -}}
 {{- end -}}
 
-{{- if and .Values.alertmanager.zoneAwareReplication.enabled (not ((($calculatedConfig).alertmanager).sharding_ring).zone_awareness_enabled) -}}
+{{- if and .Values.alertmanager.enabled .Values.alertmanager.zoneAwareReplication.enabled (not ((($calculatedConfig).alertmanager).sharding_ring).zone_awareness_enabled) -}}
 {{- fail "You have set alertmanager.zoneAwareReplication.enabled=true. The mimir.config must include alertmanager.sharding_ring.zone_awareness_enabled=true. Please merge the latest mimir.config from the chart with your mimir.config."}}
 {{- end -}}
 
-{{- if and .Values.alertmanager.zoneAwareReplication.migration.enabled (not .Values.alertmanager.zoneAwareReplication.enabled) -}}
+{{- if and .Values.alertmanager.enabled .Values.alertmanager.zoneAwareReplication.migration.enabled (not .Values.alertmanager.zoneAwareReplication.enabled) -}}
 {{- fail "You have set alertmanager.zoneAwareReplication.migration.enabled=true, but alertmanager.zoneAwareReplication.enabled=false. Please consult the Migrating from single zone with Helm document."}}
 {{- end -}}
 

@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if .Values.overrides_exporter.enabled -}}
 apiVersion: v1
 kind: Service
@@ -25,3 +26,4 @@ spec:
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "overrides-exporter") | nindent 4 }}
 {{- end -}}
+{{- end }}

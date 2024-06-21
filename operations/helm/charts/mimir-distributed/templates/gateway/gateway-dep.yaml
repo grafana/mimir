@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if (eq (include "mimir.gateway.isEnabled" .) "true") }}
 {{- with .Values.gateway }}
 {{- $isGEMGateway := $.Values.enterprise.enabled -}}
@@ -190,3 +191,4 @@ spec:
         {{- end }}
 {{- end -}}
 {{- end -}}
+{{- end }}

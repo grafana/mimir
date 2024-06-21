@@ -1,3 +1,4 @@
+{{- if has .Values.deploymentMode (list "microservices" "monolithic")}}
 {{- if .Values.alertmanager.enabled -}}
 {{- if not .Values.alertmanager.statefulSet.enabled -}}
 apiVersion: apps/v1
@@ -159,3 +160,4 @@ spec:
         {{- end }}
 {{- end -}}
 {{- end -}}
+{{- end }}
