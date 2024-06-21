@@ -52,6 +52,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add a volumeClaimTemplates section to the `chunks-cache`, `index-cache`, `metadata-cache`, and `results-cache` components. #8016
 * [ENHANCEMENT] Add 'gateway.gateway.config.clientMaxBodySize' to the `gateway` to allow setting the maximum allowed size of the client request body. #7960
 * [ENHANCEMENT] Update rollout-operator to `v0.17.0`. #8399
+* [ENHANCEMENT] Omit rendering empty `subPath`, `args`, `env`, and `envFrom` in resource manifests. #7587
 * [BUGFIX] Helm: Allowed setting static NodePort for nginx gateway via `gateway.service.nodePort`. #6966
 * [BUGFIX] Helm: Expose AM configs in the `gateway` NGINX configuration. #8248
 * [BUGFIX] Helm: fix ServiceMonitor and PVC template to not show diff in ArgoCD. #8829
