@@ -101,11 +101,11 @@ func TestBlockBuilder(t *testing.T) {
 	createAndProduceSample := func(t *testing.T, sampleTs, kafkaRecTs time.Time) {
 		samples := floatSample(sampleTs.UnixMilli())
 		val := createWriteRequest(t, samples, nil)
-		produceRecords(t, ctx, writeClient, kafkaRecTs, userID, testTopic, 0, val)
+		produceRecords(ctx, t, writeClient, kafkaRecTs, userID, testTopic, 0, val)
 
 		hSamples := histogramSample(sampleTs.UnixMilli())
 		val = createWriteRequest(t, nil, hSamples)
-		produceRecords(t, ctx, writeClient, kafkaRecTs, userID, testTopic, 1, val)
+		produceRecords(ctx, t, writeClient, kafkaRecTs, userID, testTopic, 1, val)
 
 		kafkaSamples = append(kafkaSamples, samples...)
 		kafkaHSamples = append(kafkaHSamples, hSamples...)
@@ -407,7 +407,7 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 		sampleTs := kafkaTime.Add(-time.Minute)
 		samples := floatSample(sampleTs.UnixMilli())
 		val := createWriteRequest(t, samples, nil)
-		produceRecords(t, ctx, writeClient, kafkaTime, "1", testTopic, 0, val)
+		produceRecords(ctx, t, writeClient, kafkaTime, "1", testTopic, 0, val)
 		expSamples = append(expSamples, samples...)
 	}
 
@@ -473,7 +473,16 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 	)
 }
 
-func produceRecords(t *testing.T, ctx context.Context, writeClient *kgo.Client, ts time.Time, userID, topic string, part int32, val []byte) kgo.ProduceResults {
+func produceRecords(
+	ctx context.Context,
+	t *testing.T,
+	writeClient *kgo.Client,
+	ts time.Time,
+	userID string,
+	topic string,
+	part int32,
+	val []byte,
+) kgo.ProduceResults {
 	rec := &kgo.Record{
 		Timestamp: ts,
 		Key:       []byte(userID),

@@ -65,6 +65,7 @@ func newTSDBBuilder(logger log.Logger, limits *validation.Overrides, blocksStora
 // where the sample was not put in the TSDB because it was discarded or was already processed before.
 // lastEnd: "end" time of the previous block building cycle.
 // currEnd: end time of the block we are looking at right now.
+// TODO(codesome): add metric
 func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastBlockMax, blockMax int64, recordProcessedBefore bool) (_ bool, err error) {
 	userID := string(rec.Key)
 
@@ -274,6 +275,7 @@ func (b *tsdbBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 
 // compactAndUpload compacts the blocks of all the TSDBs
 // and uploads them.
+// TODO(codesome): add metric
 func (b *tsdbBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser func(context.Context, string) blockUploader) error {
 	b.tsdbsMu.Lock()
 	defer b.tsdbsMu.Unlock()
