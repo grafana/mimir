@@ -22,20 +22,44 @@ import (
 )
 
 const (
-	defaultScrapeInterval = 15
+	defaultMinTotalMissedSamples  = 1
+	defaultMaxTotalMissedSamples  = 1000000
+	defaultMinSingleMissedSamples = 1
+	defaultMaxSingleMissedSamples = 10000
+	defaultMinTotalGapTime        = 1
+	defaultMaxTotalGapTime        = 86400
+	defaultMinSingleGapTime       = 1
+	defaultMaxSingleGapTime       = 86400
+	defaultScrapeInterval         = 0
 )
 
 type config struct {
-	minTime        flagext.Time
-	maxTime        flagext.Time
-	scrapeInterval int
-	selector       string
+	minTime                flagext.Time
+	maxTime                flagext.Time
+	minTotalMissedSamples  int
+	maxTotalMissedSamples  int
+	minSingleMissedSamples int
+	maxSingleMissedSamples int
+	minTotalGapTime        int
+	maxTotalGapTime        int
+	minSingleGapTime       int
+	maxSingleGapTime       int
+	scrapeInterval         int
+	selector               string
 }
 
 func (c *config) registerFlags(f *flag.FlagSet) {
 	f.Var(&c.minTime, "mint", "Minimum timestamp to consider (default: block min time)")
 	f.Var(&c.maxTime, "maxt", "Maximum timestamp to consider (default: block max time)")
-	f.IntVar(&c.scrapeInterval, "scrape-interval", defaultScrapeInterval, "Threshold for gap detection in seconds (default: 15, set to 0 to automatic interval detection)")
+	f.IntVar(&c.minTotalMissedSamples, "min-total-missed-samples", defaultMinTotalMissedSamples, "Minimum total missed samples in a series")
+	f.IntVar(&c.maxTotalMissedSamples, "max-total-missed-samples", defaultMaxTotalMissedSamples, "Maximum total missed samples in a series")
+	f.IntVar(&c.minSingleMissedSamples, "min-single-missed-samples", defaultMinSingleMissedSamples, "Minimum missed samples in a single gap")
+	f.IntVar(&c.maxSingleMissedSamples, "max-single-missed-samples", defaultMaxSingleMissedSamples, "Maximum missed samples in a single gap")
+	f.IntVar(&c.minTotalGapTime, "min-total-gap-time", defaultMinTotalGapTime, "Minimum total gap time in seconds for a series")
+	f.IntVar(&c.maxTotalGapTime, "max-total-gap-time", defaultMaxTotalGapTime, "Maximum total gap time in seconds for a series")
+	f.IntVar(&c.minSingleGapTime, "min-single-gap-time", defaultMinSingleGapTime, "Minimum gap time in seconds for a single gap")
+	f.IntVar(&c.maxSingleGapTime, "max-single-gap-time", defaultMaxSingleGapTime, "Maximum gap time in seconds for a single gap")
+	f.IntVar(&c.scrapeInterval, "scrape-interval", defaultScrapeInterval, "Threshold for gap detection in seconds, set to 0 for automatic interval detection)")
 	f.StringVar(&c.selector, "select", "", "PromQL metric selector (default: all series)")
 }
 
@@ -43,8 +67,51 @@ func (c *config) validate() error {
 	if time.Time(c.minTime).After(time.Time(c.maxTime)) {
 		return fmt.Errorf("minimum timestamp is greater than maximum timestamp")
 	}
+	if c.minTotalMissedSamples < 0 {
+		return fmt.Errorf("minimum total missed samples must be non-negative")
+	}
+	if c.maxTotalMissedSamples < 0 {
+		return fmt.Errorf("maximum total missed samples must be non-negative")
+	}
+	if c.minTotalMissedSamples > c.maxTotalMissedSamples {
+		return fmt.Errorf("minimum total missed samples is greater than maximum total missed samples")
+	}
+	if c.minSingleMissedSamples < 0 {
+		return fmt.Errorf("minimum missed samples in a single series must be non-negative")
+	}
+	if c.maxSingleMissedSamples < 0 {
+		return fmt.Errorf("maximum missed samples in a single series must be non-negative")
+	}
+	if c.minSingleMissedSamples > c.maxSingleMissedSamples {
+		return fmt.Errorf("minimum missed samples in a single series is greater than maximum missed samples in a single series")
+	}
+	if c.minTotalGapTime < 0 {
+		return fmt.Errorf("minimum total gap time must be non-negative")
+	}
+	if c.maxTotalGapTime < 0 {
+		return fmt.Errorf("maximum total gap time must be non-negative")
+	}
+	if c.minTotalGapTime > c.maxTotalGapTime {
+		return fmt.Errorf("minimum total gap time is greater than maximum total gap time")
+	}
+	if c.minSingleGapTime < 0 {
+		return fmt.Errorf("minimum gap time in a single series must be non-negative")
+	}
+	if c.maxSingleGapTime < 0 {
+		return fmt.Errorf("maximum gap time in a single series must be non-negative")
+	}
+	if c.minSingleGapTime > c.maxSingleGapTime {
+		return fmt.Errorf("minimum gap time in a single series is greater than maximum gap time in a single series")
+	}
 	if c.scrapeInterval < 0 {
 		return fmt.Errorf("gap threshold must be non-negative")
+	}
+	// force the use of a metrics selector, as analyzing all series can be slow
+	if c.selector == "" {
+		if _, err := parser.ParseMetricSelector(c.selector); err != nil {
+			return fmt.Errorf("failed to parse metric selector: %w", err)
+		}
+
 	}
 	return nil
 }
@@ -64,6 +131,7 @@ type seriesGapStats struct {
 	MinIntervalDiffMillis     int64  `json:"minIntervalDiffMillis"`
 	MaxIntervalDiffMillis     int64  `json:"maxIntervalDiffMillis"`
 	MostCommonIntervalSeconds int    `json:"mostCommonIntervalSeconds"`
+	GapThreshold              int    `json:"gapThreshold"`
 	Gaps                      []gap  `json:"gaps"`
 }
 
@@ -234,6 +302,14 @@ func analyzeBlockForGaps(ctx context.Context, cfg config, blockDir string, match
 		minDiff = 1<<63 - 1
 		maxDiff = -1
 		minTime = 1<<63 - 1
+		minSingleGap := int64(cfg.minSingleGapTime) * 1000
+		maxSingleGap := int64(cfg.maxSingleGapTime) * 1000
+		minTotalGap := int64(cfg.minTotalGapTime) * 1000
+		maxTotalGap := int64(cfg.maxTotalGapTime) * 1000
+		minSingleMissedSamples := int64(cfg.minSingleMissedSamples)
+		maxSingleMissedSamples := int64(cfg.maxSingleMissedSamples)
+		minTotalMissedSamples := int64(cfg.minTotalMissedSamples)
+		maxTotalMissedSamples := int64(cfg.maxTotalMissedSamples)
 		var lastT int64
 		for _, meta := range chks {
 			ch, iter, err := cr.ChunkOrIterable(meta)
@@ -283,11 +359,15 @@ func analyzeBlockForGaps(ctx context.Context, cfg config, blockDir string, match
 		var gapsPresent bool
 		gapThreshold := int64(3*cfg.scrapeInterval/2) * 1000
 		if gapThreshold == 0 {
-			if maxDiff > 2*minDiff {
+			if maxDiff >= 2*minDiff {
 				gapsPresent = true
 			}
 			gapThreshold = 3 * mostCommonInterval * 1000 / 2
 		} else {
+			// this accounts for if the set scrape interval is lower than the observed interval
+			if len(intervalCounts) == 1 {
+				gapThreshold = mostCommonInterval * 1000
+			}
 			if maxDiff > gapThreshold {
 				gapsPresent = true
 			}
@@ -295,27 +375,40 @@ func analyzeBlockForGaps(ctx context.Context, cfg config, blockDir string, match
 		if gapsPresent {
 			var seriesStats seriesGapStats
 			seriesStats.SeriesLabels = lbls.String()
+			seriesStats.GapThreshold = int(gapThreshold)
+			var totalGapTime int64
+			var totalMissedSamples int64
 			for i := 0; i < len(timestamps)-1; i++ {
 				diff := timestamps[i+1] - timestamps[i]
+				// the diff should be more than 1.5x the expected interval difference to be a gap
 				if diff > gapThreshold {
-					missedIntervals := int(diff / gapThreshold)
+					missedSamples := diff / gapThreshold
+					totalGapTime += diff
+					totalMissedSamples += missedSamples
+					// evaluate single gap filters
+					if diff > maxSingleGap || diff < minSingleGap || missedSamples > maxSingleMissedSamples || missedSamples < minSingleMissedSamples {
+						continue
+					}
 					seriesStats.Gaps = append(seriesStats.Gaps, gap{
 						Start:     timestamps[i],
 						End:       timestamps[i+1],
-						Intervals: missedIntervals,
+						Intervals: int(missedSamples),
 					})
-					seriesStats.MissedSamples += uint64(missedIntervals)
+					seriesStats.MissedSamples += uint64(missedSamples)
 				}
 			}
-			seriesStats.MinTime = minTime
-			seriesStats.MaxTime = maxTime
-			seriesStats.TotalSamples = uint64(len(timestamps))
-			seriesStats.MinIntervalDiffMillis = minDiff
-			seriesStats.MaxIntervalDiffMillis = maxDiff
-			seriesStats.MostCommonIntervalSeconds = int(mostCommonInterval)
-			blockStats.TotalMissedSamples += seriesStats.MissedSamples
-			blockStats.GapStats = append(blockStats.GapStats, seriesStats)
-			blockStats.TotalSeriesWithGaps++
+			// evaluate total gap filters
+			if len(seriesStats.Gaps) > 0 && totalGapTime >= minTotalGap && totalGapTime <= maxTotalGap && totalMissedSamples >= minTotalMissedSamples && totalMissedSamples <= maxTotalMissedSamples {
+				seriesStats.MinTime = minTime
+				seriesStats.MaxTime = maxTime
+				seriesStats.TotalSamples = uint64(len(timestamps))
+				seriesStats.MinIntervalDiffMillis = minDiff
+				seriesStats.MaxIntervalDiffMillis = maxDiff
+				seriesStats.MostCommonIntervalSeconds = int(mostCommonInterval)
+				blockStats.TotalMissedSamples += seriesStats.MissedSamples
+				blockStats.GapStats = append(blockStats.GapStats, seriesStats)
+				blockStats.TotalSeriesWithGaps++
+			}
 		}
 	}
 	if p.Err() != nil {
