@@ -6,7 +6,7 @@ set -e
 SCRIPT_DIR=$(cd `dirname $0` && pwd)
 # Ensure we run recent Grafana.
 GRAFANA_VERSION=11.0.0
-DOCKER_CONTAINER_NAME="mixin-serve-grafana-graph"
+DOCKER_CONTAINER_NAME="mixin-serve-grafana"
 DOCKER_OPTS=""
 
 function usage() {
