@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/log"
+	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -22,33 +24,24 @@ import (
 	"github.com/grafana/mimir/pkg/util/version"
 )
 
-type Config struct {
-	ServerMetricsPort   int
-	LogLevel            log.Level
-	Client              continuoustest.ClientConfig
-	Manager             continuoustest.ManagerConfig
-	WriteReadSeriesTest continuoustest.WriteReadSeriesTestConfig
-}
-
-func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	f.IntVar(&cfg.ServerMetricsPort, "server.metrics-port", 9900, "The port where metrics are exposed.")
-	cfg.LogLevel.RegisterFlags(f)
-	cfg.Client.RegisterFlags(f)
-	cfg.Manager.RegisterFlags(f)
-	cfg.WriteReadSeriesTest.RegisterFlags(f)
-}
-
 func main() {
 	// Parse CLI arguments.
-	cfg := &Config{}
+	cfg := &continuoustest.Config{}
+	var (
+		serverMetricsPort int
+		logLevel          log.Level
+	)
+	flag.CommandLine.IntVar(&serverMetricsPort, "server.metrics-port", 9900, "The port where metrics are exposed.")
 	cfg.RegisterFlags(flag.CommandLine)
+	logLevel.RegisterFlags(flag.CommandLine)
 
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
 	}
 
-	util_log.InitLogger(log.LogfmtFormat, cfg.LogLevel, false, util_log.RateLimitedLoggerCfg{})
+	util_log.InitLogger(log.LogfmtFormat, logLevel, false, util_log.RateLimitedLoggerCfg{})
+	level.Warn(util_log.Logger).Log("msg", "The mimir-continuous-test binary you are using is deprecated. Please use the Mimir binary module `mimir -target=continuous-test`.")
 
 	// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
 	if trace, err := tracing.NewFromEnv("mimir-continuous-test", jaegercfg.MaxTagValueLength(16e3)); err != nil {
@@ -64,7 +57,7 @@ func main() {
 	registry.MustRegister(version.NewCollector("mimir_continuous_test"))
 	registry.MustRegister(collectors.NewGoCollector())
 
-	i := instrumentation.NewMetricsServer(cfg.ServerMetricsPort, registry)
+	i := instrumentation.NewMetricsServer(serverMetricsPort, registry, util_log.Logger)
 	if err := i.Start(); err != nil {
 		level.Error(logger).Log("msg", "Unable to start instrumentation server", "err", err.Error())
 		util_log.Flush()
@@ -83,8 +76,11 @@ func main() {
 	m := continuoustest.NewManager(cfg.Manager, logger)
 	m.AddTest(continuoustest.NewWriteReadSeriesTest(cfg.WriteReadSeriesTest, client, logger, registry))
 	if err := m.Run(context.Background()); err != nil {
-		level.Error(logger).Log("msg", "Failed to run continuous test", "err", err.Error())
+		if !errors.Is(err, modules.ErrStopProcess) {
+			level.Error(logger).Log("msg", "Failed to run continuous test", "err", err.Error())
+			util_log.Flush()
+			os.Exit(1)
+		}
 		util_log.Flush()
-		os.Exit(1)
 	}
 }

@@ -24,35 +24,39 @@ func TestStepAlignMiddleware_SingleUser(t *testing.T) {
 		{
 			name: "no adjustment needed",
 			input: &PrometheusRangeQueryRequest{
-				Start: 0,
-				End:   100,
-				Step:  10,
+				start: 0,
+				end:   100,
+				step:  10,
 			},
 			expected: &PrometheusRangeQueryRequest{
-				Start: 0,
-				End:   100,
-				Step:  10,
+				start: 0,
+				end:   100,
+				step:  10,
+				minT:  0,
+				maxT:  0,
 			},
 		},
 
 		{
 			name: "adjust start and end",
 			input: &PrometheusRangeQueryRequest{
-				Start: 2,
-				End:   102,
-				Step:  10,
+				start: 2,
+				end:   102,
+				step:  10,
 			},
 			expected: &PrometheusRangeQueryRequest{
-				Start: 0,
-				End:   100,
-				Step:  10,
+				start: 0,
+				end:   100,
+				step:  10,
+				minT:  0,
+				maxT:  100,
 			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var result *PrometheusRangeQueryRequest
 
-			next := HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+			next := HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
 				result = req.(*PrometheusRangeQueryRequest)
 				return nil, nil
 			})
@@ -84,14 +88,16 @@ func TestStepAlignMiddleware_MultipleUsers(t *testing.T) {
 				},
 			},
 			input: &PrometheusRangeQueryRequest{
-				Start: 0,
-				End:   100,
-				Step:  10,
+				start: 0,
+				end:   100,
+				step:  10,
 			},
 			expected: &PrometheusRangeQueryRequest{
-				Start: 0,
-				End:   100,
-				Step:  10,
+				start: 0,
+				end:   100,
+				step:  10,
+				minT:  0,
+				maxT:  0,
 			},
 		},
 		{
@@ -103,14 +109,16 @@ func TestStepAlignMiddleware_MultipleUsers(t *testing.T) {
 				},
 			},
 			input: &PrometheusRangeQueryRequest{
-				Start: 2,
-				End:   102,
-				Step:  10,
+				start: 2,
+				end:   102,
+				step:  10,
 			},
 			expected: &PrometheusRangeQueryRequest{
-				Start: 0,
-				End:   100,
-				Step:  10,
+				start: 0,
+				end:   100,
+				step:  10,
+				minT:  0,
+				maxT:  100,
 			},
 		},
 		{
@@ -122,21 +130,23 @@ func TestStepAlignMiddleware_MultipleUsers(t *testing.T) {
 				},
 			},
 			input: &PrometheusRangeQueryRequest{
-				Start: 2,
-				End:   102,
-				Step:  10,
+				start: 2,
+				end:   102,
+				step:  10,
 			},
 			expected: &PrometheusRangeQueryRequest{
-				Start: 2,
-				End:   102,
-				Step:  10,
+				start: 2,
+				end:   102,
+				step:  10,
+				minT:  0,
+				maxT:  0,
 			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var result *PrometheusRangeQueryRequest
 
-			next := HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+			next := HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
 				result = req.(*PrometheusRangeQueryRequest)
 				return nil, nil
 			})
@@ -154,23 +164,23 @@ func TestStepAlignMiddleware_MultipleUsers(t *testing.T) {
 
 func TestIsRequestStepAligned(t *testing.T) {
 	tests := map[string]struct {
-		req      Request
+		req      MetricsQueryRequest
 		expected bool
 	}{
 		"should return true if start and end are aligned to step": {
-			req:      &PrometheusRangeQueryRequest{Start: 10, End: 20, Step: 10},
+			req:      &PrometheusRangeQueryRequest{start: 10, end: 20, step: 10},
 			expected: true,
 		},
 		"should return false if start is not aligned to step": {
-			req:      &PrometheusRangeQueryRequest{Start: 11, End: 20, Step: 10},
+			req:      &PrometheusRangeQueryRequest{start: 11, end: 20, step: 10},
 			expected: false,
 		},
 		"should return false if end is not aligned to step": {
-			req:      &PrometheusRangeQueryRequest{Start: 10, End: 19, Step: 10},
+			req:      &PrometheusRangeQueryRequest{start: 10, end: 19, step: 10},
 			expected: false,
 		},
 		"should return true if step is 0": {
-			req:      &PrometheusRangeQueryRequest{Start: 10, End: 11, Step: 0},
+			req:      &PrometheusRangeQueryRequest{start: 10, end: 11, step: 0},
 			expected: true,
 		},
 	}

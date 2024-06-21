@@ -27,7 +27,9 @@ spec:
     type: OnDelete
   serviceName: test-enterprise-legacy-label-values-enterprise-metrics-store-gateway
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -64,7 +66,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-store-gateway
             release: test-enterprise-legacy-label-values
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           secret:
@@ -159,7 +161,9 @@ spec:
     type: OnDelete
   serviceName: test-enterprise-legacy-label-values-enterprise-metrics-store-gateway
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -196,7 +200,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-store-gateway
             release: test-enterprise-legacy-label-values
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           secret:
@@ -291,7 +295,9 @@ spec:
     type: OnDelete
   serviceName: test-enterprise-legacy-label-values-enterprise-metrics-store-gateway
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -328,7 +334,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-store-gateway
             release: test-enterprise-legacy-label-values
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           secret:

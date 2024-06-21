@@ -9,7 +9,7 @@ import (
 
 func init() { regKey(36, 0, 2) }
 
-func (c *Cluster) handleSASLAuthenticate(creq clientReq) (kmsg.Response, error) {
+func (c *Cluster) handleSASLAuthenticate(creq *clientReq) (kmsg.Response, error) {
 	req := creq.kreq.(*kmsg.SASLAuthenticateRequest)
 	resp := req.ResponseKind().(*kmsg.SASLAuthenticateResponse)
 

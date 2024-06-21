@@ -38,7 +38,7 @@ type (
 		protocols    map[string]int
 		protocol     string
 
-		reqCh     chan clientReq
+		reqCh     chan *clientReq
 		controlCh chan func()
 
 		nJoining int
@@ -58,7 +58,7 @@ type (
 
 		// waitingReply is non-nil if a client is waiting for a reply
 		// from us for a JoinGroupRequest or a SyncGroupRequest.
-		waitingReply clientReq
+		waitingReply *clientReq
 
 		assignment []byte
 
@@ -101,11 +101,12 @@ func (gs groupState) String() string {
 }
 
 func (c *Cluster) coordinator(id string) *broker {
-	n := hashString(id) % uint64(len(c.bs))
+	gen := c.coordinatorGen.Load()
+	n := hashString(fmt.Sprint("%d", gen)+"\x00\x00"+id) % uint64(len(c.bs))
 	return c.bs[n]
 }
 
-func (c *Cluster) validateGroup(creq clientReq, group string) *kerr.Error {
+func (c *Cluster) validateGroup(creq *clientReq, group string) *kerr.Error {
 	switch key := kmsg.Key(creq.kreq.Key()); key {
 	case kmsg.OffsetCommit, kmsg.OffsetFetch, kmsg.DescribeGroups, kmsg.DeleteGroups:
 	default:
@@ -132,7 +133,7 @@ func generateMemberID(clientID string, instanceID *string) string {
 ////////////
 
 // handleJoin completely hijacks the incoming request.
-func (gs *groups) handleJoin(creq clientReq) {
+func (gs *groups) handleJoin(creq *clientReq) {
 	if gs.gs == nil {
 		gs.gs = make(map[string]*group)
 	}
@@ -147,7 +148,7 @@ start:
 			members:   make(map[string]*groupMember),
 			pending:   make(map[string]*groupMember),
 			protocols: make(map[string]int),
-			reqCh:     make(chan clientReq),
+			reqCh:     make(chan *clientReq),
 			controlCh: make(chan func()),
 			quitCh:    make(chan struct{}),
 		}
@@ -165,7 +166,7 @@ start:
 
 // Returns true if the request is hijacked and handled, otherwise false if the
 // group does not exist.
-func (gs *groups) handleHijack(group string, creq clientReq) bool {
+func (gs *groups) handleHijack(group string, creq *clientReq) bool {
 	if gs.gs == nil {
 		return false
 	}
@@ -181,27 +182,27 @@ func (gs *groups) handleHijack(group string, creq clientReq) bool {
 	}
 }
 
-func (gs *groups) handleSync(creq clientReq) bool {
+func (gs *groups) handleSync(creq *clientReq) bool {
 	return gs.handleHijack(creq.kreq.(*kmsg.SyncGroupRequest).Group, creq)
 }
 
-func (gs *groups) handleHeartbeat(creq clientReq) bool {
+func (gs *groups) handleHeartbeat(creq *clientReq) bool {
 	return gs.handleHijack(creq.kreq.(*kmsg.HeartbeatRequest).Group, creq)
 }
 
-func (gs *groups) handleLeave(creq clientReq) bool {
+func (gs *groups) handleLeave(creq *clientReq) bool {
 	return gs.handleHijack(creq.kreq.(*kmsg.LeaveGroupRequest).Group, creq)
 }
 
-func (gs *groups) handleOffsetCommit(creq clientReq) bool {
+func (gs *groups) handleOffsetCommit(creq *clientReq) bool {
 	return gs.handleHijack(creq.kreq.(*kmsg.OffsetCommitRequest).Group, creq)
 }
 
-func (gs *groups) handleOffsetDelete(creq clientReq) bool {
+func (gs *groups) handleOffsetDelete(creq *clientReq) bool {
 	return gs.handleHijack(creq.kreq.(*kmsg.OffsetDeleteRequest).Group, creq)
 }
 
-func (gs *groups) handleList(creq clientReq) *kmsg.ListGroupsResponse {
+func (gs *groups) handleList(creq *clientReq) *kmsg.ListGroupsResponse {
 	req := creq.kreq.(*kmsg.ListGroupsRequest)
 	resp := req.ResponseKind().(*kmsg.ListGroupsResponse)
 
@@ -233,7 +234,7 @@ func (gs *groups) handleList(creq clientReq) *kmsg.ListGroupsResponse {
 	return resp
 }
 
-func (gs *groups) handleDescribe(creq clientReq) *kmsg.DescribeGroupsResponse {
+func (gs *groups) handleDescribe(creq *clientReq) *kmsg.DescribeGroupsResponse {
 	req := creq.kreq.(*kmsg.DescribeGroupsRequest)
 	resp := req.ResponseKind().(*kmsg.DescribeGroupsResponse)
 
@@ -285,7 +286,7 @@ func (gs *groups) handleDescribe(creq clientReq) *kmsg.DescribeGroupsResponse {
 	return resp
 }
 
-func (gs *groups) handleDelete(creq clientReq) *kmsg.DeleteGroupsResponse {
+func (gs *groups) handleDelete(creq *clientReq) *kmsg.DeleteGroupsResponse {
 	req := creq.kreq.(*kmsg.DeleteGroupsRequest)
 	resp := req.ResponseKind().(*kmsg.DeleteGroupsResponse)
 
@@ -324,7 +325,7 @@ func (gs *groups) handleDelete(creq clientReq) *kmsg.DeleteGroupsResponse {
 	return resp
 }
 
-func (gs *groups) handleOffsetFetch(creq clientReq) *kmsg.OffsetFetchResponse {
+func (gs *groups) handleOffsetFetch(creq *clientReq) *kmsg.OffsetFetchResponse {
 	req := creq.kreq.(*kmsg.OffsetFetchRequest)
 	resp := req.ResponseKind().(*kmsg.OffsetFetchResponse)
 
@@ -423,7 +424,7 @@ func (gs *groups) handleOffsetFetch(creq clientReq) *kmsg.OffsetFetchResponse {
 	return resp
 }
 
-func (g *group) handleOffsetDelete(creq clientReq) *kmsg.OffsetDeleteResponse {
+func (g *group) handleOffsetDelete(creq *clientReq) *kmsg.OffsetDeleteResponse {
 	req := creq.kreq.(*kmsg.OffsetDeleteRequest)
 	resp := req.ResponseKind().(*kmsg.OffsetDeleteResponse)
 
@@ -588,7 +589,7 @@ func (g *group) quitOnce() {
 // to the client to immediately rejoin if a new client enters the group.
 //
 // If this returns nil, the request will be replied to later.
-func (g *group) handleJoin(creq clientReq) (kmsg.Response, bool) {
+func (g *group) handleJoin(creq *clientReq) (kmsg.Response, bool) {
 	req := creq.kreq.(*kmsg.JoinGroupRequest)
 	resp := req.ResponseKind().(*kmsg.JoinGroupResponse)
 
@@ -664,7 +665,7 @@ func (g *group) handleJoin(creq clientReq) (kmsg.Response, bool) {
 }
 
 // Handles a sync, which can transition us to stable.
-func (g *group) handleSync(creq clientReq) kmsg.Response {
+func (g *group) handleSync(creq *clientReq) kmsg.Response {
 	req := creq.kreq.(*kmsg.SyncGroupRequest)
 	resp := req.ResponseKind().(*kmsg.SyncGroupResponse)
 
@@ -715,7 +716,7 @@ func (g *group) handleSync(creq clientReq) kmsg.Response {
 
 // Handles a heartbeat, a relatively simple request that just delays our
 // session timeout timer.
-func (g *group) handleHeartbeat(creq clientReq) kmsg.Response {
+func (g *group) handleHeartbeat(creq *clientReq) kmsg.Response {
 	req := creq.kreq.(*kmsg.HeartbeatRequest)
 	resp := req.ResponseKind().(*kmsg.HeartbeatResponse)
 
@@ -751,7 +752,7 @@ func (g *group) handleHeartbeat(creq clientReq) kmsg.Response {
 
 // Handles a leave. We trigger a rebalance for every member leaving in a batch
 // request, but that's fine because of our manage serialization.
-func (g *group) handleLeave(creq clientReq) kmsg.Response {
+func (g *group) handleLeave(creq *clientReq) kmsg.Response {
 	req := creq.kreq.(*kmsg.LeaveGroupRequest)
 	resp := req.ResponseKind().(*kmsg.LeaveGroupResponse)
 
@@ -784,7 +785,7 @@ func (g *group) handleLeave(creq clientReq) kmsg.Response {
 				g.stopPending(p)
 			}
 		} else {
-			g.updateMemberAndRebalance(m, clientReq{}, nil)
+			g.updateMemberAndRebalance(m, nil, nil)
 		}
 	}
 
@@ -806,7 +807,7 @@ func fillOffsetCommit(req *kmsg.OffsetCommitRequest, resp *kmsg.OffsetCommitResp
 }
 
 // Handles a commit.
-func (g *group) handleOffsetCommit(creq clientReq) *kmsg.OffsetCommitResponse {
+func (g *group) handleOffsetCommit(creq *clientReq) *kmsg.OffsetCommitResponse {
 	req := creq.kreq.(*kmsg.OffsetCommitRequest)
 	resp := req.ResponseKind().(*kmsg.OffsetCommitResponse)
 
@@ -985,7 +986,7 @@ func (g *group) completeLeaderSync(req *kmsg.SyncGroupRequest) {
 
 func (g *group) updateHeartbeat(m *groupMember) {
 	g.atSessionTimeout(m, func() {
-		g.updateMemberAndRebalance(m, clientReq{}, nil)
+		g.updateMemberAndRebalance(m, nil, nil)
 	})
 }
 
@@ -1024,7 +1025,7 @@ func (g *group) atSessionTimeout(m *groupMember, fn func()) {
 
 // This is used to update a member from a new join request, or to clear a
 // member from failed heartbeats.
-func (g *group) updateMemberAndRebalance(m *groupMember, waitingReply clientReq, newJoin *kmsg.JoinGroupRequest) {
+func (g *group) updateMemberAndRebalance(m *groupMember, waitingReply *clientReq, newJoin *kmsg.JoinGroupRequest) {
 	for _, p := range m.join.Protocols {
 		g.protocols[p.Name]--
 	}
@@ -1050,7 +1051,7 @@ func (g *group) updateMemberAndRebalance(m *groupMember, waitingReply clientReq,
 }
 
 // Adds a new member to the group and rebalances.
-func (g *group) addMemberAndRebalance(m *groupMember, waitingReply clientReq, join *kmsg.JoinGroupRequest) {
+func (g *group) addMemberAndRebalance(m *groupMember, waitingReply *clientReq, join *kmsg.JoinGroupRequest) {
 	g.stopPending(m)
 	m.join = join
 	for _, p := range m.join.Protocols {
@@ -1132,14 +1133,14 @@ members:
 	return metadata
 }
 
-func (g *group) reply(creq clientReq, kresp kmsg.Response, m *groupMember) {
+func (g *group) reply(creq *clientReq, kresp kmsg.Response, m *groupMember) {
 	select {
 	case creq.cc.respCh <- clientResp{kresp: kresp, corr: creq.corr, seq: creq.seq}:
 	case <-g.c.die:
 		return
 	}
 	if m != nil {
-		m.waitingReply = clientReq{}
+		m.waitingReply = nil
 		g.updateHeartbeat(m)
 	}
 }

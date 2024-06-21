@@ -342,7 +342,6 @@ func funcHoltWinters(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	// Run the smoothing operation.
 	var x, y float64
 	for i := 1; i < l; i++ {
-
 		// Scale the raw value against the smoothing factor.
 		x = sf * samples.Floats[i].F
 
@@ -949,15 +948,6 @@ func funcTimestamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 	return enh.Out, nil
 }
 
-func kahanSum(samples []float64) float64 {
-	var sum, c float64
-
-	for _, v := range samples {
-		sum, c = kahanSumInc(v, sum, c)
-	}
-	return sum + c
-}
-
 func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
 	t := sum + inc
 	// Using Neumaier improvement, swap if next term larger than sum.
@@ -1111,11 +1101,17 @@ func funcHistogramStdDev(vals []parser.Value, args parser.Expressions, enh *Eval
 		it := sample.H.AllBucketIterator()
 		for it.Next() {
 			bucket := it.At()
+			if bucket.Count == 0 {
+				continue
+			}
 			var val float64
 			if bucket.Lower <= 0 && 0 <= bucket.Upper {
 				val = 0
 			} else {
 				val = math.Sqrt(bucket.Upper * bucket.Lower)
+				if bucket.Upper < 0 {
+					val = -val
+				}
 			}
 			delta := val - mean
 			variance, cVariance = kahanSumInc(bucket.Count*delta*delta, variance, cVariance)
@@ -1144,11 +1140,17 @@ func funcHistogramStdVar(vals []parser.Value, args parser.Expressions, enh *Eval
 		it := sample.H.AllBucketIterator()
 		for it.Next() {
 			bucket := it.At()
+			if bucket.Count == 0 {
+				continue
+			}
 			var val float64
 			if bucket.Lower <= 0 && 0 <= bucket.Upper {
 				val = 0
 			} else {
 				val = math.Sqrt(bucket.Upper * bucket.Lower)
+				if bucket.Upper < 0 {
+					val = -val
+				}
 			}
 			delta := val - mean
 			variance, cVariance = kahanSumInc(bucket.Count*delta*delta, variance, cVariance)
@@ -1228,7 +1230,6 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			enh.signatureToMetricWithBuckets[string(enh.lblBuf)] = mb
 		}
 		mb.buckets = append(mb.buckets, bucket{upperBound, sample.F})
-
 	}
 
 	// Now deal with the histograms.
@@ -1385,6 +1386,9 @@ func (ev *evaluator) evalLabelJoin(args parser.Expressions) (parser.Value, annot
 			panic(fmt.Errorf("invalid source label name in label_join(): %s", src))
 		}
 		srcLabels[i-3] = src
+	}
+	if !model.LabelName(dst).IsValid() {
+		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
 	}
 
 	val, ws := ev.eval(args[0])

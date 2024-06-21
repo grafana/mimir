@@ -276,12 +276,32 @@ The following command retrieves all rule groups in the Grafana Mimir instance an
 mimirtool rules print
 ```
 
+To save all the rules for editing and re-upload to Mimir, use the `--output-dir` option.
+The default output directory is the current directory.
+The output file has the format required by `mimirtool rules load` or `mimirtool rules sync`.
+
+For example, to save the file in the `rules` subdirectory:
+
+```bash
+mimirtool rules print --output-dir=rules
+```
+
 #### Get rule group
 
 The following command retrieves a single rule group and prints it to the terminal.
 
 ```bash
 mimirtool rules get <namespace> <rule_group_name>
+```
+
+To save the rule group for editing and re-upload to Mimir, use the `--output-dir` option.
+The default output directory is the current directory.
+The output file has the format required by `mimirtool rules load` or `mimirtool rules sync`.
+
+For example, to save the file in the `rules` subdirectory:
+
+```bash
+mimirtool rules get <namespace> <rule_group_name> --output-dir=rules
 ```
 
 #### Delete rule group
@@ -317,6 +337,12 @@ groups:
     rules:
       - record: job:http_inprogress_requests:sum
         expr: sum by (job) (http_inprogress_requests)
+```
+
+This command, like the other `rules` subcommands, can load multiple rule groups at once:
+
+```bash
+mimirtool rules load ./example_rules_one.yaml ./example_rules_two.yaml
 ```
 
 #### Delete a namespace
@@ -360,10 +386,12 @@ mimirtool rules prepare <file_path>...
 
 ##### Configuration
 
-| Flag                      | Description                                                                                                                  |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `-i`, `--in-place`        | Edits the file in place. If not set, the system generates a new file with the extension `.result` that contains the results. |
-| `-l`, `--label="cluster"` | Specifies the label for aggregations. By default, the label is set to `cluster`.                                             |
+| Flag                           | Description                                                                                                                                    |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-i`, `--in-place`             | Edits the file in place. If not set, the system generates a new file with the extension `.result` that contains the results.                   |
+| `-l`, `--label="cluster"`      | Specifies the label for aggregations. By default, the label is set to `cluster`.                                                               |
+| `--label-excluded-rule-groups` | Comma separated list of rule group names to exclude when including the configured label to aggregations.                                       |
+| `--rule-dirs`                  | Comma separated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed. |
 
 ##### Example
 

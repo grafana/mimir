@@ -330,7 +330,7 @@ func TestMarkForDeletion(t *testing.T) {
 	}{
 		{
 			name:         "block marked for deletion",
-			preUpload:    func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {},
+			preUpload:    func(testing.TB, ulid.ULID, objstore.Bucket) {},
 			blocksMarked: 1,
 		},
 		{
@@ -379,7 +379,7 @@ func TestMarkForNoCompact(t *testing.T) {
 	}{
 		{
 			name:         "block marked",
-			preUpload:    func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {},
+			preUpload:    func(testing.TB, ulid.ULID, objstore.Bucket) {},
 			blocksMarked: 1,
 		},
 		{
@@ -440,7 +440,7 @@ func TestUnMarkForNoCompact(t *testing.T) {
 			},
 		},
 		"unmark non-existing block should fail": {
-			setupTest: func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {},
+			setupTest: func(testing.TB, ulid.ULID, objstore.Bucket) {},
 			expectedError: func(id ulid.ULID) error {
 				return errors.Errorf("deletion of no-compaction marker for block %s has failed: inmem: object not found", id.String())
 			},

@@ -54,7 +54,7 @@ local filename = 'mimir-remote-ruler-reads.json';
       )
     )
     .addRow(
-      $.row('Query-frontend (dedicated to ruler)')
+      $.row('Ruler-query-frontend')
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.ruler_query_frontend), rulerRoutesRegex])
@@ -80,7 +80,7 @@ local filename = 'mimir-remote-ruler-reads.json';
           these panels will show "No data."
         </p>
       |||;
-      $.row('Query-scheduler (dedicated to ruler)')
+      $.row('Ruler-query-scheduler')
       .addPanel(
         local title = 'Requests / sec';
         $.timeseriesPanel(title) +
@@ -127,7 +127,7 @@ local filename = 'mimir-remote-ruler-reads.json';
           regex: '^$',
         },
       ];
-      $.row('Query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions')
+      $.row('Ruler-query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions')
       .addPanel(
         local title = '99th Percentile Latency by Queue Dimension';
         $.timeseriesPanel(title) +
@@ -169,7 +169,7 @@ local filename = 'mimir-remote-ruler-reads.json';
       )
     )
     .addRow(
-      $.row('Querier (dedicated to ruler)')
+      $.row('Ruler-querier')
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
         $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.ruler_querier), $.queries.read_http_routes_regex])
@@ -187,6 +187,25 @@ local filename = 'mimir-remote-ruler-reads.json';
     )
     .addRowIf(
       $._config.autoscaling.ruler_querier.enabled,
-      $.cpuAndMemoryBasedAutoScalingRow('Ruler-Querier'),
+      $.row('Ruler-querier - autoscaling')
+      .addPanel(
+        $.autoScalingActualReplicas('ruler_querier')
+      )
+      .addPanel(
+        $.autoScalingFailuresPanel('ruler_querier')
+      )
+    )
+    .addRowIf(
+      $._config.autoscaling.ruler_querier.enabled,
+      $.row('')
+      .addPanel(
+        $.autoScalingDesiredReplicasByScalingMetricPanel('ruler_querier', 'CPU', 'cpu')
+      )
+      .addPanel(
+        $.autoScalingDesiredReplicasByScalingMetricPanel('ruler_querier', 'memory', 'memory')
+      )
+      .addPanel(
+        $.autoScalingDesiredReplicasByScalingMetricPanel('ruler_querier', 'in-flight queries', 'queries')
+      )
     ),
 }

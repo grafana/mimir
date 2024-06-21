@@ -82,7 +82,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-multizone-values
             app.kubernetes.io/component: alertmanager
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:
@@ -232,7 +232,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-multizone-values
             app.kubernetes.io/component: alertmanager
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:
@@ -382,7 +382,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-multizone-values
             app.kubernetes.io/component: alertmanager
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:

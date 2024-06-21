@@ -2,7 +2,6 @@ package failsafe
 
 import (
 	"context"
-	"math"
 
 	"github.com/failsafe-go/failsafe-go/common"
 )
@@ -139,12 +138,15 @@ type executor[R any] struct {
 func NewExecutor[R any](policies ...Policy[R]) Executor[R] {
 	return &executor[R]{
 		policies: policies,
+		ctx:      context.Background(),
 	}
 }
 
 func (e *executor[R]) WithContext(ctx context.Context) Executor[R] {
 	c := *e
-	c.ctx = ctx
+	if ctx != nil {
+		c.ctx = ctx
+	}
 	return &c
 }
 
@@ -213,13 +215,6 @@ func (e *executor[R]) GetWithExecutionAsync(fn func(exec Execution[R]) (R, error
 	}, true)
 }
 
-// This type mirrors part of policy.ExecutionInternal, which we don't import here to avoid a cycle.
-type executionInternal[R any] interface {
-	Record(result *common.PolicyResult[R]) *common.PolicyResult[R]
-
-	Copy() Execution[R]
-}
-
 // This type mirrors part of policy.Executor, which we don't import here to avoid a cycle.
 type policyExecutor[R any] interface {
 	Apply(innerFn func(Execution[R]) *common.PolicyResult[R]) func(Execution[R]) *common.PolicyResult[R]
@@ -248,58 +243,41 @@ func (e *executor[R]) executeAsync(fn func(exec Execution[R]) (R, error), withEx
 	return result
 }
 
-func (e *executor[R]) execute(fn func(exec Execution[R]) (R, error), exec *execution[R], withExec bool) *common.PolicyResult[R] {
+func (e *executor[R]) execute(fn func(exec Execution[R]) (R, error), outerExec *execution[R], withExec bool) *common.PolicyResult[R] {
 	outerFn := func(exec Execution[R]) *common.PolicyResult[R] {
-		execInternal := exec.(executionInternal[R])
+		execInternal := exec.(*execution[R])
 		var execForUser Execution[R]
 		if withExec {
 			// Only copy and provide an execution to the user fn if needed
-			execForUser = execInternal.Copy()
+			execForUser = execInternal.copy()
 		}
 		result, err := fn(execForUser)
-		er := &common.PolicyResult[R]{
+		execInternal.record()
+		return &common.PolicyResult[R]{
 			Result:     result,
 			Error:      err,
 			Done:       true,
 			Success:    true,
 			SuccessAll: true,
 		}
-		return execInternal.Record(er)
 	}
 
 	// Compose policy executors from the innermost policy to the outermost
-	for i, policyIndex := len(e.policies)-1, 0; i >= 0; i, policyIndex = i-1, policyIndex+1 {
-		pe := e.policies[i].ToExecutor(policyIndex, *(new(R))).(policyExecutor[R])
+	for i := len(e.policies) - 1; i >= 0; i-- {
+		pe := e.policies[i].ToExecutor(*(new(R))).(policyExecutor[R])
 		outerFn = pe.Apply(outerFn)
 	}
 
-	// Propagate context cancellations to the execution
-	var stopAfterFunc func() bool
-	if e.ctx != nil {
-		ctx := e.ctx
-		stopAfterFunc = context.AfterFunc(ctx, func() {
-			exec.Cancel(math.MaxInt, &common.PolicyResult[R]{
-				Error: ctx.Err(),
-				Done:  true,
-			})
-		})
-	}
+	// Execute
+	er := outerFn(outerExec)
 
-	// Initialize first attempt and execute
-	exec.InitializeAttempt(-1)
-	er := outerFn(exec)
-
-	// Stop the Context AfterFunc and call listeners
-	if stopAfterFunc != nil {
-		stopAfterFunc()
-	}
 	if e.onSuccess != nil && er.SuccessAll {
-		e.onSuccess(newExecutionDoneEvent(er, exec))
+		e.onSuccess(newExecutionDoneEvent(outerExec, er))
 	} else if e.onFailure != nil && !er.SuccessAll {
-		e.onFailure(newExecutionDoneEvent(er, exec))
+		e.onFailure(newExecutionDoneEvent(outerExec, er))
 	}
 	if e.onDone != nil {
-		e.onDone(newExecutionDoneEvent(er, exec))
+		e.onDone(newExecutionDoneEvent(outerExec, er))
 	}
 	return er
 }

@@ -22,7 +22,7 @@ func TestEvalPredicate(t *testing.T) {
 	}{
 		"should return error if the predicate returns error": {
 			input: "selector1{} or selector2{}",
-			fn: func(node parser.Node) (bool, error) {
+			fn: func(parser.Node) (bool, error) {
 				return false, errors.New("some err")
 			},
 			expectedRes: false,
@@ -30,7 +30,7 @@ func TestEvalPredicate(t *testing.T) {
 		},
 		"should return false if the predicate returns false for all nodes in the subtree": {
 			input: "selector1{} or selector2{}",
-			fn: func(node parser.Node) (bool, error) {
+			fn: func(parser.Node) (bool, error) {
 				return false, nil
 			},
 			expectedRes: false,

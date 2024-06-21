@@ -30,7 +30,9 @@ spec:
     type: OnDelete
   serviceName: gateway-enterprise-values-mimir-ingester-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -69,7 +71,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: gateway-enterprise-values
             app.kubernetes.io/component: ingester
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
@@ -166,7 +168,9 @@ spec:
     type: OnDelete
   serviceName: gateway-enterprise-values-mimir-ingester-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -205,7 +209,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: gateway-enterprise-values
             app.kubernetes.io/component: ingester
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
@@ -302,7 +306,9 @@ spec:
     type: OnDelete
   serviceName: gateway-enterprise-values-mimir-ingester-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -341,7 +347,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: gateway-enterprise-values
             app.kubernetes.io/component: ingester
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:

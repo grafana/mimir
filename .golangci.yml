@@ -9,6 +9,7 @@ linters:
     - misspell
     - errorlint
     - forbidigo
+    - loggercheck
 
 linters-settings:
   errcheck:
@@ -63,5 +64,5 @@ run:
 
 issues:
   exclude-rules:
-    - linters: [revive]
+    - linters: [ revive ]
       text: "if-return"

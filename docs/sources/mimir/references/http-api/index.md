@@ -48,7 +48,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [HA tracker status](#ha-tracker-status) | Distributor | `GET /distributor/ha_tracker` |
 | [Flush chunks / blocks](#flush-chunks--blocks) | Ingester | `GET,POST /ingester/flush` |
 | [Prepare for Shutdown](#prepare-for-shutdown) | Ingester | `GET,POST,DELETE /ingester/prepare-shutdown` |
-| [Shutdown](#shutdown) | Ingester | `GET,POST /ingester/shutdown` |
+| [Shutdown](#shutdown) | Ingester | `POST /ingester/shutdown` |
 | [Ingesters ring status](#ingesters-ring-status) | Distributor,Ingester | `GET /ingester/ring` |
 | [Ingester tenants](#ingester-tenants) | Ingester | `GET /ingester/tenants` |
 | [Ingester tenant TSDB](#ingester-tenant-tsdb) | Ingester | `GET /ingester/tsdb/{tenant}` |
@@ -56,6 +56,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Range query](#range-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_range` |
 | [Exemplar query](#exemplar-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_exemplars` |
 | [Get series by label matchers](#get-series-by-label-matchers) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/series` |
+| [Get active series by selector](#get-active-series-by-selector) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/active_series` |
 | [Get label names](#get-label-names) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/labels` |
 | [Get label values](#get-label-values) | Querier, Query-frontend | `GET <prometheus-http-prefix>/api/v1/label/{name}/values` |
 | [Get metric metadata](#get-metric-metadata) | Querier, Query-frontend | `GET <prometheus-http-prefix>/api/v1/metadata` |
@@ -409,7 +410,7 @@ This API endpoint is usually used by Kubernetes-specific scale down automations 
 ### Shutdown
 
 ```
-GET,POST /ingester/shutdown
+POST /ingester/shutdown
 ```
 
 This endpoint flushes in-memory time series data from ingesters to the long-term storage, and then shuts down the ingester service.
@@ -418,6 +419,32 @@ During this time, `/ready` does not return 200.
 This endpoint unregisters the ingester from the ring even if you disable `-ingester.ring.unregister-on-shutdown`.
 
 This API endpoint is usually used by scale down automations.
+
+### Prepare for unregister
+
+```
+GET,PUT,DELETE /ingester/unregister-on-shutdown
+```
+
+This endpoint controls whether an ingester should unregister from the ring on its next termination, that is, the next time it receives a `SIGINT` or `SIGTERM` signal.
+Via this endpoint, Mimir operators can dynamically control an ingester's `-ingester.ring.unregister-on-shutdown` state without having to restart the ingester.
+
+A `PUT` sets the ingester's unregister state. When invoked with the `PUT` method, the endpoint takes a request body:
+
+```
+{"unregister": true}
+```
+
+A `GET` returns the ingester's current unregister state.
+
+A `DELETE` resets the ingester's unregister state to the value that was passed via the `-ingester.ring.unregister-on-shutdown`
+configuration option.
+
+Regardless of the HTTP method used, the endpoint always returns a response body with the ingester's current unregister state:
+
+```
+{"unregister": true}
+```
 
 ### TSDB Metrics
 
@@ -504,6 +531,66 @@ GET,POST <prometheus-http-prefix>/api/v1/series
 For more information, refer to Prometheus [series endpoint](https://prometheus.io/docs/prometheus/latest/querying/api/#finding-series-by-label-matchers).
 
 Requires [authentication](#authentication).
+
+### Get active series by selector
+
+```
+GET,POST <prometheus-http-prefix>/api/v1/cardinality/active_series
+```
+
+Returns the label sets of all active series matching a PromQL selector.
+
+This endpoint is similar to the [series endpoint](#get-series-by-label-matchers) but operates on the set of series considered _active_ at the time of query processing.
+A series is considered active if any data has been written for it within the period specified by `-ingester.active-series-metrics-idle-timeout`.
+
+This endpoint is disabled by default; you can enable it via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML configuration option).
+
+Requires [authentication](#authentication).
+
+#### Query parameters
+
+- **selector** - _mandatory_ - PromQL selector used to filter the result set.
+
+#### Headers
+
+- `Sharding-Control` - _optional_ - Integer value specifying how many shards to use for request execution.
+
+#### Response format
+
+The response format is a subset of the [series endpoint](#get-series-by-label-matchers) format including only the `data` field.
+The following shows an example request/response pair for this endpoint. Each item in the `data` array corresponds to a matched series.
+
+```shell
+$ curl 'http://localhost:9090/api/v1/cardinality/active_series' \
+    --header 'Sharding-Control: 4' \ # optional
+    --data-urlencode 'selector=up'
+```
+
+```shell
+{
+   "data" : [
+      {
+         "__name__" : "up",
+         "job" : "prometheus",
+         "instance" : "localhost:9090"
+      },
+      {
+         "__name__" : "up",
+         "job" : "node",
+         "instance" : "localhost:9091"
+      },
+      {
+         "__name__" : "process_start_time_seconds",
+         "job" : "prometheus",
+         "instance" : "localhost:9090"
+      }
+   ]
+}
+```
+
+#### Caching
+
+Responses for the active series endpoint are never cached.
 
 ### Get label names
 

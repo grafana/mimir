@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
@@ -26,7 +27,7 @@ import (
 
 func TestPrometheusCodec_JSONResponse(t *testing.T) {
 	headers := http.Header{"Content-Type": []string{"application/json"}}
-	expectedRespHeaders := []*PrometheusResponseHeader{
+	expectedRespHeaders := []*PrometheusHeader{
 		{
 			Name:   "Content-Type",
 			Values: []string{"application/json"},
@@ -164,7 +165,7 @@ func TestPrometheusCodec_JSONResponse(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, formatJSON)
+			codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON)
 
 			body, err := json.Marshal(tc.resp)
 			require.NoError(t, err)
@@ -352,7 +353,7 @@ func TestPrometheusCodec_JSONEncoding(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, formatJSON)
+			codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON)
 			httpRequest := &http.Request{
 				Header: http.Header{"Accept": []string{jsonMimeType}},
 			}

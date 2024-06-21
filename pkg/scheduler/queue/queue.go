@@ -33,8 +33,20 @@ var (
 	ErrQuerierShuttingDown = errors.New("querier has informed the scheduler it is shutting down")
 )
 
+type RequestKey struct {
+	frontendAddr string
+	queryID      uint64
+}
+
+func NewSchedulerRequestKey(frontendAddr string, queryID uint64) RequestKey {
+	return RequestKey{
+		frontendAddr: frontendAddr,
+		queryID:      queryID,
+	}
+}
+
 type SchedulerRequest struct {
-	FrontendAddress           string
+	FrontendAddr              string
 	UserID                    string
 	QueryID                   uint64
 	Request                   *httpgrpc.HTTPRequest
@@ -47,55 +59,96 @@ type SchedulerRequest struct {
 	CancelFunc context.CancelCauseFunc
 	QueueSpan  opentracing.Span
 
-	// This is only used for testing.
 	ParentSpanContext opentracing.SpanContext
 }
 
-// UserIndex is opaque type that allows to resume iteration over users between successive calls
-// of RequestQueue.GetNextRequestForQuerier method.
-type UserIndex struct {
+func (sr *SchedulerRequest) Key() RequestKey {
+	return RequestKey{
+		frontendAddr: sr.FrontendAddr,
+		queryID:      sr.QueryID,
+	}
+}
+
+// ExpectedQueryComponentName parses the expected query component from annotations by the frontend.
+func (sr *SchedulerRequest) ExpectedQueryComponentName() string {
+	if len(sr.AdditionalQueueDimensions) > 0 {
+		return sr.AdditionalQueueDimensions[0]
+	}
+	return ""
+}
+
+// TenantIndex is opaque type that allows to resume iteration over tenants
+// between successive calls of RequestQueue.WaitForRequestForQuerier method.
+type TenantIndex struct {
 	last int
 }
 
-// ReuseLastUser modifies index to start iteration on the same user, for which last queue was returned.
-func (ui UserIndex) ReuseLastUser() UserIndex {
+// ReuseLastTenant modifies index to start iteration on the same tenant, for which last queue was returned.
+func (ui TenantIndex) ReuseLastTenant() TenantIndex {
 	if ui.last >= 0 {
-		return UserIndex{last: ui.last - 1}
+		return TenantIndex{last: ui.last - 1}
 	}
 	return ui
 }
 
-// FirstUser returns UserIndex that starts iteration over user queues from the very first user.
-func FirstUser() UserIndex {
-	return UserIndex{last: -1}
+// FirstTenant returns TenantIndex that starts iteration over tenant queues from the very first tenant.
+func FirstTenant() TenantIndex {
+	return TenantIndex{last: -1}
 }
 
 // Request stored into the queue.
 type Request interface{}
 
-// RequestQueue holds incoming requests in per-user queues. It also assigns each user specified number of queriers,
-// and when querier asks for next request to handle (using GetNextRequestForQuerier), it returns requests
-// in a fair fashion.
+// RequestQueue holds incoming requests in queues, split by multiple dimensions based on properties of the request.
+// Dequeuing selects the next request from an appropriate queue given the state of the system.
+// Two separate system states are managed by the RequestQueue and used to select the next request:
+//  1. TenantQuerierAssignments
+//     Tenants with shuffle-sharding enabled by setting maxQueriers > 0 are assigned a subset of queriers.
+//     The RequestQueue receives waitingQuerierConn messages with QuerierIDs
+//     in order to dequeue requests from a tenant assigned to that querier.
+//  2. QueryComponentUtilization
+//     Requests sent to queriers are tracked per query component until the requests are completed or failed.
+//     The RequestQueue will dequeue requests such that one query component does not utilize
+//     all querier-worker connections while requests for the other query component are waiting.
+//
+// If no specific behavior is required by TenantQuerierAssignments and QueryComponentUtilization,
+// such as when shuffle-sharding is disabled or query component utilization is not a concern,
+// requests are dequeued in a fair round-robin fashion across all tenants and query components.
 type RequestQueue struct {
 	services.Service
 	log log.Logger
 
+	// settings
 	maxOutstandingPerTenant          int
 	additionalQueueDimensionsEnabled bool
 	forgetDelay                      time.Duration
 
-	connectedQuerierWorkers *atomic.Int32
+	// metrics for reporting
+	connectedQuerierWorkers *atomic.Int64
+	// metrics are broken out with "user" label for backwards compat, despite update to "tenant" terminology
+	queueLength       *prometheus.GaugeVec   // per user
+	discardedRequests *prometheus.CounterVec // per user
+	enqueueDuration   prometheus.Histogram
 
-	stopRequested              chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
-	stopCompleted              chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
-	querierOperations          chan querierOperation
-	requestsToEnqueue          chan requestToEnqueue
-	nextRequestForQuerierCalls chan *nextRequestForQuerierCall
+	stopRequested chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
+	stopCompleted chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
 
-	queueLength       *prometheus.GaugeVec   // Per user and reason.
-	discardedRequests *prometheus.CounterVec // Per user.
+	// querierInflightRequests tracks requests from the time the request was successfully sent to a querier
+	// to the time the request was completed by the querier or failed due to cancel, timeout, or disconnect.
+	querierInflightRequests       map[RequestKey]*SchedulerRequest
+	requestsToEnqueue             chan requestToEnqueue
+	requestsSent                  chan *SchedulerRequest
+	requestsCompleted             chan *SchedulerRequest
+	querierOperations             chan querierOperation
+	waitingQuerierConns           chan *waitingQuerierConn
+	waitingQuerierConnsToDispatch *list.List
 
-	enqueueDuration prometheus.Histogram
+	// QueryComponentUtilization encapsulates tracking requests from the time they are forwarded to a querier
+	// to the time are completed by the querier or failed due to cancel, timeout, or disconnect.
+	// Unlike schedulerInflightRequests, tracking begins only when the request is sent to a querier.
+	QueryComponentUtilization *QueryComponentUtilization
+
+	queueBroker *queueBroker
 }
 
 type querierOperation struct {
@@ -117,7 +170,7 @@ type requestToEnqueue struct {
 	req         Request
 	maxQueriers int
 	successFn   func()
-	processed   chan error
+	errChan     chan error
 }
 
 func NewRequestQueue(
@@ -128,30 +181,45 @@ func NewRequestQueue(
 	queueLength *prometheus.GaugeVec,
 	discardedRequests *prometheus.CounterVec,
 	enqueueDuration prometheus.Histogram,
-) *RequestQueue {
+	querierInflightRequestsGauge *prometheus.GaugeVec,
+) (*RequestQueue, error) {
+	queryComponentCapacity, err := NewQueryComponentUtilization(DefaultReservedQueryComponentCapacity, querierInflightRequestsGauge)
+	if err != nil {
+		return nil, err
+	}
+
 	q := &RequestQueue{
+		// settings
 		log:                              log,
 		maxOutstandingPerTenant:          maxOutstandingPerTenant,
 		additionalQueueDimensionsEnabled: additionalQueueDimensionsEnabled,
 		forgetDelay:                      forgetDelay,
 
-		connectedQuerierWorkers: atomic.NewInt32(0),
+		// metrics for reporting
+		connectedQuerierWorkers: atomic.NewInt64(0),
 		queueLength:             queueLength,
 		discardedRequests:       discardedRequests,
 		enqueueDuration:         enqueueDuration,
 
+		// channels must not be buffered so that we can detect when dispatcherLoop() has finished.
 		stopRequested: make(chan struct{}),
 		stopCompleted: make(chan struct{}),
 
-		// These channels must not be buffered so that we can detect when dispatcherLoop() has finished.
-		querierOperations:          make(chan querierOperation),
-		requestsToEnqueue:          make(chan requestToEnqueue),
-		nextRequestForQuerierCalls: make(chan *nextRequestForQuerierCall),
+		requestsToEnqueue:             make(chan requestToEnqueue),
+		querierInflightRequests:       map[RequestKey]*SchedulerRequest{},
+		requestsSent:                  make(chan *SchedulerRequest),
+		requestsCompleted:             make(chan *SchedulerRequest),
+		querierOperations:             make(chan querierOperation),
+		waitingQuerierConns:           make(chan *waitingQuerierConn),
+		waitingQuerierConnsToDispatch: list.New(),
+
+		QueryComponentUtilization: queryComponentCapacity,
+		queueBroker:               newQueueBroker(maxOutstandingPerTenant, additionalQueueDimensionsEnabled, forgetDelay),
 	}
 
 	q.Service = services.NewTimerService(forgetCheckPeriod, q.starting, q.forgetDisconnectedQueriers, q.stop).WithName("request queue")
 
-	return q
+	return q, nil
 }
 
 func (q *RequestQueue) starting(_ context.Context) error {
@@ -163,8 +231,6 @@ func (q *RequestQueue) starting(_ context.Context) error {
 
 func (q *RequestQueue) dispatcherLoop() {
 	stopping := false
-	queueBroker := newQueueBroker(q.maxOutstandingPerTenant, q.additionalQueueDimensionsEnabled, q.forgetDelay)
-	waitingGetNextRequestForQuerierCalls := list.New()
 
 	for {
 		needToDispatchQueries := false
@@ -173,77 +239,58 @@ func (q *RequestQueue) dispatcherLoop() {
 		case <-q.stopRequested:
 			// Nothing much to do here - fall through to the stop logic below to see if we can stop immediately.
 			stopping = true
-		case qe := <-q.querierOperations:
-			// These operations may cause a resharding, so we should always try to dispatch queries afterwards.
-			// In the future, we could make this smarter: detect when a resharding actually happened and only trigger dispatching queries in those cases.
-			switch qe.operation {
-			case registerConnection:
-				q.connectedQuerierWorkers.Inc()
-				queueBroker.addQuerierConnection(qe.querierID)
-				needToDispatchQueries = true
-			case unregisterConnection:
-				q.connectedQuerierWorkers.Dec()
-				queueBroker.removeQuerierConnection(qe.querierID, time.Now())
-				needToDispatchQueries = true
-			case notifyShutdown:
-				queueBroker.notifyQuerierShutdown(qe.querierID)
-				needToDispatchQueries = true
-
-				// We don't need to do any cleanup here in response to a graceful shutdown: next time we try to dispatch a query to
-				// this querier, getNextQueueForQuerier will return ErrQuerierShuttingDown and we'll remove the waiting
-				// GetNextRequestForQuerier call from our list.
-			case forgetDisconnected:
-				if queueBroker.forgetDisconnectedQueriers(time.Now()) > 0 {
-					// Removing some queriers may have caused a resharding.
-					needToDispatchQueries = true
-				}
-			default:
-				panic(fmt.Sprintf("received unknown querier event %v for querier ID %v", qe.operation, qe.querierID))
-			}
-		case r := <-q.requestsToEnqueue:
-			err := q.enqueueRequestToBroker(queueBroker, r)
-			r.processed <- err
-
+		case querierOp := <-q.querierOperations:
+			// Need to attempt to dispatch queries only if querier operation results in a resharding
+			needToDispatchQueries = q.processQuerierOperation(querierOp)
+		case reqToEnqueue := <-q.requestsToEnqueue:
+			err := q.enqueueRequestInternal(reqToEnqueue)
+			reqToEnqueue.errChan <- err
 			if err == nil {
 				needToDispatchQueries = true
 			}
-		case call := <-q.nextRequestForQuerierCalls:
-			if !q.tryDispatchRequestToQuerier(queueBroker, call) {
-				// No requests available for this querier connection right now. Add it to the list to try later.
-				waitingGetNextRequestForQuerierCalls.PushBack(call)
+		case sentReq := <-q.requestsSent:
+			q.processRequestSent(sentReq)
+		case completedReq := <-q.requestsCompleted:
+			q.processRequestCompleted(completedReq)
+		case waitingConn := <-q.waitingQuerierConns:
+			requestSent := q.trySendNextRequestForQuerier(waitingConn)
+			if !requestSent {
+				// No requests available for this querier; add it to the list to try later.
+				q.waitingQuerierConnsToDispatch.PushBack(waitingConn)
 			}
 		}
 
 		if needToDispatchQueries {
-			currentElement := waitingGetNextRequestForQuerierCalls.Front()
+			currentElement := q.waitingQuerierConnsToDispatch.Front()
 
-			for currentElement != nil && !queueBroker.isEmpty() {
-				call := currentElement.Value.(*nextRequestForQuerierCall)
+			for currentElement != nil && !q.queueBroker.isEmpty() {
+				call := currentElement.Value.(*waitingQuerierConn)
 				nextElement := currentElement.Next() // We have to capture the next element before calling Remove(), as Remove() clears it.
 
-				if q.tryDispatchRequestToQuerier(queueBroker, call) {
-					waitingGetNextRequestForQuerierCalls.Remove(currentElement)
+				if q.trySendNextRequestForQuerier(call) {
+					q.waitingQuerierConnsToDispatch.Remove(currentElement)
 				}
 
 				currentElement = nextElement
 			}
 		}
 
-		if stopping && (queueBroker.isEmpty() || q.connectedQuerierWorkers.Load() == 0) {
-			// Tell any waiting GetNextRequestForQuerier calls that nothing is coming.
-			currentElement := waitingGetNextRequestForQuerierCalls.Front()
+		// if we have received a signal to stop, we continue to dispatch queries until
+		// the queue is empty or until we have no more connected querier workers.
+		if stopping && (q.queueBroker.isEmpty() || q.connectedQuerierWorkers.Load() == 0) {
+			// tell any waiting querier connections that nothing is coming
+			currentElement := q.waitingQuerierConnsToDispatch.Front()
 
 			for currentElement != nil {
-				call := currentElement.Value.(*nextRequestForQuerierCall)
-				call.sendError(ErrStopped)
+				waitingConn := currentElement.Value.(*waitingQuerierConn)
+				waitingConn.sendError(ErrStopped)
 				currentElement = currentElement.Next()
 			}
 
-			if !queueBroker.isEmpty() {
-				// This should never happen: unless all of the queriers have shut down themselves, they should remain connected
-				// until the RequestQueue service enters the stopped state (see Scheduler.QuerierLoop()), and so we won't
-				// stop the RequestQueue until we've drained all enqueued queries.
-				// But if this does happen, we want to know about it.
+			if !q.queueBroker.isEmpty() {
+				// All queriers have disconnected, but we still have requests in the queue.
+				// Without any consumers we have nothing to do but stop the RequestQueue.
+				// This should never happen, but if this does happen, we want to know about it.
 				level.Warn(q.log).Log("msg", "shutting down dispatcher loop: have no connected querier workers, but request queue is not empty, so these requests will be abandoned")
 			}
 
@@ -254,80 +301,106 @@ func (q *RequestQueue) dispatcherLoop() {
 	}
 }
 
-// enqueueRequestToBroker handles a request from the dispatcher's queue and submits it to the scheduler's queue broker.
+// enqueueRequestInternal processes a request into the RequestQueue's internal queue structure.
 //
-// The scheduler's queue broker manages the relationship between queriers and tenant query queues,
-// enforcing queueing fairness and limits on tenant query queue depth.
-//
-// If request is successfully enqueued, successFn is called before any querier can receive the request.
-func (q *RequestQueue) enqueueRequestToBroker(broker *queueBroker, r requestToEnqueue) error {
+// If request is enqueued successFn is called before the request can be dispatched to a querier.
+func (q *RequestQueue) enqueueRequestInternal(r requestToEnqueue) error {
 	tr := tenantRequest{
 		tenantID: r.tenantID,
 		req:      r.req,
 	}
-	err := broker.enqueueRequestBack(&tr, r.maxQueriers)
+	err := q.queueBroker.enqueueRequestBack(&tr, r.maxQueriers)
 	if err != nil {
 		if errors.Is(err, ErrTooManyRequests) {
 			q.discardedRequests.WithLabelValues(string(r.tenantID)).Inc()
 		}
 		return err
 	}
-	q.queueLength.WithLabelValues(string(r.tenantID)).Inc()
-
-	// Call the successFn here to ensure we call it before sending this request to a waiting querier.
 	if r.successFn != nil {
 		r.successFn()
 	}
 
+	q.queueLength.WithLabelValues(string(r.tenantID)).Inc()
 	return nil
 }
 
-// tryDispatchRequestToQuerier finds and forwards a request to a waiting GetNextRequestForQuerier call, if a suitable request is available.
-// Returns true if call should be removed from the list of waiting calls (eg. because a request has been forwarded to it), false otherwise.
-func (q *RequestQueue) tryDispatchRequestToQuerier(broker *queueBroker, call *nextRequestForQuerierCall) bool {
-	req, tenant, idx, err := broker.dequeueRequestForQuerier(call.lastUserIndex.last, call.querierID)
+// trySendNextRequestForQuerier attempts to dequeue and send a request for a waiting querier-worker connection.
+//
+// Returns true if the waitingQuerierConn can be removed from the list of waiting connections,
+// meaning a requestForQuerier was sent through the waitingQuerierConn's receiving channel
+// or the waiting querier-worker connection's context was canceled.
+//
+// The requestForQuerier message can contain either:
+// a) a query request which was successfully dequeued for the querier, or
+// b) an ErrShuttingDown indicating the querier has been placed in a graceful shutdown state.
+func (q *RequestQueue) trySendNextRequestForQuerier(waitingConn *waitingQuerierConn) (done bool) {
+	req, tenant, idx, err := q.queueBroker.dequeueRequestForQuerier(waitingConn.lastTenantIndex.last, waitingConn.querierID)
 	if err != nil {
-		// If this querier has told us it's shutting down, terminate GetNextRequestForQuerier with an error now...
-		call.sendError(err)
-		// ...and remove the waiting GetNextRequestForQuerier call from our list.
+		// If this querier has told us it's shutting down, terminate WaitForRequestForQuerier with an error now...
+		waitingConn.sendError(err)
+		// ...and remove the waiting WaitForRequestForQuerier waitingConn from our list.
 		return true
 	}
 
-	call.lastUserIndex.last = idx
+	waitingConn.lastTenantIndex.last = idx
 	if req == nil {
 		// Nothing available for this querier, try again next time.
 		return false
 	}
 
-	reqForQuerier := nextRequestForQuerier{
-		req:           req.req,
-		lastUserIndex: call.lastUserIndex,
-		err:           nil,
-	}
-	requestSent := call.send(reqForQuerier)
+	{
+		// temporary observation of query component load balancing behavior before full implementation
+		schedulerRequest, ok := req.req.(*SchedulerRequest)
+		if ok {
+			queryComponentName := schedulerRequest.ExpectedQueryComponentName()
+			exceedsThreshold, queryComponent := q.QueryComponentUtilization.ExceedsThresholdForComponentName(
+				queryComponentName,
+				int(q.connectedQuerierWorkers.Load()),
+				q.queueBroker.tenantQueuesTree.ItemCount(),
+				q.waitingQuerierConnsToDispatch.Len(),
+			)
 
+			if exceedsThreshold {
+				level.Info(q.log).Log(
+					"msg", "experimental: querier worker connections in use by query component exceed utilization threshold. no action taken",
+					"query_component_name", queryComponentName,
+					"overloaded_query_component", queryComponent,
+				)
+			}
+		}
+	}
+
+	reqForQuerier := requestForQuerier{
+		req:             req.req,
+		lastTenantIndex: waitingConn.lastTenantIndex,
+		err:             nil,
+	}
+
+	requestSent := waitingConn.send(reqForQuerier)
 	if requestSent {
 		q.queueLength.WithLabelValues(string(tenant.tenantID)).Dec()
 	} else {
 		// should never error; any item previously in the queue already passed validation
-		err := broker.enqueueRequestFront(req, tenant.maxQueriers)
+		err := q.queueBroker.enqueueRequestFront(req, tenant.maxQueriers)
 		if err != nil {
 			level.Error(q.log).Log(
 				"msg", "failed to re-enqueue query request after dequeue",
-				"err", err, "tenant", tenant.tenantID, "querier", call.querierID,
+				"err", err, "tenant", tenant.tenantID, "querier", waitingConn.querierID,
 			)
 		}
 	}
 	return true
 }
 
-// EnqueueRequestToDispatcher handles a request from the query frontend and submits it to the initial dispatcher queue
-//
-// maxQueries is tenant-specific value to compute which queriers should handle requests for this tenant.
-// It is passed to each EnqueueRequestToDispatcher, because it can change between calls.
+// SubmitRequestToEnqueue handles a query request from the query frontend or scheduler and submits it to the queue.
+// This method will block until the queue's processing loop has enqueued the request into its internal queue structure.
 //
 // If request is successfully enqueued, successFn is called before any querier can receive the request.
-func (q *RequestQueue) EnqueueRequestToDispatcher(tenantID string, req Request, maxQueriers int, successFn func()) error {
+// Returns error if any occurred during enqueuing, or if the RequestQueue service stopped before enqueuing the request.
+//
+// maxQueriers is tenant-specific value to compute which queriers should handle requests for this tenant.
+// It is passed to SubmitRequestToEnqueue because the value can change between calls.
+func (q *RequestQueue) SubmitRequestToEnqueue(tenantID string, req Request, maxQueriers int, successFn func()) error {
 	start := time.Now()
 	defer func() {
 		q.enqueueDuration.Observe(time.Since(start).Seconds())
@@ -338,34 +411,40 @@ func (q *RequestQueue) EnqueueRequestToDispatcher(tenantID string, req Request, 
 		req:         req,
 		maxQueriers: maxQueriers,
 		successFn:   successFn,
-		processed:   make(chan error),
+		errChan:     make(chan error),
 	}
 
 	select {
 	case q.requestsToEnqueue <- r:
-		return <-r.processed
+		return <-r.errChan
 	case <-q.stopCompleted:
 		return ErrStopped
 	}
 }
 
-// GetNextRequestForQuerier find next user queue and takes the next request off of it. Will block if there are no requests.
-// By passing user index from previous call of this method, querier guarantees that it iterates over all users fairly.
-// If querier finds that request from the user is already expired, it can get a request for the same user by using UserIndex.ReuseLastUser.
-func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIndex, querierID string) (Request, UserIndex, error) {
-	call := &nextRequestForQuerierCall{
-		ctx:           ctx,
-		querierID:     QuerierID(querierID),
-		lastUserIndex: last,
-		processed:     make(chan nextRequestForQuerier),
+// WaitForRequestForQuerier is called by a querier-worker to submit a waitingQuerierConn message to the RequestQueue.
+//
+// This method blocks until the waitingQuerierConn gets a requestForQuerier message on its receiving channel,
+// the querier-worker connection context is canceled, or the RequestQueue service stops.
+//
+// Querier-workers should pass the last TenantIndex received from their previous call to WaitForRequestForQuerier,
+// which enables the RequestQueue to iterate fairly across all tenants assigned to a querier.
+// If a querier-worker finds that the query request received for the tenant is already expired,
+// it can get another request for the same tenant by using TenantIndex.ReuseLastTenant.
+// Newly-connected querier-workers should pass FirstTenant as the TenantIndex to start iteration from the beginning.
+func (q *RequestQueue) WaitForRequestForQuerier(ctx context.Context, last TenantIndex, querierID string) (Request, TenantIndex, error) {
+	waitingConn := &waitingQuerierConn{
+		querierConnCtx:  ctx,
+		querierID:       QuerierID(querierID),
+		lastTenantIndex: last,
+		recvChan:        make(chan requestForQuerier),
 	}
 
 	select {
-	case q.nextRequestForQuerierCalls <- call:
-		// The dispatcher now knows we're waiting. Either we'll get a request to send to a querier, or we'll cancel.
+	case q.waitingQuerierConns <- waitingConn:
 		select {
-		case result := <-call.processed:
-			return result.req, result.lastUserIndex, result.err
+		case reqForQuerier := <-waitingConn.recvChan:
+			return reqForQuerier.req, reqForQuerier.lastTenantIndex, reqForQuerier.err
 		case <-ctx.Done():
 			return nil, last, ctx.Err()
 		}
@@ -377,31 +456,38 @@ func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIn
 }
 
 func (q *RequestQueue) stop(_ error) error {
-	q.stopRequested <- struct{}{} // Why not close the channel? We only want to trigger dispatcherLoop() once.
+	// Do not close the stopRequested channel;
+	// this would cause the read from stopRequested to preempt all other select cases in dispatcherLoop.
+	// Reads from stopRequested tell dispatcherLoop to enter a stopping state where it tries to clear the queue.
+	// The loop needs to keep executing other select branches while stopping in order to clear the queue.
+	q.stopRequested <- struct{}{}
 	<-q.stopCompleted
 
 	return nil
 }
 
-func (q *RequestQueue) forgetDisconnectedQueriers(_ context.Context) error {
-	q.runQuerierOperation("", forgetDisconnected)
+func (q *RequestQueue) GetConnectedQuerierWorkersMetric() float64 {
+	return float64(q.connectedQuerierWorkers.Load())
+}
 
+func (q *RequestQueue) forgetDisconnectedQueriers(_ context.Context) error {
+	q.submitQuerierOperation("", forgetDisconnected)
 	return nil
 }
 
-func (q *RequestQueue) RegisterQuerierConnection(querierID string) {
-	q.runQuerierOperation(querierID, registerConnection)
+func (q *RequestQueue) SubmitRegisterQuerierConnection(querierID string) {
+	q.submitQuerierOperation(querierID, registerConnection)
 }
 
-func (q *RequestQueue) UnregisterQuerierConnection(querierID string) {
-	q.runQuerierOperation(querierID, unregisterConnection)
+func (q *RequestQueue) SubmitUnregisterQuerierConnection(querierID string) {
+	q.submitQuerierOperation(querierID, unregisterConnection)
 }
 
-func (q *RequestQueue) NotifyQuerierShutdown(querierID string) {
-	q.runQuerierOperation(querierID, notifyShutdown)
+func (q *RequestQueue) SubmitNotifyQuerierShutdown(querierID string) {
+	q.submitQuerierOperation(querierID, notifyShutdown)
 }
 
-func (q *RequestQueue) runQuerierOperation(querierID string, operation querierOperationType) {
+func (q *RequestQueue) submitQuerierOperation(querierID string, operation querierOperationType) {
 	op := querierOperation{
 		querierID: QuerierID(querierID),
 		operation: operation,
@@ -415,45 +501,108 @@ func (q *RequestQueue) runQuerierOperation(querierID string, operation querierOp
 	}
 }
 
-func (q *RequestQueue) GetConnectedQuerierWorkersMetric() float64 {
-	return float64(q.connectedQuerierWorkers.Load())
-}
-
-type nextRequestForQuerierCall struct {
-	ctx           context.Context
-	querierID     QuerierID
-	lastUserIndex UserIndex
-	processed     chan nextRequestForQuerier
-
-	haveUsed bool // Must be set to true after sending a message to processed, to ensure we only ever try to send one message to processed.
-}
-
-func (q *nextRequestForQuerierCall) sendError(err error) {
-	// If GetNextRequestForQuerier is already gone, we don't care, so ignore the result from send.
-	_ = q.send(nextRequestForQuerier{err: err})
-}
-
-// send sends req to the GetNextRequestForQuerier call that is waiting for a new query.
-// Returns true if sending succeeds, or false otherwise (eg. because the GetNextRequestForQuerier call has already returned due to a context
-// cancellation).
-func (q *nextRequestForQuerierCall) send(req nextRequestForQuerier) bool {
-	if q.haveUsed {
-		panic("bug: should not try to send multiple messages to a querier")
+func (q *RequestQueue) processQuerierOperation(querierOp querierOperation) (resharded bool) {
+	switch querierOp.operation {
+	case registerConnection:
+		return q.processRegisterQuerierConnection(querierOp.querierID)
+	case unregisterConnection:
+		return q.processUnregisterQuerierConnection(querierOp.querierID)
+	case notifyShutdown:
+		// No cleanup needed here in response to a graceful shutdown; just set querier state to shutting down.
+		// All subsequent waitingQuerierConns for the querier will receive an ErrShuttingDown.
+		// The querier-worker's end of the QuerierLoop will exit once it has received enough errors,
+		// and the Querier connection counts will be decremented as the workers disconnect.
+		return q.queueBroker.notifyQuerierShutdown(querierOp.querierID)
+	case forgetDisconnected:
+		return q.processForgetDisconnectedQueriers()
+	default:
+		panic(fmt.Sprintf("received unknown querier event %v for querier ID %v", querierOp.operation, querierOp.querierID))
 	}
+}
 
-	q.haveUsed = true
-	defer close(q.processed)
+func (q *RequestQueue) processRegisterQuerierConnection(querierID QuerierID) (resharded bool) {
+	q.connectedQuerierWorkers.Inc()
+	return q.queueBroker.addQuerierConnection(querierID)
+}
+
+func (q *RequestQueue) processUnregisterQuerierConnection(querierID QuerierID) (resharded bool) {
+	q.connectedQuerierWorkers.Dec()
+	return q.queueBroker.removeQuerierConnection(querierID, time.Now())
+}
+
+func (q *RequestQueue) processForgetDisconnectedQueriers() (resharded bool) {
+	return q.queueBroker.forgetDisconnectedQueriers(time.Now())
+}
+
+func (q *RequestQueue) SubmitRequestSent(req *SchedulerRequest) {
+	if req != nil {
+		select {
+		case q.requestsSent <- req:
+		case <-q.stopCompleted:
+		}
+	}
+}
+
+func (q *RequestQueue) processRequestSent(req *SchedulerRequest) {
+	if req != nil {
+		q.querierInflightRequests[req.Key()] = req
+		q.QueryComponentUtilization.IncrementForComponentName(req.ExpectedQueryComponentName())
+	}
+}
+
+func (q *RequestQueue) SubmitRequestCompleted(req *SchedulerRequest) {
+	if req != nil {
+		select {
+		case q.requestsCompleted <- req:
+		case <-q.stopCompleted:
+		}
+	}
+}
+
+func (q *RequestQueue) processRequestCompleted(req *SchedulerRequest) {
+	if req != nil {
+		reqKey := req.Key()
+		if req, ok := q.querierInflightRequests[reqKey]; ok {
+			q.QueryComponentUtilization.DecrementForComponentName(req.ExpectedQueryComponentName())
+		}
+		delete(q.querierInflightRequests, reqKey)
+	}
+}
+
+// waitingQuerierConn is a "request" indicating that the querier is ready to receive the next query request.
+// It embeds the unbuffered `recvChan` to receive the requestForQuerier "response" from the RequestQueue.
+// The request/response terminology is avoided in naming to disambiguate with the actual query requests.
+type waitingQuerierConn struct {
+	querierConnCtx  context.Context
+	querierID       QuerierID
+	lastTenantIndex TenantIndex
+	recvChan        chan requestForQuerier
+}
+
+// requestForQuerier is the "response" for a waitingQuerierConn, to be written to its receiving channel.
+// Errors are embedded in this response rather than written to a separate error channel
+// so that lastTenantIndex can still be returned back to the querier connection.
+type requestForQuerier struct {
+	req             Request
+	lastTenantIndex TenantIndex
+	err             error
+}
+
+func (wqc *waitingQuerierConn) sendError(err error) {
+	// querier or request queue may be shutting down; ignore the result from send
+	// as the querier may not receive the message before the context is canceled
+	_ = wqc.send(requestForQuerier{err: err})
+}
+
+// send sends req to the waitingQuerierConn result channel that is waiting for a new query.
+// Returns true if sending succeeds, or false if req context is timed out or canceled.
+func (wqc *waitingQuerierConn) send(req requestForQuerier) bool {
+	defer close(wqc.recvChan)
 
 	select {
-	case q.processed <- req:
+	case wqc.recvChan <- req:
 		return true
-	case <-q.ctx.Done():
+	case <-wqc.querierConnCtx.Done():
 		return false
 	}
-}
-
-type nextRequestForQuerier struct {
-	req           Request
-	lastUserIndex UserIndex
-	err           error
 }

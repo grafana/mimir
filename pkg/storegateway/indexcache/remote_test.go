@@ -215,7 +215,7 @@ func TestRemoteIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 		mockedErr      error
 		fetchUserID    string
 		fetchBlockID   ulid.ULID
-		fetchIds       []storage.SeriesRef
+		fetchIDs       []storage.SeriesRef
 		expectedHits   map[storage.SeriesRef][]byte
 		expectedMisses []storage.SeriesRef
 	}{
@@ -223,7 +223,7 @@ func TestRemoteIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 			setup:          []mockedSeriesForRef{},
 			fetchUserID:    user1,
 			fetchBlockID:   block1,
-			fetchIds:       []storage.SeriesRef{1, 2},
+			fetchIDs:       []storage.SeriesRef{1, 2},
 			expectedHits:   nil,
 			expectedMisses: []storage.SeriesRef{1, 2},
 		},
@@ -237,7 +237,7 @@ func TestRemoteIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 			},
 			fetchUserID:  user1,
 			fetchBlockID: block1,
-			fetchIds:     []storage.SeriesRef{1, 2},
+			fetchIDs:     []storage.SeriesRef{1, 2},
 			expectedHits: map[storage.SeriesRef][]byte{
 				1: value1,
 				2: value2,
@@ -251,7 +251,7 @@ func TestRemoteIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 			},
 			fetchUserID:    user1,
 			fetchBlockID:   block1,
-			fetchIds:       []storage.SeriesRef{1, 2},
+			fetchIDs:       []storage.SeriesRef{1, 2},
 			expectedHits:   map[storage.SeriesRef][]byte{1: value1},
 			expectedMisses: []storage.SeriesRef{2},
 		},
@@ -264,7 +264,7 @@ func TestRemoteIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 			mockedErr:      errors.New("mocked error"),
 			fetchUserID:    user1,
 			fetchBlockID:   block1,
-			fetchIds:       []storage.SeriesRef{1, 2},
+			fetchIDs:       []storage.SeriesRef{1, 2},
 			expectedHits:   nil,
 			expectedMisses: []storage.SeriesRef{1, 2},
 		},
@@ -283,12 +283,12 @@ func TestRemoteIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 			}
 
 			// Fetch series from cached and assert on it.
-			hits, misses := c.FetchMultiSeriesForRefs(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchIds)
+			hits, misses := c.FetchMultiSeriesForRefs(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchIDs)
 			assert.Equal(t, testData.expectedHits, hits)
 			assert.Equal(t, testData.expectedMisses, misses)
 
 			// Assert on metrics.
-			assert.Equal(t, float64(len(testData.fetchIds)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeriesForRef)))
+			assert.Equal(t, float64(len(testData.fetchIDs)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeriesForRef)))
 			assert.Equal(t, float64(len(testData.expectedHits)), prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeriesForRef)))
 			for _, typ := range remove(allCacheTypes, cacheTypeSeriesForRef) {
 				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(typ)))

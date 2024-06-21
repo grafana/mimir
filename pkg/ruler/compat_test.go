@@ -238,6 +238,11 @@ func TestPusherErrors(t *testing.T) {
 			expectedWrites:   1,
 			expectedFailures: 0,
 		},
+		"a METHOD_NOT_ALLOWED push error is reported as failure": {
+			returnedError:    mustStatusWithDetails(codes.Unimplemented, mimirpb.METHOD_NOT_ALLOWED).Err(),
+			expectedWrites:   1,
+			expectedFailures: 1,
+		},
 		"a TSDB_UNAVAILABLE push error is reported as failure": {
 			returnedError:    mustStatusWithDetails(codes.FailedPrecondition, mimirpb.TSDB_UNAVAILABLE).Err(),
 			expectedWrites:   1,
@@ -374,7 +379,7 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 			queries := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 			failures := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 
-			mockFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
+			mockFunc := func(context.Context, string, time.Time) (promql.Vector, error) {
 				return promql.Vector{}, tc.returnedError
 			}
 			qf := MetricsQueryFunc(mockFunc, queries, failures, tc.remoteQuerier)
@@ -392,7 +397,7 @@ func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
 	queryTime := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
 	zeroFetchedSeriesCount := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
 
-	mockFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
+	mockFunc := func(context.Context, string, time.Time) (promql.Vector, error) {
 		time.Sleep(1 * time.Second)
 		return promql.Vector{}, nil
 	}
@@ -654,9 +659,8 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 
 		// Create a test alerting rule with a "for" duration greater than the "grace period".
 		ruleGroup = rulespb.RuleGroupDesc{
-			Name:            "test",
-			Interval:        cfg.EvaluationInterval,
-			EvaluationDelay: 0,
+			Name:     "test",
+			Interval: cfg.EvaluationInterval,
 			Rules: []*rulespb.RuleDesc{{
 				Expr:  fmt.Sprintf("%s > 0", metricName),
 				Alert: "test",

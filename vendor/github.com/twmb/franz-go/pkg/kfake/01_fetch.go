@@ -18,7 +18,7 @@ import (
 
 func init() { regKey(1, 4, 13) }
 
-func (c *Cluster) handleFetch(creq clientReq, w *watchFetch) (kmsg.Response, error) {
+func (c *Cluster) handleFetch(creq *clientReq, w *watchFetch) (kmsg.Response, error) {
 	var (
 		req  = creq.kreq.(*kmsg.FetchRequest)
 		resp = req.ResponseKind().(*kmsg.FetchResponse)
@@ -182,7 +182,7 @@ type watchFetch struct {
 	need     int
 	needp    tps[int]
 	deadline time.Time
-	creq     clientReq
+	creq     *clientReq
 
 	in []*partData
 	cb func()

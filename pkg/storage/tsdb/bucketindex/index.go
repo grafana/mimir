@@ -7,6 +7,7 @@ package bucketindex
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
 	"strings"
 	"time"
@@ -97,6 +98,9 @@ type Block struct {
 
 	// Whether the block was from out of order samples
 	OutOfOrder bool `json:"out_of_order,omitempty"`
+
+	// Labels contains the external labels from the block's metadata.
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // Within returns whether the block contains samples within the provided range.
@@ -118,6 +122,7 @@ func (m *Block) ThanosMeta() *block.Meta {
 	if m.OutOfOrder {
 		compactionHints = []string{tsdb.CompactionHintFromOutOfOrder}
 	}
+
 	return &block.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    m.ID,
@@ -133,6 +138,7 @@ func (m *Block) ThanosMeta() *block.Meta {
 			Version:      block.ThanosVersion1,
 			SegmentFiles: m.thanosMetaSegmentFiles(),
 			Source:       block.SourceType(m.Source),
+			Labels:       maps.Clone(m.Labels),
 		},
 	}
 }
@@ -172,6 +178,7 @@ func BlockFromThanosMeta(meta block.Meta) *Block {
 		Source:           string(meta.Thanos.Source),
 		CompactionLevel:  meta.Compaction.Level,
 		OutOfOrder:       meta.Compaction.FromOutOfOrder(),
+		Labels:           maps.Clone(meta.Thanos.Labels),
 	}
 }
 

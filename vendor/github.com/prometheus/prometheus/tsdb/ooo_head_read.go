@@ -42,6 +42,17 @@ type OOOHeadIndexReader struct {
 	lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef
 }
 
+var _ chunkenc.Iterable = &mergedOOOChunks{}
+
+// mergedOOOChunks holds the list of iterables for overlapping chunks.
+type mergedOOOChunks struct {
+	chunkIterables []chunkenc.Iterable
+}
+
+func (o mergedOOOChunks) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
+	return storage.ChainSampleIteratorFromIterables(iterator, o.chunkIterables)
+}
+
 func NewOOOHeadIndexReader(head *Head, mint, maxt int64, lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef) *OOOHeadIndexReader {
 	hr := &headIndexReader{
 		head: head,
@@ -441,6 +452,10 @@ func (ir *OOOCompactionHeadIndexReader) Postings(_ context.Context, name string,
 	return index.NewListPostings(ir.ch.postings), nil
 }
 
+func (ir *OOOCompactionHeadIndexReader) PostingsForLabelMatching(context.Context, string, func(string) bool) index.Postings {
+	return index.ErrPostings(errors.New("not supported"))
+}
+
 func (ir *OOOCompactionHeadIndexReader) SortedPostings(p index.Postings) index.Postings {
 	// This will already be sorted from the Postings() call above.
 	return p
@@ -482,7 +497,7 @@ func (ir *OOOCompactionHeadIndexReader) LabelValueFor(context.Context, storage.S
 	return "", errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
+func (ir *OOOCompactionHeadIndexReader) LabelNamesFor(ctx context.Context, postings index.Postings) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 

@@ -23,7 +23,6 @@ spec:
           preferredDuringSchedulingIgnoredDuringExecution:
       serviceAccount:
       serviceAccountName:
-      terminationGracePeriodSeconds: # TODO(logiraptor): We set a different terminationGracePeriodSeconds in Helm v Jsonnet
       securityContext: # TODO(logiraptor): We set a pod security context only in Jsonnet
       containers:
       - name: mimir # This section applies to the first container in all mimir components

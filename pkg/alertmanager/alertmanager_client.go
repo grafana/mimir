@@ -106,6 +106,7 @@ func dialAlertmanagerClient(cfg grpcclient.Config, inst ring.InstanceDesc, reque
 	if err != nil {
 		return nil, err
 	}
+	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(inst.Addr, opts...)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to dial alertmanager %s %s", inst.Id, inst.Addr)

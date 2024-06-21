@@ -26,7 +26,7 @@ func TestTracerTransportPropagatesTrace(t *testing.T) {
 	}{
 		{
 			name:          "no next transport",
-			handlerAssert: func(t *testing.T, req *http.Request) {},
+			handlerAssert: func(*testing.T, *http.Request) {},
 		},
 		{
 			name: "with next transport",
@@ -45,7 +45,7 @@ func TestTracerTransportPropagatesTrace(t *testing.T) {
 			defer closer.Close()
 
 			observedTraceID := make(chan string, 2)
-			handler := middleware.Tracer{}.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := middleware.Tracer{}.Wrap(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 				sp := opentracing.SpanFromContext(r.Context())
 				defer sp.Finish()
 

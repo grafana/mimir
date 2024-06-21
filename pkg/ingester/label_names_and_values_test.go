@@ -56,7 +56,7 @@ func TestLabelNamesAndValuesAreSentInBatches(t *testing.T) {
 	}
 	mockServer := mockLabelNamesAndValuesServer{context: context.Background()}
 	var stream client.Ingester_LabelNamesAndValuesServer = &mockServer
-	var valueFilter = func(name, value string) (bool, error) {
+	var valueFilter = func(string, string) (bool, error) {
 		return true, nil
 	}
 	require.NoError(t, labelNamesAndValues(&mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, stream, valueFilter))
@@ -95,7 +95,7 @@ func TestLabelNamesAndValues_FilteredValues(t *testing.T) {
 	}
 	mockServer := mockLabelNamesAndValuesServer{context: context.Background()}
 	var stream client.Ingester_LabelNamesAndValuesServer = &mockServer
-	var valueFilter = func(name, value string) (bool, error) {
+	var valueFilter = func(_, value string) (bool, error) {
 		return strings.Contains(value, "0"), nil
 	}
 	require.NoError(t, labelNamesAndValues(&mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, stream, valueFilter))
@@ -128,7 +128,7 @@ func TestIngester_LabelValuesCardinality_SentInBatches(t *testing.T) {
 		}}
 	}
 
-	in := prepareHealthyIngester(t)
+	in := prepareHealthyIngester(t, nil)
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	writeReq := &mimirpb.WriteRequest{Source: mimirpb.API}
@@ -231,7 +231,7 @@ func TestIngester_LabelValuesCardinality_AllValuesToBeReturnedInSingleMessage(t 
 	}
 	for tName, tCfg := range testCases {
 		t.Run(tName, func(t *testing.T) {
-			in := prepareHealthyIngester(t)
+			in := prepareHealthyIngester(t, nil)
 			ctx := user.InjectOrgID(context.Background(), userID)
 
 			samples := []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}}
@@ -286,7 +286,7 @@ func TestLabelNamesAndValues_ContextCancellation(t *testing.T) {
 		opDelay:        idxOpDelay,
 	}
 
-	var valueFilter = func(name, value string) (bool, error) {
+	var valueFilter = func(string, string) (bool, error) {
 		return true, nil
 	}
 	doneCh := make(chan error, 1)
@@ -339,7 +339,7 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 		metricName = "metric_name"
 	)
 
-	in := prepareHealthyIngester(b)
+	in := prepareHealthyIngester(b, nil)
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	samples := []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}}

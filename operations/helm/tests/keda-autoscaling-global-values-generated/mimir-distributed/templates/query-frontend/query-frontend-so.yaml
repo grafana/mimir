@@ -32,7 +32,7 @@ spec:
   - metadata:
       query: max_over_time(sum(sum by (pod) (rate(container_cpu_usage_seconds_total{container="query-frontend",namespace="citestns"}[5m])) and max by (pod) (up{container="query-frontend",namespace="citestns"}) > 0)[15m:]) * 1000
       serverAddress: https://mimir.example.com/prometheus
-      threshold: "0"
+      threshold: "80"
       customHeaders: "X-Scope-OrgID=tenant"
     type: prometheus
   - metadata:

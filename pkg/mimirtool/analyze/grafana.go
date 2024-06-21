@@ -8,6 +8,7 @@ package analyze
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
@@ -27,6 +28,16 @@ var (
 	validMetricName              = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
 	variableRangeQueryRangeRegex = regexp.MustCompile(`\[\$?\w+?]`)
 	variableSubqueryRangeRegex   = regexp.MustCompile(`\[\$?\w+:\$?\w+?]`)
+	variableReplacer             = strings.NewReplacer(
+		"$__interval", "5m",
+		"$interval", "5m",
+		"$resolution", "5s",
+		"$__rate_interval", "15s",
+		"$rate_interval", "15s",
+		"$__range", "1d",
+		"${__range_s:glob}", "30",
+		"${__range_s}", "30",
+	)
 )
 
 type MetricsInGrafana struct {
@@ -205,19 +216,20 @@ func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}) []error 
 	return parseErrors
 }
 
-func removeVariablesFromRanges(query string) string {
+func replaceVariables(query string) string {
+	query = variableReplacer.Replace(query)
 	query = variableRangeQueryRangeRegex.ReplaceAllLiteralString(query, `[5m]`)
 	query = variableSubqueryRangeRegex.ReplaceAllLiteralString(query, `[5m:1m]`)
 	return query
 }
 
 func parseQuery(query string, metrics map[string]struct{}) error {
-	expr, err := parser.ParseExpr(removeVariablesFromRanges(query))
+	expr, err := parser.ParseExpr(replaceVariables(query))
 	if err != nil {
 		return err
 	}
 
-	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 		if n, ok := node.(*parser.VectorSelector); ok {
 			// VectorSelector has .Name when it's explicitly set as `name{...}`.
 			// Otherwise we need to look into the matchers.

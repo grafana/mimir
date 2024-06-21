@@ -34,7 +34,7 @@ func TestNewLazyBinaryReader_ShouldFailIfUnableToBuildIndexHeader(t *testing.T) 
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
 
-	testLazyBinaryReader(t, bkt, tmpDir, ulid.ULID{}, func(t *testing.T, r *LazyBinaryReader, err error) {
+	testLazyBinaryReader(t, bkt, tmpDir, ulid.ULID{}, func(t *testing.T, _ *LazyBinaryReader, err error) {
 		require.Error(t, err)
 	})
 }

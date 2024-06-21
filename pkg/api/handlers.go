@@ -34,6 +34,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -125,7 +126,7 @@ func indexHandler(httpPathPrefix string, content *IndexPageContent) http.Handler
 	})
 	template.Must(templ.Parse(indexPageHTML))
 
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		err := templ.Execute(w, indexPageContents{LinkGroups: content.GetContent()})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -180,7 +181,7 @@ type configResponse struct {
 }
 
 func (cfg *Config) statusConfigHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		response := configResponse{
 			Status: "success",
 			Config: map[string]string{},
@@ -195,7 +196,7 @@ type flagsResponse struct {
 }
 
 func (cfg *Config) statusFlagsHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		response := flagsResponse{
 			Status: "success",
 			Flags:  map[string]string{},
@@ -212,7 +213,7 @@ func NewQuerierHandler(
 	queryable storage.SampleAndChunkQueryable,
 	exemplarQueryable storage.ExemplarQueryable,
 	metadataSupplier querier.MetadataSupplier,
-	engine *promql.Engine,
+	engine promql.QueryEngine,
 	distributor Distributor,
 	reg prometheus.Registerer,
 	logger log.Logger,
@@ -284,11 +285,13 @@ func NewQuerierHandler(
 	api.InstallCodec(protobufCodec{})
 
 	router := mux.NewRouter()
+	routeInjector := middleware.RouteInjector{RouteMatcher: router}
+	fallbackInjector := compat.EngineFallbackInjector{}
+	router.Use(routeInjector.Wrap, fallbackInjector.Wrap)
 
 	// Use a separate metric for the querier in order to differentiate requests from the query-frontend when
 	// running Mimir in monolithic mode.
 	instrumentMiddleware := middleware.Instrument{
-		RouteMatcher:     router,
 		Duration:         querierRequestDuration,
 		RequestBodySize:  receivedMessageSize,
 		ResponseBodySize: sentMessageSize,
@@ -328,6 +331,7 @@ func NewQuerierHandler(
 	router.Path(path.Join(prefix, "/api/v1/cardinality/label_names")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelNamesCardinalityHandler(distributor, limits)))
 	router.Path(path.Join(prefix, "/api/v1/cardinality/label_values")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelValuesCardinalityHandler(distributor, limits)))
 	router.Path(path.Join(prefix, "/api/v1/cardinality/active_series")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.ActiveSeriesCardinalityHandler(distributor, limits)))
+	router.Path(path.Join(prefix, "/api/v1/cardinality/active_native_histogram_metrics")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.ActiveNativeHistogramMetricsHandler(distributor, limits)))
 	router.Path(path.Join(prefix, "/api/v1/format_query")).Methods("GET", "POST").Handler(formattingQueryStats.Wrap(promRouter))
 
 	// Track execution time.

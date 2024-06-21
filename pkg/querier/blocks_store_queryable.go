@@ -501,7 +501,7 @@ type queryFunc func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64)
 
 func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	ctx context.Context, spanLog *spanlogger.SpanLogger, minT, maxT int64, tenantID string, shard *sharding.ShardSelector, queryF queryFunc,
-) error {
+) (returnErr error) {
 	now := time.Now()
 
 	if !ShouldQueryBlockStore(q.queryStoreAfter, now, minT) {
@@ -547,8 +547,18 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		attemptedBlocks = map[ulid.ULID][]string{}
 		touchedStores   = map[string]struct{}{}
 	)
+
 	consistencyTracker := q.consistency.NewTracker(knownBlocks, knownDeletionMarks)
-	defer consistencyTracker.Complete()
+	defer func() {
+		// Do not track consistency check metrics if query failed with an error unrelated to consistency check (e.g. context canceled),
+		// because it means we interrupted the requests, and we don't know whether consistency check would have succeeded
+		// or failed.
+		if returnErr != nil && !errors.Is(returnErr, &storeConsistencyCheckFailedErr{}) {
+			return
+		}
+
+		consistencyTracker.Complete()
+	}()
 
 	for attempt := 1; attempt <= maxFetchSeriesAttempts; attempt++ {
 		// Find the set of store-gateway instances having the blocks. The exclude parameter is the
@@ -602,12 +612,29 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	return err
 }
 
-func newStoreConsistencyCheckFailedError(remainingBlocks []ulid.ULID) error {
+type storeConsistencyCheckFailedErr struct {
+	remainingBlocks []ulid.ULID
+}
+
+func newStoreConsistencyCheckFailedError(remainingBlocks []ulid.ULID) *storeConsistencyCheckFailedErr {
 	// Sort the blocks, so it's easier to test the error strings.
 	sort.Slice(remainingBlocks, func(i, j int) bool {
 		return remainingBlocks[i].Compare(remainingBlocks[j]) < 0
 	})
-	return fmt.Errorf("%v. The failed blocks are: %s", globalerror.StoreConsistencyCheckFailed.Message("failed to fetch some blocks"), strings.Join(convertULIDsToString(remainingBlocks), " "))
+
+	return &storeConsistencyCheckFailedErr{
+		remainingBlocks: remainingBlocks,
+	}
+}
+
+func (e *storeConsistencyCheckFailedErr) Error() string {
+	return fmt.Sprintf("%s. The failed blocks are: %s", globalerror.StoreConsistencyCheckFailed.Message("failed to fetch some blocks"), strings.Join(convertULIDsToString(e.remainingBlocks), " "))
+}
+
+// Is implements support for errors.Is.
+func (e *storeConsistencyCheckFailedErr) Is(err error) bool {
+	var target *storeConsistencyCheckFailedErr
+	return errors.As(err, &target)
 }
 
 // filterBlocksByShard removes blocks that can be safely ignored when using query sharding.

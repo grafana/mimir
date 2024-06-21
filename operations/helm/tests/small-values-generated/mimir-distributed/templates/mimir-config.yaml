@@ -28,14 +28,14 @@ data:
             addresses: dns+small-values-mimir-chunks-cache.citestns.svc:11211
             max_idle_connections: 150
             max_item_size: 1048576
-            timeout: 450ms
+            timeout: 750ms
         index_cache:
           backend: memcached
           memcached:
             addresses: dns+small-values-mimir-index-cache.citestns.svc:11211
             max_idle_connections: 150
             max_item_size: 5242880
-            timeout: 450ms
+            timeout: 750ms
         metadata_cache:
           backend: memcached
           memcached:

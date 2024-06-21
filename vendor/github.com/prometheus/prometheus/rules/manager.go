@@ -43,7 +43,7 @@ type QueryFunc func(ctx context.Context, q string, t time.Time) (promql.Vector, 
 // EngineQueryFunc returns a new query function that executes instant queries against
 // the given engine.
 // It converts scalar into vector results.
-func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
+func EngineQueryFunc(engine promql.QueryEngine, q storage.Queryable) QueryFunc {
 	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
 		q, err := engine.NewInstantQuery(ctx, q, nil, qs, t)
 		if err != nil {
@@ -118,12 +118,11 @@ type ManagerOptions struct {
 	ForGracePeriod            time.Duration
 	ResendDelay               time.Duration
 	GroupLoader               GroupLoader
+	DefaultRuleQueryOffset    func() time.Duration
 	MaxConcurrentEvals        int64
 	ConcurrentEvalsEnabled    bool
 	RuleConcurrencyController RuleConcurrencyController
 	RuleDependencyController  RuleDependencyController
-
-	DefaultEvaluationDelay func() time.Duration
 
 	// GroupEvaluationContextFunc will be called to wrap Context based on the group being evaluated.
 	// Will be skipped if nil.
@@ -346,15 +345,27 @@ func (m *Manager) LoadGroups(
 			m.opts.RuleDependencyController.AnalyseRules(rules)
 
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
-				Name:                          rg.Name,
-				File:                          fn,
-				Interval:                      itv,
-				Limit:                         rg.Limit,
-				Rules:                         rules,
-				SourceTenants:                 rg.SourceTenants,
-				ShouldRestore:                 shouldRestore,
-				Opts:                          m.opts,
-				EvaluationDelay:               (*time.Duration)(rg.EvaluationDelay),
+				Name:          rg.Name,
+				File:          fn,
+				Interval:      itv,
+				Limit:         rg.Limit,
+				Rules:         rules,
+				SourceTenants: rg.SourceTenants,
+				ShouldRestore: shouldRestore,
+				Opts:          m.opts,
+				QueryOffset: func() *time.Duration {
+					// Give preference to QueryOffset, falling back to the deprecated EvaluationDelay.
+					if rg.QueryOffset != nil {
+						return (*time.Duration)(rg.QueryOffset)
+					}
+
+					//nolint:staticcheck // We want to intentionally access a deprecated field
+					if rg.EvaluationDelay != nil {
+						return (*time.Duration)(rg.EvaluationDelay)
+					}
+
+					return nil
+				}(),
 				done:                          m.done,
 				EvalIterationFunc:             groupEvalIterationFunc,
 				AlignEvaluationTimeOnInterval: rg.AlignEvaluationTimeOnInterval,

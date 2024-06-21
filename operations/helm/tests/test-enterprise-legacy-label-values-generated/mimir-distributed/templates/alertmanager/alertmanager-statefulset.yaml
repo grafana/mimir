@@ -56,7 +56,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-alertmanager
             release: test-enterprise-legacy-label-values
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           secret:

@@ -30,7 +30,9 @@ spec:
     type: OnDelete
   serviceName: openshift-values-mimir-ingester-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -66,7 +68,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: openshift-values
             app.kubernetes.io/component: ingester
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
@@ -163,7 +165,9 @@ spec:
     type: OnDelete
   serviceName: openshift-values-mimir-ingester-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -199,7 +203,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: openshift-values
             app.kubernetes.io/component: ingester
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
@@ -296,7 +300,9 @@ spec:
     type: OnDelete
   serviceName: openshift-values-mimir-ingester-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -332,7 +338,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: openshift-values
             app.kubernetes.io/component: ingester
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:

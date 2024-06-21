@@ -30,7 +30,9 @@ spec:
     type: OnDelete
   serviceName: test-enterprise-values-mimir-store-gateway-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -69,7 +71,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-enterprise-values
             app.kubernetes.io/component: store-gateway
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           secret:
@@ -167,7 +169,9 @@ spec:
     type: OnDelete
   serviceName: test-enterprise-values-mimir-store-gateway-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -206,7 +210,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-enterprise-values
             app.kubernetes.io/component: store-gateway
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           secret:
@@ -304,7 +308,9 @@ spec:
     type: OnDelete
   serviceName: test-enterprise-values-mimir-store-gateway-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -343,7 +349,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-enterprise-values
             app.kubernetes.io/component: store-gateway
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           secret:

@@ -114,7 +114,7 @@ func (c *ConfigExtractor) ResolveConfigs() ([]*yaml.RNode, error) {
 		return nil, err
 	}
 
-	err = concurrency.ForEachJob(context.Background(), len(c.allItems), runtime.NumCPU(), func(ctx context.Context, idx int) error {
+	err = concurrency.ForEachJob(context.Background(), len(c.allItems), runtime.NumCPU(), func(_ context.Context, idx int) error {
 		pod, ok, err := extractPodSpec(c.allItems[idx])
 		if err != nil {
 			return err

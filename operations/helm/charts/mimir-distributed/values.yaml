@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r281-93e069f
+  tag: r295-c7bffb1
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -50,16 +50,24 @@ global:
   clusterDomain: cluster.local.
 
   # -- Common environment variables to add to all pods directly managed by this chart.
-  # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
+  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, graphite-proxy, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
   extraEnv: []
 
   # -- Common source of environment injections to add to all pods directly managed by this chart.
-  # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
+  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, graphite-proxy, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
   # For example to inject values from a Secret, use:
   # extraEnvFrom:
   #   - secretRef:
   #       name: mysecret
   extraEnvFrom: []
+
+  # -- Common volumes to add to all pods directly managed by this chart.
+  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, graphite-proxy, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
+  extraVolumes: []
+
+  # -- Common mount points to add to all pods directly managed by this chart.
+  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, graphite-proxy, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
+  extraVolumeMounts: []
 
   # -- Pod annotations for all pods directly managed by this chart. Usable for example to associate a version to 'global.extraEnv' and 'global.extraEnvFrom' and trigger a restart of the affected services.
   # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, tokengen
@@ -183,7 +191,7 @@ mimir:
           memcached:
             addresses: {{ include "mimir.chunksCacheAddress" . }}
             max_item_size: {{ mul (index .Values "chunks-cache").maxItemMemory 1024 1024 }}
-            timeout: 450ms
+            timeout: 750ms
             max_idle_connections: 150
         {{- end }}
         {{- if index .Values "index-cache" "enabled" }}
@@ -192,7 +200,7 @@ mimir:
           memcached:
             addresses: {{ include "mimir.indexCacheAddress" . }}
             max_item_size: {{ mul (index .Values "index-cache").maxItemMemory 1024 1024 }}
-            timeout: 450ms
+            timeout: 750ms
             max_idle_connections: 150
         {{- end }}
         {{- if index .Values "metadata-cache" "enabled" }}
@@ -350,6 +358,10 @@ mimir:
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}/alertmanager
       enable_api: true
       rule_path: /data
+      {{- if .Values.ruler.remoteEvaluationDedicatedQueryPath }}
+      query_frontend:
+        address: dns:///{{ template "mimir.fullname" . }}-ruler-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}
+      {{- end }}
 
     {{- if or (.Values.minio.enabled) (index .Values "metadata-cache" "enabled") }}
     ruler_storage:
@@ -507,7 +519,10 @@ rbac:
 
 # -- KEDA Autoscaling configuration
 kedaAutoscaling:
-  # -- A Prometheus-compatible URL. Cadvisor and Mimir metrics for the Mimir pods are expected in this server. For more information on the required metrics see [Monitor system health](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/) If empty, the helm chart uses the metamonitoring URL from metaMonitoring.grafanaAgent.metrics.remote.url. If that is empty, then the Mimir cluster is used.
+  # -- A Prometheus-compatible URL. Cadvisor and Mimir metrics for the Mimir pods are expected in this server.
+  # For more information on the required metrics see [Monitor system health](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/).
+  # If empty, the helm chart uses the metamonitoring URL from metaMonitoring.grafanaAgent.metrics.remote.url.
+  # If that is empty, then the Mimir cluster is used.
   prometheusAddress: ""
   customHeaders: {}
   pollingInterval: 10
@@ -645,7 +660,7 @@ alertmanager:
   statefulStrategy:
     type: RollingUpdate
 
-  terminationGracePeriodSeconds: 60
+  terminationGracePeriodSeconds: 900
 
   initContainers: []
   # Init containers to be added to the alertmanager pod.
@@ -698,7 +713,7 @@ alertmanager:
   #     - name: zone-a
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-a
-  #     - name: zone-a
+  #     - name: zone-b
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-b
   #     - name: zone-c
@@ -767,12 +782,15 @@ distributor:
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
-  # from the the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
-  # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
+  # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
+  # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
   # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
   kedaAutoscaling:
     enabled: false
+    # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
+    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
     targetCPUUtilizationPercentage: 100
@@ -975,7 +993,7 @@ ingester:
   statefulStrategy:
     type: RollingUpdate
 
-  terminationGracePeriodSeconds: 240
+  terminationGracePeriodSeconds: 1200
 
   tolerations: []
   initContainers: []
@@ -1143,7 +1161,7 @@ overrides_exporter:
       cpu: 100m
       memory: 128Mi
 
-  terminationGracePeriodSeconds: 60
+  terminationGracePeriodSeconds: 30
 
   tolerations: []
   extraContainers: []
@@ -1162,12 +1180,15 @@ ruler:
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
-  # from the the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
-  # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
+  # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
+  # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
   # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
   kedaAutoscaling:
     enabled: false
+    # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
+    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
     targetCPUUtilizationPercentage: 100
@@ -1249,7 +1270,7 @@ ruler:
       maxSurge: 50%
       maxUnavailable: 0
 
-  terminationGracePeriodSeconds: 180
+  terminationGracePeriodSeconds: 600
 
   tolerations: []
   initContainers: []
@@ -1263,20 +1284,329 @@ ruler:
   # Set to 'null' to use the Jaeger client's default value
   jaegerReporterMaxQueueSize: 1000
 
+  # -- If set to true, a dedicated query path will be deployed for the ruler and operational mode will be set to use remote evaluation. https://grafana.com/docs/mimir/latest/references/architecture/components/ruler/#remote
+  # -- This is useful for isolating the ruler queries from other queriers (api/grafana).
+  remoteEvaluationDedicatedQueryPath: false
+
+# -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
+ruler_querier:
+  replicas: 2
+
+  # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
+  # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
+  # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
+  # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
+  # The remote URL is used even if metamonitoring is disabled.
+  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  kedaAutoscaling:
+    enabled: false
+    # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
+    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    preserveReplicas: false
+    minReplicaCount: 1
+    maxReplicaCount: 10
+    querySchedulerInflightRequestsThreshold: 12
+    behavior:
+      scaleDown:
+        policies:
+          - periodSeconds: 120
+            type: Percent
+            value: 10
+        stabilizationWindowSeconds: 600
+      scaleUp:
+        policies:
+          - periodSeconds: 120
+            type: Percent
+            value: 50
+          - periodSeconds: 120
+            type: Pods
+            value: 15
+        stabilizationWindowSeconds: 60
+
+  service:
+    annotations: {}
+    labels: {}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Additional ruler-querier container arguments, e.g. log level (debug, info, warn, error)
+  extraArgs: {}
+
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  # Pod Disruption Budget
+  podDisruptionBudget:
+    maxUnavailable: 1
+
+  # -- The name of the PriorityClass for ruler-querier pods
+  priorityClassName: null
+
+  nodeSelector: {}
+  affinity: {}
+
+  # -- topologySpreadConstraints allows to customize the default topologySpreadConstraints. This can be either a single dict as shown below or a slice of topologySpreadConstraints.
+  # labelSelector is taken from the constraint itself (if it exists) or is generated by the chart using the same selectors as for services.
+  topologySpreadConstraints:
+    maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+
+  annotations: {}
+  persistence:
+    subPath:
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+
+  # -- SecurityContext override for ruler-querier pods
+  securityContext: {}
+
+  # -- The SecurityContext for ruler-querier containers
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 15%
+
+  terminationGracePeriodSeconds: 180
+
+  tolerations: []
+  initContainers: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  env: []
+  extraEnvFrom: []
+
+  # -- Jaeger reporter queue size
+  # Set to 'null' to use the Jaeger client's default value
+  jaegerReporterMaxQueueSize: 5000
+
+# -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
+ruler_query_frontend:
+  # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
+  replicas: 1
+
+  # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
+  # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
+  # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
+  # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
+  # The remote URL is used even if metamonitoring is disabled.
+  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  kedaAutoscaling:
+    enabled: false
+    # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
+    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    preserveReplicas: false
+    minReplicaCount: 1
+    maxReplicaCount: 10
+    targetCPUUtilizationPercentage: 75
+    targetMemoryUtilizationPercentage: 100
+    behavior:
+      scaleDown:
+        policies:
+          - periodSeconds: 60
+            type: Percent
+            value: 10
+
+  service:
+    annotations: {}
+    labels: {}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Additional ruler-query-frontend container arguments, e.g. log level (debug, info, warn, error)
+  extraArgs: {}
+
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  # Pod Disruption Budget
+  podDisruptionBudget:
+    maxUnavailable: 1
+
+  # -- The name of the PriorityClass for ruler-query-frontend pods
+  priorityClassName: null
+
+  nodeSelector: {}
+  affinity: {}
+
+  # -- topologySpreadConstraints allows to customize the default topologySpreadConstraints. This can be either a single dict as shown below or a slice of topologySpreadConstraints.
+  # labelSelector is taken from the constraint itself (if it exists) or is generated by the chart using the same selectors as for services.
+  topologySpreadConstraints:
+    maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+
+  annotations: {}
+  persistence:
+    subPath:
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+
+  # -- SecurityContext override for query-fronted pods
+  securityContext: {}
+
+  # -- The SecurityContext for ruler-query-frontend containers
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 15%
+
+  terminationGracePeriodSeconds: 390
+
+  tolerations: []
+  initContainers: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  env: []
+  extraEnvFrom: []
+
+  # -- Jaeger reporter queue size
+  # Set to 'null' to use the Jaeger client's default value
+  jaegerReporterMaxQueueSize: 5000
+
+# -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
+ruler_query_scheduler:
+  replicas: 2
+
+  service:
+    annotations: {}
+    labels: {}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Additional ruler-query-scheduler container arguments, e.g. log level (debug, info, warn, error)
+  extraArgs: {}
+
+  # Pod Labels
+  podLabels: {}
+
+  # Pod Annotations
+  podAnnotations: {}
+
+  # Pod Disruption Budget
+  podDisruptionBudget:
+    maxUnavailable: 1
+
+  # -- The name of the PriorityClass for ruler-query-scheduler pods
+  priorityClassName: null
+
+  nodeSelector: {}
+  affinity: {}
+
+  # -- topologySpreadConstraints allows to customize the default topologySpreadConstraints. This can be either a single dict as shown below or a slice of topologySpreadConstraints.
+  # labelSelector is taken from the constraint itself (if it exists) or is generated by the chart using the same selectors as for services.
+  topologySpreadConstraints:
+    maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+
+  annotations: {}
+  persistence:
+    subPath:
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+
+  # -- SecurityContext override for ruler-query-scheduler pods
+  securityContext: {}
+
+  # -- The SecurityContext for ruler-query-scheduler containers
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+
+  terminationGracePeriodSeconds: 180
+
+  tolerations: []
+  initContainers: []
+  extraContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  env: []
+  extraEnvFrom: []
+
+  # -- Jaeger reporter queue size
+  # Set to 'null' to use the Jaeger client's default value
+  jaegerReporterMaxQueueSize: null
+
 querier:
   replicas: 2
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
-  # from the the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
-  # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
+  # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
+  # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
   # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
   kedaAutoscaling:
     enabled: false
+    # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
+    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
     querySchedulerInflightRequestsThreshold: 12
+    # -- predictiveScalingEnabled scales up the querier based on the inflight requests in the past.
+    # This helps with scaling up for predictable traffic patterns and minimizing HTTP 429 responses due to filled query queues.
+    # Due to false positive items it can increase the querier TCO.
+    predictiveScalingEnabled: false
+    # -- The period to consider when considering scheduler metrics for predictive scaling.
+    # This is usually slightly lower than the period of the repeating query events to give scaling up lead time.
+    predictiveScalingPeriod: 6d23h30m
+    # -- The time range to consider when considering scheduler metrics for predictive scaling.
+    # For example: if lookback is 30m and period is 6d23h30m,
+    # the querier will scale based on the maximum inflight queries between 6d23h30m and 7d ago.
+    predictiveScalingLookback: 30m
     behavior:
       scaleDown:
         policies:
@@ -1375,12 +1705,15 @@ query_frontend:
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
-  # from the the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
-  # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
+  # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
+  # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
   # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
   kedaAutoscaling:
     enabled: false
+    # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
+    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
     targetCPUUtilizationPercentage: 75
@@ -1663,7 +1996,7 @@ store_gateway:
   strategy:
     type: RollingUpdate
 
-  terminationGracePeriodSeconds: 240
+  terminationGracePeriodSeconds: 120
 
   tolerations: []
   initContainers: []
@@ -1856,7 +2189,7 @@ compactor:
   strategy:
     type: RollingUpdate
 
-  terminationGracePeriodSeconds: 240
+  terminationGracePeriodSeconds: 900
 
   tolerations: []
   initContainers: []
@@ -1875,7 +2208,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.24-alpine
+    tag: 1.6.27-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -1898,7 +2231,7 @@ memcachedExporter:
 
   image:
     repository: prom/memcached-exporter
-    tag: v0.14.2
+    tag: v0.14.3
     pullPolicy: IfNotPresent
 
   resources:
@@ -1973,7 +2306,7 @@ chunks-cache:
   # -- Management policy for chunks-cache pods
   podManagementPolicy: Parallel
   # -- Grace period to allow the chunks-cache to shutdown before it is killed
-  terminationGracePeriodSeconds: 60
+  terminationGracePeriodSeconds: 30
 
   # -- Stateful chunks-cache strategy
   statefulStrategy:
@@ -2005,6 +2338,9 @@ chunks-cache:
   #   mountPath: /etc/extra-volume
   #   readOnly: true
   extraVolumeMounts: []
+
+  # -- List of additional PVCs to be created for the chunks-cache statefulset
+  volumeClaimTemplates: []
 
   # -- Resource requests and limits for the chunks-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
@@ -2065,7 +2401,7 @@ index-cache:
   # -- Management policy for index-cache pods
   podManagementPolicy: Parallel
   # -- Grace period to allow the index-cache to shutdown before it is killed
-  terminationGracePeriodSeconds: 60
+  terminationGracePeriodSeconds: 30
 
   # -- Stateful index-cache strategy
   statefulStrategy:
@@ -2097,6 +2433,9 @@ index-cache:
   #   mountPath: /etc/extra-volume
   #   readOnly: true
   extraVolumeMounts: []
+
+  # -- List of additional PVCs to be created for the index-cache statefulset
+  volumeClaimTemplates: []
 
   # -- Resource requests and limits for the index-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
@@ -2157,7 +2496,7 @@ metadata-cache:
   # -- Management policy for metadata-cache pods
   podManagementPolicy: Parallel
   # -- Grace period to allow the metadata-cache to shutdown before it is killed
-  terminationGracePeriodSeconds: 60
+  terminationGracePeriodSeconds: 30
 
   # -- Stateful metadata-cache strategy
   statefulStrategy:
@@ -2189,6 +2528,9 @@ metadata-cache:
   #   mountPath: /etc/extra-volume
   #   readOnly: true
   extraVolumeMounts: []
+
+  # -- List of additional PVCs to be created for the metadata-cache statefulset
+  volumeClaimTemplates: []
 
   # -- Resource requests and limits for the metadata-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
@@ -2249,7 +2591,7 @@ results-cache:
   # -- Management policy for results-cache pods
   podManagementPolicy: Parallel
   # -- Grace period to allow the results-cache to shutdown before it is killed
-  terminationGracePeriodSeconds: 60
+  terminationGracePeriodSeconds: 30
 
   # -- Stateful results-cache strategy
   statefulStrategy:
@@ -2281,6 +2623,9 @@ results-cache:
   #   mountPath: /etc/extra-volume
   #   readOnly: true
   extraVolumeMounts: []
+
+  # -- List of additional PVCs to be created for the results-cache statefulset
+  volumeClaimTemplates: []
 
   # -- Resource requests and limits for the results-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
@@ -2589,6 +2934,11 @@ nginx:
           "" "{{ include "mimir.noAuthTenant" . }}";
         }
 
+        map $http_x_scope_orgid $has_multiple_orgid_headers {
+          default 0;
+          "~^.+,.+$" 1;
+        }
+
         proxy_read_timeout 300;
         server {
           listen 8080;
@@ -2598,6 +2948,10 @@ nginx:
           auth_basic           "Mimir";
           auth_basic_user_file /etc/nginx/secrets/.htpasswd;
           {{- end }}
+
+          if ($has_multiple_orgid_headers = 1) {
+              return 400 'Sending multiple X-Scope-OrgID headers is not allowed. Use a single header with | as separator instead.';
+          }
 
           location = / {
             return 200 'OK';
@@ -2626,6 +2980,10 @@ nginx:
             proxy_pass      http://$alertmanager:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
           location = /multitenant_alertmanager/status {
+            set $alertmanager {{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            proxy_pass      http://$alertmanager:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+          }
+          location = /multitenant_alertmanager/configs {
             set $alertmanager {{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
             proxy_pass      http://$alertmanager:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
@@ -2693,6 +3051,7 @@ ingress:
     alertmanager-headless:
       - path: /alertmanager
       - path: /multitenant_alertmanager/status
+      - path: /multitenant_alertmanager/configs
       - path: /api/v1/alerts
     ruler:
       - path: /prometheus/config/v1/rules
@@ -2919,6 +3278,8 @@ gateway:
       serverSnippet: ""
       # -- Allows appending custom configuration to the http block
       httpSnippet: ""
+      # -- Allow to set client_max_body_size in the nginx configuration
+      clientMaxBodySize: 540M
       # -- Allows to set a custom resolver
       resolver: null
       # -- Configures whether or not NGINX bind IPv6
@@ -2929,6 +3290,9 @@ gateway:
         error_log  /dev/stderr {{ .Values.gateway.nginx.config.errorLogLevel }};
         pid        /tmp/nginx.pid;
         worker_rlimit_nofile 8192;
+        {{- if .Values.gateway.nginx.config.clientMaxBodySize }}
+        client_max_body_size {{ .Values.gateway.nginx.config.clientMaxBodySize }};
+        {{- end }}
 
         events {
           worker_connections  4096;  ## Default: 1024
@@ -2975,6 +3339,11 @@ gateway:
             "" "{{ include "mimir.noAuthTenant" . }}";
           }
 
+          map $http_x_scope_orgid $has_multiple_orgid_headers {
+            default 0;
+            "~^.+,.+$" 1;
+          }
+
           proxy_read_timeout 300;
           server {
             listen {{ include "mimir.serverHttpListenPort" . }};
@@ -2982,10 +3351,18 @@ gateway:
             listen [::]:{{ include "mimir.serverHttpListenPort" . }};
             {{- end }}
 
+            {{- if .Values.gateway.nginx.config.clientMaxBodySize }}
+            client_max_body_size {{ .Values.gateway.nginx.config.clientMaxBodySize }};
+            {{- end }}
+
             {{- if .Values.gateway.nginx.basicAuth.enabled }}
             auth_basic           "Mimir";
             auth_basic_user_file /etc/nginx/secrets/.htpasswd;
             {{- end }}
+
+            if ($has_multiple_orgid_headers = 1) {
+                return 400 'Sending multiple X-Scope-OrgID headers is not allowed. Use a single header with | as separator instead.';
+            }
 
             location = / {
               return 200 'OK';
@@ -3019,6 +3396,10 @@ gateway:
               proxy_pass      http://$alertmanager:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
             }
             location = /multitenant_alertmanager/status {
+              set $alertmanager {{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+              proxy_pass      http://$alertmanager:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+            }
+            location = /multitenant_alertmanager/configs {
               set $alertmanager {{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
               proxy_pass      http://$alertmanager:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
             }
@@ -3180,6 +3561,11 @@ metaMonitoring:
       # -- Controls whether to create resources PodLogs and LogsInstance resources
       enabled: true
 
+      # -- To disable setting a 'cluster' label in logs, set to 'null'.
+      # To overwrite the 'cluster' label with your own value, set to a non-empty string.
+      # Keep empty string "" to have the default value in the 'cluster' label, which is the helm release name for Mimir and the actual cluster name for Enterprise Metrics.
+      clusterLabel: ""
+
       # -- Default destination for logs. The config here is translated to Promtail client
       # configuration to write logs to this Loki-compatible remote. Optional.
       remote:
@@ -3209,11 +3595,11 @@ metaMonitoring:
       # configuration to push metrics to this Prometheus-compatible remote. Optional.
       # Note that you need to configure serviceMonitor in order to have some metrics available.
       #
-      # If you leave the metamonitoring.grafanaAgent.metrics.remote.url field empty,
+      # If you leave the metaMonitoring.grafanaAgent.metrics.remote.url field empty,
       # then the chart automatically fills in the address of the GEM gateway Service
       # or the Mimir NGINX Service.
       #
-      # If you have deployed Mimir, and metamonitoring.grafanaAgent.metrics.remote.url is not set,
+      # If you have deployed Mimir, and metaMonitoring.grafanaAgent.metrics.remote.url is not set,
       # then the metamonitoring metrics are be sent to the Mimir cluster.
       # You can query these metrics using the HTTP header X-Scope-OrgID: metamonitoring
       #
@@ -3334,7 +3720,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r281-99ff9f91
+    tag: r295-b335e5a9
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3836,10 +4222,10 @@ gr-metricname-cache:
 # that writing and reading metrics works. Currently not supported for
 # installations using GEM token-based authentication.
 smoke_test:
-  image:
-    repository: grafana/mimir-continuous-test
-    tag: r281-93e069f
-    pullPolicy: IfNotPresent
+  # -- Controls the backoffLimit on the Kubernetes Job. The Job is marked as failed after that many retries.
+  backoffLimit: 5
+  # The image section has been removed as continuous test is now a module of the regular Mimir image.
+  # See settings for the image at the top image section.
   tenantId: ""
   extraArgs: {}
   env: []
@@ -3856,11 +4242,8 @@ continuous_test:
   enabled: false
   # -- Number of replicas to start of continuous test
   replicas: 1
-  image:
-    repository: grafana/mimir-continuous-test
-    tag: r281-93e069f
-    pullPolicy: IfNotPresent
-    # Note: optional pullSecrets are set in toplevel 'image' section, not here
+  # The image section has been removed as continuous test is now a module of the regular Mimir image.
+  # See settings for the image at the top image section.
 
   # -- Authentication settings of continuous test
   auth:

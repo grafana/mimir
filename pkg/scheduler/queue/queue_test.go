@@ -33,12 +33,6 @@ func TestMain(m *testing.M) {
 	util_test.VerifyNoLeakTestMain(m)
 }
 
-// cannot import constants from frontend/v2 due to import cycle,
-// but content of the strings should not matter as much as the number of options
-const ingesterQueueDimension = "ingester"
-const storeGatewayQueueDimension = "store-gateway"
-const ingesterAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
-
 var secondQueueDimensionOptions = []string{
 	ingesterQueueDimension,
 	storeGatewayQueueDimension,
@@ -65,9 +59,9 @@ func randAdditionalQueueDimension(allowEmpty bool) []string {
 // used by the queue mechanics, in order get a more meaningful % delta between competing queue implementations.
 func makeSchedulerRequest(tenantID string, additionalQueueDimensions []string) *SchedulerRequest {
 	return &SchedulerRequest{
-		Ctx:             context.Background(),
-		FrontendAddress: "http://query-frontend:8007",
-		UserID:          tenantID,
+		Ctx:          context.Background(),
+		FrontendAddr: "http://query-frontend:8007",
+		UserID:       tenantID,
 		Request: &httpgrpc.HTTPRequest{
 			Method: "GET",
 			Headers: []*httpgrpc.Header{
@@ -132,15 +126,17 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 			Help: "[test] total time spent by items in queue before getting picked up by a consumer",
 		}, []string{"additional_queue_dimensions"})
 
-		queue := NewRequestQueue(
+		queue, err := NewRequestQueue(
 			log.NewNopLogger(),
 			maxOutstandingRequestsPerTenant,
 			additionalQueueDimensionsEnabled,
 			forgetQuerierDelay,
-			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"tenant"}),
-			promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"tenant"}),
+			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+			promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 			promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		)
+		require.NoError(t, err)
 
 		ctx := context.Background()
 		require.NoError(t, queue.starting(ctx))
@@ -193,7 +189,7 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 		}
 
 		close(startConsumersChan)
-		err := queueConsumerErrGroup.Wait()
+		err = queueConsumerErrGroup.Wait()
 		require.NoError(t, err)
 
 		// record total queue duration by queue dimensions and whether the queue splitting was enabled
@@ -235,15 +231,17 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 					// Queriers run with parallelism of 16 when query sharding is enabled.
 					for _, numConsumers := range []int{16, 160, 1600} {
 						b.Run(fmt.Sprintf("%v concurrent consumers", numConsumers), func(b *testing.B) {
-							queue := NewRequestQueue(
+							queue, err := NewRequestQueue(
 								log.NewNopLogger(),
 								maxOutstandingRequestsPerTenant,
 								true,
 								forgetQuerierDelay,
-								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"tenant"}),
-								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"tenant"}),
+								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 								promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 							)
+							require.NoError(b, err)
 
 							startSignalChan := make(chan struct{})
 							queueActorsErrGroup, ctx := errgroup.WithContext(context.Background())
@@ -275,7 +273,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 
 							b.ResetTimer()
 							close(startSignalChan)
-							err := queueActorsErrGroup.Wait()
+							err = queueActorsErrGroup.Wait()
 							if err != nil {
 								require.NoError(b, err)
 							}
@@ -343,7 +341,7 @@ func queueProduce(
 	}
 	req := makeSchedulerRequest(tenantID, additionalQueueDimensions)
 	for {
-		err := queue.EnqueueRequestToDispatcher(tenantID, req, maxQueriersPerTenant, func() {})
+		err := queue.SubmitRequestToEnqueue(tenantID, req, maxQueriersPerTenant, func() {})
 		if err == nil {
 			break
 		}
@@ -365,10 +363,10 @@ func runQueueConsumerIters(
 ) func(consumerIdx int) error {
 	return func(consumerIdx int) error {
 		consumerIters := queueActorIterationCount(totalIters, numConsumers, consumerIdx)
-		lastTenantIndex := FirstUser()
+		lastTenantIndex := FirstTenant()
 		querierID := fmt.Sprintf("consumer-%v", consumerIdx)
-		queue.RegisterQuerierConnection(querierID)
-		defer queue.UnregisterQuerierConnection(querierID)
+		queue.SubmitRegisterQuerierConnection(querierID)
+		defer queue.SubmitUnregisterQuerierConnection(querierID)
 
 		<-start
 
@@ -388,9 +386,9 @@ func runQueueConsumerIters(
 type consumeRequest func(request Request) error
 
 func queueConsume(
-	ctx context.Context, queue *RequestQueue, querierID string, lastTenantIndex UserIndex, consumeFunc consumeRequest,
-) (UserIndex, error) {
-	request, idx, err := queue.GetNextRequestForQuerier(ctx, lastTenantIndex, querierID)
+	ctx context.Context, queue *RequestQueue, querierID string, lastTenantIndex TenantIndex, consumeFunc consumeRequest,
+) (TenantIndex, error) {
+	request, idx, err := queue.WaitForRequestForQuerier(ctx, lastTenantIndex, querierID)
 	if err != nil {
 		return lastTenantIndex, err
 	}
@@ -404,61 +402,161 @@ func queueConsume(
 
 func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBecauseQuerierHasBeenForgotten(t *testing.T) {
 	const forgetDelay = 3 * time.Second
+	const testTimeout = 10 * time.Second
 
-	queue := NewRequestQueue(
+	queue, err := NewRequestQueue(
 		log.NewNopLogger(),
 		1, true,
 		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 	)
+	require.NoError(t, err)
 
 	// Start the queue service.
 	ctx := context.Background()
 	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
 	t.Cleanup(func() {
+		// if the test has failed and the queue does not get cleared,
+		// we must send a shutdown signal for the remaining connected querier
+		// or else StopAndAwaitTerminated will never complete.
+		queue.SubmitUnregisterQuerierConnection("querier-2")
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
 	})
 
 	// Two queriers connect.
-	queue.RegisterQuerierConnection("querier-1")
-	queue.RegisterQuerierConnection("querier-2")
+	queue.SubmitRegisterQuerierConnection("querier-1")
+	queue.SubmitRegisterQuerierConnection("querier-2")
 
 	// Querier-2 waits for a new request.
 	querier2wg := sync.WaitGroup{}
 	querier2wg.Add(1)
 	go func() {
 		defer querier2wg.Done()
-		_, _, err := queue.GetNextRequestForQuerier(ctx, FirstUser(), "querier-2")
+		_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), "querier-2")
 		require.NoError(t, err)
 	}()
 
 	// Querier-1 crashes (no graceful shutdown notification).
-	queue.UnregisterQuerierConnection("querier-1")
+	queue.SubmitUnregisterQuerierConnection("querier-1")
 
 	// Enqueue a request from an user which would be assigned to querier-1.
-	// NOTE: "user-1" hash falls in the querier-1 shard.
+	// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
+	// when there are only one or two queriers in the sorted list of connected queriers
 	req := &SchedulerRequest{
 		Ctx:                       context.Background(),
 		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: randAdditionalQueueDimension(true),
 	}
-	require.NoError(t, queue.EnqueueRequestToDispatcher("user-1", req, 1, nil))
+	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, 1, nil))
 
 	startTime := time.Now()
-	querier2wg.Wait()
-	waitTime := time.Since(startTime)
+	done := make(chan struct{})
+	go func() {
+		querier2wg.Wait()
+		close(done)
+	}()
 
-	// We expect that querier-2 got the request only after querier-1 forget delay is passed.
-	assert.GreaterOrEqual(t, waitTime.Milliseconds(), forgetDelay.Milliseconds())
+	select {
+	case <-done:
+		waitTime := time.Since(startTime)
+		// We expect that querier-2 got the request only after forget delay is passed.
+		assert.GreaterOrEqual(t, waitTime.Milliseconds(), forgetDelay.Milliseconds())
+	case <-time.After(testTimeout):
+		t.Fatal("timeout: querier-2 did not receive the request expected to be resharded to querier-2")
+	}
+}
+
+func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultipleQuerierForget(t *testing.T) {
+	const forgetDelay = 3 * time.Second
+	const testTimeout = 10 * time.Second
+
+	queue, err := NewRequestQueue(
+		log.NewNopLogger(),
+		1, true,
+		forgetDelay,
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+	)
+	require.NoError(t, err)
+
+	// Start the queue service.
+	ctx := context.Background()
+	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
+	t.Cleanup(func() {
+		// if the test has failed and the queue does not get cleared,
+		// we must send a shutdown signal for the remaining connected querier
+		// or else StopAndAwaitTerminated will never complete.
+		queue.SubmitUnregisterQuerierConnection("querier-2")
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
+	})
+
+	// Three queriers connect.
+	// We will submit the enqueue request with maxQueriers: 2.
+	//
+	// Whenever forgetDisconnectedQueriers runs, all queriers which reached zero connections since the last
+	// run of forgetDisconnectedQueriers will all be removed in from the shuffle shard in the same run.
+	//
+	// In this case two queriers are forgotten in the same run, but only the first forgotten querier triggers a reshard.
+	// In the first reshard, the tenant goes from a shuffled subset of queriers to a state of
+	// "tenant can use all queriers", as connected queriers is now <= tenant.maxQueriers.
+	// The second forgotten querier won't trigger a reshard, as connected queriers is already <= tenant.maxQueriers.
+	//
+	// We are testing that the occurrence of a reshard is reported correctly
+	// when not all querier forget operations in a single run of forgetDisconnectedQueriers caused a reshard.
+	queue.SubmitRegisterQuerierConnection("querier-1")
+	queue.SubmitRegisterQuerierConnection("querier-2")
+	queue.SubmitRegisterQuerierConnection("querier-3")
+
+	// querier-2 waits for a new request.
+	querier2wg := sync.WaitGroup{}
+	querier2wg.Add(1)
+	go func() {
+		defer querier2wg.Done()
+		_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), "querier-2")
+		require.NoError(t, err)
+	}()
+
+	// querier-1 and querier-3 crash (no graceful shutdown notification).
+	queue.SubmitUnregisterQuerierConnection("querier-1")
+	queue.SubmitUnregisterQuerierConnection("querier-3")
+
+	// Enqueue a request from a tenant which would be assigned to querier-1.
+	// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
+	// when there are only one or two queriers in the sorted list of connected queriers
+	req := &SchedulerRequest{
+		Ctx:                       context.Background(),
+		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		AdditionalQueueDimensions: randAdditionalQueueDimension(true),
+	}
+	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, 2, nil))
+
+	startTime := time.Now()
+	done := make(chan struct{})
+	go func() {
+		querier2wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		waitTime := time.Since(startTime)
+		// We expect that querier-2 got the request only after forget delay is passed.
+		assert.GreaterOrEqual(t, waitTime.Milliseconds(), forgetDelay.Milliseconds())
+	case <-time.After(testTimeout):
+		t.Fatal("timeout: querier-2 did not receive the request expected to be resharded to querier-2")
+	}
 }
 
 func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled(t *testing.T) {
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue := NewRequestQueue(
+	queue, err := NewRequestQueue(
 		log.NewNopLogger(),
 		1,
 		true,
@@ -466,23 +564,25 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 	)
+	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), queue))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), queue))
 	})
 
-	queue.RegisterQuerierConnection(querierID)
+	queue.SubmitRegisterQuerierConnection(querierID)
 	errChan := make(chan error)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
-		_, _, err := queue.GetNextRequestForQuerier(ctx, FirstUser(), querierID)
+		_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), querierID)
 		errChan <- err
 	}()
 
-	time.Sleep(20 * time.Millisecond) // Wait for GetNextRequestForQuerier to be waiting for a query.
+	time.Sleep(20 * time.Millisecond) // Wait for WaitForRequestForQuerier to be waiting for a query.
 	cancel()
 
 	select {
@@ -497,7 +597,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue := NewRequestQueue(
+	queue, err := NewRequestQueue(
 		log.NewNopLogger(),
 		1,
 		true,
@@ -505,7 +605,9 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 	)
+	require.NoError(t, err)
 
 	ctx := context.Background()
 	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
@@ -513,10 +615,10 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
 	})
 
-	queue.RegisterQuerierConnection(querierID)
-	queue.NotifyQuerierShutdown(querierID)
+	queue.SubmitRegisterQuerierConnection(querierID)
+	queue.SubmitNotifyQuerierShutdown(querierID)
 
-	_, _, err := queue.GetNextRequestForQuerier(context.Background(), FirstUser(), querierID)
+	_, _, err = queue.WaitForRequestForQuerier(context.Background(), FirstTenant(), querierID)
 	require.EqualError(t, err, "querier has informed the scheduler it is shutting down")
 }
 
@@ -524,7 +626,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue := NewRequestQueue(
+	queue, err := NewRequestQueue(
 		log.NewNopLogger(),
 		1,
 		true,
@@ -532,10 +634,12 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 	)
+	require.NoError(t, err)
 
 	// bypassing queue dispatcher loop for direct usage of the queueBroker and
-	// passing a nextRequestForQuerierCall for a canceled querier connection
+	// passing a waitingQuerierConn for a canceled querier connection
 	queueBroker := newQueueBroker(queue.maxOutstandingPerTenant, queue.additionalQueueDimensionsEnabled, queue.forgetDelay)
 	queueBroker.addQuerierConnection(querierID)
 
@@ -555,17 +659,17 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	require.False(t, queueBroker.tenantQueuesTree.getNode(QueuePath{"tenant-1"}).IsEmpty())
 
 	ctx, cancel := context.WithCancel(context.Background())
-	call := &nextRequestForQuerierCall{
-		ctx:           ctx,
-		querierID:     QuerierID(querierID),
-		lastUserIndex: FirstUser(),
-		processed:     make(chan nextRequestForQuerier),
+	call := &waitingQuerierConn{
+		querierConnCtx:  ctx,
+		querierID:       QuerierID(querierID),
+		lastTenantIndex: FirstTenant(),
+		recvChan:        make(chan requestForQuerier),
 	}
 	cancel() // ensure querier context done before send is attempted
 
 	// send to querier will fail but method returns true,
-	// indicating not to re-submit a request for nextRequestForQuerierCall for the querier
-	require.True(t, queue.tryDispatchRequestToQuerier(queueBroker, call))
+	// indicating not to re-submit a request for waitingQuerierConn for the querier
+	require.True(t, queue.trySendNextRequestForQuerier(call))
 	// assert request was re-enqueued for tenant after failed send
 	require.False(t, queueBroker.tenantQueuesTree.getNode(QueuePath{"tenant-1"}).IsEmpty())
 }

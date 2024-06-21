@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"slices"
 	"strconv"
+	"unsafe"
 
 	"github.com/prometheus/common/model"
 )
@@ -39,7 +40,8 @@ type Label struct {
 }
 
 func (ls Labels) String() string {
-	var b bytes.Buffer
+	var bytea [1024]byte // On stack to avoid memory allocation while building the output.
+	b := bytes.NewBuffer(bytea[:0])
 
 	b.WriteByte('{')
 	i := 0
@@ -50,7 +52,7 @@ func (ls Labels) String() string {
 		}
 		b.WriteString(l.Name)
 		b.WriteByte('=')
-		b.WriteString(strconv.Quote(l.Value))
+		b.Write(strconv.AppendQuote(b.AvailableBuffer(), l.Value))
 		i++
 	})
 	b.WriteByte('}')
@@ -213,4 +215,8 @@ func contains(s []Label, n string) bool {
 		}
 	}
 	return false
+}
+
+func yoloString(b []byte) string {
+	return *((*string)(unsafe.Pointer(&b)))
 }

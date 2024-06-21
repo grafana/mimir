@@ -69,7 +69,9 @@
     $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0),
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +
+    // Set a termination grace period greater than query timeout.
+    deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(180),
 
   querier_deployment: if !$._config.is_microservices_deployment_mode then null else
     self.newQuerierDeployment('querier', $.querier_container, $.querier_node_affinity_matchers),

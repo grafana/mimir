@@ -101,6 +101,7 @@ local filename = 'mimir-rollout-progress.json';
           min=0,
           max=1
         ) +
+        $.showAllTooltip +
         {
           id: 1,
           gridPos: { h: 13, w: 10, x: 0, y: 0 },
@@ -123,9 +124,6 @@ local filename = 'mimir-rollout-progress.json';
           options+: {
             xField: 'Workload',
             orientation: 'horizontal',
-            tooltip+: {
-              mode: 'multi',
-            },
           },
           transformations: [
             {

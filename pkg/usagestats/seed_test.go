@@ -127,14 +127,14 @@ func TestWaitSeedFileStability(t *testing.T) {
 	}
 
 	tests := map[string]func(t *testing.T, bucketClient *bucket.ClientMock) testExpectations{
-		"should immediately return if seed file does not exist": func(t *testing.T, bucketClient *bucket.ClientMock) testExpectations {
+		"should immediately return if seed file does not exist": func(_ *testing.T, bucketClient *bucket.ClientMock) testExpectations {
 			bucketClient.MockGet(ClusterSeedFileName, "", bucket.ErrObjectDoesNotExist)
 
 			return testExpectations{
 				expectedErr: bucket.ErrObjectDoesNotExist,
 			}
 		},
-		"should immediately return if seed file is corrupted": func(t *testing.T, bucketClient *bucket.ClientMock) testExpectations {
+		"should immediately return if seed file is corrupted": func(_ *testing.T, bucketClient *bucket.ClientMock) testExpectations {
 			bucketClient.MockGet(ClusterSeedFileName, "xxx", nil)
 
 			return testExpectations{
@@ -224,7 +224,7 @@ func TestInitSeedFile(t *testing.T) {
 				expectedMinDuration: minStability,
 			}
 		},
-		"should create the seed file if doesn't exist and then wait for 'min stability'": func(t *testing.T, bucketClient objstore.Bucket) testExpectations {
+		"should create the seed file if doesn't exist and then wait for 'min stability'": func(*testing.T, objstore.Bucket) testExpectations {
 			return testExpectations{
 				expectedMinDuration: minStability,
 			}

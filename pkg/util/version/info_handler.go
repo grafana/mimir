@@ -30,8 +30,7 @@ type BuildInfoFeatures struct {
 }
 
 func BuildInfoHandler(application string, features interface{}) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		response := BuildInfoResponse{
 			Status: "success",
 			BuildInfo: BuildInfo{

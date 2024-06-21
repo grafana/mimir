@@ -34,7 +34,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
-	util_log "github.com/grafana/mimir/pkg/util/log"
+	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestDistributor_DistributeRequest(t *testing.T) {
@@ -197,6 +197,16 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 			expectedTotalCalls: 1,
 			route:              "/receivers",
 		}, {
+			name:               "Read /api/v1/grafana/receivers is sent to 3 AMs",
+			numAM:              5,
+			numHappyAM:         5,
+			replicationFactor:  3,
+			isRead:             true,
+			expStatusCode:      http.StatusOK,
+			expectedTotalCalls: 3,
+			route:              "/api/v1/grafana/receivers",
+			responseBody:       []byte(`[]`),
+		}, {
 			name:                "Write /receivers not supported",
 			numAM:               5,
 			numHappyAM:          5,
@@ -314,7 +324,7 @@ func prepare(t *testing.T, numAM, numHappyAM, replicationFactor int, responseBod
 	cfg := &MultitenantAlertmanagerConfig{}
 	flagext.DefaultValues(cfg)
 
-	d, err := NewDistributor(cfg.AlertmanagerClient, cfg.MaxRecvMsgSize, amRing, newMockAlertmanagerClientFactory(amByAddr), util_log.Logger, prometheus.NewRegistry())
+	d, err := NewDistributor(cfg.AlertmanagerClient, cfg.MaxRecvMsgSize, amRing, newMockAlertmanagerClientFactory(amByAddr), utiltest.NewTestingLogger(t), prometheus.NewRegistry())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), d))
 

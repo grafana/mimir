@@ -116,9 +116,11 @@ type RulesRetriever interface {
 	AlertingRules() []*rules.AlertingRule
 }
 
+// StatsRenderer converts engine statistics into a format suitable for the API.
 type StatsRenderer func(context.Context, *stats.Statistics, string) stats.QueryStats
 
-func defaultStatsRenderer(_ context.Context, s *stats.Statistics, param string) stats.QueryStats {
+// DefaultStatsRenderer is the default stats renderer for the API.
+func DefaultStatsRenderer(_ context.Context, s *stats.Statistics, param string) stats.QueryStats {
 	if param != "" {
 		return stats.NewQueryStats(s)
 	}
@@ -177,13 +179,6 @@ type TSDBAdminStats interface {
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
 }
 
-// QueryEngine defines the interface for the *promql.Engine, so it can be replaced, wrapped or mocked.
-type QueryEngine interface {
-	SetQueryLogger(l promql.QueryLogger)
-	NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error)
-	NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error)
-}
-
 type QueryOpts interface {
 	EnablePerStepStats() bool
 	LookbackDelta() time.Duration
@@ -193,7 +188,7 @@ type QueryOpts interface {
 // them using the provided storage and query engine.
 type API struct {
 	Queryable         storage.SampleAndChunkQueryable
-	QueryEngine       QueryEngine
+	QueryEngine       promql.QueryEngine
 	ExemplarQueryable storage.ExemplarQueryable
 
 	scrapePoolsRetriever  func(context.Context) ScrapePoolsRetriever
@@ -226,7 +221,7 @@ type API struct {
 
 // NewAPI returns an initialized API type.
 func NewAPI(
-	qe QueryEngine,
+	qe promql.QueryEngine,
 	q storage.SampleAndChunkQueryable,
 	ap storage.Appendable,
 	eq storage.ExemplarQueryable,
@@ -279,7 +274,7 @@ func NewAPI(
 		buildInfo:        buildInfo,
 		gatherer:         gatherer,
 		isAgent:          isAgent,
-		statsRenderer:    defaultStatsRenderer,
+		statsRenderer:    DefaultStatsRenderer,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -468,7 +463,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	// Optional stats field in response if parameter "stats" is not empty.
 	sr := api.statsRenderer
 	if sr == nil {
-		sr = defaultStatsRenderer
+		sr = DefaultStatsRenderer
 	}
 	qs := sr(ctx, qry.Stats(), r.FormValue("stats"))
 
@@ -570,7 +565,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	// Optional stats field in response if parameter "stats" is not empty.
 	sr := api.statsRenderer
 	if sr == nil {
-		sr = defaultStatsRenderer
+		sr = DefaultStatsRenderer
 	}
 	qs := sr(ctx, qry.Stats(), r.FormValue("stats"))
 
@@ -709,7 +704,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		names = []string{}
 	}
 
-	if len(names) >= limit {
+	if len(names) > limit {
 		names = names[:limit]
 		warnings = warnings.Add(errors.New("results truncated due to limit"))
 	}
@@ -798,7 +793,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	slices.Sort(vals)
 
-	if len(vals) >= limit {
+	if len(vals) > limit {
 		vals = vals[:limit]
 		warnings = warnings.Add(errors.New("results truncated due to limit"))
 	}
@@ -889,9 +884,13 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	warnings := set.Warnings()
 
 	for set.Next() {
+		if err := ctx.Err(); err != nil {
+			return apiFuncResult{nil, returnAPIError(err), warnings, closer}
+		}
 		metrics = append(metrics, set.At().Labels())
 
-		if len(metrics) >= limit {
+		if len(metrics) > limit {
+			metrics = metrics[:limit]
 			warnings.Add(errors.New("results truncated due to limit"))
 			return apiFuncResult{metrics, nil, warnings, closer}
 		}
@@ -1762,7 +1761,7 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 
 	b, err := codec.Encode(resp)
 	if err != nil {
-		level.Error(api.logger).Log("msg", "error marshaling response", "err", err)
+		level.Error(api.logger).Log("msg", "error marshaling response", "url", req.URL, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1770,7 +1769,7 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 	w.Header().Set("Content-Type", codec.ContentType().String())
 	w.WriteHeader(http.StatusOK)
 	if n, err := w.Write(b); err != nil {
-		level.Error(api.logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
+		level.Error(api.logger).Log("msg", "error writing response", "url", req.URL, "bytesWritten", n, "err", err)
 	}
 }
 

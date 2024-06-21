@@ -125,6 +125,9 @@ spec:
         {{- if .Values.alertmanager.extraVolumes }}
         {{ toYaml .Values.alertmanager.extraVolumes | nindent 8 }}
         {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | nindent 8 }}
+        {{- end }}
       containers:
         {{- if .Values.alertmanager.extraContainers }}
         {{ toYaml .Values.alertmanager.extraContainers | nindent 8 }}
@@ -149,6 +152,9 @@ spec:
           volumeMounts:
             {{- if .Values.alertmanager.extraVolumeMounts }}
             {{ toYaml .Values.alertmanager.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+            {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: config
               mountPath: /etc/mimir

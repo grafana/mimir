@@ -65,8 +65,8 @@ func addLicense(dir string) error {
 			return nil
 		}
 
-		// Skip generated protos.
-		if strings.HasSuffix(path, ".pb.go") {
+		// Skip generated Go files.
+		if strings.HasSuffix(path, ".pb.go") || strings.HasSuffix(path, "_generated.go") {
 			return nil
 		}
 

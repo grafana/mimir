@@ -127,7 +127,7 @@ func NewLazyBinaryReader(
 		logger:          logger,
 		filepath:        path,
 		metrics:         metrics,
-		usedAt:          atomic.NewInt64(time.Now().UnixNano()),
+		usedAt:          atomic.NewInt64(0),
 		onClosed:        onClosed,
 		readerFactory:   readerFactory,
 		blockID:         id,
@@ -196,14 +196,14 @@ func (r *LazyBinaryReader) SymbolsReader() (streamindex.SymbolsReader, error) {
 }
 
 // LabelValuesOffsets implements Reader.
-func (r *LazyBinaryReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
+func (r *LazyBinaryReader) LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
 	reader, wg, err := r.getOrLoadReader()
 	if err != nil {
 		return nil, err
 	}
 	defer wg.Done()
 
-	return reader.LabelValuesOffsets(name, prefix, filter)
+	return reader.LabelValuesOffsets(ctx, name, prefix, filter)
 }
 
 // LabelNames implements Reader.

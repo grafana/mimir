@@ -4,37 +4,234 @@
 
 ### Grafana Mimir
 
-* [ENHANCEMENT] Store-gateway: merge series from different blocks concurrently. #7456
-* [ENHANCEMENT] Store-gateway: Add `stage="wait_max_concurrent"` to `cortex_bucket_store_series_request_stage_duration_seconds` which records how long the query had to wait for its turn for `-blocks-storage.bucket-store.max-concurrent`. #7609
-* [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
-* [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
-* [BUGFIX] Ingester: Prevent timely compaction of empty blocks. #7624
-* [BUGFIX] querier: Don't cache context.Canceled errors for bucket index. #7620
-* [BUGFIX] Store-gateway: account for `"other"` time in LabelValues and LabelNames requests. #7622
+* [CHANGE] Store-gateway / querier: enable streaming chunks from store-gateways to queriers by default. #6646
+* [CHANGE] Querier: honor the start/end time range specified in the read hints when executing a remote read request. #8431
+* [CHANGE] Querier: return only samples within the queried start/end time range when executing a remote read request using "SAMPLES" mode. Previously, samples outside of the range could have been returned. Samples outside of the queried time range may still be returned when executing a remote read request using "STREAMED_XOR_CHUNKS" mode. #8463
+* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.query-engine=mimir`. #8422 #8430 #8454 #8455
+* [ENHANCEMENT] Compactor: Add `cortex_compactor_compaction_job_duration_seconds` and `cortex_compactor_compaction_job_blocks` histogram metrics to track duration of individual compaction jobs and number of blocks per job. #8371
+* [ENHANCEMENT] Rules: Added per namespace max rules per rule group limit. The maximum number of rules per rule groups for all namespaces continues to be configured by `-ruler.max-rules-per-rule-group`, but now, this can be superseded by the new `-ruler.max-rules-per-rule-group-by-namespace` option on a per namespace basis. This new limit can be overridden using the overrides mechanism to be applied per-tenant. #8378
+* [ENHANCEMENT] Rules: Added per namespace max rule groups per tenant limit. The maximum number of rule groups per rule tenant for all namespaces continues to be configured by `-ruler.max-rule-groups-per-tenant`, but now, this can be superseded by the new `-ruler.max-rule-groups-per-tenant-by-namespace` option on a per namespace basis. This new limit can be overridden using the overrides mechanism to be applied per-tenant. #8425
+* [ENHANCEMENT] Query-frontend: be able to block remote read queries via the per tenant runtime override `blocked_queries`. #8372 #8415
+* [ENHANCEMENT] Query-frontend: added `remote_read` to `op` supported label values for the `cortex_query_frontend_queries_total` metric. #8412
+* [ENHANCEMENT] Query-frontend: log the overall length and start, end time offset from current time for remote read requests. The start and end times are calculated as the miminum and maximum times of the individual queries in the remote read request. #8404
+* [BUGFIX] Query-frontend: fix `-querier.max-query-lookback` enforcement when `-compactor.blocks-retention-period` is not set, and viceversa. #8388
+* [BUGFIX] Ingester: fix sporadic `not found` error causing an internal server error if label names are queried with matchers during head compaction. #8391
+* [BUGFIX] Ingester, store-gateway: fix case insensitive regular expressions not matching correctly some Unicode characters. #8391
+* [BUGFIX] Query-frontend: "query stats" log now includes the actual `status_code` when the request fails due to an error occurring in the query-frontend itself. #8407
+* [BUGFIX] Store-gateway: fixed a case where, on a quick subsequent restart, the previous lazy-loaded index header snapshot was overwritten by a partially loaded one. #8281
+* [BUGFIX] Ingester: fixed timestamp reported in the "the sample has been rejected because its timestamp is too old" error when the write request contains only histograms. #8462
 
 ### Mixin
 
-* [ENHANCEMENT] Alerts: allow configuring alerts range interval via `_config.base_alerts_range_interval_minutes`. #7591
-
 ### Jsonnet
+
+* [FEATURE] Add support for automatically deleting compactor, store-gateway and read-write mode backend PVCs when the corresponding StatefulSet is scaled down. #8382
 
 ### Mimirtool
 
+### Mimir Continuous Test
+
+### Query-tee
+
+* [ENHANCEMENT] Emit trace spans from query-tee. #8419
+* [ENHANCEMENT] Log trace ID (if present) with all log messages written while processing a request. #8419
+* [ENHANCEMENT] Log user agent when processing a request. #8419
+* [ENHANCEMENT] Add `time` parameter to proxied instant queries if it is not included in the incoming request. This is optional but enabled by default, and can be disabled with `-proxy.add-missing-time-parameter-to-instant-queries=false`. #8419
+* [BUGFIX] Ensure any errors encountered while forwarding a request to a backend (eg. DNS resolution failures) are logged. #8419
+
+### Documentation
+
+* [ENHANCEMENT] Specify in which component the configuration flags `-compactor.blocks-retention-period`, `-querier.max-query-lookback`, `-query-frontend.max-total-query-length`, `-query-frontend.max-query-expression-size-bytes` are applied and that they are applied to remote read as well. #8433
+
+### Tools
+
+* [ENHANCEMENT] `tsdb-series`: added `-stats` option to print min/max time of chunks, total number of samples and DPM for each series. #8420
+
+## v2.13.0-rc.0
+
+### Grafana Mimir
+
+* [CHANGE] Build: `grafana/mimir` docker image is now based on `gcr.io/distroless/static-debian12` image. Alpine-based docker image is still available as `grafana/mimir-alpine`, until Mimir 2.15. #8204 #8235
+* [CHANGE] Ingester: `/ingester/flush` endpoint is now only allowed to execute only while the ingester is in `Running` state. The 503 status code is returned if the endpoint is called while the ingester is not in `Running` state. #7486
+* [CHANGE] Distributor: Include label name in `err-mimir-label-value-too-long` error message: #7740
+* [CHANGE] Ingester: enabled 1 out 10 errors log sampling by default. All the discarded samples will still be tracked by the `cortex_discarded_samples_total` metric. The feature can be configured via `-ingester.error-sample-rate` (0 to log all errors). #7807
+* [CHANGE] Query-frontend: Query results caching and experimental query blocking now utilize the PromQL string-formatted query format rather than the unvalidated query as submitted to the frontend. #7742
+  * Query results caching should be more stable as all equivalent queries receive the same cache key, but there may be cache churn on first deploy with the updated format
+  * Query blocking can no longer be circumvented with an equivalent query in a different format; see [Configure queries to block](https://grafana.com/docs/mimir/latest/configure/configure-blocked-queries/)
+* [CHANGE] Query-frontend: stop using `-validation.create-grace-period` to clamp how far into the future a query can span. #8075
+* [CHANGE] Clamp [`GOMAXPROCS`](https://pkg.go.dev/runtime#GOMAXPROCS) to [`runtime.NumCPU`](https://pkg.go.dev/runtime#NumCPU). #8201
+* [CHANGE] Anonymous usage statistics tracking: add CPU usage percentage tracking. #8282
+* [CHANGE] Added new metric `cortex_compactor_disk_out_of_space_errors_total` which counts how many times a compaction failed due to the compactor being out of disk. #8237
+* [CHANGE] Anonymous usage statistics tracking: report active series in addition to in-memory series. #8279
+* [CHANGE] Ruler: `evaluation_delay` field in the rule group configuration has been deprecated. Please use `query_offset` instead (it has the same exact meaning and behaviour). #8295
+* [CHANGE] General: remove `-log.buffered`. The configuration option has been enabled by default and deprecated since Mimir 2.11. #8395
+* [CHANGE] Ruler: promote tenant federation from experimental to stable. #8400
+* [CHANGE] Ruler: promote `-ruler.recording-rules-evaluation-enabled` and `-ruler.alerting-rules-evaluation-enabled` from experimental to stable. #8400
+* [CHANGE] General: promote `-tenant-federation.max-tenants` from experimental to stable. #8400
+* [FEATURE] Continuous-test: now runable as a module with `mimir -target=continuous-test`. #7747
+* [FEATURE] Store-gateway: Allow specific tenants to be enabled or disabled via `-store-gateway.enabled-tenants` or `-store-gateway.disabled-tenants` CLI flags or their corresponding YAML settings. #7653
+* [FEATURE] New `-<prefix>.s3.bucket-lookup-type` flag configures lookup style type, used to access bucket in s3 compatible providers. #7684
+* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.promql-engine=mimir`. #7693 #7898 #7899 #8023 #8058 #8096 #8121 #8197 #8230 #8247 #8270 #8276 #8277 #8291 #8303 #8340 #8256 #8348
+* [FEATURE] New `/ingester/unregister-on-shutdown` HTTP endpoint allows dynamic access to ingesters' `-ingester.ring.unregister-on-shutdown` configuration. #7739
+* [FEATURE] Server: added experimental [PROXY protocol support](https://www.haproxy.org/download/2.3/doc/proxy-protocol.txt). The PROXY protocol support can be enabled via `-server.proxy-protocol-enabled=true`. When enabled, the support is added both to HTTP and gRPC listening ports. #7698
+* [FEATURE] Query-frontend, querier: new experimental `/cardinality/active_native_histogram_metrics` API to get active native histogram metric names with statistics about active native histogram buckets. #7982 #7986 #8008
+* [FEATURE] Alertmanager: Added `-alertmanager.max-silences-count` and `-alertmanager.max-silence-size-bytes` to set limits on per tenant silences. Disabled by default. #8241 #8249
+* [FEATURE] Ingester: add experimental support for the server-side circuit breakers when writing to and reading from ingesters. This can be enabled using `-ingester.push-circuit-breaker.enabled` and `-ingester.read-circuit-breaker.enabled` options. Further `-ingester.push-circuit-breaker.*` and `-ingester.read-circuit-breaker.*` options for configuring circuit-breaker are available. Added metrics `cortex_ingester_circuit_breaker_results_total`,  `cortex_ingester_circuit_breaker_transitions_total`, `cortex_ingester_circuit_breaker_current_state` and `cortex_ingester_circuit_breaker_request_timeouts_total`. #8180 #8285 #8315 #8446
+* [FEATURE] Distributor, ingester: add new setting `-validation.past-grace-period` to limit how old (based on the wall clock minus OOO window) the ingested samples can be. The default 0 value disables this limit. #8262
+* [ENHANCEMENT] Distributor: add metrics `cortex_distributor_samples_per_request` and `cortex_distributor_exemplars_per_request` to track samples/exemplars per request. #8265
+* [ENHANCEMENT] Reduced memory allocations in functions used to propagate contextual information between gRPC calls. #7529
+* [ENHANCEMENT] Distributor: add experimental limit for exemplars per series per request, enabled with `-distributor.max-exemplars-per-series-per-request`, the number of discarded exemplars are tracked with `cortex_discarded_exemplars_total{reason="too_many_exemplars_per_series_per_request"}` #7989 #8010
+* [ENHANCEMENT] Store-gateway: merge series from different blocks concurrently. #7456
+* [ENHANCEMENT] Store-gateway: Add `stage="wait_max_concurrent"` to `cortex_bucket_store_series_request_stage_duration_seconds` which records how long the query had to wait for its turn for `-blocks-storage.bucket-store.max-concurrent`. #7609
+* [ENHANCEMENT] Querier: add `cortex_querier_federation_upstream_query_wait_duration_seconds` to observe time from when a querier picks up a cross-tenant query to when work begins on its single-tenant counterparts. #7209
+* [ENHANCEMENT] Compactor: Add `cortex_compactor_block_compaction_delay_seconds` metric to track how long it takes to compact blocks since the blocks are created. #7635
+* [ENHANCEMENT] Store-gateway: add `outcome` label to `cortex_bucket_stores_gate_duration_seconds` histogram metric. Possible values for the `outcome` label are: `rejected_canceled`, `rejected_deadline_exceeded`, `rejected_other`, and `permitted`. #7784
+* [ENHANCEMENT] Query-frontend: use zero-allocation experimental decoder for active series queries via `-query-frontend.use-active-series-decoder`. #7665
+* [ENHANCEMENT] Go: updated to 1.22.2. #7802
+* [ENHANCEMENT] Query-frontend: support `limit` parameter on `/prometheus/api/v1/label/{name}/values` and `/prometheus/api/v1/labels` endpoints. #7722
+* [ENHANCEMENT] Expose TLS configuration for the S3 backend client. #7959
+* [ENHANCEMENT] Rules: Support expansion of native histogram values when using rule templates #7974
+* [ENHANCEMENT] Rules: Add metric `cortex_prometheus_rule_group_last_restore_duration_seconds` which measures how long it takes to restore rule groups using the `ALERTS_FOR_STATE` series #7974
+* [ENHANCEMENT] OTLP: Improve remote write format translation performance by using label set hashes for metric identifiers instead of string based ones. #8012
+* [ENHANCEMENT] Querying: Remove OpEmptyMatch from regex concatenations. #8012
+* [ENHANCEMENT] Store-gateway: add `-blocks-storage.bucket-store.max-concurrent-queue-timeout`. When set, queries at the store-gateway's query gate will not wait longer than that to execute. If a query reaches the wait timeout, then the querier will retry the blocks on a different store-gateway. If all store-gateways are unavailable, then the query will fail with `err-mimir-store-consistency-check-failed`. #7777 #8149
+* [ENHANCEMENT] Store-gateway: add `-blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout`. When set, loads of index-headers at the store-gateway's index-header lazy load gate will not wait longer than that to execute. If a load reaches the wait timeout, then the querier will retry the blocks on a different store-gateway. If all store-gateways are unavailable, then the query will fail with `err-mimir-store-consistency-check-failed`. #8138
+* [ENHANCEMENT] Ingester: Optimize querying with regexp matchers. #8106
+* [ENHANCEMENT] Distributor: Introduce `-distributor.max-request-pool-buffer-size` to allow configuring the maximum size of the request pool buffers. #8082
+* [ENHANCEMENT] Store-gateway: improve performance when streaming chunks to queriers is enabled (`-querier.prefer-streaming-chunks-from-store-gateways=true`) and the query selects fewer than `-blocks-storage.bucket-store.batch-series-size` series (defaults to 5000 series). #8039
+* [ENHANCEMENT] Ingester: active series are now updated along with owned series. They decrease when series change ownership between ingesters. This helps provide a more accurate total of active series when ingesters are added. This is only enabled when `-ingester.track-ingester-owned-series` or `-ingester.use-ingester-owned-series-for-limits` are enabled. #8084
+* [ENHANCEMENT] Query-frontend: include route name in query stats log lines. #8191
+* [ENHANCEMENT] OTLP: Speed up conversion from OTel to Mimir format by about 8% and reduce memory consumption by about 30%. Can be disabled via `-distributor.direct-otlp-translation-enabled=false` #7957
+* [ENHANCEMENT] Ingester/Querier: Optimise regexps with long lists of alternates. #8221, #8234
+* [ENHANCEMENT] Ingester: Include more detail in tracing of queries. #8242
+* [ENHANCEMENT] Distributor: add `insight=true` to remote-write and OTLP write handlers when the HTTP response status code is 4xx. #8294
+* [ENHANCEMENT] Ingester: reduce locked time while matching postings for a label, improving the write latency and compaction speed. #8327
+* [ENHANCEMENT] Ingester: reduce the amount of locks taken during the Head compaction's garbage-collection process, improving the write latency and compaction speed. #8327
+* [ENHANCEMENT] Query-frontend: log the start, end time and matchers for remote read requests to the query stats logs. #8326 #8370 #8373
+* [ENHANCEMENT] Storage Provider: Added option `-<prefix>.s3.dualstack-enabled` that allows disabling S3 client from resolving AWS S3 endpoint into dual-stack IPv4/IPv6 endpoint. Defaults to true. #8405
+* [BUGFIX] Distributor: prometheus retry on 5xx and 429 errors, while otlp collector only retry on 429, 502, 503 and 504, mapping other 5xx errors to the retryable ones in otlp endpoint. #8324 #8339
+* [BUGFIX] Distributor: make OTLP endpoint return marshalled proto bytes as response body for 4xx/5xx errors. #8227
+* [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
+* [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
+* [BUGFIX] Ingester: Prevent timely compaction of empty blocks. #7624
+* [BUGFIX] Querier: Don't cache context.Canceled errors for bucket index. #7620
+* [BUGFIX] Store-gateway: account for `"other"` time in LabelValues and LabelNames requests. #7622
+* [BUGFIX] Query-frontend: Don't panic when using the `-query-frontend.downstream-url` flag. #7651
+* [BUGFIX] Ingester: when receiving multiple exemplars for a native histogram via remote write, sort them and only report an error if all are older than the latest exemplar as this could be a partial update. #7640 #7948 #8014
+* [BUGFIX] Ingester: don't retain blocks if they finish exactly on the boundary of the retention window. #7656
+* [BUGFIX] Bug-fixes and improvements to experimental native histograms. #7744 #7813
+* [BUGFIX] Querier: return an error when a query uses `label_join` with an invalid destination label name. #7744
+* [BUGFIX] Compactor: correct outstanding job estimation in metrics and `compaction-planner` tool when block labels differ. #7745
+* [BUGFIX] Ingester: turn native histogram validation errors in TSDB into soft ingester errors that result in returning 4xx to the end-user instead of 5xx. In the case of TSDB validation errors, the counter `cortex_discarded_samples_total` will be increased with the `reason` label set to `"invalid-native-histogram"`. #7736 #7773
+* [BUGFIX] Do not wrap error message with `sampled 1/<frequency>` if it's not actually sampled. #7784
+* [BUGFIX] Store-gateway: do not track cortex_querier_blocks_consistency_checks_failed_total metric if query has been canceled or interrued due to any error not related to blocks consistency check failed. #7752
+* [BUGFIX] Ingester: ignore instances with no tokens when calculating local limits to prevent discards during ingester scale-up #7881
+* [BUGFIX] Ingester: do not reuse exemplars slice in the write request if there are more than 10 exemplars per series. This should help to reduce the in-use memory in case of few requests with a very large number of exemplars. #7936
+* [BUGFIX] Distributor: fix down scaling of native histograms in the distributor when timeseries unmarshal cache is in use. #7947
+* [BUGFIX] Distributor: fix cardinality API to return more accurate number of in-memory series when number of zones is larger than replication factor. #7984
+* [BUGFIX] All: fix config validation for non-ingester modules, when ingester's ring is configured with spread-minimizing token generation strategy. #7990
+* [BUGFIX] Ingester: copy LabelValues strings out of mapped memory to avoid a segmentation fault if the region becomes unmapped before the result is marshaled. #8003
+* [BUGFIX] OTLP: Don't generate target_info unless at least one identifying label is defined. #8012
+* [BUGFIX] OTLP: Don't generate target_info unless there are metrics. #8012
+* [BUGFIX] Query-frontend: Experimental query queue splitting: fix issue where offset and range selector duration were not considered when predicting query component. #7742
+* [BUGFIX] Querying: Empty matrix results were incorrectly returning `null` instead of `[]`. #8029
+* [BUGFIX] All: don't increment `thanos_objstore_bucket_operation_failures_total` metric for cancelled requests. #8072
+* [BUGFIX] Query-frontend: fix empty metric name matcher not being applied under certain conditions. #8076
+* [BUGFIX] Querying: Fix regex matching of multibyte runes with dot operator. #8089
+* [BUGFIX] Querying: matrix results returned from instant queries were not sorted by series. #8113
+* [BUGFIX] Query scheduler: Fix a crash in result marshaling. #8140
+* [BUGFIX] Store-gateway: Allow long-running index scans to be interrupted. #8154
+* [BUGFIX] Query-frontend: fix splitting of queries using `@ start()` and `@end()` modifiers on a subquery. Previously the `start()` and `end()` would be evaluated using the start end end of the split query instead of the original query. #8162
+* [BUGFIX] Distributor: Don't discard time series with invalid exemplars, just drop affected exemplars. #8224
+* [BUGFIX] Ingester: fixed in-memory series count when replaying a corrupted WAL. #8295
+* [BUGFIX] Ingester: fix context cancellation handling when a query is busy looking up series in the TSDB index and `-blocks-storage.tsdb.head-postings-for-matchers-cache*` or `-blocks-storage.tsdb.block-postings-for-matchers-cache*` are in use. #8337
+* [BUGFIX] Querier: fix edge case where bucket indexes are sometimes cached forever instead of with the expected TTL. #8343
+* [BUGFIX] OTLP handler: fix errors returned by OTLP handler when used via httpgrpc tunneling. #8363
+
+### Mixin
+
+* [CHANGE] Alerts: Removed obsolete `MimirQueriesIncorrect` alert that used test-exporter metrics. Test-exporter support was however removed in Mimir 2.0 release. #7774
+* [CHANGE] Alerts: Change threshold for `MimirBucketIndexNotUpdated` alert to fire before queries begin to fail due to bucket index age. #7879
+* [FEATURE] Dashboards: added 'Remote ruler reads networking' dashboard. #7751
+* [FEATURE] Alerts: Add `MimirIngesterStuckProcessingRecordsFromKafka` alert. #8147
+* [ENHANCEMENT] Alerts: allow configuring alerts range interval via `_config.base_alerts_range_interval_minutes`. #7591
+* [ENHANCEMENT] Dashboards: Add panels for monitoring distributor and ingester when using ingest-storage. These panels are disabled by default, but can be enabled using `show_ingest_storage_panels: true` config option. Similarly existing panels used when distributors and ingesters use gRPC for forwarding requests can be disabled by setting `show_grpc_ingestion_panels: false`. #7670 #7699
+* [ENHANCEMENT] Alerts: add the following alerts when using ingest-storage: #7699 #7702
+  * `MimirIngesterLastConsumedOffsetCommitFailed`
+  * `MimirIngesterFailedToReadRecordsFromKafka`
+  * `MimirIngesterKafkaFetchErrorsRateTooHigh`
+  * `MimirStartingIngesterKafkaReceiveDelayIncreasing`
+  * `MimirRunningIngesterReceiveDelayTooHigh`
+  * `MimirIngesterFailsToProcessRecordsFromKafka`
+  * `MimirIngesterFailsEnforceStrongConsistencyOnReadPath`
+* [ENHANCEMENT] Dashboards: add in-flight queries scaling metric panel for ruler-querier. #7749
+* [ENHANCEMENT] Dashboards: renamed rows in the "Remote ruler reads" and "Remote ruler reads resources" dashboards to match the actual component names. #7750
+* [ENHANCEMENT] Dashboards: allow switching between using classic of native histograms in dashboards. #7627
+  * Overview dashboard, Status panel, `cortex_request_duration_seconds` metric.
+* [ENHANCEMENT] Alerts: exclude `529` and `598` status codes from failure codes in `MimirRequestsError`. #7889
+* [ENHANCEMENT] Dashboards: renamed "TCP Connections" panel to "Ingress TCP Connections" in the networking dashboards. #8092
+* [ENHANCEMENT] Dashboards: update the use of deprecated "table (old)" panels to "table". #8181
+* [ENHANCEMENT] Dashboards: added a `component` variable to "Slow queries" dashboard to allow checking the slow queries of the remote ruler evaluation query path. #8309
+* [BUGFIX] Dashboards: fix regular expression for matching read-path gRPC ingester methods to include querying of exemplars, label-related queries, or active series queries. #7676
+* [BUGFIX] Dashboards: fix user id abbreviations and column heads for Top Tenants dashboard. #7724
+* [BUGFIX] Dashboards: fix incorrect query used for "queue length" panel on "Ruler" dashboard. #8006
+* [BUGFIX] Dashboards: fix disk space utilization panels when running with a recent version of kube-state-metrics. #8212
+
+### Jsonnet
+
+* [CHANGE] Memcached: Change default read timeout for chunks and index caches to `750ms` from `450ms`. #7778
+* [CHANGE] Fine-tuned `terminationGracePeriodSeconds` for the following components: #7364
+  * Querier: changed from `30` to `180`
+  * Query-scheduler: changed from `30` to `180`
+* [CHANGE] Change TCP port exposed by `mimir-continuous-test` deployment to match with updated defaults of its container image (see changes below). #7958
+* [FEATURE] Add support to deploy Mimir with experimental ingest storage enabled. #8028 #8222
+* [ENHANCEMENT] Compactor: add `$._config.cortex_compactor_concurrent_rollout_enabled` option (disabled by default) that makes use of rollout-operator to speed up the rollout of compactors. #7783 #7878
+* [ENHANCEMENT] Shuffle-sharding: add `$._config.shuffle_sharding.ingest_storage_partitions_enabled` and `$._config.shuffle_sharding.ingester_partitions_shard_size` options, that allow configuring partitions shard size in ingest-storage mode. #7804
+* [ENHANCEMENT] Update rollout-operator to `v0.17.0`. #8399
+* [ENHANCEMENT] Add `_config.autoscaling_querier_predictive_scaling_enabled` to scale querier based on inflight queries 7 days ago. #7775
+* [ENHANCEMENT] Add support to autoscale ruler-querier replicas based on in-flight queries too (in addition to CPU and memory based scaling). #8060 #8188
+* [ENHANCEMENT] Distributor: improved distributor HPA scaling metric to only take in account ready pods. This requires the metric `kube_pod_status_ready` to be available in the data source used by KEDA to query scaling metrics (configured via `_config.autoscaling_prometheus_url`). #8251
+* [BUGFIX] Guard against missing samples in KEDA queries. #7691
+
+### Mimirtool
+
+* [CHANGE] Deprecated `--rule-files` flag in favor of CLI arguments. #7756
+* [FEATURE] mimirtool: Add `runtime-config verify` sub-command, for verifying Mimir runtime config files. #8123
+* [ENHANCEMENT] `mimirtool promql format`: Format PromQL query with Prometheus' string or pretty-print formatter. #7742
+* [ENHANCEMENT] Add `mimir-http-prefix` configuration to set the Mimir URL prefix when using legacy routes. #8069
+* [ENHANCEMENT] Add option `--output-dir` to `mimirtool rules get` and `mimirtool rules print` to allow persisting rule groups to a file for edit and re-upload. #8142
 * [BUGFIX] Fix panic in `loadgen` subcommand. #7629
+* [BUGFIX] `mimirtool rules prepare`: do not add aggregation label to `on()` clause if already present in `group_left()` or `group_right()`. #7839
+* [BUGFIX] Analyze Grafana: fix parsing queries with variables. #8062
+* [BUGFIX] `mimirtool rules sync`: detect a change when the `query_offset` or the deprecated `evaluation_delay` configuration changes. #8297
 
 ### Mimir Continuous Test
 
+* [CHANGE] `mimir-continuous-test` has been deprecated and replaced by a Mimir module that can be run as a target from the `mimir` binary using `mimir -target=continuous-test`. #7753
+* [CHANGE] `-server.metrics-port` flag is no longer available for use in the module run of mimir-continuous-test, including the grafana/mimir-continuous-test Docker image which uses the new module. Configuring this port is still possible in the binary, which is deprecated. #7747
+* [CHANGE] Allowed authenticatication to Mimir using both Tenant ID and basic/bearer auth #7619.
 * [BUGFIX] Set `User-Agent` header for all requests sent from the testing client. #7607
 
 ### Query-tee
 
+* [ENHANCEMENT] Log queries that take longer than `proxy.log-slow-query-response-threshold` when compared to other backends. #7346
+* [ENHANCEMENT] Add two new metrics for measuring the relative duration between backends: #7782 #8013 #8330
+  * `cortex_querytee_backend_response_relative_duration_seconds`
+  * `cortex_querytee_backend_response_relative_duration_proportional`
+
 ### Documentation
+
+* [ENHANCEMENT] Clarify Compactor and its storage volume when configured under Kubernetes. #7675
+* [ENHANCEMENT] Add OTLP route to _Mimir routes by path_ runbooks section. #8074
+* [ENHANCEMENT] Document option server.log-source-ips-full. #8268
 
 ### Tools
 
 * [ENHANCEMENT] ulidtime: add option to show random part of ULID, timestamp in milliseconds and header. #7615
+* [ENHANCEMENT] copyblocks: add a flag to configure part-size for multipart uploads in s3 client-side copying. #8292
+* [ENHANCEMENT] copyblocks: enable pprof HTTP endpoints. #8292
 
-## 2.12.0-rc.0
+## 2.12.0
 
 ### Grafana Mimir
 
@@ -83,6 +280,8 @@
 * [CHANGE] The configuration option `-querier.max-query-into-future` has been deprecated and will be removed in Mimir 2.14. #7496
 * [CHANGE] Distributor: the metric `cortex_distributor_sample_delay_seconds` has been deprecated and will be removed in Mimir 2.14. #7516
 * [CHANGE] Query-frontend: The deprecated YAML setting `frontend.cache_unaligned_requests` has been moved to `limits.cache_unaligned_requests`. #7519
+* [CHANGE] Querier: the CLI flag `-querier.minimize-ingester-requests` has been moved from "experimental" to "advanced". #7638
+* [CHANGE] Ingester: allow only POST method on `/ingester/shutdown`, as previously it was too easy to accidentally trigger through GET requests. At the same time, add an option to keep the existing behavior by introducing an `-api.get-request-for-ingester-shutdown-enabled` flag. This flag will be removed in Mimir 2.15. #7707
 * [FEATURE] Introduce `-server.log-source-ips-full` option to log all IPs from `Forwarded`, `X-Real-IP`, `X-Forwarded-For` headers. #7250
 * [FEATURE] Introduce `-tenant-federation.max-tenants` option to limit the max number of tenants allowed for requests when federation is enabled. #6959
 * [FEATURE] Cardinality API: added a new `count_method` parameter which enables counting active label names. #7085
@@ -156,6 +355,7 @@
 * [BUGFIX] Fix metadata API using wrong JSON field names. #7475
 * [BUGFIX] Ruler: fix native histogram recording rule result corruption. #7552
 * [BUGFIX] Querier: fix HTTP status code translations for remote read requests. Previously, remote-read had conflicting behaviours: when returning samples all internal errors were translated to HTTP 400; when returning chunks all internal errors were translated to HTTP 500. #7487
+* [BUGFIX] Query-frontend: Fix memory leak on every request. #7654
 
 ### Mixin
 
@@ -284,10 +484,6 @@
 * [CHANGE] Ingester: changed the default value for the experimental configuration parameter `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage` from 10 to 15. #6186
 * [CHANGE] Ingester: `/ingester/push` HTTP endpoint has been removed. This endpoint was added for testing and troubleshooting, but was never documented or used for anything. #6299
 * [CHANGE] Experimental setting `-log.rate-limit-logs-per-second-burst` renamed to `-log.rate-limit-logs-burst-size`. #6230
-* [CHANGE] Distributor: instead of errors with HTTP status codes, `Push()` now returns errors with gRPC codes: #6377
-  * `http.StatusAccepted` (202) code is replaced with `codes.AlreadyExists`.
-  * `http.BadRequest` (400) code is replaced with `codes.FailedPrecondition`.
-  * `http.StatusTooManyRequests` (429) and the non-standard `529` (The service is overloaded) codes are replaced with `codes.ResourceExhausted`.
 * [CHANGE] Ingester: by setting the newly introduced experimental CLI flag `-ingester.return-only-grpc-errors` to true, ingester will return only gRPC errors. This feature changes the following status codes: #6443 #6680 #6723
   * `http.StatusBadRequest` (400) is replaced with `codes.FailedPrecondition` on the write path.
   * `http.StatusServiceUnavailable` (503) is replaced with `codes.Internal` on the write path, and with `codes.ResourceExhausted` on the read path.

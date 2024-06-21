@@ -48,6 +48,7 @@ type Group struct {
 	name                 string
 	file                 string
 	interval             time.Duration
+	queryOffset          *time.Duration
 	limit                int
 	rules                []Rule
 	sourceTenants        []string
@@ -77,7 +78,6 @@ type Group struct {
 	// concurrencyController controls the rules evaluation concurrency.
 	concurrencyController RuleConcurrencyController
 
-	evaluationDelay               *time.Duration
 	alignEvaluationTimeOnInterval bool
 }
 
@@ -96,7 +96,7 @@ type GroupOptions struct {
 	SourceTenants                 []string
 	ShouldRestore                 bool
 	Opts                          *ManagerOptions
-	EvaluationDelay               *time.Duration
+	QueryOffset                   *time.Duration
 	done                          chan struct{}
 	EvalIterationFunc             GroupEvalIterationFunc
 	AlignEvaluationTimeOnInterval bool
@@ -134,6 +134,7 @@ func NewGroup(o GroupOptions) *Group {
 		name:                  o.Name,
 		file:                  o.File,
 		interval:              o.Interval,
+		queryOffset:           o.QueryOffset,
 		limit:                 o.Limit,
 		rules:                 o.Rules,
 		shouldRestore:         o.ShouldRestore,
@@ -148,7 +149,6 @@ func NewGroup(o GroupOptions) *Group {
 		evalIterationFunc:     evalIterationFunc,
 		concurrencyController: concurrencyController,
 
-		evaluationDelay:               o.EvaluationDelay,
 		alignEvaluationTimeOnInterval: o.AlignEvaluationTimeOnInterval,
 	}
 }
@@ -246,7 +246,11 @@ func (g *Group) run(ctx context.Context) {
 			g.evalIterationFunc(ctx, g, evalTimestamp)
 		}
 
-		g.RestoreForState(time.Now())
+		restoreStartTime := time.Now()
+		g.RestoreForState(restoreStartTime)
+		totalRestoreTimeSeconds := time.Since(restoreStartTime).Seconds()
+		g.metrics.GroupLastRestoreDuration.WithLabelValues(GroupKey(g.file, g.name)).Set(totalRestoreTimeSeconds)
+		level.Debug(g.logger).Log("msg", "'for' state restoration completed", "duration_seconds", totalRestoreTimeSeconds)
 		g.shouldRestore = false
 	}
 
@@ -456,7 +460,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		samplesTotal atomic.Float64
 		wg           sync.WaitGroup
 
-		evaluationDelay = g.EvaluationDelay()
+		ruleQueryOffset = g.QueryOffset()
 	)
 
 	for i, rule := range g.rules {
@@ -489,7 +493,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
-			vector, err := rule.Eval(ctx, evaluationDelay, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
+			vector, err := rule.Eval(ctx, ruleQueryOffset, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
 			if err != nil {
 				rule.SetHealth(HealthBad)
 				rule.SetLastError(err)
@@ -566,19 +570,19 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				}
 			}
 			if numOutOfOrder > 0 {
-				level.Warn(logger).Log("msg", "Error on ingesting out-of-order result from rule evaluation", "numDropped", numOutOfOrder)
+				level.Warn(logger).Log("msg", "Error on ingesting out-of-order result from rule evaluation", "num_dropped", numOutOfOrder)
 			}
 			if numTooOld > 0 {
-				level.Warn(logger).Log("msg", "Error on ingesting too old result from rule evaluation", "numDropped", numTooOld)
+				level.Warn(logger).Log("msg", "Error on ingesting too old result from rule evaluation", "num_dropped", numTooOld)
 			}
 			if numDuplicates > 0 {
-				level.Warn(logger).Log("msg", "Error on ingesting results from rule evaluation with different value but same timestamp", "numDropped", numDuplicates)
+				level.Warn(logger).Log("msg", "Error on ingesting results from rule evaluation with different value but same timestamp", "num_dropped", numDuplicates)
 			}
 
 			for metric, lset := range g.seriesInPreviousEval[i] {
 				if _, ok := seriesReturned[metric]; !ok {
 					// Series no longer exposed, mark it stale.
-					_, err = app.Append(0, lset, timestamp.FromTime(ts.Add(-evaluationDelay)), math.Float64frombits(value.StaleNaN))
+					_, err = app.Append(0, lset, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN))
 					unwrappedErr := errors.Unwrap(err)
 					if unwrappedErr == nil {
 						unwrappedErr = err
@@ -617,13 +621,15 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	g.cleanupStaleSeries(ctx, ts)
 }
 
-func (g *Group) EvaluationDelay() time.Duration {
-	if g.evaluationDelay != nil {
-		return *g.evaluationDelay
+func (g *Group) QueryOffset() time.Duration {
+	if g.queryOffset != nil {
+		return *g.queryOffset
 	}
-	if g.opts.DefaultEvaluationDelay != nil {
-		return g.opts.DefaultEvaluationDelay()
+
+	if g.opts.DefaultRuleQueryOffset != nil {
+		return g.opts.DefaultRuleQueryOffset()
 	}
+
 	return time.Duration(0)
 }
 
@@ -632,10 +638,10 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 		return
 	}
 	app := g.opts.Appendable.Appender(ctx)
-	evaluationDelay := g.EvaluationDelay()
+	queryOffset := g.QueryOffset()
 	for _, s := range g.staleSeries {
 		// Rule that produced series no longer configured, mark it stale.
-		_, err := app.Append(0, s, timestamp.FromTime(ts.Add(-evaluationDelay)), math.Float64frombits(value.StaleNaN))
+		_, err := app.Append(0, s, timestamp.FromTime(ts.Add(-queryOffset)), math.Float64frombits(value.StaleNaN))
 		unwrappedErr := errors.Unwrap(err)
 		if unwrappedErr == nil {
 			unwrappedErr = err
@@ -691,25 +697,40 @@ func (g *Group) RestoreForState(ts time.Time) {
 			continue
 		}
 
+		sset, err := alertRule.QueryForStateSeries(g.opts.Context, q)
+		if err != nil {
+			level.Error(g.logger).Log(
+				"msg", "Failed to restore 'for' state",
+				labels.AlertName, alertRule.Name(),
+				"stage", "Select",
+				"err", err,
+			)
+			// Even if we failed to query the `ALERT_FOR_STATE` series, we currently have no way to retry the restore process.
+			// So the best we can do is mark the rule as restored and let it eventually fire.
+			alertRule.SetRestored(true)
+			continue
+		}
+
+		// While not technically the same number of series we expect, it's as good of an approximation as any.
+		seriesByLabels := make(map[string]storage.Series, alertRule.ActiveAlertsCount())
+		for sset.Next() {
+			seriesByLabels[sset.At().Labels().DropMetricName().String()] = sset.At()
+		}
+
+		// No results for this alert rule.
+		if len(seriesByLabels) == 0 {
+			level.Debug(g.logger).Log("msg", "No series found to restore the 'for' state of the alert rule", labels.AlertName, alertRule.Name())
+			alertRule.SetRestored(true)
+			continue
+		}
+
 		alertRule.ForEachActiveAlert(func(a *Alert) {
 			var s storage.Series
 
-			s, err := alertRule.QueryforStateSeries(g.opts.Context, a, q)
-			if err != nil {
-				// Querier Warnings are ignored. We do not care unless we have an error.
-				level.Error(g.logger).Log(
-					"msg", "Failed to restore 'for' state",
-					labels.AlertName, alertRule.Name(),
-					"stage", "Select",
-					"err", err,
-				)
+			s, ok := seriesByLabels[a.Labels.String()]
+			if !ok {
 				return
 			}
-
-			if s == nil {
-				return
-			}
-
 			// Series found for the 'for' state.
 			var t int64
 			var v float64
@@ -787,6 +808,10 @@ func (g *Group) Equals(ng *Group) bool {
 		return false
 	}
 
+	if ((g.queryOffset == nil) != (ng.queryOffset == nil)) || (g.queryOffset != nil && ng.queryOffset != nil && *g.queryOffset != *ng.queryOffset) {
+		return false
+	}
+
 	if len(g.rules) != len(ng.rules) {
 		return false
 	}
@@ -836,17 +861,18 @@ const namespace = "prometheus"
 
 // Metrics for rule evaluation.
 type Metrics struct {
-	EvalDuration        prometheus.Summary
-	IterationDuration   prometheus.Summary
-	IterationsMissed    *prometheus.CounterVec
-	IterationsScheduled *prometheus.CounterVec
-	EvalTotal           *prometheus.CounterVec
-	EvalFailures        *prometheus.CounterVec
-	GroupInterval       *prometheus.GaugeVec
-	GroupLastEvalTime   *prometheus.GaugeVec
-	GroupLastDuration   *prometheus.GaugeVec
-	GroupRules          *prometheus.GaugeVec
-	GroupSamples        *prometheus.GaugeVec
+	EvalDuration             prometheus.Summary
+	IterationDuration        prometheus.Summary
+	IterationsMissed         *prometheus.CounterVec
+	IterationsScheduled      *prometheus.CounterVec
+	EvalTotal                *prometheus.CounterVec
+	EvalFailures             *prometheus.CounterVec
+	GroupInterval            *prometheus.GaugeVec
+	GroupLastEvalTime        *prometheus.GaugeVec
+	GroupLastDuration        *prometheus.GaugeVec
+	GroupLastRestoreDuration *prometheus.GaugeVec
+	GroupRules               *prometheus.GaugeVec
+	GroupSamples             *prometheus.GaugeVec
 }
 
 // NewGroupMetrics creates a new instance of Metrics and registers it with the provided registerer,
@@ -922,6 +948,14 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			},
 			[]string{"rule_group"},
 		),
+		GroupLastRestoreDuration: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "rule_group_last_restore_duration_seconds",
+				Help:      "The duration of the last alert rules alerts restoration using the `ALERTS_FOR_STATE` series.",
+			},
+			[]string{"rule_group"},
+		),
 		GroupRules: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -951,6 +985,7 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			m.GroupInterval,
 			m.GroupLastEvalTime,
 			m.GroupLastDuration,
+			m.GroupLastRestoreDuration,
 			m.GroupRules,
 			m.GroupSamples,
 		)

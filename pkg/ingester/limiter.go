@@ -122,8 +122,8 @@ type limiterRingStrategy interface {
 // ingesterRingLimiterRingCount is the interface exposed by a ring implementation which allows
 // to count members
 type ingesterRingLimiterRingCount interface {
-	InstancesCount() int
-	InstancesInZoneCount(zone string) int
+	InstancesWithTokensCount() int
+	InstancesWithTokensInZoneCount(zone string) int
 	ZonesCount() int
 }
 
@@ -157,12 +157,12 @@ func (is *ingesterRingLimiterStrategy) convertGlobalToLocalLimit(userID string, 
 	var ingestersInZoneCount int
 	if zonesCount > 1 {
 		// In this case zone-aware replication is enabled, and ingestersInZoneCount is initially set to
-		// the total number of ingesters in the corresponding zone
-		ingestersInZoneCount = is.ring.InstancesInZoneCount(is.ingesterZone)
+		// the total number of ingesters with tokens in the corresponding zone
+		ingestersInZoneCount = is.ring.InstancesWithTokensInZoneCount(is.ingesterZone)
 	} else {
 		// In this case zone-aware replication is disabled, and ingestersInZoneCount is initially set to
-		// the total number of ingesters
-		ingestersInZoneCount = is.ring.InstancesCount()
+		// the total number of ingesters with tokens
+		ingestersInZoneCount = is.ring.InstancesWithTokensCount()
 	}
 	// If shuffle sharding is enabled and the total number of ingesters in the zone is greater than the
 	// expected number of ingesters per sharded zone, then we should honor the latter because series/metadata

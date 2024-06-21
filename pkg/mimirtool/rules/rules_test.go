@@ -181,11 +181,55 @@ func TestAggregateBy(t *testing.T) {
 					},
 				},
 			},
-			applyTo: func(group rwrulefmt.RuleGroup, rule rulefmt.RuleNode) bool {
+			applyTo: func(group rwrulefmt.RuleGroup, _ rulefmt.RuleNode) bool {
 				return group.Name != "CountSkipped"
 			},
 			expectedExpr: []string{`count by (namespace, cluster) (test_series) > 1`, `count by (namespace) (test_series) > 1`},
 			count:        2, modified: 1, expect: nil,
+		},
+		{
+			name: "should not the aggregation label to on() clause if already present in group_left/right()",
+			rn: RuleNamespace{
+				Groups: []rwrulefmt.RuleGroup{
+					{
+						RuleGroup: rulefmt.RuleGroup{
+							Name: "Test",
+							Rules: []rulefmt.RuleNode{
+								{
+									Alert: yaml.Node{Value: "TestWithGroupLeft"},
+									Expr:  yaml.Node{Value: `(count by (namespace) (metric_1) > 0) * on (namespace) group_left (service) group by (service, namespace) (metric_2)`},
+								}, {
+									Alert: yaml.Node{Value: "TestWithGroupLeftAndAggregationLabelAlreadyPresentInOnClause"},
+									Expr:  yaml.Node{Value: `(count by (namespace, cluster) (metric_1) > 0) * on (namespace, cluster) group_left (service) group by (service, namespace, cluster) (metric_2)`},
+								}, {
+									Alert: yaml.Node{Value: "TestWithGroupLeftAndAggregationLabelAlreadyPresentInGroupLeftClause"},
+									Expr:  yaml.Node{Value: `(count by (namespace) (metric_1) > 0) * on (namespace) group_left (cluster) group by (cluster, namespace) (metric_2)`},
+								}, {
+									Alert: yaml.Node{Value: "TestWithGroupRight"},
+									Expr:  yaml.Node{Value: `(count by (namespace, service) (metric_1) > 0) * on (namespace) group_right (service) group by (namespace) (metric_2)`},
+								}, {
+									Alert: yaml.Node{Value: "TestWithGroupRightAndAggregationLabelAlreadyPresentInOnClause"},
+									Expr:  yaml.Node{Value: `(count by (namespace, service, cluster) (metric_1) > 0) * on (namespace, cluster) group_right (service) group by (namespace, cluster) (metric_2)`},
+								}, {
+									Alert: yaml.Node{Value: "TestWithGroupRightAndAggregationLabelAlreadyPresentInGroupRightClause"},
+									Expr:  yaml.Node{Value: `(count by (namespace, service, cluster) (metric_1) > 0) * on (namespace, service) group_right (cluster) group by (namespace, service) (metric_2)`},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedExpr: []string{
+				`(count by (namespace, cluster) (metric_1) > 0) * on (namespace, cluster) group_left (service) group by (service, namespace, cluster) (metric_2)`, // Add "cluster" label to on().
+				`(count by (namespace, cluster) (metric_1) > 0) * on (namespace, cluster) group_left (service) group by (service, namespace, cluster) (metric_2)`, // This is not modified compared to the original.
+				`(count by (namespace, cluster) (metric_1) > 0) * on (namespace) group_left (cluster) group by (cluster, namespace) (metric_2)`,                   // Do not add "cluster" label to on() because it's already present in group_left() and the same label can't be in both clauses.
+
+				`(count by (namespace, service, cluster) (metric_1) > 0) * on (namespace, cluster) group_right (service) group by (namespace, cluster) (metric_2)`,          // Add "cluster" label to on().
+				`(count by (namespace, service, cluster) (metric_1) > 0) * on (namespace, cluster) group_right (service) group by (namespace, cluster) (metric_2)`,          // This is not modified compared to the original.
+				`(count by (namespace, service, cluster) (metric_1) > 0) * on (namespace, service) group_right (cluster) group by (namespace, service, cluster) (metric_2)`, // Do not add "cluster" label to on() because it's already present in group_left() and the same label can't be in both clauses.
+			},
+			count:    6,
+			modified: 4,
 		},
 	}
 

@@ -12,7 +12,6 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
@@ -534,7 +533,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 
 			var responseMatrix model.Matrix
 			if len(resp.Chunkseries) == 0 {
-				responseMatrix, err = ingester_client.TimeSeriesChunksToMatrix(0, 5, nil)
+				responseMatrix, err = ingester_client.StreamingSeriesToMatrix(0, 5, resp.StreamingSeries)
 			} else {
 				responseMatrix, err = ingester_client.TimeSeriesChunksToMatrix(0, 5, resp.Chunkseries)
 			}
@@ -544,10 +543,6 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 			// Check how many ingesters have been queried.
 			// Because we return immediately on failures, it might take some time for all ingester calls to register.
 			test.Poll(t, 4*cfg.queryDelay, testData.expectedQueriedIngesters, func() any { return countMockIngestersCalls(ingesters, "QueryStream") })
-
-			// We expected the number of non-deduplicated chunks to be equal to the number of queried series
-			// given we expect 1 chunk per series.
-			assert.Equal(t, float64(testData.expectedResponse.Len()), testutil.ToFloat64(queryMetrics.IngesterChunksTotal)-testutil.ToFloat64(queryMetrics.IngesterChunksDeduplicated))
 		})
 	}
 }

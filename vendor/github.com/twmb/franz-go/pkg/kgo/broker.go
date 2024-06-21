@@ -632,7 +632,7 @@ func (b *broker) connect(ctx context.Context) (net.Conn, error) {
 		}
 	})
 	if err != nil {
-		if !errors.Is(err, ErrClientClosed) && !strings.Contains(err.Error(), "operation was canceled") {
+		if !errors.Is(err, ErrClientClosed) && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "operation was canceled") {
 			if errors.Is(err, io.EOF) {
 				b.cl.cfg.logger.Log(LogLevelWarn, "unable to open connection to broker due to an immediate EOF, which often means the client is using TLS when the broker is not expecting it (is TLS misconfigured?)", "addr", b.addr, "broker", logID(b.meta.NodeID), "err", err)
 				return nil, &ErrFirstReadEOF{kind: firstReadTLS, err: err}
@@ -1463,9 +1463,9 @@ func (cxn *brokerCxn) handleResp(pr promisedResp) {
 	if err != nil {
 		if !errors.Is(err, ErrClientClosed) && !errors.Is(err, context.Canceled) {
 			if cxn.successes > 0 || len(cxn.b.cl.cfg.sasls) > 0 {
-				cxn.b.cl.cfg.logger.Log(LogLevelDebug, "read from broker errored, killing connection", "addr", cxn.b.addr, "broker", logID(cxn.b.meta.NodeID), "successful_reads", cxn.successes, "err", err)
+				cxn.b.cl.cfg.logger.Log(LogLevelDebug, "read from broker errored, killing connection", "req", kmsg.Key(pr.resp.Key()).Name(), "addr", cxn.b.addr, "broker", logID(cxn.b.meta.NodeID), "successful_reads", cxn.successes, "err", err)
 			} else {
-				cxn.b.cl.cfg.logger.Log(LogLevelWarn, "read from broker errored, killing connection after 0 successful responses (is SASL missing?)", "addr", cxn.b.addr, "broker", logID(cxn.b.meta.NodeID), "err", err)
+				cxn.b.cl.cfg.logger.Log(LogLevelWarn, "read from broker errored, killing connection after 0 successful responses (is SASL missing?)", "req", kmsg.Key(pr.resp.Key()).Name(), "addr", cxn.b.addr, "broker", logID(cxn.b.meta.NodeID), "err", err)
 				if err == io.EOF { // specifically avoid checking errors.Is to ensure this is not already wrapped
 					err = &ErrFirstReadEOF{kind: firstReadSASL, err: err}
 				}

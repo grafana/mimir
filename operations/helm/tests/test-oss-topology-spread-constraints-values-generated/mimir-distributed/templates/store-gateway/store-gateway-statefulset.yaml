@@ -30,7 +30,9 @@ spec:
     type: OnDelete
   serviceName: test-oss-topology-spread-constraints-values-mimir-store-gateway-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -69,7 +71,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
             app.kubernetes.io/component: store-gateway
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           configMap:
@@ -170,7 +172,9 @@ spec:
     type: OnDelete
   serviceName: test-oss-topology-spread-constraints-values-mimir-store-gateway-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -209,7 +213,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
             app.kubernetes.io/component: store-gateway
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           configMap:
@@ -310,7 +314,9 @@ spec:
     type: OnDelete
   serviceName: test-oss-topology-spread-constraints-values-mimir-store-gateway-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -349,7 +355,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
             app.kubernetes.io/component: store-gateway
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           configMap:

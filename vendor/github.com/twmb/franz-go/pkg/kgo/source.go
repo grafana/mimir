@@ -811,6 +811,11 @@ func (s *source) fetch(consumerSession *consumerSession, doneFetch chan<- struct
 	}
 
 	// The logic below here should be relatively quick.
+	//
+	// Note that fetch runs entirely in the context of a consumer session.
+	// loopFetch does not return until this function does, meaning we
+	// cannot concurrently issue a second fetch for partitions that are
+	// being processed below.
 
 	deleteReqUsedOffset := func(topic string, partition int32) {
 		t := req.usedOffsets[topic]
@@ -937,7 +942,9 @@ func (s *source) handleReqResp(br *broker, req *fetchRequest, resp *kmsg.FetchRe
 		debugWhyStripped multiUpdateWhy
 		numErrsStripped  int
 		kip320           = s.cl.supportsOffsetForLeaderEpoch()
+		kmove            kip951move
 	)
+	defer kmove.maybeBeginMove(s.cl)
 
 	strip := func(t string, p int32, err error) {
 		numErrsStripped++
@@ -998,6 +1005,10 @@ func (s *source) handleReqResp(br *broker, req *fetchRequest, resp *kmsg.FetchRe
 
 			fp := partOffset.processRespPartition(br, rp, s.cl.decompressor, s.cl.cfg.hooks)
 			if fp.Err != nil {
+				if moving := kmove.maybeAddFetchPartition(resp, rp, partOffset.from); moving {
+					strip(topic, partition, fp.Err)
+					continue
+				}
 				updateWhy.add(topic, partition, fp.Err)
 			}
 
@@ -2026,7 +2037,7 @@ func (f *fetchRequest) MaxVersion() int16 {
 	if f.disableIDs || f.session.disableIDs {
 		return 12
 	}
-	return 15
+	return 16
 }
 func (f *fetchRequest) SetVersion(v int16) { f.version = v }
 func (f *fetchRequest) GetVersion() int16  { return f.version }

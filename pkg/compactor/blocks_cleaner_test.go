@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	prom_tsdb "github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -1044,41 +1045,198 @@ func TestComputeCompactionJobs(t *testing.T) {
 	}
 
 	const user = "test"
-
 	twoHoursMS := 2 * time.Hour.Milliseconds()
 	dayMS := 24 * time.Hour.Milliseconds()
 
-	blockMarkedForNoCompact := ulid.MustNew(ulid.Now(), rand.Reader)
-
-	index := bucketindex.Index{}
-	index.Blocks = bucketindex.Blocks{
-		// Some 2h blocks that should be compacted together and split.
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
-
-		// Some merge jobs.
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "1_of_3"},
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "1_of_3"},
-
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "2_of_3"},
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "2_of_3"},
-
-		// This merge job is skipped, as block is marked for no-compaction.
-		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "3_of_3"},
-		&bucketindex.Block{ID: blockMarkedForNoCompact, MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "3_of_3"},
-	}
-
 	userBucket := bucket.NewUserBucketClient(user, bucketClient, nil)
+
 	// Mark block for no-compaction.
+	blockMarkedForNoCompact := ulid.MustNew(ulid.Now(), rand.Reader)
 	require.NoError(t, block.MarkForNoCompact(context.Background(), log.NewNopLogger(), userBucket, blockMarkedForNoCompact, block.CriticalNoCompactReason, "testing", promauto.With(nil).NewCounter(prometheus.CounterOpts{})))
 
-	// No grouping of jobs for split-compaction. All jobs will be in single split compaction.
-	jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, &index, cfg.CompactionBlockRanges, 3, 0)
-	require.NoError(t, err)
-	split, merge := computeSplitAndMergeJobs(jobs)
-	require.Equal(t, 1, split)
-	require.Equal(t, 2, merge)
+	cases := map[string]struct {
+		blocks         bucketindex.Blocks
+		expectedSplits int
+		expectedMerges int
+	}{
+		"standard": {
+			blocks: bucketindex.Blocks{
+				// Some 2h blocks that should be compacted together and split.
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+
+				// Some merge jobs.
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "1_of_3"},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "1_of_3"},
+
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "2_of_3"},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "2_of_3"},
+
+				// This merge job is skipped, as block is marked for no-compaction.
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "3_of_3"},
+				&bucketindex.Block{ID: blockMarkedForNoCompact, MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "3_of_3"},
+			},
+			expectedSplits: 1,
+			expectedMerges: 2,
+		},
+		"labels don't match": {
+			blocks: bucketindex.Blocks{
+				// Compactor wouldn't produce a job for this pair as their external labels differ:
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
+					Labels: map[string]string{
+						tsdb.OutOfOrderExternalLabel: tsdb.OutOfOrderExternalLabelValue,
+					},
+				},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
+					Labels: map[string]string{
+						"another_label": "-1",
+					},
+				},
+			},
+			expectedSplits: 0,
+			expectedMerges: 0,
+		},
+		"ignore deprecated labels": {
+			blocks: bucketindex.Blocks{
+				// Compactor will ignore deprecated labels when computing jobs. Estimation should do the same.
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
+					Labels: map[string]string{
+						"honored_label":                        "12345",
+						tsdb.DeprecatedTenantIDExternalLabel:   "tenant1",
+						tsdb.DeprecatedIngesterIDExternalLabel: "ingester1",
+					},
+				},
+				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
+					Labels: map[string]string{
+						"honored_label":                        "12345",
+						tsdb.DeprecatedTenantIDExternalLabel:   "tenant2",
+						tsdb.DeprecatedIngesterIDExternalLabel: "ingester2",
+					},
+				},
+			},
+			expectedSplits: 0,
+			expectedMerges: 1,
+		},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			index := &bucketindex.Index{Blocks: c.blocks}
+			jobs, err := estimateCompactionJobsFromBucketIndex(context.Background(), user, userBucket, index, cfg.CompactionBlockRanges, 3, 0)
+			require.NoError(t, err)
+			split, merge := computeSplitAndMergeJobs(jobs)
+			require.Equal(t, c.expectedSplits, split)
+			require.Equal(t, c.expectedMerges, merge)
+		})
+	}
+}
+
+func TestConvertBucketIndexToMetasForCompactionJobPlanning(t *testing.T) {
+	twoHoursMS := 2 * time.Hour.Milliseconds()
+
+	makeUlid := func(n byte) ulid.ULID {
+		return ulid.ULID{n}
+	}
+
+	makeMeta := func(id ulid.ULID, labels map[string]string) *block.Meta {
+		return &block.Meta{
+			BlockMeta: prom_tsdb.BlockMeta{
+				ULID:    id,
+				MinTime: 0,
+				MaxTime: twoHoursMS,
+				Version: block.TSDBVersion1,
+			},
+			Thanos: block.ThanosMeta{
+				Version: block.ThanosVersion1,
+				Labels:  labels,
+			},
+		}
+	}
+
+	cases := map[string]struct {
+		index         *bucketindex.Index
+		expectedMetas map[ulid.ULID]*block.Meta
+	}{
+		"empty": {
+			index:         &bucketindex.Index{Blocks: bucketindex.Blocks{}},
+			expectedMetas: map[ulid.ULID]*block.Meta{},
+		},
+		"basic": {
+			index: &bucketindex.Index{
+				Blocks: bucketindex.Blocks{
+					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS},
+				},
+			},
+			expectedMetas: map[ulid.ULID]*block.Meta{
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{}),
+			},
+		},
+		"adopt shard ID": {
+			index: &bucketindex.Index{
+				Blocks: bucketindex.Blocks{
+					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS, CompactorShardID: "78"},
+				},
+			},
+			expectedMetas: map[ulid.ULID]*block.Meta{
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "78"}),
+			},
+		},
+		"use labeled shard ID": {
+			index: &bucketindex.Index{
+				Blocks: bucketindex.Blocks{
+					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS,
+						Labels: map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}},
+				},
+			},
+			expectedMetas: map[ulid.ULID]*block.Meta{
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}),
+			},
+		},
+		"don't overwrite labeled shard ID": {
+			index: &bucketindex.Index{
+				Blocks: bucketindex.Blocks{
+					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS, CompactorShardID: "78",
+						Labels: map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}},
+				},
+			},
+			expectedMetas: map[ulid.ULID]*block.Meta{
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}),
+			},
+		},
+		"honor deletion marks": {
+			index: &bucketindex.Index{
+				BlockDeletionMarks: bucketindex.BlockDeletionMarks{
+					&bucketindex.BlockDeletionMark{ID: makeUlid(14)},
+				},
+				Blocks: bucketindex.Blocks{
+					&bucketindex.Block{ID: makeUlid(14), MinTime: 0, MaxTime: twoHoursMS},
+				},
+			},
+			expectedMetas: map[ulid.ULID]*block.Meta{},
+		},
+		"excess deletes": {
+			index: &bucketindex.Index{
+				BlockDeletionMarks: bucketindex.BlockDeletionMarks{
+					&bucketindex.BlockDeletionMark{ID: makeUlid(15)},
+					&bucketindex.BlockDeletionMark{ID: makeUlid(16)},
+				},
+				Blocks: bucketindex.Blocks{
+					&bucketindex.Block{ID: makeUlid(14), MinTime: 0, MaxTime: twoHoursMS},
+				},
+			},
+			expectedMetas: map[ulid.ULID]*block.Meta{
+				makeUlid(14): makeMeta(makeUlid(14), map[string]string{}),
+			},
+		},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			m := ConvertBucketIndexToMetasForCompactionJobPlanning(c.index)
+			require.Equal(t, c.expectedMetas, m)
+		})
+	}
 }
 
 type mockBucketFailure struct {

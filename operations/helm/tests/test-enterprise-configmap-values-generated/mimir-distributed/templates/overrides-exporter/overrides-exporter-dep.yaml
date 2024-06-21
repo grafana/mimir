@@ -92,7 +92,7 @@ spec:
             - secretRef:
                 name: mimir-minio-secret
       
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 30
       volumes:
         - name: config
           configMap:

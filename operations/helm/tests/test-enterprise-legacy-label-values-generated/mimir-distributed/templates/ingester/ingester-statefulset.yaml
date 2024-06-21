@@ -27,7 +27,9 @@ spec:
     type: OnDelete
   serviceName: test-enterprise-legacy-label-values-enterprise-metrics-ingester
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -64,7 +66,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-ingester
             release: test-enterprise-legacy-label-values
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           secret:
@@ -155,7 +157,9 @@ spec:
     type: OnDelete
   serviceName: test-enterprise-legacy-label-values-enterprise-metrics-ingester
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -192,7 +196,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-ingester
             release: test-enterprise-legacy-label-values
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           secret:
@@ -283,7 +287,9 @@ spec:
     type: OnDelete
   serviceName: test-enterprise-legacy-label-values-enterprise-metrics-ingester
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -320,7 +326,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-ingester
             release: test-enterprise-legacy-label-values
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           secret:
