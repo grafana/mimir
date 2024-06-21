@@ -43,8 +43,7 @@ func ProtectedNamespacesHeaderFromSet(namespacesSet map[string]struct{}) HTTPHea
 	}
 
 	ns := make([]string, 0, len(namespacesSet))
-
-	for k, _ := range namespacesSet {
+	for k := range namespacesSet {
 		ns = append(ns, k)
 	}
 
