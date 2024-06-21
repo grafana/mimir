@@ -374,15 +374,6 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 	}
 	tmpl.ExternalURL = am.cfg.ExternalURL
 
-	gTmpl, err := template.FromGlobs(templateFiles, WithCustomFunctions(userID))
-	if err != nil {
-		return err
-	}
-
-	if err := gTmpl.Parse(strings.NewReader(alertingTemplates.DefaultTemplateString)); err != nil {
-		return err
-	}
-
 	cfg := definition.GrafanaToUpstreamConfig(conf)
 	am.api.Update(&cfg, func(_ model.LabelSet) {})
 
@@ -410,7 +401,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(userID, am.cfg.Limits))
 
-	integrationsMap, err := buildIntegrationsMap(conf.Receivers, tmpl, gTmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
+	integrationsMap, err := buildIntegrationsMap(userID, conf.Receivers, tmpl, templateFiles, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
 		if am.cfg.Limits != nil {
 			rl := &tenantRateLimits{
 				tenant:      userID,
@@ -519,12 +510,23 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl, gTmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]*nfstatus.Integration, error) {
+func buildIntegrationsMap(userID string, nc []*definition.PostableApiReceiver, tmpl *template.Template, templateFiles []string, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]*nfstatus.Integration, error) {
+	var gTmpl *template.Template
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
 		var integrations []*nfstatus.Integration
 		var err error
 		if rcv.Type() == definition.GrafanaReceiverType {
+			// Create the Grafana template struct if it has not already been created.
+			if gTmpl == nil {
+				gTmpl, err = template.FromGlobs(templateFiles, WithCustomFunctions(userID))
+				if err != nil {
+					return nil, err
+				}
+				if err := gTmpl.Parse(strings.NewReader(alertingTemplates.DefaultTemplateString)); err != nil {
+					return nil, err
+				}
+			}
 			integrations, err = buildGrafanaReceiverIntegrations(rcv, gTmpl, logger)
 		} else {
 			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, logger, notifierWrapper)
