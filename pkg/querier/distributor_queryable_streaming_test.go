@@ -25,10 +25,6 @@ import (
 )
 
 func TestStreamingChunkSeries_HappyPath(t *testing.T) {
-	const (
-		minT = 1000
-		maxT = 6000
-	)
 	chunkUniqueToFirstSource := createTestChunk(t, 1500, 1.23)
 	chunkUniqueToSecondSource := createTestChunk(t, 2000, 4.56)
 	chunkPresentInBothSources := createTestChunk(t, 2500, 7.89)
