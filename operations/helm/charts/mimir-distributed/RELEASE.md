@@ -48,6 +48,14 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 
    - Merge the PR upon approval.
 
+1. Notify open PRs about the cut change log.
+
+   - From the root directory of the repository run 
+
+     ```bash
+     ./tools/release/notify-changelog-cut.sh operations/helm/charts/mimir-distributed/CHANGELOG.md
+     ```
+
 1. Create a release branch.
 
    - Create (if the branch is not created yet), switch to and push a branch starting from the commit created by the prepare changelog PR and name it `mimir-distributed-release-x.y`.
