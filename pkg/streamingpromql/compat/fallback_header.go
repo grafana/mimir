@@ -11,16 +11,16 @@ import (
 type engineFallbackContextKey int
 
 const forceFallbackEnabledContextKey = engineFallbackContextKey(0)
-const forceFallbackHeaderName = "X-Mimir-Force-Prometheus-Engine"
+const ForceFallbackHeaderName = "X-Mimir-Force-Prometheus-Engine"
 
 type EngineFallbackInjector struct{}
 
 func (i EngineFallbackInjector) Wrap(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if value := r.Header.Get(forceFallbackHeaderName); value != "" {
+		if value := r.Header.Get(ForceFallbackHeaderName); value != "" {
 			if value != "true" {
 				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte(fmt.Sprintf("invalid value '%s' for '%s' header, must be exactly 'true' or not set", value, forceFallbackHeaderName)))
+				_, _ = w.Write([]byte(fmt.Sprintf("invalid value '%s' for '%s' header, must be exactly 'true' or not set", value, ForceFallbackHeaderName)))
 				return
 			}
 
