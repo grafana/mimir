@@ -64,6 +64,7 @@ The current team members are:
 - Jonathan Halterman [@jhalterman](https://github.com/jhalterman) ([Grafana Labs](https://grafana.com/))
 - Josh Abreu Mesa [@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))
 - Joshua Hesketh [@jhesketh](https://github.com/jhesketh) ([Grafana Labs](https://grafana.com/))
+- Justin Lei [@leizor](https://github.com/leizor) ([Grafana Labs](https://grafana.com/))
 - Marco Pracucci — [@pracucci](https://github.com/pracucci) ([Grafana Labs](https://grafana.com/))
 - Mauro Stettler — [@replay](https://github.com/replay) ([Grafana Labs](https://grafana.com/))
 - Miguel Ángel Ortuño [@ortuman](https://github.com/ortuman) ([Grafana Labs](https://grafana.com/))
