@@ -8489,7 +8489,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 	testLimits := func() {
 		// Append to two series, expect series-exceeded error.
 		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
-		expectedErr := ingestererr.NewErrorWithStatus(ingestererr.WrapOrAnnotateWithUser(ingestererr.NewPerUserSeriesLimitReachedError(ing.limiter.limits.MaxGlobalSeriesPerUser(userID)), userID), codes.FailedPrecondition)
+		expectedErr := ingestererr.NewErrorWithStatus(ingestererr.WrapOrAnnotateWithUser(ingestererr.NewPerUserSeriesLimitReachedError(ing.limiter.Limits.MaxGlobalSeriesPerUser(userID)), userID), codes.FailedPrecondition)
 		checkErrorWithStatus(t, err, expectedErr)
 
 		// Append two metadata, expect no error since metadata is a best effort approach.
@@ -8592,7 +8592,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 	testLimits := func() {
 		// Append two series, expect series-exceeded error.
 		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
-		expectedErr := ingestererr.NewErrorWithStatus(ingestererr.WrapOrAnnotateWithUser(ingestererr.NewPerMetricSeriesLimitReachedError(ing.limiter.limits.MaxGlobalSeriesPerMetric(userID), labels3), userID), codes.FailedPrecondition)
+		expectedErr := ingestererr.NewErrorWithStatus(ingestererr.WrapOrAnnotateWithUser(ingestererr.NewPerMetricSeriesLimitReachedError(ing.limiter.Limits.MaxGlobalSeriesPerMetric(userID), labels3), userID), codes.FailedPrecondition)
 		checkErrorWithStatus(t, err, expectedErr)
 
 		// Append two metadata for the same metric. Drop the second one, and expect no error since metadata is a best effort approach.
@@ -10680,7 +10680,7 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, res)
 
-	expectedError := ingestererr.WrapOrAnnotateWithUser(ing.errorSamplers.MaxSeriesPerUserLimitExceeded.WrapError(ingestererr.NewPerUserSeriesLimitReachedError(ing.limiter.limits.MaxGlobalSeriesPerUser(userID))), userID)
+	expectedError := ingestererr.WrapOrAnnotateWithUser(ing.errorSamplers.MaxSeriesPerUserLimitExceeded.WrapError(ingestererr.NewPerUserSeriesLimitReachedError(ing.limiter.Limits.MaxGlobalSeriesPerUser(userID))), userID)
 	require.Error(t, expectedError)
 
 	// We push 2 times more than errorSampleRate series hitting the max-series-per-user limit, i.e., 10 series in total.
@@ -10784,7 +10784,7 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, res)
 
-	expectedError := ingestererr.WrapOrAnnotateWithUser(ing.errorSamplers.MaxSeriesPerUserLimitExceeded.WrapError(ingestererr.NewPerMetricSeriesLimitReachedError(ing.limiter.limits.MaxGlobalSeriesPerMetric(userID), metricLabelAdapters2)), userID)
+	expectedError := ingestererr.WrapOrAnnotateWithUser(ing.errorSamplers.MaxSeriesPerUserLimitExceeded.WrapError(ingestererr.NewPerMetricSeriesLimitReachedError(ing.limiter.Limits.MaxGlobalSeriesPerMetric(userID), metricLabelAdapters2)), userID)
 	require.Error(t, expectedError)
 
 	// We push 2 times more than errorSampleRate series hitting the max-series-per-metric, i.e., 10 series in total.

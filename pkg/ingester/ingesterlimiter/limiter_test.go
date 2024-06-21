@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package ingester
+package ingesterlimiter
 
 import (
 	"math"
@@ -57,7 +57,7 @@ func TestLimiter_maxSeriesPerUser(t *testing.T) {
 	}
 
 	runMaxFn := func(limiter *Limiter) int {
-		return limiter.maxSeriesPerUser("test", 0)
+		return limiter.MaxSeriesPerUser("test", 0)
 	}
 
 	t.Run("ingester ring", func(t *testing.T) {
@@ -91,7 +91,7 @@ func TestLimiter_maxExemplarsPerUser(t *testing.T) {
 	}
 
 	runMaxFn := func(limiter *Limiter) int {
-		return limiter.maxExemplarsPerUser("test")
+		return limiter.MaxExemplarsPerUser("test")
 	}
 
 	t.Run("ingester ring", func(t *testing.T) {

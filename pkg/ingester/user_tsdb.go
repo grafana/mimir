@@ -26,6 +26,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/ingestererr"
+	"github.com/grafana/mimir/pkg/ingester/ingesterlimiter"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -97,7 +98,7 @@ type userTSDB struct {
 	userID         string
 	activeSeries   *activeseries.ActiveSeries
 	seriesInMetric *metricCounter
-	limiter        *Limiter
+	limiter        *ingesterlimiter.Limiter
 
 	instanceSeriesCount *atomic.Int64 // Shared across all userTSDB instances created by ingester.
 	instanceLimitsFn    func() *InstanceLimits
@@ -559,7 +560,7 @@ func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason strin
 		shardSizeBefore = os.shardSize
 		localLimitBefore = os.localSeriesLimit
 
-		localLimitNew = u.limiter.maxSeriesPerUser(u.userID, 0)
+		localLimitNew = u.limiter.MaxSeriesPerUser(u.userID, 0)
 		ownedSeriesNew = compute()
 
 		u.ownedStateMtx.Lock()

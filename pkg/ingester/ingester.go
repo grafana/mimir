@@ -54,6 +54,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/ingester/ingestererr"
+	"github.com/grafana/mimir/pkg/ingester/ingesterlimiter"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -303,7 +304,7 @@ type Ingester struct {
 
 	lifecycler            *ring.Lifecycler
 	limits                *validation.Overrides
-	limiter               *Limiter
+	limiter               *ingesterlimiter.Limiter
 	subservicesWatcher    *services.FailureWatcher
 	ownedSeriesService    *ownedSeriesService
 	compactionService     services.Service
@@ -444,7 +445,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.compactionIdleTimeout = util.DurationWithPositiveJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout, compactionIdleTimeoutJitter)
 	level.Info(i.logger).Log("msg", "TSDB idle compaction timeout set", "timeout", i.compactionIdleTimeout)
 
-	var limiterStrategy LimiterRingStrategy
+	var limiterStrategy ingesterlimiter.LimiterRingStrategy
 	var ownedSeriesStrategy ownedSeriesRingStrategy
 
 	if ingestCfg := cfg.IngestStorageConfig; ingestCfg.Enabled {
@@ -480,17 +481,17 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			logger,
 			prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 
-		limiterStrategy = NewPartitionRingLimiterStrategy(partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
+		limiterStrategy = ingesterlimiter.NewPartitionRingLimiterStrategy(partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
 		ownedSeriesStrategy = newOwnedSeriesPartitionRingStrategy(i.ingestPartitionID, partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
 	} else {
-		limiterStrategy = NewIngesterRingLimiterStrategy(ingestersRing, cfg.IngesterRing.ReplicationFactor, cfg.IngesterRing.ZoneAwarenessEnabled, cfg.IngesterRing.InstanceZone, i.limits.IngestionTenantShardSize)
+		limiterStrategy = ingesterlimiter.NewIngesterRingLimiterStrategy(ingestersRing, cfg.IngesterRing.ReplicationFactor, cfg.IngesterRing.ZoneAwarenessEnabled, cfg.IngesterRing.InstanceZone, i.limits.IngestionTenantShardSize)
 		ownedSeriesStrategy = newOwnedSeriesIngesterRingStrategy(i.lifecycler.ID, ingestersRing, i.limits.IngestionTenantShardSize)
 	}
 
-	i.limiter = NewLimiter(limits, limiterStrategy)
+	i.limiter = ingesterlimiter.NewLimiter(limits, limiterStrategy)
 
 	if cfg.UseIngesterOwnedSeriesForLimits || cfg.UpdateIngesterOwnedSeries {
-		i.ownedSeriesService = newOwnedSeriesService(i.cfg.OwnedSeriesUpdateInterval, ownedSeriesStrategy, log.With(i.logger, "component", "owned series"), registerer, i.limiter.maxSeriesPerUser, i.getTSDBUsers, i.getTSDB)
+		i.ownedSeriesService = newOwnedSeriesService(i.cfg.OwnedSeriesUpdateInterval, ownedSeriesStrategy, log.With(i.logger, "component", "owned series"), registerer, i.limiter.MaxSeriesPerUser, i.getTSDBUsers, i.getTSDB)
 
 		// We add owned series service explicitly, because ingester doesn't start it using i.subservices.
 		i.subservicesWatcher.WatchService(i.ownedSeriesService)
@@ -526,7 +527,7 @@ func NewForFlusher(cfg Config, limits *validation.Overrides, registerer promethe
 	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 
 	i.shipperIngesterID = "flusher"
-	i.limiter = NewLimiter(limits, FlusherLimiterStrategy{})
+	i.limiter = ingesterlimiter.NewLimiter(limits, ingesterlimiter.FlusherLimiterStrategy{})
 
 	// This ingester will not start any subservices (lifecycler, compaction, shipping),
 	// and will only open TSDBs, wait for Flush to be called, and then close TSDBs again.
@@ -907,7 +908,7 @@ func (i *Ingester) applyTSDBSettings() {
 		cfg := promcfg.Config{
 			StorageConfig: promcfg.StorageConfig{
 				ExemplarsConfig: &promcfg.ExemplarsConfig{
-					MaxExemplars: int64(i.limiter.maxExemplarsPerUser(userID)),
+					MaxExemplars: int64(i.limiter.MaxExemplarsPerUser(userID)),
 				},
 				TSDBConfig: &promcfg.TSDBConfig{
 					OutOfOrderTimeWindow: oooTW.Milliseconds(),
@@ -947,7 +948,7 @@ func (i *Ingester) updateLimitMetrics() {
 			}
 		}
 
-		localLimit := i.limiter.maxSeriesPerUser(userID, minLocalSeriesLimit)
+		localLimit := i.limiter.MaxSeriesPerUser(userID, minLocalSeriesLimit)
 		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localLimit))
 	}
 }
@@ -1342,14 +1343,14 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		case errors.Is(err, globalerror.MaxSeriesPerUser):
 			stats.perUserSeriesLimitCount++
 			updateFirstPartial(i.errorSamplers.MaxSeriesPerUserLimitExceeded, func() ingestererr.SoftError {
-				return ingestererr.NewPerUserSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerUser(userID))
+				return ingestererr.NewPerUserSeriesLimitReachedError(i.limiter.Limits.MaxGlobalSeriesPerUser(userID))
 			})
 			return true
 
 		case errors.Is(err, globalerror.MaxSeriesPerMetric):
 			stats.perMetricSeriesLimitCount++
 			updateFirstPartial(i.errorSamplers.MaxSeriesPerMetricLimitExceeded, func() ingestererr.SoftError {
-				return ingestererr.NewPerMetricSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerMetric(userID), labels)
+				return ingestererr.NewPerMetricSeriesLimitReachedError(i.limiter.Limits.MaxGlobalSeriesPerMetric(userID), labels)
 			})
 			return true
 
@@ -2633,7 +2634,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	// flusher doesn't actually start the ingester services
 	initialLocalLimit := 0
 	if i.limiter != nil {
-		initialLocalLimit = i.limiter.maxSeriesPerUser(userID, 0)
+		initialLocalLimit = i.limiter.MaxSeriesPerUser(userID, 0)
 	}
 	ownedSeriedStateShardSize := 0
 	if i.ownedSeriesService != nil {
@@ -2675,7 +2676,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		SeriesLifecycleCallback:               userDB,
 		BlocksToDelete:                        userDB.blocksToDelete,
 		EnableExemplarStorage:                 true, // enable for everyone so we can raise the limit later
-		MaxExemplars:                          int64(i.limiter.maxExemplarsPerUser(userID)),
+		MaxExemplars:                          int64(i.limiter.MaxExemplarsPerUser(userID)),
 		SeriesHashCache:                       i.seriesHashCache,
 		EnableMemorySnapshotOnShutdown:        i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
 		IsolationDisabled:                     true,

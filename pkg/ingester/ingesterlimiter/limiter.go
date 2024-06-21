@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package ingester
+package ingesterlimiter
 
 import (
 	"math"
@@ -26,14 +26,15 @@ type limiterTenantLimits interface {
 // Limiter implements primitives to get the maximum number of series, exemplars, metadata, etc.
 // that an ingester can handle for a specific tenant
 type Limiter struct {
-	limits       limiterTenantLimits
+	// TODO @oleg: Limits shouldn't be exported, whoever has built the Limiter, can pass those Limits to the same entity.
+	Limits       limiterTenantLimits
 	ringStrategy LimiterRingStrategy
 }
 
 // NewLimiter makes a new in-memory series limiter
 func NewLimiter(limits limiterTenantLimits, limiterRingSupport LimiterRingStrategy) *Limiter {
 	return &Limiter{
-		limits:       limits,
+		Limits:       limits,
 		ringStrategy: limiterRingSupport,
 	}
 }
@@ -55,7 +56,7 @@ func (l *Limiter) IsWithinMaxMetadataPerMetric(userID string, metadata int) bool
 // IsWithinMaxSeriesPerUser returns true if limit has not been reached compared to the current
 // number of series in input; otherwise returns false.
 func (l *Limiter) IsWithinMaxSeriesPerUser(userID string, series int, minLocalLimit int) bool {
-	actualLimit := l.maxSeriesPerUser(userID, minLocalLimit)
+	actualLimit := l.MaxSeriesPerUser(userID, minLocalLimit)
 	return series < actualLimit
 }
 
@@ -67,23 +68,23 @@ func (l *Limiter) IsWithinMaxMetricsWithMetadataPerUser(userID string, metrics i
 }
 
 func (l *Limiter) maxSeriesPerMetric(userID string) int {
-	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalSeriesPerMetric, 0)
+	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.Limits.MaxGlobalSeriesPerMetric, 0)
 }
 
 func (l *Limiter) maxMetadataPerMetric(userID string) int {
-	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalMetadataPerMetric, 0)
+	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.Limits.MaxGlobalMetadataPerMetric, 0)
 }
 
-func (l *Limiter) maxSeriesPerUser(userID string, minLocalLimit int) int {
-	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalSeriesPerUser, minLocalLimit)
+func (l *Limiter) MaxSeriesPerUser(userID string, minLocalLimit int) int {
+	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.Limits.MaxGlobalSeriesPerUser, minLocalLimit)
 }
 
 func (l *Limiter) maxMetadataPerUser(userID string) int {
-	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalMetricsWithMetadataPerUser, 0)
+	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.Limits.MaxGlobalMetricsWithMetadataPerUser, 0)
 }
 
-func (l *Limiter) maxExemplarsPerUser(userID string) int {
-	globalLimit := l.limits.MaxGlobalExemplarsPerUser(userID)
+func (l *Limiter) MaxExemplarsPerUser(userID string) int {
+	globalLimit := l.Limits.MaxGlobalExemplarsPerUser(userID)
 
 	// We don't use `convertGlobalToLocalLimitOrUnlimited`, because we don't want "unlimited" part. 0 means disabled.
 	localLimit := l.ringStrategy.ConvertGlobalToLocalLimit(userID, globalLimit)

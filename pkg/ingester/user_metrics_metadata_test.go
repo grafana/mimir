@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/ingester/ingestererr"
+	"github.com/grafana/mimir/pkg/ingester/ingesterlimiter"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -83,8 +84,8 @@ func TestUserMetricsMetadata(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			strategy := NewIngesterRingLimiterStrategy(ring, 1, false, "", limits.IngestionTenantShardSize)
-			limiter := NewLimiter(limits, strategy)
+			strategy := ingesterlimiter.NewIngesterRingLimiterStrategy(ring, 1, false, "", limits.IngestionTenantShardSize)
+			limiter := ingesterlimiter.NewLimiter(limits, strategy)
 
 			metrics := newIngesterMetrics(
 				prometheus.NewPedanticRegistry(),
@@ -138,8 +139,8 @@ func TestUserMetricsMetadataRequest(t *testing.T) {
 	limits, err := validation.NewOverrides(validation.Limits{}, nil)
 	require.NoError(t, err)
 
-	strategy := NewIngesterRingLimiterStrategy(ring, 1, false, "", limits.IngestionTenantShardSize)
-	limiter := NewLimiter(limits, strategy)
+	strategy := ingesterlimiter.NewIngesterRingLimiterStrategy(ring, 1, false, "", limits.IngestionTenantShardSize)
+	limiter := ingesterlimiter.NewLimiter(limits, strategy)
 
 	metrics := newIngesterMetrics(
 		prometheus.NewPedanticRegistry(),
@@ -259,4 +260,30 @@ func TestUserMetricsMetadataRequest(t *testing.T) {
 			assert.True(t, pass)
 		})
 	}
+}
+
+type ringCountMock struct {
+	instancesCount       int
+	instancesInZoneCount int
+	zonesCount           int
+}
+
+func (m *ringCountMock) InstancesCount() int {
+	return m.instancesCount
+}
+
+func (m *ringCountMock) InstancesWithTokensCount() int {
+	return m.instancesCount
+}
+
+func (m *ringCountMock) InstancesInZoneCount(_ string) int {
+	return m.instancesInZoneCount
+}
+
+func (m *ringCountMock) InstancesWithTokensInZoneCount(_ string) int {
+	return m.instancesInZoneCount
+}
+
+func (m *ringCountMock) ZonesCount() int {
+	return m.zonesCount
 }

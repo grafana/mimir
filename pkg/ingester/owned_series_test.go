@@ -748,7 +748,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				newOwnedSeriesIngesterRingStrategy(c.cfg.IngesterRing.InstanceID, c.ingesterRing, c.ing.limits.IngestionTenantShardSize),
 				log.NewLogfmtLogger(c.buf),
 				nil,
-				c.ing.limiter.maxSeriesPerUser,
+				c.ing.limiter.MaxSeriesPerUser,
 				c.ing.getTSDBUsers,
 				c.ing.getTSDB,
 			)
@@ -851,7 +851,7 @@ func (c *ownedSeriesWithPartitionsRingTestContext) createIngesterAndPartitionRin
 		newOwnedSeriesPartitionRingStrategy(c.ing.ingestPartitionID, c.partitionsRing, c.ing.limits.IngestionPartitionsTenantShardSize),
 		log.NewLogfmtLogger(c.buf),
 		nil,
-		c.ing.limiter.maxSeriesPerUser,
+		c.ing.limiter.MaxSeriesPerUser,
 		c.ing.getTSDBUsers,
 		c.ing.getTSDB,
 	)

@@ -11,6 +11,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/ingester/ingestererr"
+	"github.com/grafana/mimir/pkg/ingester/ingesterlimiter"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -18,7 +19,7 @@ import (
 // Metadata is kept as a set as it can come from multiple targets that Prometheus scrapes
 // with the same metric name.
 type userMetricsMetadata struct {
-	limiter *Limiter
+	limiter *ingesterlimiter.Limiter
 	metrics *ingesterMetrics
 	userID  string
 
@@ -28,7 +29,7 @@ type userMetricsMetadata struct {
 	errorSamplers ingestererr.ErrSamplers
 }
 
-func newMetadataMap(l *Limiter, m *ingesterMetrics, errorSamplers ingestererr.ErrSamplers, userID string) *userMetricsMetadata {
+func newMetadataMap(l *ingesterlimiter.Limiter, m *ingesterMetrics, errorSamplers ingestererr.ErrSamplers, userID string) *userMetricsMetadata {
 	return &userMetricsMetadata{
 		metricToMetadata: map[string]metricMetadataSet{},
 		limiter:          l,
@@ -50,7 +51,7 @@ func (mm *userMetricsMetadata) add(metric string, metadata *mimirpb.MetricMetada
 		// Verify that the user can create more metric metadata given we don't have a set for that metric name.
 		if !mm.limiter.IsWithinMaxMetricsWithMetadataPerUser(mm.userID, len(mm.metricToMetadata)) {
 			mm.metrics.discardedMetadataPerUserMetadataLimit.WithLabelValues(mm.userID).Inc()
-			return mm.errorSamplers.MaxMetadataPerUserLimitExceeded.WrapError(ingestererr.NewPerUserMetadataLimitReachedError(mm.limiter.limits.MaxGlobalMetricsWithMetadataPerUser(mm.userID)))
+			return mm.errorSamplers.MaxMetadataPerUserLimitExceeded.WrapError(ingestererr.NewPerUserMetadataLimitReachedError(mm.limiter.Limits.MaxGlobalMetricsWithMetadataPerUser(mm.userID)))
 		}
 		set = metricMetadataSet{}
 		mm.metricToMetadata[metric] = set
@@ -58,7 +59,7 @@ func (mm *userMetricsMetadata) add(metric string, metadata *mimirpb.MetricMetada
 
 	if !mm.limiter.IsWithinMaxMetadataPerMetric(mm.userID, len(set)) {
 		mm.metrics.discardedMetadataPerMetricMetadataLimit.WithLabelValues(mm.userID).Inc()
-		return mm.errorSamplers.MaxMetadataPerMetricLimitExceeded.WrapError(ingestererr.NewPerMetricMetadataLimitReachedError(mm.limiter.limits.MaxGlobalMetadataPerMetric(mm.userID), metric))
+		return mm.errorSamplers.MaxMetadataPerMetricLimitExceeded.WrapError(ingestererr.NewPerMetricMetadataLimitReachedError(mm.limiter.Limits.MaxGlobalMetadataPerMetric(mm.userID), metric))
 	}
 
 	// if we have seen this metadata before, it is a no-op and we don't need to change our metrics.

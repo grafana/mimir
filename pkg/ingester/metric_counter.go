@@ -10,6 +10,8 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/segmentio/fasthash/fnv1a"
+
+	"github.com/grafana/mimir/pkg/ingester/ingesterlimiter"
 )
 
 const numMetricCounterShards = 128
@@ -20,13 +22,13 @@ type metricCounterShard struct {
 }
 
 type metricCounter struct {
-	limiter *Limiter
+	limiter *ingesterlimiter.Limiter
 	shards  []metricCounterShard
 
 	ignoredMetrics map[string]struct{}
 }
 
-func newMetricCounter(limiter *Limiter, ignoredMetricsForSeriesCount map[string]struct{}) *metricCounter {
+func newMetricCounter(limiter *ingesterlimiter.Limiter, ignoredMetricsForSeriesCount map[string]struct{}) *metricCounter {
 	shards := make([]metricCounterShard, 0, numMetricCounterShards)
 	for i := 0; i < numMetricCounterShards; i++ {
 		shards = append(shards, metricCounterShard{
