@@ -141,6 +141,7 @@ If something is not clear, you can get back to this document to learn more about
         `main`, `release-3.1` and `release-3.0`.
   - [ ] Announce the release on socials
   - [ ] Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
+    - Keep the last 3 minor releases
   - [ ] [Publish dashboards to grafana.com](https://github.com/grafana/mimir/blob/main/RELEASE.md#publish-a-stable-release)
 ````
 
@@ -279,6 +280,7 @@ To publish a stable release:
 1. Merge the release branch `release-x.y` into `main` (see [Merging release branch into main](#merging-release-branch-into-main))
 1. Check the `README.md` file for any broken links.
 1. Open a PR to **add** the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
+   - Keep the last 3 minor releases
 1. Publish dashboards (done by a Grafana Labs member)
    1. Login to [https://grafana.com](https://grafana.com) with your Grafana Labs account
    1. Open [https://grafana.com/orgs/grafana/dashboards](https://grafana.com/orgs/grafana/dashboards)
