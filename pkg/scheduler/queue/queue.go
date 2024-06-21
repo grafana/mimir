@@ -133,6 +133,8 @@ type RequestQueue struct {
 	stopRequested chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
 	stopCompleted chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
 
+	observeInflightRequests chan struct{}
+
 	// querierInflightRequests tracks requests from the time the request was successfully sent to a querier
 	// to the time the request was completed by the querier or failed due to cancel, timeout, or disconnect.
 	querierInflightRequests       map[RequestKey]*SchedulerRequest
@@ -205,6 +207,8 @@ func NewRequestQueue(
 		stopRequested: make(chan struct{}),
 		stopCompleted: make(chan struct{}),
 
+		observeInflightRequests: make(chan struct{}),
+
 		requestsToEnqueue:             make(chan requestToEnqueue),
 		querierInflightRequests:       map[RequestKey]*SchedulerRequest{},
 		requestsSent:                  make(chan *SchedulerRequest),
@@ -217,7 +221,7 @@ func NewRequestQueue(
 		queueBroker:               newQueueBroker(maxOutstandingPerTenant, additionalQueueDimensionsEnabled, forgetDelay),
 	}
 
-	q.Service = services.NewTimerService(forgetCheckPeriod, q.starting, q.forgetDisconnectedQueriers, q.stop).WithName("request queue")
+	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")
 
 	return q, nil
 }
@@ -227,6 +231,29 @@ func (q *RequestQueue) starting(_ context.Context) error {
 	go q.dispatcherLoop()
 
 	return nil
+}
+
+func (q *RequestQueue) running(ctx context.Context) error {
+	// periodically submit a message to dispatcherLoop to forget disconnected queriers
+	forgetDisconnectedQueriersTicker := time.NewTicker(forgetCheckPeriod)
+	defer forgetDisconnectedQueriersTicker.Stop()
+
+	// periodically submit a message to dispatcherLoop to observe inflight requests;
+	// same as scheduler, we observe inflight requests frequently and at regular intervals
+	// to have a good approximation of max inflight requests over percentiles of time.
+	inflightRequestsTicker := time.NewTicker(250 * time.Millisecond)
+	defer inflightRequestsTicker.Stop()
+
+	for {
+		select {
+		case <-forgetDisconnectedQueriersTicker.C:
+			q.submitForgetDisconnectedQueriers(ctx)
+		case <-inflightRequestsTicker.C:
+			q.submitObserveInflightRequests()
+		case <-ctx.Done():
+			return nil
+		}
+	}
 }
 
 func (q *RequestQueue) dispatcherLoop() {
@@ -239,6 +266,8 @@ func (q *RequestQueue) dispatcherLoop() {
 		case <-q.stopRequested:
 			// Nothing much to do here - fall through to the stop logic below to see if we can stop immediately.
 			stopping = true
+		case <-q.observeInflightRequests:
+			q.processObserveInflightRequests()
 		case querierOp := <-q.querierOperations:
 			// Need to attempt to dispatch queries only if querier operation results in a resharding
 			needToDispatchQueries = q.processQuerierOperation(querierOp)
@@ -470,9 +499,8 @@ func (q *RequestQueue) GetConnectedQuerierWorkersMetric() float64 {
 	return float64(q.connectedQuerierWorkers.Load())
 }
 
-func (q *RequestQueue) forgetDisconnectedQueriers(_ context.Context) error {
+func (q *RequestQueue) submitForgetDisconnectedQueriers(_ context.Context) {
 	q.submitQuerierOperation("", forgetDisconnected)
-	return nil
 }
 
 func (q *RequestQueue) SubmitRegisterQuerierConnection(querierID string) {
@@ -532,6 +560,17 @@ func (q *RequestQueue) processUnregisterQuerierConnection(querierID QuerierID) (
 
 func (q *RequestQueue) processForgetDisconnectedQueriers() (resharded bool) {
 	return q.queueBroker.forgetDisconnectedQueriers(time.Now())
+}
+
+func (q *RequestQueue) submitObserveInflightRequests() {
+	select {
+	case q.observeInflightRequests <- struct{}{}:
+	case <-q.stopCompleted:
+	}
+}
+
+func (q *RequestQueue) processObserveInflightRequests() {
+	q.QueryComponentUtilization.ObserveInflightRequests()
 }
 
 func (q *RequestQueue) SubmitRequestSent(req *SchedulerRequest) {

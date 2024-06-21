@@ -168,9 +168,14 @@ func (qcl *QueryComponentUtilization) updateForComponentName(expectedQueryCompon
 		qcl.storeGatewayInflightRequests += increment
 	}
 
+	//qcl.querierInflightRequestsMetric.WithLabelValues(string(Ingester)).Observe(float64(qcl.ingesterInflightRequests))
+	//qcl.querierInflightRequestsMetric.WithLabelValues(string(StoreGateway)).Observe(float64(qcl.storeGatewayInflightRequests))
+	qcl.querierInflightRequestsTotal += increment
+}
+
+func (qcl *QueryComponentUtilization) ObserveInflightRequests() {
 	qcl.querierInflightRequestsMetric.WithLabelValues(string(Ingester)).Observe(float64(qcl.ingesterInflightRequests))
 	qcl.querierInflightRequestsMetric.WithLabelValues(string(StoreGateway)).Observe(float64(qcl.storeGatewayInflightRequests))
-	qcl.querierInflightRequestsTotal += increment
 }
 
 // GetForComponent is a test-only util
