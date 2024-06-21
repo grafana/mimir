@@ -83,7 +83,7 @@ func TestUserMetricsMetadata(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			strategy := newIngesterRingLimiterStrategy(ring, 1, false, "", limits.IngestionTenantShardSize)
+			strategy := NewIngesterRingLimiterStrategy(ring, 1, false, "", limits.IngestionTenantShardSize)
 			limiter := NewLimiter(limits, strategy)
 
 			metrics := newIngesterMetrics(
@@ -138,7 +138,7 @@ func TestUserMetricsMetadataRequest(t *testing.T) {
 	limits, err := validation.NewOverrides(validation.Limits{}, nil)
 	require.NoError(t, err)
 
-	strategy := newIngesterRingLimiterStrategy(ring, 1, false, "", limits.IngestionTenantShardSize)
+	strategy := NewIngesterRingLimiterStrategy(ring, 1, false, "", limits.IngestionTenantShardSize)
 	limiter := NewLimiter(limits, strategy)
 
 	metrics := newIngesterMetrics(

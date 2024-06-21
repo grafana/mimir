@@ -27,11 +27,11 @@ type limiterTenantLimits interface {
 // that an ingester can handle for a specific tenant
 type Limiter struct {
 	limits       limiterTenantLimits
-	ringStrategy limiterRingStrategy
+	ringStrategy LimiterRingStrategy
 }
 
 // NewLimiter makes a new in-memory series limiter
-func NewLimiter(limits limiterTenantLimits, limiterRingSupport limiterRingStrategy) *Limiter {
+func NewLimiter(limits limiterTenantLimits, limiterRingSupport LimiterRingStrategy) *Limiter {
 	return &Limiter{
 		limits:       limits,
 		ringStrategy: limiterRingSupport,
@@ -86,7 +86,7 @@ func (l *Limiter) maxExemplarsPerUser(userID string) int {
 	globalLimit := l.limits.MaxGlobalExemplarsPerUser(userID)
 
 	// We don't use `convertGlobalToLocalLimitOrUnlimited`, because we don't want "unlimited" part. 0 means disabled.
-	localLimit := l.ringStrategy.convertGlobalToLocalLimit(userID, globalLimit)
+	localLimit := l.ringStrategy.ConvertGlobalToLocalLimit(userID, globalLimit)
 	if localLimit > 0 {
 		return localLimit
 	}
@@ -100,7 +100,7 @@ func (l *Limiter) maxExemplarsPerUser(userID string) int {
 func (l *Limiter) convertGlobalToLocalLimitOrUnlimited(userID string, globalLimitFn func(string) int, minLocalLimit int) int {
 	// We can assume that series/metadata are evenly distributed across ingesters
 	globalLimit := globalLimitFn(userID)
-	localLimit := l.ringStrategy.convertGlobalToLocalLimit(userID, globalLimit)
+	localLimit := l.ringStrategy.ConvertGlobalToLocalLimit(userID, globalLimit)
 
 	// If the limit is disabled
 	if localLimit == 0 {
@@ -110,13 +110,13 @@ func (l *Limiter) convertGlobalToLocalLimitOrUnlimited(userID string, globalLimi
 	return max(minLocalLimit, localLimit)
 }
 
-// limiterRingStrategy provides computations based on ingester or partitions ring.
-type limiterRingStrategy interface {
-	// convertGlobalToLocalLimit converts global limit to local, per-ingester limit, using given user's shard size (ingesters or partitions).
-	convertGlobalToLocalLimit(userID string, globalLimit int) int
+// LimiterRingStrategy provides computations based on ingester or partitions ring.
+type LimiterRingStrategy interface {
+	// ConvertGlobalToLocalLimit converts global limit to local, per-ingester limit, using given user's shard size (ingesters or partitions).
+	ConvertGlobalToLocalLimit(userID string, globalLimit int) int
 
-	// getShardSize returns shard size applicable for given ring.
-	getShardSize(userID string) int
+	// GetShardSize returns shard size applicable for given ring.
+	GetShardSize(userID string) int
 }
 
 // ingesterRingLimiterRingCount is the interface exposed by a ring implementation which allows
@@ -127,7 +127,7 @@ type ingesterRingLimiterRingCount interface {
 	ZonesCount() int
 }
 
-type ingesterRingLimiterStrategy struct {
+type IngesterRingLimiterStrategy struct {
 	ring                 ingesterRingLimiterRingCount
 	replicationFactor    int
 	zoneAwarenessEnabled bool
@@ -136,8 +136,8 @@ type ingesterRingLimiterStrategy struct {
 	getIngestionTenantShardSize func(userID string) int
 }
 
-func newIngesterRingLimiterStrategy(ring ingesterRingLimiterRingCount, replicationFactor int, zoneAwarenessEnabled bool, ingesterZone string, getIngestionTenantShardSize func(userID string) int) *ingesterRingLimiterStrategy {
-	return &ingesterRingLimiterStrategy{
+func NewIngesterRingLimiterStrategy(ring ingesterRingLimiterRingCount, replicationFactor int, zoneAwarenessEnabled bool, ingesterZone string, getIngestionTenantShardSize func(userID string) int) *IngesterRingLimiterStrategy {
+	return &IngesterRingLimiterStrategy{
 		ring:                        ring,
 		replicationFactor:           replicationFactor,
 		zoneAwarenessEnabled:        zoneAwarenessEnabled,
@@ -146,13 +146,13 @@ func newIngesterRingLimiterStrategy(ring ingesterRingLimiterRingCount, replicati
 	}
 }
 
-func (is *ingesterRingLimiterStrategy) convertGlobalToLocalLimit(userID string, globalLimit int) int {
+func (is *IngesterRingLimiterStrategy) ConvertGlobalToLocalLimit(userID string, globalLimit int) int {
 	if globalLimit == 0 {
 		return 0
 	}
 
 	zonesCount := is.getZonesCount()
-	userShardSize := is.getShardSize(userID)
+	userShardSize := is.GetShardSize(userID)
 
 	var ingestersInZoneCount int
 	if zonesCount > 1 {
@@ -184,11 +184,11 @@ func (is *ingesterRingLimiterStrategy) convertGlobalToLocalLimit(userID string, 
 	return int((float64(globalLimit*is.replicationFactor) / float64(zonesCount)) / float64(ingestersInZoneCount))
 }
 
-func (is *ingesterRingLimiterStrategy) getShardSize(userID string) int {
+func (is *IngesterRingLimiterStrategy) GetShardSize(userID string) int {
 	return is.getIngestionTenantShardSize(userID)
 }
 
-func (is *ingesterRingLimiterStrategy) getZonesCount() int {
+func (is *IngesterRingLimiterStrategy) getZonesCount() int {
 	if is.zoneAwarenessEnabled {
 		return util_math.Max(is.ring.ZonesCount(), 1)
 	}
@@ -200,24 +200,24 @@ type partitionRingWatcher interface {
 	PartitionRing() *ring.PartitionRing
 }
 
-type partitionRingLimiterStrategy struct {
+type PartitionRingLimiterStrategy struct {
 	partitionRingWatcher        partitionRingWatcher
 	getPartitionTenantShardSize func(userID string) int
 }
 
-func newPartitionRingLimiterStrategy(watcher partitionRingWatcher, getPartitionTenantShardSize func(userID string) int) *partitionRingLimiterStrategy {
-	return &partitionRingLimiterStrategy{
+func NewPartitionRingLimiterStrategy(watcher partitionRingWatcher, getPartitionTenantShardSize func(userID string) int) *PartitionRingLimiterStrategy {
+	return &PartitionRingLimiterStrategy{
 		partitionRingWatcher:        watcher,
 		getPartitionTenantShardSize: getPartitionTenantShardSize,
 	}
 }
 
-func (ps *partitionRingLimiterStrategy) convertGlobalToLocalLimit(userID string, globalLimit int) int {
+func (ps *PartitionRingLimiterStrategy) ConvertGlobalToLocalLimit(userID string, globalLimit int) int {
 	if globalLimit == 0 {
 		return 0
 	}
 
-	userShardSize := ps.getShardSize(userID)
+	userShardSize := ps.GetShardSize(userID)
 
 	pr := ps.partitionRingWatcher.PartitionRing()
 	// ShuffleShardSize correctly handles cases when user has 0 or negative number of shards,
@@ -234,16 +234,11 @@ func (ps *partitionRingLimiterStrategy) convertGlobalToLocalLimit(userID string,
 	return int(float64(globalLimit) / float64(activePartitionsCount))
 }
 
-func (ps *partitionRingLimiterStrategy) getShardSize(userID string) int {
+func (ps *PartitionRingLimiterStrategy) GetShardSize(userID string) int {
 	return ps.getPartitionTenantShardSize(userID)
 }
 
-type flusherLimiterStrategy struct{}
+type FlusherLimiterStrategy struct{}
 
-func (f flusherLimiterStrategy) convertGlobalToLocalLimit(_ string, _ int) int {
-	return 0
-}
-
-func (f flusherLimiterStrategy) getShardSize(_ string) int {
-	return 0
-}
+func (f FlusherLimiterStrategy) ConvertGlobalToLocalLimit(_ string, _ int) int { return 0 }
+func (f FlusherLimiterStrategy) GetShardSize(_ string) int                     { return 0 }

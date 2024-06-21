@@ -240,7 +240,7 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 	overrides, err := validation.NewOverrides(limits, nil)
 	require.NoError(t, err)
 
-	limiter := NewLimiter(overrides, newIngesterRingLimiterStrategy(nil, 3, true, "zone", overrides.IngestionTenantShardSize))
+	limiter := NewLimiter(overrides, NewIngesterRingLimiterStrategy(nil, 3, true, "zone", overrides.IngestionTenantShardSize))
 
 	t.Run("happy path", func(t *testing.T) {
 		db := userTSDB{userID: "test", limiter: limiter}
