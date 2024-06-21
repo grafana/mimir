@@ -57,17 +57,17 @@ type Config struct {
 	MinimizeIngesterRequests                       bool          `yaml:"minimize_ingester_requests" category:"advanced"`
 	MinimiseIngesterRequestsHedgingDelay           time.Duration `yaml:"minimize_ingester_requests_hedging_delay" category:"advanced"`
 
-	PromQLEngine               string `yaml:"promql_engine" category:"experimental"`
-	EnablePromQLEngineFallback bool   `yaml:"enable_promql_engine_fallback" category:"experimental"`
+	QueryEngine               string `yaml:"query_engine" category:"experimental"`
+	EnableQueryEngineFallback bool   `yaml:"enable_query_engine_fallback" category:"experimental"`
 
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
 }
 
 const (
-	queryStoreAfterFlag    = "querier.query-store-after"
-	prometheusPromQLEngine = "prometheus"
-	mimirPromQLEngine      = "mimir"
+	queryStoreAfterFlag = "querier.query-store-after"
+	prometheusEngine    = "prometheus"
+	mimirEngine         = "mimir"
 )
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -89,15 +89,15 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 256, "Number of series to buffer per ingester when streaming chunks from ingesters.")
 	f.Uint64Var(&cfg.StreamingChunksPerStoreGatewaySeriesBufferSize, "querier.streaming-chunks-per-store-gateway-buffer-size", 256, "Number of series to buffer per store-gateway when streaming chunks from store-gateways.")
 
-	f.StringVar(&cfg.PromQLEngine, "querier.promql-engine", prometheusPromQLEngine, fmt.Sprintf("PromQL engine to use, either '%v' or '%v'", prometheusPromQLEngine, mimirPromQLEngine))
-	f.BoolVar(&cfg.EnablePromQLEngineFallback, "querier.enable-promql-engine-fallback", true, "If set to true and the streaming engine is in use, fall back to using the Prometheus PromQL engine for any queries not supported by the streaming engine.")
+	f.StringVar(&cfg.QueryEngine, "querier.query-engine", prometheusEngine, fmt.Sprintf("Query engine to use, either '%v' or '%v'", prometheusEngine, mimirEngine))
+	f.BoolVar(&cfg.EnableQueryEngineFallback, "querier.enable-query-engine-fallback", true, "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.")
 
 	cfg.EngineConfig.RegisterFlags(f)
 }
 
 func (cfg *Config) Validate() error {
-	if cfg.PromQLEngine != prometheusPromQLEngine && cfg.PromQLEngine != mimirPromQLEngine {
-		return fmt.Errorf("unknown PromQL engine '%s'", cfg.PromQLEngine)
+	if cfg.QueryEngine != prometheusEngine && cfg.QueryEngine != mimirEngine {
+		return fmt.Errorf("unknown PromQL engine '%s'", cfg.QueryEngine)
 	}
 
 	return nil
@@ -160,24 +160,24 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 
 	var eng promql.QueryEngine
 
-	switch cfg.PromQLEngine {
-	case prometheusPromQLEngine:
+	switch cfg.QueryEngine {
+	case prometheusEngine:
 		eng = promql.NewEngine(opts)
-	case mimirPromQLEngine:
+	case mimirEngine:
 		limitsProvider := &tenantQueryLimitsProvider{limits: limits}
 		streamingEngine, err := streamingpromql.NewEngine(opts, limitsProvider, queryMetrics, logger)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 
-		if cfg.EnablePromQLEngineFallback {
+		if cfg.EnableQueryEngineFallback {
 			prometheusEngine := promql.NewEngine(opts)
 			eng = compat.NewEngineWithFallback(streamingEngine, prometheusEngine, reg, logger)
 		} else {
 			eng = streamingEngine
 		}
 	default:
-		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.PromQLEngine))
+		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.QueryEngine))
 	}
 
 	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, eng, nil
