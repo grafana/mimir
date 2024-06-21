@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 )
@@ -166,7 +167,7 @@ func computeChunkStats(chr tsdb.ChunkReader, chks []chunks.Meta) (time.Time, tim
 	totalSamples := 0
 
 	for _, cm := range chks {
-		c, _, err := chr.ChunkOrIterable(cm)
+		c, it, err := chr.ChunkOrIterable(cm)
 		if err != nil {
 			level.Error(logger).Log("failed to open chunk", "err", err, "chunk", cm.Ref)
 			return time.Time{}, time.Time{}, 0
@@ -174,8 +175,17 @@ func computeChunkStats(chr tsdb.ChunkReader, chks []chunks.Meta) (time.Time, tim
 
 		if c != nil {
 			totalSamples += c.NumSamples()
+		} else if it != nil {
+			i := it.Iterator(nil)
+			for i.Next() != chunkenc.ValNone {
+				totalSamples++
+			}
+			if err := i.Err(); err != nil {
+				level.Error(logger).Log("got error while iterating chunk", "chunk", cm.Ref, "err", err)
+				return time.Time{}, time.Time{}, 0
+			}
 		} else {
-			level.Error(logger).Log("chunk expected, got nil", "chunk", cm.Ref)
+			level.Error(logger).Log("can't determine samples in chunk", "chunk", cm.Ref)
 			return time.Time{}, time.Time{}, 0
 		}
 	}
