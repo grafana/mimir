@@ -543,6 +543,7 @@ func buildGrafanaReceiverIntegrations(gCfg *config.GlobalConfig, externalURL str
 		AuthPassword:  string(gCfg.SMTPAuthPassword),
 		AuthUser:      gCfg.SMTPAuthUsername,
 		CertFile:      gCfg.HTTPConfig.TLSConfig.CertFile,
+		ContentTypes:  []string{"text/html"},
 		EhloIdentity:  gCfg.SMTPHello,
 		ExternalURL:   externalURL,
 		FromAddress:   gCfg.SMTPFrom,
