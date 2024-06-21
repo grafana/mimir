@@ -167,9 +167,6 @@ func (qcl *QueryComponentUtilization) updateForComponentName(expectedQueryCompon
 	if isStoreGateway {
 		qcl.storeGatewayInflightRequests += increment
 	}
-
-	//qcl.querierInflightRequestsMetric.WithLabelValues(string(Ingester)).Observe(float64(qcl.ingesterInflightRequests))
-	//qcl.querierInflightRequestsMetric.WithLabelValues(string(StoreGateway)).Observe(float64(qcl.storeGatewayInflightRequests))
 	qcl.querierInflightRequestsTotal += increment
 }
 
