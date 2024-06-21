@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	OverrideProtectionHeader  = "X-Override-Protection"
-	ProtectedNamespacesHeader = "X-Protected-Namespaces"
+	OverrideProtectionHeader  = "X-Mimir-Ruler-Override-Namespace-Protection"
+	ProtectedNamespacesHeader = "X-Mimir-Ruler-Protected-Namespaces"
 )
 
 var (
