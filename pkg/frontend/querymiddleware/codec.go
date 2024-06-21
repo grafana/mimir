@@ -35,6 +35,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -97,9 +98,10 @@ type MetricsQueryRequest interface {
 	GetPath() string
 	// GetHeaders returns the HTTP headers in the request.
 	GetHeaders() []*PrometheusHeader
-	// GetStart returns the start timestamp of the request in milliseconds.
+	// GetStart returns the start timestamp of the query time range in milliseconds.
 	GetStart() int64
-	// GetEnd returns the end timestamp of the request in milliseconds.
+	// GetEnd returns the end timestamp of the query time range in milliseconds.
+	// The start and end timestamp are set to the same value in case of an instant query.
 	GetEnd() int64
 	// GetStep returns the step of the request in milliseconds.
 	GetStep() int64
@@ -579,6 +581,15 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 		req.Header.Add(api.ReadConsistencyHeader, consistency)
 	}
 
+	for _, h := range r.GetHeaders() {
+		if h.Name == compat.ForceFallbackHeaderName {
+			for _, v := range h.Values {
+				// There should only be one value, but add all of them for completeness.
+				req.Header.Add(compat.ForceFallbackHeaderName, v)
+			}
+		}
+	}
+
 	return req.WithContext(ctx), nil
 }
 
@@ -791,7 +802,7 @@ func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 			continue
 		}
 		for _, stream := range resp.Data.Result {
-			metric := mimirpb.FromLabelAdaptersToLabels(stream.Labels).String()
+			metric := mimirpb.FromLabelAdaptersToKeyString(stream.Labels)
 			existing, ok := output[metric]
 			if !ok {
 				existing = &SampleStream{

@@ -1911,23 +1911,23 @@
         },
         {
           "kind": "field",
-          "name": "promql_engine",
+          "name": "query_engine",
           "required": false,
-          "desc": "PromQL engine to use, either 'prometheus' or 'mimir'",
+          "desc": "Query engine to use, either 'prometheus' or 'mimir'",
           "fieldValue": null,
           "fieldDefaultValue": "prometheus",
-          "fieldFlag": "querier.promql-engine",
+          "fieldFlag": "querier.query-engine",
           "fieldType": "string",
           "fieldCategory": "experimental"
         },
         {
           "kind": "field",
-          "name": "enable_promql_engine_fallback",
+          "name": "enable_query_engine_fallback",
           "required": false,
-          "desc": "If set to true and the streaming engine is in use, fall back to using the Prometheus PromQL engine for any queries not supported by the streaming engine.",
+          "desc": "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.",
           "fieldValue": null,
           "fieldDefaultValue": true,
-          "fieldFlag": "querier.enable-promql-engine-fallback",
+          "fieldFlag": "querier.enable-query-engine-fallback",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
@@ -6157,6 +6157,17 @@
               "fieldFlag": "blocks-storage.s3.bucket-lookup-type",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "dualstack_enabled",
+              "required": false,
+              "desc": "When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "blocks-storage.s3.dualstack-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -12110,6 +12121,17 @@
             },
             {
               "kind": "field",
+              "name": "dualstack_enabled",
+              "required": false,
+              "desc": "When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "ruler-storage.s3.dualstack-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "storage_class",
               "required": false,
               "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE",
@@ -14236,6 +14258,17 @@
               "fieldFlag": "alertmanager-storage.s3.bucket-lookup-type",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "dualstack_enabled",
+              "required": false,
+              "desc": "When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "alertmanager-storage.s3.dualstack-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -16598,6 +16631,17 @@
                   "fieldFlag": "common.storage.s3.bucket-lookup-type",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "dualstack_enabled",
+                  "required": false,
+                  "desc": "When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": true,
+                  "fieldFlag": "common.storage.s3.dualstack-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",

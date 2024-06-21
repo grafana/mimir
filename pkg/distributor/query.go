@@ -181,7 +181,7 @@ func mergeExemplarQueryResponses(results []*ingester_client.ExemplarQueryRespons
 	exemplarResults := make(map[string]mimirpb.TimeSeries)
 	for _, r := range results {
 		for _, ts := range r.Timeseries {
-			lbls := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
+			lbls := mimirpb.FromLabelAdaptersToKeyString(ts.Labels)
 			e, ok := exemplarResults[lbls]
 			if !ok {
 				exemplarResults[lbls] = ts
@@ -374,7 +374,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		// Accumulate any chunk series
 		for _, batch := range res.chunkseriesBatches {
 			for _, series := range batch {
-				key := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(series.Labels))
+				key := mimirpb.FromLabelAdaptersToKeyString(series.Labels)
 				existing := hashToChunkseries[key]
 				existing.Labels = series.Labels
 
@@ -390,7 +390,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		// Accumulate any time series
 		for _, batch := range res.timeseriesBatches {
 			for _, series := range batch {
-				key := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(series.Labels))
+				key := mimirpb.FromLabelAdaptersToKeyString(series.Labels)
 				existing := hashToTimeSeries[key]
 				existing.Labels = series.Labels
 				if existing.Samples == nil {

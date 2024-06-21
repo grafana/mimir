@@ -32,6 +32,8 @@ func TestStepAlignMiddleware_SingleUser(t *testing.T) {
 				start: 0,
 				end:   100,
 				step:  10,
+				minT:  0,
+				maxT:  0,
 			},
 		},
 
@@ -46,6 +48,8 @@ func TestStepAlignMiddleware_SingleUser(t *testing.T) {
 				start: 0,
 				end:   100,
 				step:  10,
+				minT:  0,
+				maxT:  100,
 			},
 		},
 	} {
@@ -92,6 +96,8 @@ func TestStepAlignMiddleware_MultipleUsers(t *testing.T) {
 				start: 0,
 				end:   100,
 				step:  10,
+				minT:  0,
+				maxT:  0,
 			},
 		},
 		{
@@ -111,6 +117,8 @@ func TestStepAlignMiddleware_MultipleUsers(t *testing.T) {
 				start: 0,
 				end:   100,
 				step:  10,
+				minT:  0,
+				maxT:  100,
 			},
 		},
 		{
@@ -130,6 +138,8 @@ func TestStepAlignMiddleware_MultipleUsers(t *testing.T) {
 				start: 2,
 				end:   102,
 				step:  10,
+				minT:  0,
+				maxT:  0,
 			},
 		},
 	} {

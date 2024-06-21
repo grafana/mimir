@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 )
@@ -28,6 +29,7 @@ func main() {
 
 	metricSelector := flag.String("select", "", "PromQL metric selector")
 	printChunks := flag.Bool("show-chunks", false, "Print chunk details")
+	seriesStats := flag.Bool("stats", false, "Show series stats: minT, maxT, samples, DPM")
 
 	// Parse CLI arguments.
 	args, err := flagext.ParseFlagsAndArguments(flag.CommandLine)
@@ -61,11 +63,11 @@ func main() {
 	}
 
 	for _, blockDir := range args {
-		printBlockIndex(ctx, blockDir, *printChunks, matchers)
+		printBlockIndex(ctx, blockDir, *printChunks, *seriesStats, matchers)
 	}
 }
 
-func printBlockIndex(ctx context.Context, blockDir string, printChunks bool, matchers []*labels.Matcher) {
+func printBlockIndex(ctx context.Context, blockDir string, printChunks bool, seriesStats bool, matchers []*labels.Matcher) {
 	block, err := tsdb.OpenBlock(logger, blockDir, nil)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to open block", "dir", blockDir, "err", err)
@@ -79,6 +81,13 @@ func printBlockIndex(ctx context.Context, blockDir string, printChunks bool, mat
 		return
 	}
 	defer idx.Close()
+
+	chr, err := block.Chunks()
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to open block chunks", "err", err)
+		return
+	}
+	defer chr.Close()
 
 	k, v := index.AllPostingsKey()
 
@@ -121,12 +130,19 @@ func printBlockIndex(ctx context.Context, blockDir string, printChunks bool, mat
 			continue
 		}
 
-		fmt.Println("series", lbls.String())
+		if seriesStats {
+			minT, maxT, samples := computeChunkStats(chr, chks)
+			dpm := float64(samples) / (maxT.Sub(minT).Minutes())
+			fmt.Println("series:", lbls.String(), "minT:", formatTime(minT), "maxT:", formatTime(maxT), "samples:", samples, "dpm:", dpm)
+		} else {
+			fmt.Println("series:", lbls.String())
+		}
+
 		if printChunks {
 			for _, c := range chks {
-				fmt.Println("chunk", c.Ref,
-					"min time:", c.MinTime, timestamp.Time(c.MinTime).UTC().Format(time.RFC3339Nano),
-					"max time:", c.MaxTime, timestamp.Time(c.MaxTime).UTC().Format(time.RFC3339Nano))
+				fmt.Println("chunk:", c.Ref,
+					"min time:", c.MinTime, formatTime(timestamp.Time(c.MinTime)),
+					"max time:", c.MaxTime, formatTime(timestamp.Time(c.MaxTime)))
 			}
 		}
 	}
@@ -135,4 +151,44 @@ func printBlockIndex(ctx context.Context, blockDir string, printChunks bool, mat
 		level.Error(logger).Log("msg", "error iterating postings", "err", p.Err())
 		return
 	}
+}
+
+func formatTime(ts time.Time) string {
+	return ts.UTC().Format(time.RFC3339Nano)
+}
+
+func computeChunkStats(chr tsdb.ChunkReader, chks []chunks.Meta) (time.Time, time.Time, int) {
+	if len(chks) == 0 {
+		return time.Time{}, time.Time{}, 0
+	}
+
+	minTS := chks[0].MinTime
+	maxTS := chks[len(chks)-1].MaxTime
+	totalSamples := 0
+
+	for _, cm := range chks {
+		c, it, err := chr.ChunkOrIterable(cm)
+		if err != nil {
+			level.Error(logger).Log("msg", "failed to open chunk", "err", err, "chunk", cm.Ref)
+			return time.Time{}, time.Time{}, 0
+		}
+
+		if c != nil {
+			totalSamples += c.NumSamples()
+		} else if it != nil {
+			i := it.Iterator(nil)
+			for i.Next() != chunkenc.ValNone {
+				totalSamples++
+			}
+			if err := i.Err(); err != nil {
+				level.Error(logger).Log("msg", "got error while iterating chunk", "chunk", cm.Ref, "err", err)
+				return time.Time{}, time.Time{}, 0
+			}
+		} else {
+			level.Error(logger).Log("msg", "can't determine samples in chunk", "chunk", cm.Ref)
+			return time.Time{}, time.Time{}, 0
+		}
+	}
+
+	return time.UnixMilli(minTS), time.UnixMilli(maxTS), totalSamples
 }
