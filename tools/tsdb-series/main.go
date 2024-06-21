@@ -169,7 +169,7 @@ func computeChunkStats(chr tsdb.ChunkReader, chks []chunks.Meta) (time.Time, tim
 	for _, cm := range chks {
 		c, it, err := chr.ChunkOrIterable(cm)
 		if err != nil {
-			level.Error(logger).Log("failed to open chunk", "err", err, "chunk", cm.Ref)
+			level.Error(logger).Log("msg", "failed to open chunk", "err", err, "chunk", cm.Ref)
 			return time.Time{}, time.Time{}, 0
 		}
 
@@ -181,11 +181,11 @@ func computeChunkStats(chr tsdb.ChunkReader, chks []chunks.Meta) (time.Time, tim
 				totalSamples++
 			}
 			if err := i.Err(); err != nil {
-				level.Error(logger).Log("got error while iterating chunk", "chunk", cm.Ref, "err", err)
+				level.Error(logger).Log("msg", "got error while iterating chunk", "chunk", cm.Ref, "err", err)
 				return time.Time{}, time.Time{}, 0
 			}
 		} else {
-			level.Error(logger).Log("can't determine samples in chunk", "chunk", cm.Ref)
+			level.Error(logger).Log("msg", "can't determine samples in chunk", "chunk", cm.Ref)
 			return time.Time{}, time.Time{}, 0
 		}
 	}
