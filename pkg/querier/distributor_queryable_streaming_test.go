@@ -42,8 +42,6 @@ func TestStreamingChunkSeries_HappyPath(t *testing.T) {
 			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{{SeriesIndex: 0, Chunks: []client.Chunk{chunkUniqueToSecondSource, chunkPresentInBothSources}}})},
 		},
 		context: &streamingChunkSeriesContext{
-			mint:         minT,
-			maxt:         maxT,
 			queryMetrics: stats.NewQueryMetrics(reg),
 			queryStats:   queryStats,
 		},
@@ -54,7 +52,7 @@ func TestStreamingChunkSeries_HappyPath(t *testing.T) {
 
 	expectedChunks, err := client.FromChunks(series.labels, []client.Chunk{chunkUniqueToFirstSource, chunkUniqueToSecondSource, chunkPresentInBothSources})
 	require.NoError(t, err)
-	assertChunkIteratorsEqual(t, iterator, batch.NewChunkMergeIterator(nil, expectedChunks, minT, maxT))
+	assertChunkIteratorsEqual(t, iterator, batch.NewChunkMergeIterator(nil, expectedChunks))
 
 	m, err := metrics.NewMetricFamilyMapFromGatherer(reg)
 	require.NoError(t, err)
@@ -106,8 +104,6 @@ func TestStreamingChunkSeries_StreamReaderReturnsError(t *testing.T) {
 			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{})},
 		},
 		context: &streamingChunkSeriesContext{
-			mint:         1000,
-			maxt:         6000,
 			queryMetrics: stats.NewQueryMetrics(reg),
 			queryStats:   queryStats,
 		},
@@ -125,8 +121,6 @@ func TestStreamingChunkSeries_CreateIteratorTwice(t *testing.T) {
 			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{{SeriesIndex: 0, Chunks: []client.Chunk{createTestChunk(t, 1500, 1.23)}}})},
 		},
 		context: &streamingChunkSeriesContext{
-			mint:         1000,
-			maxt:         6000,
 			queryMetrics: stats.NewQueryMetrics(prometheus.NewPedanticRegistry()),
 			queryStats:   &stats.Stats{},
 		},
