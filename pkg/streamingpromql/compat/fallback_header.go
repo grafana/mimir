@@ -4,8 +4,9 @@ package compat
 
 import (
 	"context"
-	"fmt"
 	"net/http"
+
+	apierror "github.com/grafana/mimir/pkg/api/error"
 )
 
 type engineFallbackContextKey int
@@ -19,8 +20,15 @@ func (i EngineFallbackInjector) Wrap(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if value := r.Header.Get(ForceFallbackHeaderName); value != "" {
 			if value != "true" {
+				// Send a Prometheus API-style JSON error response.
+				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte(fmt.Sprintf("invalid value '%s' for '%s' header, must be exactly 'true' or not set", value, ForceFallbackHeaderName)))
+				e := apierror.Newf(apierror.TypeBadData, "invalid value '%s' for '%s' header, must be exactly 'true' or not set", value, ForceFallbackHeaderName)
+
+				if body, err := e.EncodeJSON(); err == nil {
+					_, _ = w.Write(body)
+				}
+
 				return
 			}
 

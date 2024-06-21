@@ -15,7 +15,7 @@ func TestEngineFallbackInjector(t *testing.T) {
 		headers http.Header
 
 		forceFallback bool
-		expectError   bool
+		expectedError string
 	}{
 		"no headers": {
 			headers:       http.Header{},
@@ -31,7 +31,7 @@ func TestEngineFallbackInjector(t *testing.T) {
 			headers: http.Header{
 				"X-Mimir-Force-Prometheus-Engine": []string{"blah"},
 			},
-			expectError: true,
+			expectedError: "invalid value 'blah' for 'X-Mimir-Force-Prometheus-Engine' header, must be exactly 'true' or not set",
 		},
 		"force fallback header is present, and does have expected value": {
 			headers: http.Header{
@@ -58,12 +58,17 @@ func TestEngineFallbackInjector(t *testing.T) {
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
 
-			if testCase.expectError {
-				require.False(t, handlerCalled)
-				require.Equal(t, http.StatusBadRequest, resp.Code)
-			} else {
+			if testCase.expectedError == "" {
 				require.True(t, handlerCalled)
 				require.Equal(t, http.StatusOK, resp.Code)
+			} else {
+				require.False(t, handlerCalled)
+				require.Equal(t, http.StatusBadRequest, resp.Code)
+				require.Equal(t, "application/json", resp.Header().Get("Content-Type"))
+
+				body := resp.Body.String()
+				expectedBody := `{"status": "error", "errorType": "bad_data", "error": "` + testCase.expectedError + `"}`
+				require.JSONEq(t, expectedBody, body)
 			}
 		})
 	}
