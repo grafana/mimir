@@ -311,3 +311,22 @@ func vectorToPrompbTimeseries(vector model.Vector) []*prompb.TimeSeries {
 
 	return res
 }
+
+// remoteReadQueryByMetricName generates a prompb.Query to query series by metric name within
+// the given start / end interval.
+func remoteReadQueryByMetricName(metricName string, start, end time.Time) *prompb.Query {
+	return &prompb.Query{
+		Matchers:         remoteReadQueryMatchersByMetricName(metricName),
+		StartTimestampMs: start.UnixMilli(),
+		EndTimestampMs:   end.UnixMilli(),
+		Hints: &prompb.ReadHints{
+			StepMs:  1,
+			StartMs: start.UnixMilli(),
+			EndMs:   end.UnixMilli(),
+		},
+	}
+}
+
+func remoteReadQueryMatchersByMetricName(metricName string) []*prompb.LabelMatcher {
+	return []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: metricName}}
+}

@@ -586,7 +586,7 @@ overrides:
 		{
 			name: "query blocked via regex for remote read",
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
-				httpR, _, respBytes, err := c.RemoteRead(`blocked_series`, now.Add(-time.Hour*24*32), now)
+				httpR, _, respBytes, err := c.RemoteRead(remoteReadQueryByMetricName(`blocked_series`, now.Add(-time.Hour*24*32), now))
 				return httpR, respBytes, err
 			},
 			exclude:       []string{"querier"},
@@ -614,7 +614,7 @@ overrides:
 		{
 			name: "query blocked via equality for remote read",
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
-				httpR, _, respBytes, err := c.RemoteRead(`blocked_selector`, now.Add(-time.Hour*24*32), now)
+				httpR, _, respBytes, err := c.RemoteRead(remoteReadQueryByMetricName(`blocked_selector`, now.Add(-time.Hour*24*32), now))
 				return httpR, respBytes, err
 			},
 			exclude:       []string{"querier"},
@@ -710,7 +710,7 @@ overrides:
 		{
 			name: "query remote read time range exceeds the limit",
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
-				httpR, _, respBytes, err := c.RemoteRead(`metric`, now.Add(-time.Hour*24*32), now)
+				httpR, _, respBytes, err := c.RemoteRead(remoteReadQueryByMetricName(`metric`, now.Add(-time.Hour*24*32), now))
 				return httpR, respBytes, err
 			},
 			expStatusCode: http.StatusBadRequest,
