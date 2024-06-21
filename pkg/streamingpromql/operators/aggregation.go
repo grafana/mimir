@@ -192,6 +192,14 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 
 		for _, p := range s.Histograms {
 			idx := (p.T - start) / interval
+
+			// If a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely.
+			if thisSeriesGroup.floatPresent != nil && thisSeriesGroup.floatPresent[idx] {
+				thisSeriesGroup.floatPresent[idx] = false
+				thisSeriesGroup.floatPointCount--
+				continue
+			}
+
 			if thisSeriesGroup.histogramSums[idx] == nil {
 				// We copy here because we modify the histogram through Add later on.
 				// It is necessary to preserve the original Histogram in case of any range-queries using lookback.
