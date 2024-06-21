@@ -1,51 +1,5 @@
 # Changelog
 
-## main / unreleased
-
-### Grafana Mimir
-
-* [CHANGE] Store-gateway / querier: enable streaming chunks from store-gateways to queriers by default. #6646
-* [CHANGE] Querier: honor the start/end time range specified in the read hints when executing a remote read request. #8431
-* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.query-engine=mimir`. #8422 #8430 #8454 #8455
-* [ENHANCEMENT] Compactor: Add `cortex_compactor_compaction_job_duration_seconds` and `cortex_compactor_compaction_job_blocks` histogram metrics to track duration of individual compaction jobs and number of blocks per job. #8371
-* [ENHANCEMENT] Rules: Added per namespace max rules per rule group limit. The maximum number of rules per rule groups for all namespaces continues to be configured by `-ruler.max-rules-per-rule-group`, but now, this can be superseded by the new `-ruler.max-rules-per-rule-group-by-namespace` option on a per namespace basis. This new limit can be overridden using the overrides mechanism to be applied per-tenant. #8378
-* [ENHANCEMENT] Rules: Added per namespace max rule groups per tenant limit. The maximum number of rule groups per rule tenant for all namespaces continues to be configured by `-ruler.max-rule-groups-per-tenant`, but now, this can be superseded by the new `-ruler.max-rule-groups-per-tenant-by-namespace` option on a per namespace basis. This new limit can be overridden using the overrides mechanism to be applied per-tenant. #8425
-* [ENHANCEMENT] Query-frontend: be able to block remote read queries via the per tenant runtime override `blocked_queries`. #8372 #8415
-* [ENHANCEMENT] Query-frontend: added `remote_read` to `op` supported label values for the `cortex_query_frontend_queries_total` metric. #8412
-* [ENHANCEMENT] Query-frontend: log the overall length and start, end time offset from current time for remote read requests. The start and end times are calculated as the miminum and maximum times of the individual queries in the remote read request. #8404
-* [BUGFIX] Query-frontend: fix `-querier.max-query-lookback` enforcement when `-compactor.blocks-retention-period` is not set, and viceversa. #8388
-* [BUGFIX] Ingester: fix sporadic `not found` error causing an internal server error if label names are queried with matchers during head compaction. #8391
-* [BUGFIX] Ingester, store-gateway: fix case insensitive regular expressions not matching correctly some Unicode characters. #8391
-* [BUGFIX] Query-frontend: "query stats" log now includes the actual `status_code` when the request fails due to an error occurring in the query-frontend itself. #8407
-* [BUGFIX] Store-gateway: fixed a case where, on a quick subsequent restart, the previous lazy-loaded index header snapshot was overwritten by a partially loaded one. #8281
-* [BUGFIX] Ingester: fixed timestamp reported in the "the sample has been rejected because its timestamp is too old" error when the write request contains only histograms. #8462
-
-### Mixin
-
-### Jsonnet
-
-* [FEATURE] Add support for automatically deleting compactor, store-gateway and read-write mode backend PVCs when the corresponding StatefulSet is scaled down. #8382
-
-### Mimirtool
-
-### Mimir Continuous Test
-
-### Query-tee
-
-* [ENHANCEMENT] Emit trace spans from query-tee. #8419
-* [ENHANCEMENT] Log trace ID (if present) with all log messages written while processing a request. #8419
-* [ENHANCEMENT] Log user agent when processing a request. #8419
-* [ENHANCEMENT] Add `time` parameter to proxied instant queries if it is not included in the incoming request. This is optional but enabled by default, and can be disabled with `-proxy.add-missing-time-parameter-to-instant-queries=false`. #8419
-* [BUGFIX] Ensure any errors encountered while forwarding a request to a backend (eg. DNS resolution failures) are logged. #8419
-
-### Documentation
-
-* [ENHANCEMENT] Specify in which component the configuration flags `-compactor.blocks-retention-period`, `-querier.max-query-lookback`, `-query-frontend.max-total-query-length`, `-query-frontend.max-query-expression-size-bytes` are applied and that they are applied to remote read as well. #8433
-
-### Tools
-
-* [ENHANCEMENT] `tsdb-series`: added `-stats` option to print min/max time of chunks, total number of samples and DPM for each series. #8420
-
 ## v2.13.0-rc.0
 
 ### Grafana Mimir
