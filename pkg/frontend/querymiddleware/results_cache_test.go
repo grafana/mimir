@@ -408,6 +408,8 @@ func TestPartitionCacheExtents(t *testing.T) {
 					start: 0,
 					end:   100,
 					step:  10,
+					minT:  0,
+					maxT:  100,
 				},
 			},
 		},
@@ -426,6 +428,8 @@ func TestPartitionCacheExtents(t *testing.T) {
 					start: 0,
 					end:   50,
 					step:  10,
+					minT:  0,
+					maxT:  50,
 				},
 			},
 			expectedCachedResponse: []Response{
@@ -448,6 +452,8 @@ func TestPartitionCacheExtents(t *testing.T) {
 					start: 120,
 					end:   160,
 					step:  10,
+					minT:  120,
+					maxT:  160,
 				},
 			},
 			expectedCachedResponse: []Response{
@@ -471,6 +477,8 @@ func TestPartitionCacheExtents(t *testing.T) {
 					start: 120,
 					end:   160,
 					step:  10,
+					minT:	 120,
+					maxT:	 160,
 				},
 			},
 			expectedCachedResponse: []Response{
@@ -527,11 +535,13 @@ func TestPartitionCacheExtents(t *testing.T) {
 				mkAPIResponse(486, 625, 33),
 			},
 			expectedRequests: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{start: 123, end: 486, step: 33},
+				&PrometheusRangeQueryRequest{start: 123, end: 486, step: 33, minT: 123, maxT: 486},
 				&PrometheusRangeQueryRequest{
 					start: 651,  // next number after 625 (end of extent) such that it is equal to input.Start + N * input.Step.
 					end:   1000, // until the end
 					step:  33,   // unchanged
+					minT:  651,
+					maxT:  1000,
 				},
 			},
 		},
