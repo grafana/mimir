@@ -635,7 +635,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.panelDescription(
       title,
       |||
-        The maximum and current number of %s replicas.<br /><br />
+        The minimum, maximum, and current number of %s replicas.<br /><br />
         Note: The current number of replicas can still show 1 replica even when scaled to 0.
         Because HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.
       ||| % [componentTitle]
@@ -659,7 +659,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
-  autoScalingDesiredReplicasByScalingMetricPanel(componentName, scalingMetricName, scalingMetricID)::
+  autoScalingDesiredReplicasByAverageValueScalingMetricPanel(componentName, scalingMetricName, scalingMetricID)::
     local title = if scalingMetricName != '' then 'Scaling metric (%s): Desired replicas' % scalingMetricName else 'Desired replicas';
     local scalerSelector = if scalingMetricID != '' then ('.*%s.*' % scalingMetricID) else '.+';
 
@@ -702,6 +702,54 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ),
 
   // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
+  autoScalingDesiredReplicasByValueScalingMetricPanel(componentName, scalingMetricName, scalingMetricID)::
+    local title = if scalingMetricName != '' then 'Scaling metric (%s): Desired replicas' % scalingMetricName else 'Desired replicas';
+    local scalerSelector = if scalingMetricID != '' then ('.*%s.*' % scalingMetricID) else '.+';
+
+    $.timeseriesPanel(title) +
+    $.queryPanel(
+      [
+        |||
+          sum by (scaler) (
+            label_replace(
+              keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace", scaler=~"%(scaler_selector)s"},
+              "namespace", "$1", "exported_namespace", "(.*)"
+            )
+            /
+            on(%(aggregation_labels)s, scaledObject, metric) group_left label_replace(
+              label_replace(
+                kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
+                "metric", "$1", "metric_name", "(.+)"
+              ),
+              "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)"
+            )
+            *
+            on(%(aggregation_labels)s, scaledObject) group_left label_replace(
+              kube_horizontalpodautoscaler_status_current_replicas{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
+              "scaledObject", "$1", "horizontalpodautoscaler", "keda-hpa-(.*)"
+            )
+          )
+        ||| % {
+          aggregation_labels: $._config.alert_aggregation_labels,
+          cluster_label: $._config.per_cluster_label,
+          hpa_prefix: $._config.autoscaling_hpa_prefix,
+          hpa_name: $._config.autoscaling[componentName].hpa_name,
+          namespace: $.namespaceMatcher(),
+          scaler_selector: scalerSelector,
+        },
+      ], [
+        '{{ scaler }}',
+      ]
+    ) +
+    $.panelDescription(
+      title,
+      |||
+        This panel shows the scaling metric exposed by KEDA divided by the target/threshold and multiplied by the current number of replicas.
+        It should represent the desired number of replicas, ignoring the min/max constraints applied later.
+      |||
+    ),
+
+  // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
   autoScalingFailuresPanel(componentName)::
     local title = 'Autoscaler failures rate';
 
@@ -725,10 +773,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.autoScalingActualReplicas(componentName)
     )
     .addPanel(
-      $.autoScalingDesiredReplicasByScalingMetricPanel(componentName, 'CPU', 'cpu')
+      $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel(componentName, 'CPU', 'cpu')
     )
     .addPanel(
-      $.autoScalingDesiredReplicasByScalingMetricPanel(componentName, 'memory', 'memory')
+      $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel(componentName, 'memory', 'memory')
     )
     .addPanel(
       $.autoScalingFailuresPanel(componentName)
