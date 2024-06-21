@@ -8,7 +8,7 @@ keywords:
   - Grafana Enterprise Metrics
   - Grafana metrics
 cascade:
-  MIMIR_DOCS_VERSION: "v2.12.x"
+  MIMIR_DOCS_VERSION: "next"
   gem_docs_version: "v2.12.x"
 refs:
   grafana-mimir:
