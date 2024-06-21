@@ -88,23 +88,19 @@ func remoteReadSamples(
 
 	for i, qr := range req.Queries {
 		go func(i int, qr *prompb.Query) {
-			from, to, matchers, err := queryFromRemoteReadQuery(qr)
+			start, end, matchers, hints, err := queryFromRemoteReadQuery(qr)
 			if err != nil {
 				errCh <- err
 				return
 			}
 
-			querier, err := q.Querier(int64(from), int64(to))
+			querier, err := q.Querier(int64(start), int64(end))
 			if err != nil {
 				errCh <- err
 				return
 			}
 
-			params := &storage.SelectHints{
-				Start: int64(from),
-				End:   int64(to),
-			}
-			seriesSet := querier.Select(ctx, false, params, matchers...)
+			seriesSet := querier.Select(ctx, false, hints, matchers...)
 			resp.Results[i], err = seriesSetToQueryResult(seriesSet)
 			errCh <- err
 		}(i, qr)
@@ -185,25 +181,20 @@ func processReadStreamedQueryRequest(
 	f http.Flusher,
 	maxBytesInFrame int,
 ) error {
-	from, to, matchers, err := queryFromRemoteReadQuery(queryReq)
+	start, end, matchers, hints, err := queryFromRemoteReadQuery(queryReq)
 	if err != nil {
 		return err
 	}
 
-	querier, err := q.ChunkQuerier(int64(from), int64(to))
+	querier, err := q.ChunkQuerier(int64(start), int64(end))
 	if err != nil {
 		return err
-	}
-
-	params := &storage.SelectHints{
-		Start: int64(from),
-		End:   int64(to),
 	}
 
 	return streamChunkedReadResponses(
 		prom_remote.NewChunkedWriter(w, f),
 		// The streaming API has to provide the series sorted.
-		querier.Select(ctx, true, params, matchers...),
+		querier.Select(ctx, true, hints, matchers...),
 		idx,
 		maxBytesInFrame,
 	)
@@ -344,12 +335,27 @@ func initializedFrameBytesRemaining(maxBytesInFrame int, lbls []prompb.Label) in
 
 // queryFromRemoteReadQuery returns the queried time range and label matchers for the given remote
 // read request query.
-func queryFromRemoteReadQuery(query *prompb.Query) (from, to model.Time, matchers []*labels.Matcher, err error) {
+func queryFromRemoteReadQuery(query *prompb.Query) (start, end model.Time, matchers []*labels.Matcher, hints *storage.SelectHints, err error) {
 	matchers, err = prom_remote.FromLabelMatchers(query.Matchers)
 	if err != nil {
 		return
 	}
-	from = model.Time(query.StartTimestampMs)
-	to = model.Time(query.EndTimestampMs)
+
+	start = model.Time(query.StartTimestampMs)
+	end = model.Time(query.EndTimestampMs)
+	hints = &storage.SelectHints{
+		Start: query.StartTimestampMs,
+		End:   query.EndTimestampMs,
+	}
+
+	// Honor the start/end timerange defined in the read hints, but protect from the case
+	// the passed read hints are zero values (because unintentionally initialised but not set).
+	if query.Hints != nil && query.Hints.StartMs > 0 {
+		hints.Start = query.Hints.StartMs
+	}
+	if query.Hints != nil && query.Hints.EndMs > 0 {
+		hints.End = query.Hints.EndMs
+	}
+
 	return
 }

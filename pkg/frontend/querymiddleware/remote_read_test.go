@@ -480,6 +480,22 @@ func TestRemoteReadToMetricsQueryRequest(t *testing.T) {
 			expectedStep:  0,
 			expectedStart: 10,
 			expectedEnd:   20,
+			expectedMinT:  5,
+			expectedMaxT:  25,
+		},
+		"query with zero-value hints": {
+			query: &prompb.Query{
+				Matchers: []*prompb.LabelMatcher{
+					{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "up"},
+				},
+				StartTimestampMs: 10,
+				EndTimestampMs:   20,
+				Hints:            &prompb.ReadHints{},
+			},
+			expectedQuery: "{__name__=\"up\"}",
+			expectedStep:  0,
+			expectedStart: 10,
+			expectedEnd:   20,
 			expectedMinT:  10,
 			expectedMaxT:  20,
 		},

@@ -98,9 +98,10 @@ type MetricsQueryRequest interface {
 	GetPath() string
 	// GetHeaders returns the HTTP headers in the request.
 	GetHeaders() []*PrometheusHeader
-	// GetStart returns the start timestamp of the request in milliseconds.
+	// GetStart returns the start timestamp of the query time range in milliseconds.
 	GetStart() int64
-	// GetEnd returns the end timestamp of the request in milliseconds.
+	// GetEnd returns the end timestamp of the query time range in milliseconds.
+	// The start and end timestamp are set to the same value in case of an instant query.
 	GetEnd() int64
 	// GetStep returns the step of the request in milliseconds.
 	GetStep() int64

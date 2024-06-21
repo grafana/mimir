@@ -22,6 +22,7 @@
 * [CHANGE] Ruler: promote tenant federation from experimental to stable. #8400
 * [CHANGE] Ruler: promote `-ruler.recording-rules-evaluation-enabled` and `-ruler.alerting-rules-evaluation-enabled` from experimental to stable. #8400
 * [CHANGE] General: promote `-tenant-federation.max-tenants` from experimental to stable. #8400
+* [CHANGE] Querier: honor the start/end time range specified in the read hints when executing a remote read request. #8431
 * [FEATURE] Continuous-test: now runable as a module with `mimir -target=continuous-test`. #7747
 * [FEATURE] Store-gateway: Allow specific tenants to be enabled or disabled via `-store-gateway.enabled-tenants` or `-store-gateway.disabled-tenants` CLI flags or their corresponding YAML settings. #7653
 * [FEATURE] New `-<prefix>.s3.bucket-lookup-type` flag configures lookup style type, used to access bucket in s3 compatible providers. #7684

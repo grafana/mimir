@@ -261,6 +261,30 @@ func GenerateNHistogramSeries(nSeries, nExemplars int, name func() string, ts ti
 	return
 }
 
+func filterSamplesByTimestamp(input []prompb.Sample, startMs, endMs int64) []prompb.Sample {
+	var filtered []prompb.Sample
+
+	for _, sample := range input {
+		if sample.Timestamp >= startMs && sample.Timestamp <= endMs {
+			filtered = append(filtered, sample)
+		}
+	}
+
+	return filtered
+}
+
+func filterHistogramsByTimestamp(input []prompb.Histogram, startMs, endMs int64) []prompb.Histogram {
+	var filtered []prompb.Histogram
+
+	for _, sample := range input {
+		if sample.Timestamp >= startMs && sample.Timestamp <= endMs {
+			filtered = append(filtered, sample)
+		}
+	}
+
+	return filtered
+}
+
 func prompbLabelsToMetric(pbLabels []prompb.Label) model.Metric {
 	metric := make(model.Metric, len(pbLabels))
 
@@ -310,4 +334,23 @@ func vectorToPrompbTimeseries(vector model.Vector) []*prompb.TimeSeries {
 	}
 
 	return res
+}
+
+// remoteReadQueryByMetricName generates a prompb.Query to query series by metric name within
+// the given start / end interval.
+func remoteReadQueryByMetricName(metricName string, start, end time.Time) *prompb.Query {
+	return &prompb.Query{
+		Matchers:         remoteReadQueryMatchersByMetricName(metricName),
+		StartTimestampMs: start.UnixMilli(),
+		EndTimestampMs:   end.UnixMilli(),
+		Hints: &prompb.ReadHints{
+			StepMs:  1,
+			StartMs: start.UnixMilli(),
+			EndMs:   end.UnixMilli(),
+		},
+	}
+}
+
+func remoteReadQueryMatchersByMetricName(metricName string) []*prompb.LabelMatcher {
+	return []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: metricName}}
 }
