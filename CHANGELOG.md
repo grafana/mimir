@@ -74,6 +74,8 @@
 * [BUGFIX] Distributor: prometheus retry on 5xx and 429 errors, while otlp collector only retry on 429, 502, 503 and 504, mapping other 5xx errors to the retryable ones in otlp endpoint. #8324 #8339
 * [BUGFIX] Distributor: make OTLP endpoint return marshalled proto bytes as response body for 4xx/5xx errors. #8227
 * [BUGFIX] Rules: improve error handling when querier is local to the ruler. #7567
+* [FEATURE] Ruler: add the possibility to set alert_relabel_configs to relabel labels before sending to the alertmanager.
+* [FEATURE] Ruler: add the possibility to add external label labels before sending to the alertmanager.
 * [BUGFIX] Querier, store-gateway: Protect against panics raised during snappy encoding. #7520
 * [BUGFIX] Ingester: Prevent timely compaction of empty blocks. #7624
 * [BUGFIX] Querier: Don't cache context.Canceled errors for bucket index. #7620
