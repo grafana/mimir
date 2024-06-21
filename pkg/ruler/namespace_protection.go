@@ -60,8 +60,7 @@ func AllowProtectionOverride(ctx context.Context, namespace string) error {
 		return ErrNoProtectionOverrideHeader
 	}
 
-	// TODO: Perhaps support a wildcard for all namespaces?
-	// TODO: Perhaps many namespaces is an overkill?
+	// TODO: Perhaps support a wildcard for all namespaces? Def needed for things like SLOs.
 	overrideNamespaces := strings.Split(value, ",")
 
 	if len(overrideNamespaces) == 0 {
