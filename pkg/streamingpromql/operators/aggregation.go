@@ -50,7 +50,6 @@ type group struct {
 	// Sum, presence, and histograms for each step.
 	floatSums           []float64
 	floatPresent        []bool
-	floatPointCount     int
 	histogramSums       []*histogram.FloatHistogram
 	histogramPointCount int
 }
@@ -184,9 +183,6 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 		for _, p := range s.Floats {
 			idx := (p.T - start) / interval
 			thisSeriesGroup.floatSums[idx] += p.F
-			if !thisSeriesGroup.floatPresent[idx] {
-				thisSeriesGroup.floatPointCount++
-			}
 			thisSeriesGroup.floatPresent[idx] = true
 		}
 
@@ -196,7 +192,6 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 			// If a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely.
 			if thisSeriesGroup.floatPresent != nil && thisSeriesGroup.floatPresent[idx] {
 				thisSeriesGroup.floatPresent[idx] = false
-				thisSeriesGroup.floatPointCount--
 				continue
 			}
 
@@ -204,6 +199,9 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 				// We copy here because we modify the histogram through Add later on.
 				// It is necessary to preserve the original Histogram in case of any range-queries using lookback.
 				thisSeriesGroup.histogramSums[idx] = p.H.Copy()
+				// We already have to do the check if the histogram exists at this idx,
+				// so we can count the histogram points present at this point instead
+				// of needing to loop again later like we do for floats.
 				thisSeriesGroup.histogramPointCount++
 			} else {
 				thisSeriesGroup.histogramSums[idx] = thisSeriesGroup.histogramSums[idx].Add(p.H)
@@ -215,10 +213,22 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	}
 
 	// Construct the group and return it
+	// It would be possible to calculate the number of points when constructing
+	// the series groups. However, it requires checking each point at each input
+	// series which is more costly than looping again here and just checking each
+	// point of the already grouped series.
+	// See: https://github.com/grafana/mimir/pull/8442
+	floatPointCount := 0
+	for _, p := range thisGroup.floatPresent {
+		if p {
+			floatPointCount++
+		}
+	}
+
 	var floatPoints []promql.FPoint
 	var err error
-	if thisGroup.floatPointCount > 0 {
-		floatPoints, err = a.Pool.GetFPointSlice(thisGroup.floatPointCount)
+	if floatPointCount > 0 {
+		floatPoints, err = a.Pool.GetFPointSlice(floatPointCount)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
@@ -235,7 +245,6 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	a.Pool.PutBoolSlice(thisGroup.floatPresent)
 	thisGroup.floatSums = nil
 	thisGroup.floatPresent = nil
-	thisGroup.floatPointCount = 0
 
 	var histogramPoints []promql.HPoint
 	if thisGroup.histogramPointCount > 0 {
