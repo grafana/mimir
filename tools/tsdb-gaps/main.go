@@ -140,6 +140,7 @@ type blockGapStats struct {
 	MinTime             int64            `json:"minTime"`
 	MaxTime             int64            `json:"maxTime"`
 	TotalSeries         uint64           `json:"totalSeries"`
+	TotalMatchedSeries  uint64           `json:"totalMatchedSeries"`
 	TotalSeriesWithGaps uint64           `json:"totalSeriesWithGaps"`
 	TotalSamples        uint64           `json:"totalSamples"`
 	TotalMissedSamples  uint64           `json:"totalMissedSamples"`
@@ -286,6 +287,7 @@ func analyzeBlockForGaps(ctx context.Context, cfg config, blockDir string, match
 		if !matches {
 			continue
 		}
+		blockStats.TotalMatchedSeries++
 
 		cr, err := b.Chunks()
 		if err != nil {
@@ -322,7 +324,7 @@ func analyzeBlockForGaps(ctx context.Context, cfg config, blockDir string, match
 				continue
 			}
 			if iter != nil {
-				level.Error(logger).Log("msg", "got iterable from ChunkorIterable", "ref", meta.Ref)
+				level.Error(logger).Log("msg", "got iterable from ChunkOrIterable", "ref", meta.Ref)
 				continue
 			}
 			it = ch.Iterator(nil)
