@@ -55,6 +55,12 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
      For example, `mimir-distributed-release-4.5` for any `4.5.x` release.
 
    - Push the branch to origin without any commit added.
+     ```bash
+     git fetch
+     git checkout origin/main
+     git checkout -b mimir-distributed-release-<version>
+     git push -u origin mimir-distributed-release-<version>
+     ```
 
    - Once the branch is pushed, all changes to `mimir-distributed-release-x.y` branch must be done through PR.
 
