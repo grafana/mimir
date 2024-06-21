@@ -1,6 +1,6 @@
 # Changelog
 
-## main / unreleased
+## v2.13.0-rc.0
 
 ### Grafana Mimir
 
@@ -11,7 +11,7 @@
 * [CHANGE] Query-frontend: Query results caching and experimental query blocking now utilize the PromQL string-formatted query format rather than the unvalidated query as submitted to the frontend. #7742
   * Query results caching should be more stable as all equivalent queries receive the same cache key, but there may be cache churn on first deploy with the updated format
   * Query blocking can no longer be circumvented with an equivalent query in a different format; see [Configure queries to block](https://grafana.com/docs/mimir/latest/configure/configure-blocked-queries/)
-* [CHANGE] Query-frontend: stop using `-validation.create-grace-period` to clamp how far into the future a query can span.
+* [CHANGE] Query-frontend: stop using `-validation.create-grace-period` to clamp how far into the future a query can span. #8075
 * [CHANGE] Clamp [`GOMAXPROCS`](https://pkg.go.dev/runtime#GOMAXPROCS) to [`runtime.NumCPU`](https://pkg.go.dev/runtime#NumCPU). #8201
 * [CHANGE] Anonymous usage statistics tracking: add CPU usage percentage tracking. #8282
 * [CHANGE] Added new metric `cortex_compactor_disk_out_of_space_errors_total` which counts how many times a compaction failed due to the compactor being out of disk. #8237
@@ -27,9 +27,8 @@
 * [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.promql-engine=mimir`. #7693 #7898 #7899 #8023 #8058 #8096 #8121 #8197 #8230 #8247 #8270 #8276 #8277 #8291 #8303 #8340 #8256 #8348
 * [FEATURE] New `/ingester/unregister-on-shutdown` HTTP endpoint allows dynamic access to ingesters' `-ingester.ring.unregister-on-shutdown` configuration. #7739
 * [FEATURE] Server: added experimental [PROXY protocol support](https://www.haproxy.org/download/2.3/doc/proxy-protocol.txt). The PROXY protocol support can be enabled via `-server.proxy-protocol-enabled=true`. When enabled, the support is added both to HTTP and gRPC listening ports. #7698
-* [FEATURE] mimirtool: Add `runtime-config verify` sub-command, for verifying Mimir runtime config files. #8123
 * [FEATURE] Query-frontend, querier: new experimental `/cardinality/active_native_histogram_metrics` API to get active native histogram metric names with statistics about active native histogram buckets. #7982 #7986 #8008
-* [FEATURE] Alertmanager: Added `-alertmanager.max-silences-count` and `-alertmanager.max-silence-size-bytes` to set limits on per tenant silences. Disabled by default. #6898
+* [FEATURE] Alertmanager: Added `-alertmanager.max-silences-count` and `-alertmanager.max-silence-size-bytes` to set limits on per tenant silences. Disabled by default. #8241 #8249
 * [FEATURE] Ingester: add experimental support for the server-side circuit breakers when writing to and reading from ingesters. This can be enabled using `-ingester.push-circuit-breaker.enabled` and `-ingester.read-circuit-breaker.enabled` options. Further `-ingester.push-circuit-breaker.*` and `-ingester.read-circuit-breaker.*` options for configuring circuit-breaker are available. Added metrics `cortex_ingester_circuit_breaker_results_total`,  `cortex_ingester_circuit_breaker_transitions_total`, `cortex_ingester_circuit_breaker_current_state` and `cortex_ingester_circuit_breaker_request_timeouts_total`. #8180 #8285 #8315 #8446
 * [FEATURE] Distributor, ingester: add new setting `-validation.past-grace-period` to limit how old (based on the wall clock minus OOO window) the ingested samples can be. The default 0 value disables this limit. #8262
 * [ENHANCEMENT] Distributor: add metrics `cortex_distributor_samples_per_request` and `cortex_distributor_exemplars_per_request` to track samples/exemplars per request. #8265
@@ -43,7 +42,7 @@
 * [ENHANCEMENT] Query-frontend: use zero-allocation experimental decoder for active series queries via `-query-frontend.use-active-series-decoder`. #7665
 * [ENHANCEMENT] Go: updated to 1.22.2. #7802
 * [ENHANCEMENT] Query-frontend: support `limit` parameter on `/prometheus/api/v1/label/{name}/values` and `/prometheus/api/v1/labels` endpoints. #7722
-* [ENHANCEMENT] Expose TLS configuration for the S3 backend client. #2652
+* [ENHANCEMENT] Expose TLS configuration for the S3 backend client. #7959
 * [ENHANCEMENT] Rules: Support expansion of native histogram values when using rule templates #7974
 * [ENHANCEMENT] Rules: Add metric `cortex_prometheus_rule_group_last_restore_duration_seconds` which measures how long it takes to restore rule groups using the `ALERTS_FOR_STATE` series #7974
 * [ENHANCEMENT] OTLP: Improve remote write format translation performance by using label set hashes for metric identifiers instead of string based ones. #8012
@@ -140,19 +139,20 @@
 * [FEATURE] Add support to deploy Mimir with experimental ingest storage enabled. #8028 #8222
 * [ENHANCEMENT] Compactor: add `$._config.cortex_compactor_concurrent_rollout_enabled` option (disabled by default) that makes use of rollout-operator to speed up the rollout of compactors. #7783 #7878
 * [ENHANCEMENT] Shuffle-sharding: add `$._config.shuffle_sharding.ingest_storage_partitions_enabled` and `$._config.shuffle_sharding.ingester_partitions_shard_size` options, that allow configuring partitions shard size in ingest-storage mode. #7804
+* [ENHANCEMENT] Update rollout-operator to `v0.17.0`. #8399
 * [ENHANCEMENT] Add `_config.autoscaling_querier_predictive_scaling_enabled` to scale querier based on inflight queries 7 days ago. #7775
 * [ENHANCEMENT] Add support to autoscale ruler-querier replicas based on in-flight queries too (in addition to CPU and memory based scaling). #8060 #8188
-* [ENHANCEMENT] Distributor: improved distributor HPA scaling metric to only take in account ready pods. This requires the metric `kube_pod_status_ready` to be available in the data source used by KEDA to query scaling metrics (configured via `_config.autoscaling_prometheus_url`). #8250
-* [ENHANCEMENT] Update rollout-operator to `v0.17.0`. #8399
+* [ENHANCEMENT] Distributor: improved distributor HPA scaling metric to only take in account ready pods. This requires the metric `kube_pod_status_ready` to be available in the data source used by KEDA to query scaling metrics (configured via `_config.autoscaling_prometheus_url`). #8251
 * [BUGFIX] Guard against missing samples in KEDA queries. #7691
 
 ### Mimirtool
 
 * [CHANGE] Deprecated `--rule-files` flag in favor of CLI arguments. #7756
-* [BUGFIX] Fix panic in `loadgen` subcommand. #7629
-* [ENHANCEMENT] Add `mimir-http-prefix` configuration to set the Mimir URL prefix when using legacy routes. #8069
+* [FEATURE] mimirtool: Add `runtime-config verify` sub-command, for verifying Mimir runtime config files. #8123
 * [ENHANCEMENT] `mimirtool promql format`: Format PromQL query with Prometheus' string or pretty-print formatter. #7742
-* [ENHANCEMENT] Add option `--output-dir` to `mimirtool rules get` and `mimirtool rules print` to allow persisting rule groups to a file for edit and re-upload. #7247
+* [ENHANCEMENT] Add `mimir-http-prefix` configuration to set the Mimir URL prefix when using legacy routes. #8069
+* [ENHANCEMENT] Add option `--output-dir` to `mimirtool rules get` and `mimirtool rules print` to allow persisting rule groups to a file for edit and re-upload. #8142
+* [BUGFIX] Fix panic in `loadgen` subcommand. #7629
 * [BUGFIX] `mimirtool rules prepare`: do not add aggregation label to `on()` clause if already present in `group_left()` or `group_right()`. #7839
 * [BUGFIX] Analyze Grafana: fix parsing queries with variables. #8062
 * [BUGFIX] `mimirtool rules sync`: detect a change when the `query_offset` or the deprecated `evaluation_delay` configuration changes. #8297
