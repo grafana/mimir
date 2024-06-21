@@ -140,10 +140,10 @@
 * [FEATURE] Add support to deploy Mimir with experimental ingest storage enabled. #8028 #8222
 * [ENHANCEMENT] Compactor: add `$._config.cortex_compactor_concurrent_rollout_enabled` option (disabled by default) that makes use of rollout-operator to speed up the rollout of compactors. #7783 #7878
 * [ENHANCEMENT] Shuffle-sharding: add `$._config.shuffle_sharding.ingest_storage_partitions_enabled` and `$._config.shuffle_sharding.ingester_partitions_shard_size` options, that allow configuring partitions shard size in ingest-storage mode. #7804
-* [ENHANCEMENT] Rollout-operator: upgrade to v0.14.0.
 * [ENHANCEMENT] Add `_config.autoscaling_querier_predictive_scaling_enabled` to scale querier based on inflight queries 7 days ago. #7775
 * [ENHANCEMENT] Add support to autoscale ruler-querier replicas based on in-flight queries too (in addition to CPU and memory based scaling). #8060 #8188
 * [ENHANCEMENT] Distributor: improved distributor HPA scaling metric to only take in account ready pods. This requires the metric `kube_pod_status_ready` to be available in the data source used by KEDA to query scaling metrics (configured via `_config.autoscaling_prometheus_url`). #8250
+* [ENHANCEMENT] Update rollout-operator to `v0.17.0`. #8399
 * [BUGFIX] Guard against missing samples in KEDA queries. #7691
 
 ### Mimirtool
