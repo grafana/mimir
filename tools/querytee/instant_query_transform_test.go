@@ -117,6 +117,59 @@ func TestAddMissingTimeParam(t *testing.T) {
 			},
 			expectedBody: url.Values{},
 		},
+		"POST with parameters in both URL and body, and no time in either place": {
+			method: http.MethodPost,
+			urlParams: url.Values{
+				"query": []string{"sum(abc)"},
+			},
+			body: url.Values{
+				"timeout": []string{"60s"},
+			},
+
+			expectedURLParams: url.Values{
+				"query": []string{"sum(abc)"},
+			},
+			expectedBody: url.Values{
+				"timeout": []string{"60s"},
+				"time":    []string{"2024-06-10T20:30:40Z"},
+			},
+		},
+		"POST with parameters in both URL and body, and time in URL": {
+			method: http.MethodPost,
+			urlParams: url.Values{
+				"query": []string{"sum(abc)"},
+				"time":  []string{"2024-06-19T01:23:45Z"},
+			},
+			body: url.Values{
+				"timeout": []string{"60s"},
+			},
+
+			expectedURLParams: url.Values{
+				"query": []string{"sum(abc)"},
+				"time":  []string{"2024-06-19T01:23:45Z"},
+			},
+			expectedBody: url.Values{
+				"timeout": []string{"60s"},
+			},
+		},
+		"POST with parameters in both URL and body, and time in body": {
+			method: http.MethodPost,
+			urlParams: url.Values{
+				"query": []string{"sum(abc)"},
+			},
+			body: url.Values{
+				"time":    []string{"2024-06-19T01:23:45Z"},
+				"timeout": []string{"60s"},
+			},
+
+			expectedURLParams: url.Values{
+				"query": []string{"sum(abc)"},
+			},
+			expectedBody: url.Values{
+				"time":    []string{"2024-06-19T01:23:45Z"},
+				"timeout": []string{"60s"},
+			},
+		},
 	}
 
 	logger, _ := spanlogger.New(context.Background(), "test")
