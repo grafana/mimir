@@ -366,7 +366,7 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 			// in the next iteration.
 			lag, seenTillTs, lastBlockEnd, err = b.consumePartition(ctx, pl.Partition, lag, seenTillTs, lastBlockEnd, ce)
 			if err != nil {
-				level.Error(b.logger).Log("msg", "failed to consume partition", "err", err, "part")
+				level.Error(b.logger).Log("msg", "failed to consume partition", "err", err, "part", pl.Partition)
 			}
 			// If adding the ConsumeInterval takes it beyond the cycleEnd, we set it to the cycleEnd to not
 			// exit the loop without consuming until cycleEnd.
@@ -506,7 +506,7 @@ func (b *BlockBuilder) consumePartition(
 			Epoch:  firstRec.LeaderEpoch,
 			Offset: firstRec.Offset,
 		}
-		b.seekPartition(ctx, part, rec)
+		b.seekPartition(part, rec)
 		return lag, seenTillTs, lastBlockMax, nil
 	}
 
@@ -523,7 +523,7 @@ func (b *BlockBuilder) consumePartition(
 			Epoch:  commitRec.LeaderEpoch,
 			Offset: commitRec.Offset + 1, // offset+1 means everything up (including) to commitRec was processed
 		}
-		b.seekPartition(ctx, part, rec)
+		b.seekPartition(part, rec)
 	}()
 
 	// We should take the max of "seen till" timestamp. If the partition was lagging
@@ -541,7 +541,7 @@ func (b *BlockBuilder) consumePartition(
 	return lag, seenTillTs, commitBlockMax, err
 }
 
-func (b *BlockBuilder) seekPartition(ctx context.Context, part int32, rec kgo.EpochOffset) {
+func (b *BlockBuilder) seekPartition(part int32, rec kgo.EpochOffset) {
 	offsets := map[string]map[int32]kgo.EpochOffset{
 		b.cfg.Kafka.Topic: {
 			part: rec,
@@ -610,14 +610,14 @@ const (
 	kafkaCommitMetaV1 = 1
 )
 
-// commitRecTs: timestamp of the record which was comitted (and not the commit time).
+// commitRecTs: timestamp of the record which was committed (and not the commit time).
 // lastRecTs: timestamp of the last record processed (which will be >= commitRecTs).
 // blockEnd: timestamp of the block end in this cycle.
 func marshallCommitMeta(commitRecTs, lastRecTs, blockEnd int64) string {
 	return fmt.Sprintf("%d,%d,%d,%d", kafkaCommitMetaV1, commitRecTs, lastRecTs, blockEnd)
 }
 
-// commitRecTs: timestamp of the record which was comitted (and not the commit time).
+// commitRecTs: timestamp of the record which was committed (and not the commit time).
 // lastRecTs: timestamp of the last record processed (which will be >= commitRecTs).
 // blockEnd: timestamp of the block end in this cycle.
 func unmarshallCommitMeta(meta string) (commitRecTs, lastRecTs, blockEnd int64, err error) {
@@ -650,15 +650,14 @@ type Config struct {
 	BlocksStorageConfig mimir_tsdb.BlocksStorageConfig `yaml:"-"` // TODO(codesome): check how this is passed. Copied over form ingester.
 }
 
-// RegisterFlags registers the MultitenantCompactor flags.
-func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	cfg.Kafka.RegisterFlags(f, logger)
+func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	cfg.Kafka.RegisterFlags(f)
 
 	f.DurationVar(&cfg.ConsumeInterval, "consume-internal", time.Hour, "Interval between block consumption cycles.")
 	f.DurationVar(&cfg.ConsumeIntervalBuffer, "consume-internal-buffer", 5*time.Minute, "Extra buffer between subsequent block consumption cycles to avoid small blocks.")
 }
 
-func (cfg *Config) Validate(logger log.Logger) error {
+func (cfg *Config) Validate() error {
 	if err := cfg.Kafka.Validate(); err != nil {
 		return err
 	}
@@ -672,18 +671,14 @@ func (cfg *Config) Validate(logger log.Logger) error {
 
 // KafkaConfig holds the generic config for the Kafka backend.
 type KafkaConfig struct {
-	Address     string        `yaml:"address"`
-	Topic       string        `yaml:"topic"`
-	ClientID    string        `yaml:"client_id"`
-	DialTimeout time.Duration `yaml:"dial_timeout"`
-
-	ConsumerGroup                     string        `yaml:"consumer_group"`
-	ConsumerGroupOffsetCommitInterval time.Duration `yaml:"consumer_group_offset_commit_interval"`
-
-	ConsumeFromPositionAtStartup string `yaml:"consume_from_position_at_startup"`
+	Address       string        `yaml:"address"`
+	Topic         string        `yaml:"topic"`
+	ClientID      string        `yaml:"client_id"`
+	DialTimeout   time.Duration `yaml:"dial_timeout"`
+	ConsumerGroup string        `yaml:"consumer_group"`
 }
 
-func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.RegisterFlagsWithPrefix("block-builder.kafka", f)
 }
 
