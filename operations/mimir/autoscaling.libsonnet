@@ -276,9 +276,9 @@
       |||
         quantile_over_time(0.95,
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(pod_matcher)s}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[5m]))
             and
-            max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(pod_matcher)s}[1m])) > 0
+            max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(extra_matchers)s}[1m])) > 0
           )[15m:]
         ) * 1000
       |||
@@ -293,9 +293,9 @@
       |||
         max_over_time(
           sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(pod_matcher)s}[5m]))
+            sum by (pod) (rate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[5m]))
             and
-            max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(pod_matcher)s}) > 0
+            max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
           )[15m:]
         ) * 1000
       |||
@@ -307,7 +307,7 @@
       count (
         count_over_time(
           present_over_time(
-            container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(pod_matcher)s}[1m]
+            container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[1m]
           )[15m:1m]
         ) >= 15
       )
@@ -325,9 +325,9 @@
           quantile_over_time(0.95,
             sum(
               (
-                sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(pod_matcher)s})
+                sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
                 and
-                max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(pod_matcher)s}[1m])) > 0
+                max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(extra_matchers)s}[1m])) > 0
               ) or vector(0)
             )[15m:]
           )
@@ -343,9 +343,9 @@
           max_over_time(
             sum(
               (
-                sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(pod_matcher)s})
+                sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
                 and
-                max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(pod_matcher)s}) > 0
+                max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
               ) or vector(0)
             )[15m:]
           )
@@ -358,18 +358,18 @@
       |||
         +
         sum(
-          sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="%(container)s", namespace="%(namespace)s", resource="memory"%(pod_matcher)s}[15m]))
+          sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="%(container)s", namespace="%(namespace)s", resource="memory"%(extra_matchers)s}[15m]))
           and
-          max by (pod) (changes(kube_pod_container_status_restarts_total{container="%(container)s", namespace="%(namespace)s"%(pod_matcher)s}[15m]) > 0)
+          max by (pod) (changes(kube_pod_container_status_restarts_total{container="%(container)s", namespace="%(namespace)s"%(extra_matchers)s}[15m]) > 0)
           and
-          max by (pod) (kube_pod_container_status_last_terminated_reason{container="%(container)s", namespace="%(namespace)s", reason="OOMKilled"%(pod_matcher)s})
+          max by (pod) (kube_pod_container_status_last_terminated_reason{container="%(container)s", namespace="%(namespace)s", reason="OOMKilled"%(extra_matchers)s})
           or vector(0)
         )
         and
         count (
           count_over_time(
             present_over_time(
-              container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(pod_matcher)s}[1m]
+              container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[1m]
             )[15m:1m]
           ) >= 15
         )
@@ -396,7 +396,7 @@
       local queryParameters = {
         container: if container_name != '' then container_name else name,
         namespace: $._config.namespace,
-        pod_matcher: if pod_regex == '' then '' else ',pod=~"%s"' % pod_regex,
+        extra_matchers: if pod_regex == '' then '' else ',pod=~"%s"' % pod_regex,
       },
 
       min_replica_count: replicasWithWeight(min_replicas, weight),
