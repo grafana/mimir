@@ -574,6 +574,16 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 	})
 
 	queue.SubmitRegisterQuerierConnection(querierID)
+
+	// Calling WaitForRequestForQuerier with a context that is already cancelled should fail immediately.
+	deadCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	r, tenant, err := queue.WaitForRequestForQuerier(deadCtx, FirstTenant(), querierID)
+	assert.Nil(t, r)
+	assert.Equal(t, FirstTenant(), tenant)
+	assert.ErrorIs(t, err, context.Canceled)
+
+	// Further, a context canceled after WaitForRequestForQuerier publishes a request should also fail.
 	errChan := make(chan error)
 	ctx, cancel := context.WithCancel(context.Background())
 
