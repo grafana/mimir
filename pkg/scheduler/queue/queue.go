@@ -437,8 +437,7 @@ func (q *RequestQueue) WaitForRequestForQuerier(ctx context.Context, last Tenant
 		querierConnCtx:  ctx,
 		querierID:       QuerierID(querierID),
 		lastTenantIndex: last,
-		// recvChan is written to by the dispatcher loop and read below. It is never closed.
-		recvChan: make(chan requestForQuerier),
+		recvChan:        make(chan requestForQuerier),
 	}
 
 	select {

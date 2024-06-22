@@ -574,6 +574,16 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 	})
 
 	queue.SubmitRegisterQuerierConnection(querierID)
+
+	// Calling WaitForRequestForQuerier with a context that is already cancelled should fail immediately.
+	deadCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	r, tenant, err := queue.WaitForRequestForQuerier(deadCtx, FirstTenant(), querierID)
+	assert.Nil(t, r)
+	assert.Equal(t, FirstTenant(), tenant)
+	assert.ErrorIs(t, err, context.Canceled)
+
+	// Further, a context canceled after WaitForRequestForQuerier publishes a request should also fail.
 	errChan := make(chan error)
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -620,48 +630,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 
 	_, _, err = queue.WaitForRequestForQuerier(context.Background(), FirstTenant(), querierID)
 	require.EqualError(t, err, "querier has informed the scheduler it is shutting down")
-}
-
-func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnErrorIfCtxCanceled(t *testing.T) {
-	// This tests a rare (~5 in 100K test runs) race where a canceled querier
-	// context results in WaitForRequestForQuerier returning no error yet a nil
-	// request.
-
-	const forgetDelay = 3 * time.Second
-
-	queue, err := NewRequestQueue(
-		log.NewNopLogger(),
-		1, true,
-		forgetDelay,
-		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
-		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
-		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
-	)
-	require.NoError(t, err)
-
-	// Start the queue service.
-	ctx := context.Background()
-	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
-	})
-
-	queue.SubmitRegisterQuerierConnection("querier-1")
-	queue.SubmitUnregisterQuerierConnection("querier-1")
-
-	req := &SchedulerRequest{
-		Ctx:                       context.Background(),
-		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
-		AdditionalQueueDimensions: randAdditionalQueueDimension(true),
-	}
-	require.NoError(t, queue.SubmitRequestToEnqueue("user-1", req, 2, nil))
-
-	cctx, cancel := context.WithCancel(ctx)
-	cancel() // Cancel it right away.
-	r, _, qerr := queue.WaitForRequestForQuerier(cctx, FirstTenant(), "querier-1")
-	require.Error(t, qerr)
-	require.Nil(t, r)
 }
 
 func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSendToQuerier(t *testing.T) {
