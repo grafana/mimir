@@ -735,6 +735,19 @@ func (r *RuleCommand) executeChanges(ctx context.Context, changes []rules.Namesp
 	fmt.Println()
 	fmt.Printf("Sync Summary: %v Groups Created, %v Groups Updated, %v Groups Deleted\n", created, updated, deleted)
 	return nil
+
+}
+
+// Do not apply the aggregation label to excluded rule groups.
+func (r *RuleCommand) applyTo(group rwrulefmt.RuleGroup, _ rulefmt.RuleNode) bool {
+	_, excluded := r.aggregationLabelExcludedRuleGroupsList[group.Name]
+	if excluded {
+		return false
+	}
+	if r.aggregationLabelExcludedRuleGroupsRegex.MatchString(group.Name) {
+		return false
+	}
+	return true
 }
 
 func (r *RuleCommand) prepare(_ *kingpin.ParseContext) error {
@@ -748,21 +761,9 @@ func (r *RuleCommand) prepare(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "prepare operation unsuccessful, unable to parse rules files")
 	}
 
-	// Do not apply the aggregation label to excluded rule groups.
-	applyTo := func(group rwrulefmt.RuleGroup, _ rulefmt.RuleNode) bool {
-		_, excluded := r.aggregationLabelExcludedRuleGroupsList[group.Name]
-		if excluded {
-			return false
-		}
-		if r.aggregationLabelExcludedRuleGroupsRegex.MatchString(group.Name) {
-			return false
-		}
-		return true
-	}
-
 	var count, mod int
 	for _, ruleNamespace := range namespaces {
-		c, m, err := ruleNamespace.AggregateBy(r.AggregationLabel, applyTo)
+		c, m, err := ruleNamespace.AggregateBy(r.AggregationLabel, r.applyTo)
 		if err != nil {
 			return err
 		}

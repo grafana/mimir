@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -296,6 +297,47 @@ groups:
 		require.NoError(t, err)
 		assert.Equal(t, expected, string(content))
 	})
+}
+
+func TestExcludeGroupsFromPrepare(t *testing.T) {
+	cmd := &RuleCommand{AggregationLabelExcludedRuleGroups: "group_a,group_b", AggregationLabelExcludedRuleGroupsRegex: "group_c.*,group_(d|e)"}
+	cmd.setupArgs()
+	// test args setup
+	assert.Equal(t, map[string]struct{}{"group_a": struct{}{}, "group_b": struct{}{}}, cmd.aggregationLabelExcludedRuleGroupsList)
+	assert.Equal(t, regexp.MustCompile("(group_c.*|group_(d|e))"), cmd.aggregationLabelExcludedRuleGroupsRegex)
+
+	// test different exclusion scenarios
+	for _, tc := range []struct {
+		name      string
+		groupName string
+		aggregate bool
+	}{
+		{
+			name:      "group name doesn't match any criteria",
+			groupName: "group_f",
+			aggregate: true,
+		},
+		{
+			name:      "group name match explicite name criteria",
+			groupName: "group_a",
+			aggregate: false,
+		},
+		{
+			name:      "group name match regex name criteria",
+			groupName: "group_cmore",
+			aggregate: false,
+		},
+	}{
+		t.Run(tc.name, func(t *testing.T) {
+			rule := []rwrulefmt.RuleGroup{{
+				RuleGroup: rulefmt.RuleGroup{
+					Name: "groupName",
+				},
+			}}
+			cmd.applyTo(rule[0], rulefmt.RuleNode{})
+		})
+	}
+
 }
 
 type ruleCommandClientMock struct {
