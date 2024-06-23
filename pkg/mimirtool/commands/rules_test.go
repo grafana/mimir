@@ -303,7 +303,7 @@ func TestExcludeGroupsFromPrepare(t *testing.T) {
 	cmd := &RuleCommand{AggregationLabelExcludedRuleGroups: "group_a,group_b", AggregationLabelExcludedRuleGroupsRegex: "group_c.*,group_(d|e)"}
 	cmd.setupArgs()
 	// test args setup
-	assert.Equal(t, map[string]struct{}{"group_a": struct{}{}, "group_b": struct{}{}}, cmd.aggregationLabelExcludedRuleGroupsList)
+	assert.Equal(t, map[string]struct{}{"group_a": {}, "group_b": {}}, cmd.aggregationLabelExcludedRuleGroupsList)
 	assert.Equal(t, regexp.MustCompile("(group_c.*|group_(d|e))"), cmd.aggregationLabelExcludedRuleGroupsRegex)
 
 	// test different exclusion scenarios

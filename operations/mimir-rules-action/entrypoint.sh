@@ -55,7 +55,7 @@ case "${ACTION}" in
     STATUS=$?
     ;;
   "$PREPARE_CMD")
-    OUTPUT=$(/bin/mimirtool rules prepare -i --rule-dirs="${RULES_DIR}" ${LABEL:+ --label=${LABEL}} --label-excluded-rule-groups="${LABEL_EXCLUDED_RULE_GROUPS}" "$@")
+    OUTPUT=$(/bin/mimirtool rules prepare -i --rule-dirs="${RULES_DIR}" ${LABEL:+ --label=${LABEL}} --label-excluded-rule-groups="${LABEL_EXCLUDED_RULE_GROUPS}" --label-excluded-rule-groups-regex="${LABEL_EXCLUDED_RULE_GROUPS_REGEX}" "$@")
     STATUS=$?
     ;;
   "$CHECK_CMD")

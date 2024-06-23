@@ -388,10 +388,11 @@ mimirtool rules prepare <file_path>...
 
 | Flag                           | Description                                                                                                                                    |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-i`, `--in-place`             | Edits the file in place. If not set, the system generates a new file with the extension `.result` that contains the results.                   |
-| `-l`, `--label="cluster"`      | Specifies the label for aggregations. By default, the label is set to `cluster`.                                                               |
-| `--label-excluded-rule-groups` | Comma separated list of rule group names to exclude when including the configured label to aggregations.                                       |
-| `--rule-dirs`                  | Comma separated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed. |
+| `-i`, `--in-place`                   | Edits the file in place. If not set, the system generates a new file with the extension `.result` that contains the results.                   |
+| `-l`, `--label="cluster"`            | Specifies the label for aggregations. By default, the label is set to `cluster`.                                                               |
+| `--label-excluded-rule-groups`       | Comma separated list of rule group names to exclude when including the configured label to aggregations.                                       |
+| `--label-excluded-rule-groups-regex` | Comma separated list of rule regexes, which match group names to exclude when including the configured label to aggregations.                                       |
+| `--rule-dirs`                        | Comma separated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed. |
 
 ##### Example
 
