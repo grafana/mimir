@@ -123,15 +123,18 @@ ruler_storage:
 
 You must disable [hierarchical namespace](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-namespace), otherwise Grafana Mimir will leave empty directories behind when deleting blocks.
 
-Mimir requires the following configuration to authenticate to and access Azure blob storage:
+Mimir requires the following configuration to authenticate to and access Azure Blob Storage:
 
-- Storage Account name specified in the configuration file as `storage_account_name` or in the environment variable `AZURE_STORAGE_ACCOUNT`
-- Credentials for accessing the Storage Account that are one of the following:
-  - Storage Account access key specified in the configuration file as `storage_account_key` or in the environment variable `AZURE_STORAGE_KEY`
-  - An Azure Managed Identity that is either system or user assigned. To use Azure Managed Identities, you'll need to set `use_managed_identity` to `true` in the configuration file or set `user_assigned_id` to the client ID for the managed identity you'd like to use.
-    - For a system-assigned managed identity, no additional configuration is required.
-    - For a user-assigned managed identity, you'll need to set `user_assigned_id` to the client ID for the managed identity in the configuration file.
-  - Via Azure Workload Identity. To use Azure Workload Identity, you'll need to enable Azure Workload Identity on your cluster, add the required label and annotation to the service account and the required pod label.
+- A storage account name specified either in the configuration file as `storage_account_name` or in the `AZURE_STORAGE_ACCOUNT` environment variable 
+- One of the following credentials for accessing the storage account:
+  - A storage account access key specified either in the configuration file as `storage_account_key` or in the `AZURE_STORAGE_KEY` environment variable. 
+  - An Azure managed identity that is either system or user-assigned. To use Azure managed identities, either set `use_managed_identity` to `true` in the configuration file or set `user_assigned_id` to the client ID for the managed identity you want to use.
+    - For a system-assigned managed identity, you do not need to perform additional configurations.
+    - For a user-assigned managed identity, set `user_assigned_id` to the client ID for the managed identity in the configuration file.
+  - Via Azure Workload Identity. To use Azure Workload Identity:
+   1. Enable Azure Workload Identity on your cluster
+   2. Add the required label and annotation to the service account
+   3. Add the required pod label
 
 ### Sample configuration
 
@@ -163,7 +166,7 @@ ruler_storage:
 
 #### Azure Workload Identity
 
-Here is an example config for using Azure Workload Identity.
+Here is an example configuration for using Azure Workload Identity.  
 
 ```yaml
 ---
@@ -199,7 +202,9 @@ global:
     "azure.workload.identity/use: "true"
 ```
 
-_note: federated token is not supported with Mimir unlike with Tempo_
+{{< admonition type="note" >}}  
+Unlike with Tempo, federated tokens are not supported with Mimir.  
+{{< /admonition >}}  
 
 ### OpenStack SWIFT
 
