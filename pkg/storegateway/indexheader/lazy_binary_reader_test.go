@@ -514,7 +514,7 @@ func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading_L
 	assert.ErrorIs(t, err, assert.AnError)
 }
 
-func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading_NoGhostReaders(t *testing.T) {
+func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading_NoZombieReaders(t *testing.T) {
 	// This test makes sure that if we requested a reader, but then gave up, then the reader is properly closed and
 	// isn't open forever.
 	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
