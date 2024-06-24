@@ -1250,8 +1250,8 @@ push_circuit_breaker:
   [initial_delay: <duration> | default = 0s]
 
   # (experimental) The maximum duration of an ingester's request before it
-  # triggers a circuit breaker. This configuration is used for circuit breakers
-  # only, and its timeouts aren't reported as errors.
+  # triggers a timeout. This configuration is used for circuit breakers only,
+  # and its timeouts aren't reported as errors.
   # CLI flag: -ingester.push-circuit-breaker.request-timeout
   [request_timeout: <duration> | default = 2s]
 
@@ -1287,8 +1287,8 @@ read_circuit_breaker:
   [initial_delay: <duration> | default = 0s]
 
   # (experimental) The maximum duration of an ingester's request before it
-  # triggers a circuit breaker. This configuration is used for circuit breakers
-  # only, and its timeouts aren't reported as errors.
+  # triggers a timeout. This configuration is used for circuit breakers only,
+  # and its timeouts aren't reported as errors.
   # CLI flag: -ingester.read-circuit-breaker.request-timeout
   [request_timeout: <duration> | default = 30s]
 ```
