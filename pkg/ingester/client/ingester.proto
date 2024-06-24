@@ -234,10 +234,3 @@ message LabelMatcher {
   string name = 2;
   string value = 3;
 }
-
-message TimeSeriesFile {
-  string from_ingester_id = 1;
-  string user_id = 2;
-  string filename = 3;
-  bytes data = 4;
-}
