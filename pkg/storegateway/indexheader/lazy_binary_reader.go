@@ -350,8 +350,8 @@ func (r *LazyBinaryReader) controlLoop() {
 	for {
 		select {
 		case readerReq := <-r.loadedReader:
-			if loaded.reader == nil && loaded.err == nil {
-				// TODO dimitarvdimitrov see if we retry loading a reader
+			if loaded.reader == nil {
+				// Try to load the reader if it hasn't been loaded before or if the previous loading failed.
 				loaded = loadedReader{}
 				loaded.reader, loaded.err = r.loadReader()
 				if loaded.reader != nil {

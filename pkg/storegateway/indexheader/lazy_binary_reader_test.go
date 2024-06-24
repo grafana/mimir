@@ -7,6 +7,7 @@ package indexheader
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -512,6 +513,12 @@ func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading_L
 	loadStarted = make(chan struct{})
 	_, err = lazyReader.IndexVersion(context.Background()) // try to use the reader implementation now that it has loaded
 	assert.ErrorIs(t, err, assert.AnError)
+
+	// Since we got an error the previous time we try to load the reader again.
+	loadErr = fmt.Errorf("a different error")
+	loadStarted = make(chan struct{})
+	_, err = lazyReader.IndexVersion(context.Background()) // try to use the reader implementation now that it has loaded
+	assert.ErrorIs(t, err, loadErr)
 }
 
 func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading_NoZombieReaders(t *testing.T) {
