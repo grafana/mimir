@@ -24,6 +24,9 @@
 
 ### Mixin
 
+* [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards. #7674
+  * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric.
+
 ### Jsonnet
 
 * [FEATURE] Add support for automatically deleting compactor, store-gateway and read-write mode backend PVCs when the corresponding StatefulSet is scaled down. #8382
@@ -167,8 +170,8 @@
   * `MimirIngesterFailsEnforceStrongConsistencyOnReadPath`
 * [ENHANCEMENT] Dashboards: add in-flight queries scaling metric panel for ruler-querier. #7749
 * [ENHANCEMENT] Dashboards: renamed rows in the "Remote ruler reads" and "Remote ruler reads resources" dashboards to match the actual component names. #7750
-* [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards. #7627 #7674
-  * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric.
+* [ENHANCEMENT] Dashboards: allow switching between using classic of native histograms in dashboards. #7627
+  * Overview dashboard, Status panel, `cortex_request_duration_seconds` metric.
 * [ENHANCEMENT] Alerts: exclude `529` and `598` status codes from failure codes in `MimirRequestsError`. #7889
 * [ENHANCEMENT] Dashboards: renamed "TCP Connections" panel to "Ingress TCP Connections" in the networking dashboards. #8092
 * [ENHANCEMENT] Dashboards: update the use of deprecated "table (old)" panels to "table". #8181
