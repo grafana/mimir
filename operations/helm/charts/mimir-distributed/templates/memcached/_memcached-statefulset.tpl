@@ -22,6 +22,12 @@ spec:
   updateStrategy:
     {{- toYaml .statefulStrategy | nindent 4 }}
   serviceName: {{ template "mimir.fullname" $.ctx }}-{{ $.component }}
+  {{- if .volumeClaimTemplates }}
+  volumeClaimTemplates:
+  {{- with .volumeClaimTemplates }}
+      {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- end }}
 
   template:
     metadata:
@@ -107,14 +113,14 @@ spec:
             {{- range $key, $value := .extraArgs }}
             - "-{{ $key }}{{ if $value }} {{ $value }}{{ end }}"
             {{- end }}
+          {{- with $.ctx.Values.global.extraEnv }}
           env:
-            {{- with $.ctx.Values.global.extraEnv }}
               {{ toYaml . | nindent 12 }}
-            {{- end }}
+          {{- end }}
+          {{- with $.ctx.Values.global.extraEnvFrom }}
           envFrom:
-            {{- with $.ctx.Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
-            {{- end }}
+          {{- end }}
           securityContext:
             {{- toYaml $.ctx.Values.memcached.containerSecurityContext | nindent 12 }}
           volumeMounts:

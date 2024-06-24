@@ -79,11 +79,11 @@ spec:
             - name: active-queries
               mountPath: /active-query-tracker
         {{- else }}
-        - name: nginx
+        - name: gateway
           image: {{ .nginx.image.registry }}/{{ .nginx.image.repository }}:{{ .nginx.image.tag }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
-          args:
           {{- with .extraArgs }}
+          args:
             {{- range $key, $value := . }}
             - "-{{ $key }} {{ $value }}"
             {{- end }}
@@ -117,6 +117,8 @@ spec:
             {{- toYaml .resources | nindent 12 }}
           securityContext:
             {{- toYaml .containerSecurityContext | nindent 12 }}
+          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil . }}
+          {{- if or $.Values.global.extraEnv .env $jaeger_queue_size }}
           env:
             {{- with $.Values.global.extraEnv }}
               {{ toYaml . | nindent 12 }}
@@ -124,11 +126,12 @@ spec:
             {{- with .env }}
               {{ toYaml . | nindent 12 }}
             {{- end }}
-            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil . }}
             {{- if $jaeger_queue_size }}
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
+          {{- end }}
+          {{- if or $.Values.global.extraEnvFrom .extraEnvFrom }}
           envFrom:
             {{- with $.Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -136,6 +139,7 @@ spec:
             {{- with .extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
         {{- with .extraContainers }}
         {{ toYaml . | nindent 8 }}
         {{- end }}

@@ -40,6 +40,7 @@ type Distributor interface {
 	LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*client.LabelNamesAndValuesResponse, error)
 	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error)
 	ActiveSeries(ctx context.Context, matchers []*labels.Matcher) ([]labels.Labels, error)
+	ActiveNativeHistogramMetrics(ctx context.Context, matchers []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error)
 }
 
 func NewDistributorQueryable(distributor Distributor, cfgProvider distributorQueryableConfigProvider, queryMetrics *stats.QueryMetrics, logger log.Logger) storage.Queryable {
@@ -145,8 +146,6 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		serieses = append(serieses, &chunkSeries{
 			labels: ls,
 			chunks: chunks,
-			mint:   minT,
-			maxt:   maxT,
 		})
 	}
 
@@ -157,8 +156,6 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	if len(results.StreamingSeries) > 0 {
 		streamingSeries := make([]storage.Series, 0, len(results.StreamingSeries))
 		streamingChunkSeriesConfig := &streamingChunkSeriesContext{
-			mint:         minT,
-			maxt:         maxT,
 			queryMetrics: q.queryMetrics,
 			queryStats:   stats.FromContext(ctx),
 		}

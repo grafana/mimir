@@ -162,9 +162,9 @@ local filename = 'mimir-ruler.json';
       .addPanel(
         $.timeseriesPanel('Queue length') +
         $.queryPanel(|||
-          sum by(user) (rate(cortex_prometheus_notifications_queue_length{%s}[$__rate_interval]))
+          sum by(user) (cortex_prometheus_notifications_queue_length{%s})
             /
-          sum by(user) (rate(cortex_prometheus_notifications_queue_capacity{%s}[$__rate_interval])) > 0
+          sum by(user) (cortex_prometheus_notifications_queue_capacity{%s}) > 0
         ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], '{{ user }}')
         { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } },
       )

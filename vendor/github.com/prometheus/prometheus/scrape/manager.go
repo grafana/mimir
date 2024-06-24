@@ -81,6 +81,8 @@ type Options struct {
 	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
 	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
 	EnableCreatedTimestampZeroIngestion bool
+	// Option to enable the ingestion of native histograms.
+	EnableNativeHistogramsIngestion bool
 
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
@@ -185,7 +187,6 @@ func (m *Manager) reload() {
 			sp.Sync(groups)
 			wg.Done()
 		}(m.scrapePools[setName], groups)
-
 	}
 	m.mtxScrape.Unlock()
 	wg.Wait()

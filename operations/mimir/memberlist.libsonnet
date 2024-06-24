@@ -131,6 +131,21 @@
     if !$._config.memberlist_ring_enabled then {} else gossipLabel
   ),
 
+  ingester_partition_zone_a_statefulset: overrideSuperIfExists(
+    'ingester_partition_zone_a_statefulset',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
+
+  ingester_partition_zone_b_statefulset: overrideSuperIfExists(
+    'ingester_partition_zone_b_statefulset',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
+
+  ingester_partition_zone_c_statefulset: overrideSuperIfExists(
+    'ingester_partition_zone_c_statefulset',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
+
   querier_deployment: overrideSuperIfExists(
     'querier_deployment',
     if !$._config.memberlist_ring_enabled then {} else gossipLabel

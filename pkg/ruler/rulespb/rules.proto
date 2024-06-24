@@ -31,7 +31,11 @@ message RuleGroupDesc {
   // to the Prometheus Manager.
   repeated google.protobuf.Any options = 9;
   repeated string sourceTenants = 10;
+
+  // Deprecated: use queryOffset instead.
   google.protobuf.Duration evaluationDelay = 11 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
+  google.protobuf.Duration queryOffset = 13 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
+
   bool align_evaluation_time_on_interval = 12;
 }
 

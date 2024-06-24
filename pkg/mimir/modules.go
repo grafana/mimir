@@ -21,7 +21,6 @@ import (
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/ring"
-	"github.com/grafana/dskit/runtimeconfig"
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
@@ -38,6 +37,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
+	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	"github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/continuoustest"
@@ -385,23 +385,7 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 		return nil, nil
 	}
 
-	loader := runtimeConfigLoader{validate: t.Cfg.ValidateLimits}
-	t.Cfg.RuntimeConfig.Loader = loader.load
-
-	// DeprecatedAlignQueriesWithStep is moving from a global config that can in the frontend yaml to a limit config
-	// We need to preserve the option in the frontend yaml for two releases
-	// If the frontend config is configured by the user, the default limit is overwritten
-	// TODO: Remove in Mimir 2.14
-	if t.Cfg.Frontend.QueryMiddleware.DeprecatedAlignQueriesWithStep != querymiddleware.DefaultDeprecatedAlignQueriesWithStep {
-		t.Cfg.LimitsConfig.AlignQueriesWithStep = t.Cfg.Frontend.QueryMiddleware.DeprecatedAlignQueriesWithStep
-	}
-
-	// make sure to set default limits before we start loading configuration into memory
-	validation.SetDefaultLimitsForYAMLUnmarshalling(t.Cfg.LimitsConfig)
-	ingester.SetDefaultInstanceLimitsForYAMLUnmarshalling(t.Cfg.Ingester.DefaultLimits)
-	distributor.SetDefaultInstanceLimitsForYAMLUnmarshalling(t.Cfg.Distributor.DefaultLimits)
-
-	serv, err := runtimeconfig.New(t.Cfg.RuntimeConfig, "mimir-runtime-config", prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer), util_log.Logger)
+	serv, err := NewRuntimeManager(&t.Cfg, "mimir-runtime-config", prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer), util_log.Logger)
 	if err == nil {
 		// TenantLimits just delegates to RuntimeConfig and doesn't have any state or need to do
 		// anything in the start/stopping phase. Thus we can create it as part of runtime config
@@ -714,7 +698,7 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 // initQueryFrontendCodec initializes query frontend codec.
 // NOTE: Grafana Enterprise Metrics depends on this.
 func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
-	t.QueryFrontendCodec = querymiddleware.NewPrometheusCodec(t.Registerer, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat)
+	t.QueryFrontendCodec = querymiddleware.NewPrometheusCodec(t.Registerer, t.Cfg.Frontend.FrontendV2.LookBackDelta, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat)
 	return nil, nil
 }
 
@@ -745,9 +729,18 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 
 func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.Cfg.Frontend.FrontendV2.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
+	t.Cfg.Frontend.FrontendV2.LookBackDelta = t.Cfg.Querier.EngineConfig.LookbackDelta
 	t.Cfg.Frontend.FrontendV2.QueryStoreAfter = t.Cfg.Querier.QueryStoreAfter
 
-	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(t.Cfg.Frontend, t.Overrides, t.Overrides, t.Cfg.Server.GRPCListenPort, util_log.Logger, t.Registerer)
+	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(
+		t.Cfg.Frontend,
+		t.Overrides,
+		t.Overrides,
+		t.Cfg.Server.GRPCListenPort,
+		util_log.Logger,
+		t.Registerer,
+		t.QueryFrontendCodec,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -938,7 +931,10 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 	t.Cfg.Alertmanager.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Alertmanager.CheckExternalURL(t.Cfg.API.AlertmanagerHTTPPrefix, util_log.Logger)
 
-	store, err := alertstore.NewAlertStore(context.Background(), t.Cfg.AlertmanagerStorage, t.Overrides, util_log.Logger, t.Registerer)
+	bCfg := bucketclient.BucketAlertStoreConfig{
+		FetchGrafanaConfig: t.Cfg.Alertmanager.GrafanaAlertmanagerCompatibilityEnabled,
+	}
+	store, err := alertstore.NewAlertStore(context.Background(), t.Cfg.AlertmanagerStorage, t.Overrides, bCfg, util_log.Logger, t.Registerer)
 	if err != nil {
 		return
 	}

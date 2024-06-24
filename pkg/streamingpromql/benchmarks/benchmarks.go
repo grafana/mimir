@@ -25,8 +25,9 @@ import (
 var MetricSizes = []int{1, 100, 2000}
 
 type BenchCase struct {
-	Expr  string
-	Steps int
+	Expr             string
+	Steps            int
+	InstantQueryOnly bool
 }
 
 func (c BenchCase) Name() string {
@@ -68,12 +69,22 @@ func (c BenchCase) Run(ctx context.Context, t testing.TB, start, end time.Time, 
 	return res, qry.Close
 }
 
-// These test cases are taken from https://github.com/prometheus/prometheus/blob/main/promql/bench_test.go.
+// These test cases are taken from https://github.com/prometheus/prometheus/blob/main/promql/bench_test.go
+// and enhanced/added to.
 func TestCases(metricSizes []int) []BenchCase {
 	cases := []BenchCase{
 		// Plain retrieval.
 		{
 			Expr: "a_X",
+		},
+		// Histogram retrieval
+		{
+			Expr: "nh_X",
+		},
+		// Range vector selector.
+		{
+			Expr:             "a_X[1m]",
+			InstantQueryOnly: true,
 		},
 		// Simple rate.
 		{
@@ -101,13 +112,26 @@ func TestCases(metricSizes []int) []BenchCase {
 		//	Expr: "-a_X",
 		//},
 		//// Binary operators.
-		//{
-		//	Expr: "a_X - b_X",
-		//},
-		//{
-		//	Expr:  "a_X - b_X",
-		//	Steps: 10000,
-		//},
+		{
+			Expr: "a_X - b_X",
+		},
+		{
+			Expr:  "a_X - b_X",
+			Steps: 10000,
+		},
+		// Test the case where one side of a binary operation has many more series than the other.
+		{
+			Expr: `a_100{l=~"[13579]."} - b_100`,
+		},
+		{
+			Expr: `a_2000{l=~"1..."} - b_2000`,
+		},
+		{
+			Expr: `a_2000{l="1234"} - b_2000`,
+		},
+		{
+			Expr: `a_2000 - b_2000{l="1234"}`,
+		},
 		//{
 		//	Expr: "a_X and b_X{l=~'.*[0-4]$'}",
 		//},
@@ -157,9 +181,12 @@ func TestCases(metricSizes []int) []BenchCase {
 		//	Expr: "topk(5, a_X)",
 		//},
 		//// Combinations.
-		//{
-		//	Expr: "rate(a_X[1m]) + rate(b_X[1m])",
-		//},
+		{
+			Expr: "rate(a_X[1m]) + rate(b_X[1m])",
+		},
+		{
+			Expr: "sum(a_X + b_X)",
+		},
 		{
 			Expr: "sum by (le)(rate(h_X[1m]))",
 		},
@@ -198,7 +225,7 @@ func TestCases(metricSizes []int) []BenchCase {
 			tmp = append(tmp, c)
 		} else {
 			for _, count := range metricSizes {
-				tmp = append(tmp, BenchCase{Expr: strings.ReplaceAll(c.Expr, "X", strconv.Itoa(count)), Steps: c.Steps})
+				tmp = append(tmp, BenchCase{Expr: strings.ReplaceAll(c.Expr, "X", strconv.Itoa(count)), Steps: c.Steps, InstantQueryOnly: c.InstantQueryOnly})
 			}
 		}
 	}
@@ -207,7 +234,11 @@ func TestCases(metricSizes []int) []BenchCase {
 	// No step will be replaced by cases with the standard step.
 	tmp = []BenchCase{}
 	for _, c := range cases {
-		if c.Steps != 0 {
+		if c.Steps != 0 || c.InstantQueryOnly {
+			if c.InstantQueryOnly && c.Steps != 0 {
+				panic(fmt.Sprintf("invalid test case '%v': configured as instant query with non-zero number of steps %v", c.Expr, c.Steps))
+			}
+
 			if c.Steps >= NumIntervals {
 				// Note that this doesn't check we have enough data to cover any range selectors.
 				panic(fmt.Sprintf("invalid test case '%v' with %v steps: test setup only creates %v steps", c.Expr, c.Steps, NumIntervals))
@@ -216,7 +247,6 @@ func TestCases(metricSizes []int) []BenchCase {
 			tmp = append(tmp, c)
 		} else {
 			tmp = append(tmp, BenchCase{Expr: c.Expr, Steps: 0})
-			tmp = append(tmp, BenchCase{Expr: c.Expr, Steps: 1})
 			tmp = append(tmp, BenchCase{Expr: c.Expr, Steps: 100})
 			tmp = append(tmp, BenchCase{Expr: c.Expr, Steps: 1000})
 			// Important: if adding test cases with larger numbers of steps, make sure to adjust NumIntervals as well.

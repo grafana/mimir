@@ -173,6 +173,8 @@ var (
 
 	errMissingMetadataPartition = errors.New("metadata update is missing a partition that we were previously using")
 
+	errNoCommittedOffset = errors.New("partition has no prior committed offset")
+
 	//////////////
 	// EXTERNAL //
 	//////////////

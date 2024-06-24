@@ -8,6 +8,7 @@ package mimirpb
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"sync"
 	"unsafe"
@@ -155,17 +156,39 @@ func (p *PreallocTimeseries) ClearExemplars() {
 	p.clearUnmarshalData()
 }
 
+func (p *PreallocTimeseries) ResizeExemplars(newSize int) {
+	if len(p.Exemplars) <= newSize {
+		return
+	}
+	// Name and Value may point into a large gRPC buffer, so clear the reference in each exemplar to allow GC
+	for i := newSize; i < len(p.Exemplars); i++ {
+		for j := range p.Exemplars[i].Labels {
+			p.Exemplars[i].Labels[j].Name = ""
+			p.Exemplars[i].Labels[j].Value = ""
+		}
+	}
+	p.Exemplars = p.Exemplars[:newSize]
+	p.clearUnmarshalData()
+}
+
 func (p *PreallocTimeseries) HistogramsUpdated() {
 	p.clearUnmarshalData()
 }
 
-// DeleteExemplarByMovingLast deletes the exemplar by moving the last one on top and shortening the slice
+// DeleteExemplarByMovingLast deletes the exemplar by moving the last one on top and shortening the slice.
 func (p *PreallocTimeseries) DeleteExemplarByMovingLast(ix int) {
 	last := len(p.Exemplars) - 1
 	if ix < last {
 		p.Exemplars[ix] = p.Exemplars[last]
 	}
 	p.Exemplars = p.Exemplars[:last]
+	p.clearUnmarshalData()
+}
+
+func (p *PreallocTimeseries) SortExemplars() {
+	sort.Slice(p.Exemplars, func(i, j int) bool {
+		return p.Exemplars[i].TimestampMs < p.Exemplars[j].TimestampMs
+	})
 	p.clearUnmarshalData()
 }
 
@@ -681,9 +704,10 @@ func (p *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *Writ
 	}
 
 	return &WriteRequest{
-		Timeseries: timeseries,
-		Metadata:   metadata,
-		Source:     p.Source,
+		Timeseries:              timeseries,
+		Metadata:                metadata,
+		Source:                  p.Source,
+		SkipLabelNameValidation: p.SkipLabelNameValidation,
 	}
 }
 

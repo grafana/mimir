@@ -12,7 +12,7 @@ metadata:
     "helm.sh/hook": test
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  backoffLimit: 5
+  backoffLimit: {{ .Values.smoke_test.backoffLimit }}
   completions: 1
   parallelism: 1
   selector:
@@ -59,6 +59,7 @@ spec:
             {{- if .Values.global.extraVolumeMounts }}
               {{ toYaml .Values.global.extraVolumeMounts | nindent 12 }}
             {{- end }}
+          {{- if or .Values.global.extraEnv .Values.smoke_test.env }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -66,6 +67,8 @@ spec:
             {{- with .Values.smoke_test.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.smoke_test.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -73,6 +76,7 @@ spec:
             {{- with .Values.smoke_test.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
       restartPolicy: OnFailure
       volumes:
         {{- if .Values.smoke_test.extraVolumes }}

@@ -57,7 +57,7 @@ func (q *shardedQueryable) Querier(_, _ int64) (storage.Querier, error) {
 
 // getResponseHeaders returns the merged response headers received by the downstream
 // when running the embedded queries.
-func (q *shardedQueryable) getResponseHeaders() []*PrometheusResponseHeader {
+func (q *shardedQueryable) getResponseHeaders() []*PrometheusHeader {
 	return q.responseHeaders.getHeaders()
 }
 
@@ -110,7 +110,11 @@ func (q *shardedQuerier) handleEmbeddedQueries(ctx context.Context, queries []st
 
 	// Concurrently run each query. It breaks and cancels each worker context on first error.
 	err := concurrency.ForEachJob(ctx, len(queries), len(queries), func(ctx context.Context, idx int) error {
-		resp, err := q.handler.Do(ctx, q.req.WithQuery(queries[idx]))
+		query, err := q.req.WithQuery(queries[idx])
+		if err != nil {
+			return err
+		}
+		resp, err := q.handler.Do(ctx, query)
 		if err != nil {
 			return err
 		}
@@ -158,7 +162,7 @@ func newResponseHeadersTracker() *responseHeadersTracker {
 	}
 }
 
-func (t *responseHeadersTracker) mergeHeaders(headers []*PrometheusResponseHeader) {
+func (t *responseHeadersTracker) mergeHeaders(headers []*PrometheusHeader) {
 	t.headersMx.Lock()
 	defer t.headersMx.Unlock()
 
@@ -172,14 +176,14 @@ func (t *responseHeadersTracker) mergeHeaders(headers []*PrometheusResponseHeade
 	}
 }
 
-func (t *responseHeadersTracker) getHeaders() []*PrometheusResponseHeader {
+func (t *responseHeadersTracker) getHeaders() []*PrometheusHeader {
 	t.headersMx.Lock()
 	defer t.headersMx.Unlock()
 
 	// Convert the response headers into the right data type.
-	out := make([]*PrometheusResponseHeader, 0, len(t.headers))
+	out := make([]*PrometheusHeader, 0, len(t.headers))
 	for name, values := range t.headers {
-		out = append(out, &PrometheusResponseHeader{Name: name, Values: values})
+		out = append(out, &PrometheusHeader{Name: name, Values: values})
 	}
 
 	return out

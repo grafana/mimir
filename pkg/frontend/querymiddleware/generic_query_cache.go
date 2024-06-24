@@ -125,7 +125,7 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 
 func (c *genericQueryCache) fetchCachedResponse(ctx context.Context, cacheKey, hashedCacheKey string) *http.Response {
 	// Look up the cache.
-	cacheHits := c.cache.Fetch(ctx, []string{hashedCacheKey})
+	cacheHits := c.cache.GetMulti(ctx, []string{hashedCacheKey})
 	if cacheHits[hashedCacheKey] == nil {
 		// Not found in the cache.
 		return nil
@@ -156,7 +156,7 @@ func (c *genericQueryCache) storeCachedResponse(ctx context.Context, cachedRes *
 		return
 	}
 	toStore := map[string][]byte{hashedCacheKey: encoded}
-	c.cache.StoreAsync(toStore, cacheTTL)
+	c.cache.SetMultiAsync(toStore, cacheTTL)
 	c.recordCacheStoreQueryDetails(ctx, toStore)
 }
 

@@ -63,6 +63,66 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Time"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Time"
+                              },
+                              {
+                                 "id": "custom.hidden",
+                                 "value": true
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Value"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "series"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "user"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "user"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "string"
+                              }
+                           ]
+                        }
+                     ]
+                  },
                   "fill": 1,
                   "id": 2,
                   "legend": {
@@ -91,58 +151,9 @@
                   "span": 12,
                   "stack": false,
                   "steppedLine": false,
-                  "styles": [
-                     {
-                        "alias": "Time",
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "pattern": "Time",
-                        "type": "hidden"
-                     },
-                     {
-                        "alias": "series",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "Value",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "short"
-                     },
-                     {
-                        "alias": "user",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "user",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "string"
-                     },
-                     {
-                        "alias": "",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "pattern": "/.*/",
-                        "thresholds": [ ],
-                        "type": "string",
-                        "unit": "short"
-                     }
-                  ],
                   "targets": [
                      {
-                        "expr": "topk($limit,\n  sum by (user) (\n    cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n    / on(cluster, namespace) group_left\n    max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n  )\n)\n",
+                        "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n)\n",
                         "format": "table",
                         "instant": true,
                         "legendFormat": "",
@@ -204,6 +215,66 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Time"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Time"
+                              },
+                              {
+                                 "id": "custom.hidden",
+                                 "value": true
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Value"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "series"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "user"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "user"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "string"
+                              }
+                           ]
+                        }
+                     ]
+                  },
                   "fill": 1,
                   "id": 3,
                   "legend": {
@@ -232,58 +303,9 @@
                   "span": 12,
                   "stack": false,
                   "steppedLine": false,
-                  "styles": [
-                     {
-                        "alias": "Time",
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "pattern": "Time",
-                        "type": "hidden"
-                     },
-                     {
-                        "alias": "series",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "Value",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "short"
-                     },
-                     {
-                        "alias": "user",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "user",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "string"
-                     },
-                     {
-                        "alias": "",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "pattern": "/.*/",
-                        "thresholds": [ ],
-                        "type": "string",
-                        "unit": "short"
-                     }
-                  ],
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (user) (\n  (\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} )\n      -\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} )\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"} )\n)\n)",
+                        "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) ((\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n)\n)\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n)",
                         "format": "table",
                         "instant": true,
                         "legendFormat": "",
@@ -378,7 +400,7 @@
                   "span": 12,
                   "targets": [
                      {
-                        "expr": "sum by (user) (\n  (\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} )\n      -\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} )\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"} )\n)\n\nand\ntopk($limit, sum by (user) (\n  (\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end())\n      -\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end())\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"} @ end())\n)\n - sum by (user) (\n  (\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start())\n      -\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start())\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"} @ start())\n)\n)\n",
+                        "expr": "(( # Classic storage\n  sum by (cluster, namespace, user) ((\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n)\n)\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} \n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n)\nand\ntopk($limit,\n  (\n    ( # Classic storage\n  sum by (cluster, namespace, user) ((\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end()\n)\n)\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end()\n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n\n  )\n  -\n  (\n    ( # Classic storage\n  sum by (cluster, namespace, user) ((\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start()\n)\n)\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start()\n    -\n    cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start()\n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n\n  )\n)\n",
                         "format": "time_series",
                         "legendFormat": "{{ user }}",
                         "legendLink": null
@@ -405,6 +427,66 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Time"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Time"
+                              },
+                              {
+                                 "id": "custom.hidden",
+                                 "value": true
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Value"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "samples/s"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "user"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "user"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "string"
+                              }
+                           ]
+                        }
+                     ]
+                  },
                   "fill": 1,
                   "id": 5,
                   "legend": {
@@ -433,55 +515,6 @@
                   "span": 12,
                   "stack": false,
                   "steppedLine": false,
-                  "styles": [
-                     {
-                        "alias": "Time",
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "pattern": "Time",
-                        "type": "hidden"
-                     },
-                     {
-                        "alias": "samples/s",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "Value",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "short"
-                     },
-                     {
-                        "alias": "user",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "user",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "string"
-                     },
-                     {
-                        "alias": "",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "pattern": "/.*/",
-                        "thresholds": [ ],
-                        "type": "string",
-                        "unit": "short"
-                     }
-                  ],
                   "targets": [
                      {
                         "expr": "topk($limit, sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"}[5m])))",
@@ -606,6 +639,66 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Time"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Time"
+                              },
+                              {
+                                 "id": "custom.hidden",
+                                 "value": true
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Value"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "samples/s"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "user"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "user"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "string"
+                              }
+                           ]
+                        }
+                     ]
+                  },
                   "fill": 1,
                   "id": 7,
                   "legend": {
@@ -634,55 +727,6 @@
                   "span": 12,
                   "stack": false,
                   "steppedLine": false,
-                  "styles": [
-                     {
-                        "alias": "Time",
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "pattern": "Time",
-                        "type": "hidden"
-                     },
-                     {
-                        "alias": "samples/s",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "Value",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "short"
-                     },
-                     {
-                        "alias": "user",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "user",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "string"
-                     },
-                     {
-                        "alias": "",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "pattern": "/.*/",
-                        "thresholds": [ ],
-                        "type": "string",
-                        "unit": "short"
-                     }
-                  ],
                   "targets": [
                      {
                         "expr": "topk($limit, sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*|distributor.*|cortex|mimir|mimir-write.*))\"}[5m])))",
@@ -807,6 +851,66 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Time"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Time"
+                              },
+                              {
+                                 "id": "custom.hidden",
+                                 "value": true
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Value"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "series"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "user"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "user"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "string"
+                              }
+                           ]
+                        }
+                     ]
+                  },
                   "fill": 1,
                   "id": 9,
                   "legend": {
@@ -835,58 +939,9 @@
                   "span": 12,
                   "stack": false,
                   "steppedLine": false,
-                  "styles": [
-                     {
-                        "alias": "Time",
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "pattern": "Time",
-                        "type": "hidden"
-                     },
-                     {
-                        "alias": "series",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "Value",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "short"
-                     },
-                     {
-                        "alias": "user",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "user",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "string"
-                     },
-                     {
-                        "alias": "",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "pattern": "/.*/",
-                        "thresholds": [ ],
-                        "type": "string",
-                        "unit": "short"
-                     }
-                  ],
                   "targets": [
                      {
-                        "expr": "topk($limit,\n  sum by (user) (\n    cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n    / on(cluster, namespace) group_left\n    max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n  )\n)\n",
+                        "expr": "topk($limit, ( # Classic storage\n  sum by (cluster, namespace, user) (cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, user) (\n    max by (ingester_id, cluster, namespace, user) (\n      label_replace(\n        cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n)\n",
                         "format": "table",
                         "instant": true,
                         "legendFormat": "",
@@ -948,6 +1003,66 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Time"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Time"
+                              },
+                              {
+                                 "id": "custom.hidden",
+                                 "value": true
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Value"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "exemplars/s"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "user"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "user"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "string"
+                              }
+                           ]
+                        }
+                     ]
+                  },
                   "fill": 1,
                   "id": 10,
                   "legend": {
@@ -976,55 +1091,6 @@
                   "span": 12,
                   "stack": false,
                   "steppedLine": false,
-                  "styles": [
-                     {
-                        "alias": "Time",
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "pattern": "Time",
-                        "type": "hidden"
-                     },
-                     {
-                        "alias": "exemplars/s",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "Value",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "short"
-                     },
-                     {
-                        "alias": "user",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "user",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "string"
-                     },
-                     {
-                        "alias": "",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "pattern": "/.*/",
-                        "thresholds": [ ],
-                        "type": "string",
-                        "unit": "short"
-                     }
-                  ],
                   "targets": [
                      {
                         "expr": "topk($limit, sum by (user) (rate(cortex_distributor_received_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"}[5m])))",
@@ -1089,6 +1155,66 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Time"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Time"
+                              },
+                              {
+                                 "id": "custom.hidden",
+                                 "value": true
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Value"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "rules"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "user"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "user"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "string"
+                              }
+                           ]
+                        }
+                     ]
+                  },
                   "fill": 1,
                   "id": 11,
                   "legend": {
@@ -1117,55 +1243,6 @@
                   "span": 12,
                   "stack": false,
                   "steppedLine": false,
-                  "styles": [
-                     {
-                        "alias": "Time",
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "pattern": "Time",
-                        "type": "hidden"
-                     },
-                     {
-                        "alias": "rules",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "Value",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "short"
-                     },
-                     {
-                        "alias": "user",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "user",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "string"
-                     },
-                     {
-                        "alias": "",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "pattern": "/.*/",
-                        "thresholds": [ ],
-                        "type": "string",
-                        "unit": "short"
-                     }
-                  ],
                   "targets": [
                      {
                         "expr": "topk($limit, sum by (rule_group, user) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}))",
@@ -1230,6 +1307,66 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Time"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Time"
+                              },
+                              {
+                                 "id": "custom.hidden",
+                                 "value": true
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Value"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "seconds"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "user"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "user"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "string"
+                              }
+                           ]
+                        }
+                     ]
+                  },
                   "fill": 1,
                   "id": 12,
                   "legend": {
@@ -1258,55 +1395,6 @@
                   "span": 12,
                   "stack": false,
                   "steppedLine": false,
-                  "styles": [
-                     {
-                        "alias": "Time",
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "pattern": "Time",
-                        "type": "hidden"
-                     },
-                     {
-                        "alias": "seconds",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "Value",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "short"
-                     },
-                     {
-                        "alias": "user",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "user",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "string"
-                     },
-                     {
-                        "alias": "",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "pattern": "/.*/",
-                        "thresholds": [ ],
-                        "type": "string",
-                        "unit": "short"
-                     }
-                  ],
                   "targets": [
                      {
                         "expr": "topk($limit, sum by (rule_group, user) (cortex_prometheus_rule_group_last_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}))",
@@ -1371,6 +1459,66 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Time"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Time"
+                              },
+                              {
+                                 "id": "custom.hidden",
+                                 "value": true
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Value"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Compaction Jobs"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "user"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "user"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "string"
+                              }
+                           ]
+                        }
+                     ]
+                  },
                   "fill": 1,
                   "id": 13,
                   "legend": {
@@ -1399,55 +1547,6 @@
                   "span": 12,
                   "stack": false,
                   "steppedLine": false,
-                  "styles": [
-                     {
-                        "alias": "Time",
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "pattern": "Time",
-                        "type": "hidden"
-                     },
-                     {
-                        "alias": "Compaction Jobs",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 0,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "Value",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "short"
-                     },
-                     {
-                        "alias": "user",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "user",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "string"
-                     },
-                     {
-                        "alias": "",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "pattern": "/.*/",
-                        "thresholds": [ ],
-                        "type": "string",
-                        "unit": "short"
-                     }
-                  ],
                   "targets": [
                      {
                         "expr": "topk($limit,\n  sum by (user) (cortex_bucket_index_estimated_compaction_jobs{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"})\n  and ignoring(user)\n  (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) == 0)\n)\n",

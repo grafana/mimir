@@ -40,14 +40,16 @@ var (
 	reasonInvalidNativeHistogramSchema = globalerror.InvalidSchemaNativeHistogram.LabelValue()
 	reasonDuplicateLabelNames          = globalerror.SeriesWithDuplicateLabelNames.LabelValue()
 	reasonTooFarInFuture               = globalerror.SampleTooFarInFuture.LabelValue()
+	reasonTooFarInPast                 = globalerror.SampleTooFarInPast.LabelValue()
 
 	// Discarded exemplars reasons.
-	reasonExemplarLabelsMissing    = globalerror.ExemplarLabelsMissing.LabelValue()
-	reasonExemplarLabelsTooLong    = globalerror.ExemplarLabelsTooLong.LabelValue()
-	reasonExemplarTimestampInvalid = globalerror.ExemplarTimestampInvalid.LabelValue()
-	reasonExemplarLabelsBlank      = "exemplar_labels_blank"
-	reasonExemplarTooOld           = "exemplar_too_old"
-	reasonExemplarTooFarInFuture   = "exemplar_too_far_in_future"
+	reasonExemplarLabelsMissing               = globalerror.ExemplarLabelsMissing.LabelValue()
+	reasonExemplarLabelsTooLong               = globalerror.ExemplarLabelsTooLong.LabelValue()
+	reasonExemplarTimestampInvalid            = globalerror.ExemplarTimestampInvalid.LabelValue()
+	reasonExemplarLabelsBlank                 = "exemplar_labels_blank"
+	reasonExemplarTooOld                      = "exemplar_too_old"
+	reasonExemplarTooFarInFuture              = "exemplar_too_far_in_future"
+	reasonTooManyExemplarsPerSeriesPerRequest = "too_many_exemplars_per_series_per_request"
 
 	// Discarded metadata reasons.
 	reasonMetadataMetricNameTooLong = globalerror.MetricMetadataMetricNameTooLong.LabelValue()
@@ -83,6 +85,10 @@ var (
 		"received a sample whose timestamp is too far in the future, timestamp: %d series: '%.200s'",
 		validation.CreationGracePeriodFlag,
 	)
+	sampleTimestampTooOldMsgFormat = globalerror.SampleTooFarInPast.MessageWithPerTenantLimitConfig(
+		"received a sample whose timestamp is too far in the past, timestamp: %d series: '%.200s'",
+		validation.PastGracePeriodFlag,
+	)
 	exemplarEmptyLabelsMsgFormat = globalerror.ExemplarLabelsMissing.Message(
 		"received an exemplar with no valid labels, timestamp: %d series: %s labels: %s",
 	)
@@ -107,8 +113,10 @@ var (
 // sampleValidationConfig helps with getting required config to validate sample.
 type sampleValidationConfig interface {
 	CreationGracePeriod(userID string) time.Duration
+	PastGracePeriod(userID string) time.Duration
 	MaxNativeHistogramBuckets(userID string) int
 	ReduceNativeHistogramOverMaxBuckets(userID string) bool
+	OutOfOrderTimeWindow(userID string) time.Duration
 }
 
 // sampleValidationMetrics is a collection of metrics used during sample validation.
@@ -123,6 +131,7 @@ type sampleValidationMetrics struct {
 	invalidNativeHistogramSchema *prometheus.CounterVec
 	duplicateLabelNames          *prometheus.CounterVec
 	tooFarInFuture               *prometheus.CounterVec
+	tooFarInPast                 *prometheus.CounterVec
 }
 
 func (m *sampleValidationMetrics) deleteUserMetrics(userID string) {
@@ -137,6 +146,7 @@ func (m *sampleValidationMetrics) deleteUserMetrics(userID string) {
 	m.invalidNativeHistogramSchema.DeletePartialMatch(filter)
 	m.duplicateLabelNames.DeletePartialMatch(filter)
 	m.tooFarInFuture.DeletePartialMatch(filter)
+	m.tooFarInPast.DeletePartialMatch(filter)
 }
 
 func (m *sampleValidationMetrics) deleteUserMetricsForGroup(userID, group string) {
@@ -150,6 +160,7 @@ func (m *sampleValidationMetrics) deleteUserMetricsForGroup(userID, group string
 	m.invalidNativeHistogramSchema.DeleteLabelValues(userID, group)
 	m.duplicateLabelNames.DeleteLabelValues(userID, group)
 	m.tooFarInFuture.DeleteLabelValues(userID, group)
+	m.tooFarInPast.DeleteLabelValues(userID, group)
 }
 
 func newSampleValidationMetrics(r prometheus.Registerer) *sampleValidationMetrics {
@@ -164,6 +175,7 @@ func newSampleValidationMetrics(r prometheus.Registerer) *sampleValidationMetric
 		invalidNativeHistogramSchema: validation.DiscardedSamplesCounter(r, reasonInvalidNativeHistogramSchema),
 		duplicateLabelNames:          validation.DiscardedSamplesCounter(r, reasonDuplicateLabelNames),
 		tooFarInFuture:               validation.DiscardedSamplesCounter(r, reasonTooFarInFuture),
+		tooFarInPast:                 validation.DiscardedSamplesCounter(r, reasonTooFarInPast),
 	}
 }
 
@@ -175,6 +187,7 @@ type exemplarValidationMetrics struct {
 	labelsBlank      *prometheus.CounterVec
 	tooOld           *prometheus.CounterVec
 	tooFarInFuture   *prometheus.CounterVec
+	tooManyExemplars *prometheus.CounterVec
 }
 
 func (m *exemplarValidationMetrics) deleteUserMetrics(userID string) {
@@ -184,6 +197,7 @@ func (m *exemplarValidationMetrics) deleteUserMetrics(userID string) {
 	m.labelsBlank.DeleteLabelValues(userID)
 	m.tooOld.DeleteLabelValues(userID)
 	m.tooFarInFuture.DeleteLabelValues(userID)
+	m.tooManyExemplars.DeleteLabelValues(userID)
 }
 
 func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMetrics {
@@ -194,6 +208,7 @@ func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMe
 		labelsBlank:      validation.DiscardedExemplarsCounter(r, reasonExemplarLabelsBlank),
 		tooOld:           validation.DiscardedExemplarsCounter(r, reasonExemplarTooOld),
 		tooFarInFuture:   validation.DiscardedExemplarsCounter(r, reasonExemplarTooFarInFuture),
+		tooManyExemplars: validation.DiscardedExemplarsCounter(r, reasonTooManyExemplarsPerSeriesPerRequest),
 	}
 }
 
@@ -207,6 +222,12 @@ func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValida
 		return fmt.Errorf(sampleTimestampTooNewMsgFormat, s.TimestampMs, unsafeMetricName)
 	}
 
+	if cfg.PastGracePeriod(userID) > 0 && model.Time(s.TimestampMs) < now.Add(-cfg.PastGracePeriod(userID)).Add(-cfg.OutOfOrderTimeWindow(userID)) {
+		m.tooFarInPast.WithLabelValues(userID, group).Inc()
+		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
+		return fmt.Errorf(sampleTimestampTooOldMsgFormat, s.TimestampMs, unsafeMetricName)
+	}
+
 	return nil
 }
 
@@ -218,6 +239,12 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
 		return false, fmt.Errorf(sampleTimestampTooNewMsgFormat, s.Timestamp, unsafeMetricName)
+	}
+
+	if cfg.PastGracePeriod(userID) > 0 && model.Time(s.Timestamp) < now.Add(-cfg.PastGracePeriod(userID)).Add(-cfg.OutOfOrderTimeWindow(userID)) {
+		m.tooFarInPast.WithLabelValues(userID, group).Inc()
+		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
+		return false, fmt.Errorf(sampleTimestampTooOldMsgFormat, s.Timestamp, unsafeMetricName)
 	}
 
 	if s.Schema < mimirpb.MinimumHistogramSchema || s.Schema > mimirpb.MaximumHistogramSchema {

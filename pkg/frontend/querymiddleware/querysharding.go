@@ -144,7 +144,10 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 	queryStats := stats.FromContext(ctx)
 	queryStats.AddShardedQueries(uint32(shardingStats.GetShardedQueries()))
 
-	r = r.WithQuery(shardedQuery)
+	r, err = r.WithQuery(shardedQuery)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
 	shardedQueryable := newShardedQueryable(r, s.next)
 
 	qry, err := newQuery(ctx, r, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
@@ -191,7 +194,21 @@ func newQuery(ctx context.Context, r MetricsQueryRequest, engine *promql.Engine,
 			r.GetQuery(),
 			util.TimeFromMillis(r.GetTime()),
 		)
-
+	case *remoteReadQueryRequest:
+		return engine.NewRangeQuery(
+			ctx,
+			queryable,
+			// Lookback period is not applied to remote read queries in the same way
+			// as regular queries. However we cannot set a zero lookback period
+			// because the engine will just use the default 5 minutes instead. So we
+			// set a lookback period of 1ns and add that amount to the start time so
+			// the engine will calculate an effective 0 lookback period.
+			promql.NewPrometheusQueryOpts(false, 1*time.Nanosecond),
+			r.GetQuery(),
+			util.TimeFromMillis(r.GetStart()).Add(1*time.Nanosecond),
+			util.TimeFromMillis(r.GetEnd()),
+			time.Duration(r.GetStep())*time.Millisecond,
+		)
 	default:
 		return nil, fmt.Errorf("unsupported query type %T", r)
 	}

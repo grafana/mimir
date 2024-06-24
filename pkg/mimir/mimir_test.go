@@ -163,7 +163,7 @@ func TestMimir(t *testing.T) {
 			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 		}},
 		Querier: querier.Config{
-			PromQLEngine: "standard",
+			QueryEngine: "prometheus",
 		},
 	}
 	require.NoError(t, cfg.Server.LogLevel.Set("info"))
@@ -463,6 +463,34 @@ func TestConfigValidation(t *testing.T) {
 				return cfg
 			},
 			expectAnyError: true,
+		},
+		{
+			name: "should fail if ingester ring is misconfigured with spread-minimizing token generation strategy when target is ingester",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("ingester")
+				cfg.Ingester.IngesterRing.InstanceID = "" // empty string is not a valid instance-id
+				cfg.Ingester.IngesterRing.InstanceZone = "zone-1"
+				cfg.Ingester.IngesterRing.SpreadMinimizingZones = []string{"zone-1", "zone-2"}
+				cfg.Ingester.IngesterRing.TokenGenerationStrategy = "spread-minimizing"
+
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should pass if ingester ring is misconfigured with spread-minimizing token generation strategy when target is not ingester",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("distributor")
+				cfg.Ingester.IngesterRing.InstanceID = "" // empty string is not a valid instance-id
+				cfg.Ingester.IngesterRing.InstanceZone = "zone-1"
+				cfg.Ingester.IngesterRing.SpreadMinimizingZones = []string{"zone-1", "zone-2"}
+				cfg.Ingester.IngesterRing.TokenGenerationStrategy = "spread-minimizing"
+
+				return cfg
+			},
+			expectAnyError: false,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -778,6 +806,7 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 		}()
 	}
 
+	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(net.JoinHostPort(cfg.Server.GRPCListenAddress, strconv.Itoa(cfg.Server.GRPCListenPort)), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	defer func() {

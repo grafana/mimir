@@ -471,7 +471,11 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 
 		// If there is a bit missing at the front, make a request for that.
 		if start < extent.Start {
-			r := req.WithStartEnd(start, extent.Start)
+			r, err := req.WithStartEnd(start, extent.Start)
+			if err != nil {
+				return nil, nil, err
+			}
+
 			requests = append(requests, r)
 		}
 		res, err := extent.toResponse()
@@ -499,7 +503,11 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 
 	// Lastly, make a request for any data missing at the end.
 	if start < req.GetEnd() {
-		r := req.WithStartEnd(start, req.GetEnd())
+		r, err := req.WithStartEnd(start, req.GetEnd())
+		if err != nil {
+			return nil, nil, err
+		}
+
 		requests = append(requests, r)
 	}
 

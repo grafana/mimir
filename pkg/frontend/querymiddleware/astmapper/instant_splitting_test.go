@@ -605,6 +605,10 @@ func TestInstantSplitterSkippedQueryReason(t *testing.T) {
 			query:         `max_over_time(absent_over_time(deriv(rate(metric_counter[1m])[5m:1m])[2m:])[10m:])`,
 			skippedReason: SkippedReasonSubquery,
 		},
+		{
+			query:         `sum by(group_1) (sum_over_time(metric_counter[7d:] @ start()))`,
+			skippedReason: SkippedReasonSubquery,
+		},
 	} {
 		tt := tt
 

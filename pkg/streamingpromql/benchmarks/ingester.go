@@ -14,6 +14,7 @@ import (
 	"net"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -174,7 +175,7 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 	totalMetrics := 0
 
 	for _, size := range metricSizes {
-		totalMetrics += (2 + histogramBuckets + 1) * size // 2 non-histogram metrics + 5 metrics for histogram buckets + 1 metric for +Inf histogram bucket
+		totalMetrics += (2 + histogramBuckets + 1 + 1) * size // 2 non-histogram metrics + 5 metrics for histogram buckets + 1 metric for +Inf histogram bucket + 1 metric for native-histograms
 	}
 
 	metrics := make([]labels.Labels, 0, totalMetrics)
@@ -183,6 +184,7 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 		aName := "a_" + strconv.Itoa(size)
 		bName := "b_" + strconv.Itoa(size)
 		histogramName := "h_" + strconv.Itoa(size)
+		nativeHistogramName := "nh_" + strconv.Itoa(size)
 
 		if size == 1 {
 			// We don't want a "l" label on metrics with one series (some test cases rely on this label not being present).
@@ -192,6 +194,7 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 				metrics = append(metrics, labels.FromStrings("__name__", histogramName, "le", strconv.Itoa(le)))
 			}
 			metrics = append(metrics, labels.FromStrings("__name__", histogramName, "le", "+Inf"))
+			metrics = append(metrics, labels.FromStrings("__name__", nativeHistogramName))
 		} else {
 			for i := 0; i < size; i++ {
 				metrics = append(metrics, labels.FromStrings("__name__", aName, "l", strconv.Itoa(i)))
@@ -200,34 +203,69 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 					metrics = append(metrics, labels.FromStrings("__name__", histogramName, "l", strconv.Itoa(i), "le", strconv.Itoa(le)))
 				}
 				metrics = append(metrics, labels.FromStrings("__name__", histogramName, "l", strconv.Itoa(i), "le", "+Inf"))
+				metrics = append(metrics, labels.FromStrings("__name__", nativeHistogramName, "l", strconv.Itoa(i)))
 			}
 		}
 	}
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
-	req := &mimirpb.WriteRequest{
-		Timeseries: make([]mimirpb.PreallocTimeseries, len(metrics)),
-	}
 
-	for i, m := range metrics {
-		series := mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
-			Labels:  mimirpb.FromLabelsToLabelAdapters(m),
-			Samples: make([]mimirpb.Sample, NumIntervals),
-		}}
-
-		for s := 0; s < NumIntervals; s++ {
-			series.Samples[s].TimestampMs = int64(s) * interval.Milliseconds()
-			series.Samples[s].Value = float64(s) + float64(i)/float64(len(metrics))
+	// Batch samples into separate requests
+	// There is no precise science behind this number currently.
+	// A quick run locally found batching by 100 did not increase the loading time by any noticeable amount.
+	// Additionally memory usage maxed about 4GB for the whole process.
+	batchSize := 100
+	for start := 0; start < NumIntervals; start += batchSize {
+		end := start + batchSize
+		if end > NumIntervals {
+			end = NumIntervals
 		}
 
-		req.Timeseries[i] = series
-	}
+		req := &mimirpb.WriteRequest{
+			Timeseries: make([]mimirpb.PreallocTimeseries, len(metrics)),
+		}
 
-	if _, err := ing.Push(ctx, req); err != nil {
-		return fmt.Errorf("failed to push samples to ingester: %w", err)
-	}
+		for metricIdx, m := range metrics {
+			if strings.HasPrefix(m.Get("__name__"), "nh_") {
+				series := mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+					Labels:     mimirpb.FromLabelsToLabelAdapters(m.Copy()),
+					Histograms: make([]mimirpb.Histogram, end-start),
+				}}
 
-	ing.Flush()
+				for ts := start; ts < end; ts++ {
+					// TODO(jhesketh): Fix this with some better data
+					series.Histograms[ts-start].Timestamp = int64(ts) * interval.Milliseconds()
+					series.Histograms[ts-start].Count = &mimirpb.Histogram_CountInt{CountInt: 12}
+					series.Histograms[ts-start].ZeroCount = &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 2}
+					series.Histograms[ts-start].ZeroThreshold = 0.001
+					series.Histograms[ts-start].Sum = 18.4
+					series.Histograms[ts-start].Schema = 0
+					series.Histograms[ts-start].NegativeSpans = []mimirpb.BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}}
+					series.Histograms[ts-start].NegativeDeltas = []int64{1, 1, -1, 0}
+					series.Histograms[ts-start].PositiveSpans = []mimirpb.BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}}
+					series.Histograms[ts-start].PositiveDeltas = []int64{1, 1, -1, 0}
+				}
+
+				req.Timeseries[metricIdx] = series
+			} else {
+				series := mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+					Labels:  mimirpb.FromLabelsToLabelAdapters(m.Copy()),
+					Samples: make([]mimirpb.Sample, end-start),
+				}}
+
+				for ts := start; ts < end; ts++ {
+					series.Samples[ts-start].TimestampMs = int64(ts) * interval.Milliseconds()
+					series.Samples[ts-start].Value = float64(ts) + float64(metricIdx)/float64(len(metrics))
+				}
+
+				req.Timeseries[metricIdx] = series
+			}
+		}
+		if _, err := ing.Push(ctx, req); err != nil {
+			return fmt.Errorf("failed to push samples to ingester: %w", err)
+		}
+		ing.Flush()
+	}
 
 	return nil
 }

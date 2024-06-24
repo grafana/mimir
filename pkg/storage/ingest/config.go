@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -19,9 +20,11 @@ const (
 )
 
 var (
-	ErrMissingKafkaAddress    = errors.New("the Kafka address has not been configured")
-	ErrMissingKafkaTopic      = errors.New("the Kafka topic has not been configured")
-	ErrInvalidConsumePosition = errors.New("the configured consume position is invalid")
+	ErrMissingKafkaAddress               = errors.New("the Kafka address has not been configured")
+	ErrMissingKafkaTopic                 = errors.New("the Kafka topic has not been configured")
+	ErrInvalidWriteClients               = errors.New("the configured number of write clients is invalid (must be greater than 0)")
+	ErrInvalidConsumePosition            = errors.New("the configured consume position is invalid")
+	ErrInvalidProducerMaxRecordSizeBytes = fmt.Errorf("the configured producer max record size bytes must be a value between %d and %d", minProducerRecordDataBytesLimit, maxProducerRecordDataBytesLimit)
 
 	consumeFromPositionOptions = []string{consumeFromLastOffset, consumeFromStart, consumeFromEnd, consumeFromTimestamp}
 )
@@ -60,6 +63,10 @@ type KafkaConfig struct {
 	ClientID     string        `yaml:"client_id"`
 	DialTimeout  time.Duration `yaml:"dial_timeout"`
 	WriteTimeout time.Duration `yaml:"write_timeout"`
+	WriteClients int           `yaml:"write_clients"`
+
+	ConsumerGroup                     string        `yaml:"consumer_group"`
+	ConsumerGroupOffsetCommitInterval time.Duration `yaml:"consumer_group_offset_commit_interval"`
 
 	LastProducedOffsetPollInterval time.Duration `yaml:"last_produced_offset_poll_interval"`
 	LastProducedOffsetRetryTimeout time.Duration `yaml:"last_produced_offset_retry_timeout"`
@@ -70,6 +77,11 @@ type KafkaConfig struct {
 
 	AutoCreateTopicEnabled           bool `yaml:"auto_create_topic_enabled"`
 	AutoCreateTopicDefaultPartitions int  `yaml:"auto_create_topic_default_partitions"`
+
+	ProducerMaxRecordSizeBytes int `yaml:"producer_max_record_size_bytes"`
+
+	// Used when logging unsampled client errors. Set from ingester's ErrorSampleRate.
+	FallbackClientErrorSampleRate int64 `yaml:"-"`
 }
 
 func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
@@ -82,6 +94,10 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.StringVar(&cfg.ClientID, prefix+".client-id", "", "The Kafka client ID.")
 	f.DurationVar(&cfg.DialTimeout, prefix+".dial-timeout", 2*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
 	f.DurationVar(&cfg.WriteTimeout, prefix+".write-timeout", 10*time.Second, "How long to wait for an incoming write request to be successfully committed to the Kafka backend.")
+	f.IntVar(&cfg.WriteClients, prefix+".write-clients", 1, "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. An higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka.")
+
+	f.StringVar(&cfg.ConsumerGroup, prefix+".consumer-group", "", "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it will be replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir will use the ingester instance ID to guarantee uniqueness.")
+	f.DurationVar(&cfg.ConsumerGroupOffsetCommitInterval, prefix+".consumer-group-offset-commit-interval", time.Second, "How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left.")
 
 	f.DurationVar(&cfg.LastProducedOffsetPollInterval, prefix+".last-produced-offset-poll-interval", time.Second, "How frequently to poll the last produced offset, used to enforce strong read consistency.")
 	f.DurationVar(&cfg.LastProducedOffsetRetryTimeout, prefix+".last-produced-offset-retry-timeout", 10*time.Second, "How long to retry a failed request to get the last produced offset.")
@@ -91,6 +107,8 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.DurationVar(&cfg.MaxConsumerLagAtStartup, prefix+".max-consumer-lag-at-startup", 15*time.Second, "The maximum tolerated lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set 0 to disable waiting for maximum consumer lag being honored at startup.")
 	f.BoolVar(&cfg.AutoCreateTopicEnabled, prefix+".auto-create-topic-enabled", true, "Enable auto-creation of Kafka topic if it doesn't exist.")
 	f.IntVar(&cfg.AutoCreateTopicDefaultPartitions, prefix+".auto-create-topic-default-partitions", 0, "When auto-creation of Kafka topic is enabled and this value is positive, Kafka's num.partitions configuration option is set on Kafka brokers with this value when Mimir component that uses Kafka starts. This configuration option specifies the default number of partitions that Kafka broker will use for auto-created topics. Note that this is Kafka-cluster wide setting, and applies to any auto-created topic. If setting of num.partitions fails, Mimir will proceed anyway, but auto-created topic may have incorrect number of partitions.")
+
+	f.IntVar(&cfg.ProducerMaxRecordSizeBytes, prefix+".producer-max-record-size-bytes", maxProducerRecordDataBytesLimit, "The maximum size of a Kafka record data that should be generated by the producer. An incoming write request bigger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes.")
 }
 
 func (cfg *KafkaConfig) Validate() error {
@@ -99,6 +117,9 @@ func (cfg *KafkaConfig) Validate() error {
 	}
 	if cfg.Topic == "" {
 		return ErrMissingKafkaTopic
+	}
+	if cfg.WriteClients < 1 {
+		return ErrInvalidWriteClients
 	}
 	if !slices.Contains(consumeFromPositionOptions, cfg.ConsumeFromPositionAtStartup) {
 		return ErrInvalidConsumePosition
@@ -113,8 +134,20 @@ func (cfg *KafkaConfig) Validate() error {
 			return fmt.Errorf("%w: configured consume position must be set to %q", ErrInvalidConsumePosition, consumeFromTimestamp)
 		}
 	}
+	if cfg.ProducerMaxRecordSizeBytes < minProducerRecordDataBytesLimit || cfg.ProducerMaxRecordSizeBytes > maxProducerRecordDataBytesLimit {
+		return ErrInvalidProducerMaxRecordSizeBytes
+	}
 
 	return nil
+}
+
+// GetConsumerGroup returns the consumer group to use for the given instanceID and partitionID.
+func (cfg *KafkaConfig) GetConsumerGroup(instanceID string, partitionID int32) string {
+	if cfg.ConsumerGroup == "" {
+		return instanceID
+	}
+
+	return strings.ReplaceAll(cfg.ConsumerGroup, "<partition>", strconv.Itoa(int(partitionID)))
 }
 
 // MigrationConfig holds the configuration used to migrate Mimir to ingest storage. This config shouldn't be

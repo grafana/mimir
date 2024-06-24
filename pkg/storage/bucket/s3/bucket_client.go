@@ -9,6 +9,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/thanos-io/objstore"
+	"github.com/thanos-io/objstore/exthttp"
 	"github.com/thanos-io/objstore/providers/s3"
 )
 
@@ -59,6 +60,7 @@ func newS3Config(cfg Config) (s3.Config, error) {
 		PutUserMetadata:    putUserMetadata,
 		SendContentMd5:     cfg.SendContentMd5,
 		SSEConfig:          sseCfg,
+		DisableDualstack:   !cfg.DualstackEnabled,
 		ListObjectsVersion: cfg.ListObjectsVersion,
 		BucketLookupType:   cfg.BucketLookupType,
 		AWSSDKAuth:         cfg.NativeAWSAuthEnabled,
@@ -73,6 +75,12 @@ func newS3Config(cfg Config) (s3.Config, error) {
 			MaxIdleConnsPerHost:   cfg.HTTP.MaxIdleConnsPerHost,
 			MaxConnsPerHost:       cfg.HTTP.MaxConnsPerHost,
 			Transport:             cfg.HTTP.Transport,
+			TLSConfig: exthttp.TLSConfig{
+				CAFile:     cfg.HTTP.TLSConfig.CAPath,
+				CertFile:   cfg.HTTP.TLSConfig.CertPath,
+				KeyFile:    cfg.HTTP.TLSConfig.KeyPath,
+				ServerName: cfg.HTTP.TLSConfig.ServerName,
+			},
 		},
 		// Enforce signature version 2 if CLI flag is set
 		SignatureV2: cfg.SignatureVersion == SignatureVersionV2,

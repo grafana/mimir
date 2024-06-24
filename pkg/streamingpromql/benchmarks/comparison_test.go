@@ -43,20 +43,20 @@ func BenchmarkQuery(b *testing.B) {
 	cases := TestCases(MetricSizes)
 
 	opts := streamingpromql.NewTestEngineOpts()
-	standardEngine := promql.NewEngine(opts)
-	streamingEngine, err := streamingpromql.NewEngine(opts)
+	prometheusEngine := promql.NewEngine(opts)
+	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(b, err)
 
 	// Important: the names below must remain in sync with the names used in tools/benchmark-query-engine.
 	engines := map[string]promql.QueryEngine{
-		"standard":  standardEngine,
-		"streaming": streamingEngine,
+		"Prometheus": prometheusEngine,
+		"Mimir":      mimirEngine,
 	}
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
 
 	// Don't compare results when we're running under tools/benchmark-query-engine, as that will skew peak memory utilisation.
-	skipCompareResults := os.Getenv("STREAMING_PROMQL_ENGINE_BENCHMARK_SKIP_COMPARE_RESULTS") == "true"
+	skipCompareResults := os.Getenv("MIMIR_PROMQL_ENGINE_BENCHMARK_SKIP_COMPARE_RESULTS") == "true"
 
 	for _, c := range cases {
 		start := time.Unix(int64((NumIntervals-c.Steps)*intervalSeconds), 0)
@@ -65,13 +65,13 @@ func BenchmarkQuery(b *testing.B) {
 		b.Run(c.Name(), func(b *testing.B) {
 			if !skipCompareResults {
 				// Check both engines produce the same result before running the benchmark.
-				standardResult, standardClose := c.Run(ctx, b, start, end, interval, standardEngine, q)
-				streamingResult, streamingClose := c.Run(ctx, b, start, end, interval, streamingEngine, q)
+				prometheusResult, prometheusClose := c.Run(ctx, b, start, end, interval, prometheusEngine, q)
+				mimirResult, mimirClose := c.Run(ctx, b, start, end, interval, mimirEngine, q)
 
-				requireEqualResults(b, standardResult, streamingResult)
+				requireEqualResults(b, prometheusResult, mimirResult)
 
-				standardClose()
-				streamingClose()
+				prometheusClose()
+				mimirClose()
 			}
 
 			for name, engine := range engines {
@@ -95,8 +95,8 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 	cases := TestCases(metricSizes)
 
 	opts := streamingpromql.NewTestEngineOpts()
-	standardEngine := promql.NewEngine(opts)
-	streamingEngine, err := streamingpromql.NewEngine(opts)
+	prometheusEngine := promql.NewEngine(opts)
+	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
@@ -106,13 +106,13 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 			start := time.Unix(int64((NumIntervals-c.Steps)*intervalSeconds), 0)
 			end := time.Unix(int64(NumIntervals*intervalSeconds), 0)
 
-			standardResult, standardClose := c.Run(ctx, t, start, end, interval, standardEngine, q)
-			streamingResult, streamingClose := c.Run(ctx, t, start, end, interval, streamingEngine, q)
+			prometheusResult, prometheusClose := c.Run(ctx, t, start, end, interval, prometheusEngine, q)
+			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, q)
 
-			requireEqualResults(t, standardResult, streamingResult)
+			requireEqualResults(t, prometheusResult, mimirResult)
 
-			standardClose()
-			streamingClose()
+			prometheusClose()
+			mimirClose()
 		})
 	}
 }
@@ -123,11 +123,11 @@ func TestBenchmarkSetup(t *testing.T) {
 	q := createBenchmarkQueryable(t, []int{1})
 
 	opts := streamingpromql.NewTestEngineOpts()
-	streamingEngine, err := streamingpromql.NewEngine(opts)
+	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
-	query, err := streamingEngine.NewRangeQuery(ctx, q, nil, "a_1", time.Unix(0, 0), time.Unix(int64(15*intervalSeconds), 0), interval)
+	query, err := mimirEngine.NewRangeQuery(ctx, q, nil, "a_1", time.Unix(0, 0), time.Unix(int64(15*intervalSeconds), 0), interval)
 	require.NoError(t, err)
 
 	t.Cleanup(query.Close)
@@ -163,6 +163,28 @@ func TestBenchmarkSetup(t *testing.T) {
 	}
 
 	require.Equal(t, expectedPoints, series.Floats)
+
+	// Check native histograms are set up correctly
+	query, err = mimirEngine.NewRangeQuery(ctx, q, nil, "nh_1", time.Unix(0, 0), time.Unix(int64(15*intervalSeconds), 0), interval)
+	require.NoError(t, err)
+
+	t.Cleanup(query.Close)
+	result = query.Exec(ctx)
+	require.NoError(t, result.Err)
+
+	matrix, err = result.Matrix()
+	require.NoError(t, err)
+
+	require.Len(t, matrix, 1)
+	series = matrix[0]
+	require.Equal(t, labels.FromStrings("__name__", "nh_1"), series.Metric)
+	require.Len(t, series.Floats, 0)
+	require.Len(t, series.Histograms, 16)
+
+	// Check one histogram point is as expected
+	require.Equal(t, int64(0), series.Histograms[0].T)
+	require.Equal(t, 12.0, series.Histograms[0].H.Count)
+	require.Equal(t, 18.4, series.Histograms[0].H.Sum)
 }
 
 // Why do we do this rather than require.Equal(t, expected, actual)?
@@ -194,7 +216,11 @@ func requireEqualResults(t testing.TB, expected, actual *promql.Result) {
 			require.Equal(t, expectedSample.Metric, actualSample.Metric)
 			require.Equal(t, expectedSample.T, actualSample.T)
 			require.Equal(t, expectedSample.H, actualSample.H)
-			require.InEpsilon(t, expectedSample.F, actualSample.F, 1e-10)
+			if expectedSample.F == 0 {
+				require.Equal(t, expectedSample.F, actualSample.F)
+			} else {
+				require.InEpsilon(t, expectedSample.F, actualSample.F, 1e-10)
+			}
 		}
 	case parser.ValueTypeMatrix:
 		expectedMatrix, err := expected.Matrix()
@@ -214,7 +240,11 @@ func requireEqualResults(t testing.TB, expected, actual *promql.Result) {
 				actualPoint := actualSeries.Floats[j]
 
 				require.Equal(t, expectedPoint.T, actualPoint.T)
-				require.InEpsilonf(t, expectedPoint.F, actualPoint.F, 1e-10, "expected series %v to have points %v, but result is %v", expectedSeries.Metric.String(), expectedSeries.Floats, actualSeries.Floats)
+				if expectedPoint.F == 0 {
+					require.Equal(t, expectedPoint.F, actualPoint.F)
+				} else {
+					require.InEpsilonf(t, expectedPoint.F, actualPoint.F, 1e-10, "expected series %v to have points %v, but result is %v", expectedSeries.Metric.String(), expectedSeries.Floats, actualSeries.Floats)
+				}
 			}
 		}
 	default:
@@ -223,7 +253,7 @@ func requireEqualResults(t testing.TB, expected, actual *promql.Result) {
 }
 
 func createBenchmarkQueryable(t testing.TB, metricSizes []int) storage.Queryable {
-	addr := os.Getenv("STREAMING_PROMQL_ENGINE_BENCHMARK_INGESTER_ADDR")
+	addr := os.Getenv("MIMIR_PROMQL_ENGINE_BENCHMARK_INGESTER_ADDR")
 
 	if addr == "" {
 		var err error

@@ -32,6 +32,26 @@ const (
 				"receiver": "test_receiver",
 				"group_by": ["alertname"]
 			},
+			"global": {
+				"http_config": {
+					"enable_http2": true,
+					"follow_redirects": true,
+					"proxy_url": null,
+					"tls_config": {
+						"insecure_skip_verify": true
+					}
+				},
+				"opsgenie_api_url": "https://api.opsgenie.com/",
+				"pagerduty_url": "https://events.pagerduty.com/v2/enqueue",
+				"resolve_timeout": "5m",
+				"smtp_hello": "localhost",
+				"smtp_require_tls": true,
+				"smtp_smarthost": "",
+				"telegram_api_url": "https://api.telegram.org",
+				"victorops_api_url": "https://alert.victorops.com/integrations/generic/20131114/alert/",
+				"webex_api_url": "https://webexapis.com/v1/messages",
+				"wechat_api_url": "https://qyapi.weixin.qq.com/cgi-bin/"
+			},
 			"receivers": [{
 				"name": "test_receiver",
 				"grafana_managed_receiver_configs": [{
@@ -41,18 +61,16 @@ const (
 					"disableResolveMessage": true,
 					"settings": {
 						"addresses": "test@test.com"
-					},
-					"secureSettings": null
+					}
 				}]
-			}],
-			"templates": null
+			}]
 		}
 	}`
 )
 
 func TestMultitenantAlertmanager_DeleteUserGrafanaConfig(t *testing.T) {
 	storage := objstore.NewInMemBucket()
-	alertstore := bucketclient.NewBucketAlertStore(storage, nil, log.NewNopLogger())
+	alertstore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
 	now := time.Now().UnixMilli()
 
 	am := &MultitenantAlertmanager{
@@ -111,7 +129,7 @@ func TestMultitenantAlertmanager_DeleteUserGrafanaConfig(t *testing.T) {
 
 func TestMultitenantAlertmanager_DeleteUserGrafanaState(t *testing.T) {
 	storage := objstore.NewInMemBucket()
-	alertstore := bucketclient.NewBucketAlertStore(storage, nil, log.NewNopLogger())
+	alertstore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
 
 	am := &MultitenantAlertmanager{
 		store:  alertstore,
@@ -172,7 +190,7 @@ func TestMultitenantAlertmanager_DeleteUserGrafanaState(t *testing.T) {
 
 func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 	storage := objstore.NewInMemBucket()
-	alertstore := bucketclient.NewBucketAlertStore(storage, nil, log.NewNopLogger())
+	alertstore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
 	now := time.Now().UnixMilli()
 
 	am := &MultitenantAlertmanager{
@@ -212,11 +230,13 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 				 "configuration": %s,
 				 "configuration_hash": "bb788eaa294c05ec556c1ed87546b7a9",
 				 "created": %d,
-				 "default": false
+				 "default": false,
+				 "promoted": false
 			},
 			"status": "success"
 		}
 		`, testGrafanaConfig, now)
+
 		require.JSONEq(t, json, string(body))
 		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 		require.Len(t, storage.Objects(), 1)
@@ -225,7 +245,7 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 
 func TestMultitenantAlertmanager_GetUserGrafanaState(t *testing.T) {
 	storage := objstore.NewInMemBucket()
-	alertstore := bucketclient.NewBucketAlertStore(storage, nil, log.NewNopLogger())
+	alertstore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
 
 	am := &MultitenantAlertmanager{
 		store:  alertstore,
@@ -277,7 +297,7 @@ func TestMultitenantAlertmanager_GetUserGrafanaState(t *testing.T) {
 
 func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 	storage := objstore.NewInMemBucket()
-	alertstore := bucketclient.NewBucketAlertStore(storage, nil, log.NewNopLogger())
+	alertstore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
 
 	am := &MultitenantAlertmanager{
 		store:  alertstore,
@@ -326,7 +346,8 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 			"configuration": %s,
 			"configuration_hash": "ChEKBW5mbG9nEghzb21lZGF0YQ==",
 			"created": 12312414343,
-			"default": false
+			"default": false,
+			"promoted": true
 		}
 		`, testGrafanaConfig)
 		req.Body = io.NopCloser(strings.NewReader(json))
@@ -346,7 +367,7 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 
 func TestMultitenantAlertmanager_SetUserGrafanaState(t *testing.T) {
 	storage := objstore.NewInMemBucket()
-	alertstore := bucketclient.NewBucketAlertStore(storage, nil, log.NewNopLogger())
+	alertstore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, storage, nil, log.NewNopLogger())
 
 	am := &MultitenantAlertmanager{
 		store:  alertstore,

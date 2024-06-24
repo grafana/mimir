@@ -1,0 +1,4 @@
+overrides:
+    "007":
+        unknown_field: test,
+        compactor_split_and_merge_shards: 2

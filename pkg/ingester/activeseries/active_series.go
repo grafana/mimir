@@ -168,6 +168,11 @@ func (c *ActiveSeries) ContainsRef(ref storage.SeriesRef) bool {
 	return c.stripes[stripeID].containsRef(ref)
 }
 
+func (c *ActiveSeries) NativeHistogramBuckets(ref storage.SeriesRef) (int, bool) {
+	stripeID := ref % numStripes
+	return c.stripes[stripeID].nativeHistogramBuckets(ref)
+}
+
 // Active returns the total numbers of active series, active native
 // histogram series, and buckets of those native histogram series.
 // This method does not purge expired entries, so Purge should be
@@ -205,12 +210,38 @@ func (c *ActiveSeries) ActiveWithMatchers() (total int, totalMatching []int, tot
 	return
 }
 
+func (c *ActiveSeries) Delete(ref chunks.HeadSeriesRef) {
+	stripeID := storage.SeriesRef(ref) % numStripes
+	c.stripes[stripeID].remove(storage.SeriesRef(ref))
+}
+
+func (c *ActiveSeries) Clear() {
+	for s := 0; s < numStripes; s++ {
+		c.stripes[s].clear()
+	}
+	// c.deleted keeps track of series which were removed from memory, but might come back with a different SeriesRef.
+	// If they do come back, then we use deletedSeries to stop tracking their previous entry.
+	// We can also clear the deleted series because we've already stopped tracking all series.
+	c.deleted.clear()
+}
+
 func (s *seriesStripe) containsRef(ref storage.SeriesRef) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	_, ok := s.refs[ref]
 	return ok
+}
+
+// nativeHistogramBuckets returns the active buckets for a series if it is active and is a native histogram series.
+func (s *seriesStripe) nativeHistogramBuckets(ref storage.SeriesRef) (int, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if entry, ok := s.refs[ref]; ok && entry.numNativeHistogramBuckets >= 0 {
+		return entry.numNativeHistogramBuckets, true
+	}
+
+	return 0, false
 }
 
 func (s *seriesStripe) markDeleted(ref storage.SeriesRef, lbls labels.Labels) {
@@ -365,7 +396,6 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 	return e.nanos, true
 }
 
-// nolint // Linter reports that this method is unused, but it is.
 func (s *seriesStripe) clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -559,4 +589,14 @@ func (ds *deletedSeries) purge(ref storage.SeriesRef) {
 
 	delete(ds.keys, ref)
 	delete(ds.refs, key)
+}
+
+func (ds *deletedSeries) clear() {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+
+	// nil the maps to release memory.
+	// They will be reinitialized if the tenant resumes sending series.
+	ds.keys = nil
+	ds.refs = nil
 }

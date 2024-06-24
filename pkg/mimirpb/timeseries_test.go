@@ -79,6 +79,8 @@ func TestTimeseriesFromPool(t *testing.T) {
 
 func TestCopyToYoloString(t *testing.T) {
 	stringByteArray := func(val string) uintptr {
+		// Ignore deprecation warning for now
+		//nolint:staticcheck
 		return (*reflect.SliceHeader)(unsafe.Pointer(&val)).Data
 	}
 
@@ -102,6 +104,8 @@ func TestCopyToYoloString(t *testing.T) {
 	assert.Len(t, remainingBuf, 0)
 
 	// Verify that the remainingBuf is using the same underlying byte array as safeCopy but advanced by the length.
+	// Ignore deprecation warning for now
+	//nolint:staticcheck
 	remainingBufArray := (*reflect.SliceHeader)(unsafe.Pointer(&remainingBuf)).Data
 	assert.Equal(t, int(safeCopyByteArray)+len(newBuf), int(remainingBufArray))
 }
@@ -153,43 +157,79 @@ func TestDeepCopyTimeseries(t *testing.T) {
 	// Check all the slices in the struct to ensure that
 	// none of them refer to the same underlying array.
 	assert.NotEqual(t,
+		// Ignore deprecation warning for now
+		//nolint:staticcheck
 		(*reflect.SliceHeader)(unsafe.Pointer(&src.Labels)).Data,
+		// Ignore deprecation warning for now
+		//nolint:staticcheck
 		(*reflect.SliceHeader)(unsafe.Pointer(&dst.Labels)).Data,
 	)
 	assert.NotEqual(t,
+		// Ignore deprecation warning for now
+		//nolint:staticcheck
 		(*reflect.SliceHeader)(unsafe.Pointer(&src.Samples)).Data,
+		// Ignore deprecation warning for now
+		//nolint:staticcheck
 		(*reflect.SliceHeader)(unsafe.Pointer(&dst.Samples)).Data,
 	)
 	assert.NotEqual(t,
+		// Ignore deprecation warning for now
+		//nolint:staticcheck
 		(*reflect.SliceHeader)(unsafe.Pointer(&src.Histograms)).Data,
+		// Ignore deprecation warning for now
+		//nolint:staticcheck
 		(*reflect.SliceHeader)(unsafe.Pointer(&dst.Histograms)).Data,
 	)
 	assert.NotEqual(t,
+		// Ignore deprecation warning for now
+		//nolint:staticcheck
 		(*reflect.SliceHeader)(unsafe.Pointer(&src.Exemplars)).Data,
+		// Ignore deprecation warning for now
+		//nolint:staticcheck
 		(*reflect.SliceHeader)(unsafe.Pointer(&dst.Exemplars)).Data,
 	)
 	for histogramIdx := range src.Histograms {
 		assert.NotEqual(t,
+			// Ignore deprecation warning for now
+			//nolint:staticcheck
 			(*reflect.SliceHeader)(unsafe.Pointer(&src.Histograms[histogramIdx].NegativeSpans)).Data,
+			// Ignore deprecation warning for now
+			//nolint:staticcheck
 			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Histograms[histogramIdx].NegativeSpans)).Data,
 		)
 		assert.NotEqual(t,
+			// Ignore deprecation warning for now
+			//nolint:staticcheck
 			(*reflect.SliceHeader)(unsafe.Pointer(&src.Histograms[histogramIdx].NegativeDeltas)).Data,
+			// Ignore deprecation warning for now
+			//nolint:staticcheck
 			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Histograms[histogramIdx].NegativeDeltas)).Data,
 		)
 		assert.NotEqual(t,
+			// Ignore deprecation warning for now
+			//nolint:staticcheck
 			(*reflect.SliceHeader)(unsafe.Pointer(&src.Histograms[histogramIdx].PositiveSpans)).Data,
+			// Ignore deprecation warning for now
+			//nolint:staticcheck
 			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Histograms[histogramIdx].PositiveSpans)).Data,
 		)
 		assert.NotEqual(t,
+			// Ignore deprecation warning for now
+			//nolint:staticcheck
 			(*reflect.SliceHeader)(unsafe.Pointer(&src.Histograms[histogramIdx].PositiveDeltas)).Data,
+			// Ignore deprecation warning for now
+			//nolint:staticcheck
 			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Histograms[histogramIdx].PositiveDeltas)).Data,
 		)
 	}
 
 	for exemplarIdx := range src.Exemplars {
 		assert.NotEqual(t,
+			// Ignore deprecation warning for now
+			//nolint:staticcheck
 			(*reflect.SliceHeader)(unsafe.Pointer(&src.Exemplars[exemplarIdx].Labels)).Data,
+			// Ignore deprecation warning for now
+			//nolint:staticcheck
 			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Exemplars[exemplarIdx].Labels)).Data,
 		)
 	}
@@ -465,6 +505,24 @@ func TestPreallocTimeseries_SetLabels(t *testing.T) {
 	require.Nil(t, p.marshalledData)
 }
 
+func TestPreallocTimeseries_ResizeExemplars(t *testing.T) {
+	t.Run("should resize Exemplars when size is bigger than target size", func(t *testing.T) {
+		p := PreallocTimeseries{
+			TimeSeries: &TimeSeries{
+				Exemplars: make([]Exemplar, 10),
+			},
+			marshalledData: []byte{1, 2, 3},
+		}
+
+		for i := range p.Exemplars {
+			p.Exemplars[i] = Exemplar{Labels: []LabelAdapter{{Name: "trace", Value: "1"}, {Name: "service", Value: "A"}}, Value: 1, TimestampMs: int64(i)}
+		}
+		p.ResizeExemplars(5)
+		require.Len(t, p.Exemplars, 5)
+		require.Nil(t, p.marshalledData)
+	})
+}
+
 func BenchmarkPreallocTimeseries_SortLabelsIfNeeded(b *testing.B) {
 	bcs := []int{10, 40, 100}
 
@@ -546,5 +604,25 @@ func TestClearExemplars(t *testing.T) {
 
 		assert.Equal(t, &TimeSeries{Exemplars: nil}, ts)
 		assert.Equal(t, 0, cap(ts.Exemplars))
+	})
+}
+
+func TestSortExemplars(t *testing.T) {
+	t.Run("should sort TimeSeries.Exemplars in order", func(t *testing.T) {
+		p := PreallocTimeseries{
+			TimeSeries: &TimeSeries{
+				Exemplars: []Exemplar{
+					{Labels: []LabelAdapter{{Name: "trace", Value: "1"}, {Name: "service", Value: "A"}}, Value: 1, TimestampMs: 3},
+					{Labels: []LabelAdapter{{Name: "trace", Value: "2"}, {Name: "service", Value: "B"}}, Value: 2, TimestampMs: 2},
+				},
+			},
+			marshalledData: []byte{1, 2, 3},
+		}
+
+		p.SortExemplars()
+		require.Len(t, p.Exemplars, 2)
+		assert.Equal(t, int64(2), p.Exemplars[0].TimestampMs)
+		assert.Equal(t, int64(3), p.Exemplars[1].TimestampMs)
+		assert.Nil(t, p.marshalledData)
 	})
 }

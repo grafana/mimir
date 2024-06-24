@@ -7,14 +7,17 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/mtime"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/test"
@@ -136,6 +139,11 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				ingestStorageEnabled:    true,
 				ingestStoragePartitions: 3,
 				limits:                  limits,
+				configure: func(cfg *Config) {
+					// Run a number of clients equal to the number of partitions, so that each partition
+					// has its own client, as requested by some test cases.
+					cfg.IngestStorageConfig.KafkaConfig.WriteClients = 3
+				},
 			}
 
 			distributors, _, regs, kafkaCluster := prepare(t, testConfig)
@@ -258,6 +266,68 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 			))
 		})
 	}
+}
+
+func TestDistributor_Push_ShouldReturnErrorMappedTo4xxStatusCodeIfWriteRequestContainsTimeseriesBiggerThanLimit(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "user")
+	now := time.Now()
+
+	hugeLabelValueLength := 100 * 1024 * 1024
+
+	createWriteRequest := func() *mimirpb.WriteRequest {
+		return &mimirpb.WriteRequest{
+			Timeseries: []mimirpb.PreallocTimeseries{
+				makeTimeseries([]string{model.MetricNameLabel, strings.Repeat("x", hugeLabelValueLength)}, makeSamples(now.UnixMilli(), 1), nil),
+			},
+		}
+	}
+
+	limits := prepareDefaultLimits()
+	limits.MaxLabelValueLength = hugeLabelValueLength
+
+	overrides, err := validation.NewOverrides(*limits, nil)
+	require.NoError(t, err)
+
+	testConfig := prepConfig{
+		numDistributors:         1,
+		ingestStorageEnabled:    true,
+		ingestStoragePartitions: 1,
+		limits:                  limits,
+	}
+
+	distributors, _, regs, _ := prepare(t, testConfig)
+	require.Len(t, distributors, 1)
+	require.Len(t, regs, 1)
+
+	t.Run("Push()", func(t *testing.T) {
+		// Send write request.
+		res, err := distributors[0].Push(ctx, createWriteRequest())
+		require.Error(t, err)
+		require.Nil(t, res)
+
+		// We expect a gRPC error.
+		errStatus, ok := grpcutil.ErrorToStatus(err)
+		require.True(t, ok)
+		assert.Equal(t, codes.InvalidArgument, errStatus.Code())
+		assert.ErrorContains(t, errStatus.Err(), ingest.ErrWriteRequestDataItemTooLarge.Error())
+
+		// We expect the gRPC error to be detected as client error.
+		assert.True(t, mimirpb.IsClientError(err))
+	})
+
+	t.Run("Handler()", func(t *testing.T) {
+		marshalledReq, err := createWriteRequest().Marshal()
+		require.NoError(t, err)
+
+		maxRecvMsgSize := hugeLabelValueLength * 2
+		resp := httptest.NewRecorder()
+		sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
+
+		// Send write request through the HTTP handler.
+		h := Handler(maxRecvMsgSize, nil, sourceIPs, false, overrides, RetryConfig{}, distributors[0].PushWithMiddlewares, nil, log.NewNopLogger())
+		h.ServeHTTP(resp, createRequest(t, marshalledReq))
+		assert.Equal(t, http.StatusBadRequest, resp.Code)
+	})
 }
 
 func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *testing.T) {

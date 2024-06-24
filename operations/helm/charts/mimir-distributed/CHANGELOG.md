@@ -29,6 +29,12 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards. #7674
+  * Overview dashboard: read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric.
+
+## 5.4.0-rc.0
+
+* [FEATURE] Add support for a dedicated query path for the ruler. This allows for the isolation of ruler and user query paths. Enable it via `ruler.remoteEvaluationDedicatedQueryPath: true`. #7964
 * [CHANGE] Fine-tuned `terminationGracePeriodSeconds` for the following components: #7361 #7364
   * Alertmanager: changed from `60` to `900`
   * Distributor: changed from `60` to `100`
@@ -42,12 +48,20 @@ Entries should include a reference to the Pull Request that introduced the chang
   * Metadata-cache: changed from `60` to `30`
   * Results-cache: changed from `60` to `30`
 * [CHANGE] Smoke-test: remove the `smoke_test.image` and `continuous_test.image` sections and reuse the main Mimir image from the top `image` section using the new `-target=continuous-test` CLI flag. #7923
-* [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards. #7627 #7674
-  * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric.
 * [ENHANCEMENT] Rollout-operator: upgrade to v0.14.0. #7886
+* [ENHANCEMENT] Dashboards: allow switching between using classic of native histograms in dashboards. #7627
+  * Overview dashboard, Status panel, `cortex_request_duration_seconds` metric.
 * [ENHANCEMENT] Alerts: exclude `529` and `598` status codes from failure codes in `MimirRequestsError`. #7889
 * [ENHANCEMENT] The new value `metaMonitoring.grafanaAgent.logs.clusterLabel` controls whether to add a `cluster` label and with what content to PodLogs logs. #7764
 * [ENHANCEMENT] The new values `global.extraVolumes` and `global.extraVolumeMounts` adds volumes and volumeMounts to all pods directly managed by mimir-distributed. #7922
+* [ENHANCEMENT] Smoke-test: Parameterized `backoffLimit` for smoke tests in Helm chart to accommodate slower startup environments like k3d. #8025
+* [ENHANCEMENT] Add a volumeClaimTemplates section to the `chunks-cache`, `index-cache`, `metadata-cache`, and `results-cache` components. #8016
+* [ENHANCEMENT] Add 'gateway.gateway.config.clientMaxBodySize' to the `gateway` to allow setting the maximum allowed size of the client request body. #7960
+* [ENHANCEMENT] Update rollout-operator to `v0.17.0`. #8399
+* [ENHANCEMENT] Omit rendering empty `subPath`, `args`, `env`, and `envFrom` in resource manifests. #7587
+* [BUGFIX] Helm: Allowed setting static NodePort for nginx gateway via `gateway.service.nodePort`. #6966
+* [BUGFIX] Helm: Expose AM configs in the `gateway` NGINX configuration. #8248
+* [BUGFIX] Helm: fix ServiceMonitor and PVC template to not show diff in ArgoCD. #8829
 
 ## 5.3.0
 
@@ -84,9 +98,11 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Recording rules: add native histogram recording rules to `cortex_request_duration_seconds`. #7528
 * [ENHANCEMENT] Make the port used in ServiceMonitor for kube-state-metrics configurable. #7507
 * [ENHANCEMENT] Produce a clearer error messages when multiple X-Scope-OrgID headers are present. #7704
+* [ENHANCEMENT] Add `querier.kedaAutoscaling.predictiveScalingEnabled` to scale querier based on inflight queries 7 days ago. #7775
 * [BUGFIX] Metamonitoring: update dashboards to drop unsupported `step` parameter in targets. #7157
 * [BUGFIX] Recording rules: drop rules for metrics removed in 2.0: `cortex_memcache_request_duration_seconds` and `cortex_cache_request_duration_seconds`. #7514
 * [BUGFIX] Store-gateway: setting "resources.requests.memory" with a quantity that used power-of-ten SI suffix, caused an error. #7506
+* [BUGFIX] Do nor render empty fields for `subPath`, `args`, `env` & `envFrom` #7587
 
 ## 5.2.3
 

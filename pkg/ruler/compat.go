@@ -145,8 +145,8 @@ func (t *PusherAppendable) Appender(ctx context.Context) storage.Appender {
 type RulesLimits interface {
 	EvaluationDelay(userID string) time.Duration
 	RulerTenantShardSize(userID string) int
-	RulerMaxRuleGroupsPerTenant(userID string) int
-	RulerMaxRulesPerRuleGroup(userID string) int
+	RulerMaxRuleGroupsPerTenant(userID, namespace string) int
+	RulerMaxRulesPerRuleGroup(userID, namespace string) int
 	RulerRecordingRulesEvaluationEnabled(userID string) bool
 	RulerAlertingRulesEvaluationEnabled(userID string) bool
 	RulerSyncRulesOnChangesEnabled(userID string) bool
@@ -330,7 +330,7 @@ func DefaultTenantManagerFactory(
 			ForGracePeriod:             cfg.ForGracePeriod,
 			ResendDelay:                cfg.ResendDelay,
 			AlwaysRestoreAlertState:    true,
-			DefaultEvaluationDelay: func() time.Duration {
+			DefaultRuleQueryOffset: func() time.Duration {
 				// Delay the evaluation of all rules by a set interval to give a buffer
 				// to metric that haven't been forwarded to Mimir yet.
 				return overrides.EvaluationDelay(userID)

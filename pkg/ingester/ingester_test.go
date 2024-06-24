@@ -54,6 +54,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
+	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -78,6 +79,262 @@ func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[str
 	m, err := activeseries.NewCustomTrackersConfig(source)
 	require.NoError(t, err)
 	return m
+}
+
+func TestIngester_StartPushRequest(t *testing.T) {
+	const reqSize = 10
+	instanceLimits := &InstanceLimits{}
+	pushReqState := &pushRequestState{
+		requestSize: 10,
+	}
+	ctx := context.Background()
+	ctxWithPushReqState := context.WithValue(ctx, pushReqCtxKey, pushReqState)
+
+	type testCase struct {
+		ctx                               context.Context
+		failingIngester                   bool
+		cbOpen                            bool
+		cbInitialDelay                    time.Duration
+		instanceLimitReached              bool
+		expectedStatus                    bool
+		expectedInFlightPushRequests      int64
+		expectedInflightPushRequestsBytes int64
+		verifyCtxFn                       func(context.Context, context.Context)
+		verifyErr                         func(error)
+	}
+
+	setupIngester := func(tc testCase) *failingIngester {
+		cfg := defaultIngesterTestConfig(t)
+		cfg.PushCircuitBreaker = CircuitBreakerConfig{
+			Enabled:        true,
+			InitialDelay:   tc.cbInitialDelay,
+			CooldownPeriod: 10 * time.Second,
+		}
+		cfg.InstanceLimitsFn = func() *InstanceLimits {
+			return instanceLimits
+		}
+		var (
+			failingCause  error
+			expectedState services.State
+		)
+		if tc.failingIngester {
+			expectedState = services.Terminated
+			failingCause = newUnavailableError(expectedState)
+		} else {
+			expectedState = services.Running
+		}
+		failingIng := setupFailingIngester(t, cfg, failingCause)
+		failingIng.startWaitAndCheck(ctx, t)
+		require.Equal(t, expectedState, failingIng.lifecycler.State())
+
+		if tc.cbOpen {
+			failingIng.circuitBreaker.push.cb.Open()
+		} else {
+			failingIng.circuitBreaker.push.cb.Close()
+		}
+
+		if tc.instanceLimitReached {
+			instanceLimits.MaxInflightPushRequestsBytes = 1
+		} else {
+			instanceLimits.MaxInflightPushRequestsBytes = 0
+		}
+
+		return failingIng
+	}
+
+	testCases := map[string]testCase{
+		"fail if ingester is not available for push": {
+			failingIngester:                   true,
+			ctx:                               ctx,
+			expectedStatus:                    false,
+			expectedInFlightPushRequests:      0,
+			expectedInflightPushRequestsBytes: 0,
+			verifyErr: func(err error) {
+				require.ErrorAs(t, err, &unavailableError{})
+			},
+		},
+		"fail if circuit breaker is open": {
+			ctx:                               ctx,
+			cbOpen:                            true,
+			expectedStatus:                    false,
+			expectedInFlightPushRequests:      0,
+			expectedInflightPushRequestsBytes: 0,
+			verifyErr: func(err error) {
+				require.ErrorAs(t, err, &circuitBreakerOpenError{})
+			},
+		},
+		"fail if instance limit is reached": {
+			ctx:                               ctx,
+			instanceLimitReached:              true,
+			expectedStatus:                    false,
+			expectedInFlightPushRequests:      0,
+			expectedInflightPushRequestsBytes: 0,
+			verifyErr: func(err error) {
+				require.ErrorAs(t, err, &instanceLimitReachedError{})
+			},
+		},
+		"do not fail if circuit breaker is not active": {
+			ctx:                               ctx,
+			cbInitialDelay:                    1 * time.Minute,
+			expectedStatus:                    true,
+			expectedInFlightPushRequests:      1,
+			expectedInflightPushRequestsBytes: reqSize,
+			verifyCtxFn: func(inCtx, outCtx context.Context) {
+				require.NotEqual(t, inCtx, outCtx)
+			},
+		},
+		"do not fail and return the same context if it already contains a pushRequestState": {
+			ctx:                               ctxWithPushReqState,
+			expectedStatus:                    false,
+			expectedInFlightPushRequests:      0,
+			expectedInflightPushRequestsBytes: 0,
+			verifyCtxFn: func(inCtx, outCtx context.Context) {
+				require.Equal(t, inCtx, outCtx)
+			},
+		},
+		"do not fail and add pushRequestState to the context if everything is ok": {
+			ctx:                               ctx,
+			expectedStatus:                    true,
+			expectedInFlightPushRequests:      1,
+			expectedInflightPushRequestsBytes: reqSize,
+			verifyCtxFn: func(inCtx, outCtx context.Context) {
+				require.NotEqual(t, inCtx, outCtx)
+			},
+		},
+	}
+	for testName, tc := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			failingIng := setupIngester(tc)
+			defer services.StopAndAwaitTerminated(context.Background(), failingIng) //nolint:errcheck
+
+			ctx, shouldFinish, err := failingIng.startPushRequest(tc.ctx, reqSize)
+			require.Equal(t, tc.expectedStatus, shouldFinish)
+			require.Equal(t, tc.expectedInFlightPushRequests, failingIng.inflightPushRequests.Load())
+			require.Equal(t, tc.expectedInflightPushRequestsBytes, failingIng.inflightPushRequestsBytes.Load())
+
+			if err == nil {
+				pushReqState := getPushRequestState(ctx)
+				require.NotNil(t, pushReqState)
+
+				if tc.verifyCtxFn != nil {
+					tc.verifyCtxFn(tc.ctx, ctx)
+				}
+			} else {
+				require.Nil(t, ctx)
+				require.NotNil(t, tc.verifyErr)
+				tc.verifyErr(err)
+			}
+		})
+	}
+}
+
+func TestIngester_StartReadRequest(t *testing.T) {
+	type testCase struct {
+		setup                       func(*failingIngester)
+		verifyErr                   func(error)
+		expectedAcquiredPermitCount int
+	}
+
+	var (
+		acquiredPermitCount  *atomic.Int64
+		recordedSuccessCount *atomic.Int64
+		recordedFailureCount *atomic.Int64
+		utilizationLimiter   = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+	)
+
+	setupIngester := func(testCase) *failingIngester {
+		cfg := defaultIngesterTestConfig(t)
+		cfg.ReadCircuitBreaker = CircuitBreakerConfig{
+			Enabled:        true,
+			CooldownPeriod: 10 * time.Second,
+			RequestTimeout: 30 * time.Second,
+		}
+		failingIng := newFailingIngester(t, cfg, nil, nil)
+		failingIng.startWaitAndCheck(context.Background(), t)
+		require.Equal(t, services.Running, failingIng.lifecycler.State())
+
+		acquiredPermitCount = atomic.NewInt64(0)
+		recordedSuccessCount = atomic.NewInt64(0)
+		recordedFailureCount = atomic.NewInt64(0)
+
+		failingIng.circuitBreaker.read.cb = &mockedCircuitBreaker{
+			acquiredPermitCount: acquiredPermitCount,
+			recordSuccessCount:  recordedSuccessCount,
+			recordFailureCount:  recordedFailureCount,
+			CircuitBreaker:      failingIng.circuitBreaker.read.cb,
+		}
+		failingIng.circuitBreaker.read.cb.Close()
+
+		return failingIng
+	}
+
+	testCases := map[string]testCase{
+		"fail if ingester is not available for read, and do not acquire a permit": {
+			setup: func(failingIng *failingIngester) {
+				services.StopAndAwaitTerminated(context.Background(), failingIng) //nolint:errcheck
+			},
+			expectedAcquiredPermitCount: 0,
+			verifyErr: func(err error) {
+				require.ErrorAs(t, err, &unavailableError{})
+			},
+		},
+		"fail if ingester is overloaded, and do not acquire a permit": {
+			setup: func(failingIng *failingIngester) {
+				failingIng.utilizationBasedLimiter = utilizationLimiter
+			},
+			expectedAcquiredPermitCount: 0,
+			verifyErr: func(err error) {
+				require.ErrorIs(t, err, errTooBusy)
+			},
+		},
+		"fail if circuit breaker is open, and do not acquire a permit": {
+			setup: func(failingIng *failingIngester) {
+				failingIng.circuitBreaker.read.cb.Open()
+			},
+			expectedAcquiredPermitCount: 0,
+			verifyErr: func(err error) {
+				require.ErrorAs(t, err, &circuitBreakerOpenError{})
+			},
+		},
+		"do not fail if circuit breaker is not active, and do not acquire a permit": {
+			setup: func(failingIng *failingIngester) {
+				failingIng.circuitBreaker.read.active.Store(false)
+			},
+			expectedAcquiredPermitCount: 0,
+		},
+		"do not fail if everything is ok, and acquire a permit": {
+			expectedAcquiredPermitCount: 1,
+		},
+	}
+	for testName, tc := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			failingIng := setupIngester(tc)
+			if tc.setup != nil {
+				tc.setup(failingIng)
+			}
+			defer services.StopAndAwaitTerminated(context.Background(), failingIng) //nolint:errcheck
+
+			finish, err := failingIng.startReadRequest()
+			require.Equal(t, int64(tc.expectedAcquiredPermitCount), acquiredPermitCount.Load())
+
+			if err == nil {
+				require.Nil(t, tc.verifyErr)
+				require.NotNil(t, finish)
+
+				// Calling finish must release a potentially acquired permit
+				// and in that case record a success, and no failures.
+				expectedSuccessCount := acquiredPermitCount.Load()
+				finish(err)
+				require.Equal(t, int64(0), acquiredPermitCount.Load())
+				require.Equal(t, expectedSuccessCount, recordedSuccessCount.Load())
+				require.Equal(t, int64(0), recordedFailureCount.Load())
+			} else {
+				require.NotNil(t, tc.verifyErr)
+				tc.verifyErr(err)
+				require.Nil(t, finish)
+			}
+		})
+	}
 }
 
 func TestIngester_Push(t *testing.T) {
@@ -960,16 +1217,15 @@ func TestIngester_Push(t *testing.T) {
 					nil,
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
-						// These are intentionally out of order to test the sorting.
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
-							TimestampMs: 2000,
-							Value:       2000,
-						},
 						{
 							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
+						},
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							TimestampMs: 2000,
+							Value:       2000,
 						},
 					},
 				),
@@ -2549,9 +2805,10 @@ func TestIngester_Push(t *testing.T) {
 
 			ctx := user.InjectOrgID(context.Background(), userID)
 
-			// Wait until the ingester is healthy
-			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-				return i.lifecycler.HealthyInstancesCount()
+			// Wait until the ingester is healthy and owns tokens. Note that the timeout here is set
+			// such that it is longer than the MinReadyDuration configuration for the ingester ring.
+			test.Poll(t, time.Second, nil, func() interface{} {
+				return i.lifecycler.CheckReady(context.Background())
 			})
 
 			// Push timeseries
@@ -2568,9 +2825,9 @@ func TestIngester_Push(t *testing.T) {
 						assert.NoError(t, err)
 					} else {
 						handledErr := i.mapPushErrorToErrorWithStatus(err)
-						errWithStatus, ok := handledErr.(errorWithStatus)
+						errWithStatus, ok := handledErr.(globalerror.ErrorWithStatus)
 						assert.True(t, ok)
-						assert.True(t, errWithStatus.equals(testData.expectedErr))
+						assert.True(t, errWithStatus.Equals(testData.expectedErr))
 					}
 				}
 			}
@@ -2646,6 +2903,9 @@ func TestIngester_Push(t *testing.T) {
 
 			i.updateUsageStats()
 
+			if !testData.disableActiveSeries {
+				assert.Equal(t, int64(len(testData.expectedIngested)), usagestats.GetInt(activeSeriesStatsName).Value())
+			}
 			assert.Equal(t, int64(len(testData.expectedIngested)), usagestats.GetInt(memorySeriesStatsName).Value())
 			assert.Equal(t, int64(expectedTenantsCount), usagestats.GetInt(memoryTenantsStatsName).Value())
 			assert.Equal(t, int64(expectedSamplesCount)+appendedSamplesStatsBefore, usagestats.GetCounter(appendedSamplesStatsName).Total())
@@ -3343,6 +3603,14 @@ func Test_Ingester_LabelValues(t *testing.T) {
 	})
 }
 
+func l2m(lbls labels.Labels) model.Metric {
+	m := make(model.Metric, 16)
+	lbls.Range(func(l labels.Label) {
+		m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+	})
+	return m
+}
+
 func Test_Ingester_Query(t *testing.T) {
 	series := []series{
 		{labels.FromStrings(labels.MetricName, "test_1", "status", "200", "route", "get_user"), 1, 100000},
@@ -3371,8 +3639,8 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
-				&model.SampleStream{Metric: util.LabelsToMetric(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: l2m(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: l2m(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by != matcher": {
@@ -3382,7 +3650,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.NOT_EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
+				&model.SampleStream{Metric: l2m(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
 			},
 		},
 		"should filter series by =~ matcher": {
@@ -3392,8 +3660,8 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".*_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
-				&model.SampleStream{Metric: util.LabelsToMetric(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: l2m(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: l2m(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by !~ matcher": {
@@ -3403,7 +3671,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.REGEX_NO_MATCH, Name: model.MetricNameLabel, Value: ".*_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
+				&model.SampleStream{Metric: l2m(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
 			},
 		},
 		"should filter series by multiple matchers": {
@@ -3414,7 +3682,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.REGEX_MATCH, Name: "status", Value: "5.."},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: l2m(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by matcher and time range": {
@@ -3424,7 +3692,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: l2m(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
 			},
 		},
 	}
@@ -5281,11 +5549,14 @@ func mockWriteRequest(t testing.TB, lbls labels.Labels, value float64, timestamp
 	return req, expectedQueryRes, expectedQueryStreamResSamples, expectedQueryStreamResChunks
 }
 
-func prepareHealthyIngester(b testing.TB) *Ingester {
+func prepareHealthyIngester(b testing.TB, mutateLimits func(*validation.Limits)) *Ingester {
 	cfg := defaultIngesterTestConfig(b)
 	limits := defaultLimitsTestConfig()
 	limits.MaxGlobalSeriesPerMetric = 0
 	limits.MaxGlobalSeriesPerUser = 0
+	if mutateLimits != nil {
+		mutateLimits(&limits)
+	}
 
 	// Create ingester.
 	i, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limits, nil, "", nil)
@@ -9945,11 +10216,11 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 	errorSampleRate := 5
 	now := time.Now()
 
-	users := []string{"test", "tset"}
+	users := []string{"user-1", "user-2"}
 
 	tests := map[string]struct {
 		reqs             []*mimirpb.WriteRequest
-		expectedErrs     []errorWithStatus
+		expectedErrs     []globalerror.ErrorWithStatus
 		expectedMetrics  string
 		expectedSampling bool
 		maxExemplars     int
@@ -9972,7 +10243,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					mimirpb.API,
 				),
 			},
-			expectedErrs: []errorWithStatus{
+			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleOutOfOrderError(model.Time(9), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleOutOfOrderError(model.Time(9), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -9980,8 +10251,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 4
-				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="tset"} 1
+				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="user-2"} 1
 			`,
 		},
 		"should soft fail on all samples out of bound in a write request": {
@@ -10005,7 +10276,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []errorWithStatus{
+			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10013,11 +10284,45 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 8
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="tset"} 2
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-1"} 8
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-2"} 2
 			`,
 		},
-		"should soft fail on all samples with histograms out of bound in a write request": {
+		"should soft fail on all histograms out of bound in a write request": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
+					nil,
+					nil,
+					mimirpb.API,
+				),
+				// Write request with 1 series and 1 "too old" histogram.
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels:     metricLabelAdapters,
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1575043969-(86800*1000), util_test.GenerateTestHistogram(0))},
+							},
+						},
+					},
+				},
+			},
+			expectedErrs: []globalerror.ErrorWithStatus{
+				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[0]), codes.FailedPrecondition),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[1]), codes.FailedPrecondition),
+			},
+			expectedSampling: true,
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-2"} 1
+			`,
+			nativeHistograms: true,
+		},
+		"should soft fail on all samples and histograms out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
 					[][]mimirpb.LabelAdapter{metricLabelAdapters},
@@ -10039,7 +10344,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []errorWithStatus{
+			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10047,8 +10352,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 12
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="tset"} 3
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-1"} 12
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-2"} 3
 			`,
 			nativeHistograms: true,
 		},
@@ -10076,7 +10381,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []errorWithStatus{
+			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10084,8 +10389,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 8
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="tset"} 2
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-1"} 8
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-2"} 2
 			`,
 		},
 		"should soft fail on some samples with timestamp too far in future in a write request": {
@@ -10110,7 +10415,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []errorWithStatus{
+			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10118,8 +10423,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 4
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="tset"} 1
+				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="user-2"} 1
 			`,
 		},
 		"should soft fail on some histograms with timestamp too far in future in a write request": {
@@ -10138,7 +10443,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []errorWithStatus{
+			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10146,8 +10451,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="test"} 4
-				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="tset"} 1
+				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="sample-too-far-in-future",user="user-2"} 1
 			`,
 		},
 		"should soft fail on some exemplars with timestamp too far in future in a write request": {
@@ -10169,7 +10474,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []errorWithStatus{
+			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[1]), codes.FailedPrecondition),
 			},
@@ -10192,7 +10497,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					mimirpb.API,
 				),
 			},
-			expectedErrs: []errorWithStatus{
+			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(model.Time(1575043969), metricLabelAdapters), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(model.Time(1575043969), metricLabelAdapters), users[1]), codes.FailedPrecondition),
 			},
@@ -10200,8 +10505,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 4
-				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="tset"} 1
+				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="user-2"} 1
 			`,
 		},
 		"should soft fail on exemplar with unknown series": {
@@ -10226,7 +10531,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: []errorWithStatus{
+			expectedErrs: []globalerror.ErrorWithStatus{
 				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[0]), codes.FailedPrecondition),
 				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[1]), codes.FailedPrecondition),
 			},
@@ -10308,13 +10613,13 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 						require.Error(t, err)
 						status, ok := grpcutil.ErrorToStatus(err)
 						require.True(t, ok)
-						require.ErrorContains(t, status.Err(), testData.expectedErrs[0].err.Error())
+						require.ErrorContains(t, status.Err(), testData.expectedErrs[0].UnderlyingErr.Error())
 					}
 					_, err = client.Push(ctxs[1], req)
 					require.Error(t, err)
 					status, ok := grpcutil.ErrorToStatus(err)
 					require.True(t, ok)
-					require.ErrorContains(t, status.Err(), testData.expectedErrs[1].err.Error())
+					require.ErrorContains(t, status.Err(), testData.expectedErrs[1].UnderlyingErr.Error())
 				}
 			}
 
@@ -10651,9 +10956,9 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 
 func checkErrorWithStatus(t *testing.T, err error, expectedErr error) {
 	require.Error(t, err)
-	errWithStatus, ok := err.(errorWithStatus)
+	errWithStatus, ok := err.(globalerror.ErrorWithStatus)
 	require.True(t, ok)
-	require.True(t, errWithStatus.equals(expectedErr))
+	require.True(t, errWithStatus.Equals(expectedErr))
 }
 
 func buildSeriesSet(t *testing.T, series *Series) []labels.Labels {
@@ -10720,6 +11025,128 @@ func TestIngester_Starting(t *testing.T) {
 			fI.startWaitAndCheck(ctx, t)
 			require.Equal(t, testCase.expectedLifecyclerStateAfterStarting, fI.lifecycler.State())
 			checkFinalRingState(ctx, fI)
+		})
+	}
+}
+
+func TestIngester_PrepareUnregisterHandler(t *testing.T) {
+	ctx := context.Background()
+
+	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+	require.NoError(t, err)
+
+	type testCase struct {
+		name                     string
+		startIngester            bool
+		httpMethod               string
+		requestBody              io.Reader
+		prepare                  func(i *Ingester)
+		expectedStatusCode       int
+		expectedResponseBody     string
+		expectedUnregisterStatus bool
+	}
+
+	tests := []testCase{
+		{
+			name:                     "returns HTTP 503 if ingester is not running",
+			startIngester:            false,
+			httpMethod:               http.MethodGet,
+			requestBody:              nil,
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusServiceUnavailable,
+			expectedResponseBody:     "",
+			expectedUnregisterStatus: true,
+		},
+		{
+			name:                     "returns HTTP 400 on PUT with request body that is not valid JSON",
+			startIngester:            true,
+			httpMethod:               http.MethodPut,
+			requestBody:              strings.NewReader("invalid json"),
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusBadRequest,
+			expectedResponseBody:     "",
+			expectedUnregisterStatus: true,
+		},
+		{
+			name:                     "returns HTTP 400 on PUT with request body that is valid JSON but has incorrect structure",
+			startIngester:            true,
+			httpMethod:               http.MethodPut,
+			requestBody:              strings.NewReader(`{"ping": "pong"}`),
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusBadRequest,
+			expectedResponseBody:     "",
+			expectedUnregisterStatus: true,
+		},
+		{
+			name:                     "returns HTTP 200 and unregister status on PUT with valid request body",
+			startIngester:            true,
+			httpMethod:               http.MethodPut,
+			requestBody:              strings.NewReader(`{"unregister": false}`),
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusOK,
+			expectedResponseBody:     `{"unregister":false}`,
+			expectedUnregisterStatus: false,
+		},
+		{
+			name:                     "returns HTTP 200 with unregister status on GET request",
+			startIngester:            true,
+			httpMethod:               http.MethodGet,
+			requestBody:              nil,
+			prepare:                  nil,
+			expectedStatusCode:       http.StatusOK,
+			expectedResponseBody:     `{"unregister":true}`,
+			expectedUnregisterStatus: true,
+		},
+		{
+			name:          "returns HTTP 200 with unregister status on DELETE request",
+			startIngester: true,
+			httpMethod:    http.MethodDelete,
+			requestBody:   nil,
+			prepare: func(i *Ingester) {
+				i.lifecycler.SetUnregisterOnShutdown(false)
+			},
+			expectedStatusCode:       http.StatusOK,
+			expectedResponseBody:     `{"unregister":true}`,
+			expectedUnregisterStatus: true,
+		},
+	}
+
+	setup := func(t *testing.T, start bool, cfg Config) *Ingester {
+		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
+
+		if start {
+			require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+			})
+
+			test.Poll(t, 1*time.Second, 1, func() interface{} {
+				return ingester.lifecycler.HealthyInstancesCount()
+			})
+		}
+
+		return ingester
+	}
+
+	for _, tc := range tests {
+		// Avoid a common gotcha with table driven tests and t.Parallel().
+		// See https://gist.github.com/posener/92a55c4cd441fc5e5e85f27bca008721.
+		// As of writing these tests, Mimir runs on go 1.21. Once go.mod is updated to specify go 1.22, this line can
+		// be dropped. See https://tip.golang.org/wiki/LoopvarExperiment.
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ingester := setup(t, tc.startIngester, defaultIngesterTestConfig(t))
+			if tc.prepare != nil {
+				tc.prepare(ingester)
+			}
+			res := httptest.NewRecorder()
+			ingester.PrepareUnregisterHandler(res, httptest.NewRequest(tc.httpMethod, "/ingester/unregister-on-shutdown", tc.requestBody))
+			require.Equal(t, tc.expectedStatusCode, res.Code)
+			require.Equal(t, tc.expectedResponseBody, res.Body.String())
+			require.Equal(t, tc.expectedUnregisterStatus, ingester.lifecycler.ShouldUnregisterOnShutdown())
 		})
 	}
 }

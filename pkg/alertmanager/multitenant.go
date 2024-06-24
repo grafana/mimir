@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/alerting/definition"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
@@ -218,6 +219,12 @@ type Limits interface {
 	// AlertmanagerMaxConfigSize returns max size of configuration file that user is allowed to upload. If 0, there is no limit.
 	AlertmanagerMaxConfigSize(tenant string) int
 
+	// AlertmanagerMaxSilencesCount returns the max number of silences, including expired silences. If negative or 0, there is no limit.
+	AlertmanagerMaxSilencesCount(tenant string) int
+
+	// AlertmanagerMaxSilenceSizeBytes returns the max silence size in bytes. If negative or 0, there is no limit.
+	AlertmanagerMaxSilenceSizeBytes(tenant string) int
+
 	// AlertmanagerMaxTemplatesCount returns max number of templates that tenant can use in the configuration. 0 = no limit.
 	AlertmanagerMaxTemplatesCount(tenant string) int
 
@@ -317,7 +324,7 @@ func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alerts
 	return createMultitenantAlertmanager(cfg, fallbackConfig, store, ringStore, limits, features, logger, registerer)
 }
 
-// ComputeFallbackConfig will load, vaildate and return the provided fallbackConfigFile
+// ComputeFallbackConfig will load, validate and return the provided fallbackConfigFile
 // or return an valid empty default configuration if none is provided.
 func ComputeFallbackConfig(fallbackConfigFile string) ([]byte, error) {
 	if fallbackConfigFile != "" {
@@ -592,7 +599,7 @@ func (am *MultitenantAlertmanager) stopping(_ error) error {
 // loadAlertmanagerConfigs Loads (and filters) the alertmanagers configuration from object storage, taking into consideration the sharding strategy. Returns:
 // - The list of discovered users (all users with a configuration in storage)
 // - The configurations of users owned by this instance.
-func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) ([]string, map[string]alertspb.AlertConfigDesc, error) {
+func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) ([]string, map[string]alertspb.AlertConfigDescs, error) {
 	// Find all users with an alertmanager config.
 	allUserIDs, err := am.store.ListAllUsers(ctx)
 	if err != nil {
@@ -631,11 +638,17 @@ func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
 	return alertmanagers.Includes(am.ringLifecycler.GetInstanceAddr())
 }
 
-func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]alertspb.AlertConfigDesc) {
-	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgs))
-	for user, cfg := range cfgs {
-		err := am.setConfig(cfg)
+func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertConfigDescs) {
+	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgMap))
+	for user, cfgs := range cfgMap {
+		cfg, err := am.computeConfig(cfgs)
 		if err != nil {
+			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
+			level.Warn(am.logger).Log("msg", "error computing config", "err", err)
+			continue
+		}
+
+		if err := am.setConfig(cfg); err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error applying config", "err", err)
 			continue
@@ -649,7 +662,7 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]alertspb.AlertCon
 
 	am.alertmanagersMtx.Lock()
 	for userID, userAM := range am.alertmanagers {
-		if _, exists := cfgs[userID]; !exists {
+		if _, exists := cfgMap[userID]; !exists {
 			userAlertmanagersToStop[userID] = userAM
 			delete(am.alertmanagers, userID)
 			delete(am.cfgs, userID)
@@ -668,10 +681,44 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgs map[string]alertspb.AlertCon
 	}
 }
 
+// computeConfig takes an AlertConfigDescs struct containing Mimir and Grafana configurations.
+// It returns the final configuration the Alertmanager will use.
+func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (alertspb.AlertConfigDesc, error) {
+	var cfg alertspb.AlertConfigDesc
+	switch {
+	// Mimir configuration.
+	case !cfgs.Grafana.Promoted:
+		level.Debug(am.logger).Log("msg", "grafana configuration not promoted, using mimir config", "user", cfgs.Mimir.User)
+		cfg = cfgs.Mimir
+	case cfgs.Grafana.Default:
+		level.Debug(am.logger).Log("msg", "grafana configuration is default, using mimir config", "user", cfgs.Mimir.User)
+		cfg = cfgs.Mimir
+	case cfgs.Grafana.RawConfig == "":
+		level.Debug(am.logger).Log("msg", "grafana configuration is empty, using mimir config", "user", cfgs.Mimir.User)
+		cfg = cfgs.Mimir
+
+	// Grafana configuration.
+	case cfgs.Mimir.RawConfig == am.fallbackConfig:
+		level.Debug(am.logger).Log("msg", "mimir configuration is default, using grafana config", "user", cfgs.Mimir.User)
+		return parseGrafanaConfig(cfgs.Grafana)
+	case cfgs.Mimir.RawConfig == "":
+		level.Debug(am.logger).Log("msg", "mimir configuration is empty, using grafana config", "user", cfgs.Grafana.User)
+		return parseGrafanaConfig(cfgs.Grafana)
+
+	// Both configurations.
+	// TODO: merge configurations.
+	default:
+		level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", cfgs.Mimir.User)
+		return cfgs.Mimir, nil
+	}
+
+	return cfg, nil
+}
+
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
 func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error {
-	var userAmConfig *amconfig.Config
+	var userAmConfig *definition.PostableApiAlertingConfig
 	var err error
 	var hasTemplateChanges bool
 	var userTemplateDir = filepath.Join(am.getTenantDirectory(cfg.User), templatesDir)
@@ -733,13 +780,13 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 			return fmt.Errorf("blank Alertmanager configuration for %v", cfg.User)
 		}
 		level.Debug(am.logger).Log("msg", "blank Alertmanager configuration; using fallback", "user", cfg.User)
-		userAmConfig, err = amconfig.Load(am.fallbackConfig)
+		userAmConfig, err = definition.LoadCompat([]byte(am.fallbackConfig))
 		if err != nil {
 			return fmt.Errorf("unable to load fallback configuration for %v: %v", cfg.User, err)
 		}
 		rawCfg = am.fallbackConfig
 	} else {
-		userAmConfig, err = amconfig.Load(cfg.RawConfig)
+		userAmConfig, err = definition.LoadCompat([]byte(cfg.RawConfig))
 		if err != nil && hasExisting {
 			// This means that if a user has a working config and
 			// they submit a broken one, the Manager will keep running the last known
@@ -781,7 +828,7 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
-func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amconfig.Config, rawCfg string) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, rawCfg string) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
 	tenantDir := am.getTenantDirectory(userID)
@@ -804,6 +851,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amco
 		PersisterConfig:                   am.cfg.Persister,
 		Limits:                            am.limits,
 		Features:                          am.features,
+		GrafanaAlertmanagerCompatibility:  am.cfg.GrafanaAlertmanagerCompatibilityEnabled,
 	}, reg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)

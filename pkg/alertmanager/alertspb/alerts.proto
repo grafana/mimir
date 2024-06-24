@@ -43,4 +43,5 @@ message GrafanaAlertConfigDesc {
   string hash = 4;
   int64 created_at_timestamp = 5;
   bool default = 7;
+  bool promoted = 8;
 }
