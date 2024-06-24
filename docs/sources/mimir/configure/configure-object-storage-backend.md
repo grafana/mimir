@@ -132,9 +132,9 @@ Mimir requires the following configuration to authenticate to and access Azure B
     - For a system-assigned managed identity, you do not need to perform additional configurations.
     - For a user-assigned managed identity, set `user_assigned_id` to the client ID for the managed identity in the configuration file.
   - Via Azure Workload Identity. To use Azure Workload Identity:
-   1. Enable Azure Workload Identity on your cluster
-   2. Add the required label and annotation to the service account
-   3. Add the required pod label
+    - Enable Azure Workload Identity on your cluster
+    - Add the required label and annotation to the service account
+    - Add the required pod label
 
 ### Sample configuration
 
