@@ -526,6 +526,8 @@ func buildIntegrationsMap(userID string, nc []*definition.PostableApiReceiver, t
 				if err := gTmpl.Parse(strings.NewReader(alertingTemplates.DefaultTemplateString)); err != nil {
 					return nil, err
 				}
+				// TODO: use Grafana URL.
+				gTmpl.ExternalURL = tmpl.ExternalURL
 			}
 			integrations, err = buildGrafanaReceiverIntegrations(rcv, gTmpl, logger)
 		} else {
