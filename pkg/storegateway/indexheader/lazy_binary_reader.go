@@ -79,9 +79,8 @@ type LazyBinaryReader struct {
 	lazyLoadingGate gate.Gate
 	ctx             context.Context
 
-	loadedReaderC chan readerRequest
-	loadReqC      chan loadRequest
-	unloadReqC    chan unloadRequest
+	loadedReader chan readerRequest
+	unloadReq    chan unloadRequest
 
 	// Keep track of the last time it was used.
 	usedAt *atomic.Int64
@@ -103,12 +102,6 @@ type loadedReader struct {
 	inUse  *sync.WaitGroup
 
 	err error
-}
-
-// loadRequest is a request to load a binary reader.
-type loadRequest struct {
-	// done will be closed when the load is complete.
-	done chan struct{}
 }
 
 // unloadRequest is a request to unload a binary reader.
@@ -165,9 +158,8 @@ func NewLazyBinaryReader(
 		lazyLoadingGate: lazyLoadingGate,
 		ctx:             ctx,
 
-		loadedReaderC: make(chan readerRequest),
-		loadReqC:      make(chan loadRequest),
-		unloadReqC:    make(chan unloadRequest),
+		loadedReader: make(chan readerRequest),
+		unloadReq:    make(chan unloadRequest),
 	}
 	// TODO use a proper service lifecycler here to shut down this goroutine
 	go reader.controlLoop()
@@ -274,24 +266,7 @@ func (r *LazyBinaryReader) getOrLoadReader(ctx context.Context) (Reader, *sync.W
 		return loadedR.reader, loadedR.inUse, nil
 	}
 
-	promise := r.triggerLoadReader(ctx)
-	loadedR = r.waitLoadedReader(ctx, promise)
-	if loadedR.reader == nil && loadedR.err == nil {
-		// There's a small chance that the reader was unloaded while we were waiting for it to load,
-		// so we make sure to catch this edge case.
-		return nil, nil, errUnloadedWhileLoading
-	}
 	return loadedR.reader, loadedR.inUse, loadedR.err
-}
-
-func (r *LazyBinaryReader) triggerLoadReader(ctx context.Context) chan struct{} {
-	loadReq := loadRequest{done: make(chan struct{})}
-	select {
-	case r.loadReqC <- loadReq:
-		return loadReq.done
-	case <-ctx.Done():
-		return nil
-	}
 }
 
 func (r *LazyBinaryReader) waitLoadedReader(ctx context.Context, loadDone chan struct{}) loadedReader {
@@ -306,7 +281,7 @@ func (r *LazyBinaryReader) waitLoadedReader(ctx context.Context, loadDone chan s
 func (r *LazyBinaryReader) getReader(ctx context.Context) loadedReader {
 	readerReq := readerRequest{response: make(chan loadedReader)}
 	select {
-	case r.loadedReaderC <- readerReq:
+	case r.loadedReader <- readerReq:
 		select {
 		case loadedR := <-readerReq.response:
 			return loadedR
@@ -366,7 +341,7 @@ func (r *LazyBinaryReader) unloadIfIdleSince(tsNano int64) error {
 		response:       make(chan error),
 		idleSinceNanos: tsNano,
 	}
-	r.unloadReqC <- req
+	r.unloadReq <- req
 	return <-req.response
 }
 
@@ -374,25 +349,22 @@ func (r *LazyBinaryReader) controlLoop() {
 	var loaded loadedReader
 	for {
 		select {
-		case readerReq := <-r.loadedReaderC:
+		case readerReq := <-r.loadedReader:
+			if loaded.reader == nil && loaded.err == nil {
+				// TODO dimitarvdimitrov see if we retry loading a reader
+				loaded = loadedReader{}
+				loaded.reader, loaded.err = r.loadReader()
+				if loaded.reader != nil {
+					loaded.inUse = &sync.WaitGroup{}
+				}
+			}
 			if loaded.reader != nil {
 				loaded.inUse.Add(1)
 				r.usedAt.Store(time.Now().UnixNano())
 			}
 			readerReq.response <- loaded
 
-		case loadReq := <-r.loadReqC:
-			if loaded.reader == nil && loaded.err == nil {
-				loaded = loadedReader{}
-				loaded.reader, loaded.err = r.loadReader()
-				if loaded.reader != nil {
-					loaded.inUse = &sync.WaitGroup{}
-					r.usedAt.Store(time.Now().UnixNano())
-				}
-			}
-			close(loadReq.done)
-
-		case unloadPromise := <-r.unloadReqC:
+		case unloadPromise := <-r.unloadReq:
 			if loaded.reader == nil {
 				// Nothing to do if already unloaded.
 				unloadPromise.response <- nil
