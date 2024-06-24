@@ -17,17 +17,17 @@ Prometheus native histograms is a data type in the Prometheus ecosystem that mak
 
 Native histograms are different from classic Prometheus histograms in a number of ways:
 
-- Native histogram bucket boundaries are calculated by a formula that depends on the scale (resolution) of the native histogram, and are not user defined. The calculation produces exponentially increasing bucket boundaries. For details, see [Bucket boundary calculation](#bucket-boundary-calculation).
-- Native histogram bucket boundaries might change (widen) dynamically if the observations result in too many buckets. For details, see [Limiting the number of buckets](#limiting-the-number-of-buckets).
+- Native histogram bucket boundaries are calculated by a formula that depends on the scale (resolution) of the native histogram, and are not user defined. The calculation produces exponentially increasing bucket boundaries. For details, refer to [Bucket boundary calculation](#bucket-boundary-calculation).
+- Native histogram bucket boundaries might change (widen) dynamically if the observations result in too many buckets. For details, refer to [Limit the number of buckets](#limit-the-number-of-buckets).
 - Native histogram bucket counters only count observations inside the bucket boundaries, whereas the classic histogram buckets only have an upper bound called `le` and count all observations in the bucket and all lower buckets (cumulative).
 - An instance of a native histogram metric only requires a single time series, because the buckets, sum of observations, and the count of observations are stored in a single data type called `native histogram` rather than in separate time series using the `float` data type. Thus, there are no `<metric>_bucket`, `<metric>_sum`, and `<metric>_count` series. There is only `<metric>` time series.
-- Querying native histograms via the Prometheus query language (PromQL) uses a different syntax. For details, see [functions](https://prometheus.io/docs/prometheus/latest/querying/functions/).
+- Querying native histograms via the Prometheus query language (PromQL) uses a different syntax. For details, refer to [functions](https://prometheus.io/docs/prometheus/latest/querying/functions/).
 
 For an introduction to native histograms, watch the [Native Histograms in Prometheus](https://www.youtube.com/watch?v=AcmABV6NCYk) presentation.
 
 ## Advantages and disadvantages
 
-There are advantages and disadvantages of using native histograms compared to the classic Prometheus histograms. For more information and a real example, see the [Prometheus Native Histograms in Production](https://www.youtube.com/watch?v=TgINvIK9SYc&t=127s) video.
+There are advantages and disadvantages of using native histograms compared to the classic Prometheus histograms. For more information and a real example, refer to the [Prometheus Native Histograms in Production](https://www.youtube.com/watch?v=TgINvIK9SYc&t=127s) video.
 
 ### Advantages
 
@@ -51,7 +51,7 @@ The preceding problems are mitigated by high resolution, which native histograms
 The following examples have some reasonable defaults to define a new native histogram metric. The examples use the [Go client library](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus#Histogram) version 1.16 and the [Java client library](https://prometheus.github.io/client_java/api/io/prometheus/metrics/core/metrics/Histogram.Builder.html) 1.0.
 
 {{% admonition type="note" %}}
-Native histogram options can be added to existing classic histograms to get both the classic and native histogram at the same time. See [Migrate from classic histograms](#migrate-from-classic-histograms).
+Native histogram options can be added to existing classic histograms to get both the classic and native histogram at the same time. Refer to [Migrate from classic histograms](#migrate-from-classic-histograms).
 {{% /admonition %}}
 
 {{< code >}}
@@ -80,7 +80,7 @@ static final Histogram requestLatency = Histogram.build()
 
 {{< /code >}}
 
-In Go, the `NativeHistogramBucketFactor` option sets an upper limit of the relative growth from one bucket to the next. The value 1.1 means that a bucket is at most 10% wider than the next smaller bucket. The currently supported values range from `1.0027` or 0.27% up to 65536 or 655%. For more detailed explanation see [Bucket boundary calculation](#bucket-boundary-calculation).
+In Go, the `NativeHistogramBucketFactor` option sets an upper limit of the relative growth from one bucket to the next. The value 1.1 means that a bucket is at most 10% wider than the next smaller bucket. The currently supported values range from `1.0027` or 0.27% up to 65536 or 655%. For more detailed explanation, refer to [Bucket boundary calculation](#bucket-boundary-calculation).
 
 Some of the resulting buckets for factor `1.1` rounded to two decimal places are:
 
@@ -92,9 +92,9 @@ Some of the resulting buckets for factor `1.1` rounded to two decimal places are
 
 In Java `.nativeInitialSchema` using schema value `3` results in the same bucket boundaries. For more information about the schema supported in Java, consult the documentation for [nativeInitialSchema](<https://prometheus.github.io/client_java/api/io/prometheus/metrics/core/metrics/Histogram.Builder.html#nativeInitialSchema(int)>).
 
-The value of `NativeHistogramMaxBucketNumber`/`nativeMaxNumberOfBuckets` limits the number of buckets produced by the observations. This can be especially useful if the receiver side is limiting the number of buckets that can be sent. For more information about the bucket limit see [Limiting the number of buckets](#limiting-the-number-of-buckets).
+The value of `NativeHistogramMaxBucketNumber`/`nativeMaxNumberOfBuckets` limits the number of buckets produced by the observations. This can be especially useful if the receiver side is limiting the number of buckets that can be sent. For more information about the bucket limit refer to [Limit the number of buckets](#limit-the-number-of-buckets).
 
-The duration in `NativeHistogramMinResetDuration`/`nativeResetDuration` will prohibit automatic counter resets inside that period. Counter resets are related to the bucket limit, for more information see [Limiting the number of buckets](#limiting-the-number-of-buckets).
+The duration in `NativeHistogramMinResetDuration`/`nativeResetDuration` will prohibit automatic counter resets inside that period. Counter resets are related to the bucket limit, for more information refer to [Limit the number of buckets](#limit-the-number-of-buckets).
 
 ## Scrape and send native histograms with Prometheus
 
