@@ -331,7 +331,7 @@ func (r *RuleCommand) setupArgs() error {
 			if ns != "" {
 				r.ignoredNamespacesMap[ns] = struct{}{}
 			}
-		}
+	}
 	}
 
 	// Set up allowed namespaces map for sync/diff command
@@ -352,9 +352,13 @@ func (r *RuleCommand) setupArgs() error {
 		}
 	}
 
-	aggregationLabelExcludedRuleGroupsRegex, err := regexp.Compile(fmt.Sprintf("(%s)", strings.ReplaceAll(r.AggregationLabelExcludedRuleGroupsRegex, ",", "|")))
-	if err != nil {
-		return errors.New("invalid regex for aggregation label excluded rule groups, provided by the flag --label-excluded-rule-groups-regex")
+	var aggregationLabelExcludedRuleGroupsRegex *regexp.Regexp = nil;
+	if r.AggregationLabelExcludedRuleGroupsRegex != ""{
+		var err error = nil;
+		aggregationLabelExcludedRuleGroupsRegex, err = regexp.Compile(fmt.Sprintf("(%s)", strings.ReplaceAll(r.AggregationLabelExcludedRuleGroupsRegex, ",", "|")))
+		if err != nil {
+			return errors.New("invalid regex for aggregation label excluded rule groups, provided by the flag --label-excluded-rule-groups-regex")
+		}
 	}
 	r.aggregationLabelExcludedRuleGroupsRegex = aggregationLabelExcludedRuleGroupsRegex
 
@@ -744,7 +748,7 @@ func (r *RuleCommand) applyTo(group rwrulefmt.RuleGroup, _ rulefmt.RuleNode) boo
 	if excluded {
 		return false
 	}
-	if r.aggregationLabelExcludedRuleGroupsRegex.MatchString(group.Name) {
+	if r.aggregationLabelExcludedRuleGroupsRegex != nil && r.aggregationLabelExcludedRuleGroupsRegex.MatchString(group.Name) {
 		return false
 	}
 	return true

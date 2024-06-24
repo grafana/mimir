@@ -300,41 +300,64 @@ groups:
 }
 
 func TestExcludeGroupsFromPrepare(t *testing.T) {
-	cmd := &RuleCommand{AggregationLabelExcludedRuleGroups: "group_a,group_b", AggregationLabelExcludedRuleGroupsRegex: "group_c.*,group_(d|e)"}
-	cmd.setupArgs()
-	// test args setup
-	assert.Equal(t, map[string]struct{}{"group_a": {}, "group_b": {}}, cmd.aggregationLabelExcludedRuleGroupsList)
-	assert.Equal(t, regexp.MustCompile("(group_c.*|group_(d|e))"), cmd.aggregationLabelExcludedRuleGroupsRegex)
-
-	// test different exclusion scenarios
 	for _, tc := range []struct {
-		name      string
-		groupName string
-		aggregate bool
+		name            string
+		argList         string
+		argRegex        string
+		groupName       string
+		wantListFilter  map[string]struct{}
+		wantRegexFilter *regexp.Regexp
+		wantAggregate   bool
 	}{
 		{
-			name:      "group name doesn't match any criteria",
-			groupName: "group_f",
-			aggregate: true,
+			name:            "group name doesn't match any criteria",
+			argList:         "group_a,group_b",
+			argRegex:        "group_c.*,group_(d|e)",
+			groupName:       "group_f",
+			wantListFilter:  map[string]struct{}{"group_a": {}, "group_b": {}},
+			wantRegexFilter: regexp.MustCompile("(group_c.*|group_(d|e))"),
+			wantAggregate:   true,
 		},
 		{
-			name:      "group name match explicite name criteria",
-			groupName: "group_a",
-			aggregate: false,
+			name:            "group name match explicite name criteria",
+			argList:         "group_a,group_b",
+			argRegex:        "group_c.*,group_(d|e)",
+			groupName:       "group_a",
+			wantListFilter:  map[string]struct{}{"group_a": {}, "group_b": {}},
+			wantRegexFilter: regexp.MustCompile("(group_c.*|group_(d|e))"),
+			wantAggregate:   false,
 		},
 		{
-			name:      "group name match regex name criteria",
-			groupName: "group_cmore",
-			aggregate: false,
+			name:            "group name match regex name criteria",
+			argList:         "group_a,group_b",
+			argRegex:        "group_c.*,group_(d|e)",
+			groupName:       "group_cmore",
+			wantListFilter:  map[string]struct{}{"group_a": {}, "group_b": {}},
+			wantRegexFilter: regexp.MustCompile("(group_c.*|group_(d|e))"),
+			wantAggregate:   false,
 		},
-	}{
+		{
+			name:            "no args at all",
+			argList:         "",
+			argRegex:        "",
+			groupName:       "wildcard",
+			wantListFilter:  map[string]struct{}{},
+			wantRegexFilter: nil,
+			wantAggregate:   true,
+		},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
+			cmd := &RuleCommand{AggregationLabelExcludedRuleGroups: tc.argList, AggregationLabelExcludedRuleGroupsRegex: tc.argRegex}
+			cmd.setupArgs()
+			// test args setup
+			assert.Equal(t, tc.wantListFilter, cmd.aggregationLabelExcludedRuleGroupsList)
+			assert.Equal(t, tc.wantRegexFilter, cmd.aggregationLabelExcludedRuleGroupsRegex)
 			rule := []rwrulefmt.RuleGroup{{
 				RuleGroup: rulefmt.RuleGroup{
-					Name: "groupName",
+					Name: tc.groupName,
 				},
 			}}
-			cmd.applyTo(rule[0], rulefmt.RuleNode{})
+			assert.Equal(t, tc.wantAggregate, cmd.applyTo(rule[0], rulefmt.RuleNode{}))
 		})
 	}
 
