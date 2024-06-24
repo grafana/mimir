@@ -182,26 +182,12 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 
 		for _, p := range s.Floats {
 			idx := (p.T - start) / interval
-
-			// If a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely.
-			if thisSeriesGroup.histogramSums != nil && thisSeriesGroup.histogramSums[idx] != nil {
-				thisSeriesGroup.histogramSums[idx] = nil
-				continue
-			}
-
 			thisSeriesGroup.floatSums[idx] += p.F
 			thisSeriesGroup.floatPresent[idx] = true
 		}
 
 		for _, p := range s.Histograms {
 			idx := (p.T - start) / interval
-
-			// If a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely.
-			if thisSeriesGroup.floatPresent != nil && thisSeriesGroup.floatPresent[idx] {
-				thisSeriesGroup.floatPresent[idx] = false
-				continue
-			}
-
 			if thisSeriesGroup.histogramSums[idx] == nil {
 				// We copy here because we modify the histogram through Add later on.
 				// It is necessary to preserve the original Histogram in case of any range-queries using lookback.
@@ -225,10 +211,28 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	// series which is more costly than looping again here and just checking each
 	// point of the already grouped series.
 	// See: https://github.com/grafana/mimir/pull/8442
+	// We also take two different approaches here. One with extra checks if we
+	// have both Floats and Histograms present, and one without these checks
+	// so we don't have to do it at every point.
 	floatPointCount := 0
-	for _, p := range thisGroup.floatPresent {
-		if p {
-			floatPointCount++
+	if len(thisGroup.floatPresent) > 0 && len(thisGroup.histogramSums) > 0 {
+		for idx, present := range thisGroup.floatPresent {
+			if present {
+				if thisGroup.histogramSums[idx] != nil {
+					// If a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely.
+					thisGroup.floatPresent[idx] = false
+					thisGroup.histogramSums[idx] = nil
+					thisGroup.histogramPointCount--
+				} else {
+					floatPointCount++
+				}
+			}
+		}
+	} else {
+		for _, p := range thisGroup.floatPresent {
+			if p {
+				floatPointCount++
+			}
 		}
 	}
 
