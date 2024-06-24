@@ -136,6 +136,25 @@ func labelValuesCardinality(
 		if err != nil {
 			return err
 		}
+
+		// Check if empty value for label is allowed according to matchers. This
+		// is an optimization only to avoid fetching postings, since the posting
+		// list would be empty anyway.
+		emptyValueAllowedByMatchers := true
+		for _, matcher := range matchers {
+			if matcher.Name != lblName {
+				continue
+			}
+			if !matcher.Matches("") {
+				emptyValueAllowedByMatchers = false
+				break
+			}
+		}
+
+		if emptyValueAllowedByMatchers {
+			lblValues = append(lblValues, "")
+		}
+
 		// For each value count total number of series storing the result into cardinality response item.
 		var respItem *client.LabelValueSeriesCount
 

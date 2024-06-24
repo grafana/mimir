@@ -3850,6 +3850,7 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 						"200": 1,
 						"300": 1,
 						"500": 1,
+						"":    1,
 					},
 				},
 				{
@@ -3863,6 +3864,7 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 					LabelName: "env",
 					LabelValueSeries: map[string]uint64{
 						"prod": 2,
+						"":     2,
 					},
 				},
 			},
@@ -3875,7 +3877,7 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 			expectedItems: []*client.LabelValueSeriesCount{
 				{
 					LabelName:        "status",
-					LabelValueSeries: map[string]uint64{"300": 1},
+					LabelValueSeries: map[string]uint64{"300": 1, "": 1},
 				},
 			},
 		},
