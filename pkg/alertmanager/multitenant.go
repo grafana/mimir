@@ -974,7 +974,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 	}
 
 	// Calling setConfig with an empty configuration will use the fallback config.
-	// The value for Grafana's external URL is empty in this case.
+	// We're not using Grafana Alertmanager configuration, so we pass an empty Grafana URL.
 	err = am.setConfig(cfgDesc, "")
 	if err != nil {
 		return nil, err
