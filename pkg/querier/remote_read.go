@@ -88,7 +88,7 @@ func remoteReadSamples(
 
 	for i, qr := range req.Queries {
 		go func(i int, qr *prompb.Query) {
-			start, end, matchers, hints, err := queryFromRemoteReadQuery(qr)
+			start, end, minT, maxT, matchers, hints, err := queryFromRemoteReadQuery(qr)
 			if err != nil {
 				errCh <- err
 				return
@@ -101,7 +101,10 @@ func remoteReadSamples(
 			}
 
 			seriesSet := querier.Select(ctx, false, hints, matchers...)
-			resp.Results[i], err = seriesSetToQueryResult(seriesSet)
+
+			// We can over-read when querying, but we don't need to return samples
+			// outside the queried range, so can filter them out.
+			resp.Results[i], err = seriesSetToQueryResult(seriesSet, int64(minT), int64(maxT))
 			errCh <- err
 		}(i, qr)
 	}
@@ -181,7 +184,7 @@ func processReadStreamedQueryRequest(
 	f http.Flusher,
 	maxBytesInFrame int,
 ) error {
-	start, end, matchers, hints, err := queryFromRemoteReadQuery(queryReq)
+	start, end, _, _, matchers, hints, err := queryFromRemoteReadQuery(queryReq)
 	if err != nil {
 		return err
 	}
@@ -200,7 +203,7 @@ func processReadStreamedQueryRequest(
 	)
 }
 
-func seriesSetToQueryResult(s storage.SeriesSet) (*prompb.QueryResult, error) {
+func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int64) (*prompb.QueryResult, error) {
 	result := &prompb.QueryResult{}
 
 	var it chunkenc.Iterator
@@ -210,6 +213,11 @@ func seriesSetToQueryResult(s storage.SeriesSet) (*prompb.QueryResult, error) {
 		histograms := []prompb.Histogram{}
 		it = series.Iterator(it)
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+			// Ensure the sample is within the filtered time range.
+			if ts := it.AtT(); ts < filterStartMs || ts > filterEndMs {
+				continue
+			}
+
 			switch valType {
 			case chunkenc.ValFloat:
 				t, v := it.At()
@@ -335,7 +343,7 @@ func initializedFrameBytesRemaining(maxBytesInFrame int, lbls []prompb.Label) in
 
 // queryFromRemoteReadQuery returns the queried time range and label matchers for the given remote
 // read request query.
-func queryFromRemoteReadQuery(query *prompb.Query) (start, end model.Time, matchers []*labels.Matcher, hints *storage.SelectHints, err error) {
+func queryFromRemoteReadQuery(query *prompb.Query) (start, end, minT, maxT model.Time, matchers []*labels.Matcher, hints *storage.SelectHints, err error) {
 	matchers, err = prom_remote.FromLabelMatchers(query.Matchers)
 	if err != nil {
 		return
@@ -343,6 +351,9 @@ func queryFromRemoteReadQuery(query *prompb.Query) (start, end model.Time, match
 
 	start = model.Time(query.StartTimestampMs)
 	end = model.Time(query.EndTimestampMs)
+	minT = start
+	maxT = end
+
 	hints = &storage.SelectHints{
 		Start: query.StartTimestampMs,
 		End:   query.EndTimestampMs,
@@ -352,9 +363,11 @@ func queryFromRemoteReadQuery(query *prompb.Query) (start, end model.Time, match
 	// the passed read hints are zero values (because unintentionally initialised but not set).
 	if query.Hints != nil && query.Hints.StartMs > 0 {
 		hints.Start = query.Hints.StartMs
+		minT = model.Time(hints.Start)
 	}
 	if query.Hints != nil && query.Hints.EndMs > 0 {
 		hints.End = query.Hints.EndMs
+		maxT = model.Time(hints.End)
 	}
 
 	return

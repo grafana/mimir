@@ -13,6 +13,7 @@ import (
 
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -32,6 +33,10 @@ func TestQuerierRemoteRead(t *testing.T) {
 	flags := mergeFlags(
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
+		map[string]string{
+			// This test writes samples sparse in time. We don't want compaction to trigger while testing.
+			"-blocks-storage.tsdb.block-ranges-period": "2h",
+		},
 	)
 
 	// Start dependencies.
@@ -58,40 +63,90 @@ func TestQuerierRemoteRead(t *testing.T) {
 	// Wait until the querier has updated the ring.
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
-	runTestPushSeriesForQuerierRemoteRead(t, c, querier, "series_1", generateFloatSeries)
-	runTestPushSeriesForQuerierRemoteRead(t, c, querier, "hseries_1", generateHistogramSeries)
+	t.Run("float series", func(t *testing.T) {
+		runTestPushSeriesForQuerierRemoteRead(t, c, querier, "series_1", generateFloatSeries)
+	})
+
+	t.Run("histogram series", func(t *testing.T) {
+		runTestPushSeriesForQuerierRemoteRead(t, c, querier, "hseries_1", generateHistogramSeries)
+	})
 }
 
 func runTestPushSeriesForQuerierRemoteRead(t *testing.T, c *e2emimir.Client, querier *e2emimir.MimirService, seriesName string, genSeries generateSeriesFunc) {
-	// Push a series for each user to Mimir.
 	now := time.Now()
 
-	series, expectedVectors, _ := genSeries(seriesName, now)
-	res, err := c.Push(series)
-	require.NoError(t, err)
-	require.Equal(t, 200, res.StatusCode)
+	// Generate multiple series, sparse in time.
+	series1, expectedVector1, _ := genSeries(seriesName, now.Add(-10*time.Minute))
+	series2, expectedVector2, _ := genSeries(seriesName, now)
 
-	startMs := now.Add(-1 * time.Minute)
-	endMs := now.Add(time.Minute)
+	for _, series := range [][]prompb.TimeSeries{series1, series2} {
+		res, err := c.Push(series)
+		require.NoError(t, err)
+		require.Equal(t, 200, res.StatusCode)
+	}
 
-	client, err := e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "user-1")
-	require.NoError(t, err)
-	httpResp, resp, _, err := client.RemoteRead(remoteReadQueryByMetricName(seriesName, startMs, endMs))
-	require.Equal(t, http.StatusOK, httpResp.StatusCode)
-	require.NoError(t, err)
+	tests := map[string]struct {
+		query          *prompb.Query
+		expectedVector model.Vector
+	}{
+		"remote read request without hints": {
+			query: &prompb.Query{
+				Matchers:         remoteReadQueryMatchersByMetricName(seriesName),
+				StartTimestampMs: now.Add(-1 * time.Minute).UnixMilli(),
+				EndTimestampMs:   now.Add(+1 * time.Minute).UnixMilli(),
+			},
+			expectedVector: expectedVector2,
+		},
+		"remote read request with hints time range equal to query time range": {
+			query: &prompb.Query{
+				Matchers:         remoteReadQueryMatchersByMetricName(seriesName),
+				StartTimestampMs: now.Add(-1 * time.Minute).UnixMilli(),
+				EndTimestampMs:   now.Add(+1 * time.Minute).UnixMilli(),
+				Hints: &prompb.ReadHints{
+					StartMs: now.Add(-1 * time.Minute).UnixMilli(),
+					EndMs:   now.Add(+1 * time.Minute).UnixMilli(),
+				},
+			},
+			expectedVector: expectedVector2,
+		},
+		"remote read request with hints time range different than query time range": {
+			query: &prompb.Query{
+				Matchers:         remoteReadQueryMatchersByMetricName(seriesName),
+				StartTimestampMs: now.Add(-1 * time.Minute).UnixMilli(),
+				EndTimestampMs:   now.Add(+1 * time.Minute).UnixMilli(),
+				Hints: &prompb.ReadHints{
+					StartMs: now.Add(-11 * time.Minute).UnixMilli(),
+					EndMs:   now.Add(-9 * time.Minute).UnixMilli(),
+				},
+			},
+			expectedVector: expectedVector1,
+		},
+	}
 
-	// Validate the returned remote read data matches what was written
-	require.Len(t, resp.Timeseries, 1)
-	require.Len(t, resp.Timeseries[0].Labels, 1)
-	require.Equal(t, seriesName, resp.Timeseries[0].Labels[0].GetValue())
-	isSeriesFloat := len(resp.Timeseries[0].Samples) == 1
-	isSeriesHistogram := len(resp.Timeseries[0].Histograms) == 1
-	require.Equal(t, isSeriesFloat, !isSeriesHistogram)
-	if isSeriesFloat {
-		require.Equal(t, int64(expectedVectors[0].Timestamp), resp.Timeseries[0].Samples[0].Timestamp)
-		require.Equal(t, float64(expectedVectors[0].Value), resp.Timeseries[0].Samples[0].Value)
-	} else if isSeriesHistogram {
-		require.Equal(t, expectedVectors[0].Histogram, mimirpb.FromHistogramToPromHistogram(remote.HistogramProtoToHistogram(resp.Timeseries[0].Histograms[0])))
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			client, err := e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "user-1")
+			require.NoError(t, err)
+			httpResp, resp, _, err := client.RemoteRead(testData.query)
+			require.Equal(t, http.StatusOK, httpResp.StatusCode)
+			require.NoError(t, err)
+
+			// Validate the returned remote read data matches what was written
+			require.Len(t, resp.Timeseries, 1)
+			require.Len(t, resp.Timeseries[0].Labels, 1)
+			require.Equal(t, seriesName, resp.Timeseries[0].Labels[0].GetValue())
+			isSeriesFloat := len(resp.Timeseries[0].Samples) > 0
+			isSeriesHistogram := len(resp.Timeseries[0].Histograms) > 0
+			require.Equal(t, isSeriesFloat, !isSeriesHistogram)
+			if isSeriesFloat {
+				require.Len(t, resp.Timeseries[0].Samples, 1)
+				require.Equal(t, int64(testData.expectedVector[0].Timestamp), resp.Timeseries[0].Samples[0].Timestamp)
+				require.Equal(t, float64(testData.expectedVector[0].Value), resp.Timeseries[0].Samples[0].Value)
+			} else if isSeriesHistogram {
+				require.Len(t, resp.Timeseries[0].Histograms, 1)
+				require.Equal(t, testData.expectedVector[0].Histogram, mimirpb.FromHistogramToPromHistogram(remote.HistogramProtoToHistogram(resp.Timeseries[0].Histograms[0])))
+			}
+		})
 	}
 }
 
