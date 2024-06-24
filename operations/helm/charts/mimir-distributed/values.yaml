@@ -3290,9 +3290,6 @@ gateway:
         error_log  /dev/stderr {{ .Values.gateway.nginx.config.errorLogLevel }};
         pid        /tmp/nginx.pid;
         worker_rlimit_nofile 8192;
-        {{- if .Values.gateway.nginx.config.clientMaxBodySize }}
-        client_max_body_size {{ .Values.gateway.nginx.config.clientMaxBodySize }};
-        {{- end }}
 
         events {
           worker_connections  4096;  ## Default: 1024
