@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/prometheus/prometheus/promql"
 )
 
 // Operator represents all operators.
@@ -58,7 +60,7 @@ type RangeVectorOperator interface {
 	// The provided RingBuffer may be populated with points beyond the end of the expected time range, and
 	// callers should compare returned points' timestamps to the returned RangeVectorStepData.RangeEnd.
 	// Next must be called at least once before calling NextStepSamples.
-	NextStepSamples(floats *RingBuffer) (RangeVectorStepData, error)
+	NextStepSamples(floats *RingBuffer[promql.FPoint]) (RangeVectorStepData, error)
 }
 
 var EOS = errors.New("operator stream exhausted") //nolint:revive

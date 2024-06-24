@@ -11,7 +11,7 @@ import (
 )
 
 func TestRingBuffer(t *testing.T) {
-	buf := NewRingBuffer(poolForRingBufferTesting{})
+	buf := NewFPointRingBuffer(poolForRingBufferTesting{})
 	shouldHaveNoPoints(t, buf)
 
 	buf.DiscardPointsBefore(1) // Should handle empty buffer.
@@ -65,7 +65,7 @@ func TestRingBuffer(t *testing.T) {
 func TestRingBuffer_DiscardPointsBefore_ThroughWrapAround(t *testing.T) {
 	// Set up the buffer so that the first point is part-way through the underlying slice.
 	// We resize in powers of two, and the underlying slice comes from a pool that uses a factor of 2 as well.
-	buf := NewRingBuffer(poolForRingBufferTesting{})
+	buf := NewFPointRingBuffer(poolForRingBufferTesting{})
 	require.NoError(t, buf.Append(promql.FPoint{T: 1, F: 100}))
 	require.NoError(t, buf.Append(promql.FPoint{T: 2, F: 200}))
 	require.NoError(t, buf.Append(promql.FPoint{T: 3, F: 300}))
@@ -101,7 +101,7 @@ func TestRingBuffer_DiscardPointsBefore_ThroughWrapAround(t *testing.T) {
 	)
 }
 
-func shouldHaveNoPoints(t *testing.T, buf *RingBuffer) {
+func shouldHaveNoPoints(t *testing.T, buf *RingBuffer[promql.FPoint]) {
 	shouldHavePoints(
 		t,
 		buf,
@@ -109,7 +109,7 @@ func shouldHaveNoPoints(t *testing.T, buf *RingBuffer) {
 	)
 }
 
-func shouldHavePoints(t *testing.T, buf *RingBuffer, expected ...promql.FPoint) {
+func shouldHavePoints(t *testing.T, buf *RingBuffer[promql.FPoint], expected ...promql.FPoint) {
 	var pointsFromForEach []promql.FPoint
 
 	buf.ForEach(func(p promql.FPoint) {
@@ -134,7 +134,7 @@ func shouldHavePoints(t *testing.T, buf *RingBuffer, expected ...promql.FPoint) 
 	}
 }
 
-func shouldHavePointsAtOrBeforeTime(t *testing.T, buf *RingBuffer, ts int64, expected ...promql.FPoint) {
+func shouldHavePointsAtOrBeforeTime(t *testing.T, buf *RingBuffer[promql.FPoint], ts int64, expected ...promql.FPoint) {
 	head, tail := buf.UnsafePoints(ts)
 	combinedPoints := append(head, tail...)
 

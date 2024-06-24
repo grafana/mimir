@@ -408,7 +408,7 @@ func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o t
 
 func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o types.RangeVectorOperator, series []types.SeriesMetadata) (promql.Matrix, error) {
 	m := pooling.GetMatrix(len(series))
-	b := types.NewRingBuffer(q.pool)
+	b := types.NewFPointRingBuffer(q.pool)
 	defer b.Close()
 
 	for i, s := range series {

@@ -56,7 +56,7 @@ func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
 	return nil
 }
 
-func (m *RangeVectorSelector) NextStepSamples(floats *types.RingBuffer) (types.RangeVectorStepData, error) {
+func (m *RangeVectorSelector) NextStepSamples(floats *types.RingBuffer[promql.FPoint]) (types.RangeVectorStepData, error) {
 	if m.nextT > m.Selector.End {
 		return types.RangeVectorStepData{}, types.EOS
 	}
@@ -84,7 +84,7 @@ func (m *RangeVectorSelector) NextStepSamples(floats *types.RingBuffer) (types.R
 	}, nil
 }
 
-func (m *RangeVectorSelector) fillBuffer(floats *types.RingBuffer, rangeStart, rangeEnd int64) error {
+func (m *RangeVectorSelector) fillBuffer(floats *types.RingBuffer[promql.FPoint], rangeStart, rangeEnd int64) error {
 	// Keep filling the buffer until we reach the end of the range or the end of the iterator.
 	for {
 		valueType := m.chunkIterator.Next()

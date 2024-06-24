@@ -22,7 +22,7 @@ type FunctionOverRangeVector struct {
 
 	numSteps     int
 	rangeSeconds float64
-	buffer       *types.RingBuffer
+	buffer       *types.RingBuffer[promql.FPoint]
 }
 
 var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
@@ -49,7 +49,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 	}
 
 	if m.buffer == nil {
-		m.buffer = types.NewRingBuffer(m.Pool)
+		m.buffer = types.NewFPointRingBuffer(m.Pool)
 	}
 
 	m.buffer.Reset()
