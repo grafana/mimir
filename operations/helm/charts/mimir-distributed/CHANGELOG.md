@@ -30,7 +30,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards. #7674
-  * Overview dashboard: read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric.
+  * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric.
 
 ## 5.4.0-rc.0
 
