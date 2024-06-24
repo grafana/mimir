@@ -61,6 +61,7 @@ var groupPool = zeropool.New(func() *group {
 })
 
 func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	fmt.Printf("\n\nStarting\n")
 	// Fetch the source series
 	innerSeries, err := a.Inner.SeriesMetadata(ctx)
 	if err != nil {
@@ -186,8 +187,13 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 			thisSeriesGroup.floatPresent[idx] = true
 		}
 
+		var lastUncopiedHistogram *histogram.FloatHistogram
+
+		fmt.Printf("Starting series, start=%v, interval=%v\n", start, interval)
+
 		for _, p := range s.Histograms {
 			idx := (p.T - start) / interval
+			fmt.Printf("idx=%v\n", idx)
 
 			// If a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely.
 			if thisSeriesGroup.floatPresent != nil && thisSeriesGroup.floatPresent[idx] {
@@ -195,16 +201,28 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 				continue
 			}
 
-			if thisSeriesGroup.histogramSums[idx] == nil {
-				// We copy here because we modify the histogram through Add later on.
-				// It is necessary to preserve the original Histogram in case of any range-queries using lookback.
-				thisSeriesGroup.histogramSums[idx] = p.H.Copy()
-				// We already have to do the check if the histogram exists at this idx,
-				// so we can count the histogram points present at this point instead
-				// of needing to loop again later like we do for floats.
-				thisSeriesGroup.histogramPointCount++
-			} else {
+			fmt.Printf("t=%v, got sample %v (%p)\n", p.T, p.H.TestExpression(), p.H)
+			fmt.Printf("Buckets are: %v (%p)\n", p.H.PositiveBuckets, p.H.PositiveBuckets)
+
+			if thisSeriesGroup.histogramSums[idx] != nil {
+				fmt.Printf("Adding to %v\n", thisSeriesGroup.histogramSums[idx].TestExpression())
 				thisSeriesGroup.histogramSums[idx] = thisSeriesGroup.histogramSums[idx].Add(p.H)
+				fmt.Printf("...result is %v\n", thisSeriesGroup.histogramSums[idx].TestExpression())
+			} else if lastUncopiedHistogram == p.H {
+				fmt.Printf("Copying\n")
+				// We've already used this histogram for a previous point due to lookback.
+				// Make a copy of it so we don't modify the other point.
+				thisSeriesGroup.histogramSums[idx] = p.H.Copy()
+				thisSeriesGroup.histogramPointCount++
+
+				fmt.Printf("...copy is %v\n", thisSeriesGroup.histogramSums[idx].TestExpression())
+			} else {
+				fmt.Printf("Using as-is\n")
+				// This is the first time we have seen this histogram.
+				// It is safe to store it and modify it later without copying, as we'll make copies above if the same histogram is used for subsequent points.
+				thisSeriesGroup.histogramSums[idx] = p.H
+				thisSeriesGroup.histogramPointCount++
+				lastUncopiedHistogram = p.H
 			}
 		}
 
