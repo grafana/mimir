@@ -519,7 +519,6 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 		return notifier
 	}
 
-	externalURL := am.cfg.ExternalURL.String()
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
 		var integrations []*nfstatus.Integration
@@ -534,10 +533,9 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 				if err := gTmpl.Parse(strings.NewReader(alertingTemplates.DefaultTemplateString)); err != nil {
 					return nil, err
 				}
-				// TODO: use Grafana URL.
-				gTmpl.ExternalURL = tmpl.ExternalURL
+				gTmpl.ExternalURL = am.cfg.GrafanaExternalURL
 			}
-			integrations, err = buildGrafanaReceiverIntegrations(gCfg, externalURL, rcv, gTmpl, am.logger)
+			integrations, err = buildGrafanaReceiverIntegrations(gCfg, rcv, gTmpl, am.logger)
 		} else {
 			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, nw)
 		}
@@ -551,7 +549,7 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 	return integrationsMap, nil
 }
 
-func buildGrafanaReceiverIntegrations(gCfg *config.GlobalConfig, externalURL string, rcv *definition.PostableApiReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
+func buildGrafanaReceiverIntegrations(gCfg *config.GlobalConfig, rcv *definition.PostableApiReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
 	loggerFactory := newLoggerFactory(logger)
 	emailCfg := alertingReceivers.EmailSenderConfig{
 		AuthPassword:  string(gCfg.SMTPAuthPassword),
@@ -559,7 +557,7 @@ func buildGrafanaReceiverIntegrations(gCfg *config.GlobalConfig, externalURL str
 		CertFile:      gCfg.HTTPConfig.TLSConfig.CertFile,
 		ContentTypes:  []string{"text/html"},
 		EhloIdentity:  gCfg.SMTPHello,
-		ExternalURL:   externalURL,
+		ExternalURL:   tmpl.ExternalURL.String(),
 		FromAddress:   gCfg.SMTPFrom,
 		FromName:      "Grafana",
 		Host:          gCfg.SMTPSmarthost.String(),
