@@ -93,3 +93,13 @@ load 1m
 eval instant at 1m sum(single_histogram)
 
 clear
+
+# Test a mix of float and histogram values at the same point
+load 1m
+	single_histogram{label="value"}  {{sum:5 count:5 buckets:[1 3 1]}}
+	single_histogram{label="value2"}   3
+
+# "If either operator has to aggregate a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely."
+eval instant at 1m sum(single_histogram)
+
+clear

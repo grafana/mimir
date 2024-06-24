@@ -182,6 +182,13 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 
 		for _, p := range s.Floats {
 			idx := (p.T - start) / interval
+
+			// If a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely.
+			if thisSeriesGroup.histogramSums != nil && thisSeriesGroup.histogramSums[idx] != nil {
+				thisSeriesGroup.histogramSums[idx] = nil
+				continue
+			}
+
 			thisSeriesGroup.floatSums[idx] += p.F
 			thisSeriesGroup.floatPresent[idx] = true
 		}
