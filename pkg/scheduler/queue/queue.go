@@ -597,8 +597,6 @@ func (wqc *waitingQuerierConn) sendError(err error) {
 // send sends req to the waitingQuerierConn result channel that is waiting for a new query.
 // Returns true if sending succeeds, or false if req context is timed out or canceled.
 func (wqc *waitingQuerierConn) send(req requestForQuerier) bool {
-	defer close(wqc.recvChan)
-
 	select {
 	case wqc.recvChan <- req:
 		return true

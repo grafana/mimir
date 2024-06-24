@@ -42,6 +42,9 @@
 (import 'ingester-automated-downscale.libsonnet') +
 (import 'store-gateway-automated-downscale.libsonnet') +
 
+// Automatic cleanup of unused PVCs after scaling down
+(import 'pvc-auto-deletion.libsonnet') +
+
 // Experimental ingest storage.
 (import 'ingest-storage.libsonnet') +
 (import 'ingest-storage-ingester-autoscaling.libsonnet') +

@@ -494,15 +494,16 @@ func (e ingesterPushGrpcDisabledError) errorCause() mimirpb.ErrorCause {
 var _ ingesterError = ingesterPushGrpcDisabledError{}
 
 type circuitBreakerOpenError struct {
+	requestType    string
 	remainingDelay time.Duration
 }
 
-func newCircuitBreakerOpenError(remainingDelay time.Duration) circuitBreakerOpenError {
-	return circuitBreakerOpenError{remainingDelay: remainingDelay}
+func newCircuitBreakerOpenError(requestType string, remainingDelay time.Duration) circuitBreakerOpenError {
+	return circuitBreakerOpenError{requestType: requestType, remainingDelay: remainingDelay}
 }
 
 func (e circuitBreakerOpenError) Error() string {
-	return fmt.Sprintf("%s with remaining delay %s", circuitbreaker.ErrOpen.Error(), e.remainingDelay.String())
+	return fmt.Sprintf("%s on %s request type with remaining delay %s", circuitbreaker.ErrOpen.Error(), e.requestType, e.remainingDelay.String())
 }
 
 func (e circuitBreakerOpenError) errorCause() mimirpb.ErrorCause {
@@ -559,6 +560,8 @@ func mapPushErrorToErrorWithStatus(err error) error {
 			errCode = codes.Internal
 		case mimirpb.METHOD_NOT_ALLOWED:
 			errCode = codes.Unimplemented
+		case mimirpb.CIRCUIT_BREAKER_OPEN:
+			errCode = codes.Unavailable
 		}
 	}
 	return newErrorWithStatus(wrappedErr, errCode)
@@ -580,6 +583,8 @@ func mapPushErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
 		case mimirpb.METHOD_NOT_ALLOWED:
 			return newErrorWithStatus(err, codes.Unimplemented)
+		case mimirpb.CIRCUIT_BREAKER_OPEN:
+			return newErrorWithStatus(err, codes.Unavailable)
 		}
 	}
 	return err
@@ -599,6 +604,8 @@ func mapReadErrorToErrorWithStatus(err error) error {
 			errCode = codes.Unavailable
 		case mimirpb.METHOD_NOT_ALLOWED:
 			return newErrorWithStatus(err, codes.Unimplemented)
+		case mimirpb.CIRCUIT_BREAKER_OPEN:
+			return newErrorWithStatus(err, codes.Unavailable)
 		}
 	}
 	return newErrorWithStatus(err, errCode)
@@ -618,6 +625,8 @@ func mapReadErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 			return newErrorWithStatus(err, codes.Unavailable)
 		case mimirpb.METHOD_NOT_ALLOWED:
 			return newErrorWithStatus(err, codes.Unimplemented)
+		case mimirpb.CIRCUIT_BREAKER_OPEN:
+			return newErrorWithStatus(err, codes.Unavailable)
 		}
 	}
 	return err

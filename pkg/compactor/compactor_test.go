@@ -585,7 +585,7 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 		`level=info component=compactor user=user-1 msg="start of GC"`,
 		`level=debug component=compactor user=user-1 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTVP434PA9VFXSW2JKB3392D (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01FS51A7GQ1RQWV35DBVYQM4KF (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
 		`level=info component=compactor user=user-1 msg="start of compactions"`,
-		`level=info component=compactor user=user-1 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 msg="compaction job succeeded"`,
+		`level=info component=compactor user=user-1 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job_type=merge msg="compaction job succeeded" block_count=2`,
 		`level=info component=compactor user=user-1 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-2`,
@@ -593,7 +593,7 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 		`level=info component=compactor user=user-2 msg="start of GC"`,
 		`level=debug component=compactor user=user-2 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTW0ZCPDDNV4BV83Q2SV4QAZ (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01FRSF035J26D6CGX7STCSD1KG (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
 		`level=info component=compactor user=user-2 msg="start of compactions"`,
-		`level=info component=compactor user=user-2 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 msg="compaction job succeeded"`,
+		`level=info component=compactor user=user-2 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job_type=merge msg="compaction job succeeded" block_count=2`,
 		`level=info component=compactor user=user-2 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-2`,
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
@@ -727,7 +727,7 @@ func TestMultitenantCompactor_ShouldStopCompactingTenantOnReachingMaxCompactionT
 		`level=debug component=compactor user=user-1 msg="grouper found a compactable blocks group" groupKey=0@414047632870839233-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTVP434PA9VFXSW2JKB3392D (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01FS51A7GQ1RQWV35DBVYQM4KF (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
 		`level=info component=compactor user=user-1 msg="start of compactions"`,
 		`level=info component=compactor user=user-1 msg="max compaction time reached, no more compactions will be started"`,
-		`level=info component=compactor user=user-1 groupKey=0@12695595599644216241-merge--1574776800000-1574784000000 msg="compaction job succeeded"`,
+		`level=info component=compactor user=user-1 groupKey=0@12695595599644216241-merge--1574776800000-1574784000000 job_type=merge msg="compaction job succeeded" block_count=2`,
 		`level=info component=compactor user=user-1 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
@@ -1078,7 +1078,7 @@ func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneIn
 		`level=info component=compactor user=user-1 msg="start of GC"`,
 		`level=debug component=compactor user=user-1 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTVP434PA9VFXSW2JKB3392D (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01FSTQ95C8FS0ZAGTQS2EF1NEG (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
 		`level=info component=compactor user=user-1 msg="start of compactions"`,
-		`level=info component=compactor user=user-1 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 msg="compaction job succeeded"`,
+		`level=info component=compactor user=user-1 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job_type=merge msg="compaction job succeeded" block_count=2`,
 		`level=info component=compactor user=user-1 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-2`,
@@ -1086,7 +1086,7 @@ func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneIn
 		`level=info component=compactor user=user-2 msg="start of GC"`,
 		`level=debug component=compactor user=user-2 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTW0ZCPDDNV4BV83Q2SV4QAZ (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01FSV54G6QFQH1G9QE93G3B9TB (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
 		`level=info component=compactor user=user-2 msg="start of compactions"`,
-		`level=info component=compactor user=user-2 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 msg="compaction job succeeded"`,
+		`level=info component=compactor user=user-2 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job_type=merge msg="compaction job succeeded" block_count=2`,
 		`level=info component=compactor user=user-2 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-2`,
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
@@ -1299,7 +1299,7 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 		require.NoError(t, err)
 		defer f.Close()
 
-		mockCall.ReturnArguments = mock.Arguments{compactedMeta.ULID, nil}
+		mockCall.ReturnArguments = mock.Arguments{[]ulid.ULID{compactedMeta.ULID}, nil}
 	}
 
 	// Start the compactor
@@ -1393,7 +1393,7 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlannin
 		`level=debug component=compactor user=user-1 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-split-1_of_4-1574863200000-1574870400000 job="stage: split, range start: 1574863200000, range end: 1574870400000, shard: 1_of_4, blocks: 01DTVP434PA9VFXSW2JK000002 (min time: 2019-11-27 14:00:00 +0000 UTC, max time: 2019-11-27 16:00:00 +0000 UTC)"`,
 		// The ownership check is failing because, to keep this test simple, we've just switched
 		// the instance state to LEAVING and there are no other instances in the ring.
-		`level=info component=compactor user=user-1 groupKey=0@17241709254077376921-split-4_of_4-1574776800000-1574784000000 msg="compaction job succeeded"`,
+		`level=info component=compactor user=user-1 groupKey=0@17241709254077376921-split-4_of_4-1574776800000-1574784000000 job_type=split msg="compaction job succeeded" block_count=1`,
 		`level=info component=compactor user=user-1 msg="skipped compaction because unable to check whether the job is owned by the compactor instance" groupKey=0@17241709254077376921-split-1_of_4-1574863200000-1574870400000 err="at least 1 live replicas required, could only find 0 - unhealthy instances: 1.2.3.4:0"`,
 		`level=info component=compactor user=user-1 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
@@ -1848,14 +1848,14 @@ func (m *tsdbCompactorMock) Plan(dir string) ([]string, error) {
 	return args.Get(0).([]string), args.Error(1)
 }
 
-func (m *tsdbCompactorMock) Write(dest string, b tsdb.BlockReader, mint, maxt int64, parent *tsdb.BlockMeta) (ulid.ULID, error) {
+func (m *tsdbCompactorMock) Write(dest string, b tsdb.BlockReader, mint, maxt int64, parent *tsdb.BlockMeta) ([]ulid.ULID, error) {
 	args := m.Called(dest, b, mint, maxt, parent)
-	return args.Get(0).(ulid.ULID), args.Error(1)
+	return args.Get(0).([]ulid.ULID), args.Error(1)
 }
 
-func (m *tsdbCompactorMock) Compact(dest string, dirs []string, open []*tsdb.Block) (ulid.ULID, error) {
+func (m *tsdbCompactorMock) Compact(dest string, dirs []string, open []*tsdb.Block) ([]ulid.ULID, error) {
 	args := m.Called(dest, dirs, open)
-	return args.Get(0).(ulid.ULID), args.Error(1)
+	return args.Get(0).([]ulid.ULID), args.Error(1)
 }
 
 func (m *tsdbCompactorMock) CompactWithSplitting(dest string, dirs []string, open []*tsdb.Block, shardCount uint64) (result []ulid.ULID, _ error) {

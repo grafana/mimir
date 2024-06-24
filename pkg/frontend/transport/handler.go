@@ -185,7 +185,15 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Limit the read body size.
 	r.Body = http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize)
 
-	params, err := util.ParseRequestFormWithoutConsumingBody(r)
+	var params url.Values
+	var err error
+
+	if r.Header.Get("Content-Type") == "application/x-protobuf" && querymiddleware.IsRemoteReadQuery(r.URL.Path) {
+		params, err = querymiddleware.ParseRemoteReadRequestValuesWithoutConsumingBody(r)
+	} else {
+		params, err = util.ParseRequestFormWithoutConsumingBody(r)
+	}
+
 	if err != nil {
 		writeError(w, apierror.New(apierror.TypeBadData, err.Error()))
 		return
@@ -212,8 +220,8 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	queryResponseTime := time.Since(startTime)
 
 	if err != nil {
-		writeError(w, err)
-		f.reportQueryStats(r, params, startTime, queryResponseTime, 0, queryDetails, 0, err)
+		statusCode := writeError(w, err)
+		f.reportQueryStats(r, params, startTime, queryResponseTime, 0, queryDetails, statusCode, err)
 		return
 	}
 
@@ -420,7 +428,8 @@ func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []any) 
 	return fields
 }
 
-func writeError(w http.ResponseWriter, err error) {
+// writeError writes the error response to http.ResponseWriter, and returns the response HTTP status code.
+func writeError(w http.ResponseWriter, err error) int {
 	switch {
 	case errors.Is(err, context.Canceled):
 		err = errCanceled
@@ -432,13 +441,30 @@ func writeError(w http.ResponseWriter, err error) {
 		}
 	}
 
-	// if the error is an APIError, ensure it gets written as a JSON response
-	if resp, ok := apierror.HTTPResponseFromError(err); ok {
-		_ = httpgrpc.WriteResponse(w, resp)
-		return
+	var (
+		res      *httpgrpc.HTTPResponse
+		resFound bool
+	)
+
+	// If the error is an APIError, ensure it gets written as a JSON response.
+	// Otherwise, check if there's a response encoded in the gRPC error.
+	res, resFound = apierror.HTTPResponseFromError(err)
+	if !resFound {
+		res, resFound = httpgrpc.HTTPResponseFromError(err)
 	}
 
-	httpgrpc.WriteError(w, err)
+	// If we've been able to get the HTTP response from the error, then we send
+	// it with the right status code and response body content.
+	if resFound {
+		_ = httpgrpc.WriteResponse(w, res)
+		return int(res.Code)
+	}
+
+	// Otherwise, we do fallback to a 5xx error, returning the non-formatted error
+	// message in the response body.
+	statusCode := http.StatusInternalServerError
+	http.Error(w, err.Error(), statusCode)
+	return statusCode
 }
 
 func writeServiceTimingHeader(queryResponseTime time.Duration, headers http.Header, stats *querier_stats.Stats) {

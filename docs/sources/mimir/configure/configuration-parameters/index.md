@@ -216,8 +216,8 @@ tenant_federation:
   # CLI flag: -tenant-federation.max-concurrent
   [max_concurrent: <int> | default = 16]
 
-  # (experimental) The max number of tenant IDs that may be supplied for a
-  # federated query if enabled. 0 to disable the limit.
+  # The max number of tenant IDs that may be supplied for a federated query if
+  # enabled. 0 to disable the limit.
   # CLI flag: -tenant-federation.max-tenants
   [max_tenants: <int> | default = 0]
 
@@ -1218,48 +1218,79 @@ instance_limits:
 # CLI flag: -ingester.owned-series-update-interval
 [owned_series_update_interval: <duration> | default = 15s]
 
-circuit_breaker:
+push_circuit_breaker:
   # (experimental) Enable circuit breaking when making requests to ingesters
-  # CLI flag: -ingester.circuit-breaker.enabled
+  # CLI flag: -ingester.push-circuit-breaker.enabled
   [enabled: <boolean> | default = false]
 
   # (experimental) Max percentage of requests that can fail over period before
   # the circuit breaker opens
-  # CLI flag: -ingester.circuit-breaker.failure-threshold-percentage
+  # CLI flag: -ingester.push-circuit-breaker.failure-threshold-percentage
   [failure_threshold_percentage: <int> | default = 10]
 
   # (experimental) How many requests must have been executed in period for the
   # circuit breaker to be eligible to open for the rate of failures
-  # CLI flag: -ingester.circuit-breaker.failure-execution-threshold
+  # CLI flag: -ingester.push-circuit-breaker.failure-execution-threshold
   [failure_execution_threshold: <int> | default = 100]
 
   # (experimental) Moving window of time that the percentage of failed requests
   # is computed over
-  # CLI flag: -ingester.circuit-breaker.thresholding-period
+  # CLI flag: -ingester.push-circuit-breaker.thresholding-period
   [thresholding_period: <duration> | default = 1m]
 
   # (experimental) How long the circuit breaker will stay in the open state
   # before allowing some requests
-  # CLI flag: -ingester.circuit-breaker.cooldown-period
+  # CLI flag: -ingester.push-circuit-breaker.cooldown-period
   [cooldown_period: <duration> | default = 10s]
 
   # (experimental) How long the circuit breaker should wait between an
   # activation request and becoming effectively active. During that time both
   # failures and successes will not be counted.
-  # CLI flag: -ingester.circuit-breaker.initial-delay
+  # CLI flag: -ingester.push-circuit-breaker.initial-delay
   [initial_delay: <duration> | default = 0s]
 
-  # (experiment) The maximum length of time an ingester's Push request can last
-  # before it triggers a circuit breaker. This configuration is used for circuit
-  # breakers only, and its timeouts aren't reported as errors.
-  # CLI flag: -ingester.circuit-breaker.push-timeout
-  [push_timeout: <duration> | default = 2s]
+  # (experimental) The maximum duration of an ingester's request before it
+  # triggers a circuit breaker. This configuration is used for circuit breakers
+  # only, and its timeouts aren't reported as errors.
+  # CLI flag: -ingester.push-circuit-breaker.request-timeout
+  [request_timeout: <duration> | default = 2s]
 
-  # (experiment) The maximum length of time an ingester's read-path request can
-  # last before it triggers a circuit breaker. This configuration is used for
-  # circuit breakers only, and its timeouts aren't reported as errors.
-  # CLI flag: -ingester.circuit-breaker.read-timeout
-  [read_timeout: <duration> | default = 30s]
+read_circuit_breaker:
+  # (experimental) Enable circuit breaking when making requests to ingesters
+  # CLI flag: -ingester.read-circuit-breaker.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Max percentage of requests that can fail over period before
+  # the circuit breaker opens
+  # CLI flag: -ingester.read-circuit-breaker.failure-threshold-percentage
+  [failure_threshold_percentage: <int> | default = 10]
+
+  # (experimental) How many requests must have been executed in period for the
+  # circuit breaker to be eligible to open for the rate of failures
+  # CLI flag: -ingester.read-circuit-breaker.failure-execution-threshold
+  [failure_execution_threshold: <int> | default = 100]
+
+  # (experimental) Moving window of time that the percentage of failed requests
+  # is computed over
+  # CLI flag: -ingester.read-circuit-breaker.thresholding-period
+  [thresholding_period: <duration> | default = 1m]
+
+  # (experimental) How long the circuit breaker will stay in the open state
+  # before allowing some requests
+  # CLI flag: -ingester.read-circuit-breaker.cooldown-period
+  [cooldown_period: <duration> | default = 10s]
+
+  # (experimental) How long the circuit breaker should wait between an
+  # activation request and becoming effectively active. During that time both
+  # failures and successes will not be counted.
+  # CLI flag: -ingester.read-circuit-breaker.initial-delay
+  [initial_delay: <duration> | default = 0s]
+
+  # (experimental) The maximum duration of an ingester's request before it
+  # triggers a circuit breaker. This configuration is used for circuit breakers
+  # only, and its timeouts aren't reported as errors.
+  # CLI flag: -ingester.read-circuit-breaker.request-timeout
+  [request_timeout: <duration> | default = 30s]
 ```
 
 ### querier
@@ -1358,15 +1389,15 @@ store_gateway_client:
 # respond with a stream of chunks if the target store-gateway supports this, and
 # this preference will be ignored by store-gateways that do not support this.
 # CLI flag: -querier.prefer-streaming-chunks-from-store-gateways
-[prefer_streaming_chunks_from_store_gateways: <boolean> | default = false]
+[prefer_streaming_chunks_from_store_gateways: <boolean> | default = true]
 
 # (advanced) Number of series to buffer per ingester when streaming chunks from
 # ingesters.
 # CLI flag: -querier.streaming-chunks-per-ingester-buffer-size
 [streaming_chunks_per_ingester_series_buffer_size: <int> | default = 256]
 
-# (experimental) Number of series to buffer per store-gateway when streaming
-# chunks from store-gateways.
+# (advanced) Number of series to buffer per store-gateway when streaming chunks
+# from store-gateways.
 # CLI flag: -querier.streaming-chunks-per-store-gateway-buffer-size
 [streaming_chunks_per_store_gateway_series_buffer_size: <int> | default = 256]
 
@@ -1384,15 +1415,15 @@ store_gateway_client:
 # CLI flag: -querier.minimize-ingester-requests-hedging-delay
 [minimize_ingester_requests_hedging_delay: <duration> | default = 3s]
 
-# (experimental) PromQL engine to use, either 'prometheus' or 'mimir'
-# CLI flag: -querier.promql-engine
-[promql_engine: <string> | default = "prometheus"]
+# (experimental) Query engine to use, either 'prometheus' or 'mimir'
+# CLI flag: -querier.query-engine
+[query_engine: <string> | default = "prometheus"]
 
-# (experimental) If set to true and the streaming engine is in use, fall back to
-# using the Prometheus PromQL engine for any queries not supported by the
-# streaming engine.
-# CLI flag: -querier.enable-promql-engine-fallback
-[enable_promql_engine_fallback: <boolean> | default = true]
+# (experimental) If set to true and the Mimir query engine is in use, fall back
+# to using the Prometheus query engine for any queries not supported by the
+# Mimir query engine.
+# CLI flag: -querier.enable-query-engine-fallback
+[enable_query_engine_fallback: <boolean> | default = true]
 
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.
@@ -1581,6 +1612,10 @@ results_cache:
 # active series queries.
 # CLI flag: -query-frontend.use-active-series-decoder
 [use_active_series_decoder: <boolean> | default = false]
+
+# (experimental) True to enable limits enforcement for remote read requests.
+# CLI flag: -query-frontend.remote-read-limits-enabled
+[remote_read_limits_enabled: <boolean> | default = false]
 
 # Format to use when retrieving query results from queriers. Supported values:
 # json, protobuf
@@ -3227,9 +3262,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # Limit how long back data (series and metadata) can be queried, up until
 # <lookback> duration ago. This limit is enforced in the query-frontend, querier
-# and ruler. If the requested time range is outside the allowed range, the
-# request will not fail but will be manipulated to only query data within the
-# allowed time range. 0 to disable.
+# and ruler for instant, range and remote read queries. For metadata queries
+# like series, label names, label values queries the limit is enforced in the
+# querier and ruler. If the requested time range is outside the allowed range,
+# the request will not fail but will be manipulated to only query data within
+# the allowed time range. 0 to disable.
 # CLI flag: -querier.max-query-lookback
 [max_query_lookback: <duration> | default = 0s]
 
@@ -3295,7 +3332,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 [query_ingesters_within: <duration> | default = 13h]
 
 # Limit the total query time range (end - start time). This limit is enforced in
-# the query-frontend on the received query.
+# the query-frontend on the received instant, range or remote read query.
 # CLI flag: -query-frontend.max-total-query-length
 [max_total_query_length: <duration> | default = 0s]
 
@@ -3327,8 +3364,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.cache-unaligned-requests
 [cache_unaligned_requests: <boolean> | default = false]
 
-# Max size of the raw query, in bytes. 0 to not apply a limit to the size of the
-# query.
+# Max size of the raw query, in bytes. This limit is enforced by the
+# query-frontend for instant, range and remote read queries. 0 to not apply a
+# limit to the size of the query.
 # CLI flag: -query-frontend.max-query-expression-size-bytes
 [max_query_expression_size_bytes: <int> | default = 0]
 
@@ -3380,15 +3418,15 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ruler.max-rule-groups-per-tenant
 [ruler_max_rule_groups_per_tenant: <int> | default = 70]
 
-# (experimental) Controls whether recording rules evaluation is enabled. This
-# configuration option can be used to forcefully disable recording rules
-# evaluation on a per-tenant basis.
+# Controls whether recording rules evaluation is enabled. This configuration
+# option can be used to forcefully disable recording rules evaluation on a
+# per-tenant basis.
 # CLI flag: -ruler.recording-rules-evaluation-enabled
 [ruler_recording_rules_evaluation_enabled: <boolean> | default = true]
 
-# (experimental) Controls whether alerting rules evaluation is enabled. This
-# configuration option can be used to forcefully disable alerting rules
-# evaluation on a per-tenant basis.
+# Controls whether alerting rules evaluation is enabled. This configuration
+# option can be used to forcefully disable alerting rules evaluation on a
+# per-tenant basis.
 # CLI flag: -ruler.alerting-rules-evaluation-enabled
 [ruler_alerting_rules_evaluation_enabled: <boolean> | default = true]
 
@@ -3399,6 +3437,24 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ruler.sync-rules-on-changes-enabled
 [ruler_sync_rules_on_changes_enabled: <boolean> | default = true]
 
+# (experimental) Maximum number of rules per rule group by namespace. Value is a
+# map, where each key is the namespace and value is the number of rules allowed
+# in the namespace (int). On the command line, this map is given in a JSON
+# format. The number of rules specified has the same meaning as
+# -ruler.max-rules-per-rule-group, but only applies for the specific namespace.
+# If specified, it supersedes -ruler.max-rules-per-rule-group.
+# CLI flag: -ruler.max-rules-per-rule-group-by-namespace
+[ruler_max_rules_per_rule_group_by_namespace: <map of string to int> | default = {}]
+
+# (experimental) Maximum number of rule groups per tenant by namespace. Value is
+# a map, where each key is the namespace and value is the number of rule groups
+# allowed in the namespace (int). On the command line, this map is given in a
+# JSON format. The number of rule groups specified has the same meaning as
+# -ruler.max-rule-groups-per-tenant, but only applies for the specific
+# namespace. If specified, it supersedes -ruler.max-rule-groups-per-tenant.
+# CLI flag: -ruler.max-rule-groups-per-tenant-by-namespace
+[ruler_max_rule_groups_per_tenant_by_namespace: <map of string to int> | default = {}]
+
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
 # sharded across all store-gateway replicas.
@@ -3406,8 +3462,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 [store_gateway_tenant_shard_size: <int> | default = 0]
 
 # Delete blocks containing samples older than the specified retention period.
-# Also used by query-frontend to avoid querying beyond the retention period. 0
-# to disable.
+# Also used by query-frontend to avoid querying beyond the retention period by
+# instant, range or remote read queries. 0 to disable.
 # CLI flag: -compactor.blocks-retention-period
 [compactor_blocks_retention_period: <duration> | default = 0s]
 
@@ -3605,7 +3661,7 @@ bucket_store:
   # another store-gateway. 0 means no timeout and all queries will wait
   # indefinitely for their turn.
   # CLI flag: -blocks-storage.bucket-store.max-concurrent-queue-timeout
-  [max_concurrent_queue_timeout: <duration> | default = 0s]
+  [max_concurrent_queue_timeout: <duration> | default = 5s]
 
   # (advanced) Maximum number of concurrent tenants synching blocks.
   # CLI flag: -blocks-storage.bucket-store.tenant-sync-concurrency
@@ -4739,6 +4795,11 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # service. Default is auto. Supported values are: auto, path, virtual-hosted.
 # CLI flag: -<prefix>.s3.bucket-lookup-type
 [bucket_lookup_type: <string> | default = "auto"]
+
+# (experimental) When enabled, direct all AWS S3 requests to the dual-stack
+# IPv4/IPv6 endpoint for the configured region.
+# CLI flag: -<prefix>.s3.dualstack-enabled
+[dualstack_enabled: <boolean> | default = true]
 
 # (experimental) The S3 storage class to use, not set by default. Details can be
 # found at https://aws.amazon.com/s3/storage-classes/. Supported values are:

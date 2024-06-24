@@ -8,7 +8,6 @@ package indexheader
 import (
 	"context"
 	"crypto/rand"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -32,7 +31,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 		lazyReaderIdleTimeout                       time.Duration
 		eagerLoadReaderEnabled                      bool
 		initialSync                                 bool
-		createLazyLoadedHeadersSnapshotFn           func(blockId ulid.ULID) lazyLoadedHeadersSnapshot
+		createLoadedBlocksSnapshotFn                func(blockId ulid.ULID) map[ulid.ULID]int64
 		expectedLoadCountMetricBeforeLabelNamesCall int
 		expectedLoadCountMetricAfterLabelNamesCall  int
 	}{
@@ -57,11 +56,8 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 			initialSync:            true,
 			expectedLoadCountMetricBeforeLabelNamesCall: 1, // the index header will be eagerly loaded before the operation
 			expectedLoadCountMetricAfterLabelNamesCall:  1,
-			createLazyLoadedHeadersSnapshotFn: func(blockId ulid.ULID) lazyLoadedHeadersSnapshot {
-				return lazyLoadedHeadersSnapshot{
-					IndexHeaderLastUsedTime: map[ulid.ULID]int64{blockId: time.Now().UnixMilli()},
-					UserID:                  "anonymous",
-				}
+			createLoadedBlocksSnapshotFn: func(blockId ulid.ULID) map[ulid.ULID]int64 {
+				return map[ulid.ULID]int64{blockId: time.Now().UnixMilli()}
 			},
 		},
 		"block is present in pre-shutdown loaded blocks and eager-loading is enabled, loading index header after initial sync": {
@@ -71,11 +67,8 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 			initialSync:            false,
 			expectedLoadCountMetricBeforeLabelNamesCall: 0, // the index header is not eager loaded if not during initial-sync
 			expectedLoadCountMetricAfterLabelNamesCall:  1,
-			createLazyLoadedHeadersSnapshotFn: func(blockId ulid.ULID) lazyLoadedHeadersSnapshot {
-				return lazyLoadedHeadersSnapshot{
-					IndexHeaderLastUsedTime: map[ulid.ULID]int64{blockId: time.Now().UnixMilli()},
-					UserID:                  "anonymous",
-				}
+			createLoadedBlocksSnapshotFn: func(blockId ulid.ULID) map[ulid.ULID]int64 {
+				return map[ulid.ULID]int64{blockId: time.Now().UnixMilli()}
 			},
 		},
 		"block is not present in pre-shutdown loaded blocks snapshot and eager-loading is enabled": {
@@ -85,15 +78,11 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 			initialSync:            true,
 			expectedLoadCountMetricBeforeLabelNamesCall: 0, // although eager loading is enabled, this test will not do eager loading because the block ID is not in the lazy loaded file.
 			expectedLoadCountMetricAfterLabelNamesCall:  1,
-			createLazyLoadedHeadersSnapshotFn: func(_ ulid.ULID) lazyLoadedHeadersSnapshot {
+			createLoadedBlocksSnapshotFn: func(_ ulid.ULID) map[ulid.ULID]int64 {
 				// let's create a random fake blockID to be stored in lazy loaded headers file
 				fakeBlockID := ulid.MustNew(ulid.Now(), rand.Reader)
 				// this snapshot will refer to fake block, hence eager load wouldn't be executed for the real block that we test
-
-				return lazyLoadedHeadersSnapshot{
-					IndexHeaderLastUsedTime: map[ulid.ULID]int64{fakeBlockID: time.Now().UnixMilli()},
-					UserID:                  "anonymous",
-				}
+				return map[ulid.ULID]int64{fakeBlockID: time.Now().UnixMilli()}
 			},
 		},
 		"pre-shutdown loaded blocks snapshot doesn't exist and eager-loading is enabled": {
@@ -111,14 +100,10 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			snapshotConfig := LazyLoadedHeadersSnapshotConfig{
-				Path:   tmpDir,
-				UserID: "anonymous",
-			}
-			if testData.createLazyLoadedHeadersSnapshotFn != nil {
-				lazyLoadedSnapshot := testData.createLazyLoadedHeadersSnapshotFn(blockID)
-				err := lazyLoadedSnapshot.persist(snapshotConfig.Path)
-				require.NoError(t, err)
+			var lazyLoadedBlocks map[ulid.ULID]int64
+			if testData.createLoadedBlocksSnapshotFn != nil {
+				lazyLoadedBlocks = testData.createLoadedBlocksSnapshotFn(blockID)
+				require.NotNil(t, lazyLoadedBlocks)
 			}
 
 			metrics := NewReaderPoolMetrics(nil)
@@ -127,7 +112,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 				LazyLoadingIdleTimeout:     testData.lazyReaderIdleTimeout,
 				EagerLoadingStartupEnabled: testData.eagerLoadReaderEnabled,
 			}
-			pool := NewReaderPool(log.NewNopLogger(), indexHeaderConfig, gate.NewNoop(), metrics, snapshotConfig)
+			pool := NewReaderPool(log.NewNopLogger(), indexHeaderConfig, gate.NewNoop(), metrics, lazyLoadedBlocks)
 			defer pool.Close()
 
 			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, indexHeaderConfig, testData.initialSync)
@@ -212,66 +197,6 @@ func TestReaderPool_LoadedBlocks(t *testing.T) {
 		lazyReaders:       map[*LazyBinaryReader]struct{}{&lb: {}},
 	}
 	require.Equal(t, map[ulid.ULID]int64{id: usedAt.UnixMilli()}, rp.LoadedBlocks())
-}
-
-func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
-	const idleTimeout = time.Second
-	ctx, tmpDir, bkt, blockID, metrics := prepareReaderPool(t)
-
-	// Note that we are creating a ReaderPool that doesn't run a background cleanup task for idle
-	// Reader instances. We'll manually invoke the cleanup task when we need it as part of this test.
-	pool := newReaderPool(log.NewNopLogger(), Config{
-		LazyLoadingEnabled:         true,
-		LazyLoadingIdleTimeout:     idleTimeout,
-		EagerLoadingStartupEnabled: true,
-	}, gate.NewNoop(), metrics, nil)
-	defer pool.Close()
-
-	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{}, false)
-	require.NoError(t, err)
-	defer func() { require.NoError(t, r.Close()) }()
-
-	// Ensure it can read data.
-	labelNames, err := r.LabelNames()
-	require.NoError(t, err)
-	require.Equal(t, []string{"a"}, labelNames)
-	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
-
-	snapshot := lazyLoadedHeadersSnapshot{
-		IndexHeaderLastUsedTime: pool.LoadedBlocks(),
-		UserID:                  "anonymous",
-	}
-
-	err = snapshot.persist(tmpDir)
-	require.NoError(t, err)
-
-	persistedFile := filepath.Join(tmpDir, lazyLoadedHeadersListFileName)
-	persistedData, err := os.ReadFile(persistedFile)
-	require.NoError(t, err)
-
-	var expected string
-	// we know that there is only one lazyReader, hence just use formatter to set the ULID and timestamp.
-	require.Equal(t, 1, len(pool.lazyReaders), "expecting only one lazyReaders")
-	for r := range pool.lazyReaders {
-		expected = fmt.Sprintf(`{"index_header_last_used_time":{"%s":%d},"user_id":"anonymous"}`, r.blockID, r.usedAt.Load()/int64(time.Millisecond))
-	}
-	require.JSONEq(t, expected, string(persistedData))
-
-	// Wait enough time before checking it.
-	time.Sleep(idleTimeout * 2)
-	pool.closeIdleReaders()
-
-	// LoadedBlocks will update the IndexHeaderLastUsedTime map with the removal of
-	// idle blocks.
-	snapshot.IndexHeaderLastUsedTime = pool.LoadedBlocks()
-	err = snapshot.persist(tmpDir)
-	require.NoError(t, err)
-
-	persistedData, err = os.ReadFile(persistedFile)
-	require.NoError(t, err)
-
-	require.JSONEq(t, `{"index_header_last_used_time":{},"user_id":"anonymous"}`, string(persistedData), "index_header_last_used_time should be cleared")
 }
 
 func prepareReaderPool(t *testing.T) (context.Context, string, *filesystem.Bucket, ulid.ULID, *ReaderPoolMetrics) {

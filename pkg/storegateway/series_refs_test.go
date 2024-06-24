@@ -1087,10 +1087,16 @@ func TestLimitingSeriesChunkRefsSetIterator(t *testing.T) {
 }
 
 func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
+	b := labels.NewScratchBuilder(1)
+	oneLabel := func(name, value string) labels.Labels {
+		b.Reset()
+		b.Add(name, value)
+		return b.Labels()
+	}
 	defaultTestBlockFactory := prepareTestBlock(test.NewTB(t), func(t testing.TB, appenderFactory func() storage.Appender) {
 		appender := appenderFactory()
 		for i := 0; i < 100; i++ {
-			_, err := appender.Append(0, labels.FromStrings("l1", fmt.Sprintf("v%d", i)), int64(i*10), 0)
+			_, err := appender.Append(0, oneLabel("l1", fmt.Sprintf("v%d", i)), int64(i*10), 0)
 			assert.NoError(t, err)
 		}
 		assert.NoError(t, appender.Commit())
@@ -1100,7 +1106,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 	largerTestBlockFactory := prepareTestBlock(test.NewTB(t), func(t testing.TB, appenderFactory func() storage.Appender) {
 		for i := 0; i < largerTestBlockSeriesCount; i++ {
 			appender := appenderFactory()
-			lbls := labels.FromStrings("l1", fmt.Sprintf("v%d", i))
+			lbls := oneLabel("l1", fmt.Sprintf("v%d", i))
 			var ref storage.SeriesRef
 			const numSamples = 240 // Write enough samples to have two chunks per series
 			for j := 0; j < numSamples; j++ {
@@ -1247,7 +1253,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			expectedSets: func() []seriesChunkRefsSet {
 				set := newSeriesChunkRefsSet(largerTestBlockSeriesCount, true)
 				for i := 0; i < largerTestBlockSeriesCount; i++ {
-					set.series = append(set.series, seriesChunkRefs{lset: labels.FromStrings("l1", fmt.Sprintf("v%d", i))})
+					set.series = append(set.series, seriesChunkRefs{lset: oneLabel("l1", fmt.Sprintf("v%d", i))})
 				}
 				// The order of series in the block is by their labels, so we need to sort what we generated.
 				sort.Slice(set.series, func(i, j int) bool {
@@ -1265,7 +1271,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			expectedSets: func() []seriesChunkRefsSet {
 				series := make([]seriesChunkRefs, 0, largerTestBlockSeriesCount)
 				for i := 0; i < largerTestBlockSeriesCount; i++ {
-					series = append(series, seriesChunkRefs{lset: labels.FromStrings("l1", fmt.Sprintf("v%d", i))})
+					series = append(series, seriesChunkRefs{lset: oneLabel("l1", fmt.Sprintf("v%d", i))})
 				}
 				// The order of series in the block is by their labels, so we need to sort what we generated.
 				sort.Slice(series, func(i, j int) bool {
@@ -2409,11 +2415,12 @@ func readAllSeriesChunkRefs(it iterator[seriesChunkRefs]) []seriesChunkRefs {
 // incremented by +1.
 func createSeriesChunkRefsSet(minSeriesID, maxSeriesID int, releasable bool) seriesChunkRefsSet {
 	set := newSeriesChunkRefsSet(maxSeriesID-minSeriesID+1, releasable)
+	b := labels.NewScratchBuilder(1)
 
 	for seriesID := minSeriesID; seriesID <= maxSeriesID; seriesID++ {
-		set.series = append(set.series, seriesChunkRefs{
-			lset: labels.FromStrings(labels.MetricName, fmt.Sprintf("metric_%06d", seriesID)),
-		})
+		b.Reset()
+		b.Add(labels.MetricName, fmt.Sprintf("metric_%06d", seriesID))
+		set.series = append(set.series, seriesChunkRefs{lset: b.Labels()})
 	}
 
 	return set

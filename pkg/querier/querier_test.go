@@ -605,7 +605,7 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 		MaxSamples:         1e6,
 		Timeout:            1 * time.Minute,
 	})
-	cfg := Config{PromQLEngine: prometheusPromQLEngine}
+	cfg := Config{QueryEngine: prometheusEngine}
 	for _, c := range testCases {
 		t.Run(c.name, func(t *testing.T) {
 			distributor := &errDistributor{}
