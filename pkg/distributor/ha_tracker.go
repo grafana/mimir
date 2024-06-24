@@ -79,7 +79,7 @@ func (cfg *HATrackerConfig) RegisterFlags(f *flag.FlagSet) {
 	// We want the ability to use different instances for the ring and
 	// for HA cluster tracking. We also customize the default keys prefix, in
 	// order to not clash with the ring key if they both share the same KVStore
-	// backend (i.e. run on the same consul cluster).
+	// backend (i.e. run on the same Consul cluster).
 	cfg.KVStore.RegisterFlagsWithPrefix("distributor.ha-tracker.", "ha-tracker/", f)
 }
 
@@ -269,7 +269,7 @@ const (
 	cleanupCyclePeriod         = 30 * time.Minute
 	cleanupCycleJitterVariance = 0.2 // for 30 minutes, this is ±6 min
 
-	// If we have received the last sample for given cluster before this timeout, we will mark the selected replica for deletion.
+	// If we have received the last sample for the given cluster before this timeout, we will mark the selected replica for deletion.
 	// If the selected replica is marked for deletion for this time, it is deleted completely.
 	deletionTimeout = 30 * time.Minute
 )
@@ -358,9 +358,9 @@ func (h *haTracker) cleanupOldReplicas(ctx context.Context, deadline time.Time) 
 				continue
 			}
 
-			// We're blindly deleting a key here. It may happen that value was updated since we have read it a few lines above,
-			// in which case distributors will have updated value in memory, but Delete will remove it from KV store anyway.
-			// That's not great, but should not be a problem. If KV store sends Watch notification for Delete, distributors will
+			// We're blindly deleting a key here. It may happen that the value was updated since we have read it a few lines above,
+			// in which case distributors will have updated value in memory, but Delete will remove it from the KV store anyway.
+			// That's not great, but should not be a problem. If the KV store sends Watch notification for Delete, distributors will
 			// delete it from memory, and recreate it on the next sample with matching replica.
 			//
 			// If KV store doesn't send Watch notification for Delete, distributors *with* replica in memory will keep using it,
