@@ -96,7 +96,7 @@ eval instant at 0m sum by (label) (single_histogram)
 	{label="value"} {{schema:0 count:4 sum:2 buckets:[1 2 1]}}
 	{label="value2"} {{schema:1 count:14 sum:15 buckets:[4 6 4]}}
 
-eval range from 0 to 1m step 1m  sum(single_histogram)
+eval range from 0 to 1m step 1m sum(single_histogram)
 	{} {{schema:0 sum:17 count:18 buckets:[5 12 1]}} {{schema:0 sum:6 count:12 buckets:[3 7 2]}}
 
 clear

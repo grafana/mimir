@@ -381,21 +381,27 @@ func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData,
 		seriesGroup.floatPresent[idx] = true
 	}
 
+	var lastUncopiedHistogram *histogram.FloatHistogram
+
 	for _, p := range s.Histograms {
 		idx := (p.T - start) / interval
-		if seriesGroup.histogramSums[idx] == nil {
-			// We copy here because we modify the histogram through Add later on.
-			// It is necessary to preserve the original Histogram in case of any range-queries using lookback.
-			seriesGroup.histogramSums[idx] = p.H.Copy()
-			// We already have to do the check if the histogram exists at this idx,
-			// so we can count the histogram points present at this point instead
-			// of needing to loop again later like we do for floats.
-			seriesGroup.histogramPointCount++
-		} else {
+
+		if seriesGroup.histogramSums[idx] != nil {
 			seriesGroup.histogramSums[idx], err = seriesGroup.histogramSums[idx].Add(p.H)
 			if err != nil {
 				return err
 			}
+		} else if lastUncopiedHistogram == p.H {
+			// We've already used this histogram for a previous point due to lookback.
+			// Make a copy of it so we don't modify the other point.
+			seriesGroup.histogramSums[idx] = p.H.Copy()
+			seriesGroup.histogramPointCount++
+		} else {
+			// This is the first time we have seen this histogram.
+			// It is safe to store it and modify it later without copying, as we'll make copies above if the same histogram is used for subsequent points.
+			seriesGroup.histogramSums[idx] = p.H
+			seriesGroup.histogramPointCount++
+			lastUncopiedHistogram = p.H
 		}
 	}
 

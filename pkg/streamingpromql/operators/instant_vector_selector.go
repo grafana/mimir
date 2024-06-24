@@ -8,6 +8,7 @@ package operators
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/value"
@@ -53,6 +54,9 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 
 	data := types.InstantVectorSeriesData{}
 
+	lastHistogramT := int64(math.MinInt64)
+	var lastHistogram *histogram.FloatHistogram
+
 	for stepT := v.Selector.Start; stepT <= v.Selector.End; stepT += v.Selector.Interval {
 		var t int64
 		var f float64
@@ -73,7 +77,15 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 		case chunkenc.ValFloat:
 			t, f = v.memoizedIterator.At()
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
-			t, h = v.memoizedIterator.AtFloatHistogram()
+			if atT := v.memoizedIterator.AtT(); atT == lastHistogramT {
+				// We're still looking at the last histogram we saw, don't bother creating another FloatHistogram.
+				t, h = atT, lastHistogram
+			} else {
+				t, h = v.memoizedIterator.AtFloatHistogram()
+				lastHistogramT = t
+				lastHistogram = h
+			}
+
 		default:
 			return types.InstantVectorSeriesData{}, fmt.Errorf("streaming PromQL engine: unknown value type %s", valueType.String())
 		}
