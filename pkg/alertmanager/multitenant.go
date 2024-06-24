@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -641,6 +642,13 @@ func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
 func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertConfigDescs) {
 	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgMap))
 	for user, cfgs := range cfgMap {
+
+		grafanaURL, err := url.Parse(cfgs.Grafana.ExternalUrl)
+		if err != nil {
+			level.Warn(am.logger).Log("msg", "error parsing external url for grafana", "err", err)
+			grafanaURL = &url.URL{}
+		}
+
 		cfg, err := am.computeConfig(cfgs)
 		if err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
@@ -648,7 +656,7 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertC
 			continue
 		}
 
-		if err := am.setConfig(cfg); err != nil {
+		if err := am.setConfig(cfg, grafanaURL); err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error applying config", "err", err)
 			continue
@@ -717,7 +725,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
-func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error {
+func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc, grafanaURL *url.URL) error {
 	var userAmConfig *definition.PostableApiAlertingConfig
 	var err error
 	var hasTemplateChanges bool
@@ -806,7 +814,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
 		level.Debug(am.logger).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
-		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, rawCfg)
+		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, rawCfg, grafanaURL)
 		if err != nil {
 			return err
 		}
@@ -828,7 +836,7 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
-func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, rawCfg string) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, rawCfg string, grafanaURL *url.URL) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
 	tenantDir := am.getTenantDirectory(userID)
@@ -852,6 +860,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		Limits:                            am.limits,
 		Features:                          am.features,
 		GrafanaAlertmanagerCompatibility:  am.cfg.GrafanaAlertmanagerCompatibilityEnabled,
+		GrafanaExternalURL:                grafanaURL,
 	}, reg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
@@ -973,7 +982,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 	}
 
 	// Calling setConfig with an empty configuration will use the fallback config.
-	err = am.setConfig(cfgDesc)
+	err = am.setConfig(cfgDesc, &url.URL{})
 	if err != nil {
 		return nil, err
 	}
