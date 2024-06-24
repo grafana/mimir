@@ -87,7 +87,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
 
       local p = self,
-      readRequestsPerSecondMetric: 'cortex_request_duration_seconds',
+      requestsPerSecondMetric: 'cortex_request_duration_seconds',
       readRequestsPerSecondSelector: '%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"' % variables,
       // These query routes are used in the overview and other dashboard, everythign else is considered "other" queries.
       // Has to be a list to keep the same colors as before, see overridesNonErrorColorsPalette.
@@ -140,7 +140,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       labelValuesCardinalityQueriesPerSecond: queryPerSecond('labelValuesCardinality'),
 
       // Read failures rate as percentage of total requests.
-      readFailuresRate: $.ncHistogramFailureRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector),
+      readFailuresRate: $.ncHistogramFailureRate(p.requestsPerSecondMetric, p.readRequestsPerSecondSelector),
     },
 
     ruler: {

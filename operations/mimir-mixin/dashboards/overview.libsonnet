@@ -178,9 +178,9 @@ local filename = 'mimir-overview.json';
         $.timeseriesPanel(std.stripChars('Read requests / sec %(gatewayEnabledPanelTitleSuffix)s' % helpers, ' ')) +
         $.qpsPanelNativeHistogram(
           if $._config.gateway_enabled then
-            $.queries.gateway.readRequestsPerSecondMetric
+            $.queries.gateway.requestsPerSecondMetric
           else
-            $.queries.query_frontend.readRequestsPerSecondMetric,
+            $.queries.query_frontend.requestsPerSecondMetric,
           if $._config.gateway_enabled then
             $.queries.gateway.readRequestsPerSecondSelector
           else
