@@ -342,7 +342,7 @@ func Test_DequeueOrderAfterEnqueue(t *testing.T) {
 			},
 		},
 		{
-			name: "should dequeue from new (next-in-queue) tenant-querier child immediately after it is added",
+			name: "should dequeue from new tenant-querier child before repeat-dequeueing",
 			treeAlgosByDepth: []QueuingAlgorithm{
 				&tenantQuerierAssignments{
 					tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{},
@@ -678,7 +678,7 @@ func Test_DequeueBalancedRoundRobinTree(t *testing.T) {
 
 	count := 0
 
-	// TreeQueue will fairly dequeue from all levels of the tree
+	// IntegratedTreeQueue will fairly dequeue from all levels of the tree
 	rotationsBeforeRepeat := len(firstDimensions) * len(secondDimensions)
 	// track dequeued paths to ensure round-robin dequeuing does not repeat before expected
 	dequeuedPathCache := make([]QueuePath, rotationsBeforeRepeat)
@@ -848,7 +848,7 @@ func Test_NodeCannotDeleteItself(t *testing.T) {
 	}
 }
 
-func makeBalancedRoundRobinTree(t *testing.T, firstDimensions, secondDimensions []string, itemsPerDimension int) *TreeQueue {
+func makeBalancedRoundRobinTree(t *testing.T, firstDimensions, secondDimensions []string, itemsPerDimension int) *IntegratedTreeQueue {
 	tree, err := NewTree(&roundRobinState{}, &roundRobinState{}, &roundRobinState{})
 	require.NoError(t, err)
 	require.Equal(t, 1, tree.rootNode.nodeCount())
@@ -873,7 +873,7 @@ func makeBalancedRoundRobinTree(t *testing.T, firstDimensions, secondDimensions 
 	return tree
 }
 
-func makeUnbalancedRoundRobinTree(t *testing.T) *TreeQueue {
+func makeUnbalancedRoundRobinTree(t *testing.T) *IntegratedTreeQueue {
 	/*
 	   root
 	   ├── child0

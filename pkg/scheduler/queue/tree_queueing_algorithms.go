@@ -3,7 +3,7 @@
 package queue
 
 // QueuingAlgorithm represents the set of operations specific to different approaches to queuing/dequeuing. It is
-// applied at the layer-level -- every Node at the same depth in a TreeQueue shares the same QueuingAlgorithm,
+// applied at the layer-level -- every Node at the same depth in a IntegratedTreeQueue shares the same QueuingAlgorithm,
 // including any state in structs that implement QueuingAlgorithm.
 type QueuingAlgorithm interface {
 	// addChildNode creates a child Node of parent. QueuePaths passed to enqueue functions are allowed to contain
@@ -26,7 +26,7 @@ type QueuingAlgorithm interface {
 }
 
 // roundRobinState is the simplest type of QueuingAlgorithm; nodes which use this QueuingAlgorithm and are at
-// the same depth in a TreeQueue do not share any state. When children are added to these nodes, they are placed at
+// the same depth in a IntegratedTreeQueue do not share any state. When children are added to these nodes, they are placed at
 // the "end" of the order from the perspective of the node's current queuePosition (e.g., if queuePosition is 3,
 // a new child will be placed at index 2). Children are dequeued from using a simple round-robin ordering;
 // queuePosition is incremented on every dequeue.

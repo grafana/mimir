@@ -24,7 +24,7 @@ type tenantRequest struct {
 // queueBroker encapsulates access to tenant queues for pending requests
 // and maintains consistency with the tenant-querier assignments
 type queueBroker struct {
-	tree *TreeQueue
+	tree Tree
 
 	tenantQuerierAssignments *tenantQuerierAssignments
 
@@ -36,7 +36,7 @@ type queueBroker struct {
 func newQueueBroker(
 	maxTenantQueueSize int,
 	additionalQueueDimensionsEnabled bool,
-	prioritizeQueryComponents bool,
+	useIntegratedTreeQueue bool,
 	forgetDelay time.Duration,
 ) *queueBroker {
 	currentQuerier := QuerierID("")
@@ -48,23 +48,24 @@ func newQueueBroker(
 		tenantsByID:        map[TenantID]*queueTenant{},
 		tenantQuerierIDs:   map[TenantID]map[QuerierID]struct{}{},
 		currentQuerier:     &currentQuerier,
-		tenantOrderIndex:   localQueueIndex - 1,
+		tenantOrderIndex:   localQueueIndex,
 	}
 
-	// If prioritizeQueryComponents is true, the tree will be created
-	// with query components at one level above tenants; if it is false,
-	// tenant nodes will each maintain their own query component subtree.
-	tree, err := NewTree(
-		tqas,               // root; QueuingAlgorithm selects tenants
-		&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
-		&roundRobinState{}, // query components; QueuingAlgorithm selects query from local queue
-	)
-	if prioritizeQueryComponents {
+	var tree Tree
+	var err error
+	if useIntegratedTreeQueue {
 		tree, err = NewTree(
-			&roundRobinState{}, // root; QueuingAlgorithm selects query component
-			tqas,               // query components; QueuingAlgorithm selects tenant
-			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query from local queue
+			tqas,               // root; QueuingAlgorithm selects tenants
+			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
+			&roundRobinState{}, // query components; QueuingAlgorithm selects query from local queue
 		)
+		// An error building the tree is fatal; we must panic
+		if err != nil {
+			panic(fmt.Sprintf("error creating the tree queue: %v", err))
+		}
+	} else {
+		// by default, use the legacy tree queue
+		tree = NewTreeQueue("root")
 	}
 
 	// An error building the tree is fatal; we must panic
@@ -76,7 +77,6 @@ func newQueueBroker(
 		tenantQuerierAssignments:         tqas,
 		maxTenantQueueSize:               maxTenantQueueSize,
 		additionalQueueDimensionsEnabled: additionalQueueDimensionsEnabled,
-		prioritizeQueryComponents:        prioritizeQueryComponents,
 	}
 
 	return qb
@@ -100,8 +100,21 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 		return err
 	}
 
-	if tenantQueueNode := qb.tree.rootNode.getNode(queuePath[:1]); tenantQueueNode != nil {
-		if tenantQueueNode.ItemCount()+1 > qb.maxTenantQueueSize {
+	// TODO (casie): When deprecating TreeQueue, clean this up.
+	// Technically, the IntegratedTreeQueue approach is adequate for both tree types, but we are temporarily
+	// maintaining the legacy tree behavior as much as possible for stability reasons.
+	if tq, ok := qb.tree.(*TreeQueue); ok {
+		if tenantQueueNode := tq.getNode(queuePath[:1]); tenantQueueNode != nil {
+			if tenantQueueNode.ItemCount()+1 > qb.maxTenantQueueSize {
+				return ErrTooManyRequests
+			}
+		}
+	} else if _, ok := qb.tree.(*IntegratedTreeQueue); ok {
+		itemCount := 0
+		for _, tenantNode := range qb.tenantQuerierAssignments.tenantNodes[string(request.tenantID)] {
+			itemCount += tenantNode.ItemCount()
+		}
+		if itemCount+1 > qb.maxTenantQueueSize {
 			return ErrTooManyRequests
 		}
 	}
@@ -156,10 +169,22 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 		return nil, nil, qb.tenantQuerierAssignments.tenantOrderIndex, ErrQuerierShuttingDown
 	}
 
-	qb.tenantQuerierAssignments.currentQuerier = &querierID
-	qb.tenantQuerierAssignments.tenantOrderIndex = lastTenantIndex
+	var queuePath QueuePath
+	var queueElement any
+	if tq, ok := qb.tree.(*TreeQueue); ok {
+		tenant, tenantIndex, err := qb.tenantQuerierAssignments.getNextTenantForQuerier(lastTenantIndex, querierID)
+		if tenant == nil || err != nil {
+			return nil, tenant, tenantIndex, err
+		}
+		qb.tenantQuerierAssignments.tenantOrderIndex = tenantIndex
+		queuePath = QueuePath{string(tenant.tenantID)}
+		queueElement = tq.DequeueByPath(queuePath)
+	} else if itq, ok := qb.tree.(*IntegratedTreeQueue); ok {
+		qb.tenantQuerierAssignments.currentQuerier = &querierID
+		qb.tenantQuerierAssignments.tenantOrderIndex = lastTenantIndex
 
-	queuePath, queueElement := qb.tree.Dequeue()
+		queuePath, queueElement = itq.Dequeue()
+	}
 
 	var request *tenantRequest
 	var tenantID TenantID
@@ -174,13 +199,23 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 		tenant = qb.tenantQuerierAssignments.tenantsByID[tenantID]
 	}
 
-	// dequeue returns the full path including root, but getNode expects the path _from_ root
-	queueNodeAfterDequeue := qb.tree.rootNode.getNode(queuePath)
-	if queueNodeAfterDequeue == nil && len(qb.tenantQuerierAssignments.tenantNodes[string(tenantID)]) == 0 {
-		// queue node was deleted due to being empty after dequeue
-		qb.tenantQuerierAssignments.removeTenant(tenantID)
+	// TODO (casie): When deprecating TreeQueue, clean this up.
+	// This cannot be handled by the Tree interface without defining some other, more expansive interfaces
+	// between the legacy and integrated tree queues, which would be more overhead than it's worth, given
+	// that we will eventually retire the legacy tree queue.
+	if tq, ok := qb.tree.(*TreeQueue); ok {
+		queueNodeAfterDequeue := tq.getNode(queuePath)
+		if queueNodeAfterDequeue == nil {
+			// queue node was deleted due to being empty after dequeue
+			qb.tenantQuerierAssignments.removeTenant(tenant.tenantID)
+		}
+	} else if itq, ok := qb.tree.(*IntegratedTreeQueue); ok {
+		queueNodeAfterDequeue := itq.GetNode(queuePath)
+		if queueNodeAfterDequeue == nil && len(qb.tenantQuerierAssignments.tenantNodes[string(tenantID)]) == 0 {
+			// queue node was deleted due to being empty after dequeue
+			qb.tenantQuerierAssignments.removeTenant(tenantID)
+		}
 	}
-
 	return request, tenant, qb.tenantQuerierAssignments.tenantOrderIndex, nil
 }
 

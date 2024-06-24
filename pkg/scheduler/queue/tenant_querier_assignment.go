@@ -53,7 +53,7 @@ func (s querierIDSlice) Search(x QuerierID) int {
 	return sort.Search(len(s), func(i int) bool { return s[i] >= x })
 }
 
-// tenantQuerierAssignments implements QueuingAlgorithm. In the context of a TreeQueue, it maintains a mapping of
+// tenantQuerierAssignments implements QueuingAlgorithm. In the context of a IntegratedTreeQueue, it maintains a mapping of
 // tenants to queriers in order to support dequeuing from an appropriate tenant if shuffle-sharding is enabled.
 type tenantQuerierAssignments struct {
 	// a tenant has many queriers
@@ -94,6 +94,48 @@ type tenantQuerierAssignments struct {
 	// Tenant querier ID is set to nil if sharding is off or available queriers <= tenant's maxQueriers.
 	tenantQuerierIDs map[TenantID]map[QuerierID]struct{}
 	currentQuerier   *QuerierID
+}
+
+// getNextTenantForQuerier gets the next tenant in the tenant order assigned to a given querier.
+// It should _only_ be called by the legacy TreeQueue.
+//
+// The next tenant for the querier is obtained by rotating through the global tenant order
+// starting just after the last tenant the querier received a request for, until a tenant
+// is found that is assigned to the given querier according to the querier shuffle sharding.
+// A newly connected querier provides lastTenantIndex of -1 in order to start at the beginning.
+func (tqa *tenantQuerierAssignments) getNextTenantForQuerier(lastTenantIndex int, querierID QuerierID) (*queueTenant, int, error) {
+	// check if querier is registered and is not shutting down
+	if q := tqa.queriersByID[querierID]; q == nil || q.shuttingDown {
+		return nil, lastTenantIndex, ErrQuerierShuttingDown
+	}
+	tenantOrderIndex := lastTenantIndex
+	for iters := 0; iters < len(tqa.tenantIDOrder); iters++ {
+		tenantOrderIndex++
+		if tenantOrderIndex >= len(tqa.tenantIDOrder) {
+			// Do not use modulo (e.g. i = (i + 1) % len(slice)) to wrap this index.
+			// Tenant list can change size between calls and the querier provides its external view
+			// of the lastTenantIndex it received, which is not updated when this list changes.
+			// If the tenant list shrinks and the querier-provided lastTenantIndex exceeds the
+			// length of the tenant list, wrapping via modulo would skip the beginning of the list.
+			tenantOrderIndex = 0
+		}
+		tenantID := tqa.tenantIDOrder[tenantOrderIndex]
+		if tenantID == emptyTenantID {
+			continue
+		}
+		tenant := tqa.tenantsByID[tenantID]
+
+		tenantQuerierSet := tqa.tenantQuerierIDs[tenantID]
+		if tenantQuerierSet == nil {
+			// tenant can use all queriers
+			return tenant, tenantOrderIndex, nil
+		} else if _, ok := tenantQuerierSet[querierID]; ok {
+			// tenant is assigned this querier
+			return tenant, tenantOrderIndex, nil
+		}
+	}
+
+	return nil, lastTenantIndex, nil
 }
 
 // createOrUpdateTenant creates or updates a tenant into the tenant-querier assignment state.
