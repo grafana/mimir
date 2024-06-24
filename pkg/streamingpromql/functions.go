@@ -89,10 +89,32 @@ func createRateFunctionOperator(args []types.Operator, pool *pooling.LimitingPoo
 
 // These functions return an instant-vector.
 var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOperatorFactory{
+	"abs":             TransformationFunctionOperatorFactory("abs", functions.Abs),
 	"acos":            TransformationFunctionOperatorFactory("acos", functions.Acos),
+	"acosh":           TransformationFunctionOperatorFactory("acosh", functions.Acosh),
+	"asin":            TransformationFunctionOperatorFactory("asin", functions.Asin),
+	"asinh":           TransformationFunctionOperatorFactory("asinh", functions.Asinh),
+	"atan":            TransformationFunctionOperatorFactory("atan", functions.Atan),
+	"atanh":           TransformationFunctionOperatorFactory("atanh", functions.Atanh),
+	"ceil":            TransformationFunctionOperatorFactory("ceil", functions.Ceil),
+	"cos":             TransformationFunctionOperatorFactory("cos", functions.Cos),
+	"cosh":            TransformationFunctionOperatorFactory("cosh", functions.Cosh),
+	"deg":             TransformationFunctionOperatorFactory("deg", functions.Deg),
+	"exp":             TransformationFunctionOperatorFactory("exp", functions.Exp),
+	"floor":           TransformationFunctionOperatorFactory("floor", functions.Floor),
 	"histogram_count": TransformationFunctionOperatorFactory("histogram_count", functions.HistogramCount),
 	"histogram_sum":   TransformationFunctionOperatorFactory("histogram_sum", functions.HistogramSum),
+	"ln":              TransformationFunctionOperatorFactory("ln", functions.Ln),
+	"log10":           TransformationFunctionOperatorFactory("log10", functions.Log10),
+	"log2":            TransformationFunctionOperatorFactory("log2", functions.Log2),
+	"rad":             TransformationFunctionOperatorFactory("rad", functions.Rad),
 	"rate":            createRateFunctionOperator,
+	"sgn":             TransformationFunctionOperatorFactory("sgn", functions.Sgn),
+	"sin":             TransformationFunctionOperatorFactory("sin", functions.Sin),
+	"sinh":            TransformationFunctionOperatorFactory("sinh", functions.Sinh),
+	"sqrt":            TransformationFunctionOperatorFactory("sqrt", functions.Sqrt),
+	"tan":             TransformationFunctionOperatorFactory("tan", functions.Tan),
+	"tanh":            TransformationFunctionOperatorFactory("tanh", functions.Tanh),
 }
 
 func RegisterInstantVectorFunctionOperatorFactory(functionName string, factory InstantVectorFunctionOperatorFactory) error {

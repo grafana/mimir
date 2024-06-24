@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/require"
 )
 
@@ -44,6 +45,12 @@ func TestLimitingPool_Unlimited(t *testing.T) {
 		reg, metric := createRejectedMetric()
 		pool := NewLimitingPool(0, metric)
 		testUnlimitedPool(t, pool.GetBoolSlice, pool.PutBoolSlice, pool, BoolSize, reg)
+	})
+
+	t.Run("[]*histogram.FloatHistogram", func(t *testing.T) {
+		reg, metric := createRejectedMetric()
+		pool := NewLimitingPool(0, metric)
+		testUnlimitedPool(t, pool.GetHistogramPointerSlice, pool.PutHistogramPointerSlice, pool, HistogramPointerSize, reg)
 	})
 }
 
@@ -118,6 +125,12 @@ func TestLimitingPool_Limited(t *testing.T) {
 		reg, metric := createRejectedMetric()
 		pool := NewLimitingPool(11*BoolSize, metric)
 		testLimitedPool(t, pool.GetBoolSlice, pool.PutBoolSlice, pool, BoolSize, reg)
+	})
+
+	t.Run("[]*histogram.FloatHistogram", func(t *testing.T) {
+		reg, metric := createRejectedMetric()
+		pool := NewLimitingPool(11*HistogramPointerSize, metric)
+		testLimitedPool(t, pool.GetHistogramPointerSlice, pool.PutHistogramPointerSlice, pool, HistogramPointerSize, reg)
 	})
 }
 
@@ -222,6 +235,21 @@ func TestLimitingPool_ClearsReturnedSlices(t *testing.T) {
 		require.NoError(t, err)
 		boolSlice = boolSlice[:2]
 		require.Equal(t, []bool{false, false}, boolSlice)
+	})
+
+	t.Run("[]*histogram.FloatHistogram", func(t *testing.T) {
+		HistogramPointerSlice, err := pool.GetHistogramPointerSlice(2)
+		require.NoError(t, err)
+		HistogramPointerSlice = HistogramPointerSlice[:2]
+		HistogramPointerSlice[0] = &histogram.FloatHistogram{Count: 1}
+		HistogramPointerSlice[1] = &histogram.FloatHistogram{Count: 2}
+
+		pool.PutHistogramPointerSlice(HistogramPointerSlice)
+
+		HistogramPointerSlice, err = pool.GetHistogramPointerSlice(2)
+		require.NoError(t, err)
+		HistogramPointerSlice = HistogramPointerSlice[:2]
+		require.Equal(t, []*histogram.FloatHistogram{nil, nil}, HistogramPointerSlice)
 	})
 }
 

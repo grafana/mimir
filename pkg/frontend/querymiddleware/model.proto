@@ -17,7 +17,7 @@ import "google/protobuf/any.proto";
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
-message PrometheusResponseHeader {
+message PrometheusHeader {
   string Name = 1 [(gogoproto.jsontag) = "-"];
   repeated string Values = 2 [(gogoproto.jsontag) = "-"];
 }
@@ -27,7 +27,7 @@ message PrometheusResponse {
   PrometheusData Data = 2 [(gogoproto.jsontag) = "data,omitempty"];
   string ErrorType = 3 [(gogoproto.jsontag) = "errorType,omitempty"];
   string Error = 4 [(gogoproto.jsontag) = "error,omitempty"];
-  repeated PrometheusResponseHeader Headers = 5 [(gogoproto.jsontag) = "-"];
+  repeated PrometheusHeader Headers = 5 [(gogoproto.jsontag) = "-"];
   repeated string Warnings = 6 [(gogoproto.jsontag) = "warnings,omitempty"];
 }
 

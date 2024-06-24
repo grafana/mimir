@@ -6270,8 +6270,8 @@ func (i *mockIngester) QueryExemplars(ctx context.Context, req *client.ExemplarQ
 
 	// Sort series by labels because the real ingester returns sorted ones.
 	slices.SortFunc(res.Timeseries, func(a, b mimirpb.TimeSeries) int {
-		aKey := client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(a.Labels))
-		bKey := client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(b.Labels))
+		aKey := mimirpb.FromLabelAdaptersToKeyString(a.Labels)
+		bKey := mimirpb.FromLabelAdaptersToKeyString(b.Labels)
 		return strings.Compare(aKey, bKey)
 	})
 

@@ -271,14 +271,19 @@ func CreateBlock(
 		return id, errors.Wrap(err, "create compactor")
 	}
 
-	id, err = c.Write(dir, h, mint, maxt, nil)
+	blocks, err := c.Write(dir, h, mint, maxt, nil)
 	if err != nil {
 		return id, errors.Wrap(err, "write block")
 	}
 
-	if id.Compare(ulid.ULID{}) == 0 {
+	if len(blocks) == 0 || (blocks[0] == ulid.ULID{}) {
 		return id, errors.Errorf("nothing to write, asked for %d samples", numSamples)
 	}
+	if len(blocks) > 1 {
+		return id, errors.Errorf("expected one block, got %d, asked for %d samples", len(blocks), numSamples)
+	}
+
+	id = blocks[0]
 
 	blockDir := filepath.Join(dir, id.String())
 

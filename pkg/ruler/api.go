@@ -524,14 +524,14 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if err := a.ruler.AssertMaxRulesPerRuleGroup(userID, len(rg.Rules)); err != nil {
+	if err := a.ruler.AssertMaxRulesPerRuleGroup(userID, namespace, len(rg.Rules)); err != nil {
 		level.Error(logger).Log("msg", "limit validation failure", "err", err.Error(), "user", userID)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// Only list rule groups when enforcing a max number of groups for this tenant.
-	if a.ruler.IsMaxRuleGroupsLimited(userID) {
+	// Only list rule groups when enforcing a max number of groups for this tenant and namespace.
+	if a.ruler.IsMaxRuleGroupsLimited(userID, namespace) {
 		rgs, err := a.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "")
 		if err != nil {
 			level.Error(logger).Log("msg", "unable to fetch current rule groups for validation", "err", err.Error(), "user", userID)
@@ -539,7 +539,7 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 
-		if err := a.ruler.AssertMaxRuleGroups(userID, len(rgs)+1); err != nil {
+		if err := a.ruler.AssertMaxRuleGroups(userID, namespace, len(rgs)+1); err != nil {
 			level.Error(logger).Log("msg", "limit validation failure", "err", err.Error(), "user", userID)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

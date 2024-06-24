@@ -27,7 +27,6 @@ import (
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
 	"github.com/prometheus/prometheus/storage/remote"
@@ -256,18 +255,9 @@ func (c *Client) QueryRangeRaw(query string, start, end time.Time, step time.Dur
 // RemoteRead uses samples streaming. See RemoteReadChunks as well for chunks streaming.
 // RemoteRead returns the HTTP response with consumed body, the remote read protobuf response and an error.
 // In case the response is not a protobuf, the plaintext body content is returned instead of the protobuf message.
-func (c *Client) RemoteRead(metricName string, start, end time.Time) (_ *http.Response, _ *prompb.QueryResult, plaintextResponse []byte, _ error) {
+func (c *Client) RemoteRead(query *prompb.Query) (_ *http.Response, _ *prompb.QueryResult, plaintextResponse []byte, _ error) {
 	req := &prompb.ReadRequest{
-		Queries: []*prompb.Query{{
-			Matchers:         []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: metricName}},
-			StartTimestampMs: start.UnixMilli(),
-			EndTimestampMs:   end.UnixMilli(),
-			Hints: &prompb.ReadHints{
-				StepMs:  1,
-				StartMs: start.UnixMilli(),
-				EndMs:   end.UnixMilli(),
-			},
-		}},
+		Queries: []*prompb.Query{query},
 	}
 	resp, err := c.doRemoteReadReq(req)
 	if err != nil {
@@ -283,6 +273,11 @@ func (c *Client) RemoteRead(metricName string, start, end time.Time) (_ *http.Re
 			return resp, queryResult, nil, fmt.Errorf("parsing remote read response: %w", err)
 		}
 		return resp, queryResult, nil, nil
+	case "application/json":
+		// The remote read protocol does not have a way to return an error message
+		// in the response body, thus the error message is returned as a Prometheus
+		// JSON results response.
+		fallthrough
 	case "text/plain; charset=utf-8":
 		respBytes, err := io.ReadAll(resp.Body)
 		return resp, nil, respBytes, err
@@ -295,18 +290,9 @@ func (c *Client) RemoteRead(metricName string, start, end time.Time) (_ *http.Re
 // RemoteReadChunks uses chunks streaming. See RemoteRead as well for samples streaming.
 // RemoteReadChunks returns the HTTP response with consumed body, the remote read protobuf response and an error.
 // In case the response is not a protobuf, the plaintext body content is returned instead of the protobuf message.
-func (c *Client) RemoteReadChunks(metricName string, start, end time.Time) (_ *http.Response, _ []prompb.ChunkedReadResponse, plaintextResponse []byte, _ error) {
+func (c *Client) RemoteReadChunks(query *prompb.Query) (_ *http.Response, _ []prompb.ChunkedReadResponse, plaintextResponse []byte, _ error) {
 	req := &prompb.ReadRequest{
-		Queries: []*prompb.Query{{
-			Matchers:         []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: metricName}},
-			StartTimestampMs: start.UnixMilli(),
-			EndTimestampMs:   end.UnixMilli(),
-			Hints: &prompb.ReadHints{
-				StepMs:  1,
-				StartMs: start.UnixMilli(),
-				EndMs:   end.UnixMilli(),
-			},
-		}},
+		Queries:               []*prompb.Query{query},
 		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
 	}
 

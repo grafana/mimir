@@ -264,11 +264,11 @@ func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
 	querier, err := queryable.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 
-	querier.(*shardedQuerier).responseHeaders.mergeHeaders([]*PrometheusResponseHeader{
+	querier.(*shardedQuerier).responseHeaders.mergeHeaders([]*PrometheusHeader{
 		{Name: "content-type", Values: []string{"application/json"}},
 		{Name: "cache-control", Values: []string{"no-cache"}},
 	})
-	assert.ElementsMatch(t, []*PrometheusResponseHeader{
+	assert.ElementsMatch(t, []*PrometheusHeader{
 		{Name: "content-type", Values: []string{"application/json"}},
 		{Name: "cache-control", Values: []string{"no-cache"}},
 	}, queryable.getResponseHeaders())
@@ -277,11 +277,11 @@ func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
 	querier, err = queryable.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 
-	querier.(*shardedQuerier).responseHeaders.mergeHeaders([]*PrometheusResponseHeader{
+	querier.(*shardedQuerier).responseHeaders.mergeHeaders([]*PrometheusHeader{
 		{Name: "content-type", Values: []string{"application/json"}},
 		{Name: "cache-control", Values: []string{"no-store"}},
 	})
-	assert.ElementsMatch(t, []*PrometheusResponseHeader{
+	assert.ElementsMatch(t, []*PrometheusHeader{
 		{Name: "content-type", Values: []string{"application/json"}},
 		{Name: "cache-control", Values: []string{"no-cache", "no-store"}},
 	}, queryable.getResponseHeaders())

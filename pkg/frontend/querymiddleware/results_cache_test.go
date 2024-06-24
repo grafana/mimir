@@ -308,7 +308,7 @@ func TestIsResponseCachable(t *testing.T) {
 		{
 			name: "does not contain the cacheControl header",
 			response: Response(&PrometheusResponse{
-				Headers: []*PrometheusResponseHeader{
+				Headers: []*PrometheusHeader{
 					{
 						Name:   "meaninglessheader",
 						Values: []string{},
@@ -320,7 +320,7 @@ func TestIsResponseCachable(t *testing.T) {
 		{
 			name: "does contain the cacheControl header which has the value",
 			response: Response(&PrometheusResponse{
-				Headers: []*PrometheusResponseHeader{
+				Headers: []*PrometheusHeader{
 					{
 						Name:   cacheControlHeader,
 						Values: []string{noStoreValue},
@@ -332,7 +332,7 @@ func TestIsResponseCachable(t *testing.T) {
 		{
 			name: "cacheControl header contains extra values but still good",
 			response: Response(&PrometheusResponse{
-				Headers: []*PrometheusResponseHeader{
+				Headers: []*PrometheusHeader{
 					{
 						Name:   cacheControlHeader,
 						Values: []string{"foo", noStoreValue},
@@ -349,14 +349,14 @@ func TestIsResponseCachable(t *testing.T) {
 		{
 			name: "nil headers",
 			response: Response(&PrometheusResponse{
-				Headers: []*PrometheusResponseHeader{nil},
+				Headers: []*PrometheusHeader{nil},
 			}),
 			expected: true,
 		},
 		{
 			name: "had cacheControl header but no values",
 			response: Response(&PrometheusResponse{
-				Headers: []*PrometheusResponseHeader{{Name: cacheControlHeader}},
+				Headers: []*PrometheusHeader{{Name: cacheControlHeader}},
 			}),
 			expected: true,
 		},
@@ -408,6 +408,8 @@ func TestPartitionCacheExtents(t *testing.T) {
 					start: 0,
 					end:   100,
 					step:  10,
+					minT:  0,
+					maxT:  100,
 				},
 			},
 		},
@@ -426,6 +428,8 @@ func TestPartitionCacheExtents(t *testing.T) {
 					start: 0,
 					end:   50,
 					step:  10,
+					minT:  0,
+					maxT:  50,
 				},
 			},
 			expectedCachedResponse: []Response{
@@ -448,6 +452,8 @@ func TestPartitionCacheExtents(t *testing.T) {
 					start: 120,
 					end:   160,
 					step:  10,
+					minT:  120,
+					maxT:  160,
 				},
 			},
 			expectedCachedResponse: []Response{
@@ -471,6 +477,8 @@ func TestPartitionCacheExtents(t *testing.T) {
 					start: 120,
 					end:   160,
 					step:  10,
+					minT:  120,
+					maxT:  160,
 				},
 			},
 			expectedCachedResponse: []Response{
@@ -527,11 +535,13 @@ func TestPartitionCacheExtents(t *testing.T) {
 				mkAPIResponse(486, 625, 33),
 			},
 			expectedRequests: []MetricsQueryRequest{
-				&PrometheusRangeQueryRequest{start: 123, end: 486, step: 33},
+				&PrometheusRangeQueryRequest{start: 123, end: 486, step: 33, minT: 123, maxT: 486},
 				&PrometheusRangeQueryRequest{
 					start: 651,  // next number after 625 (end of extent) such that it is equal to input.Start + N * input.Step.
 					end:   1000, // until the end
 					step:  33,   // unchanged
+					minT:  651,
+					maxT:  1000,
 				},
 			},
 		},

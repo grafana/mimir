@@ -28,32 +28,34 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func TestIsFailure(t *testing.T) {
+func TestCircuitBreaker_TryRecordFailure(t *testing.T) {
+	cfg := CircuitBreakerConfig{Enabled: true}
+	cb := newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
 	t.Run("no error", func(t *testing.T) {
-		require.False(t, isCircuitBreakerFailure(nil))
+		require.False(t, cb.tryRecordFailure(nil))
 	})
 
 	t.Run("context cancelled", func(t *testing.T) {
-		require.False(t, isCircuitBreakerFailure(context.Canceled))
-		require.False(t, isCircuitBreakerFailure(fmt.Errorf("%w", context.Canceled)))
+		require.False(t, cb.tryRecordFailure(context.Canceled))
+		require.False(t, cb.tryRecordFailure(fmt.Errorf("%w", context.Canceled)))
 	})
 
 	t.Run("gRPC context cancelled", func(t *testing.T) {
 		err := status.Error(codes.Canceled, "cancelled!")
-		require.False(t, isCircuitBreakerFailure(err))
-		require.False(t, isCircuitBreakerFailure(fmt.Errorf("%w", err)))
+		require.False(t, cb.tryRecordFailure(err))
+		require.False(t, cb.tryRecordFailure(fmt.Errorf("%w", err)))
 	})
 
 	t.Run("gRPC deadline exceeded", func(t *testing.T) {
 		err := status.Error(codes.DeadlineExceeded, "broken!")
-		require.True(t, isCircuitBreakerFailure(err))
-		require.True(t, isCircuitBreakerFailure(fmt.Errorf("%w", err)))
+		require.True(t, cb.tryRecordFailure(err))
+		require.True(t, cb.tryRecordFailure(fmt.Errorf("%w", err)))
 	})
 
 	t.Run("gRPC unavailable with INSTANCE_LIMIT details", func(t *testing.T) {
 		err := newInstanceLimitReachedError("broken")
-		require.True(t, isCircuitBreakerFailure(err))
-		require.True(t, isCircuitBreakerFailure(fmt.Errorf("%w", err)))
+		require.True(t, cb.tryRecordFailure(err))
+		require.True(t, cb.tryRecordFailure(fmt.Errorf("%w", err)))
 	})
 
 	t.Run("gRPC unavailable with SERVICE_UNAVAILABLE details is not a failure", func(t *testing.T) {
@@ -61,14 +63,14 @@ func TestIsFailure(t *testing.T) {
 		stat, err := stat.WithDetails(&mimirpb.ErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE})
 		require.NoError(t, err)
 		err = stat.Err()
-		require.False(t, isCircuitBreakerFailure(err))
-		require.False(t, isCircuitBreakerFailure(fmt.Errorf("%w", err)))
+		require.False(t, cb.tryRecordFailure(err))
+		require.False(t, cb.tryRecordFailure(fmt.Errorf("%w", err)))
 	})
 
 	t.Run("gRPC unavailable without details is not a failure", func(t *testing.T) {
 		err := status.Error(codes.Unavailable, "broken!")
-		require.False(t, isCircuitBreakerFailure(err))
-		require.False(t, isCircuitBreakerFailure(fmt.Errorf("%w", err)))
+		require.False(t, cb.tryRecordFailure(err))
+		require.False(t, cb.tryRecordFailure(fmt.Errorf("%w", err)))
 	})
 }
 
@@ -175,6 +177,7 @@ func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
 func TestCircuitBreaker_RecordResult(t *testing.T) {
 	metricNames := []string{
 		"cortex_ingester_circuit_breaker_results_total",
+		"cortex_ingester_circuit_breaker_request_timeouts_total",
 	}
 	testCases := map[string]struct {
 		errs            []error
@@ -190,6 +193,9 @@ func TestCircuitBreaker_RecordResult(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 1
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
 			`,
 		},
 		"erroneous execution not passing the failure check records a success": {
@@ -201,6 +207,9 @@ func TestCircuitBreaker_RecordResult(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 1
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
 			`,
 		},
 		"erroneous execution passing the failure check records an error": {
@@ -212,6 +221,9 @@ func TestCircuitBreaker_RecordResult(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 1
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 1
 			`,
 		},
 		"erroneous execution with multiple errors records the first error passing the failure check": {
@@ -223,6 +235,9 @@ func TestCircuitBreaker_RecordResult(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 1
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 1
 			`,
 		},
 	}
@@ -242,6 +257,7 @@ func TestCircuitBreaker_RecordResult(t *testing.T) {
 func TestCircuitBreaker_FinishRequest(t *testing.T) {
 	metricNames := []string{
 		"cortex_ingester_circuit_breaker_results_total",
+		"cortex_ingester_circuit_breaker_request_timeouts_total",
 	}
 	instanceLimitReachedErr := newInstanceLimitReachedError("error")
 	maxRequestDuration := 2 * time.Second
@@ -262,6 +278,9 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 1
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
 			`,
 		},
 		"with circuit breaker not active, requestDuration lower than maxRequestDuration and no input error, finishRequest does nothing": {
@@ -274,6 +293,9 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
 			`,
 		},
 		"with circuit breaker active, requestDuration higher than maxRequestDuration and no input error, finishRequest gives context deadline exceeded error": {
@@ -287,6 +309,9 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 1
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 1
 			`,
 		},
 		"with circuit breaker not active, requestDuration higher than maxRequestDuration and no input error, finishRequest does nothing": {
@@ -300,6 +325,9 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
 			`,
 		},
 		"with circuit breaker not active, requestDuration higher than maxRequestDuration and an input error relevant for circuit breakers, finishRequest does nothing": {
@@ -313,6 +341,9 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
 			`,
 		},
 		"with circuit breaker not active, requestDuration higher than maxRequestDuration and an input error irrelevant for circuit breakers, finishRequest does nothing": {
@@ -326,6 +357,9 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
 			`,
 		},
 		"with circuit breaker active, requestDuration higher than maxRequestDuration and an input error relevant for circuit breakers, finishRequest gives the input error": {
@@ -339,6 +373,9 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 1
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
 			`,
 		},
 		"with circuit breaker active, requestDuration higher than maxRequestDuration and an input error irrelevant for circuit breakers, finishRequest gives context deadline exceeded error": {
@@ -352,6 +389,9 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 1
 				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 1
 			`,
 		},
 	}
@@ -381,15 +421,56 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
 		expectedErrorWhenCircuitBreakerClosed error
 		pushRequestDelay                      time.Duration
 		limits                                InstanceLimits
+		expectedMetrics                       string
 	}{
 		"deadline exceeded": {
 			expectedErrorWhenCircuitBreakerClosed: nil,
 			limits:                                InstanceLimits{MaxInMemoryTenants: 3},
 			pushRequestDelay:                      pushTimeout,
+			expectedMetrics: `
+				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
+				# TYPE cortex_ingester_circuit_breaker_results_total counter
+        	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 2
+        	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 2
+        	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 1
+				# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
+				# TYPE cortex_ingester_circuit_breaker_transitions_total counter
+        	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="closed"} 0
+        	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="half-open"} 0
+        	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="open"} 1
+				# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
+        	    # TYPE cortex_ingester_circuit_breaker_current_state gauge
+        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
+        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
+        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 1
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 2
+			`,
 		},
 		"instance limit hit": {
 			expectedErrorWhenCircuitBreakerClosed: instanceLimitReachedError{},
 			limits:                                InstanceLimits{MaxInMemoryTenants: 1},
+			expectedMetrics: `
+				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
+				# TYPE cortex_ingester_circuit_breaker_results_total counter
+        	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 2
+        	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 2
+        	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 1
+				# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
+				# TYPE cortex_ingester_circuit_breaker_transitions_total counter
+        	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="closed"} 0
+        	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="half-open"} 0
+        	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="open"} 1
+				# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
+        	    # TYPE cortex_ingester_circuit_breaker_current_state gauge
+        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
+        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
+        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 1
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
+			`,
 		},
 	}
 
@@ -401,6 +482,7 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
 					"cortex_ingester_circuit_breaker_results_total",
 					"cortex_ingester_circuit_breaker_transitions_total",
 					"cortex_ingester_circuit_breaker_current_state",
+					"cortex_ingester_circuit_breaker_request_timeouts_total",
 				}
 
 				registry := prometheus.NewRegistry()
@@ -511,25 +593,12 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 1
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 0
+						# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+						# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+						cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
     				`
 				} else {
-					expectedMetrics = `
-						# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
-						# TYPE cortex_ingester_circuit_breaker_results_total counter
-        	            cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 2
-        	            cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 2
-        	            cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 1
-						# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
-						# TYPE cortex_ingester_circuit_breaker_transitions_total counter
-        	            cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="closed"} 0
-        	            cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="half-open"} 0
-        	            cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="open"} 1
-						# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
-        	            # TYPE cortex_ingester_circuit_breaker_current_state gauge
-        	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
-        	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
-        	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 1
-    				`
+					expectedMetrics = testCase.expectedMetrics
 				}
 				assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 			})
@@ -593,6 +662,7 @@ func TestIngester_StartPushRequest_CircuitBreakerOpen(t *testing.T) {
 func TestIngester_FinishPushRequest(t *testing.T) {
 	metricNames := []string{
 		"cortex_ingester_circuit_breaker_results_total",
+		"cortex_ingester_circuit_breaker_request_timeouts_total",
 	}
 	testCases := map[string]struct {
 		pushRequestDuration          time.Duration
@@ -610,6 +680,9 @@ func TestIngester_FinishPushRequest(t *testing.T) {
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 1
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
 			`,
 		},
 		"when a permit not acquired, pushRequestDuration lower than RequestTimeout and no input err, FinishPushRequest does nothing": {
@@ -622,6 +695,9 @@ func TestIngester_FinishPushRequest(t *testing.T) {
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
 			`,
 		},
 		"with a permit acquired, pushRequestDuration higher than RequestTimeout and no input error, FinishPushRequest records a failure": {
@@ -634,6 +710,9 @@ func TestIngester_FinishPushRequest(t *testing.T) {
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 1
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 1
 			`,
 		},
 		"with a permit not acquired, pushRequestDuration higher than RequestTimeout and no input error, FinishPushRequest does nothing": {
@@ -646,6 +725,9 @@ func TestIngester_FinishPushRequest(t *testing.T) {
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
 			`,
 		},
 		"with a permit acquired, pushRequestDuration higher than RequestTimeout and an input error relevant for the circuit breakers, FinishPushRequest records a failure": {
@@ -658,6 +740,9 @@ func TestIngester_FinishPushRequest(t *testing.T) {
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 1
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
 			`,
 		},
 		"with a permit acquired, pushRequestDuration higher than RequestTimeout and an input error irrelevant for the circuit breakers, FinishPushRequest records a failure": {
@@ -670,6 +755,9 @@ func TestIngester_FinishPushRequest(t *testing.T) {
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 1
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 1
 			`,
 		},
 		"with a permit not acquired, pushRequestDuration higher than RequestTimeout and an input error relevant for the circuit breakers, FinishPushRequest does nothing": {
@@ -682,6 +770,9 @@ func TestIngester_FinishPushRequest(t *testing.T) {
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
 			`,
 		},
 		"with a permit not acquired, pushRequestDuration higher than RequestTimeout and an input error irrelevant for the circuit breakers, FinishPushRequest does nothing": {
@@ -694,6 +785,9 @@ func TestIngester_FinishPushRequest(t *testing.T) {
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
 				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 0
         	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
 			`,
 		},
 	}
@@ -745,6 +839,7 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
 				"cortex_ingester_circuit_breaker_results_total",
 				"cortex_ingester_circuit_breaker_transitions_total",
 				"cortex_ingester_circuit_breaker_current_state",
+				"cortex_ingester_circuit_breaker_request_timeouts_total",
 			}
 
 			registry := prometheus.NewRegistry()
@@ -861,6 +956,9 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 1
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 0
+						# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+						# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+						cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
     				`
 			} else {
 				expectedMetrics = `
@@ -879,6 +977,9 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
         	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 1
+						# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+						# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+						cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 2
     				`
 			}
 			assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
@@ -957,11 +1058,16 @@ func TestPRCircuitBreaker_NewPRCircuitBreaker(t *testing.T) {
 		cortex_ingester_circuit_breaker_current_state{request_type="read",state="half-open"} 0
 		cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 1
 		cortex_ingester_circuit_breaker_current_state{request_type="read",state="closed"} 1
+		# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+		# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+		cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
+		cortex_ingester_circuit_breaker_request_timeouts_total{request_type="read"} 0
 	`
 	metricNames := []string{
 		"cortex_ingester_circuit_breaker_results_total",
 		"cortex_ingester_circuit_breaker_transitions_total",
 		"cortex_ingester_circuit_breaker_current_state",
+		"cortex_ingester_circuit_breaker_request_timeouts_total",
 	}
 	assert.NoError(t, testutil.GatherAndCompare(registerer, strings.NewReader(expectedMetrics), metricNames...))
 }

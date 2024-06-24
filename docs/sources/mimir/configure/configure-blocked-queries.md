@@ -24,6 +24,12 @@ overrides:
         regex: true
 ```
 
+The blocking is enforced on instant and range queries as well as remote read queries.
+
+For instant and range queries the pattern is evaluated against the query, for remote read requests, the pattern is evaluated against each set of matchers, as if the matchers formed a vector selector. If any set of matchers is blocked, the whole remote read request is rejected.
+
+For example the remote read query that contains the matcher `__name__` regex matched to `foo.*` is interpreted as `{__name__=~"foo.*"}`. To restrict the blocking to such selectors, include the curly braces in your pattern, e.g. `\{.*foo.*\}`.
+
 To set up runtime overrides, refer to [runtime configuration]({{< relref "./about-runtime-configuration" >}}).
 
 {{% admonition type="note" %}}

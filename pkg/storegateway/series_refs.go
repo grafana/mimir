@@ -683,6 +683,7 @@ type loadingSeriesChunkRefsSetIterator struct {
 	shard               *sharding.ShardSelector
 	seriesHasher        seriesHasher
 	strategy            seriesIteratorStrategy
+	builder             labels.ScratchBuilder
 	minTime, maxTime    int64
 	tenantID            string
 	logger              log.Logger
@@ -842,6 +843,7 @@ func newLoadingSeriesChunkRefsSetIterator(
 		shard:               shard,
 		seriesHasher:        seriesHasher,
 		strategy:            strategy,
+		builder:             labels.NewScratchBuilder(0),
 		minTime:             minTime,
 		maxTime:             maxTime,
 		tenantID:            tenantID,
@@ -1118,12 +1120,8 @@ func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, lo
 func (s *loadingSeriesChunkRefsSetIterator) singlePassStringify(symbolizedSet symbolizedSeriesChunkRefsSet) (seriesChunkRefsSet, error) {
 	// Some conservative map pre-allocation; the goal is to get an order of magnitude size of the map, so we minimize map growth.
 	symbols := make(map[uint32]string, len(symbolizedSet.series)/2)
-	maxLabelsPerSeries := 0
 
 	for _, series := range symbolizedSet.series {
-		if numLabels := len(series.lset); maxLabelsPerSeries < numLabels {
-			maxLabelsPerSeries = numLabels
-		}
 		for _, symRef := range series.lset {
 			symbols[symRef.value] = ""
 			symbols[symRef.name] = ""
@@ -1151,15 +1149,14 @@ func (s *loadingSeriesChunkRefsSetIterator) singlePassStringify(symbolizedSet sy
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it after Next() is called again.
 	set := newSeriesChunkRefsSet(len(symbolizedSet.series), true)
 
-	labelsBuilder := labels.NewScratchBuilder(maxLabelsPerSeries)
 	for _, series := range symbolizedSet.series {
-		labelsBuilder.Reset()
+		s.builder.Reset()
 		for _, symRef := range series.lset {
-			labelsBuilder.Add(symbols[symRef.name], symbols[symRef.value])
+			s.builder.Add(symbols[symRef.name], symbols[symRef.value])
 		}
 
 		set.series = append(set.series, seriesChunkRefs{
-			lset: labelsBuilder.Labels(),
+			lset: s.builder.Labels(),
 			refs: series.refs,
 		})
 	}
@@ -1171,9 +1168,8 @@ func (s *loadingSeriesChunkRefsSetIterator) multiLookupStringify(symbolizedSet s
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it after Next() is called again.
 	set := newSeriesChunkRefsSet(len(symbolizedSet.series), true)
 
-	labelsBuilder := labels.NewScratchBuilder(16)
 	for _, series := range symbolizedSet.series {
-		lset, err := s.indexr.LookupLabelsSymbols(s.ctx, series.lset, &labelsBuilder)
+		lset, err := s.indexr.LookupLabelsSymbols(s.ctx, series.lset, &s.builder)
 		if err != nil {
 			return seriesChunkRefsSet{}, err
 		}

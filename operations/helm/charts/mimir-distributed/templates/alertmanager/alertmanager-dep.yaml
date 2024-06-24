@@ -71,7 +71,9 @@ spec:
               mountPath: /var/{{ include "mimir.name" . }}
             - name: storage
               mountPath: "/data"
+              {{- if .Values.alertmanager.persistence.subPath }}
               subPath: {{ .Values.alertmanager.persistence.subPath }}
+              {{- end }}
             {{- if .Values.alertmanager.fallbackConfig }}
             - name: alertmanager-fallback-config
               mountPath: /configs/
@@ -98,6 +100,7 @@ spec:
             {{- toYaml .Values.alertmanager.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.alertmanager.containerSecurityContext | nindent 12 }}
+          {{- if or .Values.global.extraEnv .Values.alertmanager.env }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -105,6 +108,8 @@ spec:
             {{- with .Values.alertmanager.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.alertmanager.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -112,6 +117,7 @@ spec:
             {{- with .Values.alertmanager.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
 {{- if .Values.alertmanager.extraContainers }}
 {{ toYaml .Values.alertmanager.extraContainers | indent 8}}
 {{- end }}
