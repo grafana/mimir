@@ -505,7 +505,7 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
 	// Create a function that wraps a notifier with rate limiting.
-	notifierWrapper := func(integrationName string, notifier notify.Notifier) notify.Notifier {
+	nw := func(integrationName string, notifier notify.Notifier) notify.Notifier {
 		if am.cfg.Limits != nil {
 			rl := &tenantRateLimits{
 				tenant:      am.cfg.UserID,
@@ -525,7 +525,7 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 		if rcv.Type() == definition.GrafanaReceiverType {
 			integrations, err = buildGrafanaReceiverIntegrations(gCfg, externalURL, rcv, tmpl, am.logger)
 		} else {
-			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, notifierWrapper)
+			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, nw)
 		}
 		if err != nil {
 			return nil, err
