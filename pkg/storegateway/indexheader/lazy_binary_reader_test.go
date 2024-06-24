@@ -624,10 +624,7 @@ func BenchmarkNewLazyBinaryReader(b *testing.B) {
 				go func() {
 					defer wg.Done()
 					for i := 0; i < b.N; i++ {
-						_, err = lazyReader.IndexVersion(ctx)
-						if err != nil {
-							b.Fatal(err)
-						}
+						_, _ = lazyReader.IndexVersion(ctx) // ignore the mocked values above
 					}
 				}()
 			}
