@@ -3,7 +3,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 {
   // Helper function to produce failure rate in percentage queries for native and classic histograms.
   // Takes a metric name and a selector as strings and returns a dictionary with classic and native queries.
-  nativeClassicFailureRate(metric, selector):: {
+  ncHistogramFailureRate(metric, selector):: {
     local template = |||
       (
           # gRPC errors are not tracked as 5xx but "error".
@@ -16,12 +16,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       sum(%(countQuery)s)
     |||,
     classic: template % {
-      countFailQuery: utils.nativeClassicHistogramCountRate(metric, selector + ',status_code=~"5.*|error"').classic,
-      countQuery: utils.nativeClassicHistogramCountRate(metric, selector).classic,
+      countFailQuery: utils.ncHistogramCountRate(metric, selector + ',status_code=~"5.*|error"').classic,
+      countQuery: utils.ncHistogramCountRate(metric, selector).classic,
     },
     native: template % {
-      countFailQuery: utils.nativeClassicHistogramCountRate(metric, selector + ',status_code=~"5.*|error"').native,
-      countQuery: utils.nativeClassicHistogramCountRate(metric, selector).native,
+      countFailQuery: utils.ncHistogramCountRate(metric, selector + ',status_code=~"5.*|error"').native,
+      countQuery: utils.ncHistogramCountRate(metric, selector).native,
     },
   },
 
@@ -62,10 +62,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       readRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"' % variables,
 
       // Write failures rate as percentage of total requests.
-      writeFailuresRate: $.nativeClassicFailureRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector),
+      writeFailuresRate: $.ncHistogramFailureRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector),
 
       // Read failures rate as percentage of total requests.
-      readFailuresRate: $.nativeClassicFailureRate(p.requestsPerSecondMetric, p.readRequestsPerSecondSelector),
+      readFailuresRate: $.ncHistogramFailureRate(p.requestsPerSecondMetric, p.readRequestsPerSecondSelector),
     },
 
     distributor: {
@@ -79,7 +79,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       exemplarsPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_exemplars:rate5m{%(distributorMatcher)s})' % variables,
 
       // Write failures rate as percentage of total requests.
-      writeFailuresRate: $.nativeClassicFailureRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector),
+      writeFailuresRate: $.ncHistogramFailureRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector),
     },
 
     query_frontend: {
@@ -140,7 +140,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       labelValuesCardinalityQueriesPerSecond: queryPerSecond('labelValuesCardinality'),
 
       // Read failures rate as percentage of total requests.
-      readFailuresRate: $.nativeClassicFailureRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector),
+      readFailuresRate: $.ncHistogramFailureRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector),
     },
 
     ruler: {

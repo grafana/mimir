@@ -200,23 +200,23 @@ local filename = 'mimir-overview.json';
         {
           targets: [
             {
-              expr: utils.showClassicHistogramQuery(utils.nativeClassicSumBy(utils.nativeClassicHistogramCountRate($.queries.query_frontend.overviewRoutesPerSecondMetric, $.queries.query_frontend.overviewRoutesPerSecondSelector), ['route'])),
+              expr: utils.showClassicHistogramQuery(utils.ncHistogramSumBy(utils.ncHistogramCountRate($.queries.query_frontend.overviewRoutesPerSecondMetric, $.queries.query_frontend.overviewRoutesPerSecondSelector), ['route'])),
               format: 'time_series',
               legendLink: null,
             },
             {
-              expr: utils.showNativeHistogramQuery(utils.nativeClassicSumBy(utils.nativeClassicHistogramCountRate($.queries.query_frontend.overviewRoutesPerSecondMetric, $.queries.query_frontend.overviewRoutesPerSecondSelector), ['route'])),
+              expr: utils.showNativeHistogramQuery(utils.ncHistogramSumBy(utils.ncHistogramCountRate($.queries.query_frontend.overviewRoutesPerSecondMetric, $.queries.query_frontend.overviewRoutesPerSecondSelector), ['route'])),
               format: 'time_series',
               legendLink: null,
             },
             {
-              expr: utils.showClassicHistogramQuery(utils.nativeClassicSumBy(utils.nativeClassicHistogramCountRate($.queries.query_frontend.overviewRoutesPerSecondMetric, $.queries.query_frontend.nonOverviewRoutesPerSecondSelector))),
+              expr: utils.showClassicHistogramQuery(utils.ncHistogramSumBy(utils.ncHistogramCountRate($.queries.query_frontend.overviewRoutesPerSecondMetric, $.queries.query_frontend.nonOverviewRoutesPerSecondSelector))),
               format: 'time_series',
               legendFormat: 'other',
               legendLink: null,
             },
             {
-              expr: utils.showNativeHistogramQuery(utils.nativeClassicSumBy(utils.nativeClassicHistogramCountRate($.queries.query_frontend.overviewRoutesPerSecondMetric, $.queries.query_frontend.nonOverviewRoutesPerSecondSelector))),
+              expr: utils.showNativeHistogramQuery(utils.ncHistogramSumBy(utils.ncHistogramCountRate($.queries.query_frontend.overviewRoutesPerSecondMetric, $.queries.query_frontend.nonOverviewRoutesPerSecondSelector))),
               format: 'time_series',
               legendFormat: 'other',
               legendLink: null,
