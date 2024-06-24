@@ -302,6 +302,8 @@ func TestCheckReplicaMultiClusterTimeout(t *testing.T) {
 	err = c.checkReplica(context.Background(), "user", "c2", replica2, now)
 	assert.Error(t, err)
 
+	ts1 := c.clusters["user"]["c1"].lastElectionTimestamp
+
 	// Wait more than the failover timeout.
 	now = now.Add(1100 * time.Millisecond)
 
@@ -333,6 +335,9 @@ func TestCheckReplicaMultiClusterTimeout(t *testing.T) {
 		labels.MustNewMatcher(labels.MatchEqual, "operation", "CAS"),
 		labels.MustNewMatcher(labels.MatchRegexp, "status_code", "2.*"),
 	}), uint64(0))
+
+	ts2 := c.clusters["user"]["c1"].lastElectionTimestamp
+	assert.Greater(t, ts2, ts1)
 }
 
 // Test that writes only happen every update timeout.

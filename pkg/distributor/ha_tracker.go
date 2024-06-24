@@ -121,6 +121,7 @@ type haTracker struct {
 
 	electedReplicaChanges         *prometheus.CounterVec
 	electedReplicaTimestamp       *prometheus.GaugeVec
+	lastElectionTimestamp         *prometheus.GaugeVec
 	electedReplicaPropagationTime prometheus.Histogram
 	kvCASCalls                    *prometheus.CounterVec
 
@@ -136,6 +137,7 @@ type haClusterInfo struct {
 	electedLastSeenTimestamp    int64
 	nonElectedLastSeenReplica   string
 	nonElectedLastSeenTimestamp int64
+	lastElectionTimestamp       int64
 }
 
 // newHATracker returns a new HA cluster tracker using either Consul,
@@ -160,6 +162,10 @@ func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 		electedReplicaTimestamp: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ha_tracker_elected_replica_timestamp_seconds",
 			Help: "The timestamp stored for the currently elected replica, from the KVStore.",
+		}, []string{"user", "cluster"}),
+		lastElectionTimestamp: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ha_tracker_last_election_timestamp_seconds",
+			Help: "The timestamp stored for the most recent election, from the KVStore.",
 		}, []string{"user", "cluster"}),
 		electedReplicaPropagationTime: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ha_tracker_elected_replica_change_propagation_time_seconds",
@@ -240,6 +246,7 @@ func (h *haTracker) loop(ctx context.Context) error {
 		if replica.DeletedAt > 0 {
 			h.electedReplicaChanges.DeleteLabelValues(user, cluster)
 			h.electedReplicaTimestamp.DeleteLabelValues(user, cluster)
+			h.lastElectionTimestamp.DeleteLabelValues(user, cluster)
 
 			h.electedLock.Lock()
 			defer h.electedLock.Unlock()
@@ -312,6 +319,7 @@ func (h *haTracker) updateKVStoreAll(ctx context.Context, now time.Time) {
 			} else if h.withinUpdateTimeout(now, entry.nonElectedLastSeenTimestamp) {
 				// Not seen elected but have seen another: attempt to fail over.
 				replica = entry.nonElectedLastSeenReplica
+				level.Info(h.logger).Log("msg", "new replica elected after update timeout exceeded", "user", userID, "cluster", cluster, "previous_replica", entry.elected.Replica, "elected_replica", replica)
 			} else {
 				continue // we don't have any recent timestamps
 			}
@@ -462,6 +470,8 @@ func (h *haTracker) updateCache(userID, cluster string, desc *ReplicaDesc) {
 	}
 	if desc.Replica != entry.elected.Replica {
 		h.electedReplicaChanges.WithLabelValues(userID, cluster).Inc()
+		h.lastElectionTimestamp.WithLabelValues(userID, cluster).Set(float64(desc.ReceivedAt / 1000))
+		entry.lastElectionTimestamp = desc.ReceivedAt
 	}
 	entry.elected = *desc
 	h.electedReplicaTimestamp.WithLabelValues(userID, cluster).Set(float64(desc.ReceivedAt / 1000))
@@ -524,5 +534,6 @@ func (h *haTracker) cleanupHATrackerMetricsForUser(userID string) {
 
 	h.electedReplicaChanges.DeletePartialMatch(filter)
 	h.electedReplicaTimestamp.DeletePartialMatch(filter)
+	h.lastElectionTimestamp.DeletePartialMatch(filter)
 	h.kvCASCalls.DeletePartialMatch(filter)
 }

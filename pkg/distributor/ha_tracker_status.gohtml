@@ -14,7 +14,8 @@
         <th>User ID</th>
         <th>Cluster</th>
         <th>Replica</th>
-        <th>Elected Time</th>
+        <th>Last Election</th>
+        <th>Elected Last Seen Time</th>
         <th>Time Until Update</th>
         <th>Time Until Failover</th>
     </tr>
@@ -25,6 +26,7 @@
             <td>{{ .UserID }}</td>
             <td>{{ .Cluster }}</td>
             <td>{{ .Replica }}</td>
+            <td>{{ .LastElectionTime }}</td>
             <td>{{ .ElectedAt }}</td>
             <td>{{ .UpdateTime }}</td>
             <td>{{ .FailoverTime }}</td>
