@@ -26,6 +26,9 @@
 
 ### Mixin
 
+* [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards. #7674
+  * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric.
+
 ### Jsonnet
 
 * [FEATURE] Add support for automatically deleting compactor, store-gateway and read-write mode backend PVCs when the corresponding StatefulSet is scaled down. #8382
