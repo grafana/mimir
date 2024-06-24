@@ -251,7 +251,7 @@ func TestNewLazyBinaryReader_EagerLoadLazyLoadedIndexHeaders(t *testing.T) {
 	})
 }
 
-func initBucketAndBlocksForTest(t *testing.T) (string, *filesystem.Bucket, ulid.ULID) {
+func initBucketAndBlocksForTest(t testing.TB) (string, *filesystem.Bucket, ulid.ULID) {
 	ctx := context.Background()
 
 	tmpDir := filepath.Join(t.TempDir(), "test-indexheader")
@@ -598,4 +598,40 @@ func TestLazyBinaryReader_SymbolReaderAndUnload(t *testing.T) {
 
 		wg.Wait()
 	})
+}
+
+func BenchmarkNewLazyBinaryReader(b *testing.B) {
+	tmpDir, bkt, blockID := initBucketAndBlocksForTest(b)
+
+	factory := func() (Reader, error) {
+		reader := mockReader{
+			IndexVersionFunc: func(context.Context) (int, error) { return 1, nil },
+		}
+		return reader, nil
+	}
+
+	lazyReader, err := NewLazyBinaryReader(context.Background(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
+	if err != nil {
+		b.Fatal(err)
+	}
+	ctx := context.Background()
+	wg := &sync.WaitGroup{}
+
+	for _, readConcurrency := range []int{1, 2, 10, 20, 50, 100} {
+		b.Run(fmt.Sprintf("concurrency=%d", readConcurrency), func(b *testing.B) {
+			wg.Add(readConcurrency)
+			for readerIdx := 0; readerIdx < readConcurrency; readerIdx++ {
+				go func() {
+					defer wg.Done()
+					for i := 0; i < b.N; i++ {
+						_, err = lazyReader.IndexVersion(ctx)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				}()
+			}
+			wg.Wait()
+		})
+	}
 }
