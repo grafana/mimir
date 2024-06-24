@@ -360,6 +360,7 @@ templates:
 		CreatedAtTimestamp: time.Now().Unix(),
 		Default:            false,
 		Promoted:           true,
+		ExternalUrl:        "test.grafana.com",
 	}
 	emptyMimirConfig := alertspb.AlertConfigDesc{User: "user4"}
 	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
@@ -378,6 +379,9 @@ templates:
 	user4Dir := dirs["user4"]
 	require.NotZero(t, user4Dir)
 	require.True(t, dirExists(t, user4Dir))
+
+	// Check that the external URL for Grafana was correctly set.
+	require.Equal(t, userGrafanaCfg.ExternalUrl, am.alertmanagers["user4"].cfg.GrafanaExternalURL)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.

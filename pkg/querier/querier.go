@@ -516,7 +516,7 @@ func (mq multiQuerier) mergeSeriesSets(sets []storage.SeriesSet) storage.SeriesS
 	}
 
 	// partitionChunks returns set with sorted series, so it can be used by NewMergeSeriesSet
-	chunksSet := partitionChunks(chunks, mq.minT, mq.maxT)
+	chunksSet := partitionChunks(chunks)
 
 	if len(otherSets) == 0 {
 		return chunksSet

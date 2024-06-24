@@ -29,6 +29,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+## 5.4.0-rc.0
+
 * [FEATURE] Add support for a dedicated query path for the ruler. This allows for the isolation of ruler and user query paths. Enable it via `ruler.remoteEvaluationDedicatedQueryPath: true`. #7964
 * [CHANGE] Fine-tuned `terminationGracePeriodSeconds` for the following components: #7361 #7364
   * Alertmanager: changed from `60` to `900`
@@ -52,6 +54,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add a volumeClaimTemplates section to the `chunks-cache`, `index-cache`, `metadata-cache`, and `results-cache` components. #8016
 * [ENHANCEMENT] Add 'gateway.gateway.config.clientMaxBodySize' to the `gateway` to allow setting the maximum allowed size of the client request body. #7960
 * [ENHANCEMENT] Update rollout-operator to `v0.17.0`. #8399
+* [ENHANCEMENT] Omit rendering empty `subPath`, `args`, `env`, and `envFrom` in resource manifests. #7587
 * [BUGFIX] Helm: Allowed setting static NodePort for nginx gateway via `gateway.service.nodePort`. #6966
 * [BUGFIX] Helm: Expose AM configs in the `gateway` NGINX configuration. #8248
 * [BUGFIX] Helm: fix ServiceMonitor and PVC template to not show diff in ArgoCD. #8829
@@ -95,6 +98,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Metamonitoring: update dashboards to drop unsupported `step` parameter in targets. #7157
 * [BUGFIX] Recording rules: drop rules for metrics removed in 2.0: `cortex_memcache_request_duration_seconds` and `cortex_cache_request_duration_seconds`. #7514
 * [BUGFIX] Store-gateway: setting "resources.requests.memory" with a quantity that used power-of-ten SI suffix, caused an error. #7506
+* [BUGFIX] Do nor render empty fields for `subPath`, `args`, `env` & `envFrom` #7587
 
 ## 5.2.3
 

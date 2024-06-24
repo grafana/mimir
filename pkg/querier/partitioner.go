@@ -6,7 +6,6 @@
 package querier
 
 import (
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -17,7 +16,7 @@ import (
 )
 
 // Series in the returned set are sorted alphabetically by labels.
-func partitionChunks(chunks []chunk.Chunk, mint, maxt int64) storage.SeriesSet {
+func partitionChunks(chunks []chunk.Chunk) storage.SeriesSet {
 	chunksBySeries := map[string][]chunk.Chunk{}
 	var buf [1024]byte
 	for _, c := range chunks {
@@ -30,8 +29,6 @@ func partitionChunks(chunks []chunk.Chunk, mint, maxt int64) storage.SeriesSet {
 		series = append(series, &chunkSeries{
 			labels: chunksBySeries[i][0].Metric,
 			chunks: chunksBySeries[i],
-			mint:   mint,
-			maxt:   maxt,
 		})
 	}
 
@@ -40,9 +37,8 @@ func partitionChunks(chunks []chunk.Chunk, mint, maxt int64) storage.SeriesSet {
 
 // Implements SeriesWithChunks
 type chunkSeries struct {
-	labels     labels.Labels
-	chunks     []chunk.Chunk
-	mint, maxt int64
+	labels labels.Labels
+	chunks []chunk.Chunk
 }
 
 func (s *chunkSeries) Labels() labels.Labels {
@@ -51,7 +47,7 @@ func (s *chunkSeries) Labels() labels.Labels {
 
 // Iterator returns a new iterator of the data of the series.
 func (s *chunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
-	return batch.NewChunkMergeIterator(it, s.chunks, model.Time(s.mint), model.Time(s.maxt))
+	return batch.NewChunkMergeIterator(it, s.chunks)
 }
 
 // Chunks implements SeriesWithChunks interface.
