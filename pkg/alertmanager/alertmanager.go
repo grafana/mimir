@@ -402,7 +402,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		return d + waitFunc()
 	}
 
-	integrationsMap, err := am.buildIntegrationsMap(cfg.Global, conf.Receivers, tmpl)
+	integrationsMap, err := am.buildIntegrationsMap(cfg.Global, conf.Receivers, tmpl, templateFiles)
 	if err != nil {
 		return err
 	}
@@ -500,7 +500,8 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*definition.PostableApiReceiver, tmpl *template.Template) (map[string][]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*definition.PostableApiReceiver, tmpl *template.Template, templateFiles []string) (map[string][]*nfstatus.Integration, error) {
+	var gTmpl *template.Template
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
@@ -523,7 +524,17 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 		var integrations []*nfstatus.Integration
 		var err error
 		if rcv.Type() == definition.GrafanaReceiverType {
-			integrations, err = buildGrafanaReceiverIntegrations(gCfg, externalURL, rcv, tmpl, am.logger)
+			// Create the Grafana template struct if it has not already been created.
+			if gTmpl == nil {
+				gTmpl, err = template.FromGlobs(templateFiles, WithCustomFunctions(am.cfg.UserID))
+				if err != nil {
+					return nil, err
+				}
+				if err := gTmpl.Parse(strings.NewReader(alertingTemplates.DefaultTemplateString)); err != nil {
+					return nil, err
+				}
+			}
+			integrations, err = buildGrafanaReceiverIntegrations(gCfg, externalURL, rcv, gTmpl, am.logger)
 		} else {
 			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, nw)
 		}
