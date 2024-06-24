@@ -3661,7 +3661,7 @@ bucket_store:
   # another store-gateway. 0 means no timeout and all queries will wait
   # indefinitely for their turn.
   # CLI flag: -blocks-storage.bucket-store.max-concurrent-queue-timeout
-  [max_concurrent_queue_timeout: <duration> | default = 0s]
+  [max_concurrent_queue_timeout: <duration> | default = 5s]
 
   # (advanced) Maximum number of concurrent tenants synching blocks.
   # CLI flag: -blocks-storage.bucket-store.tenant-sync-concurrency
