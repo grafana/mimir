@@ -257,28 +257,19 @@ func (r *LazyBinaryReader) EagerLoad(ctx context.Context) {
 	loaded.inUse.Done()
 }
 
-// getOrLoadReader ensures the underlying binary index-header reader has been successfully loaded.
-// Returns the reader, wait group that should be used to signal that usage of reader is finished, and an error on failure.
-// Must be called without lock.
-func (r *LazyBinaryReader) getOrLoadReader(ctx context.Context) loadedReader {
-	loadedR := r.getReader(ctx)
-	if loadedR.reader != nil {
-		return loadedR
-	}
-
-	return loadedR
-}
-
 func (r *LazyBinaryReader) waitLoadedReader(ctx context.Context, loadDone chan struct{}) loadedReader {
 	select {
 	case <-loadDone:
-		return r.getReader(ctx)
+		return r.getOrLoadReader(ctx)
 	case <-ctx.Done():
 		return loadedReader{err: context.Cause(ctx)}
 	}
 }
 
-func (r *LazyBinaryReader) getReader(ctx context.Context) loadedReader {
+// getOrLoadReader ensures the underlying binary index-header reader has been successfully loaded.
+// Returns the reader, wait group that should be used to signal that usage of reader is finished, and an error on failure.
+// Must be called without lock.
+func (r *LazyBinaryReader) getOrLoadReader(ctx context.Context) loadedReader {
 	readerReq := readerRequest{response: make(chan loadedReader)}
 	select {
 	case r.loadedReader <- readerReq:
