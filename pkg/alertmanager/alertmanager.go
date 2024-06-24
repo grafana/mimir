@@ -533,6 +533,8 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 				if err := gTmpl.Parse(strings.NewReader(alertingTemplates.DefaultTemplateString)); err != nil {
 					return nil, err
 				}
+				// TODO: use Grafana URL.
+				gTmpl.ExternalURL = tmpl.ExternalURL
 			}
 			integrations, err = buildGrafanaReceiverIntegrations(gCfg, externalURL, rcv, gTmpl, am.logger)
 		} else {
