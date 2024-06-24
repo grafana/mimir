@@ -4,7 +4,7 @@ keywords:
   - send metrics
   - native histogram
   - prometheus
-  - grafana agent
+  - grafana alloy
   - instrumentation
 menuTitle: Native histograms
 title: Send native histograms to Mimir
@@ -147,9 +147,9 @@ Use the latest version of Prometheus or at least version 2.47.
        send_native_histograms: true
    ```
 
-## Scrape and send native histograms with Grafana Agent
+## Scrape and send native histograms with Grafana Alloy
 
-Use the latest version of the Grafana Agent in [Flow mode](/docs/agent/latest/flow/) (static mode support is coming soon).
+Use the latest version of [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_VERSION>).
 
 1. To enable scraping native histograms you need to enable the argument `enable_protobuf_negotiation` in the `prometheus.scrape` component:
 
@@ -159,7 +159,7 @@ Use the latest version of the Grafana Agent in [Flow mode](/docs/agent/latest/fl
    }
    ```
 
-1. The above flag will make Prometheus detect and scrape native histograms, but ignores classic histogram version of those metrics that have native histogram defined as well. Classic histograms without native histogram definitions are not effected. To keep scraping the classic histogram version of native histogram metrics you need to set `scrape_classic_histograms` to `true` in your scrape jobs, for example:
+1. This flag makes Prometheus detect and scrape native histograms, but ignores classic histogram version of those metrics that have native histogram defined as well. Classic histograms without native histogram definitions are not affected. To keep scraping the classic histogram version of native histogram metrics, you need to set `scrape_classic_histograms` to `true` in your scrape jobs. For example:
 
    ```
    prometheus.scrape "myapp" {
@@ -204,13 +204,19 @@ Use the latest version of the Grafana Agent in [Flow mode](/docs/agent/latest/fl
 
 ## Migrate from classic histograms
 
-It is perfectly possible to keep the custom bucket definition of a classic histogram and add native histogram buckets at the same time. This can ease the migration process, which can look like this in general:
+It is possible to keep the custom bucket definition of a classic histogram and add native histogram buckets at the same time. This can ease the migration process.
 
-1. Add native histogram definition to an existing histogram in the instrumentation.
-1. Let Prometheus or Grafana Agent scrape both classic and native histograms for metrics that have both defined.
-1. Send native histograms to remote write - if classic histogram is scraped, it is sent by default.
-1. Start modifying the recording rules, alerts, dashboards to use the new native histograms.
-1. Once everything works, remove the custom bucket definition (`Buckets`/`classicUpperBounds`) from the instrumentation. Or drop the classic histogram series with [Prometheus relabeling](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) or [Grafana Agent prometheus.relabel](/docs/agent/latest/flow/reference/components/prometheus.relabel/) at the time of scraping. Or stop scraping classic histogram version of metrics, however note that that will apply to all metrics of a scrape target.
+To migrate from classic histograms, complete these steps.
+
+1. Add the native histogram definition to an existing histogram in the instrumentation.
+1. Let Prometheus or Grafana Alloy scrape both classic and native histograms for metrics that have both defined.
+1. Send native histograms to remote write. Native histograms are sent to remote write by default if classic histograms are scraped.
+1. Start modifying the recording rules, alerts, and dashboards to use native histograms.
+1. After completing the migration to native histograms, choose one of the following ways to stop collecting classic histograms.
+
+    - Remove the custom bucket definition, `Buckets`/`classicUpperBounds`, from the instrumentation.
+    - Drop the classic histogram series with [Prometheus relabeling](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) or [Grafana Alloy prometheus.relabel](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus.relabel) at the time of scraping. 
+    - Stop scraping classic histogram version of metrics. This option applies to all metrics of a scrape target.
 
 Code examples with both classic and native histogram defined for the same metric:
 
@@ -290,13 +296,13 @@ Native histogram samples have three different kind of buckets, for any observed 
 
   where the `schema` is chosen as above.
 
-## Limiting the number of buckets
+## Limit the number of buckets
 
 The server scraping or receiving native histograms over remote write may limit the number of native histogram buckets it accepts. The server may reject or downscale (reduce resolution and merge adjacent buckets). Even if that wasn't the case, storing and emitting potentially unlimited number of buckets isn't practical.
 
 The instrumentation libraries of Prometheus have automation to keep the number of buckets down, provided that the maximum bucket number option is used, such as `NativeHistogramMaxBucketNumber` in Go.
 
-Once the set maximum is exceeded, the following strategy is enacted:
+After the set maximum is exceeded, the following strategy is enacted:
 
 1. First, if the last reset (or the creation) of the histogram is at least the minimum reset duration ago, then the whole histogram is reset to its initial state (including classic buckets). This only works if the minimum reset duration was set (`NativeHistogramMinResetDuration` in Go).
 
