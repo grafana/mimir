@@ -100,7 +100,7 @@ type Config struct {
 	PersisterConfig   PersisterConfig
 
 	GrafanaAlertmanagerCompatibility bool
-	GrafanaExternalURL               string
+	GrafanaExternalURL               *url.URL
 }
 
 // An Alertmanager manages the alerts for one user.
@@ -402,7 +402,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(userID, am.cfg.Limits))
 
-	integrationsMap, err := buildIntegrationsMap(userID, conf.Receivers, tmpl, templateFiles, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
+	integrationsMap, err := am.buildIntegrationsMap(userID, conf.Receivers, tmpl, templateFiles, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
 		if am.cfg.Limits != nil {
 			rl := &tenantRateLimits{
 				tenant:      userID,
@@ -511,7 +511,7 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func buildIntegrationsMap(userID string, nc []*definition.PostableApiReceiver, tmpl *template.Template, templateFiles []string, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(userID string, nc []*definition.PostableApiReceiver, tmpl *template.Template, templateFiles []string, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]*nfstatus.Integration, error) {
 	var gTmpl *template.Template
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
@@ -527,8 +527,7 @@ func buildIntegrationsMap(userID string, nc []*definition.PostableApiReceiver, t
 				if err := gTmpl.Parse(strings.NewReader(alertingTemplates.DefaultTemplateString)); err != nil {
 					return nil, err
 				}
-				// TODO: use Grafana URL.
-				gTmpl.ExternalURL = tmpl.ExternalURL
+				gTmpl.ExternalURL = am.cfg.GrafanaExternalURL
 			}
 			integrations, err = buildGrafanaReceiverIntegrations(rcv, gTmpl, logger)
 		} else {

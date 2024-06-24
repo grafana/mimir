@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -648,7 +649,13 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertC
 			continue
 		}
 
-		if err := am.setConfig(cfg, cfgs.Grafana.ExternalUrl); err != nil {
+		grafanaURL, err := url.Parse(cfgs.Grafana.ExternalUrl)
+		if err != nil {
+			level.Warn(am.logger).Log("msg", "error parsing external url for grafana, using empty url", "err", err)
+			grafanaURL = &url.URL{}
+		}
+
+		if err := am.setConfig(cfg, grafanaURL); err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error applying config", "err", err)
 			continue
@@ -717,7 +724,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
-func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc, grafanaURL string) error {
+func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc, grafanaURL *url.URL) error {
 	var userAmConfig *definition.PostableApiAlertingConfig
 	var err error
 	var hasTemplateChanges bool
@@ -828,7 +835,7 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
-func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, rawCfg string, grafanaURL string) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, rawCfg string, grafanaURL *url.URL) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
 	tenantDir := am.getTenantDirectory(userID)
@@ -975,7 +982,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 
 	// Calling setConfig with an empty configuration will use the fallback config.
 	// We're not using Grafana Alertmanager configuration, so we pass an empty Grafana URL.
-	err = am.setConfig(cfgDesc, "")
+	err = am.setConfig(cfgDesc, &url.URL{})
 	if err != nil {
 		return nil, err
 	}
