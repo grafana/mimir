@@ -3301,7 +3301,6 @@ gateway:
           fastcgi_temp_path     /tmp/fastcgi_temp;
           uwsgi_temp_path       /tmp/uwsgi_temp;
           scgi_temp_path        /tmp/scgi_temp;
-        
           {{- if .Values.gateway.nginx.config.clientMaxBodySize }}
           client_max_body_size {{ .Values.gateway.nginx.config.clientMaxBodySize }};
           {{- end }}
