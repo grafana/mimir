@@ -378,7 +378,10 @@ func (r *LazyBinaryReader) controlLoop() {
 			}
 
 			// Wait until all users finished using current reader.
-			loaded.inUse.Wait()
+			if err := waitWaitGroup(loaded.inUse, 30*time.Second); err != nil {
+				unloadPromise.response <- fmt.Errorf("waiting for active readers: %w", err)
+				continue
+			}
 
 			r.metrics.unloadCount.Inc()
 			if err := loaded.reader.Close(); err != nil {
@@ -391,6 +394,20 @@ func (r *LazyBinaryReader) controlLoop() {
 			r.usedAt.Store(0)
 			unloadPromise.response <- nil
 		}
+	}
+}
+
+func waitWaitGroup(wg *sync.WaitGroup, timeout time.Duration) error {
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-time.After(timeout):
+		return fmt.Errorf("timed out")
 	}
 }
 
