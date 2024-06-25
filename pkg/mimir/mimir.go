@@ -121,7 +121,7 @@ type Config struct {
 	LimitsConfig     validation.Limits               `yaml:"limits"`
 	Worker           querier_worker.Config           `yaml:"frontend_worker"`
 	Frontend         frontend.CombinedFrontendConfig `yaml:"frontend"`
-	IngestStorage    ingest.Config                   `yaml:"ingest_storage" doc:"hidden"`
+	IngestStorage    ingest.Config                   `yaml:"ingest_storage"`
 	BlocksStorage    tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
 	Compactor        compactor.Config                `yaml:"compactor"`
 	StoreGateway     storegateway.Config             `yaml:"store_gateway"`

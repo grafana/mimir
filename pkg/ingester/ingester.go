@@ -176,7 +176,7 @@ type requestWithUsersAndCallback struct {
 // Config for an Ingester.
 type Config struct {
 	IngesterRing          RingConfig          `yaml:"ring"`
-	IngesterPartitionRing PartitionRingConfig `yaml:"partition_ring" category:"experimental" doc:"hidden"`
+	IngesterPartitionRing PartitionRingConfig `yaml:"partition_ring" category:"experimental"`
 
 	// Config for metadata purging.
 	MetadataRetainPeriod time.Duration `yaml:"metadata_retain_period" category:"advanced"`

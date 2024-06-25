@@ -356,7 +356,7 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiAlertingConfig, rawCfg string) error {
+func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, rawCfg string) error {
 	templateFiles := make([]string, len(conf.Templates))
 	for i, t := range conf.Templates {
 		templateFilepath, err := safeTemplateFilepath(filepath.Join(am.cfg.TenantDataDir, templatesDir), t)
@@ -367,7 +367,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 		templateFiles[i] = templateFilepath
 	}
 
-	tmpl, err := template.FromGlobs(templateFiles, WithCustomFunctions(userID))
+	tmpl, err := template.FromGlobs(templateFiles, WithCustomFunctions(am.cfg.UserID))
 	if err != nil {
 		return err
 	}
@@ -397,21 +397,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *definition.PostableApiA
 		return d + waitFunc()
 	}
 
-	// Create a firewall binded to the per-tenant config.
-	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(userID, am.cfg.Limits))
-
-	integrationsMap, err := buildIntegrationsMap(conf.Receivers, tmpl, firewallDialer, am.logger, func(integrationName string, notifier notify.Notifier) notify.Notifier {
-		if am.cfg.Limits != nil {
-			rl := &tenantRateLimits{
-				tenant:      userID,
-				limits:      am.cfg.Limits,
-				integration: integrationName,
-			}
-
-			return newRateLimitedNotifier(notifier, rl, 10*time.Second, am.rateLimitedNotifications.WithLabelValues(integrationName))
-		}
-		return notifier
-	})
+	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpl)
 	if err != nil {
 		return err
 	}
@@ -509,15 +495,32 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.Template, firewallDialer *util_net.FirewallDialer, logger log.Logger, notifierWrapper func(string, notify.Notifier) notify.Notifier) (map[string][]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.Template) (map[string][]*nfstatus.Integration, error) {
+	// Create a firewall binded to the per-tenant config.
+	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
+
+	// Create a function that wraps a notifier with rate limiting.
+	nw := func(integrationName string, notifier notify.Notifier) notify.Notifier {
+		if am.cfg.Limits != nil {
+			rl := &tenantRateLimits{
+				tenant:      am.cfg.UserID,
+				limits:      am.cfg.Limits,
+				integration: integrationName,
+			}
+
+			return newRateLimitedNotifier(notifier, rl, 10*time.Second, am.rateLimitedNotifications.WithLabelValues(integrationName))
+		}
+		return notifier
+	}
+
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
 		var integrations []*nfstatus.Integration
 		var err error
 		if rcv.Type() == definition.GrafanaReceiverType {
-			integrations, err = buildGrafanaReceiverIntegrations(rcv, tmpl, logger)
+			integrations, err = buildGrafanaReceiverIntegrations(rcv, tmpl, am.logger)
 		} else {
-			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, logger, notifierWrapper)
+			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, nw)
 		}
 		if err != nil {
 			return nil, err
