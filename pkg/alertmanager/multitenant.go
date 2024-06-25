@@ -655,7 +655,11 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertC
 			grafanaURL = &url.URL{}
 		}
 
-		if err := am.setConfig(cfg, grafanaURL); err != nil {
+		c := amConfig{
+			AlertConfigDesc: cfg,
+			grafanaURL:      grafanaURL,
+		}
+		if err := am.setConfig(c); err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error applying config", "err", err)
 			continue
@@ -722,9 +726,14 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	return cfg, nil
 }
 
+type amConfig struct {
+	alertspb.AlertConfigDesc
+	grafanaURL *url.URL
+}
+
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
-func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc, grafanaURL *url.URL) error {
+func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 	var userAmConfig *definition.PostableApiAlertingConfig
 	var err error
 	var hasTemplateChanges bool
@@ -736,7 +745,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc, grafa
 	// which is correct, but Mimir uses config.Load to validate both API requests and tenant
 	// configurations. This means metrics from API requests are confused with metrics from
 	// tenant configurations. To avoid this confusion, we use a different origin.
-	validateMatchersInConfigDesc(am.logger, "tenant", cfg)
+	validateMatchersInConfigDesc(am.logger, "tenant", cfg.AlertConfigDesc)
 
 	// List existing files to keep track of the ones to be removed
 	if oldTemplateFiles, err := os.ReadDir(userTemplateDir); err == nil {
@@ -813,7 +822,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc, grafa
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
 		level.Debug(am.logger).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
-		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, rawCfg, grafanaURL)
+		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, rawCfg, cfg.grafanaURL)
 		if err != nil {
 			return err
 		}
@@ -821,13 +830,13 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc, grafa
 	} else if am.cfgs[cfg.User].RawConfig != cfg.RawConfig || hasTemplateChanges {
 		level.Info(am.logger).Log("msg", "updating new per-tenant alertmanager", "user", cfg.User)
 		// If the config changed, apply the new one.
-		err := existing.ApplyConfig(userAmConfig, rawCfg, grafanaURL)
+		err := existing.ApplyConfig(userAmConfig, rawCfg, cfg.grafanaURL)
 		if err != nil {
 			return fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
 		}
 	}
 
-	am.cfgs[cfg.User] = cfg
+	am.cfgs[cfg.User] = cfg.AlertConfigDesc
 	return nil
 }
 
@@ -981,7 +990,11 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 
 	// Calling setConfig with an empty configuration will use the fallback config.
 	// We're not using Grafana Alertmanager configuration, so we pass an empty Grafana URL.
-	err = am.setConfig(cfgDesc, &url.URL{})
+	amConfig := amConfig{
+		AlertConfigDesc: cfgDesc,
+		grafanaURL:      &url.URL{},
+	}
+	err = am.setConfig(amConfig)
 	if err != nil {
 		return nil, err
 	}
