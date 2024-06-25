@@ -249,7 +249,7 @@ func (q *RequestQueue) running(ctx context.Context) error {
 		case <-forgetDisconnectedQueriersTicker.C:
 			q.submitForgetDisconnectedQueriers(ctx)
 		case <-inflightRequestsTicker.C:
-			q.submitObserveInflightRequests()
+			q.QueryComponentUtilization.ObserveInflightRequests()
 		case <-ctx.Done():
 			return nil
 		}
@@ -266,8 +266,6 @@ func (q *RequestQueue) dispatcherLoop() {
 		case <-q.stopRequested:
 			// Nothing much to do here - fall through to the stop logic below to see if we can stop immediately.
 			stopping = true
-		case <-q.observeInflightRequests:
-			q.processObserveInflightRequests()
 		case querierOp := <-q.querierOperations:
 			// Need to attempt to dispatch queries only if querier operation results in a resharding
 			needToDispatchQueries = q.processQuerierOperation(querierOp)
@@ -560,17 +558,6 @@ func (q *RequestQueue) processUnregisterQuerierConnection(querierID QuerierID) (
 
 func (q *RequestQueue) processForgetDisconnectedQueriers() (resharded bool) {
 	return q.queueBroker.forgetDisconnectedQueriers(time.Now())
-}
-
-func (q *RequestQueue) submitObserveInflightRequests() {
-	select {
-	case q.observeInflightRequests <- struct{}{}:
-	case <-q.stopCompleted:
-	}
-}
-
-func (q *RequestQueue) processObserveInflightRequests() {
-	q.QueryComponentUtilization.ObserveInflightRequests()
 }
 
 func (q *RequestQueue) SubmitRequestSent(req *SchedulerRequest) {

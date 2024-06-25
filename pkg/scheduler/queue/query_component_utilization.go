@@ -4,6 +4,7 @@ package queue
 
 import (
 	"math"
+	"sync"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -52,6 +53,7 @@ type QueryComponentUtilization struct {
 	// for queries to the less-loaded query component when the query queue becomes backlogged.
 	targetReservedCapacity float64
 
+	inflightRequestsMu           sync.RWMutex
 	ingesterInflightRequests     int
 	storeGatewayInflightRequests int
 	querierInflightRequestsTotal int
@@ -135,6 +137,8 @@ func (qcl *QueryComponentUtilization) ExceedsThresholdForComponentName(
 	}
 
 	isIngester, isStoreGateway := queryComponentFlags(name)
+	qcl.inflightRequestsMu.RLock()
+	defer qcl.inflightRequestsMu.RUnlock()
 	if isIngester {
 		if connectedWorkers-(qcl.ingesterInflightRequests) <= minReservedConnections {
 			return true, Ingester
@@ -161,6 +165,8 @@ func (qcl *QueryComponentUtilization) DecrementForComponentName(expectedQueryCom
 func (qcl *QueryComponentUtilization) updateForComponentName(expectedQueryComponent string, increment int) {
 	isIngester, isStoreGateway := queryComponentFlags(expectedQueryComponent)
 
+	qcl.inflightRequestsMu.Lock()
+	defer qcl.inflightRequestsMu.Unlock()
 	if isIngester {
 		qcl.ingesterInflightRequests += increment
 	}
@@ -171,12 +177,16 @@ func (qcl *QueryComponentUtilization) updateForComponentName(expectedQueryCompon
 }
 
 func (qcl *QueryComponentUtilization) ObserveInflightRequests() {
+	qcl.inflightRequestsMu.RLock()
+	defer qcl.inflightRequestsMu.RUnlock()
 	qcl.querierInflightRequestsMetric.WithLabelValues(string(Ingester)).Observe(float64(qcl.ingesterInflightRequests))
 	qcl.querierInflightRequestsMetric.WithLabelValues(string(StoreGateway)).Observe(float64(qcl.storeGatewayInflightRequests))
 }
 
 // GetForComponent is a test-only util
 func (qcl *QueryComponentUtilization) GetForComponent(component QueryComponent) int {
+	qcl.inflightRequestsMu.RLock()
+	defer qcl.inflightRequestsMu.RUnlock()
 	switch component {
 	case Ingester:
 		return qcl.ingesterInflightRequests
