@@ -357,7 +357,7 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, rawCfg string, grafanaURL *url.URL) error {
+func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, rawCfg string, tmplExternalURL *url.URL) error {
 	templateFiles := make([]string, len(conf.Templates))
 	for i, t := range conf.Templates {
 		templateFilepath, err := safeTemplateFilepath(filepath.Join(am.cfg.TenantDataDir, templatesDir), t)
@@ -372,7 +372,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 	if err != nil {
 		return err
 	}
-	tmpl.ExternalURL = am.cfg.ExternalURL
+	tmpl.ExternalURL = tmplExternalURL
 
 	cfg := definition.GrafanaToUpstreamConfig(conf)
 	am.api.Update(&cfg, func(_ model.LabelSet) {})
@@ -398,7 +398,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		return d + waitFunc()
 	}
 
-	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpl, templateFiles, grafanaURL)
+	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpl, templateFiles, tmplExternalURL)
 	if err != nil {
 		return err
 	}
