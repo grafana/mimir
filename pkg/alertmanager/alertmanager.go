@@ -398,7 +398,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		return d + waitFunc()
 	}
 
-	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpl, templateFiles)
+	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpl)
 	if err != nil {
 		return err
 	}
@@ -496,7 +496,7 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.Template, templateFiles []string) (map[string][]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.Template) (map[string][]*nfstatus.Integration, error) {
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
@@ -514,24 +514,19 @@ func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceive
 		return notifier
 	}
 
-	var gTmpl *template.Template
+	var grafanaTemplatesParsed bool
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
 		var integrations []*nfstatus.Integration
 		var err error
 		if rcv.Type() == definition.GrafanaReceiverType {
-			// Create the Grafana template struct if it has not already been created.
-			if gTmpl == nil {
-				gTmpl, err = template.FromGlobs(templateFiles, WithCustomFunctions(am.cfg.UserID))
-				if err != nil {
+			if !grafanaTemplatesParsed {
+				if err := tmpl.Parse(strings.NewReader(alertingTemplates.DefaultTemplateString)); err != nil {
 					return nil, err
 				}
-				if err := gTmpl.Parse(strings.NewReader(alertingTemplates.DefaultTemplateString)); err != nil {
-					return nil, err
-				}
-				gTmpl.ExternalURL = tmpl.ExternalURL
+				grafanaTemplatesParsed = true
 			}
-			integrations, err = buildGrafanaReceiverIntegrations(rcv, gTmpl, am.logger)
+			integrations, err = buildGrafanaReceiverIntegrations(rcv, tmpl, am.logger)
 		} else {
 			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, nw)
 		}
