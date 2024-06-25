@@ -43,6 +43,10 @@
 ### Jsonnet
 
 * [FEATURE] Add support for automatically deleting compactor, store-gateway and read-write mode backend PVCs when the corresponding StatefulSet is scaled down. #8382
+* [ENHANCEMENT] Added the following config options to set the number of partition ingester replicas when migrating to experimental ingest storage. #8517
+  * `ingest_storage_migration_partition_ingester_zone_a_replicas`
+  * `ingest_storage_migration_partition_ingester_zone_b_replicas`
+  * `ingest_storage_migration_partition_ingester_zone_c_replicas`
 
 ### Mimirtool
 
