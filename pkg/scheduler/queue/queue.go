@@ -133,8 +133,6 @@ type RequestQueue struct {
 	stopRequested chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
 	stopCompleted chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
 
-	observeInflightRequests chan struct{}
-
 	requestsToEnqueue             chan requestToEnqueue
 	requestsSent                  chan *SchedulerRequest
 	requestsCompleted             chan *SchedulerRequest
@@ -203,8 +201,6 @@ func NewRequestQueue(
 		// channels must not be buffered so that we can detect when dispatcherLoop() has finished.
 		stopRequested: make(chan struct{}),
 		stopCompleted: make(chan struct{}),
-
-		observeInflightRequests: make(chan struct{}),
 
 		requestsToEnqueue:             make(chan requestToEnqueue),
 		requestsSent:                  make(chan *SchedulerRequest),

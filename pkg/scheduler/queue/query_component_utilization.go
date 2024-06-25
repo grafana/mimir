@@ -156,6 +156,7 @@ func (qcl *QueryComponentUtilization) ExceedsThresholdForComponentName(
 	return false, ""
 }
 
+// MarkRequestSent is called when a request is sent to a querier
 func (qcl *QueryComponentUtilization) MarkRequestSent(req *SchedulerRequest) {
 	if req != nil {
 		qcl.inflightRequestsMu.Lock()
@@ -166,6 +167,7 @@ func (qcl *QueryComponentUtilization) MarkRequestSent(req *SchedulerRequest) {
 	}
 }
 
+// MarkRequestCompleted is called when a querier completes or fails a request
 func (qcl *QueryComponentUtilization) MarkRequestCompleted(req *SchedulerRequest) {
 	if req != nil {
 		qcl.inflightRequestsMu.Lock()
@@ -179,12 +181,10 @@ func (qcl *QueryComponentUtilization) MarkRequestCompleted(req *SchedulerRequest
 	}
 }
 
-// incrementForComponentName is called when a request is sent to a querier
 func (qcl *QueryComponentUtilization) incrementForComponentName(expectedQueryComponent string) {
 	qcl.updateForComponentName(expectedQueryComponent, 1)
 }
 
-// decrementForComponentName is called when a querier completes or fails a request
 func (qcl *QueryComponentUtilization) decrementForComponentName(expectedQueryComponent string) {
 	qcl.updateForComponentName(expectedQueryComponent, -1)
 }
