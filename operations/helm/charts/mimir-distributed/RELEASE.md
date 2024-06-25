@@ -180,7 +180,7 @@ The [release process](https://github.com/grafana/mimir/blob/main/.github/workflo
 
      You might have to wait a few minutes.
 
-   - In a browser, go to [https://grafana.com/docs/helm-charts/mimir-distributed](https://grafana.com/docs/helm-charts/mimir-distributed) and refresh the page.
+   - For stable releases (i.e. excluding release candidates): In a browser, go to the [helm chart docs versions](https://grafana.com/docs/versions/?project=/docs/helm-charts/mimir-distributed/) and verify that the new version is selectable. This might take up to 15 minutes.
 
 1. After the release tag in Git is created, merge the branch back into `main` by following the same procedure as for Mimir releases: [Merging release branch into main](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main).
 
