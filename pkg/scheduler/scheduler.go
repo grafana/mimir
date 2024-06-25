@@ -281,8 +281,9 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 		case schedulerpb.CANCEL:
 			requestKey := queue.NewSchedulerRequestKey(frontendAddress, msg.QueryID)
 			schedulerReq := s.cancelRequestAndRemoveFromPending(requestKey, "frontend cancelled query")
-			// we may not have reached SubmitRequestSent for this query, but RequestQueue will handle this case
-			s.requestQueue.QueryComponentUtilization.MarkRequestSent(schedulerReq)
+			// we may not have reached MarkRequestSent for this query before receiving the cancel,
+			// but RequestQueue will just no-op if the request was not yet tracked in the inflightRequests map.
+			s.requestQueue.QueryComponentUtilization.MarkRequestCompleted(schedulerReq)
 			resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 
 		default:
