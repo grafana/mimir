@@ -689,7 +689,7 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertC
 // It returns the final configuration and external URL the Alertmanager will use.
 func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (alertspb.AlertConfigDesc, *url.URL, error) {
 	var cfg alertspb.AlertConfigDesc
-	externalURL := &url.URL{}
+	var externalURL *url.URL
 	var err error
 
 	switch {
