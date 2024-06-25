@@ -1250,8 +1250,8 @@ push_circuit_breaker:
   [initial_delay: <duration> | default = 0s]
 
   # (experimental) The maximum duration of an ingester's request before it
-  # triggers a circuit breaker. This configuration is used for circuit breakers
-  # only, and its timeouts aren't reported as errors.
+  # triggers a timeout. This configuration is used for circuit breakers only,
+  # and its timeouts aren't reported as errors.
   # CLI flag: -ingester.push-circuit-breaker.request-timeout
   [request_timeout: <duration> | default = 2s]
 
@@ -1287,8 +1287,8 @@ read_circuit_breaker:
   [initial_delay: <duration> | default = 0s]
 
   # (experimental) The maximum duration of an ingester's request before it
-  # triggers a circuit breaker. This configuration is used for circuit breakers
-  # only, and its timeouts aren't reported as errors.
+  # triggers a timeout. This configuration is used for circuit breakers only,
+  # and its timeouts aren't reported as errors.
   # CLI flag: -ingester.read-circuit-breaker.request-timeout
   [request_timeout: <duration> | default = 30s]
 ```
@@ -3661,7 +3661,7 @@ bucket_store:
   # another store-gateway. 0 means no timeout and all queries will wait
   # indefinitely for their turn.
   # CLI flag: -blocks-storage.bucket-store.max-concurrent-queue-timeout
-  [max_concurrent_queue_timeout: <duration> | default = 0s]
+  [max_concurrent_queue_timeout: <duration> | default = 5s]
 
   # (advanced) Maximum number of concurrent tenants synching blocks.
   # CLI flag: -blocks-storage.bucket-store.tenant-sync-concurrency
