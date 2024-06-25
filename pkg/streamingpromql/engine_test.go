@@ -420,7 +420,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 			},
 		},
 		"mixed series with a float following a histogram causing lookback": {
-			// This is unexpected, but consistent behavour between the engines
+			// This is unexpected, but consistent behavior between the engines
 			// See: https://github.com/prometheus/prometheus/issues/14172
 			expr: "mixed_metric_histogram_first[2m]",
 			ts:   baseT.Add(2 * time.Minute),
