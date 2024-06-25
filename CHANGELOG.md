@@ -47,6 +47,7 @@
   * `ingest_storage_migration_partition_ingester_zone_a_replicas`
   * `ingest_storage_migration_partition_ingester_zone_b_replicas`
   * `ingest_storage_migration_partition_ingester_zone_c_replicas`
+* [ENHANCEMENT] Distributor: increase `-distributor.remote-timeout` when the experimental ingest storage is enabled. #8518
 
 ### Mimirtool
 

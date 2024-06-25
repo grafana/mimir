@@ -139,11 +139,11 @@
   },
 
   distributor_args+::
-    (if !$._config.ingest_storage_migration_write_to_partition_ingesters_enabled then {} else writeToPartitionIngestersArgs) +
+    (if !$._config.ingest_storage_migration_write_to_partition_ingesters_enabled then {} else (writeToPartitionIngestersArgs + $.ingest_storage_distributor_args)) +
     (if !$._config.ingest_storage_migration_write_to_classic_ingesters_enabled then {} else writeToClassicIngestersArgs),
 
   ruler_args+::
-    (if !$._config.ingest_storage_migration_write_to_partition_ingesters_enabled then {} else writeToPartitionIngestersArgs) +
+    (if !$._config.ingest_storage_migration_write_to_partition_ingesters_enabled then {} else (writeToPartitionIngestersArgs + $.ingest_storage_ruler_args)) +
     (if !$._config.ingest_storage_migration_write_to_classic_ingesters_enabled then {} else writeToClassicIngestersArgs),
 
   //

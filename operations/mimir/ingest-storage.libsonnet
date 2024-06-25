@@ -68,10 +68,22 @@
   //
 
   distributor_args+:: if !$._config.ingest_storage_enabled then {} else
-    $.ingest_storage_kafka_producer_args,
+    $.ingest_storage_kafka_producer_args +
+    $.ingest_storage_distributor_args,
 
   ruler_args+:: if !$._config.ingest_storage_enabled then {} else
-    $.ingest_storage_kafka_producer_args,
+    $.ingest_storage_kafka_producer_args +
+    $.ingest_storage_ruler_args,
+
+  ingest_storage_distributor_args+:: {
+    // Increase the default remote write timeout (applied to writing to Kafka too) because writing
+    // to Kafka-compatible backend may be slower than writing to ingesters.
+    'distributor.remote-timeout': '5s',
+  },
+
+  ingest_storage_ruler_args+:: {
+    // No need to increase -distributor.remote-timeout because the ruler's default is higher.
+  },
 
   ingest_storage_ingester_args+:: {
     // Disallow Push gRPC API; everything must come from ingest storage.
