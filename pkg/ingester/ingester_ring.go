@@ -28,7 +28,7 @@ const (
 
 // sharedOptionWithRingClient is a message appended to all config options that should be also
 // set on the components running the ingester ring client.
-const sharedOptionWithRingClient = " This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode."
+const sharedOptionWithRingClient = " This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode."
 
 // ErrSpreadMinimizingValidation is a sentinel error that indicates a failure
 // in the validation of spread minimizing token generation config.
