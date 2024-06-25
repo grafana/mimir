@@ -398,7 +398,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		return d + waitFunc()
 	}
 
-	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpl, templateFiles, tmplExternalURL)
+	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpl, templateFiles)
 	if err != nil {
 		return err
 	}
@@ -496,7 +496,7 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.Template, templateFiles []string, grafanaURL *url.URL) (map[string][]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.Template, templateFiles []string) (map[string][]*nfstatus.Integration, error) {
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
@@ -529,7 +529,7 @@ func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceive
 				if err := gTmpl.Parse(strings.NewReader(alertingTemplates.DefaultTemplateString)); err != nil {
 					return nil, err
 				}
-				gTmpl.ExternalURL = grafanaURL
+				gTmpl.ExternalURL = tmpl.ExternalURL
 			}
 			integrations, err = buildGrafanaReceiverIntegrations(rcv, gTmpl, am.logger)
 		} else {
