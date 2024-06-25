@@ -133,26 +133,10 @@ local filename = 'mimir-reads.json';
     .addRows($.getCommonReadsDashboardsRows(
       queryFrontendJobName=$._config.job_names.query_frontend,
       querySchedulerJobName=$._config.job_names.query_scheduler,
+      querierJobName=$._config.job_names.querier,
       queryRoutesRegex=$.queries.read_http_routes_regex,
       showQueryCacheRow=true,
     ))
-    .addRow(
-      $.row('Querier')
-      .addPanel(
-        $.timeseriesPanel('Requests / sec') +
-        $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.querier), $.queries.read_http_routes_regex])
-      )
-      .addPanel(
-        $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
-      )
-      .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_querier_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.querier), $.queries.read_http_routes_regex], ''
-        )
-      )
-    )
     .addRow(
       $.row('Ingester')
       .addPanel(
