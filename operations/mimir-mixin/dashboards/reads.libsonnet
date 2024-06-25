@@ -130,7 +130,7 @@ local filename = 'mimir-reads.json';
         )
       )
     )
-    .addRows($.getCommonReadsDashboardsRows(
+    .addRows($.commonReadsDashboardsRows(
       queryFrontendJobName=$._config.job_names.query_frontend,
       querySchedulerJobName=$._config.job_names.query_scheduler,
       querierJobName=$._config.job_names.querier,

@@ -1464,7 +1464,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   capitalize(str):: std.asciiUpper(str[0]) + str[1:],
 
-  getCommonReadsDashboardsRows(
+  commonReadsDashboardsRows(
     queryFrontendJobName,
     querySchedulerJobName,
     querierJobName,
