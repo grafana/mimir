@@ -507,7 +507,8 @@ func (tqa *tenantQuerierAssignments) addChildNode(parent, child *Node) {
 }
 
 // updateQueuingAlgorithmState should be called before attempting to dequeue, and updates inputs required by this
-// QueuingAlgorithm to dequeue the appropriate value for the given querier.
+// QueuingAlgorithm to dequeue the appropriate value for the given querier. In some test cases, it need not be called
+// before consecutive dequeues for the same querier, but in all operating cases, it should be called ahead of a dequeue.
 func (tqa *tenantQuerierAssignments) updateQueuingAlgorithmState(querierID QuerierID, tenantOrderIndex int) {
 	tqa.currentQuerier = querierID
 	tqa.tenantOrderIndex = tenantOrderIndex

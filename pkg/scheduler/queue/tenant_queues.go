@@ -36,7 +36,7 @@ type queueBroker struct {
 func newQueueBroker(
 	maxTenantQueueSize int,
 	additionalQueueDimensionsEnabled bool,
-	useIntegratedTreeQueue bool,
+	useMultiAlgoTreeQueue bool,
 	forgetDelay time.Duration,
 ) *queueBroker {
 	currentQuerier := QuerierID("")
@@ -54,7 +54,7 @@ func newQueueBroker(
 
 	var tree Tree
 	var err error
-	if useIntegratedTreeQueue {
+	if useMultiAlgoTreeQueue {
 		tree, err = NewTree(
 			tqas,               // root; QueuingAlgorithm selects tenants
 			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component

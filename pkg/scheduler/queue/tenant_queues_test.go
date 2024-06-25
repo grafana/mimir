@@ -69,7 +69,7 @@ func TestQueues_NoShuffleSharding(t *testing.T) {
 	treeTypes := buildTreeTestsStruct()
 	for _, tt := range treeTypes {
 		t.Run(tt.name, func(t *testing.T) {
-			qb := newQueueBroker(0, true, tt.useIntegratedTreeQueue, 0)
+			qb := newQueueBroker(0, true, tt.useMultiAlgoTreeQueue, 0)
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
@@ -211,7 +211,7 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	for _, tt := range treeTypes {
 		t.Run(tt.name, func(t *testing.T) {
 			maxTenantQueueSize := 100
-			qb := newQueueBroker(maxTenantQueueSize, true, tt.useIntegratedTreeQueue, 0)
+			qb := newQueueBroker(maxTenantQueueSize, true, tt.useMultiAlgoTreeQueue, 0)
 			additionalQueueDimensions := map[int][]string{
 				0: nil,
 				1: {"ingester"},
@@ -290,7 +290,7 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 	treeTypes := buildTreeTestsStruct()
 	for _, tt := range treeTypes {
 		t.Run(tt.name, func(t *testing.T) {
-			qb := newQueueBroker(0, true, tt.useIntegratedTreeQueue, 0)
+			qb := newQueueBroker(0, true, tt.useMultiAlgoTreeQueue, 0)
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
@@ -364,7 +364,7 @@ func TestQueues_QuerierDistribution(t *testing.T) {
 	treeTypes := buildTreeTestsStruct()
 	for _, tt := range treeTypes {
 		t.Run(tt.name, func(t *testing.T) {
-			qb := newQueueBroker(0, true, tt.useIntegratedTreeQueue, 0)
+			qb := newQueueBroker(0, true, tt.useMultiAlgoTreeQueue, 0)
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
@@ -444,7 +444,7 @@ func TestQueuesConsistency(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			for testName, testData := range tests {
 				t.Run(testName, func(t *testing.T) {
-					qb := newQueueBroker(0, true, tt.useIntegratedTreeQueue, testData.forgetDelay)
+					qb := newQueueBroker(0, true, tt.useMultiAlgoTreeQueue, testData.forgetDelay)
 					assert.NotNil(t, qb)
 					assert.NoError(t, isConsistent(qb))
 
@@ -500,7 +500,7 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	for _, tt := range treeTypes {
 		t.Run(tt.name, func(t *testing.T) {
 			now := time.Now()
-			qb := newQueueBroker(0, true, tt.useIntegratedTreeQueue, forgetDelay)
+			qb := newQueueBroker(0, true, tt.useMultiAlgoTreeQueue, forgetDelay)
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
@@ -603,7 +603,7 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 	for _, tt := range treeTypes {
 		t.Run(tt.name, func(t *testing.T) {
 			now := time.Now()
-			qb := newQueueBroker(0, true, tt.useIntegratedTreeQueue, forgetDelay)
+			qb := newQueueBroker(0, true, tt.useMultiAlgoTreeQueue, forgetDelay)
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 

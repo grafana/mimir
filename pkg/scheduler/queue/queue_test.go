@@ -32,12 +32,12 @@ import (
 // TODO (casie): Write tests for prioritizeQueryComponents is true
 
 func buildTreeTestsStruct() []struct {
-	name                   string
-	useIntegratedTreeQueue bool
+	name                  string
+	useMultiAlgoTreeQueue bool
 } {
 	return []struct {
-		name                   string
-		useIntegratedTreeQueue bool
+		name                  string
+		useMultiAlgoTreeQueue bool
 	}{
 		{"legacy tree queue", false},
 		{"integrated tree queue", true},
@@ -149,7 +149,7 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 					log.NewNopLogger(),
 					maxOutstandingRequestsPerTenant,
 					additionalQueueDimensionsEnabled,
-					tt.useIntegratedTreeQueue,
+					tt.useMultiAlgoTreeQueue,
 					forgetQuerierDelay,
 					promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 					promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
@@ -254,21 +254,21 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 					for _, numProducers := range []int{10, 25} {
 						b.Run(fmt.Sprintf("%v concurrent producers", numProducers), func(b *testing.B) {
 
-					// Queriers run with parallelism of 16 when query sharding is enabled.
-					for _, numConsumers := range []int{16, 160, 1600} {
-						b.Run(fmt.Sprintf("%v concurrent consumers", numConsumers), func(b *testing.B) {
-							queue, err := NewRequestQueue(
-								log.NewNopLogger(),
-								maxOutstandingRequestsPerTenant,
-								true,
-								t.useIntegratedTreeQueue,
-								forgetQuerierDelay,
-								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
-								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
-								promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-								promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
-							)
-							require.NoError(b, err)
+							// Queriers run with parallelism of 16 when query sharding is enabled.
+							for _, numConsumers := range []int{16, 160, 1600} {
+								b.Run(fmt.Sprintf("%v concurrent consumers", numConsumers), func(b *testing.B) {
+									queue, err := NewRequestQueue(
+										log.NewNopLogger(),
+										maxOutstandingRequestsPerTenant,
+										true,
+										t.useMultiAlgoTreeQueue,
+										forgetQuerierDelay,
+										promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+										promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+										promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+										promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+									)
+									require.NoError(b, err)
 
 									startSignalChan := make(chan struct{})
 									queueActorsErrGroup, ctx := errgroup.WithContext(context.Background())
@@ -441,7 +441,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 			queue, err := NewRequestQueue(
 				log.NewNopLogger(),
 				1, true,
-				tt.useIntegratedTreeQueue,
+				tt.useMultiAlgoTreeQueue,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 				promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
@@ -517,7 +517,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 			queue, err := NewRequestQueue(
 				log.NewNopLogger(),
 				1, true,
-				tt.useIntegratedTreeQueue,
+				tt.useMultiAlgoTreeQueue,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 				promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
@@ -608,7 +608,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 				log.NewNopLogger(),
 				1,
 				true,
-				tt.useIntegratedTreeQueue,
+				tt.useMultiAlgoTreeQueue,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 				promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
@@ -668,7 +668,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 				log.NewNopLogger(),
 				1,
 				true,
-				tt.useIntegratedTreeQueue,
+				tt.useMultiAlgoTreeQueue,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 				promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
@@ -704,7 +704,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 				log.NewNopLogger(),
 				1,
 				true,
-				tt.useIntegratedTreeQueue,
+				tt.useMultiAlgoTreeQueue,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 				promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
