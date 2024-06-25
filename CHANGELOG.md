@@ -172,7 +172,7 @@
 * [FEATURE] Alerts: Add `MimirIngesterStuckProcessingRecordsFromKafka` alert. #8147
 * [ENHANCEMENT] Alerts: allow configuring alerts range interval via `_config.base_alerts_range_interval_minutes`. #7591
 * [ENHANCEMENT] Dashboards: Add panels for monitoring distributor and ingester when using ingest-storage. These panels are disabled by default, but can be enabled using `show_ingest_storage_panels: true` config option. Similarly existing panels used when distributors and ingesters use gRPC for forwarding requests can be disabled by setting `show_grpc_ingestion_panels: false`. #7670 #7699
-* [ENHANCEMENT] Alerts: add the following alerts when using ingest-storage: #7699 #7702
+* [ENHANCEMENT] Alerts: add the following alerts when using ingest-storage: #7699 #7702 #7867
   * `MimirIngesterLastConsumedOffsetCommitFailed`
   * `MimirIngesterFailedToReadRecordsFromKafka`
   * `MimirIngesterKafkaFetchErrorsRateTooHigh`
