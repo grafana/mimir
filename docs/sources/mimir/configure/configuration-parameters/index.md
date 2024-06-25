@@ -1708,6 +1708,12 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.additional-query-queue-dimensions-enabled
 [additional_query_queue_dimensions_enabled: <boolean> | default = false]
 
+# (experimental) Use an experimental version of the query queue which has the
+# same behavior as the existing queue, but integrates tenant selection into the
+# tree model. (default false)
+# CLI flag: -query-scheduler.use-multi-algorithm-query-queue
+[use_multi_algorithm_query_queue: <boolean> | default = false]
+
 # (experimental) If a querier disconnects without sending notification about
 # graceful shutdown, the query-scheduler will keep the querier in the tenant's
 # shard until the forget delay has passed. This feature is useful to reduce the

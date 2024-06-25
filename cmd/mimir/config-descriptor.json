@@ -15911,6 +15911,17 @@
         },
         {
           "kind": "field",
+          "name": "use_multi_algorithm_query_queue",
+          "required": false,
+          "desc": "Use an experimental version of the query queue which has the same behavior as the existing queue, but integrates tenant selection into the tree model. (default false)",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-scheduler.use-multi-algorithm-query-queue",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "querier_forget_delay",
           "required": false,
           "desc": "If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.",

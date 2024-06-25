@@ -121,7 +121,6 @@ type RequestQueue struct {
 	// settings
 	maxOutstandingPerTenant          int
 	additionalQueueDimensionsEnabled bool
-	useMultiAlgoQueue                bool
 	forgetDelay                      time.Duration
 
 	// metrics for reporting

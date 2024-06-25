@@ -173,7 +173,7 @@ func TestQueues_NoShuffleSharding(t *testing.T) {
 				{buildExpectedObject(tenantTwo.tenantID, 7), tenantTwo},
 			}
 
-			lastTenantIndexQuerierTwo = assertExpectedValuesOnDequeue(t, qb, lastTenantIndexQuerierTwo, "querier-2", expectedDequeueVals)
+			_ = assertExpectedValuesOnDequeue(t, qb, lastTenantIndexQuerierTwo, "querier-2", expectedDequeueVals)
 
 			// Remove two: [four "" three]
 			qb.removeTenantQueue("two")
