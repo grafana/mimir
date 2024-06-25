@@ -167,14 +167,6 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	a.pool.PutFloatSlice(thisGroup.floatSums)
-	a.pool.PutBoolSlice(thisGroup.floatPresent)
-	a.pool.PutHistogramPointerSlice(thisGroup.histogramSums)
-	thisGroup.floatSums = nil
-	thisGroup.floatPresent = nil
-	thisGroup.histogramSums = nil
-	thisGroup.histogramPointCount = 0
-
 	groupPool.Put(thisGroup)
 	return seriesData, nil
 }
@@ -192,16 +184,16 @@ func (a *Aggregation) accumulateUntilGroupComplete(ctx context.Context, g *group
 
 		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
 		a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
-		err = a.seriesIntoGroup(s, thisSeriesGroup, a.steps, a.start, a.interval)
+		err = a.accumulateSeriesIntoGroup(s, thisSeriesGroup, a.steps, a.start, a.interval)
 		if err != nil {
 			return err
 		}
 	}
-	return
+	return nil
 }
 
 func (a *Aggregation) constructSeriesData(thisGroup *group, start int64, interval int64) (types.InstantVectorSeriesData, error) {
-	floatPointCount := reconcilePointCount(thisGroup)
+	floatPointCount := thisGroup.reconcileAndCountFloatPoints()
 	var floatPoints []promql.FPoint
 	var err error
 	if floatPointCount > 0 {
@@ -232,10 +224,23 @@ func (a *Aggregation) constructSeriesData(thisGroup *group, start int64, interva
 			}
 		}
 	}
+
+	a.pool.PutFloatSlice(thisGroup.floatSums)
+	a.pool.PutBoolSlice(thisGroup.floatPresent)
+	a.pool.PutHistogramPointerSlice(thisGroup.histogramSums)
+	thisGroup.floatSums = nil
+	thisGroup.floatPresent = nil
+	thisGroup.histogramSums = nil
+	thisGroup.histogramPointCount = 0
+
 	return types.InstantVectorSeriesData{Floats: floatPoints, Histograms: histogramPoints}, nil
 }
 
-func reconcilePointCount(thisGroup *group) int {
+// reconcileAndCountFloatPoints will return the number of points with a float present.
+// It also takes the opportunity whilst looping through the floats to check if there
+// is a conflicting Histogram present. If both are present, an empty vector should
+// be returned. So this method removes the float+histogram where they conflict.
+func (g *group) reconcileAndCountFloatPoints() int {
 	// It would be possible to calculate the number of points when constructing
 	// the series groups. However, it requires checking each point at each input
 	// series which is more costly than looping again here and just checking each
@@ -245,21 +250,21 @@ func reconcilePointCount(thisGroup *group) int {
 	// have both Floats and Histograms present, and one without these checks
 	// so we don't have to do it at every point.
 	floatPointCount := 0
-	if len(thisGroup.floatPresent) > 0 && len(thisGroup.histogramSums) > 0 {
-		for idx, present := range thisGroup.floatPresent {
+	if len(g.floatPresent) > 0 && len(g.histogramSums) > 0 {
+		for idx, present := range g.floatPresent {
 			if present {
-				if thisGroup.histogramSums[idx] != nil {
+				if g.histogramSums[idx] != nil {
 					// If a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely.
-					thisGroup.floatPresent[idx] = false
-					thisGroup.histogramSums[idx] = nil
-					thisGroup.histogramPointCount--
+					g.floatPresent[idx] = false
+					g.histogramSums[idx] = nil
+					g.histogramPointCount--
 				} else {
 					floatPointCount++
 				}
 			}
 		}
 	} else {
-		for _, p := range thisGroup.floatPresent {
+		for _, p := range g.floatPresent {
 			if p {
 				floatPointCount++
 			}
@@ -268,17 +273,17 @@ func reconcilePointCount(thisGroup *group) int {
 	return floatPointCount
 }
 
-func (a *Aggregation) seriesIntoGroup(s types.InstantVectorSeriesData, seriesGroup *group, steps int, start int64, interval int64) (err error) {
+func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData, seriesGroup *group, steps int, start int64, interval int64) (err error) {
 	if len(s.Floats) > 0 && seriesGroup.floatSums == nil {
 		// First series with float values for this group, populate it.
 		seriesGroup.floatSums, err = a.pool.GetFloatSlice(steps)
 		if err != nil {
-			return
+			return err
 		}
 
 		seriesGroup.floatPresent, err = a.pool.GetBoolSlice(steps)
 		if err != nil {
-			return
+			return err
 		}
 		seriesGroup.floatSums = seriesGroup.floatSums[:steps]
 		seriesGroup.floatPresent = seriesGroup.floatPresent[:steps]
@@ -288,7 +293,7 @@ func (a *Aggregation) seriesIntoGroup(s types.InstantVectorSeriesData, seriesGro
 		// First series with histogram values for this group, populate it.
 		seriesGroup.histogramSums, err = a.pool.GetHistogramPointerSlice(steps)
 		if err != nil {
-			return
+			return err
 		}
 		seriesGroup.histogramSums = seriesGroup.histogramSums[:steps]
 	}
@@ -316,7 +321,7 @@ func (a *Aggregation) seriesIntoGroup(s types.InstantVectorSeriesData, seriesGro
 
 	a.pool.PutInstantVectorSeriesData(s)
 	seriesGroup.remainingSeriesCount--
-	return
+	return nil
 }
 
 func (a *Aggregation) Close() {
