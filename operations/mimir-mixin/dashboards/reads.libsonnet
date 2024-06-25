@@ -134,34 +134,8 @@ local filename = 'mimir-reads.json';
       queryFrontendJobName=$._config.job_names.query_frontend,
       querySchedulerJobName=$._config.job_names.query_scheduler,
       queryRoutesRegex=$.queries.read_http_routes_regex,
+      showQueryCacheRow=true,
     ))
-    .addRow(
-      $.row('Cache – query results')
-      .addPanel(
-        $.timeseriesPanel('Requests / sec') +
-        $.queryPanel(
-          |||
-            sum (
-              rate(thanos_memcached_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
-              or ignoring(backend)
-              rate(thanos_cache_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
-            )
-          ||| % {
-            frontend: $.jobMatcher($._config.job_names.query_frontend),
-          },
-          'Requests/s'
-        ) +
-        { fieldConfig+: { defaults+: { unit: 'ops' } } },
-      )
-      .addPanel(
-        $.timeseriesPanel('Latency') +
-        $.backwardsCompatibleLatencyPanel(
-          'thanos_memcached_operation_duration_seconds',
-          'thanos_cache_operation_duration_seconds',
-          '{%s, name="frontend-cache"}' % $.jobMatcher($._config.job_names.query_frontend)
-        )
-      )
-    )
     .addRow(
       $.row('Querier')
       .addPanel(
