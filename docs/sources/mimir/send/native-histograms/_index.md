@@ -151,7 +151,7 @@ Use the latest version of Prometheus or at least version 2.47.
 
 Use the latest version of [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_VERSION>).
 
-1. To enable scraping native histograms you need to enable the argument `enable_protobuf_negotiation` in the `prometheus.scrape` component:
+1. To scrape native histograms you need to enable the argument `enable_protobuf_negotiation` in the `prometheus.scrape` component:
 
    ```
    prometheus.scrape "myapp" {
@@ -159,7 +159,7 @@ Use the latest version of [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_
    }
    ```
 
-1. This flag makes Prometheus detect and scrape native histograms, but ignores classic histogram version of those metrics that have native histogram defined as well. Classic histograms without native histogram definitions are not affected. To keep scraping the classic histogram version of native histogram metrics, you need to set `scrape_classic_histograms` to `true` in your scrape jobs. For example:
+    This flag makes Prometheus detect and scrape native histograms and ignore the classic histogram versions of metrics that also have native histograms defined. Classic histograms without native histogram definitions aren't affected. To keep scraping the classic histogram version of metrics with native histogram definitions, you need to set `scrape_classic_histograms` to `true` in your scrape jobs. For example:
 
    ```
    prometheus.scrape "myapp" {
@@ -191,7 +191,7 @@ Use the latest version of [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_
    what was ingested before via the text format.
    {{% /admonition %}}
 
-1. To be able to send native histograms to a Prometheus remote write compatible receiver, for example Grafana Cloud Metrics, Mimir, etc, set `send_native_histograms` argument to `true` in the `prometheus.remote_write` component, for example:
+1. To send native histograms to a Prometheus remote write compatible receiver, such as Grafana Cloud Metrics or Mimir, set the `send_native_histograms` argument to `true` in the `prometheus.remote_write` component. For example:
 
    ```
    prometheus.remote_write "mimir" {
@@ -204,19 +204,17 @@ Use the latest version of [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_
 
 ## Migrate from classic histograms
 
-It is possible to keep the custom bucket definition of a classic histogram and add native histogram buckets at the same time. This can ease the migration process.
-
-To migrate from classic histograms, complete these steps.
+To ease the migration process, you can keep the custom bucket definition for classic histograms while you migrate to native histograms.
 
 1. Add the native histogram definition to an existing histogram in the instrumentation.
 1. Let Prometheus or Grafana Alloy scrape both classic and native histograms for metrics that have both defined.
 1. Send native histograms to remote write. Native histograms are sent to remote write by default if classic histograms are scraped.
 1. Start modifying the recording rules, alerts, and dashboards to use native histograms.
-1. After completing the migration to native histograms, choose one of the following ways to stop collecting classic histograms.
+1. After configuring native histogram collection, choose one of the following ways to stop collecting classic histograms.
 
     - Remove the custom bucket definition, `Buckets`/`classicUpperBounds`, from the instrumentation.
     - Drop the classic histogram series with [Prometheus relabeling](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) or [Grafana Alloy prometheus.relabel](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus.relabel) at the time of scraping. 
-    - Stop scraping classic histogram version of metrics. This option applies to all metrics of a scrape target.
+    - Stop scraping the classic histogram version of metrics. This option applies to all metrics of a scrape target.
 
 Code examples with both classic and native histogram defined for the same metric:
 
@@ -308,6 +306,6 @@ After the set maximum is exceeded, the following strategy is enacted:
 
 1. If less time has passed, or if the minimum reset duration is zero, no reset is performed. Instead, the zero threshold is increased sufficiently to reduce the number of buckets to or below the maximum bucket number, but not to more than the maximum zero threshold (`NativeHistogramMaxZeroThreshold` in Go). Thus, if the threshold is at or above the maximum threshold already nothing happens at this step.
 
-1. After that, if the number of buckets still exceeds maximum bucket number, the resolution of the histogram is reduced by doubling the width of all the buckets (up to a growth factor between one bucket to the next of 2^(2^4) = 65536, see above in [Bucket boundary calculation](#bucket-boundary-calculation)).
+1. After that, if the number of buckets still exceeds maximum bucket number, the resolution of the histogram is reduced by doubling the width of all the buckets (up to a growth factor between one bucket to the next of 2^(2^4) = 65536, refer to [Bucket boundary calculation](#bucket-boundary-calculation)).
 
 1. Any increased zero threshold or reduced resolution is reset back to their original values once the minimum reset duration has passed (since the last reset or the creation of the histogram).
