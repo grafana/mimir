@@ -33,12 +33,13 @@ import (
 )
 
 type Settings struct {
-	Namespace           string
-	ExternalLabels      map[string]string
-	DisableTargetInfo   bool
-	ExportCreatedMetric bool
-	AddMetricSuffixes   bool
-	SendMetadata        bool
+	Namespace                 string
+	ExternalLabels            map[string]string
+	DisableTargetInfo         bool
+	ExportCreatedMetric       bool
+	AddMetricSuffixes         bool
+	SendMetadata              bool
+	PromoteResourceAttributes []string
 }
 
 // MimirConverter converts from OTel write format to Mimir remote write format.

@@ -37,7 +37,7 @@ func (c *MimirConverter) addGaugeNumberDataPoints(dataPoints pmetric.NumberDataP
 		labels := createAttributes(
 			resource,
 			pt.Attributes(),
-			settings.ExternalLabels,
+			settings,
 			nil,
 			true,
 			model.MetricNameLabel,
@@ -67,7 +67,7 @@ func (c *MimirConverter) addSumNumberDataPoints(dataPoints pmetric.NumberDataPoi
 		lbls := createAttributes(
 			resource,
 			pt.Attributes(),
-			settings.ExternalLabels,
+			settings,
 			nil,
 			true,
 			model.MetricNameLabel,

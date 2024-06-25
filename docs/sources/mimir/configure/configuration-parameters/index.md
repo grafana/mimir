@@ -3594,6 +3594,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # through OTLP.
 # CLI flag: -distributor.otel-metric-suffixes-enabled
 [otel_metric_suffixes_enabled: <boolean> | default = false]
+
+# (experimental) Eventual OTel resource attributes to promote to labels.
+# CLI flag: -distributor.promote-otel-resource-attributes
+[promote_otel_resource_attributes: <string> | default = ""]
 ```
 
 ### blocks_storage
