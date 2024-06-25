@@ -52,6 +52,7 @@ to reduce the size of the output to what is necessary.
 ## Examples
 
 ### Find gaps in a single metric
+
 ```yaml
 ./tsdb-gaps -select '{__name__="etcd_requests_total"}' 01J0SSQT75APKRZ2ZX8FYZ08TA | jq
 level=debug msg="using matchers" matcher="__name__=\"etcd_requests_total\""
@@ -110,6 +111,7 @@ The `totalSeriesWithGaps` and `"gapStats": null` show there were no gaps in the 
   }
 }
 ```
+
 The metric selector limits by a regex on a label value, and restricts the total time range to a 30 minute window.
 One series with one gap was found, with the gap representing 38 missed samples. This assumes a 15 minute scrape interval. The
 scrape interval can be configured with `-scrape-interval`.
