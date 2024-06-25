@@ -290,7 +290,6 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 			} else {
 				level.Info(b.logger).Log(
 					"msg", "nothing to consume in partition",
-					"err", pl.Err,
 					"part", part,
 					"offset", pl.Commit.At,
 					"end_offset", pl.End.Offset,
