@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -199,7 +200,15 @@ func TestRangeVectorSelectors(t *testing.T) {
 			some_metric{env="2"} 0+2x4
 			some_metric_with_gaps 0 1 _ 3
 			some_metric_with_stale_marker 0 1 stale 3
+			incr_histogram{env="1"}	{{schema:0 sum:4 count:4 buckets:[1 2 1]}}+{{sum:2 count:1 buckets:[1] offset:1}}x4
+			incr_histogram{env="2"}	{{schema:0 sum:4 count:4 buckets:[1 2 1]}}+{{sum:4 count:2 buckets:[1 2] offset:1}}x4
+			histogram_with_gaps	{{sum:1 count:1 buckets:[1]}} {{sum:2 count:2 buckets:[1 1]}} _ {{sum:3 count:3 buckets:[1 1 1]}}
+			histogram_with_stale_marker	{{sum:1 count:1 buckets:[1]}} {{sum:2 count:2 buckets:[1 1]}} stale {{sum:4 count:4 buckets:[1 1 1 1]}}
+			mixed_metric {{schema:0 sum:4 count:4 buckets:[1 2 1]}} 1 2 {{schema:0 sum:3 count:3 buckets:[1 2 1]}}
+			mixed_metric_histogram_first {{schema:0 sum:4 count:4 buckets:[1 2 1]}} 1
+			mixed_metric_float_first 1 {{schema:0 sum:4 count:4 buckets:[1 2 1]}}
 	`)
+
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
 	testCases := map[string]struct {
@@ -273,6 +282,189 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
+		"histogram: matches series with points in range": {
+			expr: "incr_histogram[1m]",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "incr_histogram", "env", "1"),
+						Histograms: []promql.HPoint{
+							{
+								T: timestamp.FromTime(baseT.Add(time.Minute)),
+								H: &histogram.FloatHistogram{
+									Sum:   6,
+									Count: 5,
+								},
+							},
+							{
+								T: timestamp.FromTime(baseT.Add(2 * time.Minute)),
+								H: &histogram.FloatHistogram{
+									Sum:   8,
+									Count: 6,
+								},
+							},
+						},
+					},
+					{
+						Metric: labels.FromStrings("__name__", "incr_histogram", "env", "2"),
+						Histograms: []promql.HPoint{
+							{
+								T: timestamp.FromTime(baseT.Add(time.Minute)),
+								H: &histogram.FloatHistogram{
+									Sum:   8,
+									Count: 6,
+								},
+							},
+							{
+								T: timestamp.FromTime(baseT.Add(2 * time.Minute)),
+								H: &histogram.FloatHistogram{
+									Sum:   12,
+									Count: 8,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"histogram: no samples in range": {
+			expr: "incr_histogram[1m]",
+			ts:   baseT.Add(20 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{},
+			},
+		},
+		"histogram: does not return points outside range if last selected point does not align to end of range": {
+			expr: "histogram_with_gaps[1m]",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "histogram_with_gaps"),
+						Histograms: []promql.HPoint{
+							{
+								T: timestamp.FromTime(baseT.Add(time.Minute)),
+								H: &histogram.FloatHistogram{
+									Sum:   2,
+									Count: 2,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"histogram: metric with stale marker": {
+			expr: "histogram_with_stale_marker[3m]",
+			ts:   baseT.Add(3 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "histogram_with_stale_marker"),
+						Histograms: []promql.HPoint{
+							{
+								T: timestamp.FromTime(baseT),
+								H: &histogram.FloatHistogram{
+									Sum:   1,
+									Count: 1,
+								},
+							},
+							{
+								T: timestamp.FromTime(baseT.Add(time.Minute)),
+								H: &histogram.FloatHistogram{
+									Sum:   2,
+									Count: 2,
+								},
+							},
+							{
+								T: timestamp.FromTime(baseT.Add(3 * time.Minute)),
+								H: &histogram.FloatHistogram{
+									Sum:   4,
+									Count: 4,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"mixed series with histograms and floats": {
+			expr: "mixed_metric[4m]",
+			ts:   baseT.Add(4 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "mixed_metric"),
+						Floats: []promql.FPoint{
+							{
+								T: timestamp.FromTime(baseT.Add(time.Minute)),
+								F: 1,
+							},
+							{
+								T: timestamp.FromTime(baseT.Add(2 * time.Minute)),
+								F: 2,
+							},
+						},
+						Histograms: []promql.HPoint{
+							{
+								T: timestamp.FromTime(baseT.Add(3 * time.Minute)),
+								H: &histogram.FloatHistogram{
+									Sum:   3,
+									Count: 3,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"mixed series with a float following a histogram causing lookback": {
+			// This is unexpected, but consistent behavour between the engines
+			// See: https://github.com/prometheus/prometheus/issues/14172
+			expr: "mixed_metric_histogram_first[2m]",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "mixed_metric_histogram_first"),
+						Floats: []promql.FPoint{
+							{
+								T: timestamp.FromTime(baseT.Add(time.Minute)),
+								F: 1,
+							},
+						},
+					},
+				},
+			},
+		},
+		"mixed series with histogram following a float": {
+			// No incorrect lookback
+			expr: "mixed_metric_float_first[2m]",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "mixed_metric_float_first"),
+						Floats: []promql.FPoint{
+							{
+								T: timestamp.FromTime(baseT),
+								F: 1,
+							},
+						},
+						Histograms: []promql.HPoint{
+							{
+								T: timestamp.FromTime(baseT.Add(time.Minute)),
+								H: &histogram.FloatHistogram{
+									Sum:   4,
+									Count: 4,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -283,7 +475,26 @@ func TestRangeVectorSelectors(t *testing.T) {
 				defer q.Close()
 
 				res := q.Exec(context.Background())
-				require.Equal(t, expected, res)
+
+				// Because Histograms are pointers, it is hard to use Equal for the whole result
+				// Instead, compare what we can, and check values for the Histograms
+				expectedMatrix := expected.Value.(promql.Matrix)
+				resMatrix := res.Value.(promql.Matrix)
+				require.Equal(t, expectedMatrix.Len(), resMatrix.Len(), "Right number of results")
+				for i := range expectedMatrix {
+					if expectedMatrix[i].Histograms == nil {
+						require.Equal(t, expectedMatrix[i], resMatrix[i], "Results match expectation exactly (Floats)")
+					} else {
+						require.Equal(t, expectedMatrix[i].Metric, resMatrix[i].Metric, "Metric name matches")
+						require.Equal(t, expectedMatrix[i].Floats, resMatrix[i].Floats, "Float points match")
+						require.Equal(t, len(expectedMatrix[i].Histograms), len(resMatrix[i].Histograms), "Same number of histograms")
+						for j := range expectedMatrix[i].Histograms {
+							require.Equal(t, expectedMatrix[i].Histograms[j].T, resMatrix[i].Histograms[j].T, "Histogram timestamps match")
+							require.Equal(t, expectedMatrix[i].Histograms[j].H.Sum, resMatrix[i].Histograms[j].H.Sum, "Histogram Sums match")
+							require.Equal(t, expectedMatrix[i].Histograms[j].H.Count, resMatrix[i].Histograms[j].H.Count, "Histogram Counts match")
+						}
+					}
+				}
 			}
 
 			t.Run("Mimir's engine", func(t *testing.T) {

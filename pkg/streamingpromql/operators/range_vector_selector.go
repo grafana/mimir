@@ -56,7 +56,7 @@ func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
 	return nil
 }
 
-func (m *RangeVectorSelector) NextStepSamples(floats *types.RingBuffer[promql.FPoint]) (types.RangeVectorStepData, error) {
+func (m *RangeVectorSelector) NextStepSamples(floats *types.RingBuffer[promql.FPoint], histograms *types.RingBuffer[promql.HPoint]) (types.RangeVectorStepData, error) {
 	if m.nextT > m.Selector.End {
 		return types.RangeVectorStepData{}, types.EOS
 	}
@@ -70,8 +70,9 @@ func (m *RangeVectorSelector) NextStepSamples(floats *types.RingBuffer[promql.FP
 
 	rangeStart := rangeEnd - m.rangeMilliseconds
 	floats.DiscardPointsBefore(rangeStart)
+	histograms.DiscardPointsBefore(rangeStart)
 
-	if err := m.fillBuffer(floats, rangeStart, rangeEnd); err != nil {
+	if err := m.fillBuffer(floats, histograms, rangeStart, rangeEnd); err != nil {
 		return types.RangeVectorStepData{}, err
 	}
 
@@ -84,7 +85,7 @@ func (m *RangeVectorSelector) NextStepSamples(floats *types.RingBuffer[promql.FP
 	}, nil
 }
 
-func (m *RangeVectorSelector) fillBuffer(floats *types.RingBuffer[promql.FPoint], rangeStart, rangeEnd int64) error {
+func (m *RangeVectorSelector) fillBuffer(floats *types.RingBuffer[promql.FPoint], histograms *types.RingBuffer[promql.HPoint], rangeStart, rangeEnd int64) error {
 	// Keep filling the buffer until we reach the end of the range or the end of the iterator.
 	for {
 		valueType := m.chunkIterator.Next()
@@ -103,6 +104,22 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.RingBuffer[promql.FPoint]
 			// - callers of NextStepSamples are expected to pass the same RingBuffer to subsequent calls, so the point is not lost
 			// - callers of NextStepSamples are expected to handle the case where the buffer contains points beyond the end of the range
 			if err := floats.Append(promql.FPoint{T: t, F: f}); err != nil {
+				return err
+			}
+
+			if t >= rangeEnd {
+				return nil
+			}
+		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+			t, h := m.chunkIterator.AtFloatHistogram(nil)
+			if value.IsStaleNaN(h.Sum) || t < rangeStart {
+				continue
+			}
+
+			// We might append a sample beyond the range end, but this is OK:
+			// - callers of NextStepSamples are expected to pass the same RingBuffer to subsequent calls, so the point is not lost
+			// - callers of NextStepSamples are expected to handle the case where the buffer contains points beyond the end of the range
+			if err := histograms.Append(promql.HPoint{T: t, H: h}); err != nil {
 				return err
 			}
 
