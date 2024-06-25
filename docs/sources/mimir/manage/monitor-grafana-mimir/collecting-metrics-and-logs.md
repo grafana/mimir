@@ -23,10 +23,10 @@ For more information, see [Collect metrics and logs without the Helm chart]({{< 
 ## Collect metrics and logs without the Helm chart
 
 You can still use the dashboards and rules in the monitoring-mixin,
-even if Mimir or GEM is not deployed via the Helm chart.
-If you are not using the Helm chart, start by using the Agent configuration
-from [Collect metrics and logs via Grafana Agent]({{< relref "#collect-metrics-and-logs-via-grafana-agent" >}}).
-You might need to modify it. For
+even if you're not deploying Mimir or GEM via the Helm chart.
+If you're not using the Helm chart, start by using the Grafana Alloy configuration
+from [Collect metrics and logs via Grafana Alloy](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/collecting-metrics-and-logs/#collect-metrics-and-logs-via-grafana-alloy).
+It's possible that you need to modify this configuration. For
 more information, see [dashboards and alerts requirements]({{< relref "./requirements" >}}).
 
 ### Service discovery
@@ -36,18 +36,18 @@ logs to ones that are strictly related to the Grafana Mimir deployment. If you a
 then replace the `kubernetes_sd_configs` block with a block from
 the [Agent configuration](/docs/agent/latest/configuration/) that can discover the Mimir processes.
 
-### Collect metrics and logs via Grafana Agent
+### Collect metrics and logs via Grafana Alloy
 
-Set up a Grafana Agent that collects logs and metrics from Mimir or GEM. To set up Grafana Agent,
-see [Set up Grafana Agent](/docs/agent/latest/set-up/). After your Agent is deployed, use the [example Agent configuration](#example-agent-configuration) to configure the Agent to scrape Mimir or GEM.
+Set up Grafana Alloy to collect logs and metrics from Mimir or GEM. To get started with Grafana Alloy,
+refer to [Get started with Grafana Alloy](https://grafana.com/docs/<ALLOY_VERSION>/latest/get-started). After deploying Alloy, use the [example Alloy configuration](#example-alloy-configuration) to scrape Mimir or GEM.
 
 #### Caveats
 
-Managing your own Agent comes with some caveats:
+Managing your own Grafana Alloy configuration comes with some caveats:
 
-- You will have to keep the Agent configuration up to date manually as you update the Mimir Helm chart. While we will
-  try to keep this article up to date, we cannot guarantee that
-  the [example Agent configuration](#example-agent-configuration) will always work.
+- You have to keep the Alloy configuration up-to-date manually as you update the Mimir Helm chart. While we
+  try to keep this article up-to-date, we cannot guarantee that
+  the [example Alloy configuration](#example-alloy-configuration) always works.
 - The static configuration makes some assumptions about the naming of the chart, such as that you have not overridden
   the `fullnameOverride` in the Helm chart.
 - The static configuration cannot be selective in the PersistentVolumes metrics it collects from Kubelet, so it will
@@ -59,9 +59,9 @@ If possible, upgrade the Mimir Helm chart to version 3.0 or higher and use
 the [built-in Grafana Agent operator](/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/). Using the Agent operator allows the
 chart to automatically configure the Agent, eliminating the aforementioned caveats.
 
-#### Example Agent configuration
+#### Example Alloy configuration
 
-In the following example Grafana Agent configuration file for collecting logs and metrics, replace `url`, `password`, and `username` in
+In the following example Grafana Alloy configuration file for collecting logs and metrics, replace `url`, `password`, and `username` in
 the `logs` and `metrics` blocks with the details of your Prometheus and Loki clusters.
 
 ```yaml
