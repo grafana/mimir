@@ -34,6 +34,7 @@
 * [BUGFIX] Ingester: fixed timestamp reported in the "the sample has been rejected because its timestamp is too old" error when the write request contains only histograms. #8462
 * [BUGFIX] Store-gateway: store sparse index headers atomically to disk. #8485
 * [BUGFIX] Query scheduler: fix a panic in request queueing. #8451
+* [BUGFIX] Querier: fix issue where "context canceled" is logged for trace spans for requests to store-gateways that return no series when chunks streaming is enabled. #8510
 
 ### Mixin
 
