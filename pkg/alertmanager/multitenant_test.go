@@ -890,6 +890,19 @@ func TestMultitenantAlertmanager_zoneAwareSharding(t *testing.T) {
 	am1ZoneA := createInstance(1, "zoneA", registriesZoneA)
 	am2ZoneA := createInstance(2, "zoneA", registriesZoneA)
 	am1ZoneB := createInstance(3, "zoneB", registriesZoneB)
+	allInstances := []*MultitenantAlertmanager{am1ZoneA, am2ZoneA, am1ZoneB}
+
+	// Wait until every alertmanager has updated the ring, in order to get stable tests.
+	require.Eventually(t, func() bool {
+		for _, am := range allInstances {
+			set, err := am.ring.GetAllHealthy(SyncRingOp)
+			if err != nil || len(set.Instances) != len(allInstances) {
+				return false
+			}
+		}
+
+		return true
+	}, 2*time.Second, 10*time.Millisecond)
 
 	{
 		require.NoError(t, alertStore.SetAlertConfig(ctx, alertspb.AlertConfigDesc{

@@ -32,8 +32,9 @@ const (
 )
 
 type circuitBreakerMetrics struct {
-	circuitBreakerTransitions *prometheus.CounterVec
-	circuitBreakerResults     *prometheus.CounterVec
+	circuitBreakerTransitions     *prometheus.CounterVec
+	circuitBreakerResults         *prometheus.CounterVec
+	circuitBreakerRequestTimeouts prometheus.Counter
 }
 
 func newCircuitBreakerMetrics(r prometheus.Registerer, currentState func() circuitbreaker.State, requestType string) *circuitBreakerMetrics {
@@ -48,6 +49,11 @@ func newCircuitBreakerMetrics(r prometheus.Registerer, currentState func() circu
 			Help:        "Results of executing requests via the circuit breaker.",
 			ConstLabels: map[string]string{circuitBreakerRequestTypeLabel: requestType},
 		}, []string{"result"}),
+		circuitBreakerRequestTimeouts: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_ingester_circuit_breaker_request_timeouts_total",
+			Help:        "Number of times the circuit breaker recorded a request that reached timeout.",
+			ConstLabels: map[string]string{circuitBreakerRequestTypeLabel: requestType},
+		}),
 	}
 	circuitBreakerCurrentStateGauge := func(state circuitbreaker.State) prometheus.GaugeFunc {
 		return promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
@@ -92,7 +98,7 @@ func (cfg *CircuitBreakerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.
 	f.DurationVar(&cfg.ThresholdingPeriod, prefix+"thresholding-period", time.Minute, "Moving window of time that the percentage of failed requests is computed over")
 	f.DurationVar(&cfg.CooldownPeriod, prefix+"cooldown-period", 10*time.Second, "How long the circuit breaker will stay in the open state before allowing some requests")
 	f.DurationVar(&cfg.InitialDelay, prefix+"initial-delay", 0, "How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.")
-	f.DurationVar(&cfg.RequestTimeout, prefix+"request-timeout", defaultRequestDuration, "The maximum duration of an ingester's request before it triggers a circuit breaker. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors.")
+	f.DurationVar(&cfg.RequestTimeout, prefix+"request-timeout", defaultRequestDuration, "The maximum duration of an ingester's request before it triggers a timeout. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors.")
 }
 
 // circuitBreaker abstracts the ingester's server-side circuit breaker functionality.
@@ -154,7 +160,16 @@ func newCircuitBreaker(cfg CircuitBreakerConfig, registerer prometheus.Registere
 	return &cb
 }
 
-func isCircuitBreakerFailure(err error) bool {
+func isDeadlineExceeded(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	statusCode := grpcutil.ErrorToStatusCode(err)
+	return statusCode == codes.DeadlineExceeded
+}
+
+func (cb *circuitBreaker) tryRecordFailure(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -163,18 +178,21 @@ func isCircuitBreakerFailure(err error) bool {
 	// to be errors worthy of tripping the circuit breaker since these
 	// are specific to a particular ingester, not a user or request.
 
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
+	isFailure := false
+	if isDeadlineExceeded(err) {
+		cb.metrics.circuitBreakerRequestTimeouts.Inc()
+		isFailure = true
+	} else {
+		var ingesterErr ingesterError
+		if errors.As(err, &ingesterErr) {
+			isFailure = ingesterErr.errorCause() == mimirpb.INSTANCE_LIMIT
+		}
 	}
 
-	statusCode := grpcutil.ErrorToStatusCode(err)
-	if statusCode == codes.DeadlineExceeded {
+	if isFailure {
+		cb.cb.RecordFailure()
+		cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultError).Inc()
 		return true
-	}
-
-	var ingesterErr ingesterError
-	if errors.As(err, &ingesterErr) {
-		return ingesterErr.errorCause() == mimirpb.INSTANCE_LIMIT
 	}
 
 	return false
@@ -245,9 +263,7 @@ func (cb *circuitBreaker) recordResult(errs ...error) error {
 	}
 
 	for _, err := range errs {
-		if err != nil && isCircuitBreakerFailure(err) {
-			cb.cb.RecordFailure()
-			cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultError).Inc()
+		if cb.tryRecordFailure(err) {
 			return err
 		}
 	}

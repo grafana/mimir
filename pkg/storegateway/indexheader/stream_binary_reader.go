@@ -28,6 +28,7 @@ import (
 	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
 	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader/indexheaderpb"
+	"github.com/grafana/mimir/pkg/util/atomicfs"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -261,8 +262,8 @@ func writeSparseHeadersToFile(logger *spanlogger.SpanLogger, id ulid.ULID, spars
 		return fmt.Errorf("failed to encode sparse index-header: %w", err)
 	}
 
-	var gzipped bytes.Buffer
-	gzipWriter := gzip.NewWriter(&gzipped)
+	gzipped := &bytes.Buffer{}
+	gzipWriter := gzip.NewWriter(gzipped)
 
 	if _, err := gzipWriter.Write(out); err != nil {
 		return fmt.Errorf("failed to gzip sparse index-header: %w", err)
@@ -272,7 +273,7 @@ func writeSparseHeadersToFile(logger *spanlogger.SpanLogger, id ulid.ULID, spars
 		return fmt.Errorf("failed to close gzip sparse index-header: %w", err)
 	}
 
-	if err := os.WriteFile(sparseHeadersPath, gzipped.Bytes(), 0600); err != nil {
+	if err := atomicfs.CreateFileAndMove(sparseHeadersPath+".tmp", sparseHeadersPath, gzipped); err != nil {
 		return fmt.Errorf("failed to write sparse index-header file: %w", err)
 	}
 

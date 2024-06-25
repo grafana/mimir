@@ -521,7 +521,7 @@ func TestMimirPromQLEngine(t *testing.T) {
 	defer s.Close()
 
 	flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-		"-querier.promql-engine": "mimir",
+		"-querier.query-engine": "mimir",
 	})
 
 	consul := e2edb.NewConsul()
@@ -758,7 +758,7 @@ func testMetadataQueriesWithBlocksStorage(
 				require.NoError(t, err)
 				if st.ok {
 					require.Equal(t, 1, len(seriesRes), st)
-					require.Equal(t, model.LabelSet(prompbLabelsToModelMetric(st.resp)), seriesRes[0], st)
+					require.Equal(t, model.LabelSet(prompbLabelsToMetric(st.resp)), seriesRes[0], st)
 				} else {
 					require.Equal(t, 0, len(seriesRes), st)
 				}
@@ -1025,7 +1025,7 @@ func TestHashCollisionHandling(t *testing.T) {
 		},
 	})
 	expectedVector = append(expectedVector, &model.Sample{
-		Metric:    prompbLabelsToModelMetric(metric1),
+		Metric:    prompbLabelsToMetric(metric1),
 		Value:     model.SampleValue(float64(0)),
 		Timestamp: model.Time(tsMillis),
 	})
@@ -1036,7 +1036,7 @@ func TestHashCollisionHandling(t *testing.T) {
 		},
 	})
 	expectedVector = append(expectedVector, &model.Sample{
-		Metric:    prompbLabelsToModelMetric(metric2),
+		Metric:    prompbLabelsToMetric(metric2),
 		Value:     model.SampleValue(float64(1)),
 		Timestamp: model.Time(tsMillis),
 	})
@@ -1069,14 +1069,4 @@ func getMetricName(lbls []prompb.Label) string {
 	}
 
 	panic(fmt.Sprintf("series %v has no metric name", lbls))
-}
-
-func prompbLabelsToModelMetric(pbLabels []prompb.Label) model.Metric {
-	metric := model.Metric{}
-
-	for _, l := range pbLabels {
-		metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
-	}
-
-	return metric
 }

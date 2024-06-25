@@ -1319,9 +1319,9 @@ func TestSplitRequests_prepareDownstreamRequests(t *testing.T) {
 				{downstreamRequests: []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 3}}},
 			},
 			expected: []MetricsQueryRequest{
-				(&PrometheusRangeQueryRequest{start: 1}).WithID(1).WithTotalQueriesHint(3),
-				(&PrometheusRangeQueryRequest{start: 2}).WithID(2).WithTotalQueriesHint(3),
-				(&PrometheusRangeQueryRequest{start: 3}).WithID(3).WithTotalQueriesHint(3),
+				mustSucceed(mustSucceed((&PrometheusRangeQueryRequest{start: 1}).WithID(1)).WithTotalQueriesHint(3)),
+				mustSucceed(mustSucceed((&PrometheusRangeQueryRequest{start: 2}).WithID(2)).WithTotalQueriesHint(3)),
+				mustSucceed(mustSucceed((&PrometheusRangeQueryRequest{start: 3}).WithID(3)).WithTotalQueriesHint(3)),
 			},
 		},
 	}
@@ -1333,7 +1333,7 @@ func TestSplitRequests_prepareDownstreamRequests(t *testing.T) {
 				require.Empty(t, req.downstreamResponses)
 			}
 
-			assert.Equal(t, testData.expected, testData.input.prepareDownstreamRequests())
+			assert.Equal(t, testData.expected, mustSucceed(testData.input.prepareDownstreamRequests()))
 
 			// Ensure responses slices have been initialized.
 			for _, req := range testData.input {

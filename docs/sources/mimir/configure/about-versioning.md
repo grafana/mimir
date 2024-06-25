@@ -56,8 +56,9 @@ The following features are currently experimental:
     - `-compactor.no-blocks-file-cleanup-enabled`
 - Ruler
   - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
-  - Allow defining a limit on the maximum number of rules allowed in a rule group by namespace. If set, this supersedes the `-ruler.max-rules-per-rule-group` limit.
+  - Allow defining limits on the maximum number of rules allowed in a rule group by namespace and the maximum number of rule groups by namespace. If set, this supersedes the `-ruler.max-rules-per-rule-group` and `-ruler.max-rule-groups-per-tenant` limits.
   - `-ruler.max-rules-per-rule-group-by-namespace`
+  - `-ruler.max-rule-groups-per-tenant-by-namespace`
 - Distributor
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`
@@ -145,7 +146,7 @@ The following features are currently experimental:
   - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
   - Enable PromQL experimental functions (`-querier.promql-experimental-functions-enabled`)
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
-  - Mimir query engine (`-querier.promql-engine=mimir` and `-querier.enable-promql-engine-fallback`)
+  - Mimir query engine (`-querier.query-engine=mimir` and `-querier.enable-query-engine-fallback`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`

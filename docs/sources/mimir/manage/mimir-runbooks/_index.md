@@ -2034,7 +2034,7 @@ How to **fix** it:
 This error occurs when execution of a query exceeds the limit on the maximum estimated memory consumed by a single query.
 
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
-This limit only applies when Mimir's query engine is used (ie. `-querier.promql-engine=mimir`).
+This limit only applies when Mimir's query engine is used (ie. `-querier.query-engine=mimir`).
 To configure the limit on a global basis, use the `-querier.max-estimated-memory-consumption-per-query` option.
 To configure the limit on a per-tenant basis, set the `max_estimated_memory_consumption_per_query` per-tenant override in the runtime configuration.
 

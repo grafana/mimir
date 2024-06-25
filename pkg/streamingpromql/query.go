@@ -156,14 +156,14 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, err
 		}
 
-		return &operators.Aggregation{
-			Inner:    inner,
-			Start:    q.statement.Start,
-			End:      q.statement.End,
-			Interval: interval,
-			Grouping: e.Grouping,
-			Pool:     q.pool,
-		}, nil
+		return operators.NewAggregation(
+			inner,
+			q.statement.Start,
+			q.statement.End,
+			interval,
+			e.Grouping,
+			q.pool,
+		), nil
 	case *parser.Call:
 		return q.convertFunctionCallToOperator(e)
 	case *parser.BinaryExpr:
