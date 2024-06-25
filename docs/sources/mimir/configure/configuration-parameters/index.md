@@ -1073,7 +1073,7 @@ The `ingester` block configures the ingester.
 ```yaml
 ring:
   # The key-value store used to share the hash ring across multiple instances.
-  # This option needs be set on ingesters, distributors, queriers and rulers
+  # This option needs be set on ingesters, distributors, queriers, and rulers
   # when running in microservices mode.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
@@ -1220,7 +1220,7 @@ ring:
 
 partition_ring:
   # The key-value store used to share the hash ring across multiple instances.
-  # This option needs be set on ingesters, distributors, queriers and rulers
+  # This option needs be set on ingesters, distributors, queriers, and rulers
   # when running in microservices mode.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
