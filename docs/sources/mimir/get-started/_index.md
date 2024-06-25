@@ -156,7 +156,7 @@ scrape_configs:
       - targets: ["localhost:9090"]
 ```
 
-## Configure Grafana Agent to write to Grafana Mimir
+## Configure Grafana Alloy to write to Grafana Mimir
 
 Add the following YAML snippet to one of your Agent metrics configurations (`metrics.configs`) in your Agent configuration file, and restart Grafana Agent:
 
