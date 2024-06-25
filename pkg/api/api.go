@@ -224,8 +224,9 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 			a.RegisterRoute("/api/v1/grafana/state", http.HandlerFunc(am.SetUserGrafanaState), true, true, http.MethodPost)
 			a.RegisterRoute("/api/v1/grafana/state", http.HandlerFunc(am.DeleteUserGrafanaState), true, true, http.MethodDelete)
 
-			// This API is handled by the per-tenant Alertmanager, so it's handed by the distributor.
+			// These APIs are handled by the per-tenant Alertmanager, so it's handled by the distributor.
 			a.RegisterRoute("/api/v1/grafana/receivers", am, true, true, http.MethodGet)
+			a.RegisterRoute("/api/v1/grafana/receivers/test", am, true, true, http.MethodPost)
 			a.RegisterRoute("/api/v1/grafana/templates/test", am, true, true, http.MethodPost)
 		}
 	}
