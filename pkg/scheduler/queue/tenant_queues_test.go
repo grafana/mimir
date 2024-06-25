@@ -240,7 +240,7 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 			// TODO (casie): After deprecating legacy tree queue, clean this up
 			if tq, ok := qb.tree.(*TreeQueue); ok {
 				assert.Equal(t, maxTenantQueueSize, tq.getNode(queuePath).ItemCount())
-			} else if itq, ok := qb.tree.(*IntegratedTreeQueue); ok {
+			} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 				assert.Equal(t, maxTenantQueueSize, itq.GetNode(queuePath).ItemCount())
 			}
 
@@ -251,7 +251,7 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 				var itemCount int
 				if tq, ok := qb.tree.(*TreeQueue); ok {
 					itemCount = tq.getNode(queuePath).LocalQueueLen()
-				} else if itq, ok := qb.tree.(*IntegratedTreeQueue); ok {
+				} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 					itemCount = itq.GetNode(queuePath).getLocalQueue().Len()
 				}
 				assert.Equal(t, maxTenantQueueSize/len(additionalQueueDimensions), itemCount)
@@ -712,7 +712,7 @@ func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) e
 	queuePath := qb.makeQueuePathForTests(tenantID)
 	if tq, ok := qb.tree.(*TreeQueue); ok {
 		_, err = tq.getOrAddNode(queuePath)
-	} else if itq, ok := qb.tree.(*IntegratedTreeQueue); ok {
+	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 		_, err = itq.rootNode.getOrAddNode(queuePath, itq)
 	}
 	return err
@@ -735,7 +735,7 @@ func (qb *queueBroker) removeTenantQueue(tenantID TenantID) bool {
 		}
 		return tq.deleteNode(queuePath)
 
-	} else if itq, ok := qb.tree.(*IntegratedTreeQueue); ok {
+	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 		return itq.rootNode.deleteNode(queuePath)
 	}
 
@@ -790,7 +790,7 @@ func isConsistent(qb *queueBroker) error {
 			if tenantID == "" && node != nil {
 				return fmt.Errorf("tenant %s shouldn't have queue in legacy tree", tenantID)
 			}
-		} else if itq, ok := qb.tree.(*IntegratedTreeQueue); ok {
+		} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 			node := itq.rootNode.getNode(path)
 			if tenantID != "" && node == nil {
 				return fmt.Errorf("tenant %s doesn't have queue", tenantID)
@@ -833,7 +833,7 @@ func isConsistent(qb *queueBroker) error {
 	// TODO (casie): After deprecating legacy tree queue, clean this up
 	if tq, ok := qb.tree.(*TreeQueue); ok {
 		tenantQueueCount = tq.NodeCount() - 1
-	} else if itq, ok := qb.tree.(*IntegratedTreeQueue); ok {
+	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 		tenantQueueCount = itq.rootNode.nodeCount() - 1
 	}
 	if tenantQueueCount != tenantCount {

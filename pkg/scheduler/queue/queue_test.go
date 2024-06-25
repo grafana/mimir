@@ -734,7 +734,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 				require.Nil(t, tq.getNode(QueuePath{"tenant-1"}))
 				require.NoError(t, queueBroker.enqueueRequestBack(&tr, tenantMaxQueriers))
 				require.False(t, tq.getNode(QueuePath{"tenant-1"}).IsEmpty())
-			} else if itq, ok := queueBroker.tree.(*IntegratedTreeQueue); ok {
+			} else if itq, ok := queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 				require.Nil(t, itq.GetNode(QueuePath{"tenant-1"}))
 				require.NoError(t, queueBroker.enqueueRequestBack(&tr, tenantMaxQueriers))
 				require.False(t, itq.GetNode(QueuePath{"tenant-1"}).IsEmpty())
@@ -756,7 +756,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 			// TODO (casie): Clean this up when deprecating legacy tree queue
 			if tq, ok := queueBroker.tree.(*TreeQueue); ok {
 				require.False(t, tq.getNode(QueuePath{"tenant-1"}).IsEmpty())
-			} else if itq, ok := queueBroker.tree.(*IntegratedTreeQueue); ok {
+			} else if itq, ok := queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 				require.False(t, itq.GetNode(QueuePath{"tenant-1"}).IsEmpty())
 			}
 

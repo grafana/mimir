@@ -47,7 +47,8 @@ func newQueueBroker(
 		tenantIDOrder:      nil,
 		tenantsByID:        map[TenantID]*queueTenant{},
 		tenantQuerierIDs:   map[TenantID]map[QuerierID]struct{}{},
-		currentQuerier:     &currentQuerier,
+		tenantNodes:        map[string][]*Node{},
+		currentQuerier:     currentQuerier,
 		tenantOrderIndex:   localQueueIndex,
 	}
 
@@ -101,7 +102,7 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 	}
 
 	// TODO (casie): When deprecating TreeQueue, clean this up.
-	// Technically, the IntegratedTreeQueue approach is adequate for both tree types, but we are temporarily
+	// Technically, the MultiQueuingAlgorithmTreeQueue approach is adequate for both tree types, but we are temporarily
 	// maintaining the legacy tree behavior as much as possible for stability reasons.
 	if tq, ok := qb.tree.(*TreeQueue); ok {
 		if tenantQueueNode := tq.getNode(queuePath[:1]); tenantQueueNode != nil {
@@ -109,7 +110,7 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 				return ErrTooManyRequests
 			}
 		}
-	} else if _, ok := qb.tree.(*IntegratedTreeQueue); ok {
+	} else if _, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 		itemCount := 0
 		for _, tenantNode := range qb.tenantQuerierAssignments.tenantNodes[string(request.tenantID)] {
 			itemCount += tenantNode.ItemCount()
@@ -179,10 +180,8 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 		qb.tenantQuerierAssignments.tenantOrderIndex = tenantIndex
 		queuePath = QueuePath{string(tenant.tenantID)}
 		queueElement = tq.DequeueByPath(queuePath)
-	} else if itq, ok := qb.tree.(*IntegratedTreeQueue); ok {
-		qb.tenantQuerierAssignments.currentQuerier = &querierID
-		qb.tenantQuerierAssignments.tenantOrderIndex = lastTenantIndex
-
+	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+		qb.tenantQuerierAssignments.updateQueuingAlgorithmState(querierID, lastTenantIndex)
 		queuePath, queueElement = itq.Dequeue()
 	}
 
@@ -209,7 +208,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 			// queue node was deleted due to being empty after dequeue
 			qb.tenantQuerierAssignments.removeTenant(tenant.tenantID)
 		}
-	} else if itq, ok := qb.tree.(*IntegratedTreeQueue); ok {
+	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 		queueNodeAfterDequeue := itq.GetNode(queuePath)
 		if queueNodeAfterDequeue == nil && len(qb.tenantQuerierAssignments.tenantNodes[string(tenantID)]) == 0 {
 			// queue node was deleted due to being empty after dequeue
