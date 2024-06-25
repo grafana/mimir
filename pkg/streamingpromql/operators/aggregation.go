@@ -157,22 +157,8 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	a.remainingGroups = a.remainingGroups[1:]
 
 	// Iterate through inner series until the desired group is complete
-	for thisGroup.remainingSeriesCount > 0 {
-		s, err := a.inner.NextSeries(ctx)
-		if err != nil {
-			if errors.Is(err, types.EOS) {
-				return types.InstantVectorSeriesData{}, fmt.Errorf("exhausted series before all groups were completed: %w", err)
-			}
-
-			return types.InstantVectorSeriesData{}, err
-		}
-
-		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
-		a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
-		err = a.seriesIntoGroup(s, thisSeriesGroup, a.steps, a.start, a.interval)
-		if err != nil {
-			return types.InstantVectorSeriesData{}, err
-		}
+	if err := a.accumulateUntilGroupComplete(ctx, thisGroup); err != nil {
+		return types.InstantVectorSeriesData{}, err
 	}
 
 	// Construct the group and return it
@@ -191,6 +177,27 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 
 	groupPool.Put(thisGroup)
 	return seriesData, nil
+}
+
+func (a *Aggregation) accumulateUntilGroupComplete(ctx context.Context, g *group) (err error) {
+	for g.remainingSeriesCount > 0 {
+		s, err := a.inner.NextSeries(ctx)
+		if err != nil {
+			if errors.Is(err, types.EOS) {
+				return fmt.Errorf("exhausted series before all groups were completed: %w", err)
+			}
+
+			return err
+		}
+
+		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
+		a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
+		err = a.seriesIntoGroup(s, thisSeriesGroup, a.steps, a.start, a.interval)
+		if err != nil {
+			return err
+		}
+	}
+	return
 }
 
 func (a *Aggregation) constructSeriesData(thisGroup *group, start int64, interval int64) (types.InstantVectorSeriesData, error) {
