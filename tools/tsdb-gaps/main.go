@@ -64,7 +64,8 @@ func (c *config) registerFlags(f *flag.FlagSet) {
 }
 
 func (c *config) validate() error {
-	if time.Time(c.minTime).After(time.Time(c.maxTime)) {
+	maxTime := time.Time(c.maxTime)
+	if !maxTime.IsZero() && time.Time(c.minTime).After(maxTime) {
 		return fmt.Errorf("minimum timestamp is greater than maximum timestamp")
 	}
 	if c.minTotalMissedSamples < 0 {
