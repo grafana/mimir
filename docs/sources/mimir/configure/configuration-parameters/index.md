@@ -194,6 +194,10 @@ api:
 # The frontend block configures the query-frontend.
 [frontend: <frontend>]
 
+# The ingest_storage block configures the experimental Kafka-based ingest
+# storage.
+[ingest_storage: <ingest_storage>]
+
 # The blocks_storage block configures the blocks storage.
 [blocks_storage: <blocks_storage>]
 
@@ -969,7 +973,7 @@ The `ingester` block configures the ingester.
 ```yaml
 ring:
   # The key-value store used to share the hash ring across multiple instances.
-  # This option needs be set on ingesters, distributors, queriers and rulers
+  # This option needs be set on ingesters, distributors, queriers, and rulers
   # when running in microservices mode.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
@@ -1012,26 +1016,26 @@ ring:
 
   # (advanced) The heartbeat timeout after which ingesters are skipped for
   # reads/writes. 0 = never (timeout disabled). This option needs be set on
-  # ingesters, distributors, queriers and rulers when running in microservices
+  # ingesters, distributors, queriers, and rulers when running in microservices
   # mode.
   # CLI flag: -ingester.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
   # Number of ingesters that each time series is replicated to. This option
-  # needs be set on ingesters, distributors, queriers and rulers when running in
-  # microservices mode.
+  # needs be set on ingesters, distributors, queriers, and rulers when running
+  # in microservices mode.
   # CLI flag: -ingester.ring.replication-factor
   [replication_factor: <int> | default = 3]
 
   # True to enable the zone-awareness and replicate ingested samples across
   # different availability zones. This option needs be set on ingesters,
-  # distributors, queriers and rulers when running in microservices mode.
+  # distributors, queriers, and rulers when running in microservices mode.
   # CLI flag: -ingester.ring.zone-awareness-enabled
   [zone_awareness_enabled: <boolean> | default = false]
 
   # (advanced) Comma-separated list of zones to exclude from the ring. Instances
   # in excluded zones will be filtered out from the ring. This option needs be
-  # set on ingesters, distributors, queriers and rulers when running in
+  # set on ingesters, distributors, queriers, and rulers when running in
   # microservices mode.
   # CLI flag: -ingester.ring.excluded-zones
   [excluded_zones: <string> | default = ""]
@@ -1113,6 +1117,64 @@ ring:
   # used only when "token-generation-strategy" is set to "spread-minimizing".
   # CLI flag: -ingester.ring.spread-minimizing-zones
   [spread_minimizing_zones: <string> | default = ""]
+
+partition_ring:
+  # The key-value store used to share the hash ring across multiple instances.
+  # This option needs be set on ingesters, distributors, queriers, and rulers
+  # when running in microservices mode.
+  kvstore:
+    # Backend storage to use for the ring. Supported values are: consul, etcd,
+    # inmemory, memberlist, multi.
+    # CLI flag: -ingester.partition-ring.store
+    [store: <string> | default = "memberlist"]
+
+    # (advanced) The prefix for the keys in the store. Should end with a /.
+    # CLI flag: -ingester.partition-ring.prefix
+    [prefix: <string> | default = "collectors/"]
+
+    # The consul block configures the consul client.
+    # The CLI flags prefix for this block configuration is:
+    # ingester.partition-ring
+    [consul: <consul>]
+
+    # The etcd block configures the etcd client.
+    # The CLI flags prefix for this block configuration is:
+    # ingester.partition-ring
+    [etcd: <etcd>]
+
+    multi:
+      # (advanced) Primary backend storage used by multi-client.
+      # CLI flag: -ingester.partition-ring.multi.primary
+      [primary: <string> | default = ""]
+
+      # (advanced) Secondary backend storage used by multi-client.
+      # CLI flag: -ingester.partition-ring.multi.secondary
+      [secondary: <string> | default = ""]
+
+      # (advanced) Mirror writes to secondary store.
+      # CLI flag: -ingester.partition-ring.multi.mirror-enabled
+      [mirror_enabled: <boolean> | default = false]
+
+      # (advanced) Timeout for storing value to secondary store.
+      # CLI flag: -ingester.partition-ring.multi.mirror-timeout
+      [mirror_timeout: <duration> | default = 2s]
+
+  # Minimum number of owners to wait before a PENDING partition gets switched to
+  # ACTIVE.
+  # CLI flag: -ingester.partition-ring.min-partition-owners-count
+  [min_partition_owners_count: <int> | default = 1]
+
+  # How long the minimum number of owners are enforced before a PENDING
+  # partition gets switched to ACTIVE.
+  # CLI flag: -ingester.partition-ring.min-partition-owners-duration
+  [min_partition_owners_duration: <duration> | default = 10s]
+
+  # How long to wait before an INACTIVE partition is eligible for deletion. The
+  # partition is deleted only if it has been in INACTIVE state for at least the
+  # configured duration and it has no owners registered. A value of 0 disables
+  # partitions deletion.
+  # CLI flag: -ingester.partition-ring.delete-inactive-partition-after
+  [delete_inactive_partition_after: <duration> | default = 13h]
 
 # (advanced) Period at which metadata we have not seen will remain in memory
 # before being deleted.
@@ -2682,6 +2744,7 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 - `compactor.ring`
 - `distributor.ha-tracker`
 - `distributor.ring`
+- `ingester.partition-ring`
 - `ingester.ring`
 - `overrides-exporter.ring`
 - `query-scheduler.ring`
@@ -2786,6 +2849,7 @@ The `consul` block configures the consul client. The supported CLI flags `<prefi
 - `compactor.ring`
 - `distributor.ha-tracker`
 - `distributor.ring`
+- `ingester.partition-ring`
 - `ingester.ring`
 - `overrides-exporter.ring`
 - `query-scheduler.ring`
@@ -3594,6 +3658,126 @@ The `limits` block configures default and per-tenant limits imposed by component
 # through OTLP.
 # CLI flag: -distributor.otel-metric-suffixes-enabled
 [otel_metric_suffixes_enabled: <boolean> | default = false]
+
+# (experimental) The default consistency level to enforce for queries when using
+# the ingest storage. Supports values: strong, eventual.
+# CLI flag: -ingest-storage.read-consistency
+[ingest_storage_read_consistency: <string> | default = "eventual"]
+
+# (experimental) The number of partitions a tenant's data should be sharded to
+# when using the ingest storage. Tenants are sharded across partitions using
+# shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all
+# partitions.
+# CLI flag: -ingest-storage.ingestion-partition-tenant-shard-size
+[ingestion_partitions_tenant_shard_size: <int> | default = 0]
+```
+
+### ingest_storage
+
+The `ingest_storage` block configures the experimental Kafka-based ingest storage.
+
+```yaml
+# True to enable the ingestion via object storage.
+# CLI flag: -ingest-storage.enabled
+[enabled: <boolean> | default = false]
+
+kafka:
+  # The Kafka backend address.
+  # CLI flag: -ingest-storage.kafka.address
+  [address: <string> | default = ""]
+
+  # The Kafka topic name.
+  # CLI flag: -ingest-storage.kafka.topic
+  [topic: <string> | default = ""]
+
+  # The Kafka client ID.
+  # CLI flag: -ingest-storage.kafka.client-id
+  [client_id: <string> | default = ""]
+
+  # The maximum time allowed to open a connection to a Kafka broker.
+  # CLI flag: -ingest-storage.kafka.dial-timeout
+  [dial_timeout: <duration> | default = 2s]
+
+  # How long to wait for an incoming write request to be successfully committed
+  # to the Kafka backend.
+  # CLI flag: -ingest-storage.kafka.write-timeout
+  [write_timeout: <duration> | default = 10s]
+
+  # The number of Kafka clients used by producers. When the configured number of
+  # clients is greater than 1, partitions are sharded among Kafka clients. A
+  # higher number of clients may provide higher write throughput at the cost of
+  # additional Metadata requests pressure to Kafka.
+  # CLI flag: -ingest-storage.kafka.write-clients
+  [write_clients: <int> | default = 1]
+
+  # The consumer group used by the consumer to track the last consumed offset.
+  # The consumer group must be different for each ingester. If the configured
+  # consumer group contains the '<partition>' placeholder, it is replaced with
+  # the actual partition ID owned by the ingester. When empty (recommended),
+  # Mimir uses the ingester instance ID to guarantee uniqueness.
+  # CLI flag: -ingest-storage.kafka.consumer-group
+  [consumer_group: <string> | default = ""]
+
+  # How frequently a consumer should commit the consumed offset to Kafka. The
+  # last committed offset is used at startup to continue the consumption from
+  # where it was left.
+  # CLI flag: -ingest-storage.kafka.consumer-group-offset-commit-interval
+  [consumer_group_offset_commit_interval: <duration> | default = 1s]
+
+  # How frequently to poll the last produced offset, used to enforce strong read
+  # consistency.
+  # CLI flag: -ingest-storage.kafka.last-produced-offset-poll-interval
+  [last_produced_offset_poll_interval: <duration> | default = 1s]
+
+  # How long to retry a failed request to get the last produced offset.
+  # CLI flag: -ingest-storage.kafka.last-produced-offset-retry-timeout
+  [last_produced_offset_retry_timeout: <duration> | default = 10s]
+
+  # From which position to start consuming the partition at startup. Supported
+  # options: last-offset, start, end, timestamp.
+  # CLI flag: -ingest-storage.kafka.consume-from-position-at-startup
+  [consume_from_position_at_startup: <string> | default = "last-offset"]
+
+  # Milliseconds timestamp after which the consumption of the partition starts
+  # at startup. Only applies when consume-from-position-at-startup is timestamp
+  # CLI flag: -ingest-storage.kafka.consume-from-timestamp-at-startup
+  [consume_from_timestamp_at_startup: <int> | default = 0]
+
+  # The maximum tolerated lag before a consumer is considered to have caught up
+  # reading from a partition at startup, becomes ACTIVE in the hash ring and
+  # passes the readiness check. Set 0 to disable waiting for maximum consumer
+  # lag being honored at startup.
+  # CLI flag: -ingest-storage.kafka.max-consumer-lag-at-startup
+  [max_consumer_lag_at_startup: <duration> | default = 15s]
+
+  # Enable auto-creation of Kafka topic if it doesn't exist.
+  # CLI flag: -ingest-storage.kafka.auto-create-topic-enabled
+  [auto_create_topic_enabled: <boolean> | default = true]
+
+  # When auto-creation of Kafka topic is enabled and this value is positive,
+  # Kafka's num.partitions configuration option is set on Kafka brokers with
+  # this value when Mimir component that uses Kafka starts. This configuration
+  # option specifies the default number of partitions that the Kafka broker uses
+  # for auto-created topics. Note that this is a Kafka-cluster wide setting, and
+  # applies to any auto-created topic. If the setting of num.partitions fails,
+  # Mimir proceeds anyways, but auto-created topics could have an incorrect
+  # number of partitions.
+  # CLI flag: -ingest-storage.kafka.auto-create-topic-default-partitions
+  [auto_create_topic_default_partitions: <int> | default = 0]
+
+  # The maximum size of a Kafka record data that should be generated by the
+  # producer. An incoming write request larger than this size is split into
+  # multiple Kafka records. We strongly recommend to not change this setting
+  # unless for testing purposes.
+  # CLI flag: -ingest-storage.kafka.producer-max-record-size-bytes
+  [producer_max_record_size_bytes: <int> | default = 15983616]
+
+migration:
+  # When both this option and ingest storage are enabled, distributors write to
+  # both Kafka and ingesters. A write request is considered successful only when
+  # written to both backends.
+  # CLI flag: -ingest-storage.migration.distributor-send-to-ingesters-enabled
+  [distributor_send_to_ingesters_enabled: <boolean> | default = false]
 ```
 
 ### blocks_storage

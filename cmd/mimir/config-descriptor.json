@@ -2694,7 +2694,7 @@
               "kind": "field",
               "name": "heartbeat_timeout",
               "required": false,
-              "desc": "The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled). This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode.",
+              "desc": "The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled). This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode.",
               "fieldValue": null,
               "fieldDefaultValue": 60000000000,
               "fieldFlag": "ingester.ring.heartbeat-timeout",
@@ -2705,7 +2705,7 @@
               "kind": "field",
               "name": "replication_factor",
               "required": false,
-              "desc": "Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode.",
+              "desc": "Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode.",
               "fieldValue": null,
               "fieldDefaultValue": 3,
               "fieldFlag": "ingester.ring.replication-factor",
@@ -2715,7 +2715,7 @@
               "kind": "field",
               "name": "zone_awareness_enabled",
               "required": false,
-              "desc": "True to enable the zone-awareness and replicate ingested samples across different availability zones. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode.",
+              "desc": "True to enable the zone-awareness and replicate ingested samples across different availability zones. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "ingester.ring.zone-awareness-enabled",
@@ -2725,7 +2725,7 @@
               "kind": "field",
               "name": "excluded_zones",
               "required": false,
-              "desc": "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode.",
+              "desc": "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingester.ring.excluded-zones",
@@ -2895,6 +2895,367 @@
               "fieldFlag": "ingester.ring.spread-minimizing-zones",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "partition_ring",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "block",
+              "name": "kvstore",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "store",
+                  "required": false,
+                  "desc": "Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "memberlist",
+                  "fieldFlag": "ingester.partition-ring.store",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "prefix",
+                  "required": false,
+                  "desc": "The prefix for the keys in the store. Should end with a /.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "collectors/",
+                  "fieldFlag": "ingester.partition-ring.prefix",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "consul",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "host",
+                      "required": false,
+                      "desc": "Hostname and port of Consul.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "localhost:8500",
+                      "fieldFlag": "ingester.partition-ring.consul.hostname",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "acl_token",
+                      "required": false,
+                      "desc": "ACL Token used to interact with Consul.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.consul.acl-token",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "http_client_timeout",
+                      "required": false,
+                      "desc": "HTTP timeout when talking to Consul",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 20000000000,
+                      "fieldFlag": "ingester.partition-ring.consul.client-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "consistent_reads",
+                      "required": false,
+                      "desc": "Enable consistent reads to Consul.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "ingester.partition-ring.consul.consistent-reads",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "watch_rate_limit",
+                      "required": false,
+                      "desc": "Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "ingester.partition-ring.consul.watch-rate-limit",
+                      "fieldType": "float",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "watch_burst_size",
+                      "required": false,
+                      "desc": "Burst size used in rate limit. Values less than 1 are treated as 1.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "ingester.partition-ring.consul.watch-burst-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "cas_retry_delay",
+                      "required": false,
+                      "desc": "Maximum duration to wait before retrying a Compare And Swap (CAS) operation.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1000000000,
+                      "fieldFlag": "ingester.partition-ring.consul.cas-retry-delay",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "block",
+                  "name": "etcd",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "endpoints",
+                      "required": false,
+                      "desc": "The etcd endpoints to connect to.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": [],
+                      "fieldFlag": "ingester.partition-ring.etcd.endpoints",
+                      "fieldType": "list of strings"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dial_timeout",
+                      "required": false,
+                      "desc": "The dial timeout for the etcd connection.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10000000000,
+                      "fieldFlag": "ingester.partition-ring.etcd.dial-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_retries",
+                      "required": false,
+                      "desc": "The maximum number of retries to do for failed ops.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10,
+                      "fieldFlag": "ingester.partition-ring.etcd.max-retries",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_enabled",
+                      "required": false,
+                      "desc": "Enable TLS.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "ingester.partition-ring.etcd.tls-enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cert_path",
+                      "required": false,
+                      "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.etcd.tls-cert-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_key_path",
+                      "required": false,
+                      "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.etcd.tls-key-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_ca_path",
+                      "required": false,
+                      "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.etcd.tls-ca-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_server_name",
+                      "required": false,
+                      "desc": "Override the expected name on the server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.etcd.tls-server-name",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_insecure_skip_verify",
+                      "required": false,
+                      "desc": "Skip validating server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "ingester.partition-ring.etcd.tls-insecure-skip-verify",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cipher_suites",
+                      "required": false,
+                      "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.etcd.tls-cipher-suites",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_min_version",
+                      "required": false,
+                      "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.etcd.tls-min-version",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "username",
+                      "required": false,
+                      "desc": "Etcd username.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.etcd.username",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "password",
+                      "required": false,
+                      "desc": "Etcd password.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.etcd.password",
+                      "fieldType": "string"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "block",
+                  "name": "multi",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "primary",
+                      "required": false,
+                      "desc": "Primary backend storage used by multi-client.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.multi.primary",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "secondary",
+                      "required": false,
+                      "desc": "Secondary backend storage used by multi-client.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.multi.secondary",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "mirror_enabled",
+                      "required": false,
+                      "desc": "Mirror writes to secondary store.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "ingester.partition-ring.multi.mirror-enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "mirror_timeout",
+                      "required": false,
+                      "desc": "Timeout for storing value to secondary store.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 2000000000,
+                      "fieldFlag": "ingester.partition-ring.multi.mirror-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "min_partition_owners_count",
+              "required": false,
+              "desc": "Minimum number of owners to wait before a PENDING partition gets switched to ACTIVE.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "ingester.partition-ring.min-partition-owners-count",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "min_partition_owners_duration",
+              "required": false,
+              "desc": "How long the minimum number of owners are enforced before a PENDING partition gets switched to ACTIVE.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ingester.partition-ring.min-partition-owners-duration",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "delete_inactive_partition_after",
+              "required": false,
+              "desc": "How long to wait before an INACTIVE partition is eligible for deletion. The partition is deleted only if it has been in INACTIVE state for at least the configured duration and it has no owners registered. A value of 0 disables partitions deletion.",
+              "fieldValue": null,
+              "fieldDefaultValue": 46800000000000,
+              "fieldFlag": "ingester.partition-ring.delete-inactive-partition-after",
+              "fieldType": "duration"
             }
           ],
           "fieldValue": null,
@@ -4348,6 +4709,28 @@
           "fieldFlag": "distributor.otel-metric-suffixes-enabled",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "ingest_storage_read_consistency",
+          "required": false,
+          "desc": "The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual.",
+          "fieldValue": null,
+          "fieldDefaultValue": "eventual",
+          "fieldFlag": "ingest-storage.read-consistency",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "ingestion_partitions_tenant_shard_size",
+          "required": false,
+          "desc": "The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingest-storage.ingestion-partition-tenant-shard-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -6037,6 +6420,216 @@
           "fieldFlag": "query-frontend.downstream-url",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        }
+      ],
+      "fieldValue": null,
+      "fieldDefaultValue": null
+    },
+    {
+      "kind": "block",
+      "name": "ingest_storage",
+      "required": false,
+      "desc": "",
+      "blockEntries": [
+        {
+          "kind": "field",
+          "name": "enabled",
+          "required": false,
+          "desc": "True to enable the ingestion via object storage.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingest-storage.enabled",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "block",
+          "name": "kafka",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "address",
+              "required": false,
+              "desc": "The Kafka backend address.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.address",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "topic",
+              "required": false,
+              "desc": "The Kafka topic name.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.topic",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "client_id",
+              "required": false,
+              "desc": "The Kafka client ID.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.client-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "dial_timeout",
+              "required": false,
+              "desc": "The maximum time allowed to open a connection to a Kafka broker.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2000000000,
+              "fieldFlag": "ingest-storage.kafka.dial-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "write_timeout",
+              "required": false,
+              "desc": "How long to wait for an incoming write request to be successfully committed to the Kafka backend.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ingest-storage.kafka.write-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "write_clients",
+              "required": false,
+              "desc": "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "ingest-storage.kafka.write-clients",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "consumer_group",
+              "required": false,
+              "desc": "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '\u003cpartition\u003e' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.consumer-group",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "consumer_group_offset_commit_interval",
+              "required": false,
+              "desc": "How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "ingest-storage.kafka.consumer-group-offset-commit-interval",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "last_produced_offset_poll_interval",
+              "required": false,
+              "desc": "How frequently to poll the last produced offset, used to enforce strong read consistency.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "ingest-storage.kafka.last-produced-offset-poll-interval",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "last_produced_offset_retry_timeout",
+              "required": false,
+              "desc": "How long to retry a failed request to get the last produced offset.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ingest-storage.kafka.last-produced-offset-retry-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "consume_from_position_at_startup",
+              "required": false,
+              "desc": "From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp.",
+              "fieldValue": null,
+              "fieldDefaultValue": "last-offset",
+              "fieldFlag": "ingest-storage.kafka.consume-from-position-at-startup",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "consume_from_timestamp_at_startup",
+              "required": false,
+              "desc": "Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is timestamp",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.kafka.consume-from-timestamp-at-startup",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "max_consumer_lag_at_startup",
+              "required": false,
+              "desc": "The maximum tolerated lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set 0 to disable waiting for maximum consumer lag being honored at startup.",
+              "fieldValue": null,
+              "fieldDefaultValue": 15000000000,
+              "fieldFlag": "ingest-storage.kafka.max-consumer-lag-at-startup",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "auto_create_topic_enabled",
+              "required": false,
+              "desc": "Enable auto-creation of Kafka topic if it doesn't exist.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "ingest-storage.kafka.auto-create-topic-enabled",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "auto_create_topic_default_partitions",
+              "required": false,
+              "desc": "When auto-creation of Kafka topic is enabled and this value is positive, Kafka's num.partitions configuration option is set on Kafka brokers with this value when Mimir component that uses Kafka starts. This configuration option specifies the default number of partitions that the Kafka broker uses for auto-created topics. Note that this is a Kafka-cluster wide setting, and applies to any auto-created topic. If the setting of num.partitions fails, Mimir proceeds anyways, but auto-created topics could have an incorrect number of partitions.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.kafka.auto-create-topic-default-partitions",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "producer_max_record_size_bytes",
+              "required": false,
+              "desc": "The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes.",
+              "fieldValue": null,
+              "fieldDefaultValue": 15983616,
+              "fieldFlag": "ingest-storage.kafka.producer-max-record-size-bytes",
+              "fieldType": "int"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "migration",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "distributor_send_to_ingesters_enabled",
+              "required": false,
+              "desc": "When both this option and ingest storage are enabled, distributors write to both Kafka and ingesters. A write request is considered successful only when written to both backends.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingest-storage.migration.distributor-send-to-ingesters-enabled",
+              "fieldType": "boolean"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
