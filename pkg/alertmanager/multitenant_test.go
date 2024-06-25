@@ -380,9 +380,6 @@ templates:
 	require.NotZero(t, user4Dir)
 	require.True(t, dirExists(t, user4Dir))
 
-	// Check that the external URL for Grafana was correctly set.
-	require.Equal(t, userGrafanaCfg.ExternalUrl, am.alertmanagers["user4"].cfg.GrafanaExternalURL.String())
-
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
 		# TYPE cortex_alertmanager_config_last_reload_successful gauge
