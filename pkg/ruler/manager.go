@@ -353,11 +353,16 @@ func (r *DefaultMultiTenantManager) removeUsersIf(shouldRemove func(userID strin
 			r.notifiersMtx.Lock()
 			n, ok := r.notifiers[userID]
 			r.notifiersMtx.Unlock()
+
 			if ok {
 				n.stop()
-				delete(r.notifiers, userID)
 			}
+
+			r.notifiersMtx.Lock()
+			delete(r.notifiers, userID)
+			r.notifiersMtx.Unlock()
 		}()
+
 		delete(r.userManagers, userID)
 
 		r.mapper.cleanupUser(userID)
