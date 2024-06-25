@@ -29,6 +29,9 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards. #7674
+  * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric.
+
 ## 5.4.0-rc.0
 
 * [FEATURE] Add support for a dedicated query path for the ruler. This allows for the isolation of ruler and user query paths. Enable it via `ruler.remoteEvaluationDedicatedQueryPath: true`. #7964
@@ -52,7 +55,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] The new values `global.extraVolumes` and `global.extraVolumeMounts` adds volumes and volumeMounts to all pods directly managed by mimir-distributed. #7922
 * [ENHANCEMENT] Smoke-test: Parameterized `backoffLimit` for smoke tests in Helm chart to accommodate slower startup environments like k3d. #8025
 * [ENHANCEMENT] Add a volumeClaimTemplates section to the `chunks-cache`, `index-cache`, `metadata-cache`, and `results-cache` components. #8016
-* [ENHANCEMENT] Add 'gateway.gateway.config.clientMaxBodySize' to the `gateway` to allow setting the maximum allowed size of the client request body. #7960
+* [ENHANCEMENT] Add 'gateway.nginx.config.clientMaxBodySize' to the `gateway` to allow setting the maximum allowed size of the client request body. #7960 #8497
 * [ENHANCEMENT] Update rollout-operator to `v0.17.0`. #8399
 * [ENHANCEMENT] Omit rendering empty `subPath`, `args`, `env`, and `envFrom` in resource manifests. #7587
 * [BUGFIX] Helm: Allowed setting static NodePort for nginx gateway via `gateway.service.nodePort`. #6966

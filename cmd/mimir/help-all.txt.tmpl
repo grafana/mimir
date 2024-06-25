@@ -546,7 +546,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.max-concurrent int
     	Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants. (default 100)
   -blocks-storage.bucket-store.max-concurrent-queue-timeout duration
-    	Timeout for the queue of queries waiting for execution. If the queue is full and the timeout is reached, the query will be retried on another store-gateway. 0 means no timeout and all queries will wait indefinitely for their turn.
+    	Timeout for the queue of queries waiting for execution. If the queue is full and the timeout is reached, the query will be retried on another store-gateway. 0 means no timeout and all queries will wait indefinitely for their turn. (default 5s)
   -blocks-storage.bucket-store.meta-sync-concurrency int
     	Number of Go routines to use when syncing block meta files from object storage per tenant. (default 20)
   -blocks-storage.bucket-store.metadata-cache.backend string
@@ -1418,7 +1418,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.push-circuit-breaker.initial-delay duration
     	[experimental] How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.
   -ingester.push-circuit-breaker.request-timeout duration
-    	[experimental] The maximum duration of an ingester's request before it triggers a circuit breaker. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 2s)
+    	[experimental] The maximum duration of an ingester's request before it triggers a timeout. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 2s)
   -ingester.push-circuit-breaker.thresholding-period duration
     	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.rate-update-period duration
@@ -1434,7 +1434,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.read-circuit-breaker.initial-delay duration
     	[experimental] How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.
   -ingester.read-circuit-breaker.request-timeout duration
-    	[experimental] The maximum duration of an ingester's request before it triggers a circuit breaker. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 30s)
+    	[experimental] The maximum duration of an ingester's request before it triggers a timeout. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 30s)
   -ingester.read-circuit-breaker.thresholding-period duration
     	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.read-path-cpu-utilization-limit float
