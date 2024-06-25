@@ -368,11 +368,17 @@ func (r *DefaultMultiTenantManager) removeUsersIf(shouldRemove func(userID strin
 	r.notifiersMtx.Lock()
 	for userID, n := range r.notifiers {
 		if shouldRemove(userID) {
-			go n.stop()
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				n.stop()
+			}()
 			delete(r.notifiers, userID)
 		}
 	}
 	r.notifiersMtx.Unlock()
+
+	wg.Wait()
 
 	r.managersTotal.Set(float64(len(r.userManagers)))
 }
