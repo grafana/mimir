@@ -23,13 +23,13 @@ import (
 )
 
 type Aggregation struct {
-	inner    types.InstantVectorOperator
-	start    int64
-	end      int64
-	interval int64
-	steps    int
-	grouping []string
-	pool     *pooling.LimitingPool
+	Inner    types.InstantVectorOperator
+	Start    int64 // Milliseconds since Unix epoch
+	End      int64 // Milliseconds since Unix epoch
+	Interval int64 // In milliseconds
+	Steps    int
+	Grouping []string
+	Pool     *pooling.LimitingPool
 
 	remainingInnerSeriesToGroup []*group // One entry per series produced by Inner, value is the group for that series
 	remainingGroups             []*group // One entry per group, in the order we want to return them
@@ -45,13 +45,13 @@ func NewAggregation(
 ) *Aggregation {
 	s, e, i := timestamp.FromTime(start), timestamp.FromTime(end), interval.Milliseconds()
 	return &Aggregation{
-		inner:    inner,
-		start:    s,
-		end:      e,
-		interval: i,
-		steps:    stepCount(s, e, i),
-		grouping: grouping,
-		pool:     pool,
+		Inner:    inner,
+		Start:    s,
+		End:      e,
+		Interval: i,
+		Steps:    stepCount(s, e, i),
+		Grouping: grouping,
+		Pool:     pool,
 	}
 }
 
@@ -83,7 +83,7 @@ var groupPool = zeropool.New(func() *group {
 
 func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	// Fetch the source series
-	innerSeries, err := a.inner.SeriesMetadata(ctx)
+	innerSeries, err := a.Inner.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		// This is something we should likely fix, but at present, Prometheus' PromQL engine doesn't handle collisions either,
 		// so at least both engines will be incorrect in the same way.
 		var groupingKey uint64
-		groupingKey, buf = series.Labels.HashForLabels(buf, a.grouping...)
+		groupingKey, buf = series.Labels.HashForLabels(buf, a.Grouping...)
 		g, groupExists := groups[groupingKey]
 
 		if !groupExists {
@@ -137,12 +137,12 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 }
 
 func (a *Aggregation) labelsForGroup(m labels.Labels, lb *labels.Builder) labels.Labels {
-	if len(a.grouping) == 0 {
+	if len(a.Grouping) == 0 {
 		return labels.EmptyLabels()
 	}
 
 	lb.Reset(m)
-	lb.Keep(a.grouping...)
+	lb.Keep(a.Grouping...)
 	return lb.Labels()
 }
 
@@ -162,7 +162,7 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	}
 
 	// Construct the group and return it
-	seriesData, err := a.constructSeriesData(thisGroup, a.start, a.interval)
+	seriesData, err := a.constructSeriesData(thisGroup, a.Start, a.Interval)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -171,9 +171,9 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	return seriesData, nil
 }
 
-func (a *Aggregation) accumulateUntilGroupComplete(ctx context.Context, g *group) (err error) {
+func (a *Aggregation) accumulateUntilGroupComplete(ctx context.Context, g *group) error {
 	for g.remainingSeriesCount > 0 {
-		s, err := a.inner.NextSeries(ctx)
+		s, err := a.Inner.NextSeries(ctx)
 		if err != nil {
 			if errors.Is(err, types.EOS) {
 				return fmt.Errorf("exhausted series before all groups were completed: %w", err)
@@ -184,7 +184,7 @@ func (a *Aggregation) accumulateUntilGroupComplete(ctx context.Context, g *group
 
 		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
 		a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
-		err = a.accumulateSeriesIntoGroup(s, thisSeriesGroup, a.steps, a.start, a.interval)
+		err = a.accumulateSeriesIntoGroup(s, thisSeriesGroup, a.Steps, a.Start, a.Interval)
 		if err != nil {
 			return err
 		}
@@ -197,7 +197,7 @@ func (a *Aggregation) constructSeriesData(thisGroup *group, start int64, interva
 	var floatPoints []promql.FPoint
 	var err error
 	if floatPointCount > 0 {
-		floatPoints, err = a.pool.GetFPointSlice(floatPointCount)
+		floatPoints, err = a.Pool.GetFPointSlice(floatPointCount)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
@@ -212,7 +212,7 @@ func (a *Aggregation) constructSeriesData(thisGroup *group, start int64, interva
 
 	var histogramPoints []promql.HPoint
 	if thisGroup.histogramPointCount > 0 {
-		histogramPoints, err = a.pool.GetHPointSlice(thisGroup.histogramPointCount)
+		histogramPoints, err = a.Pool.GetHPointSlice(thisGroup.histogramPointCount)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
@@ -225,9 +225,9 @@ func (a *Aggregation) constructSeriesData(thisGroup *group, start int64, interva
 		}
 	}
 
-	a.pool.PutFloatSlice(thisGroup.floatSums)
-	a.pool.PutBoolSlice(thisGroup.floatPresent)
-	a.pool.PutHistogramPointerSlice(thisGroup.histogramSums)
+	a.Pool.PutFloatSlice(thisGroup.floatSums)
+	a.Pool.PutBoolSlice(thisGroup.floatPresent)
+	a.Pool.PutHistogramPointerSlice(thisGroup.histogramSums)
 	thisGroup.floatSums = nil
 	thisGroup.floatPresent = nil
 	thisGroup.histogramSums = nil
@@ -273,15 +273,16 @@ func (g *group) reconcileAndCountFloatPoints() int {
 	return floatPointCount
 }
 
-func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData, seriesGroup *group, steps int, start int64, interval int64) (err error) {
+func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData, seriesGroup *group, steps int, start int64, interval int64) error {
+	var err error
 	if len(s.Floats) > 0 && seriesGroup.floatSums == nil {
 		// First series with float values for this group, populate it.
-		seriesGroup.floatSums, err = a.pool.GetFloatSlice(steps)
+		seriesGroup.floatSums, err = a.Pool.GetFloatSlice(steps)
 		if err != nil {
 			return err
 		}
 
-		seriesGroup.floatPresent, err = a.pool.GetBoolSlice(steps)
+		seriesGroup.floatPresent, err = a.Pool.GetBoolSlice(steps)
 		if err != nil {
 			return err
 		}
@@ -291,7 +292,7 @@ func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData,
 
 	if len(s.Histograms) > 0 && seriesGroup.histogramSums == nil {
 		// First series with histogram values for this group, populate it.
-		seriesGroup.histogramSums, err = a.pool.GetHistogramPointerSlice(steps)
+		seriesGroup.histogramSums, err = a.Pool.GetHistogramPointerSlice(steps)
 		if err != nil {
 			return err
 		}
@@ -319,13 +320,13 @@ func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData,
 		}
 	}
 
-	a.pool.PutInstantVectorSeriesData(s)
+	a.Pool.PutInstantVectorSeriesData(s)
 	seriesGroup.remainingSeriesCount--
 	return nil
 }
 
 func (a *Aggregation) Close() {
-	a.inner.Close()
+	a.Inner.Close()
 }
 
 type groupSorter struct {
