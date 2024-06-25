@@ -45,6 +45,33 @@ func NewFPointRingBuffer(pool FPointPool) *RingBuffer[promql.FPoint] {
 	}
 }
 
+type HPointPool interface {
+	GetHPointSlice(size int) ([]promql.HPoint, error)
+	PutHPointSlice(s []promql.HPoint)
+}
+
+type HPointRingBufferPool struct {
+	pool HPointPool
+}
+
+func (p *HPointRingBufferPool) GetSlice(size int) ([]promql.HPoint, error) {
+	return p.pool.GetHPointSlice(size)
+}
+
+func (p *HPointRingBufferPool) PutSlice(s []promql.HPoint) {
+	p.pool.PutHPointSlice(s)
+}
+
+func (p *HPointRingBufferPool) GetTimestamp(point promql.HPoint) int64 {
+	return point.T
+}
+
+func NewHPointRingBuffer(pool HPointPool) *RingBuffer[promql.HPoint] {
+	return &RingBuffer[promql.HPoint]{
+		pool: &HPointRingBufferPool{pool: pool},
+	}
+}
+
 // DiscardPointsBefore discards all points in this buffer with timestamp less than t.
 func (b *RingBuffer[T]) DiscardPointsBefore(t int64) {
 	for b.size > 0 && b.pool.GetTimestamp(b.points[b.firstIndex]) < t {
