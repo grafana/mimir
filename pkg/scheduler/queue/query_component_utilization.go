@@ -53,7 +53,10 @@ type QueryComponentUtilization struct {
 	// for queries to the less-loaded query component when the query queue becomes backlogged.
 	targetReservedCapacity float64
 
-	inflightRequestsMu           sync.RWMutex
+	inflightRequestsMu sync.RWMutex
+	// inflightRequests tracks requests from the time the request was successfully sent to a querier
+	// to the time the request was completed by the querier or failed due to cancel, timeout, or disconnect.
+	inflightRequests             map[RequestKey]*SchedulerRequest
 	ingesterInflightRequests     int
 	storeGatewayInflightRequests int
 	querierInflightRequestsTotal int
@@ -85,6 +88,7 @@ func NewQueryComponentUtilization(
 	return &QueryComponentUtilization{
 		targetReservedCapacity: targetReservedCapacity,
 
+		inflightRequests:             map[RequestKey]*SchedulerRequest{},
 		ingesterInflightRequests:     0,
 		storeGatewayInflightRequests: 0,
 		querierInflightRequestsTotal: 0,
@@ -152,21 +156,42 @@ func (qcl *QueryComponentUtilization) ExceedsThresholdForComponentName(
 	return false, ""
 }
 
-// IncrementForComponentName is called when a request is sent to a querier
-func (qcl *QueryComponentUtilization) IncrementForComponentName(expectedQueryComponent string) {
+func (qcl *QueryComponentUtilization) MarkRequestSent(req *SchedulerRequest) {
+	if req != nil {
+		qcl.inflightRequestsMu.Lock()
+		defer qcl.inflightRequestsMu.Unlock()
+
+		qcl.inflightRequests[req.Key()] = req
+		qcl.incrementForComponentName(req.ExpectedQueryComponentName())
+	}
+}
+
+func (qcl *QueryComponentUtilization) MarkRequestCompleted(req *SchedulerRequest) {
+	if req != nil {
+		qcl.inflightRequestsMu.Lock()
+		defer qcl.inflightRequestsMu.Unlock()
+
+		reqKey := req.Key()
+		if req, ok := qcl.inflightRequests[reqKey]; ok {
+			qcl.decrementForComponentName(req.ExpectedQueryComponentName())
+		}
+		delete(qcl.inflightRequests, reqKey)
+	}
+}
+
+// incrementForComponentName is called when a request is sent to a querier
+func (qcl *QueryComponentUtilization) incrementForComponentName(expectedQueryComponent string) {
 	qcl.updateForComponentName(expectedQueryComponent, 1)
 }
 
-// DecrementForComponentName is called when a querier completes or fails a request
-func (qcl *QueryComponentUtilization) DecrementForComponentName(expectedQueryComponent string) {
+// decrementForComponentName is called when a querier completes or fails a request
+func (qcl *QueryComponentUtilization) decrementForComponentName(expectedQueryComponent string) {
 	qcl.updateForComponentName(expectedQueryComponent, -1)
 }
 
 func (qcl *QueryComponentUtilization) updateForComponentName(expectedQueryComponent string, increment int) {
 	isIngester, isStoreGateway := queryComponentFlags(expectedQueryComponent)
-
-	qcl.inflightRequestsMu.Lock()
-	defer qcl.inflightRequestsMu.Unlock()
+	// lock is expected to be obtained by the calling method to mark the request as sent or completed
 	if isIngester {
 		qcl.ingesterInflightRequests += increment
 	}

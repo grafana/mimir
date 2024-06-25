@@ -135,9 +135,6 @@ type RequestQueue struct {
 
 	observeInflightRequests chan struct{}
 
-	// querierInflightRequests tracks requests from the time the request was successfully sent to a querier
-	// to the time the request was completed by the querier or failed due to cancel, timeout, or disconnect.
-	querierInflightRequests       map[RequestKey]*SchedulerRequest
 	requestsToEnqueue             chan requestToEnqueue
 	requestsSent                  chan *SchedulerRequest
 	requestsCompleted             chan *SchedulerRequest
@@ -210,7 +207,6 @@ func NewRequestQueue(
 		observeInflightRequests: make(chan struct{}),
 
 		requestsToEnqueue:             make(chan requestToEnqueue),
-		querierInflightRequests:       map[RequestKey]*SchedulerRequest{},
 		requestsSent:                  make(chan *SchedulerRequest),
 		requestsCompleted:             make(chan *SchedulerRequest),
 		querierOperations:             make(chan querierOperation),
@@ -275,10 +271,6 @@ func (q *RequestQueue) dispatcherLoop() {
 			if err == nil {
 				needToDispatchQueries = true
 			}
-		case sentReq := <-q.requestsSent:
-			q.processRequestSent(sentReq)
-		case completedReq := <-q.requestsCompleted:
-			q.processRequestCompleted(completedReq)
 		case waitingConn := <-q.waitingQuerierConns:
 			requestSent := q.trySendNextRequestForQuerier(waitingConn)
 			if !requestSent {
@@ -558,41 +550,6 @@ func (q *RequestQueue) processUnregisterQuerierConnection(querierID QuerierID) (
 
 func (q *RequestQueue) processForgetDisconnectedQueriers() (resharded bool) {
 	return q.queueBroker.forgetDisconnectedQueriers(time.Now())
-}
-
-func (q *RequestQueue) SubmitRequestSent(req *SchedulerRequest) {
-	if req != nil {
-		select {
-		case q.requestsSent <- req:
-		case <-q.stopCompleted:
-		}
-	}
-}
-
-func (q *RequestQueue) processRequestSent(req *SchedulerRequest) {
-	if req != nil {
-		q.querierInflightRequests[req.Key()] = req
-		q.QueryComponentUtilization.IncrementForComponentName(req.ExpectedQueryComponentName())
-	}
-}
-
-func (q *RequestQueue) SubmitRequestCompleted(req *SchedulerRequest) {
-	if req != nil {
-		select {
-		case q.requestsCompleted <- req:
-		case <-q.stopCompleted:
-		}
-	}
-}
-
-func (q *RequestQueue) processRequestCompleted(req *SchedulerRequest) {
-	if req != nil {
-		reqKey := req.Key()
-		if req, ok := q.querierInflightRequests[reqKey]; ok {
-			q.QueryComponentUtilization.DecrementForComponentName(req.ExpectedQueryComponentName())
-		}
-		delete(q.querierInflightRequests, reqKey)
-	}
 }
 
 // waitingQuerierConn is a "request" indicating that the querier is ready to receive the next query request.

@@ -223,11 +223,21 @@ func TestExceedsUtilizationThresholdForQueryComponents(t *testing.T) {
 			require.NoError(t, err)
 
 			for i := 0; i < testCase.ingesterInflightRequests; i++ {
-				queryComponentUtilization.IncrementForComponentName(ingesterQueueDimension)
+				ingesterInflightRequest := &SchedulerRequest{
+					FrontendAddr:              "frontend-a",
+					QueryID:                   uint64(i),
+					AdditionalQueueDimensions: []string{ingesterQueueDimension},
+				}
+				queryComponentUtilization.MarkRequestSent(ingesterInflightRequest)
 			}
 
 			for i := 0; i < testCase.storeGatewayInflightRequests; i++ {
-				queryComponentUtilization.IncrementForComponentName(storeGatewayQueueDimension)
+				storeGatewayInflightRequest := &SchedulerRequest{
+					FrontendAddr:              "frontend-b",
+					QueryID:                   uint64(i),
+					AdditionalQueueDimensions: []string{storeGatewayQueueDimension},
+				}
+				queryComponentUtilization.MarkRequestSent(storeGatewayInflightRequest)
 			}
 
 			exceedsThreshold, queryComponent := queryComponentUtilization.ExceedsThresholdForComponentName(
