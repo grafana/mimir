@@ -145,13 +145,17 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		Name: "cortex_query_scheduler_enqueue_duration_seconds",
 		Help: "Time spent by requests waiting to join the queue or be rejected.",
 	})
-	querierInflightRequestsGauge := promauto.With(registerer).NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "cortex_query_scheduler_querier_inflight_requests",
-			Help: "Number of inflight requests being processed on all querier-scheduler connections.",
+	querierInflightRequestsMetric := promauto.With(registerer).NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "cortex_query_scheduler_querier_inflight_requests",
+			Help:       "Number of inflight requests being processed on all querier-scheduler connections. Quantile buckets keep track of inflight requests over the last 60s.",
+			Objectives: map[float64]float64{0.5: 0.05, 0.75: 0.02, 0.8: 0.02, 0.9: 0.01, 0.95: 0.01, 0.99: 0.001},
+			MaxAge:     time.Minute,
+			AgeBuckets: 6,
 		},
 		[]string{"query_component"},
 	)
+
 	s.requestQueue, err = queue.NewRequestQueue(
 		s.log,
 		cfg.MaxOutstandingPerTenant,
@@ -160,7 +164,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		s.queueLength,
 		s.discardedRequests,
 		enqueueDuration,
-		querierInflightRequestsGauge,
+		querierInflightRequestsMetric,
 	)
 	if err != nil {
 		return nil, err
@@ -278,7 +282,7 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			requestKey := queue.NewSchedulerRequestKey(frontendAddress, msg.QueryID)
 			schedulerReq := s.cancelRequestAndRemoveFromPending(requestKey, "frontend cancelled query")
 			// we may not have reached SubmitRequestSent for this query, but RequestQueue will handle this case
-			s.requestQueue.SubmitRequestCompleted(schedulerReq)
+			s.requestQueue.QueryComponentUtilization.MarkRequestSent(schedulerReq)
 			resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 
 		default:
@@ -447,9 +451,9 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		*/
 
 		if schedulerReq.Ctx.Err() != nil {
-			// remove from pending requests;
-			// no need to SubmitRequestCompleted to RequestQueue as we had not yet SubmitRequestSent
+			// remove from pending requests
 			s.cancelRequestAndRemoveFromPending(schedulerReq.Key(), "request cancelled")
+			s.requestQueue.QueryComponentUtilization.MarkRequestCompleted(schedulerReq)
 			lastUserIndex = lastUserIndex.ReuseLastTenant()
 			continue
 		}
@@ -470,8 +474,8 @@ func (s *Scheduler) NotifyQuerierShutdown(_ context.Context, req *schedulerpb.No
 }
 
 func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, req *queue.SchedulerRequest, queueTime time.Duration) error {
-	s.requestQueue.SubmitRequestSent(req)
-	defer s.requestQueue.SubmitRequestCompleted(req)
+	s.requestQueue.QueryComponentUtilization.MarkRequestSent(req)
+	defer s.requestQueue.QueryComponentUtilization.MarkRequestCompleted(req)
 	defer s.cancelRequestAndRemoveFromPending(req.Key(), "request complete")
 
 	// Handle the stream sending & receiving on a goroutine so we can
