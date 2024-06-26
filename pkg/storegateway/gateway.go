@@ -253,7 +253,7 @@ func (g *StoreGateway) starting(ctx context.Context) (err error) {
 	// At this point, if sharding is enabled, the instance is registered with some tokens
 	// and we can run the initial synchronization.
 	g.bucketSync.WithLabelValues(syncReasonInitial).Inc()
-	if err = g.stores.InitialSync(ctx); err != nil {
+	if err = services.StartAndAwaitRunning(ctx, g.stores); err != nil {
 		return errors.Wrap(err, "initial blocks synchronization")
 	}
 

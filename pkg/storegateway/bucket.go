@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
+	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
@@ -81,6 +82,8 @@ type BucketStoreStats struct {
 // This makes them smaller, but takes extra CPU and memory.
 // When used with in-memory cache, memory usage should decrease overall, thanks to postings being smaller.
 type BucketStore struct {
+	services.Service
+
 	userID          string
 	logger          log.Logger
 	metrics         *BucketStoreMetrics
@@ -257,18 +260,27 @@ func NewBucketStore(
 		return nil, errors.Wrap(err, "create dir")
 	}
 
+	s.Service = services.NewIdleService(s.start, s.stop)
 	return s, nil
+}
+
+func (s *BucketStore) start(ctx context.Context) error {
+	return nil // TODO dimitarvdimitrov
+}
+
+func (s *BucketStore) stop(err error) error {
+	return nil // TODO dimitarvdimitrov
 }
 
 // RemoveBlocksAndClose remove all blocks from local disk and releases all resources associated with the BucketStore.
 func (s *BucketStore) RemoveBlocksAndClose() error {
-	err := s.removeAllBlocks()
+	removeBlocksErr := s.removeAllBlocks()
 
 	// Release other resources even if it failed to close some blocks.
 	s.snapshotter.Stop()
 	s.indexReaderPool.Close()
 
-	return err
+	return multierror.New(removeBlocksErr, services.StopAndAwaitTerminated(context.Background(), s)).Err()
 }
 
 // Stats returns statistics about the BucketStore instance.
