@@ -32,17 +32,16 @@ func (r *Ruler) IsNamespaceProtected(userID string, namespace string) bool {
 }
 
 // ProtectedNamespacesHeaderFromString returns a HTTPHeader with the given namespace as the value and ProtectedNamespacesHeader as the key.
-func ProtectedNamespacesHeaderFromString(namespace string) HTTPHeader {
-	return HTTPHeader{
-		Key:   ProtectedNamespacesHeader,
-		Value: namespace,
+func ProtectedNamespacesHeaderFromString(namespace string) http.Header {
+	return http.Header{
+		ProtectedNamespacesHeader: []string{namespace},
 	}
 }
 
 // ProtectedNamespacesHeaderFromSet returns a HTTPHeader with the given namespaces command-separated as the value and ProtectedNamespacesHeader as the key.
-func ProtectedNamespacesHeaderFromSet(namespacesSet map[string]struct{}) HTTPHeader {
+func ProtectedNamespacesHeaderFromSet(namespacesSet map[string]struct{}) http.Header {
 	if len(namespacesSet) == 0 {
-		return HTTPHeader{}
+		return nil
 	}
 
 	ns := make([]string, 0, len(namespacesSet))
@@ -52,9 +51,8 @@ func ProtectedNamespacesHeaderFromSet(namespacesSet map[string]struct{}) HTTPHea
 
 	slices.Sort(ns)
 
-	return HTTPHeader{
-		Key:   ProtectedNamespacesHeader,
-		Value: strings.Join(ns, ","),
+	return http.Header{
+		ProtectedNamespacesHeader: ns,
 	}
 }
 

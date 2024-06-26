@@ -55,33 +55,30 @@ func Test_IsNamespaceProtected(t *testing.T) {
 
 func Test_ProtectedNamespacesHeaderFromString(t *testing.T) {
 	header := ProtectedNamespacesHeaderFromString("namespace1")
-	require.Equal(t, HTTPHeader{Key: ProtectedNamespacesHeader, Value: "namespace1"}, header)
+	require.Equal(t, http.Header{ProtectedNamespacesHeader: []string{"namespace1"}}, header)
 }
 
 func Test_ProtectedNamespacesHeaderFromSet(t *testing.T) {
 	tc := map[string]struct {
 		namespacesSet map[string]struct{}
-		expected      HTTPHeader
+		expected      http.Header
 	}{
 		"Single namespace": {
 			namespacesSet: map[string]struct{}{
 				"namespace1": {},
 			},
-			expected: HTTPHeader{Key: ProtectedNamespacesHeader, Value: "namespace1"},
+			expected: http.Header{ProtectedNamespacesHeader: []string{"namespace1"}},
 		},
 		"Multiple namespaces": {
 			namespacesSet: map[string]struct{}{
 				"namespace1": {},
 				"namespace2": {},
 			},
-			expected: HTTPHeader{
-				Key:   ProtectedNamespacesHeader,
-				Value: "namespace1,namespace2",
-			},
+			expected: http.Header{ProtectedNamespacesHeader: []string{"namespace1", "namespace2"}},
 		},
 		"Empty namespaces": {
 			namespacesSet: map[string]struct{}{},
-			expected:      HTTPHeader{},
+			expected:      nil,
 		},
 	}
 

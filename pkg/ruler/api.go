@@ -326,7 +326,7 @@ type HTTPHeader struct {
 	Value string
 }
 
-func marshalAndSend(output interface{}, w http.ResponseWriter, logger log.Logger, headers ...HTTPHeader) {
+func marshalAndSend(output interface{}, w http.ResponseWriter, logger log.Logger, headers ...http.Header) {
 	d, err := yaml.Marshal(&output)
 	if err != nil {
 		level.Error(logger).Log("msg", "error marshalling yaml rule groups", "err", err)
@@ -337,7 +337,9 @@ func marshalAndSend(output interface{}, w http.ResponseWriter, logger log.Logger
 	w.Header().Set("Content-Type", "application/yaml")
 	if len(headers) > 0 {
 		for _, v := range headers {
-			w.Header().Set(v.Key, v.Value)
+			for headerKey, headerValue := range v {
+				w.Header().Set(headerKey, strings.Join(headerValue, ","))
+			}
 		}
 	}
 
@@ -347,7 +349,7 @@ func marshalAndSend(output interface{}, w http.ResponseWriter, logger log.Logger
 	}
 }
 
-func respondAccepted(w http.ResponseWriter, logger log.Logger, headers ...HTTPHeader) {
+func respondAccepted(w http.ResponseWriter, logger log.Logger, headers ...http.Header) {
 	b, err := json.Marshal(&response{
 		Status: "success",
 	})
@@ -362,7 +364,9 @@ func respondAccepted(w http.ResponseWriter, logger log.Logger, headers ...HTTPHe
 	w.WriteHeader(http.StatusAccepted)
 	if len(headers) > 0 {
 		for _, v := range headers {
-			w.Header().Set(v.Key, v.Value)
+			for headerKey, headerValue := range v {
+				w.Header().Set(headerKey, strings.Join(headerValue, ","))
+			}
 		}
 	}
 
@@ -503,7 +507,7 @@ func (a *API) GetRuleGroup(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var header HTTPHeader
+	var header http.Header
 	if a.ruler.IsNamespaceProtected(userID, namespace) {
 		header = ProtectedNamespacesHeaderFromString(namespace)
 	}
