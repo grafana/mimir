@@ -55,6 +55,7 @@ func ProtectedNamespacesHeaderFromSet(namespacesSet map[string]struct{}) HTTPHea
 	}
 }
 
+// AllowProtectionOverride checks if the request headers contain the protection override header and if the given namespace is in the list of overrides.
 func AllowProtectionOverride(reqHeaders http.Header, namespace string) error {
 	value := reqHeaders.Get(OverrideProtectionHeader)
 	if value == "" {
