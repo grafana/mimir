@@ -157,5 +157,6 @@ func (m *FunctionOverRangeVector) Close() {
 
 	if m.floatBuffer != nil {
 		m.floatBuffer.Close()
+		m.histogramBuffer.Close()
 	}
 }

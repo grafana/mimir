@@ -33,6 +33,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
@@ -295,6 +296,15 @@ func TestRangeVectorSelectors(t *testing.T) {
 								H: &histogram.FloatHistogram{
 									Sum:   6,
 									Count: 5,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 3,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 3, 1,
+									},
 								},
 							},
 							{
@@ -302,6 +312,15 @@ func TestRangeVectorSelectors(t *testing.T) {
 								H: &histogram.FloatHistogram{
 									Sum:   8,
 									Count: 6,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 3,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 4, 1,
+									},
 								},
 							},
 						},
@@ -314,6 +333,15 @@ func TestRangeVectorSelectors(t *testing.T) {
 								H: &histogram.FloatHistogram{
 									Sum:   8,
 									Count: 6,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 3,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 3, 3,
+									},
 								},
 							},
 							{
@@ -321,6 +349,15 @@ func TestRangeVectorSelectors(t *testing.T) {
 								H: &histogram.FloatHistogram{
 									Sum:   12,
 									Count: 8,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 3,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 4, 5,
+									},
 								},
 							},
 						},
@@ -348,6 +385,15 @@ func TestRangeVectorSelectors(t *testing.T) {
 								H: &histogram.FloatHistogram{
 									Sum:   2,
 									Count: 2,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 3,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 1, 0,
+									},
 								},
 							},
 						},
@@ -368,6 +414,15 @@ func TestRangeVectorSelectors(t *testing.T) {
 								H: &histogram.FloatHistogram{
 									Sum:   1,
 									Count: 1,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 2,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 0,
+									},
 								},
 							},
 							{
@@ -375,6 +430,15 @@ func TestRangeVectorSelectors(t *testing.T) {
 								H: &histogram.FloatHistogram{
 									Sum:   2,
 									Count: 2,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 2,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 1,
+									},
 								},
 							},
 							{
@@ -382,6 +446,15 @@ func TestRangeVectorSelectors(t *testing.T) {
 								H: &histogram.FloatHistogram{
 									Sum:   4,
 									Count: 4,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 4,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 1, 1, 1,
+									},
 								},
 							},
 						},
@@ -412,6 +485,15 @@ func TestRangeVectorSelectors(t *testing.T) {
 								H: &histogram.FloatHistogram{
 									Sum:   3,
 									Count: 3,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 3,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 2, 1,
+									},
 								},
 							},
 						},
@@ -458,6 +540,15 @@ func TestRangeVectorSelectors(t *testing.T) {
 								H: &histogram.FloatHistogram{
 									Sum:   4,
 									Count: 4,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 3,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 2, 1,
+									},
 								},
 							},
 						},
@@ -477,7 +568,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 				res := q.Exec(context.Background())
 
 				// Because Histograms are pointers, it is hard to use Equal for the whole result
-				// Instead, compare what we can, and check values for the Histograms
+				// Instead, compare each point individually.
 				expectedMatrix := expected.Value.(promql.Matrix)
 				resMatrix := res.Value.(promql.Matrix)
 				require.Equal(t, expectedMatrix.Len(), resMatrix.Len(), "Right number of results")
@@ -489,9 +580,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 						require.Equal(t, expectedMatrix[i].Floats, resMatrix[i].Floats, "Float points match")
 						require.Equal(t, len(expectedMatrix[i].Histograms), len(resMatrix[i].Histograms), "Same number of histograms")
 						for j := range expectedMatrix[i].Histograms {
-							require.Equal(t, expectedMatrix[i].Histograms[j].T, resMatrix[i].Histograms[j].T, "Histogram timestamps match")
-							require.Equal(t, expectedMatrix[i].Histograms[j].H.Sum, resMatrix[i].Histograms[j].H.Sum, "Histogram Sums match")
-							require.Equal(t, expectedMatrix[i].Histograms[j].H.Count, resMatrix[i].Histograms[j].H.Count, "Histogram Counts match")
+							test.RequireFloatHistogramEqual(t, expectedMatrix[i].Histograms[j].H, resMatrix[i].Histograms[j].H)
 						}
 					}
 				}

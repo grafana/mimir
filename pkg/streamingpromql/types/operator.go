@@ -60,6 +60,8 @@ type RangeVectorOperator interface {
 	// The provided RingBuffers may be populated with points beyond the end of the expected time range, and
 	// callers should compare returned points' timestamps to the returned RangeVectorStepData.RangeEnd.
 	// Next must be called at least once before calling NextStepSamples.
+	// Keep in mind that HPoint contains a pointer to a histogram, so it is generally not safe to
+	// modify directly as the histogram may be used for other HPoint values, such as when lookback has occurred.
 	NextStepSamples(floats *RingBuffer[promql.FPoint], histograms *RingBuffer[promql.HPoint]) (RangeVectorStepData, error)
 }
 
