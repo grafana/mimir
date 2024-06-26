@@ -31,10 +31,10 @@ more information, see [dashboards and alerts requirements]({{< relref "./require
 
 ### Service discovery
 
-The Agent configuration relies on Kubernetes service discovery and Pod labels to constrain the collected metrics and
+The Grafana Alloy configuration relies on Kubernetes service discovery and Pod labels to constrain the collected metrics and
 logs to ones that are strictly related to the Grafana Mimir deployment. If you are deploying Grafana Mimir on something other than Kubernetes,
-then replace the `kubernetes_sd_configs` block with a block from
-the [Agent configuration](/docs/agent/latest/configuration/) that can discover the Mimir processes.
+then replace the `discovery.kubernetes` component with another component from
+the [Alloy configuration](https://grafana.com/docs/alloy/latest/reference/components) that can discover the Mimir processes.
 
 ### Collect metrics and logs via Grafana Alloy
 
