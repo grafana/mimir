@@ -1441,10 +1441,11 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 						assert.Greater(t, int(chunksSlicePool.(*pool.TrackedPool).Gets.Load()), 0)
 					}
 
-					for _, b := range st.blocks {
+					st.blocks.Range(func(_, val any) bool {
+						b := val.(*bucketBlock)
 						// NOTE(bwplotka): It is 4 x 1.0 for 100mln samples. Kind of make sense: long series.
-						assert.Equal(t, 0.0, promtest.ToFloat64(b.metrics.seriesRefetches))
-					}
+						return assert.Equal(t, 0.0, promtest.ToFloat64(b.metrics.seriesRefetches))
+					})
 
 					// Check exposed metrics.
 					assertHistograms := map[string]bool{
@@ -1792,18 +1793,17 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			LazyLoadingEnabled:     false,
 			LazyLoadingIdleTimeout: 0,
 		}, gate.NewNoop(), indexheader.NewReaderPoolMetrics(nil), nil),
-		metrics:  NewBucketStoreMetrics(nil),
-		blockSet: &bucketBlockSet{blocks: []*bucketBlock{b1, b2}},
-		blocks: map[ulid.ULID]*bucketBlock{
-			b1.meta.ULID: b1,
-			b2.meta.ULID: b2,
-		},
+		metrics:              NewBucketStoreMetrics(nil),
 		postingsStrategy:     selectAllStrategy{},
 		queryGate:            gate.NewNoop(),
 		chunksLimiterFactory: newStaticChunksLimiterFactory(0),
 		seriesLimiterFactory: newStaticSeriesLimiterFactory(0),
 		maxSeriesPerBatch:    65536,
 	}
+
+	store.blockSet = &bucketBlockSet{blocks: []*bucketBlock{b1, b2}}
+	store.blocks.Store(b1.meta.ULID, b1)
+	store.blocks.Store(b2.meta.ULID, b2)
 
 	srv := newStoreGatewayTestServer(t, store)
 
@@ -2568,8 +2568,9 @@ func TestBucketStore_buildStoreStats(t *testing.T) {
 					},
 				},
 			}
-
-			stats := buildStoreStats(durations, map[ulid.ULID]*bucketBlock{uid: blk})
+			var blocks sync.Map
+			blocks.Store(uid, blk)
+			stats := buildStoreStats(durations, &blocks)
 			require.Contains(t, stats.BlocksLoaded, tc.expectedBucket)
 			require.Equal(t, 1, stats.BlocksLoaded[tc.expectedBucket])
 		})
@@ -2879,13 +2880,13 @@ func labelNamesFromSeriesSet(series []*storepb.Series) []string {
 		}
 	}
 
-	labels := make([]string, 0, len(labelsMap))
+	ll := make([]string, 0, len(labelsMap))
 	for k := range labelsMap {
-		labels = append(labels, k)
+		ll = append(ll, k)
 	}
 
-	slices.Sort(labels)
-	return labels
+	slices.Sort(ll)
+	return ll
 }
 
 type headGenOptions struct {
