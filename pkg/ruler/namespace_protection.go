@@ -30,8 +30,8 @@ func (r *Ruler) IsNamespaceProtected(userID string, namespace string) bool {
 	return false
 }
 
-// ProtectedNamespaceHeaderFromString returns a HTTPHeader with the given namespace as the value and ProtectedNamespacesHeader as the key.
-func ProtectedNamespaceHeaderFromString(namespace string) HTTPHeader {
+// ProtectedNamespacesHeaderFromString returns a HTTPHeader with the given namespace as the value and ProtectedNamespacesHeader as the key.
+func ProtectedNamespacesHeaderFromString(namespace string) HTTPHeader {
 	return HTTPHeader{
 		Key:   ProtectedNamespacesHeader,
 		Value: namespace,

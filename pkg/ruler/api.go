@@ -505,7 +505,7 @@ func (a *API) GetRuleGroup(w http.ResponseWriter, req *http.Request) {
 
 	var header HTTPHeader
 	if a.ruler.IsNamespaceProtected(userID, namespace) {
-		header = ProtectedNamespaceHeaderFromString(namespace)
+		header = ProtectedNamespacesHeaderFromString(namespace)
 	}
 
 	formatted := rulespb.FromProto(rg)
