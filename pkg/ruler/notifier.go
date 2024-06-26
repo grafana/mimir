@@ -98,6 +98,9 @@ func (rn *rulerNotifier) applyConfig(cfg *config.Config) error {
 	return rn.sdManager.ApplyConfig(sdCfgs)
 }
 
+// stop stops the notifier and waits for it to terminate.
+//
+// Note that this can take quite some time if draining the notification queue is enabled.
 func (rn *rulerNotifier) stop() {
 	rn.sdCancel(errRulerNotifierStopped)
 	rn.notifier.Stop()
