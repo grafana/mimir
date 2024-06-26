@@ -360,10 +360,7 @@ func (r *LazyBinaryReader) controlLoop() {
 			}
 
 			// Wait until all users finished using current reader.
-			if err := waitWaitGroup(loaded.inUse, 30*time.Second); err != nil {
-				unloadPromise.response <- fmt.Errorf("waiting for active readers: %w", err)
-				continue
-			}
+			waitReadersOrPanic(loaded.inUse)
 
 			r.metrics.unloadCount.Inc()
 			if err := loaded.reader.Close(); err != nil {
@@ -379,7 +376,10 @@ func (r *LazyBinaryReader) controlLoop() {
 	}
 }
 
-func waitWaitGroup(wg *sync.WaitGroup, timeout time.Duration) error {
+func waitReadersOrPanic(wg *sync.WaitGroup) {
+	// timeout is long enough for any request to finish.
+	// The idea is that we don't want to wait forever, but surface a bug.
+	const timeout = time.Hour
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()
@@ -387,9 +387,11 @@ func waitWaitGroup(wg *sync.WaitGroup, timeout time.Duration) error {
 	}()
 	select {
 	case <-done:
-		return nil
+		return
 	case <-time.After(timeout):
-		return fmt.Errorf("timed out")
+		// It is illegal to leave the hanging wg.Wait() and later call wg.Add() on the same instance.
+		// So we panic here.
+		panic(fmt.Sprintf("timed out waiting for readers after %s, there is probably a bug keeping readers open, please report this", timeout))
 	}
 }
 
