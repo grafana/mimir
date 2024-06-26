@@ -707,14 +707,14 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	// Grafana configuration.
 	case cfgs.Mimir.RawConfig == am.fallbackConfig:
 		level.Debug(am.logger).Log("msg", "mimir configuration is default, using grafana config", "user", cfgs.Mimir.User)
-		cfg, err = parseGrafanaConfig(cfgs.Grafana)
+		cfg, err = parseGrafanaConfig(cfgs.Grafana, &cfgs.Mimir)
 		if err != nil {
 			return cfg, nil, err
 		}
 		externalURL, err = url.Parse(cfgs.Grafana.ExternalUrl)
 	case cfgs.Mimir.RawConfig == "":
 		level.Debug(am.logger).Log("msg", "mimir configuration is empty, using grafana config", "user", cfgs.Grafana.User)
-		cfg, err = parseGrafanaConfig(cfgs.Grafana)
+		cfg, err = parseGrafanaConfig(cfgs.Grafana, nil)
 		if err != nil {
 			return cfg, nil, err
 		}

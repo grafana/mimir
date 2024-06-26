@@ -398,7 +398,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		return d + waitFunc()
 	}
 
-	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpl, templateFiles)
+	integrationsMap, err := am.buildIntegrationsMap(cfg.Global, conf.Receivers, tmpl, templateFiles)
 	if err != nil {
 		return err
 	}
@@ -496,7 +496,7 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.Template, templateFiles []string) (map[string][]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*definition.PostableApiReceiver, tmpl *template.Template, templateFiles []string) (map[string][]*nfstatus.Integration, error) {
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
@@ -531,7 +531,7 @@ func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceive
 				}
 				gTmpl.ExternalURL = tmpl.ExternalURL
 			}
-			integrations, err = buildGrafanaReceiverIntegrations(rcv, gTmpl, am.logger)
+			integrations, err = buildGrafanaReceiverIntegrations(gCfg, rcv, gTmpl, am.logger)
 		} else {
 			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, nw)
 		}
@@ -545,13 +545,25 @@ func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceive
 	return integrationsMap, nil
 }
 
-func buildGrafanaReceiverIntegrations(rcv *definition.PostableApiReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
+func buildGrafanaReceiverIntegrations(gCfg *config.GlobalConfig, rcv *definition.PostableApiReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
 	loggerFactory := newLoggerFactory(logger)
 	whFn := func(alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
 		return NewSender(logger), nil
 	}
-	emailFn := func(alertingReceivers.Metadata) (alertingReceivers.EmailSender, error) {
-		return NewSender(logger), nil
+
+	emailCfg := alertingReceivers.EmailSenderConfig{
+		AuthPassword: string(gCfg.SMTPAuthPassword),
+		AuthUser:     gCfg.SMTPAuthUsername,
+		CertFile:     gCfg.HTTPConfig.TLSConfig.CertFile,
+		ContentTypes: []string{"text/html"},
+		EhloIdentity: gCfg.SMTPHello,
+		ExternalURL:  tmpl.ExternalURL.String(),
+		FromAddress:  gCfg.SMTPFrom,
+		FromName:     "Grafana",
+		Host:         gCfg.SMTPSmarthost.String(),
+		KeyFile:      gCfg.HTTPConfig.TLSConfig.KeyFile,
+		SkipVerify:   !gCfg.SMTPRequireTLS,
+		// TODO: add static headers.
 	}
 
 	// The decrypt functions and the context are used to decrypt the configuration.
@@ -567,7 +579,7 @@ func buildGrafanaReceiverIntegrations(rcv *definition.PostableApiReceiver, tmpl 
 		&images.UnavailableProvider{}, // TODO: include images in notifications
 		loggerFactory,
 		whFn,
-		emailFn,
+		alertingReceivers.NewEmailSenderFactory(emailCfg),
 		1, // orgID is always 1.
 		version.Version,
 	)

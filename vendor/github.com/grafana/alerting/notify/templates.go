@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	tmplhtml "html/template"
+	"net/url"
 	tmpltext "text/template"
 
+	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/templates"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/template"
@@ -19,7 +21,7 @@ type TestTemplatesConfigBodyParams struct {
 	// Template string to test.
 	Template string
 
-	// Name of the template file.
+	// Name of the template.
 	Name string
 }
 
@@ -96,7 +98,7 @@ func (am *GrafanaAlertmanager) TestTemplate(ctx context.Context, c TestTemplates
 	var captureTemplate template.Option = func(text *tmpltext.Template, _ *tmplhtml.Template) {
 		newTextTmpl = text
 	}
-	newTmpl, err := am.TemplateFromContent(templateContents, captureTemplate)
+	newTmpl, err := templateFromContent(templateContents, am.ExternalURL(), captureTemplate)
 	if err != nil {
 		return nil, err
 	}
@@ -131,6 +133,30 @@ func (am *GrafanaAlertmanager) TestTemplate(ctx context.Context, c TestTemplates
 	return &results, nil
 }
 
+func (am *GrafanaAlertmanager) GetTemplate() (*template.Template, error) {
+	am.reloadConfigMtx.RLock()
+
+	seen := make(map[string]struct{})
+	tmpls := make([]string, 0, len(am.templates))
+	for _, tc := range am.templates {
+		if _, ok := seen[tc.Name]; ok {
+			level.Warn(am.logger).Log("msg", "template with same name is defined multiple times, skipping...", "template_name", tc.Name)
+			continue
+		}
+		tmpls = append(tmpls, tc.Template)
+		seen[tc.Name] = struct{}{}
+	}
+
+	am.reloadConfigMtx.RUnlock()
+
+	tmpl, err := templateFromContent(tmpls, am.ExternalURL())
+	if err != nil {
+		return nil, err
+	}
+
+	return tmpl, nil
+}
+
 // parseTestTemplate parses the test template and returns the top-level definitions that should be interpolated as results.
 func parseTestTemplate(name string, text string) ([]string, error) {
 	tmpl, err := tmpltext.New(name).Funcs(tmpltext.FuncMap(template.DefaultFuncs)).Parse(text)
@@ -144,4 +170,18 @@ func parseTestTemplate(name string, text string) ([]string, error) {
 	}
 
 	return topLevel, nil
+}
+
+// TemplateFromContent returns a *Template based on defaults and the provided template contents.
+func templateFromContent(tmpls []string, externalURL string, options ...template.Option) (*templates.Template, error) {
+	tmpl, err := templates.FromContent(tmpls, options...)
+	if err != nil {
+		return nil, err
+	}
+	extURL, err := url.Parse(externalURL)
+	if err != nil {
+		return nil, err
+	}
+	tmpl.ExternalURL = extURL
+	return tmpl, nil
 }
