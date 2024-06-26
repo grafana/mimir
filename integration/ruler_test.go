@@ -1343,9 +1343,8 @@ func TestRulerProtectedNamespaces(t *testing.T) {
 	)
 
 	// Configure the ruler.
-	// TODO: Figure out how to do multiple namespaces.
 	rulerFlags := mergeFlags(CommonStorageBackendFlags(), RulerFlags(), BlocksStorageFlags(), map[string]string{
-		"-ruler.protected-namespaces": protectedNamespaceOne,
+		"-ruler.protected-namespaces": strings.Join([]string{protectedNamespaceOne, protectedNamespaceTwo}, ","),
 	})
 
 	// Start Mimir components.
@@ -1358,14 +1357,17 @@ func TestRulerProtectedNamespaces(t *testing.T) {
 	cWithOverrideHeader, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), "user-1", e2emimir.WithAddHeader(
 		mimir_ruler.OverrideProtectionHeader, protectedNamespaceOne))
 	require.NoError(t, err)
-
-	// Create a rule group in one of the protected namespaces so that the headers we get back are set correctly.
-	setupRg := createTestRuleGroup(withName("protected-rg"))
-	require.NoError(t, cWithOverrideHeader.SetRuleGroup(setupRg, protectedNamespaceOne))
+	cWithOverrideHeader2, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), "user-1", e2emimir.WithAddHeader(
+		mimir_ruler.OverrideProtectionHeader, protectedNamespaceTwo))
+	require.NoError(t, err)
 
 	const nonProtectedNamespace = "namespace1"
 
 	t.Run("without protection overrides", func(t *testing.T) {
+		// Create a rule group in one of the protected namespaces so that the headers we get back are set correctly.
+		setupRg := createTestRuleGroup(withName("protected-rg"))
+		require.NoError(t, cWithOverrideHeader.SetRuleGroup(setupRg, protectedNamespaceOne))
+
 		t.Run("on a non-protected namespace", func(t *testing.T) {
 			rgnp1 := createTestRuleGroup(withName("rgnp1"))
 			// Create two rule groups successfully.
@@ -1450,6 +1452,29 @@ func TestRulerProtectedNamespaces(t *testing.T) {
 			// Delete a namespace successfully.
 			require.NoError(t, cWithOverrideHeader.DeleteRuleNamespace(protectedNamespaceOne))
 		})
+	})
+
+	t.Run("with multiple namespaces protected", func(t *testing.T) {
+		// Create a rule group in one of the protected namespaces so that the headers we get back are set correctly.
+		setupRg := createTestRuleGroup(withName("protected-rg"))
+		require.NoError(t, cWithOverrideHeader.SetRuleGroup(setupRg, protectedNamespaceOne))
+
+		// You can't modify the protected namespace without the correct override header.
+		// We're using the client that has the override header set for protectedNamespaceOne.
+		rgp2 := createTestRuleGroup(withName("protected-rg2"))
+		require.EqualError(t, cWithOverrideHeader.SetRuleGroup(rgp2, protectedNamespaceTwo), "unexpected status code: 403")
+
+		// With the right client, it succeeds.
+		require.NoError(t, cWithOverrideHeader2.SetRuleGroup(rgp2, protectedNamespaceTwo))
+
+		// When listing rules, the header should give you all protected namespaces.
+		resp, rgs, err := cWithOverrideHeader.GetRuleGroups()
+
+		require.Len(t, rgs, 2)
+		require.Len(t, rgs[protectedNamespaceOne], 1)
+		require.Len(t, rgs[protectedNamespaceTwo], 1)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{protectedNamespaceOne, protectedNamespaceTwo}, strings.Split(resp.Header.Get(mimir_ruler.ProtectedNamespacesHeader), ","))
 	})
 }
 
