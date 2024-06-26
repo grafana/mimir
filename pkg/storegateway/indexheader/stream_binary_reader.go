@@ -273,7 +273,7 @@ func writeSparseHeadersToFile(logger *spanlogger.SpanLogger, id ulid.ULID, spars
 		return fmt.Errorf("failed to close gzip sparse index-header: %w", err)
 	}
 
-	if err := atomicfs.CreateFileAndMove(sparseHeadersPath+".tmp", sparseHeadersPath, gzipped); err != nil {
+	if err := atomicfs.CreateFile(sparseHeadersPath, gzipped); err != nil {
 		return fmt.Errorf("failed to write sparse index-header file: %w", err)
 	}
 
