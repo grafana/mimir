@@ -15,6 +15,9 @@ topologySpreadConstraints:
   {{- else }}
     matchLabels:
       {{- $selectorLabels | nindent 6 }}
+  matchLabelKeys: {{ $constraint.matchLabelKeys }}
+  nodeAffinityPolicy: {{ $constraint.nodeAffinityPolicy }}
+  nodeTaintsPolicy: {{ $constraint.nodeTaintsPolicy }}
   {{- end -}}
 {{- end -}}
 {{- end -}}
