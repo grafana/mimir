@@ -105,7 +105,7 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxOutstandingPerTenant, "query-scheduler.max-outstanding-requests-per-tenant", 100, "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429.")
 	f.BoolVar(&cfg.AdditionalQueryQueueDimensionsEnabled, "query-scheduler.additional-query-queue-dimensions-enabled", false, "Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)")
-	f.BoolVar(&cfg.UseMultiAlgorithmQueryQueue, "query-scheduler.use-multi-algorithm-query-queue", false, "Use an experimental version of the query queue which has the same behavior as the existing queue, but integrates tenant selection into the tree model. (default false)")
+	f.BoolVar(&cfg.UseMultiAlgorithmQueryQueue, "query-scheduler.use-multi-algorithm-query-queue", false, "Use an experimental version of the query queue which has the same behavior as the existing queue, but integrates tenant selection into the tree model.")
 	f.DurationVar(&cfg.QuerierForgetDelay, "query-scheduler.querier-forget-delay", 0, "If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.")
 
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-scheduler.grpc-client-config", f)

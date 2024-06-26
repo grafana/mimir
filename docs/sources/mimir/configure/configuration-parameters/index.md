@@ -1710,7 +1710,7 @@ The `query_scheduler` block configures the query-scheduler.
 
 # (experimental) Use an experimental version of the query queue which has the
 # same behavior as the existing queue, but integrates tenant selection into the
-# tree model. (default false)
+# tree model.
 # CLI flag: -query-scheduler.use-multi-algorithm-query-queue
 [use_multi_algorithm_query_queue: <boolean> | default = false]
 

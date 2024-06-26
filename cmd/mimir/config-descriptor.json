@@ -15913,7 +15913,7 @@
           "kind": "field",
           "name": "use_multi_algorithm_query_queue",
           "required": false,
-          "desc": "Use an experimental version of the query queue which has the same behavior as the existing queue, but integrates tenant selection into the tree model. (default false)",
+          "desc": "Use an experimental version of the query queue which has the same behavior as the existing queue, but integrates tenant selection into the tree model.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-scheduler.use-multi-algorithm-query-queue",
