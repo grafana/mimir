@@ -4,7 +4,6 @@
 
 ### Grafana Mimir
 
-* [BUGFIX] Alertmanager: Fix per-tenant silence limits not reloaded during runtime. #8456
 * [CHANGE] Store-gateway / querier: enable streaming chunks from store-gateways to queriers by default. #6646
 * [CHANGE] Querier: honor the start/end time range specified in the read hints when executing a remote read request. #8431
 * [CHANGE] Querier: return only samples within the queried start/end time range when executing a remote read request using "SAMPLES" mode. Previously, samples outside of the range could have been returned. Samples outside of the queried time range may still be returned when executing a remote read request using "STREAMED_XOR_CHUNKS" mode. #8463
@@ -36,6 +35,7 @@
 * [BUGFIX] Store-gateway: store sparse index headers atomically to disk. #8485
 * [BUGFIX] Query scheduler: fix a panic in request queueing. #8451
 * [BUGFIX] Querier: fix issue where "context canceled" is logged for trace spans for requests to store-gateways that return no series when chunks streaming is enabled. #8510
+* [BUGFIX] Alertmanager: Fix per-tenant silence limits not reloaded during runtime. #8456
 
 ### Mixin
 
