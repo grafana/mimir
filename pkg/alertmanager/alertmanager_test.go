@@ -93,7 +93,7 @@ route:
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-	require.NoError(t, am.ApplyConfig(cfg, cfgRaw))
+	require.NoError(t, am.ApplyConfig(cfg, cfgRaw, &url.URL{}))
 
 	now := time.Now()
 
@@ -177,7 +177,7 @@ route:
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-	require.NoError(t, am.ApplyConfig(cfg, cfgRaw))
+	require.NoError(t, am.ApplyConfig(cfg, cfgRaw, &url.URL{}))
 
 	now := time.Now()
 	inputAlerts := []*types.Alert{
@@ -466,7 +466,7 @@ route:
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-	require.NoError(t, am.ApplyConfig(cfg, cfgRaw))
+	require.NoError(t, am.ApplyConfig(cfg, cfgRaw, &url.URL{}))
 
 	doGetReceivers := func() []alertingmodels.Receiver {
 		rr := httptest.NewRecorder()

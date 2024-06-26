@@ -26,6 +26,7 @@ import (
 	alertingNotify "github.com/grafana/alerting/notify"
 	"github.com/grafana/alerting/notify/nfstatus"
 	alertingReceivers "github.com/grafana/alerting/receivers"
+	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/api"
@@ -356,7 +357,7 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, rawCfg string) error {
+func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, rawCfg string, tmplExternalURL *url.URL) error {
 	templateFiles := make([]string, len(conf.Templates))
 	for i, t := range conf.Templates {
 		templateFilepath, err := safeTemplateFilepath(filepath.Join(am.cfg.TenantDataDir, templatesDir), t)
@@ -371,7 +372,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 	if err != nil {
 		return err
 	}
-	tmpl.ExternalURL = am.cfg.ExternalURL
+	tmpl.ExternalURL = tmplExternalURL
 
 	cfg := definition.GrafanaToUpstreamConfig(conf)
 	am.api.Update(&cfg, func(_ model.LabelSet) {})
@@ -397,7 +398,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		return d + waitFunc()
 	}
 
-	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpl)
+	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpl, templateFiles)
 	if err != nil {
 		return err
 	}
@@ -495,7 +496,7 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.Template) (map[string][]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.Template, templateFiles []string) (map[string][]*nfstatus.Integration, error) {
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
@@ -513,12 +514,24 @@ func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceive
 		return notifier
 	}
 
+	var gTmpl *template.Template
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
 		var integrations []*nfstatus.Integration
 		var err error
 		if rcv.Type() == definition.GrafanaReceiverType {
-			integrations, err = buildGrafanaReceiverIntegrations(rcv, tmpl, am.logger)
+			// Create the Grafana template struct if it has not already been created.
+			if gTmpl == nil {
+				gTmpl, err = template.FromGlobs(templateFiles, WithCustomFunctions(am.cfg.UserID))
+				if err != nil {
+					return nil, err
+				}
+				if err := gTmpl.Parse(strings.NewReader(alertingTemplates.DefaultTemplateString)); err != nil {
+					return nil, err
+				}
+				gTmpl.ExternalURL = tmpl.ExternalURL
+			}
+			integrations, err = buildGrafanaReceiverIntegrations(rcv, gTmpl, am.logger)
 		} else {
 			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, nw)
 		}
