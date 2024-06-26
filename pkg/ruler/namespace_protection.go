@@ -3,8 +3,8 @@
 package ruler
 
 import (
-	"context"
 	"errors"
+	"net/http"
 	"strings"
 )
 
@@ -55,13 +55,12 @@ func ProtectedNamespacesHeaderFromSet(namespacesSet map[string]struct{}) HTTPHea
 	}
 }
 
-func AllowProtectionOverride(ctx context.Context, namespace string) error {
-	value, ok := ctx.Value(OverrideProtectionHeader).(string)
-	if !ok {
+func AllowProtectionOverride(reqHeaders http.Header, namespace string) error {
+	value := reqHeaders.Get(OverrideProtectionHeader)
+	if value == "" {
 		return ErrNoProtectionOverrideHeader
 	}
 
-	// TODO: Perhaps support a wildcard for all namespaces? Def needed for things like SLOs.
 	overrideNamespaces := strings.Split(value, ",")
 
 	if len(overrideNamespaces) == 0 {

@@ -2536,7 +2536,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.poll-interval duration
     	How frequently the configured rule groups are re-synced from the object storage. (default 10m0s)
   -ruler.protected-namespaces string
-    	[experimental] List of namespaces that are protected from modification unless a special HTTP header is used. If a namespace is protected, it cannot be modified via the ruler's config API only read. The value is a list of strings, where each string is a namespace name. On the command line, this list is given as a comma-separated list.
+    	[experimental] Namespaces that are protected from modification unless a special HTTP header is used, the flag can be repeated in order to protect multiple namespaces. If a namespace is protected, it cannot be modified via the ruler's config API only read. The value is a string that represents the namespace name.
   -ruler.query-frontend.address string
     	GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.
   -ruler.query-frontend.grpc-client-config.backoff-max-period duration

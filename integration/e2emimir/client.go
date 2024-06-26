@@ -719,11 +719,11 @@ func (c *Client) GetPrometheusRules() ([]*promv1.RuleGroup, error) {
 }
 
 // GetRuleGroups gets the configured rule groups from the ruler.
-func (c *Client) GetRuleGroups() (map[string][]rulefmt.RuleGroup, error) {
+func (c *Client) GetRuleGroups() (*http.Response, error, map[string][]rulefmt.RuleGroup) {
 	// Create HTTP request
 	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/prometheus/config/v1/rules", c.rulerAddress), nil)
 	if err != nil {
-		return nil, err
+		return nil, err, nil
 	}
 	req.Header.Set("X-Scope-OrgID", c.orgID)
 
@@ -733,7 +733,7 @@ func (c *Client) GetRuleGroups() (map[string][]rulefmt.RuleGroup, error) {
 	// Execute HTTP request
 	res, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
-		return nil, err
+		return nil, err, nil
 	}
 
 	defer res.Body.Close()
@@ -741,15 +741,15 @@ func (c *Client) GetRuleGroups() (map[string][]rulefmt.RuleGroup, error) {
 
 	data, err := io.ReadAll(res.Body)
 	if err != nil {
-		return nil, err
+		return nil, err, nil
 	}
 
 	err = yaml.Unmarshal(data, rgs)
 	if err != nil {
-		return nil, err
+		return nil, err, nil
 	}
 
-	return rgs, nil
+	return res, nil, rgs
 }
 
 // SetRuleGroup configures the provided rulegroup to the ruler.
@@ -825,6 +825,10 @@ func (c *Client) DeleteRuleGroup(namespace string, groupName string) error {
 		return err
 	}
 
+	if res.StatusCode != 202 {
+		return fmt.Errorf("unexpected status code: %d", res.StatusCode)
+	}
+
 	defer res.Body.Close()
 	return nil
 }
@@ -843,9 +847,14 @@ func (c *Client) DeleteRuleNamespace(namespace string) error {
 	defer cancel()
 
 	// Execute HTTP request
-	_, err = c.httpClient.Do(req.WithContext(ctx))
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
 		return err
+	}
+
+	if resp.StatusCode != 202 {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+
 	}
 
 	return nil

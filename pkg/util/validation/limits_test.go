@@ -889,7 +889,6 @@ differentuser:
 
 	for name, tt := range tc {
 		t.Run(name, func(t *testing.T) {
-
 			t.Cleanup(func() {
 				SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
 			})
@@ -911,6 +910,69 @@ differentuser:
 			require.NoError(t, err)
 
 			require.Equal(t, tt.expectedLimit, ov.RulerMaxRuleGroupsPerTenant("testuser", tt.inputNamespace))
+		})
+	}
+}
+
+func TestRulerProtectedNamespacesOverrides(t *testing.T) {
+	tc := map[string]struct {
+		inputYAML          string
+		overrides          string
+		expectedNamespaces []string
+	}{
+		"no user specific protected namespaces": {
+			inputYAML: `
+ruler_protected_namespaces:
+  - ns1
+  - ns2
+`,
+			expectedNamespaces: []string{"ns1", "ns2"},
+		},
+		"default limit for not specific user": {
+			inputYAML: `
+ruler_protected_namespaces:
+  - ns1
+  - ns2
+`,
+			overrides: `
+randomuser:
+  ruler_protected_namespaces:
+    - ns3
+`,
+			expectedNamespaces: []string{"ns1", "ns2"},
+		},
+		"overridden limit for specific user": {
+			inputYAML: `
+ruler_protected_namespaces:
+  - ns1
+  - ns2
+`,
+			overrides: `
+user1:
+  ruler_protected_namespaces:
+    - ns3
+`,
+			expectedNamespaces: []string{"ns3"},
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			var LimitsYAML Limits
+			err := yaml.Unmarshal([]byte(tt.inputYAML), &LimitsYAML)
+			require.NoError(t, err)
+
+			SetDefaultLimitsForYAMLUnmarshalling(LimitsYAML)
+
+			overrides := map[string]*Limits{}
+			err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+			require.NoError(t, err)
+
+			tl := NewMockTenantLimits(overrides)
+			ov, err := NewOverrides(LimitsYAML, tl)
+			require.NoError(t, err)
+
+			require.Equal(t, tt.expectedNamespaces, ov.RulerProtectedNamespaces("user1"))
 		})
 	}
 }

@@ -523,7 +523,7 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if a.ruler.IsNamespaceProtected(userID, namespace) {
-		if err = AllowProtectionOverride(req.Context(), namespace); err != nil {
+		if err = AllowProtectionOverride(req.Header, namespace); err != nil {
 			level.Error(logger).Log("msg", "unable to create rule group under namespace", "err", err.Error())
 			http.Error(w, "namespace is protected, no modification allowed", http.StatusForbidden)
 			return
@@ -607,7 +607,7 @@ func (a *API) DeleteNamespace(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if a.ruler.IsNamespaceProtected(userID, namespace) {
-		if err = AllowProtectionOverride(req.Context(), namespace); err != nil {
+		if err = AllowProtectionOverride(req.Header, namespace); err != nil {
 			level.Error(logger).Log("msg", "unable to delete namespace", "err", err.Error())
 			http.Error(w, "namespace is protected, no modification allowed", http.StatusForbidden)
 			return
@@ -640,7 +640,7 @@ func (a *API) DeleteRuleGroup(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if a.ruler.IsNamespaceProtected(userID, namespace) {
-		if err = AllowProtectionOverride(req.Context(), namespace); err != nil {
+		if err = AllowProtectionOverride(req.Header, namespace); err != nil {
 			level.Error(logger).Log("msg", "unable to delete rule group under namespace", "err", err.Error())
 			http.Error(w, "namespace is protected, no modification allowed", http.StatusForbidden)
 			return

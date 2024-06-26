@@ -36,6 +36,7 @@ import (
 	"github.com/grafana/mimir/integration/ca"
 	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/querier/api"
+	mimir_ruler "github.com/grafana/mimir/pkg/ruler"
 )
 
 func TestRulerAPI(t *testing.T) {
@@ -72,7 +73,7 @@ func TestRulerAPI(t *testing.T) {
 	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(1), "cortex_ruler_managers_total"))
 
 	// Check to ensure the rules running in the ruler match what was set
-	rgs, err := c.GetRuleGroups()
+	_, err, rgs := c.GetRuleGroups()
 	require.NoError(t, err)
 
 	retrievedNamespace, exists := rgs[namespaceOne]
@@ -85,7 +86,7 @@ func TestRulerAPI(t *testing.T) {
 	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(2), "cortex_prometheus_rule_group_rules"))
 
 	// Check to ensure the rules running in the ruler match what was set
-	rgs, err = c.GetRuleGroups()
+	_, err, rgs = c.GetRuleGroups()
 	require.NoError(t, err)
 
 	retrievedNamespace, exists = rgs[namespaceOne]
@@ -131,7 +132,7 @@ func TestRulerAPI(t *testing.T) {
 	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(0), "cortex_ruler_managers_total"))
 
 	// Check to ensure the rule groups are no longer active
-	groups, err := c.GetRuleGroups()
+	_, err, groups := c.GetRuleGroups()
 	require.NoError(t, err)
 	require.Empty(t, groups)
 
@@ -175,7 +176,7 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	require.NoError(t, mimir.WaitSumMetrics(e2e.Equals(1), "cortex_ruler_managers_total"))
 
 	// Check to ensure the rules running in the mimir match what was set
-	rgs, err := c.GetRuleGroups()
+	_, err, rgs := c.GetRuleGroups()
 	require.NoError(t, err)
 
 	retrievedNamespace, exists := rgs[namespace]
@@ -928,7 +929,7 @@ func TestRulerFederatedRules(t *testing.T) {
 			require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(float64(i+1)), "cortex_ruler_managers_total"))
 
 			// Check to ensure the rules running in the ruler match what was set
-			rgs, err := c.GetRuleGroups()
+			_, err, rgs := c.GetRuleGroups()
 			retrievedNamespace, exists := rgs[namespace]
 			require.NoError(t, err)
 			require.True(t, exists)
@@ -1326,6 +1327,132 @@ func TestRuler_RestoreWithLongForPeriod(t *testing.T) {
 	assert.Equal(t, "firing", rules[0].Rules[0].(v1.AlertingRule).State)
 }
 
+func TestRulerProtectedNamespaces(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, mimirBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	const (
+		protectedNamespaceOne = "namespace-protected-1"
+		protectedNamespaceTwo = "namespace-protected-2"
+	)
+
+	// Configure the ruler.
+	// TODO: Figure out how to do multiple namespaces.
+	rulerFlags := mergeFlags(CommonStorageBackendFlags(), RulerFlags(), BlocksStorageFlags(), map[string]string{
+		"-ruler.protected-namespaces": protectedNamespaceOne,
+	})
+
+	// Start Mimir components.
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags)
+	require.NoError(t, s.StartAndWaitReady(ruler))
+
+	// Create two clients, one with the override header and one without for the same user - we'll need them both.
+	client, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), "user-1")
+	require.NoError(t, err)
+	cWithOverrideHeader, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), "user-1", e2emimir.WithAddHeader(
+		mimir_ruler.OverrideProtectionHeader, protectedNamespaceOne))
+	require.NoError(t, err)
+
+	// Create a rule group in one of the protected namespaces so that the headers we get back are set correctly.
+	setupRg := createTestRuleGroup(withName("protected-rg"))
+	require.NoError(t, cWithOverrideHeader.SetRuleGroup(setupRg, protectedNamespaceOne))
+
+	const nonProtectedNamespace = "namespace1"
+
+	t.Run("without protection overrides", func(t *testing.T) {
+		t.Run("on a non-protected namespace", func(t *testing.T) {
+			rgnp1 := createTestRuleGroup(withName("rgnp1"))
+			// Create two rule groups successfully.
+			require.NoError(t, client.SetRuleGroup(rgnp1, nonProtectedNamespace))
+			require.NoError(t, client.SetRuleGroup(createTestRuleGroup(withName("rgnp2")), nonProtectedNamespace))
+			// List all rule groups successfully.
+			resp, err, rgs := client.GetRuleGroups()
+			require.Len(t, rgs, 2)
+			require.Len(t, rgs[nonProtectedNamespace], 2)
+			require.Len(t, rgs[protectedNamespaceOne], 1)
+			require.Equal(t, resp.Header.Get(mimir_ruler.ProtectedNamespacesHeader), protectedNamespaceOne)
+			require.NoError(t, err)
+			// Get a rule group successfully.
+			resp, err = client.GetRuleGroup(nonProtectedNamespace, rgnp1.Name)
+			require.Equal(t, resp.Header.Get(mimir_ruler.ProtectedNamespacesHeader), "") // No namespace header unless requesting the protected namespace.
+			require.NoError(t, err)
+			// Delete a rule group successfully.
+			require.NoError(t, client.DeleteRuleGroup(nonProtectedNamespace, rgnp1.Name))
+			// Delete a namespace successfully.
+			require.NoError(t, client.DeleteRuleNamespace(nonProtectedNamespace))
+		})
+
+		t.Run("on a protected namespace", func(t *testing.T) {
+			// Create a rule group in the protected namespace fails.
+			require.EqualError(t, client.SetRuleGroup(createTestRuleGroup(), protectedNamespaceOne), "unexpected status code: 403")
+			// List all rule groups successfully.
+			resp, err, rgs := client.GetRuleGroups()
+			require.Len(t, rgs, 1)
+			require.Len(t, rgs[protectedNamespaceOne], 1)
+			require.Equal(t, resp.Header.Get(mimir_ruler.ProtectedNamespacesHeader), protectedNamespaceOne)
+			require.NoError(t, err)
+			// Get the rule group we originally created successfully.
+			resp, err = client.GetRuleGroup(protectedNamespaceOne, setupRg.Name)
+			require.Equal(t, resp.Header.Get(mimir_ruler.ProtectedNamespacesHeader), protectedNamespaceOne)
+			require.NoError(t, err)
+			// Deleting the rule group we created as part of the setup fails.
+			require.EqualError(t, client.DeleteRuleGroup(protectedNamespaceOne, setupRg.Name), "unexpected status code: 403")
+			// Deleting a namespace we create as part of the setup fails.
+			require.EqualError(t, client.DeleteRuleNamespace(protectedNamespaceOne), "unexpected status code: 403")
+		})
+	})
+
+	t.Run("with protection overrides", func(t *testing.T) {
+		t.Run("on a non-protected namespace", func(t *testing.T) {
+			rgnp1 := createTestRuleGroup(withName("rgnp1"))
+			// Create two rule groups successfully.
+			require.NoError(t, cWithOverrideHeader.SetRuleGroup(rgnp1, nonProtectedNamespace))
+			require.NoError(t, cWithOverrideHeader.SetRuleGroup(createTestRuleGroup(withName("rgnp2")), nonProtectedNamespace))
+			// List all rule groups successfully.
+			resp, err, rgs := cWithOverrideHeader.GetRuleGroups()
+			require.Len(t, rgs, 2)
+			require.Len(t, rgs[nonProtectedNamespace], 2)
+			require.Len(t, rgs[protectedNamespaceOne], 1)
+			require.Equal(t, resp.Header.Get(mimir_ruler.ProtectedNamespacesHeader), protectedNamespaceOne)
+			require.NoError(t, err)
+			// Get a rule group successfully.
+			resp, err = cWithOverrideHeader.GetRuleGroup(nonProtectedNamespace, rgnp1.Name)
+			require.Equal(t, resp.Header.Get(mimir_ruler.ProtectedNamespacesHeader), "") // No namespace header unless requesting the protected namespace.
+			require.NoError(t, err)
+			// Delete a rule group successfully.
+			require.NoError(t, cWithOverrideHeader.DeleteRuleGroup(nonProtectedNamespace, rgnp1.Name))
+			// Delete a namespace successfully.
+			require.NoError(t, cWithOverrideHeader.DeleteRuleNamespace(nonProtectedNamespace))
+		})
+
+		t.Run("on a protected namespace", func(t *testing.T) {
+			rgp1 := createTestRuleGroup(withName("rgp1"))
+			// Create another rule group successfully. We created another one as part of the setup.
+			require.NoError(t, cWithOverrideHeader.SetRuleGroup(rgp1, protectedNamespaceOne))
+			// List all rule groups successfully.
+			resp, err, rgs := cWithOverrideHeader.GetRuleGroups()
+			require.Len(t, rgs, 1)
+			require.Len(t, rgs[protectedNamespaceOne], 2)
+			require.Equal(t, resp.Header.Get(mimir_ruler.ProtectedNamespacesHeader), protectedNamespaceOne)
+			require.NoError(t, err)
+			// Get a rule group successfully.
+			resp, err = cWithOverrideHeader.GetRuleGroup(protectedNamespaceOne, rgp1.Name)
+			require.Equal(t, resp.Header.Get(mimir_ruler.ProtectedNamespacesHeader), protectedNamespaceOne) // No namespace header unless requesting the protected namespace.
+			require.NoError(t, err)
+			// Delete a rule group successfully.
+			require.NoError(t, cWithOverrideHeader.DeleteRuleGroup(protectedNamespaceOne, rgp1.Name))
+			// Delete a namespace successfully.
+			require.NoError(t, cWithOverrideHeader.DeleteRuleNamespace(protectedNamespaceOne))
+		})
+	})
+}
+
 func TestRulerEnableAPIs(t *testing.T) {
 	testCases := []struct {
 		name                        string
@@ -1464,8 +1591,22 @@ func ruleGroupWithRules(groupName string, interval time.Duration, rules ...rulef
 	}
 }
 
-func createTestRuleGroup() rulefmt.RuleGroup {
-	return ruleGroupWithRules("test_encoded_+\"+group_name/?", 100, recordingRule("test_rule", "up"))
+func withName(name string) testRuleGroupsOption {
+	return func(rg *rulefmt.RuleGroup) {
+		rg.Name = name
+	}
+}
+
+type testRuleGroupsOption func(*rulefmt.RuleGroup)
+
+func createTestRuleGroup(opts ...testRuleGroupsOption) rulefmt.RuleGroup {
+	rg := ruleGroupWithRules("test_encoded_+\"+group_name/?", 100, recordingRule("test_rule", "up"))
+
+	for _, opt := range opts {
+		opt(&rg)
+	}
+
+	return rg
 }
 
 func recordingRule(record, expr string) rulefmt.RuleNode {
