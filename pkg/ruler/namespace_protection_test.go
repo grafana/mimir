@@ -21,7 +21,7 @@ func Test_IsNamespaceProtected(t *testing.T) {
 			userID:    "user1",
 			namespace: "namespace1",
 			protected: true,
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
 				tenantLimits["user1"] = validation.MockDefaultLimits()
 				tenantLimits["user1"].RulerProtectedNamespaces = []string{"namespace1"}
 			}),
@@ -30,7 +30,7 @@ func Test_IsNamespaceProtected(t *testing.T) {
 			userID:    "user1",
 			namespace: "namespace3",
 			protected: false,
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
 				tenantLimits["user1"] = validation.MockDefaultLimits()
 				tenantLimits["user1"].RulerProtectedNamespaces = []string{"namespace1", "namespace2"}
 			}),

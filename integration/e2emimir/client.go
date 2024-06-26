@@ -719,11 +719,11 @@ func (c *Client) GetPrometheusRules() ([]*promv1.RuleGroup, error) {
 }
 
 // GetRuleGroups gets the configured rule groups from the ruler.
-func (c *Client) GetRuleGroups() (*http.Response, error, map[string][]rulefmt.RuleGroup) {
+func (c *Client) GetRuleGroups() (*http.Response, map[string][]rulefmt.RuleGroup, error) {
 	// Create HTTP request
 	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/prometheus/config/v1/rules", c.rulerAddress), nil)
 	if err != nil {
-		return nil, err, nil
+		return nil, nil, err
 	}
 	req.Header.Set("X-Scope-OrgID", c.orgID)
 
@@ -733,7 +733,7 @@ func (c *Client) GetRuleGroups() (*http.Response, error, map[string][]rulefmt.Ru
 	// Execute HTTP request
 	res, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
-		return nil, err, nil
+		return nil, nil, err
 	}
 
 	defer res.Body.Close()
@@ -741,15 +741,15 @@ func (c *Client) GetRuleGroups() (*http.Response, error, map[string][]rulefmt.Ru
 
 	data, err := io.ReadAll(res.Body)
 	if err != nil {
-		return nil, err, nil
+		return nil, nil, err
 	}
 
 	err = yaml.Unmarshal(data, rgs)
 	if err != nil {
-		return nil, err, nil
+		return nil, nil, err
 	}
 
-	return res, nil, rgs
+	return res, rgs, nil
 }
 
 // SetRuleGroup configures the provided rulegroup to the ruler.
