@@ -500,6 +500,10 @@ type ruleDependencyController struct{}
 
 // AnalyseRules implements RuleDependencyController.
 func (ruleDependencyController) AnalyseRules(rules []Rule) {
+	AnalyseRulesDependencies(rules)
+}
+
+func AnalyseRulesDependencies(rules []Rule) {
 	depMap := buildDependencyMap(rules)
 
 	if depMap == nil {
