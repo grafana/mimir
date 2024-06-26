@@ -11,10 +11,12 @@ import (
 )
 
 // Create creates a new file at a temporary path that will be renamed to the
-// supplied path on close, ensuring all data and the containing directory have
-// been fsynced to disk.
+// supplied path on close from a temporary file in the same directory, ensuring
+// all data and the containing directory have been fsynced to disk.
 func Create(path string) (*File, error) {
-	// Important that the temporary file is in the same directory as the final file.
+	// We rename from a temporary file in the same directory to because rename
+	// can only operate on two files that are on the same filesystem. Creating
+	// a temporary file in the same directory is an easy way to guarantee that.
 	final := filepath.Clean(path)
 	tmp := tempPath(final)
 
@@ -66,6 +68,14 @@ func (a *File) Close() error {
 	}
 
 	cleanup = false
+	// After writing the file and calling fsync on it, fsync the containing directory
+	// to ensure the directory entry is persisted to disk.
+	//
+	// From https://man7.org/linux/man-pages/man2/fsync.2.html
+	// > Calling fsync() does not necessarily ensure that the entry in the
+	// > directory containing the file has also reached disk.  For that an
+	// > explicit fsync() on a file descriptor for the directory is also
+	// > needed.
 	dir, err := os.Open(filepath.Dir(a.finalPath))
 	if err != nil {
 		return err
