@@ -5,6 +5,7 @@ package ruler
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 )
 
@@ -48,6 +49,8 @@ func ProtectedNamespacesHeaderFromSet(namespacesSet map[string]struct{}) HTTPHea
 	for k := range namespacesSet {
 		ns = append(ns, k)
 	}
+
+	slices.Sort(ns)
 
 	return HTTPHeader{
 		Key:   ProtectedNamespacesHeader,
