@@ -731,15 +731,15 @@ func (c *Client) GetRuleGroups() (*http.Response, map[string][]rulefmt.RuleGroup
 	defer cancel()
 
 	// Execute HTTP request
-	res, err := c.httpClient.Do(req.WithContext(ctx))
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
 		return nil, nil, err
 	}
 
-	defer res.Body.Close()
+	defer resp.Body.Close()
 	rgs := map[string][]rulefmt.RuleGroup{}
 
-	data, err := io.ReadAll(res.Body)
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -749,7 +749,7 @@ func (c *Client) GetRuleGroups() (*http.Response, map[string][]rulefmt.RuleGroup
 		return nil, nil, err
 	}
 
-	return res, rgs, nil
+	return resp, rgs, nil
 }
 
 // SetRuleGroup configures the provided rulegroup to the ruler.
