@@ -35,6 +35,7 @@
 * [BUGFIX] Store-gateway: store sparse index headers atomically to disk. #8485
 * [BUGFIX] Query scheduler: fix a panic in request queueing. #8451
 * [BUGFIX] Querier: fix issue where "context canceled" is logged for trace spans for requests to store-gateways that return no series when chunks streaming is enabled. #8510
+* [BUGFIX] Alertmanager: Fix per-tenant silence limits not reloaded during runtime. #8456
 
 ### Mixin
 
