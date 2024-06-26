@@ -6,8 +6,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func Test_IsNamespaceProtected(t *testing.T) {
