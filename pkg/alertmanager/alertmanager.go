@@ -374,10 +374,6 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 	}
 	tmpl.ExternalURL = tmplExternalURL
 
-	if err := tmpl.Parse(strings.NewReader(alertingTemplates.DefaultTemplateString)); err != nil {
-		return err
-	}
-
 	cfg := definition.GrafanaToUpstreamConfig(conf)
 	am.api.Update(&cfg, func(_ model.LabelSet) {})
 
