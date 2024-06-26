@@ -468,19 +468,19 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 	}
 
 	numRules := 0
-	ProtectedNamespaces := map[string]struct{}{}
+	protectedNamespaces := map[string]struct{}{}
 	for _, rg := range rgs {
 		numRules += len(rg.Rules)
 
 		if a.ruler.IsNamespaceProtected(userID, rg.Namespace) {
-			ProtectedNamespaces[rg.Namespace] = struct{}{}
+			protectedNamespaces[rg.Namespace] = struct{}{}
 		}
 	}
 
 	level.Debug(logger).Log("msg", "retrieved rules for rule groups from rule store", "userID", userID, "num_groups", len(rgs), "num_rules", numRules)
 
 	formatted := rgs.Formatted()
-	marshalAndSend(formatted, w, logger, ProtectedNamespacesHeaderFromSet(ProtectedNamespaces))
+	marshalAndSend(formatted, w, logger, ProtectedNamespacesHeaderFromSet(protectedNamespaces))
 }
 
 func (a *API) GetRuleGroup(w http.ResponseWriter, req *http.Request) {
