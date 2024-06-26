@@ -342,6 +342,8 @@ func (r *DefaultMultiTenantManager) removeUsersIf(shouldRemove func(userID strin
 			continue
 		}
 
+		// Stop manager in the background, so we don't block further resharding operations.
+		// The manager won't terminate until any inflight evaluations are complete.
 		go mngr.Stop()
 		delete(r.userManagers, userID)
 
@@ -354,6 +356,10 @@ func (r *DefaultMultiTenantManager) removeUsersIf(shouldRemove func(userID strin
 	}
 
 	r.managersTotal.Set(float64(len(r.userManagers)))
+
+	// Note that we don't remove any notifiers here:
+	// - stopping a notifier can take quite some time, as it needs to drain the notification queue (if enabled), and we don't want to block further resharding operations
+	// - we can safely reuse the notifier if the tenant is resharded back to this ruler in the future
 }
 
 func (r *DefaultMultiTenantManager) GetRules(userID string) []*promRules.Group {
