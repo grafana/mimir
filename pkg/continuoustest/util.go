@@ -291,10 +291,11 @@ func generateHistogramFloatValue(t time.Time, gauge bool) float64 {
 // of expectedSeries and checks whether the actual values match the expected ones.
 // Samples are checked in backward order, from newest to oldest. Returns error if values don't match,
 // and the index of the last sample that matched the expectation or -1 if no sample matches.
-func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time.Duration, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc) (lastMatchingIdx int, err error) {
+func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time.Duration, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc) (lastMatchingIdx int, err error, failTimestamp model.Time) {
 	lastMatchingIdx = -1
+	failTimestamp = model.Time(0)
 	if len(matrix) != 1 {
-		return lastMatchingIdx, fmt.Errorf("expected 1 series in the result but got %d", len(matrix))
+		return lastMatchingIdx, fmt.Errorf("expected 1 series in the result but got %d", len(matrix)), failTimestamp
 	}
 
 	samples := matrix[0].Values
@@ -302,24 +303,24 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 	haveSamples := len(samples) > 0
 	haveHistograms := len(histograms) > 0
 	if haveSamples && haveHistograms {
-		return lastMatchingIdx, fmt.Errorf("expected only floats or histograms in the result but got both")
+		return lastMatchingIdx, fmt.Errorf("expected only floats or histograms in the result but got both"), failTimestamp
 	}
 	if !haveSamples && !haveHistograms {
-		return lastMatchingIdx, fmt.Errorf("expected either floats or histograms in the result but got neither")
+		return lastMatchingIdx, fmt.Errorf("expected either floats or histograms in the result but got neither"), failTimestamp
 	}
 
 	if haveHistograms {
 		for idx := len(histograms) - 1; idx >= 0; idx-- {
 			histogram := histograms[idx]
 			if histogram.Histogram == nil {
-				return lastMatchingIdx, fmt.Errorf("found null pointer in histogram")
+				return lastMatchingIdx, fmt.Errorf("found null pointer in histogram"), failTimestamp
 			}
 			ts := time.UnixMilli(int64(histogram.Timestamp)).UTC()
 
 			// Assert on value.
 			expectedHistogram := generateSampleHistogram(ts, expectedSeries)
 			if !compareHistogramValues(histogram.Histogram, expectedHistogram, maxComparisonDeltaHistogram) {
-				return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) has sum %f while was expecting %f", histogram.Timestamp, ts.String(), histogram.Histogram.Sum, expectedHistogram.Sum)
+				return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) has sum %f while was expecting %f", histogram.Timestamp, ts.String(), histogram.Histogram.Sum, expectedHistogram.Sum), failTimestamp
 			}
 
 			// Assert on histogram timestamp. We expect no gaps.
@@ -329,13 +330,13 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 
 				if ts.UnixMilli() != expectedTs.UnixMilli() {
 					return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) was expected to have timestamp %d (%s) because next histogram has timestamp %d (%s)",
-						histogram.Timestamp, ts.String(), expectedTs.UnixMilli(), expectedTs.String(), nextTs.UnixMilli(), nextTs.String())
+						histogram.Timestamp, ts.String(), expectedTs.UnixMilli(), expectedTs.String(), nextTs.UnixMilli(), nextTs.String()), failTimestamp
 				}
 			}
 
 			lastMatchingIdx = idx
 		}
-		return lastMatchingIdx, nil
+		return lastMatchingIdx, nil, failTimestamp
 	}
 
 	for idx := len(samples) - 1; idx >= 0; idx-- {
@@ -346,7 +347,8 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 		expectedValue := generateValue(ts) * float64(expectedSeries)
 		if !compareFloatValues(float64(sample.Value), expectedValue, maxComparisonDeltaFloat) {
 			comparison := formatExpectedAndActualValuesComparison(matrix, expectedSeries, generateValue)
-			return lastMatchingIdx, fmt.Errorf("sample at timestamp %d (%s) has value %f while was expecting %f, full result comparison:\n%s", sample.Timestamp, ts.String(), sample.Value, expectedValue, comparison)
+
+			return lastMatchingIdx, fmt.Errorf("sample at timestamp %d (%s) has value %f while was expecting %f, full result comparison:\n%s", sample.Timestamp, ts.String(), sample.Value, expectedValue, comparison), sample.Timestamp
 		}
 
 		// Assert on sample timestamp. We expect no gaps.
@@ -356,13 +358,13 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 
 			if ts.UnixMilli() != expectedTs.UnixMilli() {
 				return lastMatchingIdx, fmt.Errorf("sample at timestamp %d (%s) was expected to have timestamp %d (%s) because next sample has timestamp %d (%s)",
-					sample.Timestamp, ts.String(), expectedTs.UnixMilli(), expectedTs.String(), nextTs.UnixMilli(), nextTs.String())
+					sample.Timestamp, ts.String(), expectedTs.UnixMilli(), expectedTs.String(), nextTs.UnixMilli(), nextTs.String()), failTimestamp
 			}
 		}
 
 		lastMatchingIdx = idx
 	}
-	return lastMatchingIdx, nil
+	return lastMatchingIdx, nil, failTimestamp
 }
 
 // accounts for float imprecision

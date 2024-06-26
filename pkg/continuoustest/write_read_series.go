@@ -5,6 +5,7 @@ package continuoustest
 import (
 	"context"
 	"flag"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -299,10 +300,25 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	}
 
 	t.metrics.queryResultChecksTotal.WithLabelValues(typeLabel).Inc()
-	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram)
+	var failedTimestamp model.Time
+	_, err, failedTimestamp = verifySamplesSum(matrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram)
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Range query result check failed", "err", err, "type", typeLabel)
+
+		// Run an instant query and dump the resulting series_id
+		vec, errIQ := t.client.Query(ctx, "max_over_time(mimir_continuous_test_sine_wave[1s])", failedTimestamp.Time())
+		if errIQ != nil {
+			level.Warn(logger).Log("msg", "Failed to execute instant query to dump series_id", "err", errIQ)
+		} else {
+			samples := []string{}
+			for _, entry := range vec {
+				seriesID := entry.Metric["series_id"]
+				samples = append(samples, fmt.Sprintf("%s:%s:%s", seriesID, entry.Timestamp.String(), entry.Value.String()))
+			}
+			level.Warn(logger).Log("msg", "Instant query to dump series_id", "samples", samples)
+		}
+
 		return errors.Wrap(err, "range query result check failed")
 	}
 	return nil
@@ -351,7 +367,7 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 	}
 
 	t.metrics.queryResultChecksTotal.WithLabelValues(typeLabel).Inc()
-	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, 0, generateValue, generateSampleHistogram)
+	_, err, _ = verifySamplesSum(matrix, t.cfg.NumSeries, 0, generateValue, generateSampleHistogram)
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Instant query result check failed", "err", err, "type", typeLabel)
@@ -417,7 +433,7 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 			level.Error(logger).Log("msg", "The range query used to find previously written samples returned either both floats and histograms or neither", "query", query)
 			return
 		}
-		lastMatchingIdx, _ := verifySamplesSum(fullMatrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram)
+		lastMatchingIdx, _, _ := verifySamplesSum(fullMatrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram)
 		if lastMatchingIdx == -1 {
 			return
 		}

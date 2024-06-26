@@ -123,7 +123,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 1*multiplier)
 		client.AssertNumberOfCalls(t, "QueryRange", 4*multiplier)
-		client.AssertNumberOfCalls(t, "Query", 4*multiplier)
+		client.AssertNumberOfCalls(t, "Query", 8*multiplier)
 
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
@@ -157,7 +157,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 1*multiplier)
 		client.AssertNumberOfCalls(t, "QueryRange", 4*multiplier)
-		client.AssertNumberOfCalls(t, "Query", 4*multiplier)
+		client.AssertNumberOfCalls(t, "Query", 8*multiplier)
 
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
@@ -196,7 +196,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 3*multiplier)
 		client.AssertNumberOfCalls(t, "QueryRange", 4*multiplier)
-		client.AssertNumberOfCalls(t, "Query", 4*multiplier)
+		client.AssertNumberOfCalls(t, "Query", 8*multiplier)
 
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
@@ -324,12 +324,18 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 				client.On("Query", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything).Return(model.Vector{
 					{Timestamp: model.Time(now.UnixMilli()), Value: model.SampleValue(tt.generateValue(now) * float64(cfg.NumSeries))},
 				}, nil)
+				client.On("Query", mock.Anything, "max_over_time(mimir_continuous_test_sine_wave[1s])", mock.Anything, mock.Anything).Return(model.Vector{
+					{Timestamp: model.Time(now.UnixMilli())},
+				}, nil)
 			} else {
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
 					{Histograms: []model.SampleHistogramPair{newSampleHistogramPair(now, tt.generateSampleHistogram(now, cfg.NumSeries))}},
 				}, nil)
 				client.On("Query", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything).Return(model.Vector{
 					{Timestamp: model.Time(now.UnixMilli()), Histogram: tt.generateSampleHistogram(now, cfg.NumSeries)},
+				}, nil)
+				client.On("Query", mock.Anything, "max_over_time(mimir_continuous_test_sine_wave[1s])", mock.Anything, mock.Anything).Return(model.Vector{
+					{Timestamp: model.Time(now.UnixMilli())},
 				}, nil)
 			}
 		}
@@ -375,12 +381,18 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 				client.On("Query", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything).Return(model.Vector{
 					{Timestamp: model.Time(now.UnixMilli()), Value: 12345},
 				}, nil)
+				client.On("Query", mock.Anything, "max_over_time(mimir_continuous_test_sine_wave[1s])", mock.Anything, mock.Anything).Return(model.Vector{
+					{Timestamp: model.Time(now.UnixMilli())},
+				}, nil)
 			} else {
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
 					{Histograms: []model.SampleHistogramPair{newSampleHistogramPair(now, tt.generateSampleHistogram(now, 1))}},
 				}, nil)
 				client.On("Query", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything).Return(model.Vector{
 					{Timestamp: model.Time(now.UnixMilli()), Histogram: tt.generateSampleHistogram(now, 1)},
+				}, nil)
+				client.On("Query", mock.Anything, "max_over_time(mimir_continuous_test_sine_wave[1s])", mock.Anything, mock.Anything).Return(model.Vector{
+					{Timestamp: model.Time(now.UnixMilli())},
 				}, nil)
 			}
 		}
@@ -393,7 +405,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 1*multiplier)
 		client.AssertNumberOfCalls(t, "QueryRange", 4*multiplier)
-		client.AssertNumberOfCalls(t, "Query", 4*multiplier)
+		client.AssertNumberOfCalls(t, "Query", 8*multiplier)
 
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)

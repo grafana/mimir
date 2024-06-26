@@ -66,6 +66,7 @@ func testVerifySamplesSumFloats(t *testing.T, generateValue generateValueFunc, t
 		expectedStep            time.Duration
 		expectedLastMatchingIdx int
 		expectedErr             string
+		expectedFailTimestamp   model.Time
 	}{
 		"should return no error if all samples value and timestamp match the expected one (1 series)": {
 			samples: []model.SamplePair{
@@ -99,6 +100,7 @@ func testVerifySamplesSumFloats(t *testing.T, generateValue generateValueFunc, t
 			expectedStep:            10 * time.Second,
 			expectedLastMatchingIdx: -1,
 			expectedErr:             "sample at timestamp .* has value .* while was expecting .*",
+			expectedFailTimestamp:   model.Time(now.Add(30 * time.Second).UnixMilli()),
 		},
 		"should return error if there's a missing sample": {
 			samples: []model.SamplePair{
@@ -126,12 +128,13 @@ func testVerifySamplesSumFloats(t *testing.T, generateValue generateValueFunc, t
 	for testName, testData := range tests {
 		t.Run(fmt.Sprintf("%s:%s", testLabel, testName), func(t *testing.T) {
 			matrix := model.Matrix{{Values: testData.samples}}
-			actualLastMatchingIdx, actualErr := verifySamplesSum(matrix, testData.expectedSeries, testData.expectedStep, generateValue, nil)
+			actualLastMatchingIdx, actualErr, failTimestamp := verifySamplesSum(matrix, testData.expectedSeries, testData.expectedStep, generateValue, nil)
 			if testData.expectedErr == "" {
 				assert.NoError(t, actualErr)
 			} else {
 				assert.Error(t, actualErr)
 				assert.Regexp(t, testData.expectedErr, actualErr.Error())
+				assert.Equal(t, testData.expectedFailTimestamp, failTimestamp)
 			}
 			assert.Equal(t, testData.expectedLastMatchingIdx, actualLastMatchingIdx)
 		})
@@ -155,6 +158,7 @@ func testVerifySamplesSumHistograms(t *testing.T, generateValue generateValueFun
 		expectedStep            time.Duration
 		expectedLastMatchingIdx int
 		expectedErr             string
+		expectedFailTimestamp   model.Time
 	}{
 		"should return no error if all histograms value and timestamp match the expected one (1 series)": {
 			histograms: []model.SampleHistogramPair{
@@ -215,12 +219,13 @@ func testVerifySamplesSumHistograms(t *testing.T, generateValue generateValueFun
 	for testName, testData := range tests {
 		t.Run(fmt.Sprintf("%s:%s", testLabel, testName), func(t *testing.T) {
 			matrix := model.Matrix{{Histograms: testData.histograms}}
-			actualLastMatchingIdx, actualErr := verifySamplesSum(matrix, testData.expectedSeries, testData.expectedStep, generateValue, generateSampleHistogram)
+			actualLastMatchingIdx, actualErr, failTimestamp := verifySamplesSum(matrix, testData.expectedSeries, testData.expectedStep, generateValue, generateSampleHistogram)
 			if testData.expectedErr == "" {
 				assert.NoError(t, actualErr)
 			} else {
 				assert.Error(t, actualErr)
 				assert.Regexp(t, testData.expectedErr, actualErr.Error())
+				assert.Equal(t, testData.expectedFailTimestamp, failTimestamp)
 			}
 			assert.Equal(t, testData.expectedLastMatchingIdx, actualLastMatchingIdx)
 		})
