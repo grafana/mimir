@@ -232,8 +232,8 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		SnapshotFile: silencesFile,
 		Retention:    cfg.Retention,
 		Limits: silence.Limits{
-			MaxSilences:        cfg.Limits.AlertmanagerMaxSilencesCount(cfg.UserID),
-			MaxPerSilenceBytes: cfg.Limits.AlertmanagerMaxSilenceSizeBytes(cfg.UserID),
+			MaxSilences:         func() int { return cfg.Limits.AlertmanagerMaxSilencesCount(cfg.UserID) },
+			MaxSilenceSizeBytes: func() int { return cfg.Limits.AlertmanagerMaxSilenceSizeBytes(cfg.UserID) },
 		},
 		Logger:  log.With(am.logger, "component", "silences"),
 		Metrics: am.registry,
