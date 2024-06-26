@@ -102,7 +102,7 @@ func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reade
 		}
 	} else {
 		var err error
-		keys, totalSize, err = g.filterNonExistingKeys(r)
+		keys, totalSize, err = g.filterNonExistingKeys(ctx, r)
 		if err != nil {
 			return postingGroup{}, errors.Wrap(err, "filter posting keys")
 		}
@@ -118,13 +118,13 @@ func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reade
 
 // filterNonExistingKeys uses the indexheader.Reader to filter out any label values that do not exist in this index.
 // modifies the underlying keys slice of the group. Do not use the rawPostingGroup after calling toPostingGroup.
-func (g rawPostingGroup) filterNonExistingKeys(r indexheader.Reader) ([]labels.Label, int64, error) {
+func (g rawPostingGroup) filterNonExistingKeys(ctx context.Context, r indexheader.Reader) ([]labels.Label, int64, error) {
 	var (
 		writeIdx  int
 		totalSize int64
 	)
 	for _, l := range g.keys {
-		offset, err := r.PostingsOffset(l.Name, l.Value)
+		offset, err := r.PostingsOffset(ctx, l.Name, l.Value)
 		if errors.Is(err, indexheader.NotFoundRangeErr) {
 			// This label name and value doesn't exist in this block, so there are 0 postings we can match.
 			// Try with the rest of the set matchers, maybe they can match some series.
