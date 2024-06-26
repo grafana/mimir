@@ -198,12 +198,14 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 		logger: test.NewTestingLogger(t),
 	}
 
+	externalURL := "http://test.grafana.com"
 	require.NoError(t, alertstore.SetGrafanaAlertConfig(context.Background(), alertspb.GrafanaAlertConfigDesc{
 		User:               "test_user",
 		RawConfig:          testGrafanaConfig,
 		Hash:               "bb788eaa294c05ec556c1ed87546b7a9",
 		CreatedAtTimestamp: now,
 		Default:            false,
+		ExternalUrl:        externalURL,
 	}))
 
 	require.Len(t, storage.Objects(), 1)
@@ -231,11 +233,12 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 				 "configuration_hash": "bb788eaa294c05ec556c1ed87546b7a9",
 				 "created": %d,
 				 "default": false,
-				 "promoted": false
+				 "promoted": false,
+				 "external_url": %q
 			},
 			"status": "success"
 		}
-		`, testGrafanaConfig, now)
+		`, testGrafanaConfig, now, externalURL)
 
 		require.JSONEq(t, json, string(body))
 		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
@@ -347,7 +350,8 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 			"configuration_hash": "ChEKBW5mbG9nEghzb21lZGF0YQ==",
 			"created": 12312414343,
 			"default": false,
-			"promoted": true
+			"promoted": true,
+			"external_url": "http://test.grafana.com"
 		}
 		`, testGrafanaConfig)
 		req.Body = io.NopCloser(strings.NewReader(json))

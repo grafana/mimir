@@ -360,6 +360,7 @@ templates:
 		CreatedAtTimestamp: time.Now().Unix(),
 		Default:            false,
 		Promoted:           true,
+		ExternalUrl:        "test.grafana.com",
 	}
 	emptyMimirConfig := alertspb.AlertConfigDesc{User: "user4"}
 	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))

@@ -26,6 +26,7 @@ import (
 	alertingNotify "github.com/grafana/alerting/notify"
 	"github.com/grafana/alerting/notify/nfstatus"
 	alertingReceivers "github.com/grafana/alerting/receivers"
+	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/api"
@@ -356,7 +357,7 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, rawCfg string) error {
+func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, rawCfg string, tmplExternalURL *url.URL) error {
 	templateFiles := make([]string, len(conf.Templates))
 	for i, t := range conf.Templates {
 		templateFilepath, err := safeTemplateFilepath(filepath.Join(am.cfg.TenantDataDir, templatesDir), t)
@@ -371,7 +372,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 	if err != nil {
 		return err
 	}
-	tmpl.ExternalURL = am.cfg.ExternalURL
+	tmpl.ExternalURL = tmplExternalURL
 
 	cfg := definition.GrafanaToUpstreamConfig(conf)
 	am.api.Update(&cfg, func(_ model.LabelSet) {})
@@ -513,11 +514,18 @@ func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceive
 		return notifier
 	}
 
+	var grafanaTemplatesParsed bool
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
 		var integrations []*nfstatus.Integration
 		var err error
 		if rcv.Type() == definition.GrafanaReceiverType {
+			if !grafanaTemplatesParsed {
+				if err := tmpl.Parse(strings.NewReader(alertingTemplates.DefaultTemplateString)); err != nil {
+					return nil, err
+				}
+				grafanaTemplatesParsed = true
+			}
 			integrations, err = buildGrafanaReceiverIntegrations(rcv, tmpl, am.logger)
 		} else {
 			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, nw)

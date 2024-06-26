@@ -48,6 +48,7 @@ type UserGrafanaConfig struct {
 	CreatedAt                 int64                     `json:"created"`
 	Default                   bool                      `json:"default"`
 	Promoted                  bool                      `json:"promoted"`
+	ExternalURL               string                    `json:"external_url"`
 }
 
 func (gc *UserGrafanaConfig) Validate() error {
@@ -290,6 +291,8 @@ func (am *MultitenantAlertmanager) GetUserGrafanaConfig(w http.ResponseWriter, r
 			Hash:                      cfg.Hash,
 			CreatedAt:                 cfg.CreatedAtTimestamp,
 			Default:                   cfg.Default,
+			Promoted:                  cfg.Promoted,
+			ExternalURL:               cfg.ExternalUrl,
 		},
 	})
 }
@@ -329,7 +332,7 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
-	cfgDesc := alertspb.ToGrafanaProto(string(rawCfg), userID, cfg.Hash, cfg.CreatedAt, cfg.Default, cfg.Promoted)
+	cfgDesc := alertspb.ToGrafanaProto(string(rawCfg), userID, cfg.Hash, cfg.CreatedAt, cfg.Default, cfg.Promoted, cfg.ExternalURL)
 	err = am.store.SetGrafanaAlertConfig(r.Context(), cfgDesc)
 	if err != nil {
 		level.Error(logger).Log("msg", errStoringGrafanaConfig, "err", err.Error())
