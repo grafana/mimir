@@ -359,7 +359,7 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 
 // ApplyConfig applies a new configuration to an Alertmanager.
 func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []io.Reader, rawCfg string, tmplExternalURL *url.URL) error {
-	tmpl, err := loadTemplates(tmpls, withCustomFunctions(am.cfg.UserID))
+	tmpl, err := loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
 	if err != nil {
 		return err
 	}
@@ -389,7 +389,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		return d + waitFunc()
 	}
 
-	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpl, templateFiles)
+	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpl, tmpls)
 	if err != nil {
 		return err
 	}
@@ -487,7 +487,7 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.Template, templateFiles []string) (map[string][]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceiver, tmpl *template.Template, tmpls []io.Reader) (map[string][]*nfstatus.Integration, error) {
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
@@ -513,7 +513,7 @@ func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceive
 		if rcv.Type() == definition.GrafanaReceiverType {
 			// Create the Grafana template struct if it has not already been created.
 			if gTmpl == nil {
-				gTmpl, err = template.FromGlobs(templateFiles, WithCustomFunctions(am.cfg.UserID))
+				gTmpl, err = loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
 				if err != nil {
 					return nil, err
 				}

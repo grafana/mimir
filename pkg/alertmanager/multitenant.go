@@ -738,7 +738,7 @@ type amConfig struct {
 
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
-func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error {
+func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 	// Instead of using "config" as the origin, as in Prometheus Alertmanager, we use "tenant".
 	// The reason for this that the config.Load function uses the origin "config",
 	// which is correct, but Mimir uses config.Load to validate both API requests and tenant
@@ -754,7 +754,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 	existing, hasExisting := am.alertmanagers[cfg.User]
 
 	rawCfg := cfg.RawConfig
-	var userAmConfig *amconfig.Config
+	var userAmConfig *definition.PostableApiAlertingConfig
 	var err error
 	if cfg.RawConfig == "" {
 		if am.fallbackConfig == "" {
@@ -797,7 +797,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 			return err
 		}
 		am.alertmanagers[cfg.User] = newAM
-	} else if configChanged(am.cfgs[cfg.User], cfg) {
+	} else if configChanged(am.cfgs[cfg.User], cfg.AlertConfigDesc) {
 		level.Info(am.logger).Log("msg", "updating new per-tenant alertmanager", "user", cfg.User)
 		// If the config changed, apply the new one.
 		err := existing.ApplyConfig(userAmConfig, templates, rawCfg, cfg.tmplExternalURL)

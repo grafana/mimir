@@ -469,7 +469,8 @@ route:
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-	require.NoError(t, am.ApplyConfig(cfg, cfgRaw, &url.URL{}))
+	tmpls := make([]io.Reader, 0)
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}))
 
 	doGetReceivers := func() []alertingmodels.Receiver {
 		rr := httptest.NewRecorder()

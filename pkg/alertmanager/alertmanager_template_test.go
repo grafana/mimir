@@ -144,7 +144,7 @@ func Test_loadTemplates(t *testing.T) {
 			for _, tmpl := range c.loaded {
 				readers = append(readers, strings.NewReader(tmpl))
 			}
-			tmpl, err := loadTemplates(readers, withCustomFunctions("test"))
+			tmpl, err := loadTemplates(readers, WithCustomFunctions("test"))
 			assert.NoError(t, err)
 
 			call := fmt.Sprintf(`{{ template "%s" . }}`, c.invoke)
