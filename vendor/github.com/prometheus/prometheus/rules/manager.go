@@ -467,6 +467,10 @@ type ruleDependencyController struct{}
 
 // AnalyseRules implements RuleDependencyController.
 func (c ruleDependencyController) AnalyseRules(rules []Rule) {
+	AnalyseRulesDependencies(rules)
+}
+
+func AnalyseRulesDependencies(rules []Rule) {
 	depMap := buildDependencyMap(rules)
 	for _, r := range rules {
 		r.SetNoDependentRules(depMap.dependents(r) == 0)
