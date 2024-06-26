@@ -824,12 +824,12 @@ func (c *Client) DeleteRuleGroup(namespace string, groupName string) error {
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != 202 {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	defer resp.Body.Close()
 	return nil
 }
 
@@ -851,6 +851,8 @@ func (c *Client) DeleteRuleNamespace(namespace string) error {
 	if err != nil {
 		return err
 	}
+
+	defer resp.Body.Close()
 
 	if resp.StatusCode != 202 {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
