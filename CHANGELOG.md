@@ -34,6 +34,7 @@
 * [BUGFIX] Ingester: fixed timestamp reported in the "the sample has been rejected because its timestamp is too old" error when the write request contains only histograms. #8462
 * [BUGFIX] Store-gateway: store sparse index headers atomically to disk. #8485
 * [BUGFIX] Query scheduler: fix a panic in request queueing. #8451
+* [BUGFIX] Querier: fix issue where "context canceled" is logged for trace spans for requests to store-gateways that return no series when chunks streaming is enabled. #8510
 
 ### Mixin
 
@@ -43,6 +44,11 @@
 ### Jsonnet
 
 * [FEATURE] Add support for automatically deleting compactor, store-gateway and read-write mode backend PVCs when the corresponding StatefulSet is scaled down. #8382
+* [ENHANCEMENT] Added the following config options to set the number of partition ingester replicas when migrating to experimental ingest storage. #8517
+  * `ingest_storage_migration_partition_ingester_zone_a_replicas`
+  * `ingest_storage_migration_partition_ingester_zone_b_replicas`
+  * `ingest_storage_migration_partition_ingester_zone_c_replicas`
+* [ENHANCEMENT] Distributor: increase `-distributor.remote-timeout` when the experimental ingest storage is enabled. #8518
 
 ### Mimirtool
 
