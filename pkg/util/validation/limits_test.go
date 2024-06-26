@@ -922,35 +922,27 @@ func TestRulerProtectedNamespacesOverrides(t *testing.T) {
 	}{
 		"no user specific protected namespaces": {
 			inputYAML: `
-ruler_protected_namespaces:
-  - ns1
-  - ns2
+ruler_protected_namespaces: "ns1,ns2"
 `,
 			expectedNamespaces: []string{"ns1", "ns2"},
 		},
 		"default limit for not specific user": {
 			inputYAML: `
-ruler_protected_namespaces:
-  - ns1
-  - ns2
+ruler_protected_namespaces: "ns1,ns2"
 `,
 			overrides: `
 randomuser:
-  ruler_protected_namespaces:
-    - ns3
+  ruler_protected_namespaces: "ns3"
 `,
 			expectedNamespaces: []string{"ns1", "ns2"},
 		},
 		"overridden limit for specific user": {
 			inputYAML: `
-ruler_protected_namespaces:
-  - ns1
-  - ns2
+ruler_protected_namespaces: "ns1,ns2"
 `,
 			overrides: `
 user1:
-  ruler_protected_namespaces:
-    - ns3
+  ruler_protected_namespaces: "ns3"
 `,
 			expectedNamespaces: []string{"ns3"},
 		},
