@@ -820,16 +820,16 @@ func (c *Client) DeleteRuleGroup(namespace string, groupName string) error {
 	defer cancel()
 
 	// Execute HTTP request
-	res, err := c.httpClient.Do(req.WithContext(ctx))
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
 		return err
 	}
 
-	if res.StatusCode != 202 {
-		return fmt.Errorf("unexpected status code: %d", res.StatusCode)
+	if resp.StatusCode != 202 {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	defer res.Body.Close()
+	defer resp.Body.Close()
 	return nil
 }
 
