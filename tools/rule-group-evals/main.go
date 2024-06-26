@@ -122,13 +122,12 @@ func analyseRuleGroup(group *Group) {
 }
 
 func printAnalysisResultsCSV(groups []*Group) {
-	fmt.Println(`"Rule group","Evaluation interval (sec)","Num strong consistency rules","Current duration (sec)","Estimated duration with strong read consistency (sec)", "Estimated duration with strong read consistency (%)"`)
-
 	// Sort groups by estimated duration % desc.
 	slices.SortFunc(groups, func(a, b *Group) int {
 		return int(b.estimatedDurationPercentage() - a.estimatedDurationPercentage())
 	})
 
+	fmt.Println(`"Rule group","Evaluation interval (sec)","Num strong consistency rules","Current duration (sec)","Estimated duration with strong read consistency (sec)", "Estimated duration with strong read consistency (%)"`)
 	for _, group := range groups {
 		// Skip rule groups with no strong consistency rules, since they're not affected.
 		if group.rulesStrongConsistencyCount == 0 {
@@ -144,6 +143,20 @@ func printAnalysisResultsCSV(groups []*Group) {
 			fmt.Sprintf("%.0f%%", group.estimatedDurationPercentage()),
 		}, ","))
 	}
+
+	// Print global stats.
+	fmt.Println("")
+	fmt.Println(`"Total number of strong consistency rules"`)
+	fmt.Println(strings.Join([]string{
+		strconv.Itoa(strongConsistencyRulesCount(groups)),
+	}, ","))
+}
+
+func strongConsistencyRulesCount(groups []*Group) (count int) {
+	for _, group := range groups {
+		count += group.rulesStrongConsistencyCount
+	}
+	return
 }
 
 func noErr(err error) {
