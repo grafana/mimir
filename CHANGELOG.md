@@ -176,6 +176,7 @@
 * [BUGFIX] Ingester: fix context cancellation handling when a query is busy looking up series in the TSDB index and `-blocks-storage.tsdb.head-postings-for-matchers-cache*` or `-blocks-storage.tsdb.block-postings-for-matchers-cache*` are in use. #8337
 * [BUGFIX] Querier: fix edge case where bucket indexes are sometimes cached forever instead of with the expected TTL. #8343
 * [BUGFIX] OTLP handler: fix errors returned by OTLP handler when used via httpgrpc tunneling. #8363
+* [BUGFIX] Update `github.com/hashicorp/go-retryablehttp` to address [CVE-2024-6104](https://github.com/advisories/GHSA-v6v8-xj6m-xwqh). #8539
 
 ### Mixin
 
