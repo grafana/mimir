@@ -773,8 +773,8 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 	}
 
 	if metaCache != nil {
-		items, size := metaCache.Stats()
-		level.Info(userLogger).Log("msg", "meta cache stats before compaction", "items", items, "bytes_size", size)
+		items, size, hits, misses := metaCache.Stats()
+		level.Info(userLogger).Log("msg", "meta cache stats before compaction", "items", items, "bytes_size", size, "hits", hits, "misses", misses)
 	}
 
 	fetcher, err := block.NewMetaFetcher(
@@ -827,8 +827,8 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 	}
 
 	if metaCache != nil {
-		items, size := metaCache.Stats()
-		level.Info(userLogger).Log("msg", "meta cache stats after compaction", "items", items, "bytes_size", size)
+		items, size, hits, misses := metaCache.Stats()
+		level.Info(userLogger).Log("msg", "meta cache stats after compaction", "items", items, "bytes_size", size, "hits", hits, "misses", misses)
 	}
 	return nil
 }

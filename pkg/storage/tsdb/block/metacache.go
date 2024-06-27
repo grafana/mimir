@@ -1,6 +1,7 @@
 package block
 
 import (
+	"sync/atomic"
 	"unsafe"
 
 	lru "github.com/hashicorp/golang-lru/v2"
@@ -9,7 +10,9 @@ import (
 )
 
 type MetaCache struct {
-	lru *lru.Cache[ulid.ULID, *Meta]
+	lru    *lru.Cache[ulid.ULID, *Meta]
+	hits   atomic.Int64
+	misses atomic.Int64
 }
 
 func NewMetaCache(size int) *MetaCache {
@@ -41,18 +44,20 @@ func (mc *MetaCache) Put(id ulid.ULID, meta *Meta) {
 func (mc *MetaCache) Get(id ulid.ULID) *Meta {
 	val, ok := mc.lru.Get(id)
 	if !ok {
+		mc.misses.Add(1)
 		return nil
 	}
+	mc.hits.Add(1)
 	return val
 }
 
-func (mc *MetaCache) Stats() (items int, bytesSize int64) {
+func (mc *MetaCache) Stats() (items int, bytesSize int64, hits, misses int64) {
 	for _, m := range mc.lru.Values() {
 		items++
 		bytesSize += sizeOfUlid // for a key
 		bytesSize += MetaBytesSize(m)
 	}
-	return items, bytesSize
+	return items, bytesSize, mc.hits.Load(), mc.misses.Load()
 }
 
 var sizeOfUlid = int64(unsafe.Sizeof(ulid.ULID{}))
