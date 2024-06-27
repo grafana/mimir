@@ -43,11 +43,6 @@ import (
 // (This is now separate from DeprecatedTenantIDExternalLabel to signify different use case.)
 const GrpcContextMetadataTenantID = "__org_id__"
 
-// defaultBlockDurations is the expected duration of blocks the compactor generates. This is used for
-// metrics emitted by the store-gateway, so it's fine to hardcode it here instead of using the durations
-// that are actually configured to avoid coupling to compactor configuration.
-var defaultBlockDurations = []time.Duration{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
-
 // BucketStores is a multi-tenant wrapper of Thanos BucketStore.
 type BucketStores struct {
 	logger             log.Logger
@@ -595,17 +590,15 @@ func (u *BucketStores) closeBucketStoreAndDeleteLocalFilesForExcludedTenants(inc
 }
 
 // countBlocksLoaded returns the total number of blocks loaded, summed for all users.
-func (u *BucketStores) countBlocksLoaded(durations []time.Duration) int {
+func (u *BucketStores) countBlocksLoaded() int {
 	total := 0
 
 	u.storesMu.RLock()
 	defer u.storesMu.RUnlock()
 
 	for _, store := range u.stores {
-		stats := store.Stats(durations)
-		for _, n := range stats.BlocksLoaded {
-			total += n
-		}
+		stats := store.Stats()
+		total += stats.BlocksLoadedTotal
 	}
 
 	return total
@@ -616,7 +609,7 @@ func (u *BucketStores) Describe(descs chan<- *prometheus.Desc) {
 }
 
 func (u *BucketStores) Collect(metrics chan<- prometheus.Metric) {
-	total := u.countBlocksLoaded(defaultBlockDurations)
+	total := u.countBlocksLoaded()
 	metrics <- prometheus.MustNewConstMetric(u.blocksLoaded, prometheus.GaugeValue, float64(total))
 }
 
