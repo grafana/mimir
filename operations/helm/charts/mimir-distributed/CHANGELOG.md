@@ -31,6 +31,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards. #7674
   * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric.
+* [ENHANCEMENT] Add missing fields in multiple topology spread constraints. #8533
 
 ## 5.4.0-rc.0
 
