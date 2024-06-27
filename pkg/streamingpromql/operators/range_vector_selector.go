@@ -56,7 +56,7 @@ func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
 	return nil
 }
 
-func (m *RangeVectorSelector) NextStepSamples(floats *types.RingBuffer[promql.FPoint], histograms *types.RingBuffer[promql.HPoint]) (types.RangeVectorStepData, error) {
+func (m *RangeVectorSelector) NextStepSamples(floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer) (types.RangeVectorStepData, error) {
 	if m.nextT > m.Selector.End {
 		return types.RangeVectorStepData{}, types.EOS
 	}
@@ -85,7 +85,7 @@ func (m *RangeVectorSelector) NextStepSamples(floats *types.RingBuffer[promql.FP
 	}, nil
 }
 
-func (m *RangeVectorSelector) fillBuffer(floats *types.RingBuffer[promql.FPoint], histograms *types.RingBuffer[promql.HPoint], rangeStart, rangeEnd int64) error {
+func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer, rangeStart, rangeEnd int64) error {
 	// Keep filling the buffer until we reach the end of the range or the end of the iterator.
 	for {
 		valueType := m.chunkIterator.Next()

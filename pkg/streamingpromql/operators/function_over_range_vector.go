@@ -22,8 +22,8 @@ type FunctionOverRangeVector struct {
 
 	numSteps        int
 	rangeSeconds    float64
-	floatBuffer     *types.RingBuffer[promql.FPoint]
-	histogramBuffer *types.RingBuffer[promql.HPoint]
+	floatBuffer     *types.FPointRingBuffer
+	histogramBuffer *types.HPointRingBuffer
 }
 
 var _ types.InstantVectorOperator = &FunctionOverRangeVector{}

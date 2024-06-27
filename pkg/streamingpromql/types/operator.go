@@ -6,8 +6,6 @@ import (
 	"context"
 	"errors"
 	"time"
-
-	"github.com/prometheus/prometheus/promql"
 )
 
 // Operator represents all operators.
@@ -62,7 +60,7 @@ type RangeVectorOperator interface {
 	// Next must be called at least once before calling NextStepSamples.
 	// Keep in mind that HPoint contains a pointer to a histogram, so it is generally not safe to
 	// modify directly as the histogram may be used for other HPoint values, such as when lookback has occurred.
-	NextStepSamples(floats *RingBuffer[promql.FPoint], histograms *RingBuffer[promql.HPoint]) (RangeVectorStepData, error)
+	NextStepSamples(floats *FPointRingBuffer, histograms *HPointRingBuffer) (RangeVectorStepData, error)
 }
 
 var EOS = errors.New("operator stream exhausted") //nolint:revive

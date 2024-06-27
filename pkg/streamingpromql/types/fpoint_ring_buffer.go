@@ -1,80 +1,37 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+
 package types
 
 import (
 	"github.com/prometheus/prometheus/promql"
 )
 
-type RingBuffer[T any] struct {
-	pool       RingBufferPool[T]
-	points     []T
+// FPointRingBuffer and HPointRingBuffer are nearly identical, but exist for each
+// specific point type.
+// The code is duplicated due to the cost of indirection in golang.
+// The tests are combined to ensure consistency. We may wish to consider codegen
+// or similar in the future if we end up with more data types etc.
+// (see: https://github.com/grafana/mimir/pull/8508#discussion_r1654668995)
+
+type FPointRingBuffer struct {
+	pool       FPointRingBufferPool
+	points     []promql.FPoint
 	firstIndex int // Index into 'points' of first point in this buffer.
 	size       int // Number of points in this buffer.
 }
 
-type RingBufferPool[T any] interface {
-	GetSlice(size int) ([]T, error)
-	PutSlice(s []T)
-	GetTimestamp(p T) int64
-}
-
-type FPointPool interface {
+type FPointRingBufferPool interface {
 	GetFPointSlice(size int) ([]promql.FPoint, error)
 	PutFPointSlice(s []promql.FPoint)
 }
 
-type FPointRingBufferPool struct {
-	pool FPointPool
-}
-
-func (p *FPointRingBufferPool) GetSlice(size int) ([]promql.FPoint, error) {
-	return p.pool.GetFPointSlice(size)
-}
-
-func (p *FPointRingBufferPool) PutSlice(s []promql.FPoint) {
-	p.pool.PutFPointSlice(s)
-}
-
-func (p *FPointRingBufferPool) GetTimestamp(point promql.FPoint) int64 {
-	return point.T
-}
-
-func NewFPointRingBuffer(pool FPointPool) *RingBuffer[promql.FPoint] {
-	return &RingBuffer[promql.FPoint]{
-		pool: &FPointRingBufferPool{pool: pool},
-	}
-}
-
-type HPointPool interface {
-	GetHPointSlice(size int) ([]promql.HPoint, error)
-	PutHPointSlice(s []promql.HPoint)
-}
-
-type HPointRingBufferPool struct {
-	pool HPointPool
-}
-
-func (p *HPointRingBufferPool) GetSlice(size int) ([]promql.HPoint, error) {
-	return p.pool.GetHPointSlice(size)
-}
-
-func (p *HPointRingBufferPool) PutSlice(s []promql.HPoint) {
-	p.pool.PutHPointSlice(s)
-}
-
-func (p *HPointRingBufferPool) GetTimestamp(point promql.HPoint) int64 {
-	return point.T
-}
-
-func NewHPointRingBuffer(pool HPointPool) *RingBuffer[promql.HPoint] {
-	return &RingBuffer[promql.HPoint]{
-		pool: &HPointRingBufferPool{pool: pool},
-	}
+func NewFPointRingBuffer(pool FPointRingBufferPool) *FPointRingBuffer {
+	return &FPointRingBuffer{pool: pool}
 }
 
 // DiscardPointsBefore discards all points in this buffer with timestamp less than t.
-func (b *RingBuffer[T]) DiscardPointsBefore(t int64) {
-	for b.size > 0 && b.pool.GetTimestamp(b.points[b.firstIndex]) < t {
+func (b *FPointRingBuffer) DiscardPointsBefore(t int64) {
+	for b.size > 0 && b.points[b.firstIndex].T < t {
 		b.firstIndex++
 		b.size--
 
@@ -97,10 +54,10 @@ func (b *RingBuffer[T]) DiscardPointsBefore(t int64) {
 //
 // FIXME: the fact we have to expose this is a bit gross, but the overhead of calling a function with ForEach is terrible.
 // Perhaps we can use range-over function iterators (https://go.dev/wiki/RangefuncExperiment) once this is not experimental?
-func (b *RingBuffer[T]) UnsafePoints(maxT int64) (head []T, tail []T) {
+func (b *FPointRingBuffer) UnsafePoints(maxT int64) (head []promql.FPoint, tail []promql.FPoint) {
 	size := b.size
 
-	for size > 0 && b.pool.GetTimestamp(b.points[(b.firstIndex+size-1)%len(b.points)]) > maxT {
+	for size > 0 && b.points[(b.firstIndex+size-1)%len(b.points)].T > maxT {
 		size--
 	}
 
@@ -118,16 +75,16 @@ func (b *RingBuffer[T]) UnsafePoints(maxT int64) (head []T, tail []T) {
 
 // CopyPoints returns a single slice of the points in this buffer, including only points with timestamp less than or equal to maxT.
 // Callers may modify the values in the returned slice, and should return the slice to the pool by calling
-// PutSlice when it is no longer needed.
+// PutFPointSlice when it is no longer needed.
 // Calling UnsafePoints is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
 // points into the slice, whereas UnsafePoints returns a view into the internal state of this buffer.
-func (b *RingBuffer[T]) CopyPoints(maxT int64) ([]T, error) {
+func (b *FPointRingBuffer) CopyPoints(maxT int64) ([]promql.FPoint, error) {
 	if b.size == 0 {
 		return nil, nil
 	}
 
 	head, tail := b.UnsafePoints(maxT)
-	combined, err := b.pool.GetSlice(len(head) + len(tail))
+	combined, err := b.pool.GetFPointSlice(len(head) + len(tail))
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +96,7 @@ func (b *RingBuffer[T]) CopyPoints(maxT int64) ([]T, error) {
 }
 
 // ForEach calls f for each point in this buffer.
-func (b *RingBuffer[T]) ForEach(f func(p T)) {
+func (b *FPointRingBuffer) ForEach(f func(p promql.FPoint)) {
 	if b.size == 0 {
 		return
 	}
@@ -167,7 +124,7 @@ func (b *RingBuffer[T]) ForEach(f func(p T)) {
 // Append adds p to this buffer, expanding it if required.
 // If this buffer is non-empty, p.T must be greater than or equal to the
 // timestamp of the last point in the buffer.
-func (b *RingBuffer[T]) Append(p T) error {
+func (b *FPointRingBuffer) Append(p promql.FPoint) error {
 	if b.size == len(b.points) {
 		// Create a new slice, copy the elements from the current slice.
 		newSize := b.size * 2
@@ -175,7 +132,7 @@ func (b *RingBuffer[T]) Append(p T) error {
 			newSize = 2
 		}
 
-		newSlice, err := b.pool.GetSlice(newSize)
+		newSlice, err := b.pool.GetFPointSlice(newSize)
 		if err != nil {
 			return err
 		}
@@ -185,7 +142,7 @@ func (b *RingBuffer[T]) Append(p T) error {
 		copy(newSlice, b.points[b.firstIndex:])
 		copy(newSlice[pointsAtEnd:], b.points[:b.firstIndex])
 
-		b.pool.PutSlice(b.points)
+		b.pool.PutFPointSlice(b.points)
 		b.points = newSlice
 		b.firstIndex = 0
 	}
@@ -197,21 +154,21 @@ func (b *RingBuffer[T]) Append(p T) error {
 }
 
 // Reset clears the contents of this buffer.
-func (b *RingBuffer[T]) Reset() {
+func (b *FPointRingBuffer) Reset() {
 	b.firstIndex = 0
 	b.size = 0
 }
 
 // Close releases any resources associated with this buffer.
-func (b *RingBuffer[T]) Close() {
+func (b *FPointRingBuffer) Close() {
 	b.Reset()
-	b.pool.PutSlice(b.points)
+	b.pool.PutFPointSlice(b.points)
 	b.points = nil
 }
 
 // First returns the first point in this buffer.
 // It panics if the buffer is empty.
-func (b *RingBuffer[T]) First() T {
+func (b *FPointRingBuffer) First() promql.FPoint {
 	if b.size == 0 {
 		panic("Can't get first element of empty buffer")
 	}
@@ -221,19 +178,18 @@ func (b *RingBuffer[T]) First() T {
 
 // LastAtOrBefore returns the last point in this buffer with timestamp less than or equal to maxT.
 // It returns false if there is no point satisfying this requirement.
-func (b *RingBuffer[T]) LastAtOrBefore(maxT int64) (T, bool) {
+func (b *FPointRingBuffer) LastAtOrBefore(maxT int64) (promql.FPoint, bool) {
 	size := b.size
 
 	for size > 0 {
 		p := b.points[(b.firstIndex+size-1)%len(b.points)]
 
-		if b.pool.GetTimestamp(p) <= maxT {
+		if p.T <= maxT {
 			return p, true
 		}
 
 		size--
 	}
 
-	var zero T
-	return zero, false
+	return promql.FPoint{}, false
 }
