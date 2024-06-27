@@ -56,7 +56,7 @@ cards:
 
 ## Overview
 
-Grafana Mimir enables users to run queries, create new data through the use of recording rules, and set up alerting rules across multiple tenants to leverage tenant federation. Once deployed, the best-practice dashboards, alerts, and runbooks packaged with Grafana Mimir make it easy to monitor the health of the system.
+Grafana Mimir enables users to ingest Prometheus or OpenTelemetry metrics,  run queries, create new data through the use of recording rules, and set up alerting rules across multiple tenants to leverage tenant federation. Once deployed, the best-practice dashboards, alerts, and runbooks packaged with Grafana Mimir make it easy to monitor the health of the system.
 
 ## Explore
 
