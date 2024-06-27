@@ -129,8 +129,6 @@ type Config struct {
 	// Allow downstream projects to customise the blocks compactor.
 	BlocksGrouperFactory   BlocksGrouperFactory   `yaml:"-"`
 	BlocksCompactorFactory BlocksCompactorFactory `yaml:"-"`
-
-	PerTenantInMemoryMetaCacheSize int `yaml:"per_tenant_in_memory_meta_cache_size"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
@@ -166,7 +164,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.Var(&cfg.EnabledTenants, "compactor.enabled-tenants", "Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "compactor.disabled-tenants", "Comma separated list of tenants that cannot be compacted by the compactor. If specified, and the compactor would normally pick a given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.")
-	f.IntVar(&cfg.PerTenantInMemoryMetaCacheSize, "compactor.per-tenant-in-memory-cache-size", 0, "Size of per-tenant in-memory cache for parsed meta.json files. Useful when meta.json files are big and parsing is expensive, and number of tenants is small")
 }
 
 func (cfg *Config) Validate(logger log.Logger) error {
@@ -238,6 +235,9 @@ type ConfigProvider interface {
 
 	// CompactorBlockUploadMaxBlockSizeBytes returns the maximum size in bytes of a block that is allowed to be uploaded or validated for a given user.
 	CompactorBlockUploadMaxBlockSizeBytes(userID string) int64
+
+	// CompactorInMemoryTenantMetaCacheSize returns number of parsed *Meta objects that we can keep in memory for the user between compactions.
+	CompactorInMemoryTenantMetaCacheSize(userID string) int
 }
 
 // MultitenantCompactor is a multi-tenant TSDB block compactor based on Thanos.
@@ -766,15 +766,20 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		NewNoCompactionMarkFilter(userBucket),
 	}
 
-	metaCache := c.metaCaches[userID]
-	if metaCache == nil && c.compactorCfg.PerTenantInMemoryMetaCacheSize > 0 {
-		metaCache = block.NewMetaCache(c.compactorCfg.PerTenantInMemoryMetaCacheSize)
-		c.metaCaches[userID] = metaCache
-	}
-
-	if metaCache != nil {
-		items, size, hits, misses := metaCache.Stats()
-		level.Info(userLogger).Log("msg", "meta cache stats before compaction", "items", items, "bytes_size", size, "hits", hits, "misses", misses)
+	var metaCache *block.MetaCache
+	metaCacheSize := c.cfgProvider.CompactorInMemoryTenantMetaCacheSize(userID)
+	if metaCacheSize == 0 {
+		delete(c.metaCaches, userID)
+	} else {
+		metaCache = c.metaCaches[userID]
+		if metaCache == nil || metaCache.MaxSize() != metaCacheSize {
+			// We use min compaction level equal to configured block ranges.
+			// Blocks created by ingesters start with compaction level 1. When blocks are first compacted (blockRanges[0], possibly split-compaction), compaction level will be 2.
+			// Higher the compaction level, higher chance of finding the same block over and over, and that's where cache helps the most.
+			// Blocks with 64 sources take at least 1 KiB of memory (each source = 16 bytes). Blocks with many sources are more expensive to reparse over and over again.
+			metaCache = block.NewMetaCache(metaCacheSize, len(c.compactorCfg.BlockRanges), 64)
+			c.metaCaches[userID] = metaCache
+		}
 	}
 
 	fetcher, err := block.NewMetaFetcher(
@@ -828,7 +833,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 
 	if metaCache != nil {
 		items, size, hits, misses := metaCache.Stats()
-		level.Info(userLogger).Log("msg", "meta cache stats after compaction", "items", items, "bytes_size", size, "hits", hits, "misses", misses)
+		level.Info(userLogger).Log("msg", "per-user meta cache stats after compacting user", "items", items, "bytes_size", size, "hits", hits, "misses", misses)
 	}
 	return nil
 }

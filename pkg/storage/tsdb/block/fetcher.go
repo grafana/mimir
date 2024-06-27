@@ -14,17 +14,21 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/golang/groupcache/singleflight"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
+	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/util/extprom"
@@ -225,7 +229,7 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 		m, err := ReadMetaFromDir(cachedBlockDir)
 		if err == nil {
 			if f.metaCache != nil {
-				f.metaCache.Put(id, m)
+				f.metaCache.Put(m)
 			}
 			return m, nil
 		}
@@ -275,7 +279,7 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 	}
 
 	if f.metaCache != nil {
-		f.metaCache.Put(id, m)
+		f.metaCache.Put(m)
 	}
 	return m, nil
 }
@@ -620,4 +624,87 @@ func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.UL
 	f.mtx.Unlock()
 
 	return nil
+}
+
+// MetaCache is a LRU cache for parsed *Meta objects, optionally used by *MetaFetcher.
+// While MetaFetcher.cache is per-instance, MetaCache can be reused between different *MetaFetcher instances.
+type MetaCache struct {
+	maxSize            int
+	minCompactionLevel int
+	minSources         int
+
+	lru    *lru.Cache[ulid.ULID, *Meta]
+	hits   atomic.Int64
+	misses atomic.Int64
+}
+
+// NewMetaCache creates new *MetaCache with given max size, and parameters for storing *Meta objects.
+// Only *Meta objects with specified minimum compaction level and number of sources are stored into the cache.
+func NewMetaCache(maxSize, minCompactionLevel, minSources int) *MetaCache {
+	l, err := lru.New[ulid.ULID, *Meta](maxSize)
+	// This can only happen if size < 0.
+	if err != nil {
+		panic(err.Error())
+	}
+
+	return &MetaCache{
+		maxSize:            maxSize,
+		minCompactionLevel: minCompactionLevel,
+		minSources:         minSources,
+		lru:                l,
+	}
+}
+
+func (c *MetaCache) MaxSize() int {
+	return c.maxSize
+}
+
+func (mc *MetaCache) Put(meta *Meta) {
+	if meta == nil {
+		return
+	}
+
+	if mc.minCompactionLevel > 0 && meta.Compaction.Level < mc.minCompactionLevel {
+		return
+	}
+
+	if mc.minSources > 0 && len(meta.Compaction.Sources) < mc.minSources {
+		return
+	}
+
+	mc.lru.Add(meta.ULID, meta)
+}
+
+func (mc *MetaCache) Get(id ulid.ULID) *Meta {
+	val, ok := mc.lru.Get(id)
+	if !ok {
+		mc.misses.Add(1)
+		return nil
+	}
+	mc.hits.Add(1)
+	return val
+}
+
+func (mc *MetaCache) Stats() (items int, bytesSize int64, hits, misses int) {
+	for _, m := range mc.lru.Values() {
+		items++
+		bytesSize += sizeOfUlid // for a key
+		bytesSize += MetaBytesSize(m)
+	}
+	return items, bytesSize, int(mc.hits.Load()), int(mc.misses.Load())
+}
+
+var sizeOfUlid = int64(unsafe.Sizeof(ulid.ULID{}))
+var sizeOfBlockDesc = int64(unsafe.Sizeof(tsdb.BlockDesc{}))
+
+func MetaBytesSize(m *Meta) int64 {
+	size := int64(0)
+	size += int64(unsafe.Sizeof(*m))
+	size += int64(len(m.Compaction.Sources)) * sizeOfUlid
+	size += int64(len(m.Compaction.Parents)) * sizeOfBlockDesc
+
+	for _, h := range m.Compaction.Hints {
+		size += int64(unsafe.Sizeof(h))
+	}
+	return size
 }
