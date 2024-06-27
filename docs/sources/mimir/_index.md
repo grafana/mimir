@@ -46,7 +46,11 @@ cards:
       height: 24
     - title: Visualize data
       href: ./visualize/
-      description: Query, visualize, and explore your metrics using Grafana, an open platform for metrics visualization. It supports multiple data stores including Prometheus. You can also visualize native histograms through Grafana Mimir since they are a Prometheuse data type.
+      description: Query, visualize, and explore your metrics using Grafana, an open platform for metrics visualization. It supports multiple data stores including Prometheus. You can also visualize native histograms through Grafana Mimir since they are a Prometheus data type.
+      height: 24
+    - title: Reduce costs
+      href: https://grafana.com/docs/grafana-cloud/cost-management-and-billing/reduce-costs/metrics-costs/control-metrics-usage-via-adaptive-metrics/
+      description: Reduce the costs of your Grafana Cloud metrics with Adaptive Metrics. Adaptive Metrics is a cardinality optimization feature that allows you to identify and eliminate unused time series metrics data by means of aggregation. 
       height: 24
 ---
 
