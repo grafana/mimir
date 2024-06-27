@@ -234,7 +234,7 @@ local filename = 'mimir-writes.json';
     )
     .addRowIf(
       $._config.show_ingest_storage_panels,
-      ($.row('Ingester (ingest storage)'))
+      ($.row('Ingester – Kafka records processing (ingest storage)'))
       .addPanel(
         $.timeseriesPanel('Kafka fetches / sec') +
         $.panelDescription(
@@ -317,66 +317,17 @@ local filename = 'mimir-writes.json';
     )
     .addRowIf(
       $._config.show_ingest_storage_panels,
-      ($.row('Ingester (ingest storage – end-to-end latency)'))
+      $.row('Ingester – end-to-end latency (ingest storage)')
       .addPanel(
-        $.timeseriesPanel('Kafka record end-to-end latency when ingesters are running') +
-        $.panelDescription(
-          'Kafka record end-to-end latency when ingesters are running',
-          |||
-            Time between writing request by distributor to Kafka and reading the record by ingester, when ingesters are running.
-          |||
-        ) +
-        $.queryPanel(
-          [
-            'histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-          ],
-          [
-            'avg',
-            '99th percentile',
-            '99.9th percentile',
-            '100th percentile',
-          ],
-        ) + {
-          fieldConfig+: {
-            defaults+: { unit: 's' },
-          },
-        },
+        $.ingestStorageIngesterEndToEndLatencyWhenRunningPanel(),
       )
       .addPanel(
-        $.timeseriesPanel('Kafka record end-to-end latency when starting') +
-        $.panelDescription(
-          'Kafka record end-to-end latency when starting',
-          |||
-            Time between writing request by distributor to Kafka and reading the record by ingester during catch-up phase, when ingesters are starting.
-            If ingesters are not starting and catching up in the selected time range, this panel will be empty.
-          |||
-        ) +
-        $.queryPanel(
-          [
-            'histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-          ],
-          [
-            'avg',
-            '99th percentile',
-            '99.9th percentile',
-            '100th percentile',
-          ],
-        ) + {
-          fieldConfig+: {
-            defaults+: { unit: 's' },
-          },
-        },
+        $.ingestStorageIngesterEndToEndLatencyWhenStartingPanel(),
       )
     )
     .addRowIf(
       $._config.show_ingest_storage_panels,
-      ($.row('Ingester (ingest storage - last consumed offset)'))
+      ($.row('Ingester – last consumed offset (ingest storage)'))
       .addPanel(
         $.timeseriesPanel('Last consumed offset commits / sec') +
         $.panelDescription(
@@ -438,7 +389,7 @@ local filename = 'mimir-writes.json';
     )
     .addRowIf(
       $._config.show_ingest_storage_panels && $._config.autoscaling.ingester.enabled,
-      $.row('Ingester (ingest storage) – autoscaling')
+      $.row('Ingester – autoscaling (ingest storage)')
       .addPanel(
         $.autoScalingActualReplicas('ingester') + { title: 'Replicas (ReplicaTemplate)' } +
         $.panelDescription(
@@ -481,7 +432,7 @@ local filename = 'mimir-writes.json';
       $.kvStoreRow('Ingester - key-value store for the ingesters ring', 'ingester', 'ingester-.*')
     )
     .addRow(
-      $.row('Ingester - shipper')
+      $.row('Ingester – shipper')
       .addPanel(
         $.timeseriesPanel('Uploaded blocks / sec') +
         $.successFailurePanel(
@@ -510,7 +461,7 @@ local filename = 'mimir-writes.json';
       )
     )
     .addRow(
-      $.row('Ingester - TSDB head')
+      $.row('Ingester – TSDB head')
       .addPanel(
         $.timeseriesPanel('Compactions / sec') +
         $.successFailurePanel(
@@ -540,7 +491,7 @@ local filename = 'mimir-writes.json';
       )
     )
     .addRow(
-      $.row('Ingester - TSDB write ahead log (WAL)')
+      $.row('Ingester – TSDB write ahead log (WAL)')
       .addPanel(
         $.timeseriesPanel('WAL truncations / sec') +
         $.successFailurePanel(
