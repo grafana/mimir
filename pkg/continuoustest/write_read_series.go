@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -316,7 +317,7 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 				seriesID := entry.Metric["series_id"]
 				samples = append(samples, fmt.Sprintf("%s:%s:%s", seriesID, entry.Timestamp.String(), entry.Value.String()))
 			}
-			level.Warn(logger).Log("msg", "Instant query to dump series_id", "samples", samples)
+			level.Warn(logger).Log("msg", "Instant query to dump series_id", "samples", strings.Join(samples, ","))
 		}
 
 		return errors.Wrap(err, "range query result check failed")
