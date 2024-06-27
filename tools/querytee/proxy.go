@@ -228,7 +228,7 @@ func (p *Proxy) Start() error {
 		if p.cfg.CompareResponses {
 			comparator = route.ResponseComparator
 		}
-		router.Path(route.Path).Methods(route.Methods...).Handler(NewProxyEndpoint(p.backends, route, p.metrics, p.logger, comparator, p.cfg.LogSlowQueryResponseThreshold))
+		router.Path(route.Path).Methods(route.Methods...).Handler(NewProxyEndpoint(p.backends, route, p.metrics, p.logger, comparator, p.cfg.LogSlowQueryResponseThreshold, p.cfg.SecondaryBackendsRequestProportion))
 	}
 
 	if p.cfg.PassThroughNonRegisteredRoutes {

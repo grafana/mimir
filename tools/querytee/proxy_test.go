@@ -331,13 +331,14 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 
 			// Start the proxy.
 			cfg := ProxyConfig{
-				BackendEndpoints:         strings.Join(backendURLs, ","),
-				PreferredBackend:         strconv.Itoa(testData.preferredBackendIdx),
-				ServerHTTPServiceAddress: "localhost",
-				ServerHTTPServicePort:    0,
-				ServerGRPCServiceAddress: "localhost",
-				ServerGRPCServicePort:    0,
-				BackendReadTimeout:       time.Second,
+				BackendEndpoints:                   strings.Join(backendURLs, ","),
+				PreferredBackend:                   strconv.Itoa(testData.preferredBackendIdx),
+				ServerHTTPServiceAddress:           "localhost",
+				ServerHTTPServicePort:              0,
+				ServerGRPCServiceAddress:           "localhost",
+				ServerGRPCServicePort:              0,
+				BackendReadTimeout:                 time.Second,
+				SecondaryBackendsRequestProportion: 1.0,
 			}
 
 			if len(backendURLs) == 2 {

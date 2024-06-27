@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"sync"
@@ -27,41 +28,43 @@ type ResponsesComparator interface {
 }
 
 type ProxyEndpoint struct {
-	backends              []ProxyBackendInterface
-	metrics               *ProxyMetrics
-	logger                log.Logger
-	comparator            ResponsesComparator
-	slowResponseThreshold time.Duration
+	backends                          []ProxyBackendInterface
+	metrics                           *ProxyMetrics
+	logger                            log.Logger
+	comparator                        ResponsesComparator
+	slowResponseThreshold             time.Duration
+	secondaryBackendRequestProportion float64
 
-	// Whether for this endpoint there's a preferred backend configured.
-	hasPreferredBackend bool
+	// The preferred backend, if any.
+	preferredBackend ProxyBackendInterface
 
 	route Route
 }
 
-func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, slowResponseThreshold time.Duration) *ProxyEndpoint {
-	hasPreferredBackend := false
+func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, slowResponseThreshold time.Duration, secondaryBackendRequestProportion float64) *ProxyEndpoint {
+	var preferredBackend ProxyBackendInterface
 	for _, backend := range backends {
 		if backend.Preferred() {
-			hasPreferredBackend = true
+			preferredBackend = backend
 			break
 		}
 	}
 
 	return &ProxyEndpoint{
-		backends:              backends,
-		route:                 route,
-		metrics:               metrics,
-		logger:                logger,
-		comparator:            comparator,
-		slowResponseThreshold: slowResponseThreshold,
-		hasPreferredBackend:   hasPreferredBackend,
+		backends:                          backends,
+		route:                             route,
+		metrics:                           metrics,
+		logger:                            logger,
+		comparator:                        comparator,
+		slowResponseThreshold:             slowResponseThreshold,
+		secondaryBackendRequestProportion: secondaryBackendRequestProportion,
+		preferredBackend:                  preferredBackend,
 	}
 }
 
 func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Send the same request to all backends.
-	backends := p.backends
+	// Send the same request to all selected backends.
+	backends := p.selectBackends()
 	resCh := make(chan *backendResponse, len(backends))
 	go p.executeBackendRequests(r, backends, resCh)
 
@@ -79,6 +82,22 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p.metrics.responsesTotal.WithLabelValues(downstreamRes.backend.Name(), r.Method, p.route.RouteName).Inc()
+}
+
+func (p *ProxyEndpoint) selectBackends() []ProxyBackendInterface {
+	if len(p.backends) == 1 || p.secondaryBackendRequestProportion == 1.0 {
+		return p.backends
+	}
+
+	if p.secondaryBackendRequestProportion == 0.0 {
+		return []ProxyBackendInterface{p.preferredBackend}
+	}
+
+	if rand.Float64() > p.secondaryBackendRequestProportion {
+		return []ProxyBackendInterface{p.preferredBackend}
+	}
+
+	return p.backends
 }
 
 func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []ProxyBackendInterface, resCh chan *backendResponse) {
@@ -234,7 +253,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 	close(resCh)
 
 	// Compare responses.
-	if p.comparator != nil {
+	if p.comparator != nil && len(backends) >= 2 {
 		expectedResponse := responses[0]
 		actualResponse := responses[1]
 		if responses[1].backend.Preferred() {
@@ -288,7 +307,7 @@ func (p *ProxyEndpoint) waitBackendResponseForDownstream(backends []ProxyBackend
 		// - There's no preferred backend configured
 		// - Or this response is from the preferred backend
 		// - Or the preferred backend response has already been received and wasn't successful
-		if res.succeeded() && (!p.hasPreferredBackend || res.backend.Preferred() || preferredResponseReceived) {
+		if res.succeeded() && (p.preferredBackend == nil || res.backend.Preferred() || preferredResponseReceived) {
 			return res
 		}
 
