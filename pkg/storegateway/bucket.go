@@ -239,17 +239,7 @@ func NewBucketStore(
 		option(s)
 	}
 
-	lazyLoadedBlocks, err := indexheader.RestoreLoadedBlocks(dir)
-	if err != nil {
-		level.Warn(s.logger).Log(
-			"msg", "loading the list of index-headers from snapshot file failed; not eagerly loading index-headers for tenant",
-			"dir", dir,
-			"err", err,
-		)
-		// Don't fail initialization. If eager loading doesn't happen, then we will load index-headers lazily.
-		// Lazy loading which is slower, but not worth failing startup for.
-	}
-	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics, lazyLoadedBlocks)
+	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics)
 
 	if bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled {
 		snapConfig := indexheader.SnapshotterConfig{
@@ -317,10 +307,10 @@ func (s *BucketStore) Stats() BucketStoreStats {
 // SyncBlocks synchronizes the stores state with the Bucket bucket.
 // It will reuse disk space as persistent cache based on s.dir param.
 func (s *BucketStore) SyncBlocks(ctx context.Context) error {
-	return s.syncBlocks(ctx, false)
+	return s.syncBlocks(ctx)
 }
 
-func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
+func (s *BucketStore) syncBlocks(ctx context.Context) error {
 	metas, _, metaFetchErr := s.fetcher.Fetch(ctx)
 	// For partial view allow adding new blocks at least.
 	if metaFetchErr != nil && metas == nil {
@@ -334,7 +324,7 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 		wg.Add(1)
 		go func() {
 			for meta := range blockc {
-				if err := s.addBlock(ctx, meta, initialSync); err != nil {
+				if err := s.addBlock(ctx, meta); err != nil {
 					continue
 				}
 			}
@@ -385,10 +375,45 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 // InitialSync perform blocking sync with extra step at the end to delete locally saved blocks that are no longer
 // present in the bucket. The mismatch of these can only happen between restarts, so we can do that only once per startup.
 func (s *BucketStore) InitialSync(ctx context.Context) error {
-	if err := s.syncBlocks(ctx, true); err != nil {
+	previouslyLoadedBlocks, err := indexheader.RestoreLoadedBlocks(s.dir)
+	if err != nil {
+		level.Warn(s.logger).Log(
+			"msg", "loading the list of index-headers from snapshot file failed; not eagerly loading index-headers for tenant",
+			"dir", s.dir,
+			"err", err,
+		)
+		// Don't fail initialization. If eager loading doesn't happen, then we will load index-headers lazily.
+		// Lazy loading which is slower, but not worth failing startup for.
+	}
+	if err := s.syncBlocks(ctx); err != nil {
 		return errors.Wrap(err, "sync block")
 	}
+	if s.indexHeaderCfg.EagerLoadingStartupEnabled {
+		s.loadBlocks(ctx, previouslyLoadedBlocks)
+	}
 
+	err = s.cleanUpUnownedBlocks()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *BucketStore) loadBlocks(ctx context.Context, blocks map[ulid.ULID]int64) {
+	// We ignore the time the block was used because it can only be in the map if it was still loaded before the shutdown
+	for id := range blocks {
+		r := s.getBlock(id)
+		if r == nil {
+			continue // we don't own this block anymore
+		}
+		if lazyReader, ok := r.indexHeaderReader.(*indexheader.LazyBinaryReader); ok {
+			lazyReader.EagerLoad(ctx)
+		}
+	}
+}
+
+func (s *BucketStore) cleanUpUnownedBlocks() error {
 	fis, err := os.ReadDir(s.dir)
 	if err != nil {
 		return errors.Wrap(err, "read dir")
@@ -415,7 +440,7 @@ func (s *BucketStore) InitialSync(ctx context.Context) error {
 	return nil
 }
 
-func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta, initialSync bool) (err error) {
+func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error) {
 	dir := filepath.Join(s.dir, meta.ULID.String())
 	start := time.Now()
 
@@ -441,7 +466,6 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta, initialSyn
 		meta.ULID,
 		s.postingOffsetsInMemSampling,
 		s.indexHeaderCfg,
-		initialSync,
 	)
 	if err != nil {
 		return errors.Wrap(err, "create index header reader")
@@ -1581,6 +1605,18 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		Values: util.MergeSlices(sets...),
 		Hints:  anyHints,
 	}, nil
+}
+
+func (s *BucketStore) blockULIDs() []ulid.ULID {
+	s.blocksMx.RLock()
+	defer s.blocksMx.RUnlock()
+
+	ulids := make([]ulid.ULID, 0, len(s.blocks))
+	for _, b := range s.blocks {
+		ulids = append(ulids, b.meta.ULID)
+	}
+
+	return ulids
 }
 
 // blockLabelValues returns sorted values of the label with requested name,

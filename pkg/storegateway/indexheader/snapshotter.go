@@ -54,7 +54,7 @@ type BlocksLoader interface {
 }
 
 func (s *Snapshotter) persist(context.Context) error {
-	err := s.PersistLoadedBlocks(s.bl)
+	err := s.PersistLoadedBlocks()
 	if err != nil {
 		// Note, the decision here is to only log the error but not failing the job. We may reconsider that later.
 		level.Warn(s.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
@@ -63,9 +63,9 @@ func (s *Snapshotter) persist(context.Context) error {
 	return nil
 }
 
-func (s *Snapshotter) PersistLoadedBlocks(bl BlocksLoader) error {
+func (s *Snapshotter) PersistLoadedBlocks() error {
 	snapshot := &indexHeadersSnapshot{
-		IndexHeaderLastUsedTime: bl.LoadedBlocks(),
+		IndexHeaderLastUsedTime: s.bl.LoadedBlocks(),
 		UserID:                  s.conf.UserID,
 	}
 	data, err := json.Marshal(snapshot)
