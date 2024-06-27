@@ -121,6 +121,7 @@ type haTracker struct {
 
 	electedReplicaChanges         *prometheus.CounterVec
 	electedReplicaTimestamp       *prometheus.GaugeVec
+	lastElectionTimestamp         *prometheus.GaugeVec
 	electedReplicaPropagationTime prometheus.Histogram
 	kvCASCalls                    *prometheus.CounterVec
 
@@ -147,7 +148,7 @@ func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 	}
 
 	t := &haTracker{
-		logger:              logger,
+		logger:              log.With(logger, "component", "ha-tracker"),
 		cfg:                 cfg,
 		updateTimeoutJitter: jitter,
 		limits:              limits,
@@ -160,6 +161,10 @@ func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 		electedReplicaTimestamp: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ha_tracker_elected_replica_timestamp_seconds",
 			Help: "The timestamp stored for the currently elected replica, from the KVStore.",
+		}, []string{"user", "cluster"}),
+		lastElectionTimestamp: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ha_tracker_last_election_timestamp_seconds",
+			Help: "The timestamp stored for the most recent election, from the KVStore.",
 		}, []string{"user", "cluster"}),
 		electedReplicaPropagationTime: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ha_tracker_elected_replica_change_propagation_time_seconds",
@@ -240,6 +245,7 @@ func (h *haTracker) loop(ctx context.Context) error {
 		if replica.DeletedAt > 0 {
 			h.electedReplicaChanges.DeleteLabelValues(user, cluster)
 			h.electedReplicaTimestamp.DeleteLabelValues(user, cluster)
+			h.lastElectionTimestamp.DeleteLabelValues(user, cluster)
 
 			h.electedLock.Lock()
 			defer h.electedLock.Unlock()
@@ -462,6 +468,7 @@ func (h *haTracker) updateCache(userID, cluster string, desc *ReplicaDesc) {
 	}
 	if desc.Replica != entry.elected.Replica {
 		h.electedReplicaChanges.WithLabelValues(userID, cluster).Inc()
+		level.Info(h.logger).Log("msg", "updating replica in cache", "user", userID, "cluster", cluster, "old_replica", entry.elected.Replica, "new_replica", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
 	}
 	entry.elected = *desc
 	h.electedReplicaTimestamp.WithLabelValues(userID, cluster).Set(float64(desc.ReceivedAt / 1000))
@@ -476,11 +483,17 @@ func (h *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica 
 		var ok bool
 		if desc, ok = in.(*ReplicaDesc); ok && desc.DeletedAt == 0 {
 			// If the entry in KVStore is up-to-date, just stop the loop.
-			if h.withinUpdateTimeout(now, desc.ReceivedAt) ||
-				// If our replica is different, wait until the failover time.
-				desc.Replica != replica && now.Sub(timestamp.Time(desc.ReceivedAt)) < h.cfg.FailoverTimeout {
+			if h.withinUpdateTimeout(now, desc.ReceivedAt) {
 				return nil, false, nil
 			}
+		}
+		// If our replica is different, wait until the failover time
+		if desc != nil && desc.Replica != replica {
+			if now.Sub(timestamp.Time(desc.ReceivedAt)) < h.cfg.FailoverTimeout {
+				level.Info(h.logger).Log("msg", "replica differs, but it's too early to failover", "user", userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
+				return nil, false, nil
+			}
+			level.Info(h.logger).Log("msg", "replica differs, attempting to update kv", "user", userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
 		}
 
 		// Attempt to update KVStore to our timestamp and replica.
@@ -488,7 +501,9 @@ func (h *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica 
 			Replica:    replica,
 			ReceivedAt: timestamp.FromTime(now),
 			DeletedAt:  0,
+			ElectedAt:  timestamp.FromTime(now),
 		}
+		h.lastElectionTimestamp.WithLabelValues(userID, cluster).Set(float64(desc.ReceivedAt / 1000))
 		return desc, true, nil
 	})
 	h.kvCASCalls.WithLabelValues(userID, cluster).Inc()
@@ -524,5 +539,6 @@ func (h *haTracker) cleanupHATrackerMetricsForUser(userID string) {
 
 	h.electedReplicaChanges.DeletePartialMatch(filter)
 	h.electedReplicaTimestamp.DeletePartialMatch(filter)
+	h.lastElectionTimestamp.DeletePartialMatch(filter)
 	h.kvCASCalls.DeletePartialMatch(filter)
 }
