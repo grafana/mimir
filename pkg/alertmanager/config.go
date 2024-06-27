@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/grafana/alerting/definition"
+
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
 
