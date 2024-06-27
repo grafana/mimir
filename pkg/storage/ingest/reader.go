@@ -35,6 +35,10 @@ const (
 	kafkaOffsetEnd = int64(-1)
 )
 
+var (
+	errWaitStrongReadConsistencyTimeoutExceeded = errors.Wrap(context.DeadlineExceeded, "wait strong read consistency timeout exceeded")
+)
+
 type record struct {
 	// Context holds the tracing (and potentially other) info, that the record was enriched with on fetch from Kafka.
 	ctx      context.Context
@@ -541,6 +545,13 @@ func (r *PartitionReader) WaitReadConsistency(ctx context.Context) (returnErr er
 
 	spanLog := spanlogger.FromContext(ctx, r.logger)
 	spanLog.DebugLog("msg", "waiting for read consistency")
+
+	// Honor the configured wait timeout.
+	if r.kafkaCfg.WaitStrongReadConsistencyTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeoutCause(ctx, r.kafkaCfg.WaitStrongReadConsistencyTimeout, errWaitStrongReadConsistencyTimeoutExceeded)
+		defer cancel()
+	}
 
 	defer func() {
 		// Do not track failure or latency if the request was canceled (because the tracking would be incorrect).
