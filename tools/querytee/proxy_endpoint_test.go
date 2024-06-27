@@ -119,7 +119,7 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 			}()
 
 			// Wait for the selected backend response.
-			actual := endpoint.waitBackendResponseForDownstream(resCh)
+			actual := endpoint.waitBackendResponseForDownstream(testData.backends, resCh)
 			assert.Equal(t, testData.expected, actual.backend)
 		})
 	}

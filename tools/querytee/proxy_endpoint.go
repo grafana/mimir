@@ -61,11 +61,12 @@ func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *Pr
 
 func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Send the same request to all backends.
-	resCh := make(chan *backendResponse, len(p.backends))
-	go p.executeBackendRequests(r, resCh)
+	backends := p.backends
+	resCh := make(chan *backendResponse, len(backends))
+	go p.executeBackendRequests(r, backends, resCh)
 
 	// Wait for the first response that's feasible to be sent back to the client.
-	downstreamRes := p.waitBackendResponseForDownstream(resCh)
+	downstreamRes := p.waitBackendResponseForDownstream(backends, resCh)
 
 	if downstreamRes.err != nil {
 		http.Error(w, downstreamRes.err.Error(), http.StatusInternalServerError)
@@ -80,12 +81,12 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.metrics.responsesTotal.WithLabelValues(downstreamRes.backend.Name(), r.Method, p.route.RouteName).Inc()
 }
 
-func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *backendResponse) {
+func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []ProxyBackendInterface, resCh chan *backendResponse) {
 	var (
 		wg           = sync.WaitGroup{}
 		err          error
 		body         []byte
-		responses    = make([]*backendResponse, 0, len(p.backends))
+		responses    = make([]*backendResponse, 0, len(backends))
 		responsesMtx = sync.Mutex{}
 		timingMtx    = sync.Mutex{}
 		query        = req.URL.RawQuery
@@ -150,8 +151,8 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 		slowestBackend  ProxyBackendInterface
 	)
 
-	wg.Add(len(p.backends))
-	for _, b := range p.backends {
+	wg.Add(len(backends))
+	for _, b := range backends {
 		b := b
 
 		go func() {
@@ -276,9 +277,9 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 	}
 }
 
-func (p *ProxyEndpoint) waitBackendResponseForDownstream(resCh chan *backendResponse) *backendResponse {
+func (p *ProxyEndpoint) waitBackendResponseForDownstream(backends []ProxyBackendInterface, resCh chan *backendResponse) *backendResponse {
 	var (
-		responses                 = make([]*backendResponse, 0, len(p.backends))
+		responses                 = make([]*backendResponse, 0, len(backends))
 		preferredResponseReceived = false
 	)
 
