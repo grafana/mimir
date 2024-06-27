@@ -17,8 +17,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcutil"
 	dskit_metrics "github.com/grafana/dskit/metrics"
-    "github.com/grafana/dskit/services"
-    "github.com/prometheus/client_golang/prometheus"
+	"github.com/grafana/dskit/services"
+	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -193,9 +193,10 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 			BlockSyncConcurrency:        20,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
-				EagerLoadingStartupEnabled: true,
-				LazyLoadingEnabled:         true,
-				LazyLoadingIdleTimeout:     time.Minute,
+				EagerLoadingStartupEnabled:  true,
+				LazyLoadingEnabled:          true,
+				LazyLoadingIdleTimeout:      time.Minute,
+				EagerLoadingPersistInterval: time.Minute,
 			},
 		},
 		cfg.postingsStrategy,

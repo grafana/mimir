@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/stretchr/testify/require"
 )
@@ -33,7 +34,7 @@ func TestSnapshotter_PersistAndRestoreLoadedBlocks(t *testing.T) {
 	}
 
 	// First instance persists the original snapshot.
-	s1 := NewSnapshotter(log.NewNopLogger(), config)
+	s1 := NewSnapshotter(log.NewNopLogger(), config, testBlocksLoader)
 	err := s1.PersistLoadedBlocks(testBlocksLoader)
 	require.NoError(t, err)
 
@@ -45,7 +46,7 @@ func TestSnapshotter_PersistAndRestoreLoadedBlocks(t *testing.T) {
 	require.JSONEq(t, expected, string(data))
 
 	// Another instance restores the snapshot persisted earlier.
-	s2 := NewSnapshotter(log.NewNopLogger(), config)
+	s2 := NewSnapshotter(log.NewNopLogger(), config, testBlocksLoader)
 
 	restoredBlocks := s2.RestoreLoadedBlocks()
 	require.Equal(t, origBlocks, restoredBlocks)
@@ -63,35 +64,19 @@ func TestSnapshotter_StartStop(t *testing.T) {
 		})
 
 		config := SnapshotterConfig{
-			Path:   tmpDir,
-			UserID: "anonymous",
+			Path:            tmpDir,
+			UserID:          "anonymous",
+			PersistInterval: 100 * time.Millisecond,
 		}
-		s := NewSnapshotter(log.NewNopLogger(), config)
-
-		s.Start(context.Background(), testBlocksLoader)
-		s.Stop()
+		s := NewSnapshotter(log.NewNopLogger(), config, testBlocksLoader)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), s))
+		time.Sleep(config.PersistInterval * 2) // give enough time to persist the snapshot
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), s))
 
 		persistedFile := filepath.Join(tmpDir, lazyLoadedHeadersListFileName)
 		data, err := os.ReadFile(persistedFile)
 		require.NoError(t, err)
 		require.NotEmpty(t, data)
-	})
-
-	t.Run("stop but no start", func(t *testing.T) {
-		tmpDir := t.TempDir()
-
-		config := SnapshotterConfig{
-			Path:   tmpDir,
-			UserID: "anonymous",
-		}
-		s := NewSnapshotter(log.NewNopLogger(), config)
-
-		// Nothing was started but an attempt to stop shouldn't hang.
-		s.Stop()
-
-		persistedFile := filepath.Join(tmpDir, lazyLoadedHeadersListFileName)
-		_, err := os.ReadFile(persistedFile)
-		require.ErrorIs(t, err, os.ErrNotExist)
 	})
 }
 

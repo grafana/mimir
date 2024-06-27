@@ -8,11 +8,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 
 	"github.com/grafana/mimir/pkg/util/atomicfs"
@@ -21,6 +21,7 @@ import (
 const lazyLoadedHeadersListFileName = "lazy-loaded.json"
 
 type SnapshotterConfig struct {
+	PersistInterval time.Duration
 	// Path stores where lazy loaded blocks will be tracked in a single file per tenant
 	Path   string
 	UserID string
@@ -28,62 +29,39 @@ type SnapshotterConfig struct {
 
 // Snapshotter manages the snapshots of lazy loaded blocks.
 type Snapshotter struct {
+	services.Service
+
 	logger log.Logger
 	conf   SnapshotterConfig
 
-	// when the running group is positive, this indicates the Snapshotter is active
-	running sync.WaitGroup
-	stop    chan struct{}
+	bl BlocksLoader
 }
 
-func NewSnapshotter(logger log.Logger, conf SnapshotterConfig) *Snapshotter {
-	return &Snapshotter{
+func NewSnapshotter(logger log.Logger, conf SnapshotterConfig, bl BlocksLoader) *Snapshotter {
+	s := &Snapshotter{
 		logger: logger,
 		conf:   conf,
-		stop:   make(chan struct{}),
+		bl:     bl,
 	}
+	s.Service = services.NewTimerService(conf.PersistInterval, nil, s.persist, nil)
+	return s
 }
 
-type blocksLoader interface {
+type BlocksLoader interface {
 	LoadedBlocks() map[ulid.ULID]int64
 }
 
-// Start spawns a background job that periodically persists the list of lazy-loaded index headers.
-func (s *Snapshotter) Start(ctx context.Context, bl blocksLoader) {
-	s.running.Add(1)
-	go func() {
-		defer s.running.Done()
-
-		err := s.PersistLoadedBlocks(bl)
-		if err != nil {
-			// Note, the decision here is to only log the error but not failing the job. We may reconsider that later.
-			level.Warn(s.logger).Log("msg", "failed to persist initial list of lazy-loaded index headers", "err", err)
-		}
-
-		tick := time.NewTicker(time.Minute)
-		defer tick.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-s.stop:
-				return
-			case <-tick.C:
-				if err := s.PersistLoadedBlocks(bl); err != nil {
-					level.Warn(s.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
-				}
-			}
-		}
-	}()
+func (s *Snapshotter) persist(context.Context) error {
+	err := s.PersistLoadedBlocks(s.bl)
+	if err != nil {
+		// Note, the decision here is to only log the error but not failing the job. We may reconsider that later.
+		level.Warn(s.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
+	}
+	// Never return an error because we want to persist the list of lazy-loaded index headers as a best effort
+	return nil
 }
 
-func (s *Snapshotter) Stop() {
-	close(s.stop)
-	s.running.Wait()
-}
-
-func (s *Snapshotter) PersistLoadedBlocks(bl blocksLoader) error {
+func (s *Snapshotter) PersistLoadedBlocks(bl BlocksLoader) error {
 	snapshot := &indexHeadersSnapshot{
 		IndexHeaderLastUsedTime: bl.LoadedBlocks(),
 		UserID:                  s.conf.UserID,

@@ -75,6 +75,11 @@ type BucketStoreStats struct {
 	BlocksLoaded map[time.Duration]int
 }
 
+type snapshotter interface {
+	services.Service
+	RestoreLoadedBlocks() map[ulid.ULID]int64
+}
+
 // BucketStore implements the store API backed by a bucket. It loads all index
 // files to local disk.
 //
@@ -94,8 +99,7 @@ type BucketStore struct {
 	indexReaderPool *indexheader.ReaderPool
 	seriesHashCache *hashcache.SeriesHashCache
 
-	snapshotter          *indexheader.Snapshotter
-	snapshotterStartOnce sync.Once
+	snapshotter snapshotter
 
 	// Sets of blocks that have the same labels. They are indexed by a hash over their label set.
 	blocksMx sync.RWMutex
@@ -132,6 +136,12 @@ type BucketStore struct {
 	// postingsStrategy is a strategy shared among all tenants.
 	postingsStrategy postingsSelectionStrategy
 }
+
+type noopShapshotter struct {
+	services.Service
+}
+
+func (noopShapshotter) RestoreLoadedBlocks() map[ulid.ULID]int64 { return nil }
 
 type noopCache struct{}
 
@@ -244,17 +254,17 @@ func NewBucketStore(
 		option(s)
 	}
 
-	snapConfig := indexheader.SnapshotterConfig{
-		Path:   dir,
-		UserID: userID,
-	}
-	s.snapshotter = indexheader.NewSnapshotter(s.logger, snapConfig)
-
-	var lazyLoadedBlocks map[ulid.ULID]int64
 	if bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled {
-		lazyLoadedBlocks = s.snapshotter.RestoreLoadedBlocks()
+		snapConfig := indexheader.SnapshotterConfig{
+			Path:            dir,
+			UserID:          userID,
+			PersistInterval: bucketStoreConfig.IndexHeader.LazyLoadingIdleTimeout,
+		}
+		s.snapshotter = indexheader.NewSnapshotter(s.logger, snapConfig, s.indexReaderPool)
+	} else {
+		s.snapshotter = noopShapshotter{services.NewIdleService(nil, nil)}
 	}
-	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics, lazyLoadedBlocks)
+	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics, s.snapshotter.RestoreLoadedBlocks())
 
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create dir")
@@ -264,23 +274,38 @@ func NewBucketStore(
 	return s, nil
 }
 
+func (s *BucketStore) subservices() []services.Service {
+	return []services.Service{s.snapshotter}
+}
+
 func (s *BucketStore) start(ctx context.Context) error {
 	return nil // TODO dimitarvdimitrov
 }
 
 func (s *BucketStore) stop(err error) error {
-	return nil // TODO dimitarvdimitrov
+	subservices := s.subservices()
+
+	errs := multierror.New(err)
+	for _, svc := range subservices {
+		if err := services.StopAndAwaitTerminated(context.Background(), svc); err != nil {
+			errs.Add(fmt.Errorf("stop %T: %w", svc, err))
+		}
+	}
+	return errs.Err()
 }
 
 // RemoveBlocksAndClose remove all blocks from local disk and releases all resources associated with the BucketStore.
 func (s *BucketStore) RemoveBlocksAndClose() error {
-	removeBlocksErr := s.removeAllBlocks()
-
+	errs := multierror.New()
+	if err := services.StopAndAwaitTerminated(context.Background(), s); err != nil {
+		errs.Add(fmt.Errorf("stopping subservices: %w", err))
+	}
 	// Release other resources even if it failed to close some blocks.
-	s.snapshotter.Stop()
-	s.indexReaderPool.Close()
+	if err := s.removeAllBlocks(); err != nil {
+		errs.Add(fmt.Errorf("remove all blocks: %w", err))
+	}
 
-	return multierror.New(removeBlocksErr, services.StopAndAwaitTerminated(context.Background(), s)).Err()
+	return errs.Err()
 }
 
 // Stats returns statistics about the BucketStore instance.
@@ -374,9 +399,9 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 
 	// Start snapshotter in the end of the sync, but do that only once per BucketStore's lifetime.
 	// We do that here, so the snapshotter watched after blocks from both initial sync and those discovered later.
-	s.snapshotterStartOnce.Do(func() {
-		s.snapshotter.Start(ctx, s.indexReaderPool)
-	})
+	// If it's already started this will return an error. We ignore that because syncBlocks can run multiple times
+	// We pass context.Background() because we want to stop it ourselves as opposed to stopping it as soon as the runtime context is cancelled..
+	_ = s.snapshotter.StartAsync(context.Background())
 
 	return nil
 }
