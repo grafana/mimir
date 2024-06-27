@@ -963,7 +963,7 @@ groups:
               /
               sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{phase="running"}[1m]))
             ) > (2 * 60)
-          for: 5m
+          for: 3m
           labels:
             severity: critical
             threshold: very_high_for_short_period

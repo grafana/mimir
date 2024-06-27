@@ -78,9 +78,11 @@
         },
 
         // Alert firing if an ingester is ingesting data with a very high delay, even for a short period of time.
+        // With a threshold of 2m, a for duration of 3m, an evaluation delay of 1m and an evaluation interval of 1m
+        // when this alert fires the ingester should be up to 2+3+1+1=7 minutes behind.
         {
           alert: $.alertName('RunningIngesterReceiveDelayTooHigh'),
-          'for': '5m',
+          'for': '3m',
           // We're using series from classic histogram here, because mixtool lint doesn't support histogram_sum, histogram_count functions yet.
           expr: |||
             (
