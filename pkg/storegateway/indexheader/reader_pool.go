@@ -118,7 +118,7 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 		if initialSync && p.preShutdownLoadedBlocks != nil {
 			// we only eager load if we have preShutdownLoadedBlocks for the given block id
 			if p.preShutdownLoadedBlocks[id] > 0 {
-				lazyBinaryReader.EagerLoad()
+				lazyBinaryReader.EagerLoad(ctx)
 			}
 		}
 		reader, err = lazyBinaryReader, lazyErr
@@ -162,7 +162,7 @@ func (p *ReaderPool) getIdleReadersSince(ts int64) []*LazyBinaryReader {
 
 	var idle []*LazyBinaryReader
 	for r := range p.lazyReaders {
-		if r.isIdleSince(ts) {
+		if r.IsIdleSince(ts) {
 			idle = append(idle, r)
 		}
 	}
