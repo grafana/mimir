@@ -273,7 +273,7 @@ func writeSparseHeadersToFile(logger *spanlogger.SpanLogger, id ulid.ULID, spars
 		return fmt.Errorf("failed to close gzip sparse index-header: %w", err)
 	}
 
-	if err := atomicfs.CreateFileAndMove(sparseHeadersPath+".tmp", sparseHeadersPath, gzipped); err != nil {
+	if err := atomicfs.CreateFile(sparseHeadersPath, gzipped); err != nil {
 		return fmt.Errorf("failed to write sparse index-header file: %w", err)
 	}
 
@@ -306,11 +306,11 @@ func newBinaryTOCFromFile(d streamencoding.Decbuf, indexHeaderSize int) (*Binary
 	}, nil
 }
 
-func (r *StreamBinaryReader) IndexVersion() (int, error) {
+func (r *StreamBinaryReader) IndexVersion(context.Context) (int, error) {
 	return r.indexVersion, nil
 }
 
-func (r *StreamBinaryReader) PostingsOffset(name, value string) (index.Range, error) {
+func (r *StreamBinaryReader) PostingsOffset(_ context.Context, name string, value string) (index.Range, error) {
 	rng, found, err := r.postingsOffsetTable.PostingsOffset(name, value)
 	if err != nil {
 		return index.Range{}, err
@@ -321,7 +321,7 @@ func (r *StreamBinaryReader) PostingsOffset(name, value string) (index.Range, er
 	return rng, nil
 }
 
-func (r *StreamBinaryReader) LookupSymbol(o uint32) (string, error) {
+func (r *StreamBinaryReader) LookupSymbol(_ context.Context, o uint32) (string, error) {
 	if r.indexVersion == index.FormatV1 {
 		// For v1 little trick is needed. Refs are actual offset inside index, not index-header. This is different
 		// of the header length difference between two files.
@@ -370,7 +370,7 @@ func (c cachedLabelNamesSymbolsReader) Read(u uint32) (string, error) {
 	return c.r.Read(u)
 }
 
-func (r *StreamBinaryReader) SymbolsReader() (streamindex.SymbolsReader, error) {
+func (r *StreamBinaryReader) SymbolsReader(context.Context) (streamindex.SymbolsReader, error) {
 	return cachedLabelNamesSymbolsReader{
 		labelNames: r.nameSymbols,
 		r:          r.symbols.Reader(),
@@ -381,7 +381,7 @@ func (r *StreamBinaryReader) LabelValuesOffsets(ctx context.Context, name string
 	return r.postingsOffsetTable.LabelValuesOffsets(ctx, name, prefix, filter)
 }
 
-func (r *StreamBinaryReader) LabelNames() ([]string, error) {
+func (r *StreamBinaryReader) LabelNames(context.Context) ([]string, error) {
 	return r.postingsOffsetTable.LabelNames()
 }
 

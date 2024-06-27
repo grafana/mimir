@@ -28,14 +28,14 @@ const (
 
 // sharedOptionWithRingClient is a message appended to all config options that should be also
 // set on the components running the ingester ring client.
-const sharedOptionWithRingClient = " This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode."
+const sharedOptionWithRingClient = " This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode."
 
 // ErrSpreadMinimizingValidation is a sentinel error that indicates a failure
 // in the validation of spread minimizing token generation config.
 var ErrSpreadMinimizingValidation = fmt.Errorf("%q token generation strategy is misconfigured", tokenGenerationSpreadMinimizing)
 
 type RingConfig struct {
-	KVStore              kv.Config              `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode."`
+	KVStore              kv.Config              `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode."`
 	HeartbeatPeriod      time.Duration          `yaml:"heartbeat_period" category:"advanced"`
 	HeartbeatTimeout     time.Duration          `yaml:"heartbeat_timeout" category:"advanced"`
 	ReplicationFactor    int                    `yaml:"replication_factor"`

@@ -47,6 +47,7 @@ enum ErrorCause {
   TOO_BUSY = 9;
   CIRCUIT_BREAKER_OPEN = 10;
   METHOD_NOT_ALLOWED = 11;
+  TENANT_LIMIT = 12;
 }
 
 message ErrorDetails {

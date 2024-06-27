@@ -152,7 +152,9 @@ func runTestPushSeriesForQuerierRemoteRead(t *testing.T, c *e2emimir.Client, que
 
 func TestQuerierStreamingRemoteRead(t *testing.T) {
 	var (
-		now           = time.Now().Truncate(time.Minute) // Make assertions easier to debug.
+		// This test runs with a fixed time so that assertions are stable. The reason is that the formula used by TSDB
+		// to cut chunks has some rounding which may cause this test to be flaky if run with a random "now" time.
+		now           = must(time.Parse(time.RFC3339, "2024-01-01T00:00:00Z"))
 		pushedStartMs = now.Add(-time.Minute).UnixMilli()
 		pushedEndMs   = now.Add(time.Minute).UnixMilli()
 		pushedStepMs  = int64(100) // Simulate a high frequency scraping (10Hz).
@@ -205,16 +207,15 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 				StartTimestampMs: pushedStartMs,
 				EndTimestampMs:   pushedEndMs,
 				Hints: &prompb.ReadHints{
-					StartMs: now.UnixMilli(),
-					EndMs:   now.Add(10 * time.Second).UnixMilli(),
+					StartMs: now.Add(5 * time.Second).UnixMilli(),
+					EndMs:   now.Add(15 * time.Second).UnixMilli(),
 				},
 			},
 			// Mimir doesn't cut returned chunks to the requested time range for performance reasons. This means
 			// that we get the entire chunks in output. TSDB targets to cut chunks once every 120 samples, but
-			// it's based on estimation and math is not super accurate. That's why we get these not-perfectly-aligned
-			// chunk ranges. However, they're consistent, so tests are stable.
-			expectedStartMs: now.Add(-1500 * time.Millisecond).UnixMilli(),
-			expectedEndMs:   now.Add(10100 * time.Millisecond).UnixMilli(),
+			// it's based on estimation and math is not super accurate. That's why we run this test with a fixed time.
+			expectedStartMs: now.UnixMilli(),
+			expectedEndMs:   now.Add(23300 * time.Millisecond).UnixMilli(),
 		},
 		"histograms": {
 			valType:         chunkenc.ValHistogram,
@@ -243,6 +244,9 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 
 		// This test writes samples sparse in time. We don't want compaction to trigger while testing.
 		"-blocks-storage.tsdb.block-ranges-period": "2h",
+
+		// This test writes samples with an old timestamp.
+		"-querier.query-ingesters-within": "0",
 	})
 
 	// Start dependencies.
@@ -333,7 +337,6 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 					require.NoError(t, err)
 
 					chkItr := chk.Iterator(nil)
-					chkIdx := 0
 					for valType := chkItr.Next(); valType != chunkenc.ValNone; valType = chkItr.Next() {
 						require.Equal(t, testData.valType, valType)
 						switch valType {
@@ -357,7 +360,6 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 							require.Fail(t, "unrecognized value type")
 						}
 						sampleIdx++
-						chkIdx++
 					}
 				}
 			}

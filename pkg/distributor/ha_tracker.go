@@ -36,7 +36,7 @@ var (
 )
 
 type haTrackerLimits interface {
-	// MaxHAClusters returns max number of clusters that HA tracker should track for a user.
+	// MaxHAClusters returns the max number of clusters that the HA tracker should track for a user.
 	// Samples from additional clusters are rejected.
 	MaxHAClusters(user string) int
 }
@@ -51,8 +51,8 @@ func NewReplicaDesc() *ReplicaDesc {
 	return &ReplicaDesc{}
 }
 
-// HATrackerConfig contains the configuration require to
-// create a HA Tracker.
+// HATrackerConfig contains the configuration required to
+// create an HA Tracker.
 type HATrackerConfig struct {
 	EnableHATracker bool `yaml:"enable_ha_tracker"`
 	// We should only update the timestamp if the difference
@@ -76,10 +76,10 @@ func (cfg *HATrackerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.UpdateTimeoutJitterMax, "distributor.ha-tracker.update-timeout-jitter-max", 5*time.Second, "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time.")
 	f.DurationVar(&cfg.FailoverTimeout, "distributor.ha-tracker.failover-timeout", 30*time.Second, "If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout")
 
-	// We want the ability to use different Consul instances for the ring and
+	// We want the ability to use different instances for the ring and
 	// for HA cluster tracking. We also customize the default keys prefix, in
 	// order to not clash with the ring key if they both share the same KVStore
-	// backend (ie. run on the same consul cluster).
+	// backend (i.e. run on the same Consul cluster).
 	cfg.KVStore.RegisterFlagsWithPrefix("distributor.ha-tracker.", "ha-tracker/", f)
 }
 
@@ -138,8 +138,8 @@ type haClusterInfo struct {
 	nonElectedLastSeenTimestamp int64
 }
 
-// newHATracker returns a new HA cluster tracker using either Consul
-// or in-memory KV store. Tracker must be started via StartAsync().
+// newHATracker returns a new HA cluster tracker using either Consul,
+// etcd, or an in-memory KV store. Tracker must be started via StartAsync().
 func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Registerer, logger log.Logger) (*haTracker, error) {
 	var jitter time.Duration
 	if cfg.UpdateTimeoutJitterMax > 0 {
@@ -224,7 +224,7 @@ func (h *haTracker) loop(ctx context.Context) error {
 
 	// Request callbacks from KVStore when data changes.
 	// The KVStore config we gave when creating h should have contained a prefix,
-	// which would have given us a prefixed KVStore client. So, we can pass empty string here.
+	// which would have given us a prefixed KVStore client. So, we can pass an empty string here.
 	h.client.WatchPrefix(ctx, "", func(key string, value interface{}) bool {
 		replica := value.(*ReplicaDesc)
 		segments := strings.SplitN(key, "/", 2)
@@ -269,8 +269,8 @@ const (
 	cleanupCyclePeriod         = 30 * time.Minute
 	cleanupCycleJitterVariance = 0.2 // for 30 minutes, this is ±6 min
 
-	// If we have received last sample for given cluster before this timeout, we will mark selected replica for deletion.
-	// If selected replica is marked for deletion for this time, it is deleted completely.
+	// If we have received the last sample for the given cluster before this timeout, we will mark the selected replica for deletion.
+	// If the selected replica is marked for deletion for this time, it is deleted completely.
 	deletionTimeout = 30 * time.Minute
 )
 
@@ -358,10 +358,10 @@ func (h *haTracker) cleanupOldReplicas(ctx context.Context, deadline time.Time) 
 				continue
 			}
 
-			// We're blindly deleting a key here. It may happen that value was updated since we have read it few lines above,
-			// in which case Distributors will have updated value in memory, but Delete will remove it from KV store anyway.
-			// That's not great, but should not be a problem. If KV store sends Watch notification for Delete, distributors will
-			// delete it from memory, and recreate on next sample with matching replica.
+			// We're blindly deleting a key here. It may happen that the value was updated since we have read it a few lines above,
+			// in which case distributors will have updated value in memory, but Delete will remove it from the KV store anyway.
+			// That's not great, but should not be a problem. If the KV store sends Watch notification for Delete, distributors will
+			// delete it from memory, and recreate it on the next sample with matching replica.
 			//
 			// If KV store doesn't send Watch notification for Delete, distributors *with* replica in memory will keep using it,
 			// while distributors *without* replica in memory will try to write it to KV store -- which will update *all*

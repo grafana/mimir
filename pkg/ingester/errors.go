@@ -257,7 +257,7 @@ func (e perUserSeriesLimitReachedError) Error() string {
 }
 
 func (e perUserSeriesLimitReachedError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.BAD_DATA
+	return mimirpb.TENANT_LIMIT
 }
 
 func (e perUserSeriesLimitReachedError) soft() {}
@@ -288,7 +288,7 @@ func (e perUserMetadataLimitReachedError) Error() string {
 }
 
 func (e perUserMetadataLimitReachedError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.BAD_DATA
+	return mimirpb.TENANT_LIMIT
 }
 
 func (e perUserMetadataLimitReachedError) soft() {}
@@ -324,7 +324,7 @@ func (e perMetricSeriesLimitReachedError) Error() string {
 }
 
 func (e perMetricSeriesLimitReachedError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.BAD_DATA
+	return mimirpb.TENANT_LIMIT
 }
 
 func (e perMetricSeriesLimitReachedError) soft() {}
@@ -360,7 +360,7 @@ func (e perMetricMetadataLimitReachedError) Error() string {
 }
 
 func (e perMetricMetadataLimitReachedError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.BAD_DATA
+	return mimirpb.TENANT_LIMIT
 }
 
 func (e perMetricMetadataLimitReachedError) soft() {}
@@ -550,6 +550,8 @@ func mapPushErrorToErrorWithStatus(err error) error {
 	if errors.As(err, &ingesterErr) {
 		switch ingesterErr.errorCause() {
 		case mimirpb.BAD_DATA:
+			errCode = codes.InvalidArgument
+		case mimirpb.TENANT_LIMIT:
 			errCode = codes.FailedPrecondition
 		case mimirpb.SERVICE_UNAVAILABLE:
 			errCode = codes.Unavailable
@@ -574,6 +576,8 @@ func mapPushErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 	if errors.As(err, &ingesterErr) {
 		switch ingesterErr.errorCause() {
 		case mimirpb.BAD_DATA:
+			return newErrorWithHTTPStatus(err, http.StatusBadRequest)
+		case mimirpb.TENANT_LIMIT:
 			return newErrorWithHTTPStatus(err, http.StatusBadRequest)
 		case mimirpb.SERVICE_UNAVAILABLE:
 			return newErrorWithStatus(err, codes.Unavailable)

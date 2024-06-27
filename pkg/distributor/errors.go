@@ -272,6 +272,8 @@ func errorCauseToGRPCStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErro
 	switch errCause {
 	case mimirpb.BAD_DATA:
 		return codes.InvalidArgument
+	case mimirpb.TENANT_LIMIT:
+		return codes.FailedPrecondition
 	case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
 		if serviceOverloadErrorEnabled {
 			return codes.Unavailable
@@ -292,6 +294,8 @@ func errorCauseToGRPCStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErro
 func errorCauseToHTTPStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErrorEnabled bool) int {
 	switch errCause {
 	case mimirpb.BAD_DATA:
+		return http.StatusBadRequest
+	case mimirpb.TENANT_LIMIT:
 		return http.StatusBadRequest
 	case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
 		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
