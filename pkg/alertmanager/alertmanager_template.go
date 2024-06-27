@@ -7,6 +7,7 @@ import (
 	"fmt"
 	tmplhtml "html/template"
 	"net/url"
+	"strings"
 	tmpltext "text/template"
 
 	"github.com/prometheus/alertmanager/template"
@@ -37,29 +38,51 @@ type grafanaExploreParams struct {
 
 // grafanaExploreURL is a template helper function to generate Grafana range query explore URL in the alert template.
 func grafanaExploreURL(grafanaURL, datasource, from, to, expr string) (string, error) {
-	res, err := json.Marshal(&grafanaExploreParams{
-		Range: grafanaExploreRange{
-			From: from,
-			To:   to,
-		},
-		Queries: []grafanaExploreQuery{
-			{
-				Datasource: grafanaDatasource{
-					Type: "prometheus",
-					UID:  datasource,
-				},
-				Expr:    expr,
-				Instant: false,
-				Range:   true,
-				RefID:   "A",
+	grafanaExploreQueryPrefix := "/explore?left="
+	var res []byte
+	var err error
+	var grafanaExplore grafanaExploreParams
+
+	if strings.HasPrefix(expr, grafanaExploreQueryPrefix) {
+		// remove begging to get queries params
+		expr = strings.ReplaceAll(expr, grafanaExploreQueryPrefix, "")
+		if err = json.Unmarshal([]byte(expr), &grafanaExplore); err != nil {
+			return "", err
+		}
+		grafanaExplore.Queries[0].Range = true
+		grafanaExplore.Queries[0].RefID = "A"
+		grafanaExplore.Range.From = from
+		grafanaExplore.Range.To = to
+	} else {
+		grafanaExplore = grafanaExploreParams{
+			Range: grafanaExploreRange{
+				From: from,
+				To:   to,
 			},
-		},
-	})
-	return grafanaURL + "/explore?left=" + url.QueryEscape(string(res)), err
+			Queries: []grafanaExploreQuery{
+				{
+					Datasource: grafanaDatasource{
+						Type: "prometheus",
+						UID:  datasource,
+					},
+					Expr:    expr,
+					Instant: false,
+					Range:   true,
+					RefID:   "A",
+				},
+			},
+		}
+	}
+	res, err = json.Marshal(grafanaExplore)
+	return grafanaURL + grafanaExploreQueryPrefix + url.QueryEscape(string(res)), err
 }
 
 // queryFromGeneratorURL returns a PromQL expression parsed out from a GeneratorURL in Prometheus alert
 func queryFromGeneratorURL(generatorURL string) (string, error) {
+	// if generator url source is a grafana product
+	if strings.HasPrefix(generatorURL, "/explore?left=") {
+		return generatorURL, nil
+	}
 	u, err := url.Parse(generatorURL)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse generator URL: %w", err)
