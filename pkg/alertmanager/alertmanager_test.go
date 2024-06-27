@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -24,6 +25,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/alertmanager/featurecontrol"
+	"github.com/prometheus/alertmanager/silence"
 	"github.com/prometheus/alertmanager/silence/silencepb"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
@@ -93,7 +95,8 @@ route:
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-	require.NoError(t, am.ApplyConfig(cfg, cfgRaw))
+	tmpls := make([]io.Reader, 0)
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}))
 
 	now := time.Now()
 
@@ -177,7 +180,8 @@ route:
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-	require.NoError(t, am.ApplyConfig(cfg, cfgRaw))
+	tmpls := make([]io.Reader, 0)
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}))
 
 	now := time.Now()
 	inputAlerts := []*types.Alert{
@@ -330,17 +334,33 @@ func testLimiter(t *testing.T, limits Limits, ops []callbackOp) {
 	}
 }
 
+// cloneSilence returns a shallow copy of a silence. It is used in tests.
+func cloneSilence(t *testing.T, sil *silencepb.Silence) *silencepb.Silence {
+	t.Helper()
+	s := *sil
+	return &s
+}
+
+func toMeshSilence(t *testing.T, sil *silencepb.Silence, retention time.Duration) *silencepb.MeshSilence {
+	t.Helper()
+	return &silencepb.MeshSilence{
+		Silence:   sil,
+		ExpiresAt: sil.EndsAt.Add(retention),
+	}
+}
+
 func TestSilenceLimits(t *testing.T) {
 	user := "test"
 
 	r := prometheus.NewPedanticRegistry()
+	limits := mockAlertManagerLimits{
+		maxSilencesCount:    1,
+		maxSilenceSizeBytes: 2 << 11, // 4KB,
+	}
 	am, err := New(&Config{
-		UserID: user,
-		Logger: log.NewNopLogger(),
-		Limits: &mockAlertManagerLimits{
-			maxSilencesCount:    1,
-			maxSilenceSizeBytes: 2 << 11, // 4KB,
-		},
+		UserID:            user,
+		Logger:            log.NewNopLogger(),
+		Limits:            &limits,
 		Features:          featurecontrol.NoopFlags{},
 		TenantDataDir:     t.TempDir(),
 		ExternalURL:       &url.URL{Path: "/am"},
@@ -364,38 +384,26 @@ func TestSilenceLimits(t *testing.T) {
 		StartsAt: time.Now(),
 		EndsAt:   time.Now().Add(5 * time.Minute),
 	}
-	id1, err := am.silences.Set(sil1)
-	require.NoError(t, err)
-	require.NotEqual(t, "", id1)
+	require.NoError(t, am.silences.Set(sil1))
 
-	// Insert sil2 should fail because maximum number of silences
-	// has been exceeded.
+	// Insert sil2 should fail because maximum number of silences has been
+	// exceeded.
 	sil2 := &silencepb.Silence{
-		Matchers: []*silencepb.Matcher{{Name: "a", Pattern: "b"}},
+		Matchers: []*silencepb.Matcher{{Name: "c", Pattern: "d"}},
 		StartsAt: time.Now(),
 		EndsAt:   time.Now().Add(5 * time.Minute),
 	}
-	id2, err := am.silences.Set(sil2)
-	require.EqualError(t, err, "exceeded maximum number of silences: 1 (limit: 1)")
-	require.Equal(t, "", id2)
+	require.EqualError(t, am.silences.Set(sil2), "exceeded maximum number of silences: 1 (limit: 1)")
 
-	// Expire sil1 and run the GC. This should allow sil2 to be
-	// inserted.
-	require.NoError(t, am.silences.Expire(id1))
+	// Expire sil1 and run the GC. This should allow sil2 to be inserted.
+	require.NoError(t, am.silences.Expire(sil1.Id))
 	n, err := am.silences.GC()
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
+	require.NoError(t, am.silences.Set(sil2))
 
-	id2, err = am.silences.Set(sil2)
-	require.NoError(t, err)
-	require.NotEqual(t, "", id2)
-
-	// Should be able to update sil2 without hitting the limit.
-	_, err = am.silences.Set(sil2)
-	require.NoError(t, err)
-
-	// Expire sil2.
-	require.NoError(t, am.silences.Expire(id2))
+	// Expire sil2 and run the GC.
+	require.NoError(t, am.silences.Expire(sil2.Id))
 	n, err = am.silences.GC()
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
@@ -404,25 +412,82 @@ func TestSilenceLimits(t *testing.T) {
 	sil3 := &silencepb.Silence{
 		Matchers: []*silencepb.Matcher{
 			{
-				Name:    strings.Repeat("a", 2<<9),
-				Pattern: strings.Repeat("b", 2<<9),
+				Name:    strings.Repeat("e", 2<<9),
+				Pattern: strings.Repeat("f", 2<<9),
 			},
 			{
-				Name:    strings.Repeat("c", 2<<9),
-				Pattern: strings.Repeat("d", 2<<9),
+				Name:    strings.Repeat("g", 2<<9),
+				Pattern: strings.Repeat("h", 2<<9),
 			},
 		},
-		CreatedBy: strings.Repeat("e", 2<<9),
-		Comment:   strings.Repeat("f", 2<<9),
+		CreatedBy: strings.Repeat("i", 2<<9),
+		Comment:   strings.Repeat("j", 2<<9),
 		StartsAt:  time.Now(),
 		EndsAt:    time.Now().Add(5 * time.Minute),
 	}
-	id3, err := am.silences.Set(sil3)
-	require.Error(t, err)
-	// Do not check the exact size as it can change between consecutive runs
-	// due to padding.
-	require.Contains(t, err.Error(), "silence exceeded maximum size")
-	require.Equal(t, "", id3)
+	require.EqualError(t, am.silences.Set(sil3), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil3, 0).Size()))
+
+	// Should be able to insert sil4.
+	sil4 := &silencepb.Silence{
+		Matchers: []*silencepb.Matcher{{Name: "k", Pattern: "l"}},
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(5 * time.Minute),
+	}
+	require.NoError(t, am.silences.Set(sil4))
+
+	// Should be able to update sil4 without modifications. It is expected to
+	// keep the same ID.
+	sil5 := cloneSilence(t, sil4)
+	require.NoError(t, am.silences.Set(sil5))
+	require.Equal(t, sil4.Id, sil5.Id)
+
+	// Should be able to update the comment. It is also expected to keep the
+	// same ID.
+	sil6 := cloneSilence(t, sil5)
+	sil6.Comment = "m"
+	require.NoError(t, am.silences.Set(sil6))
+	require.Equal(t, sil5.Id, sil6.Id)
+
+	// Should not be able to update the start and end time as this requires
+	// sil6 to be expired and a new silence to be created. However, this would
+	// exceed the maximum number of silences, which counts both active and
+	// expired silences.
+	sil7 := cloneSilence(t, sil6)
+	sil7.StartsAt = time.Now().Add(5 * time.Minute)
+	sil7.EndsAt = time.Now().Add(10 * time.Minute)
+	require.EqualError(t, am.silences.Set(sil7), "exceeded maximum number of silences: 1 (limit: 1)")
+
+	// sil6 should not be expired because the update failed.
+	sils, _, err := am.silences.Query(silence.QState(types.SilenceStateExpired))
+	require.NoError(t, err)
+	require.Len(t, sils, 0)
+
+	// Should not be able to update with a comment that exceeds maximum size.
+	// Need to increase the maximum number of silences to test this.
+	limits.maxSilencesCount = 2
+	sil8 := cloneSilence(t, sil6)
+	sil8.Comment = strings.Repeat("m", 2<<11)
+	require.EqualError(t, am.silences.Set(sil8), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil8, 0).Size()))
+
+	// sil6 should not be expired because the update failed.
+	sils, _, err = am.silences.Query(silence.QState(types.SilenceStateExpired))
+	require.NoError(t, err)
+	require.Len(t, sils, 0)
+
+	// Should not be able to replace with a silence that exceeds maximum size.
+	// This is different from the previous assertion as unlike when adding or
+	// updating a comment, changing the matchers for a silence should expire
+	// the existing silence, unless the silence that is replacing it exceeds
+	// limits, in which case the operation should fail and the existing silence
+	// should still be active.
+	sil9 := cloneSilence(t, sil8)
+	sil9.Matchers = []*silencepb.Matcher{{Name: "n", Pattern: "o"}}
+	require.EqualError(t, am.silences.Set(sil9), fmt.Sprintf("silence exceeded maximum size: %d bytes (limit: 4096 bytes)", toMeshSilence(t, sil9, 0).Size()))
+
+	// sil6 should not be expired because the update failed.
+	sils, _, err = am.silences.Query(silence.QState(types.SilenceStateExpired))
+	require.NoError(t, err)
+	require.Len(t, sils, 0)
 }
 
 func TestExperimentalReceiversAPI(t *testing.T) {
@@ -466,7 +531,8 @@ route:
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-	require.NoError(t, am.ApplyConfig(cfg, cfgRaw))
+	tmpls := make([]io.Reader, 0)
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}))
 
 	doGetReceivers := func() []alertingmodels.Receiver {
 		rr := httptest.NewRecorder()

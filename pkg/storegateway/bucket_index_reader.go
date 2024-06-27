@@ -59,8 +59,8 @@ func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelection
 		block:            block,
 		postingsStrategy: postingsStrategy,
 		dec: &index.Decoder{
-			LookupSymbol: func(_ context.Context, o uint32) (string, error) {
-				return block.indexHeaderReader.LookupSymbol(o)
+			LookupSymbol: func(ctx context.Context, o uint32) (string, error) {
+				return block.indexHeaderReader.LookupSymbol(ctx, o)
 			},
 		},
 		indexHeaderReader: block.indexHeaderReader,
@@ -236,7 +236,7 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 
 	// As of version two all series entries are 16 byte padded. All references
 	// we get have to account for that to get the correct offset.
-	version, err := r.block.indexHeaderReader.IndexVersion()
+	version, err := r.block.indexHeaderReader.IndexVersion(ctx)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "get index version")
 	}
@@ -400,7 +400,7 @@ func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Lab
 
 	// As of version two all series entries are 16 byte padded. All references
 	// we get have to account for that to get the correct offset.
-	version, err := r.block.indexHeaderReader.IndexVersion()
+	version, err := r.block.indexHeaderReader.IndexVersion(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "get index version")
 	}
@@ -460,7 +460,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 		}
 
 		// Cache miss; save pointer for actual posting in index stored in object store.
-		ptr, err := r.block.indexHeaderReader.PostingsOffset(key.Name, key.Value)
+		ptr, err := r.block.indexHeaderReader.PostingsOffset(ctx, key.Name, key.Value)
 		if errors.Is(err, indexheader.NotFoundRangeErr) {
 			// This block does not have any posting for given key.
 			output[ix] = index.EmptyPostings()

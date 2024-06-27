@@ -192,7 +192,7 @@ func TestAlertmanagerClassicMode(t *testing.T) {
 		StartsAt: time.Now(),
 		EndsAt:   time.Now().Add(time.Minute),
 	})
-	require.EqualError(t, err, "creating the silence failed with status 400 and error \"silence invalid: invalid label matcher 0: invalid label name \\\"bar🙂\\\"\"\n")
+	require.EqualError(t, err, "creating the silence failed with status 400 and error \"invalid silence: invalid label matcher 0: invalid label name \\\"bar🙂\\\"\"\n")
 	require.Empty(t, silenceID)
 
 	// Should be able to post alerts with classic labels but not UTF-8 labels.

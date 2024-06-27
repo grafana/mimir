@@ -34,20 +34,20 @@ type Reader interface {
 	io.Closer
 
 	// IndexVersion returns version of index.
-	IndexVersion() (int, error)
+	IndexVersion(context.Context) (int, error)
 
 	// PostingsOffset returns start and end offsets of postings for given name and value.
 	// The Start is inclusive and is the byte offset of the number_of_entries field of a posting list.
 	// The End is exclusive and is typically the byte offset of the CRC32 field.
 	// The End might be bigger than the actual posting ending, but not larger than the whole index file.
 	// NotFoundRangeErr is returned when no index can be found for given name and value.
-	PostingsOffset(name string, value string) (index.Range, error)
+	PostingsOffset(ctx context.Context, name string, value string) (index.Range, error)
 
 	// LookupSymbol returns string based on given reference.
 	// Error is return if the symbol can't be found.
-	LookupSymbol(o uint32) (string, error)
+	LookupSymbol(ctx context.Context, o uint32) (string, error)
 
-	SymbolsReader() (streamindex.SymbolsReader, error)
+	SymbolsReader(ctx context.Context) (streamindex.SymbolsReader, error)
 
 	// LabelValuesOffsets returns all label values and the offsets for their posting lists for given label name or error.
 	// The returned label values are sorted lexicographically (which the same as sorted by posting offset).
@@ -59,7 +59,7 @@ type Reader interface {
 	LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error)
 
 	// LabelNames returns all label names in sorted order.
-	LabelNames() ([]string, error)
+	LabelNames(ctx context.Context) ([]string, error)
 }
 
 type Config struct {
