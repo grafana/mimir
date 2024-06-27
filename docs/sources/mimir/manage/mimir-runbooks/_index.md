@@ -1454,13 +1454,14 @@ This alert fires when too many read-requests with strong consistency are failing
 How it **works**:
 
 - When read request asks for strong-consistency guarantee, ingester will read the last produced offset from Kafka, and wait until record with this offset is consumed.
-- If read request times out during this wait, that is considered to be a failure of request with strong-consistency.
+- If read request times out during this wait, either because of the request timeout or the configured `-ingest-storage.kafka.wait-strong-read-consistency-timeout` (whatever happens first), that is considered to be a failure of request with strong-consistency.
 - If requests keep failing due to failure to enforce strong-consistency, this alert is raised.
 
 How to **investigate**:
 
 - Check wait latency of requests with strong-consistency on `Mimir / Queries` dashboard.
-- Check if ingester needs to process too many records, and whether ingesters need to be scaled up (vertically or horizontally).
+- Check if ingesters are processing too many records, and they need to be scaled up (vertically or horizontally).
+- Check actual error in logs to see whether the `-ingest-storage.kafka.wait-strong-read-consistency-timeout` or the request timeout has been hit first.
 
 ### Ingester is overloaded when consuming from Kafka
 

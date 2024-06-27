@@ -3772,6 +3772,11 @@ kafka:
   # CLI flag: -ingest-storage.kafka.producer-max-record-size-bytes
   [producer_max_record_size_bytes: <int> | default = 15983616]
 
+  # The maximum allowed for a read requests processed by an ingester to wait
+  # until strong read consistency is enforced. 0 to disable the timeout.
+  # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
+  [wait_strong_read_consistency_timeout: <duration> | default = 20s]
+
 migration:
   # When both this option and ingest storage are enabled, distributors write to
   # both Kafka and ingesters. A write request is considered successful only when
