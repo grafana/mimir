@@ -177,11 +177,17 @@ func TestBucketBlockSet_remove(t *testing.T) {
 		m.ULID = in.id
 		m.MinTime = in.mint
 		m.MaxTime = in.maxt
-		assert.NoError(t, set.add(&bucketBlock{meta: &m}))
+		set.add(&bucketBlock{meta: &m})
 	}
-	set.remove(input[1].id)
-	res := set.getFor(0, 300, nil)
+	_, ok := set.remove(input[1].id)
+	require.True(t, ok)
 
+	require.Equal(t, 2, set.len())
+
+	res := make([]*bucketBlock, 0, len(input))
+	set.filter(0, 300, nil, func(b *bucketBlock) {
+		res = append(res, b)
+	})
 	assert.Equal(t, 2, len(res))
 	assert.Equal(t, input[0].id, res[0].meta.ULID)
 	assert.Equal(t, input[2].id, res[1].meta.ULID)
@@ -1440,10 +1446,9 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 						assert.Greater(t, int(chunksSlicePool.(*pool.TrackedPool).Gets.Load()), 0)
 					}
 
-					st.blocks.Range(func(_, val any) bool {
-						b := val.(*bucketBlock)
+					st.blockSet.all(func(b *bucketBlock) {
 						// NOTE(bwplotka): It is 4 x 1.0 for 100mln samples. Kind of make sense: long series.
-						return assert.Equal(t, 0.0, promtest.ToFloat64(b.metrics.seriesRefetches))
+						assert.Equal(t, 0.0, promtest.ToFloat64(b.metrics.seriesRefetches))
 					})
 
 					// Check exposed metrics.
@@ -1792,6 +1797,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			LazyLoadingEnabled:     false,
 			LazyLoadingIdleTimeout: 0,
 		}, gate.NewNoop(), indexheader.NewReaderPoolMetrics(nil), nil),
+		blockSet:             newBucketBlockSet(),
 		metrics:              NewBucketStoreMetrics(nil),
 		postingsStrategy:     selectAllStrategy{},
 		queryGate:            gate.NewNoop(),
@@ -1799,10 +1805,8 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		seriesLimiterFactory: newStaticSeriesLimiterFactory(0),
 		maxSeriesPerBatch:    65536,
 	}
-
-	store.blockSet = &bucketBlockSet{blocks: []*bucketBlock{b1, b2}}
-	store.blocks.Store(b1.meta.ULID, b1)
-	store.blocks.Store(b2.meta.ULID, b2)
+	store.blockSet.add(b1)
+	store.blockSet.add(b2)
 
 	srv := newStoreGatewayTestServer(t, store)
 
