@@ -536,26 +536,6 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 }
 
 func buildGrafanaReceiverIntegrations(gCfg *config.GlobalConfig, rcv *definition.PostableApiReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
-	loggerFactory := newLoggerFactory(logger)
-	emailCfg := alertingReceivers.EmailSenderConfig{
-		AuthPassword:  string(gCfg.SMTPAuthPassword),
-		AuthUser:      gCfg.SMTPAuthUsername,
-		CertFile:      gCfg.HTTPConfig.TLSConfig.CertFile,
-		ContentTypes:  []string{"text/html"},
-		EhloIdentity:  gCfg.SMTPHello,
-		ExternalURL:   tmpl.ExternalURL.String(),
-		FromAddress:   gCfg.SMTPFrom,
-		FromName:      "Grafana",
-		Host:          gCfg.SMTPSmarthost.String(),
-		KeyFile:       gCfg.HTTPConfig.TLSConfig.KeyFile,
-		SkipVerify:    !gCfg.SMTPRequireTLS,
-		StaticHeaders: map[string]string{}, // (?)
-	}
-
-	whFn := func(n alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
-		return NewSender(logger), nil
-	}
-
 	// The decrypt functions and the context are used to decrypt the configuration.
 	// We don't need to decrypt anything, so we can pass a no-op decrypt func and a context.Background().
 	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), alertingNotify.NoopDecrypt)
@@ -563,11 +543,30 @@ func buildGrafanaReceiverIntegrations(gCfg *config.GlobalConfig, rcv *definition
 		return nil, err
 	}
 
+	whFn := func(alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
+		return NewSender(logger), nil
+	}
+
+	emailCfg := alertingReceivers.EmailSenderConfig{
+		AuthPassword: string(gCfg.SMTPAuthPassword),
+		AuthUser:     gCfg.SMTPAuthUsername,
+		CertFile:     gCfg.HTTPConfig.TLSConfig.CertFile,
+		ContentTypes: []string{"text/html"},
+		EhloIdentity: gCfg.SMTPHello,
+		ExternalURL:  tmpl.ExternalURL.String(),
+		FromAddress:  gCfg.SMTPFrom,
+		FromName:     "Grafana",
+		Host:         gCfg.SMTPSmarthost.String(),
+		KeyFile:      gCfg.HTTPConfig.TLSConfig.KeyFile,
+		SkipVerify:   !gCfg.SMTPRequireTLS,
+		// TODO: add static headers.
+	}
+
 	integrations, err := alertingNotify.BuildReceiverIntegrations(
 		rCfg,
 		tmpl,
 		&images.UnavailableProvider{}, // TODO: include images in notifications
-		loggerFactory,
+		newLoggerFactory(logger),
 		whFn,
 		alertingReceivers.NewEmailSenderFactory(emailCfg),
 		1, // orgID is always 1.
