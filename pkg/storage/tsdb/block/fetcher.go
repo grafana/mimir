@@ -655,8 +655,8 @@ func NewMetaCache(maxSize, minCompactionLevel, minSources int) *MetaCache {
 	}
 }
 
-func (c *MetaCache) MaxSize() int {
-	return c.maxSize
+func (mc *MetaCache) MaxSize() int {
+	return mc.maxSize
 }
 
 func (mc *MetaCache) Put(meta *Meta) {
