@@ -391,9 +391,9 @@ local filename = 'mimir-writes.json';
       $._config.autoscaling.ingester.enabled,
       $.row('Ingester – autoscaling')
       .addPanel(
-        $.autoScalingActualReplicas('ingester') + { title: 'Replicas (leader)' } +
+        $.autoScalingActualReplicas('ingester') + { title: 'Replicas (leader zone)' } +
         $.panelDescription(
-          'Replicas (leader)',
+          'Replicas (leader zone)',
           |||
             The minimum, maximum, and current number of replicas for the leader zone of ingesters.
             Other zones scale to follow this zone (with delay for downscale).
@@ -416,7 +416,7 @@ local filename = 'mimir-writes.json';
         ),
       )
       .addPanel(
-        $.autoScalingDesiredReplicasByValueScalingMetricPanel('ingester', '', '') + { title: 'Desired replicas (leader)' }
+        $.autoScalingDesiredReplicasByValueScalingMetricPanel('ingester', '', '') + { title: 'Desired replicas (leader zone)' }
       )
       .addPanel(
         $.autoScalingFailuresPanel('ingester') + { title: 'Autoscaler failures rate' }
