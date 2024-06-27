@@ -1261,6 +1261,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  latencyRecordingRulePanelNativeHistogram(metric, selectors, extra_selectors=[], multiplier='1e3', sum_by=[])::
+    utils.latencyRecordingRulePanelNativeHistogram(metric, selectors, extra_selectors, multiplier, sum_by) + {
+      // Hide yaxes from JSON Model; it's not supported by timeseriesPanel.
+      yaxes:: super.yaxes,
+      fieldConfig+: {
+        defaults+: {
+          unit: 'ms',
+          min: 0,
+        },
+      },
+    },
+
   filterNodeDiskContainer(containerName)::
     |||
       ignoring(%(instanceLabel)s) group_right() (
@@ -1447,4 +1459,177 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ],
     },
   },
+
+  capitalize(str):: std.asciiUpper(str[0]) + str[1:],
+
+  commonReadsDashboardsRows(
+    queryFrontendJobName,
+    querySchedulerJobName,
+    querierJobName,
+    queryRoutesRegex,
+    rowTitlePrefix='',
+    showQueryCacheRow=false,
+  )::
+    [
+      $.row($.capitalize(rowTitlePrefix + 'query-frontend'))
+      .addPanel(
+        $.timeseriesPanel('Requests / sec') +
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher(queryFrontendJobName), queryRoutesRegex])
+      )
+      .addPanel(
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector(queryFrontendJobName) + [utils.selector.re('route', queryRoutesRegex)])
+      )
+      .addPanel(
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.hiddenLegendQueryPanel(
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher(queryFrontendJobName), queryRoutesRegex], ''
+        )
+      ),
+      local description = |||
+        <p>
+          The query scheduler is an optional service that moves
+          the internal queue from the query-frontend into a
+          separate component.
+          If this service is not deployed,
+          these panels will show "No data."
+        </p>
+      |||;
+      $.row($.capitalize(rowTitlePrefix + 'query-scheduler'))
+      .addPanel(
+        local title = 'Requests / sec';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher(querySchedulerJobName))
+      )
+      .addPanel(
+        local title = 'Latency (Time in Queue)';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher(querySchedulerJobName))
+      )
+      .addPanel(
+        local title = 'Queue length';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.hiddenLegendQueryPanel(
+          'sum(min_over_time(cortex_query_scheduler_queue_length{%s}[$__interval]))' % [$.jobMatcher(querySchedulerJobName)],
+          'Queue length'
+        ) +
+        {
+          fieldConfig+: {
+            defaults+: {
+              unit: 'queries',
+            },
+          },
+        },
+      ),
+      local description = |||
+        <p>
+          The query scheduler can optionally create subqueues
+          in order to enforce round-robin query queuing fairness
+          across additional queue dimensions beyond the default.
+
+          By default, query queuing fairness is only applied by tenant ID.
+          Queries without additional queue dimensions are labeled 'none'.
+        </p>
+      |||;
+      local metricName = 'cortex_query_scheduler_queue_duration_seconds';
+      local selector = '{%s}' % $.jobMatcher(querySchedulerJobName);
+      local labels = ['additional_queue_dimensions'];
+      local labelReplaceArgSets = [
+        {
+          dstLabel: 'additional_queue_dimensions',
+          replacement: 'none',
+          srcLabel:
+            'additional_queue_dimensions',
+          regex: '^$',
+        },
+      ];
+      $.row($.capitalize(rowTitlePrefix + 'query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions'))
+      .addPanel(
+        local title = '99th Percentile Latency by Queue Dimension';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.latencyPanelLabelBreakout(
+          metricName=metricName,
+          selector=selector,
+          percentiles=['0.99'],
+          includeAverage=false,
+          labels=labels,
+          labelReplaceArgSets=labelReplaceArgSets,
+        )
+      )
+      .addPanel(
+        local title = '50th Percentile Latency by Queue Dimension';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.latencyPanelLabelBreakout(
+          metricName=metricName,
+          selector=selector,
+          percentiles=['0.50'],
+          includeAverage=false,
+          labels=labels,
+          labelReplaceArgSets=labelReplaceArgSets,
+        )
+      )
+      .addPanel(
+        local title = 'Average Latency by Queue Dimension';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.latencyPanelLabelBreakout(
+          metricName=metricName,
+          selector=selector,
+          percentiles=[],
+          includeAverage=true,
+          labels=labels,
+          labelReplaceArgSets=labelReplaceArgSets,
+        )
+      ),
+    ] +
+    (
+      if (!showQueryCacheRow) then [] else [
+        $.row('Cache – query results')
+        .addPanel(
+          $.timeseriesPanel('Requests / sec') +
+          $.queryPanel(
+            |||
+              sum (
+                rate(thanos_memcached_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
+                or ignoring(backend)
+                rate(thanos_cache_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
+              )
+            ||| % {
+              frontend: $.jobMatcher(queryFrontendJobName),
+            },
+            'Requests/s'
+          ) +
+          { fieldConfig+: { defaults+: { unit: 'ops' } } },
+        )
+        .addPanel(
+          $.timeseriesPanel('Latency') +
+          $.backwardsCompatibleLatencyPanel(
+            'thanos_memcached_operation_duration_seconds',
+            'thanos_cache_operation_duration_seconds',
+            '{%s, name="frontend-cache"}' % $.jobMatcher(queryFrontendJobName)
+          )
+        ),
+      ]
+    ) + [
+      $.row($.capitalize(rowTitlePrefix + 'querier'))
+      .addPanel(
+        $.timeseriesPanel('Requests / sec') +
+        $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher(querierJobName), $.queries.read_http_routes_regex])
+      )
+      .addPanel(
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector(querierJobName) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
+      )
+      .addPanel(
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.hiddenLegendQueryPanel(
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_querier_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher(querierJobName), $.queries.read_http_routes_regex], ''
+        )
+      ),
+    ],
 }

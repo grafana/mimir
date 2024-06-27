@@ -79,10 +79,10 @@ Determine the current size of the blocks you are trying to upload by running the
 find <path/to/blocks> -name 'chunks' -printf '%s\n' | numfmt --to=iec-i
 ```
 
-This will show the size of each block's chunks directory in a human-readable format.
+This shows the size of each block's chunks directory in a human-readable format.
 Increase the client_max_body_size directive in the Nginx configuration:
 
-For manual Nginx deployments, open the Nginx configuration file (e.g., /etc/nginx/nginx.conf) and set the client_max_body_size directive inside the server block for the Mimir endpoint to a value about 5% larger than the maximum size of the blocks you are uploading. For example:
+For manual Nginx deployments, open the Nginx configuration file (e.g., /etc/nginx/nginx.conf) and set the `client_max_body_size` directive inside the server block for the Mimir endpoint to a value about 5% larger than the maximum size of the blocks you are uploading. For example:
 
 ```
 server {
@@ -123,7 +123,7 @@ For Helm deployments, upgrade your Mimir release with the updated values file:
 helm upgrade <release-name> <chart-name> -f values.yaml
 ```
 
-After increasing the client_max_body_size setting, you should be able to upload the blocks without encountering the 413 error.
+After increasing the `client_max_body_size` setting, you can upload the blocks without encountering the 413 error.
 {{< /admonition >}}
 
 ## Considerations on Thanos specific features

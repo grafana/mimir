@@ -1441,7 +1441,7 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 	if len(matchers) == 0 {
 		// Do it via index reader to have pending reader registered correctly.
 		// LabelNames are already sorted.
-		names, err := indexr.block.indexHeaderReader.LabelNames()
+		names, err := indexr.block.indexHeaderReader.LabelNames(ctx)
 		if err != nil {
 			return nil, errors.Wrap(err, "label names")
 		}
@@ -1980,7 +1980,7 @@ func (b *bucketBlock) loadedIndexReader(ctx context.Context, postingsStrategy po
 
 	loadStartTime := time.Now()
 	// Call IndexVersion to lazy load the index header if it lazy-loaded.
-	_, _ = b.indexHeaderReader.IndexVersion()
+	_, _ = b.indexHeaderReader.IndexVersion(ctx)
 	stats.update(func(stats *queryStats) {
 		stats.streamingSeriesIndexHeaderLoadDuration += time.Since(loadStartTime)
 	})

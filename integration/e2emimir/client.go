@@ -298,9 +298,6 @@ func (c *Client) RemoteReadChunks(query *prompb.Query) (_ *http.Response, _ []pr
 
 	resp, err := c.doRemoteReadReq(req)
 	if err != nil {
-		return resp, nil, nil, err
-	}
-	if err != nil {
 		return resp, nil, nil, fmt.Errorf("making remote read request: %w", err)
 	}
 	switch contentType := resp.Header.Get("Content-Type"); contentType {

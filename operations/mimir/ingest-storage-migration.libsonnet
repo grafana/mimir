@@ -7,6 +7,10 @@
     ingest_storage_migration_partition_ingester_zone_b_enabled: false,
     ingest_storage_migration_partition_ingester_zone_c_enabled: false,
 
+    ingest_storage_migration_partition_ingester_zone_a_replicas: 1,
+    ingest_storage_migration_partition_ingester_zone_b_replicas: 1,
+    ingest_storage_migration_partition_ingester_zone_c_replicas: 1,
+
     // Controls whether write path components should tee writes both to classic ingesters and Kafka.
     ingest_storage_migration_write_to_partition_ingesters_enabled: false,
     ingest_storage_migration_write_to_classic_ingesters_enabled: false,
@@ -86,6 +90,7 @@
 
   ingester_partition_zone_a_statefulset: if !$._config.ingest_storage_migration_partition_ingester_zone_a_enabled then null else
     self.newIngesterZoneStatefulSet('a-partition', $.ingester_partition_zone_a_container, $.ingester_partition_zone_a_node_affinity_matchers) +
+    statefulSet.mixin.spec.withReplicas($._config.ingest_storage_migration_partition_ingester_zone_a_replicas) +
     partitionIngesterStatefulSetLabelsAndAnnotations +
     (if !$._config.ingest_storage_migration_partition_ingester_zone_a_scale_down then {} else statefulSet.mixin.spec.withReplicas(0)),
 
@@ -98,6 +103,7 @@
 
   ingester_partition_zone_b_statefulset: if !$._config.ingest_storage_migration_partition_ingester_zone_b_enabled then null else
     self.newIngesterZoneStatefulSet('b-partition', $.ingester_partition_zone_b_container, $.ingester_partition_zone_b_node_affinity_matchers) +
+    statefulSet.mixin.spec.withReplicas($._config.ingest_storage_migration_partition_ingester_zone_b_replicas) +
     partitionIngesterStatefulSetLabelsAndAnnotations +
     (if !$._config.ingest_storage_migration_partition_ingester_zone_b_scale_down then {} else statefulSet.mixin.spec.withReplicas(0)),
 
@@ -110,6 +116,7 @@
 
   ingester_partition_zone_c_statefulset: if !$._config.ingest_storage_migration_partition_ingester_zone_c_enabled then null else
     self.newIngesterZoneStatefulSet('c-partition', $.ingester_partition_zone_c_container, $.ingester_partition_zone_c_node_affinity_matchers) +
+    statefulSet.mixin.spec.withReplicas($._config.ingest_storage_migration_partition_ingester_zone_c_replicas) +
     partitionIngesterStatefulSetLabelsAndAnnotations +
     (if !$._config.ingest_storage_migration_partition_ingester_zone_c_scale_down then {} else statefulSet.mixin.spec.withReplicas(0)),
 
@@ -132,11 +139,11 @@
   },
 
   distributor_args+::
-    (if !$._config.ingest_storage_migration_write_to_partition_ingesters_enabled then {} else writeToPartitionIngestersArgs) +
+    (if !$._config.ingest_storage_migration_write_to_partition_ingesters_enabled then {} else (writeToPartitionIngestersArgs + $.ingest_storage_distributor_args)) +
     (if !$._config.ingest_storage_migration_write_to_classic_ingesters_enabled then {} else writeToClassicIngestersArgs),
 
   ruler_args+::
-    (if !$._config.ingest_storage_migration_write_to_partition_ingesters_enabled then {} else writeToPartitionIngestersArgs) +
+    (if !$._config.ingest_storage_migration_write_to_partition_ingesters_enabled then {} else (writeToPartitionIngestersArgs + $.ingest_storage_ruler_args)) +
     (if !$._config.ingest_storage_migration_write_to_classic_ingesters_enabled then {} else writeToClassicIngestersArgs),
 
   //
