@@ -1794,7 +1794,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		indexReaderPool: indexheader.NewReaderPool(log.NewNopLogger(), indexheader.Config{
 			LazyLoadingEnabled:     false,
 			LazyLoadingIdleTimeout: 0,
-		}, gate.NewNoop(), indexheader.NewReaderPoolMetrics(nil), nil),
+		}, gate.NewNoop(), indexheader.NewReaderPoolMetrics(nil)),
 		metrics:  NewBucketStoreMetrics(nil),
 		blockSet: &bucketBlockSet{blocks: []*bucketBlock{b1, b2}},
 		blocks: map[ulid.ULID]*bucketBlock{

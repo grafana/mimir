@@ -264,7 +264,7 @@ func NewBucketStore(
 	} else {
 		s.snapshotter = noopShapshotter{services.NewIdleService(nil, nil)}
 	}
-	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics, s.snapshotter.RestoreLoadedBlocks())
+	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics)
 
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create dir")
@@ -279,7 +279,7 @@ func (s *BucketStore) subservices() []services.Service {
 }
 
 func (s *BucketStore) start(ctx context.Context) error {
-	return nil // TODO dimitarvdimitrov
+	return nil
 }
 
 func (s *BucketStore) stop(err error) error {
@@ -344,10 +344,10 @@ func bucketBlockDuration(buckets tsdb.DurationList, duration time.Duration) time
 // SyncBlocks synchronizes the stores state with the Bucket bucket.
 // It will reuse disk space as persistent cache based on s.dir param.
 func (s *BucketStore) SyncBlocks(ctx context.Context) error {
-	return s.syncBlocks(ctx, false)
+	return s.syncBlocks(ctx)
 }
 
-func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
+func (s *BucketStore) syncBlocks(ctx context.Context) error {
 	metas, _, metaFetchErr := s.fetcher.Fetch(ctx)
 	// For partial view allow adding new blocks at least.
 	if metaFetchErr != nil && metas == nil {
@@ -361,7 +361,7 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 		wg.Add(1)
 		go func() {
 			for meta := range blockc {
-				if err := s.addBlock(ctx, meta, initialSync); err != nil {
+				if err := s.addBlock(ctx, meta); err != nil {
 					continue
 				}
 			}
@@ -409,10 +409,36 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 // InitialSync perform blocking sync with extra step at the end to delete locally saved blocks that are no longer
 // present in the bucket. The mismatch of these can only happen between restarts, so we can do that only once per startup.
 func (s *BucketStore) InitialSync(ctx context.Context) error {
-	if err := s.syncBlocks(ctx, true); err != nil {
+	previouslyLoadedBlocks := s.snapshotter.RestoreLoadedBlocks()
+	if err := s.syncBlocks(ctx); err != nil {
 		return errors.Wrap(err, "sync block")
 	}
+	if s.indexHeaderCfg.EagerLoadingStartupEnabled {
+		s.loadBlocks(ctx, previouslyLoadedBlocks)
+	}
 
+	err := s.cleanUpUnownedBlocks()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *BucketStore) loadBlocks(ctx context.Context, blocks map[ulid.ULID]int64) {
+	// We ignore the time the block was used because it can only be in the map if it was still loaded before the shutdown
+	for id := range blocks {
+		r := s.getBlock(id)
+		if r == nil {
+			continue // we don't own this block anymore
+		}
+		if lazyReader, ok := r.indexHeaderReader.(*indexheader.LazyBinaryReader); ok {
+			lazyReader.EagerLoad(ctx)
+		}
+	}
+}
+
+func (s *BucketStore) cleanUpUnownedBlocks() error {
 	fis, err := os.ReadDir(s.dir)
 	if err != nil {
 		return errors.Wrap(err, "read dir")
@@ -445,7 +471,7 @@ func (s *BucketStore) getBlock(id ulid.ULID) *bucketBlock {
 	return s.blocks[id]
 }
 
-func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta, initialSync bool) (err error) {
+func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error) {
 	dir := filepath.Join(s.dir, meta.ULID.String())
 	start := time.Now()
 
@@ -471,7 +497,6 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta, initialSyn
 		meta.ULID,
 		s.postingOffsetsInMemSampling,
 		s.indexHeaderCfg,
-		initialSync,
 	)
 	if err != nil {
 		return errors.Wrap(err, "create index header reader")
@@ -1648,6 +1673,18 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		Values: util.MergeSlices(sets...),
 		Hints:  anyHints,
 	}, nil
+}
+
+func (s *BucketStore) blockULIDs() []ulid.ULID {
+	s.blocksMx.RLock()
+	defer s.blocksMx.RUnlock()
+
+	ulids := make([]ulid.ULID, 0, len(s.blocks))
+	for _, b := range s.blocks {
+		ulids = append(ulids, b.meta.ULID)
+	}
+
+	return ulids
 }
 
 // blockLabelValues returns sorted values of the label with requested name,

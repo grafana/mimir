@@ -35,7 +35,7 @@ func TestSnapshotter_PersistAndRestoreLoadedBlocks(t *testing.T) {
 
 	// First instance persists the original snapshot.
 	s1 := NewSnapshotter(log.NewNopLogger(), config, testBlocksLoader)
-	err := s1.PersistLoadedBlocks(testBlocksLoader)
+	err := s1.PersistLoadedBlocks()
 	require.NoError(t, err)
 
 	persistedFile := filepath.Join(tmpDir, lazyLoadedHeadersListFileName)

@@ -254,6 +254,7 @@ func (r *LazyBinaryReader) EagerLoad(ctx context.Context) {
 		level.Warn(r.logger).Log("msg", "eager loading of lazy loaded index-header failed; skipping", "err", loaded.err)
 		return
 	}
+	level.Info(r.logger).Log("msg", "eager loaded block", "block_id", r.blockID)
 	loaded.inUse.Done()
 }
 
