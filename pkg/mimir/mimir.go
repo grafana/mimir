@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/signals"
 	"github.com/grafana/dskit/spanprofiler"
+	"github.com/okzk/sdnotify"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -886,9 +887,15 @@ func (t *Mimir) Run() error {
 		grpcutil.WithManager(sm),
 	))
 
-	// Let's listen for events from this manager, and log them.
-	healthy := func() { level.Info(util_log.Logger).Log("msg", "Application started") }
-	stopped := func() { level.Info(util_log.Logger).Log("msg", "Application stopped") }
+	// Let's listen for events from this manager, log them and send sd_notify event
+	healthy := func() {
+		level.Info(util_log.Logger).Log("msg", "Application started")
+		_ = sdnotify.Ready()
+	}
+	stopped := func() {
+		level.Info(util_log.Logger).Log("msg", "Application stopped")
+		_ = sdnotify.Stopping()
+	}
 	serviceFailed := func(service services.Service) {
 		// if any service fails, stop entire Mimir
 		sm.StopAsync()
