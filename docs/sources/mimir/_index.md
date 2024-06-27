@@ -29,9 +29,13 @@ cards:
       href: ./get-started/
       description: Get started quickly with Grafana Mimir's extensive documentation, tutorials, and deployment tooling. Use the monolithic mode to get up and running with just one binary and no added dependencies.
       height: 24
-    - title: Set up and configure
+    - title: Set up
+      href: ./set-up/
+      description: Set up Grafana Mimir with Helm, Puppet, or Jsonnet and Tanka. Migrate to Grafana Mimir from Cortex, Thanos, or Prometheus. 
+      height: 24
+    - title: Configure
       href: ./configure/about-configurations/
-      description: Set up Grafana Mimir with Helm, Puppet, or Jsonnet and Tanka. Migrate to Grafana Mimir from Cortex, Thanos, or Prometheus. Configure Grafana Mimir through the use of a YAML-based configuration file or CLI flags and learn about the common configurations.
+      description: Configure Grafana Mimir through the use of a YAML-based configuration file or CLI flags and learn about the common configurations.
       height: 24
     - title: Send metric data
       href: ./send/
