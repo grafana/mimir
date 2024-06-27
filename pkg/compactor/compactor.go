@@ -129,6 +129,8 @@ type Config struct {
 	// Allow downstream projects to customise the blocks compactor.
 	BlocksGrouperFactory   BlocksGrouperFactory   `yaml:"-"`
 	BlocksCompactorFactory BlocksCompactorFactory `yaml:"-"`
+
+	PerTenantInMemoryMetaCacheSize int `yaml:"per_tenant_in_memory_meta_cache_size"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
@@ -164,6 +166,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.Var(&cfg.EnabledTenants, "compactor.enabled-tenants", "Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "compactor.disabled-tenants", "Comma separated list of tenants that cannot be compacted by the compactor. If specified, and the compactor would normally pick a given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.")
+	f.IntVar(&cfg.PerTenantInMemoryMetaCacheSize, "compactor.per-tenant-in-memory-cache-size", 0, "Size of per-tenant in-memory cache for parsed meta.json files. Useful when meta.json files are big and parsing is expensive, and number of tenants is small")
 }
 
 func (cfg *Config) Validate(logger log.Logger) error {
@@ -301,6 +304,9 @@ type MultitenantCompactor struct {
 	blockUploadBytes       *prometheus.GaugeVec
 	blockUploadFiles       *prometheus.GaugeVec
 	blockUploadValidations atomic.Int64
+
+	// Per-tenant meta caches that are passed to MetaFetcher.
+	metaCaches map[string]*block.MetaCache
 }
 
 // NewMultitenantCompactor makes a new MultitenantCompactor.
@@ -759,6 +765,17 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		NewNoCompactionMarkFilter(userBucket),
 	}
 
+	metaCache := c.metaCaches[userID]
+	if metaCache == nil && c.compactorCfg.PerTenantInMemoryMetaCacheSize > 0 {
+		metaCache = block.NewMetaCache(c.compactorCfg.PerTenantInMemoryMetaCacheSize)
+		c.metaCaches[userID] = metaCache
+	}
+
+	if metaCache != nil {
+		items, size := metaCache.Stats()
+		level.Info(userLogger).Log("msg", "meta cache stats before compaction", "items", items, "bytes_size", size)
+	}
+
 	fetcher, err := block.NewMetaFetcher(
 		userLogger,
 		c.compactorCfg.MetaSyncConcurrency,
@@ -766,6 +783,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.metaSyncDirForUser(userID),
 		reg,
 		fetcherFilters,
+		metaCache,
 	)
 	if err != nil {
 		return err
@@ -807,6 +825,10 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		return errors.Wrap(err, "compaction")
 	}
 
+	if metaCache != nil {
+		items, size := metaCache.Stats()
+		level.Info(userLogger).Log("msg", "meta cache stats after compaction", "items", items, "bytes_size", size)
+	}
 	return nil
 }
 

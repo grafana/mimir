@@ -142,10 +142,13 @@ type MetaFetcher struct {
 
 	mtx    sync.Mutex
 	cached map[ulid.ULID]*Meta
+
+	// Cache reused between MetaFetchers.
+	metaCache *MetaCache
 }
 
 // NewMetaFetcher returns a MetaFetcher.
-func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.InstrumentedBucketReader, dir string, reg prometheus.Registerer, filters []MetadataFilter) (*MetaFetcher, error) {
+func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.InstrumentedBucketReader, dir string, reg prometheus.Registerer, filters []MetadataFilter, metaCache *MetaCache) (*MetaFetcher, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -166,6 +169,7 @@ func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 		cached:      map[ulid.ULID]*Meta{},
 		metrics:     NewFetcherMetrics(reg, nil),
 		filters:     filters,
+		metaCache:   metaCache,
 	}, nil
 }
 
@@ -209,10 +213,20 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 		return m, nil
 	}
 
+	if f.metaCache != nil {
+		m := f.metaCache.Get(id)
+		if m != nil {
+			return m, nil
+		}
+	}
+
 	// Best effort load from local dir.
 	if f.cacheDir != "" {
 		m, err := ReadMetaFromDir(cachedBlockDir)
 		if err == nil {
+			if f.metaCache != nil {
+				f.metaCache.Put(id, m)
+			}
 			return m, nil
 		}
 
@@ -258,6 +272,10 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 		if err := m.WriteToDir(f.logger, cachedBlockDir); err != nil {
 			level.Warn(f.logger).Log("msg", "best effort save of the meta.json to local dir failed; ignoring", "dir", cachedBlockDir, "err", err)
 		}
+	}
+
+	if f.metaCache != nil {
+		f.metaCache.Put(id, m)
 	}
 	return m, nil
 }
