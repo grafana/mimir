@@ -546,7 +546,13 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 }
 
 func buildGrafanaReceiverIntegrations(gCfg *config.GlobalConfig, rcv *definition.PostableApiReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
-	loggerFactory := newLoggerFactory(logger)
+	// The decrypt functions and the context are used to decrypt the configuration.
+	// We don't need to decrypt anything, so we can pass a no-op decrypt func and a context.Background().
+	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), alertingNotify.NoopDecrypt)
+	if err != nil {
+		return nil, err
+	}
+
 	whFn := func(alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
 		return NewSender(logger), nil
 	}
@@ -566,18 +572,11 @@ func buildGrafanaReceiverIntegrations(gCfg *config.GlobalConfig, rcv *definition
 		// TODO: add static headers.
 	}
 
-	// The decrypt functions and the context are used to decrypt the configuration.
-	// We don't need to decrypt anything, so we can pass a no-op decrypt func and a context.Background().
-	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), alertingNotify.NoopDecrypt)
-	if err != nil {
-		return nil, err
-	}
-
 	integrations, err := alertingNotify.BuildReceiverIntegrations(
 		rCfg,
 		tmpl,
 		&images.UnavailableProvider{}, // TODO: include images in notifications
-		loggerFactory,
+		newLoggerFactory(logger),
 		whFn,
 		alertingReceivers.NewEmailSenderFactory(emailCfg),
 		1, // orgID is always 1.
