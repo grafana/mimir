@@ -137,7 +137,6 @@ type haClusterInfo struct {
 	electedLastSeenTimestamp    int64
 	nonElectedLastSeenReplica   string
 	nonElectedLastSeenTimestamp int64
-	lastElectionTimestamp       int64
 }
 
 // newHATracker returns a new HA cluster tracker using either Consul,
@@ -149,7 +148,7 @@ func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 	}
 
 	t := &haTracker{
-		logger:              logger,
+		logger:              log.With(logger, "component", "ha-tracker"),
 		cfg:                 cfg,
 		updateTimeoutJitter: jitter,
 		limits:              limits,
@@ -319,7 +318,6 @@ func (h *haTracker) updateKVStoreAll(ctx context.Context, now time.Time) {
 			} else if h.withinUpdateTimeout(now, entry.nonElectedLastSeenTimestamp) {
 				// Not seen elected but have seen another: attempt to fail over.
 				replica = entry.nonElectedLastSeenReplica
-				level.Info(h.logger).Log("msg", "new replica elected after update timeout exceeded", "user", userID, "cluster", cluster, "previous_replica", entry.elected.Replica, "elected_replica", replica)
 			} else {
 				continue // we don't have any recent timestamps
 			}
@@ -470,8 +468,7 @@ func (h *haTracker) updateCache(userID, cluster string, desc *ReplicaDesc) {
 	}
 	if desc.Replica != entry.elected.Replica {
 		h.electedReplicaChanges.WithLabelValues(userID, cluster).Inc()
-		h.lastElectionTimestamp.WithLabelValues(userID, cluster).Set(float64(desc.ReceivedAt / 1000))
-		entry.lastElectionTimestamp = desc.ReceivedAt
+		level.Info(h.logger).Log("msg", "updating replica in cache", "user", userID, "cluster", cluster, "old_replica", entry.elected.Replica, "new_replica", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
 	}
 	entry.elected = *desc
 	h.electedReplicaTimestamp.WithLabelValues(userID, cluster).Set(float64(desc.ReceivedAt / 1000))
@@ -486,11 +483,17 @@ func (h *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica 
 		var ok bool
 		if desc, ok = in.(*ReplicaDesc); ok && desc.DeletedAt == 0 {
 			// If the entry in KVStore is up-to-date, just stop the loop.
-			if h.withinUpdateTimeout(now, desc.ReceivedAt) ||
-				// If our replica is different, wait until the failover time.
-				desc.Replica != replica && now.Sub(timestamp.Time(desc.ReceivedAt)) < h.cfg.FailoverTimeout {
+			if h.withinUpdateTimeout(now, desc.ReceivedAt) {
 				return nil, false, nil
 			}
+		}
+		// If our replica is different, wait until the failover time
+		if desc != nil && desc.Replica != replica {
+			if now.Sub(timestamp.Time(desc.ReceivedAt)) < h.cfg.FailoverTimeout {
+				level.Info(h.logger).Log("msg", "replica differs, but it's too early to failover", "user", userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
+				return nil, false, nil
+			}
+			level.Info(h.logger).Log("msg", "replica differs, attempting to update kv", "user", userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
 		}
 
 		// Attempt to update KVStore to our timestamp and replica.
@@ -498,7 +501,9 @@ func (h *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica 
 			Replica:    replica,
 			ReceivedAt: timestamp.FromTime(now),
 			DeletedAt:  0,
+			ElectedAt:  timestamp.FromTime(now),
 		}
+		h.lastElectionTimestamp.WithLabelValues(userID, cluster).Set(float64(desc.ReceivedAt / 1000))
 		return desc, true, nil
 	})
 	h.kvCASCalls.WithLabelValues(userID, cluster).Inc()
