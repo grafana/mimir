@@ -187,7 +187,7 @@ func (d *Distributor) doAll(userID string, w http.ResponseWriter, r *http.Reques
 	// Force waiting for responses from all healthy replicas.
 	replicationSet.MaxErrors = 0
 
-	results, err := replicationSet.Do(r.Context(), 0, func(ctx context.Context, instance *ring.InstanceDesc) (interface{}, error) {
+	results, err := replicationSet.Do(r.Context(), 0, func(ctx context.Context, instance *ring.InstanceDesc) (any, error) {
 		ctx = user.InjectOrgID(ctx, userID)
 		sp, ctx := opentracing.StartSpanFromContext(ctx, "Distributor.doAll")
 		defer sp.Finish()
