@@ -46,7 +46,7 @@ cards:
       height: 24
     - title: Visualize data
       href: ./visualize/
-      description: Grafana is an open platform for metrics visualization. It supports multiple data stores including Prometheus. Grafana allows you to query, visualize, and understand your metrics. You can also visualize native histograms through Grafana Mimir since they are a Prometheuse data type.
+      description: Query, visualize, and explore your metrics using Grafana, an open platform for metrics visualization. It supports multiple data stores including Prometheus. You can also visualize native histograms through Grafana Mimir since they are a Prometheuse data type.
       height: 24
 ---
 
