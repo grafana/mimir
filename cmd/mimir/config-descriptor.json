@@ -6606,6 +6606,16 @@
               "fieldDefaultValue": 15983616,
               "fieldFlag": "ingest-storage.kafka.producer-max-record-size-bytes",
               "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "wait_strong_read_consistency_timeout",
+              "required": false,
+              "desc": "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "ingest-storage.kafka.wait-strong-read-consistency-timeout",
+              "fieldType": "duration"
             }
           ],
           "fieldValue": null,
