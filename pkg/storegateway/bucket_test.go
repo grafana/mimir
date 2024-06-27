@@ -11,7 +11,6 @@ package storegateway
 import (
 	"bytes"
 	"context"
-	cryptorand "crypto/rand"
 	"fmt"
 	"math"
 	"math/rand"
@@ -2491,88 +2490,6 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 					}
 				})
 			}
-		})
-	}
-}
-
-func TestBucketStore_buildStoreStats(t *testing.T) {
-	durations := []time.Duration{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
-	now := time.Now().Round(time.Hour)
-
-	type buildStoreStatsCase struct {
-		name           string
-		minTime        time.Time
-		maxTime        time.Time
-		expectedBucket time.Duration
-	}
-
-	testCases := []buildStoreStatsCase{
-		{
-			name:           "under 2h duration",
-			minTime:        now,
-			maxTime:        now.Add(90 * time.Minute),
-			expectedBucket: 2 * time.Hour,
-		},
-		{
-			name:           "exactly 2h duration",
-			minTime:        now,
-			maxTime:        now.Add(120 * time.Minute),
-			expectedBucket: 2 * time.Hour,
-		},
-		{
-			name:           "over 2h duration",
-			minTime:        now,
-			maxTime:        now.Add(125 * time.Minute),
-			expectedBucket: 12 * time.Hour,
-		},
-		{
-			name:           "double 2h duration",
-			minTime:        now,
-			maxTime:        now.Add(240 * time.Minute),
-			expectedBucket: 12 * time.Hour,
-		},
-		{
-			name:           "exactly 12h duration",
-			minTime:        now,
-			maxTime:        now.Add(12 * time.Hour),
-			expectedBucket: 12 * time.Hour,
-		},
-		{
-			name:           "over 12h duration",
-			minTime:        now,
-			maxTime:        now.Add(13 * time.Hour),
-			expectedBucket: 24 * time.Hour,
-		},
-		{
-			name:           "exactly 24h duration",
-			minTime:        now,
-			maxTime:        now.Add(24 * time.Hour),
-			expectedBucket: 24 * time.Hour,
-		},
-		{
-			name:           "over 24h duration",
-			minTime:        now,
-			maxTime:        now.Add(25 * time.Hour),
-			expectedBucket: 24 * time.Hour,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			uid := ulid.MustNew(uint64(now.UnixMilli()), cryptorand.Reader)
-			blk := &bucketBlock{
-				meta: &block.Meta{
-					BlockMeta: tsdb.BlockMeta{
-						MinTime: tc.minTime.UnixMilli(),
-						MaxTime: tc.maxTime.UnixMilli(),
-					},
-				},
-			}
-			var blocks sync.Map
-			blocks.Store(uid, blk)
-			stats := buildStoreStats(durations, &blocks)
-			require.Contains(t, stats.BlocksLoaded, tc.expectedBucket)
-			require.Equal(t, 1, stats.BlocksLoaded[tc.expectedBucket])
 		})
 	}
 }

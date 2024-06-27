@@ -69,9 +69,8 @@ const (
 )
 
 type BucketStoreStats struct {
-	// BlocksLoaded is the number of blocks currently loaded in the bucket store
-	// indexed by the duration of the block.
-	BlocksLoaded map[time.Duration]int
+	// BlocksLoadedTotal is the total number of blocks currently loaded in the bucket store.
+	BlocksLoadedTotal int
 }
 
 // BucketStore implements the store API backed by a bucket. It loads all index
@@ -271,34 +270,15 @@ func (s *BucketStore) RemoveBlocksAndClose() error {
 }
 
 // Stats returns statistics about the BucketStore instance.
-func (s *BucketStore) Stats(durations []time.Duration) BucketStoreStats {
-	return buildStoreStats(durations, &s.blocks)
-}
+func (s *BucketStore) Stats() BucketStoreStats {
+	var stats BucketStoreStats
 
-func buildStoreStats(durations []time.Duration, blocks *sync.Map) BucketStoreStats {
-	stats := BucketStoreStats{}
-	stats.BlocksLoaded = make(map[time.Duration]int)
-
-	if len(durations) != 0 {
-		blocks.Range(func(_, v any) bool {
-			// Bucket each block into one of the possible block durations we're creating.
-			bucketed := bucketBlockDuration(durations, v.(*bucketBlock).blockDuration())
-			stats.BlocksLoaded[bucketed]++
-			return true
-		})
-	}
+	s.blocks.Range(func(_, _ any) bool {
+		stats.BlocksLoadedTotal++
+		return true
+	})
 
 	return stats
-}
-
-func bucketBlockDuration(buckets tsdb.DurationList, duration time.Duration) time.Duration {
-	for _, d := range buckets {
-		if duration <= d {
-			return d
-		}
-	}
-
-	return buckets[len(buckets)-1]
 }
 
 // SyncBlocks synchronizes the stores state with the Bucket bucket.
