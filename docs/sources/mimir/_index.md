@@ -21,7 +21,7 @@ hero:
   image: /media/docs/mimir/GrafanaLogo_Mimir_icon.png
   width: 100
   height: 100
-  description: Grafana Mimir is an open source software project that provides horizontally scalable, highly available, multi-tenant, long-term storage for Prometheus.
+  description: Grafana Mimir is an open source software project that provides horizontally scalable, highly available, multi-tenant, long-term storage for Prometheus and OpenTelemetry metrics.
 cards:
   title_class: pt-0 lh-1s
   items:
