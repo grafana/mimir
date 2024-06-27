@@ -264,12 +264,12 @@ func NewBucketStore(
 	return s, nil
 }
 
-func (s *BucketStore) start(ctx context.Context) error {
-	return nil // TODO dimitarvdimitrov
+func (s *BucketStore) start(context.Context) error {
+	return nil
 }
 
-func (s *BucketStore) stop(err error) error {
-	return nil // TODO dimitarvdimitrov
+func (s *BucketStore) stop(error) error {
+	return nil
 }
 
 // RemoveBlocksAndClose remove all blocks from local disk and releases all resources associated with the BucketStore.
