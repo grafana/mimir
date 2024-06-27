@@ -274,24 +274,16 @@ func NewBucketStore(
 	return s, nil
 }
 
-func (s *BucketStore) subservices() []services.Service {
-	return []services.Service{s.snapshotter, s.indexReaderPool}
-}
-
 func (s *BucketStore) start(context.Context) error {
 	// Use context.Background() so that we stop the index reader pool ourselves and do it after closing all blocks.
 	return services.StartAndAwaitRunning(context.Background(), s.indexReaderPool)
 }
 
 func (s *BucketStore) stop(err error) error {
-	subservices := s.subservices()
-
 	errs := multierror.New(err)
-	for _, svc := range subservices {
-		if err := services.StopAndAwaitTerminated(context.Background(), svc); err != nil {
-			errs.Add(fmt.Errorf("stop %T: %w", svc, err))
-		}
-	}
+	errs.Add(s.closeAllBlocks())
+	errs.Add(services.StopAndAwaitTerminated(context.Background(), s.snapshotter))
+	errs.Add(services.StopAndAwaitTerminated(context.Background(), s.indexReaderPool))
 	return errs.Err()
 }
 
@@ -541,6 +533,17 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 	return nil
 }
 
+func (s *BucketStore) loadedBlocks() []ulid.ULID {
+	s.blocksMx.RLock()
+	defer s.blocksMx.RUnlock()
+
+	ids := make([]ulid.ULID, 0, len(s.blocks))
+	for id := range s.blocks {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 func (s *BucketStore) removeBlock(id ulid.ULID) (returnErr error) {
 	defer func() {
 		if returnErr != nil {
@@ -573,16 +576,24 @@ func (s *BucketStore) removeBlock(id ulid.ULID) (returnErr error) {
 	return nil
 }
 
-func (s *BucketStore) removeAllBlocks() error {
-	// Build a list of blocks to remove.
-	s.blocksMx.Lock()
-	blockIDs := make([]ulid.ULID, 0, len(s.blocks))
-	for id := range s.blocks {
-		blockIDs = append(blockIDs, id)
+func (s *BucketStore) closeAllBlocks() error {
+	errs := multierror.New()
+	loadedBlocks := s.loadedBlocks()
+	for _, id := range loadedBlocks {
+		b := s.getBlock(id)
+		if b == nil {
+			continue
+		}
+		if err := b.Close(); err != nil {
+			errs.Add(fmt.Errorf("close block %s: %w", id.String(), err))
+		}
 	}
-	s.blocksMx.Unlock()
 
-	// Close all blocks.
+	return errs.Err()
+}
+
+func (s *BucketStore) removeAllBlocks() error {
+	blockIDs := s.loadedBlocks()
 	errs := multierror.New()
 
 	for _, id := range blockIDs {
