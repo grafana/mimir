@@ -15,9 +15,11 @@ topologySpreadConstraints:
   {{- else }}
     matchLabels:
       {{- $selectorLabels | nindent 6 }}
-  matchLabelKeys: {{ $constraint.matchLabelKeys }}
+  matchLabelKeys: 
+  {{- $constraint.matchLabelKeys | toYaml | nindent 4 }}
   nodeAffinityPolicy: {{ $constraint.nodeAffinityPolicy }}
   nodeTaintsPolicy: {{ $constraint.nodeTaintsPolicy }}
+  minDomains: {{ $constraint.minDomains }}
   {{- end -}}
 {{- end -}}
 {{- end -}}
