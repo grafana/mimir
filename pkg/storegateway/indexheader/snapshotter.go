@@ -93,13 +93,8 @@ func (s *Snapshotter) PersistLoadedBlocks(bl blocksLoader) error {
 		return err
 	}
 
-	// Create temporary path for fsync.
-	// We don't use temporary folder because the process might not have access to the temporary folder.
-	tmpPath := filepath.Join(s.conf.Path, "tmp-"+lazyLoadedHeadersListFileName)
-	// the actual path we want to store the file in
 	finalPath := filepath.Join(s.conf.Path, lazyLoadedHeadersListFileName)
-
-	return atomicfs.CreateFileAndMove(tmpPath, finalPath, bytes.NewReader(data))
+	return atomicfs.CreateFile(finalPath, bytes.NewReader(data))
 }
 
 func (s *Snapshotter) RestoreLoadedBlocks() map[ulid.ULID]int64 {

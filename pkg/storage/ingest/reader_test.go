@@ -151,15 +151,17 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 		ctx = context.Background()
 	)
 
-	setup := func(t *testing.T, consumer recordConsumer) (*PartitionReader, *kgo.Client, *prometheus.Registry) {
+	setup := func(t *testing.T, consumer recordConsumer, opts ...readerTestCfgOtp) (*PartitionReader, *kgo.Client, *prometheus.Registry) {
 		reg := prometheus.NewPedanticRegistry()
 
 		_, clusterAddr := testkafka.CreateCluster(t, 1, topicName)
 
 		// Configure the reader to poll the "last produced offset" frequently.
 		reader := createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer,
-			withLastProducedOffsetPollInterval(100*time.Millisecond),
-			withRegistry(reg))
+			append([]readerTestCfgOtp{
+				withLastProducedOffsetPollInterval(100 * time.Millisecond),
+				withRegistry(reg),
+			}, opts...)...)
 
 		writeClient := newKafkaProduceClient(t, clusterAddr)
 
@@ -217,13 +219,13 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 		`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
 	})
 
-	t.Run("should block until the context deadline exceed if produced records are not consumed", func(t *testing.T) {
+	t.Run("should block until the request context deadline is exceeded if produced records are not consumed", func(t *testing.T) {
 		t.Parallel()
 
 		// Create a consumer with no buffer capacity.
 		consumer := newTestConsumer(0)
 
-		reader, writeClient, reg := setup(t, consumer)
+		reader, writeClient, reg := setup(t, consumer, withWaitStrongReadConsistencyTimeout(0))
 
 		// Produce some records.
 		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
@@ -231,14 +233,52 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 
 		err := reader.WaitReadConsistency(createTestContextWithTimeout(t, time.Second))
 		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.NotErrorIs(t, err, errWaitStrongReadConsistencyTimeoutExceeded)
 
 		// Consume the records.
-		records, err := consumer.waitRecords(1, time.Second, 0)
+		records, err := consumer.waitRecords(1, 2*time.Second, 0)
 		assert.NoError(t, err)
 		assert.Equal(t, [][]byte{[]byte("record-1")}, records)
 
 		// Now the WaitReadConsistency() should return soon.
 		err = reader.WaitReadConsistency(createTestContextWithTimeout(t, time.Second))
+		require.NoError(t, err)
+
+		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
+			# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
+			cortex_ingest_storage_strong_consistency_requests_total 2
+
+			# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
+			# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
+			cortex_ingest_storage_strong_consistency_failures_total 1
+		`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
+	})
+
+	t.Run("should block until the configured wait timeout is exceeded if produced records are not consumed", func(t *testing.T) {
+		t.Parallel()
+
+		// Create a consumer with no buffer capacity.
+		consumer := newTestConsumer(0)
+
+		reader, writeClient, reg := setup(t, consumer, withWaitStrongReadConsistencyTimeout(time.Second))
+
+		// Produce some records.
+		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+		t.Log("produced 1 record")
+
+		ctx := context.Background()
+		err := reader.WaitReadConsistency(ctx)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.ErrorIs(t, err, errWaitStrongReadConsistencyTimeoutExceeded)
+
+		// Consume the records.
+		records, err := consumer.waitRecords(1, 2*time.Second, 0)
+		assert.NoError(t, err)
+		assert.Equal(t, [][]byte{[]byte("record-1")}, records)
+
+		// Now the WaitReadConsistency() should return soon.
+		err = reader.WaitReadConsistency(ctx)
 		require.NoError(t, err)
 
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
@@ -1378,6 +1418,12 @@ func withConsumeFromTimestampAtStartup(ts int64) func(cfg *readerTestCfg) {
 	return func(cfg *readerTestCfg) {
 		cfg.kafka.ConsumeFromPositionAtStartup = consumeFromTimestamp
 		cfg.kafka.ConsumeFromTimestampAtStartup = ts
+	}
+}
+
+func withWaitStrongReadConsistencyTimeout(timeout time.Duration) func(cfg *readerTestCfg) {
+	return func(cfg *readerTestCfg) {
+		cfg.kafka.WaitStrongReadConsistencyTimeout = timeout
 	}
 }
 

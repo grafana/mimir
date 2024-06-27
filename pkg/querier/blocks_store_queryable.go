@@ -803,6 +803,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 
 				resp, err := stream.Recv()
 				if errors.Is(err, io.EOF) {
+					util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
 					break
 				}
 				if err != nil {
@@ -867,7 +868,12 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					}
 					myStreamingSeries = append(myStreamingSeries, ss.Series...)
 					if ss.IsEndOfSeriesStream {
-						// We expect "end of stream" to be sent after the hints and the stats have been sent.
+						// If we aren't expecting any series from this stream, close it now.
+						if len(myStreamingSeries) == 0 {
+							util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
+						}
+
+						// We expect "end of stream" to be sent after the hints and the stats have been sent, so we can break out of the loop now.
 						break
 					}
 				}
@@ -898,6 +904,11 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					"instance", c.RemoteAddress(),
 					"fetched series", len(myStreamingSeries),
 					"fetched index bytes", indexBytesFetched,
+					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
+					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
+			} else {
+				level.Debug(log).Log("msg", "received no series from store-gateway",
+					"instance", c.RemoteAddress(),
 					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
 					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
 			}

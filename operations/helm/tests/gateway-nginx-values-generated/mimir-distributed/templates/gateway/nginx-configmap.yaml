@@ -16,7 +16,6 @@ data:
     error_log  /dev/stderr error;
     pid        /tmp/nginx.pid;
     worker_rlimit_nofile 8192;
-    client_max_body_size 540M;
     
     events {
       worker_connections  4096;  ## Default: 1024

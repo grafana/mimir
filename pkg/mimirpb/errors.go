@@ -26,5 +26,5 @@ func IsClientError(err error) bool {
 
 // IsClientErrorCause returns true if the given ErrorCause corresponds to a well-known client error cause.
 func IsClientErrorCause(errCause ErrorCause) bool {
-	return errCause == BAD_DATA
+	return errCause == BAD_DATA || errCause == TENANT_LIMIT
 }

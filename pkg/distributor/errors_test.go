@@ -623,6 +623,10 @@ func TestErrorCauseToGRPCStatusCode(t *testing.T) {
 			errorCause:             mimirpb.BAD_DATA,
 			expectedGRPCStatusCode: codes.InvalidArgument,
 		},
+		"a TENANT_LIMIT error cause gets translated into a FailedPrecondition": {
+			errorCause:             mimirpb.TENANT_LIMIT,
+			expectedGRPCStatusCode: codes.FailedPrecondition,
+		},
 		"an INGESTION_RATE_LIMITED error cause without serviceOverloadErrorEnabled gets translated into a ResourceExhausted": {
 			errorCause:                  mimirpb.INGESTION_RATE_LIMITED,
 			serviceOverloadErrorEnabled: false,
@@ -697,6 +701,10 @@ func TestErrorCauseToHTTPStatusCode(t *testing.T) {
 		},
 		"a BAD_DATA error cause gets translated into a HTTP 400": {
 			errorCause:         mimirpb.BAD_DATA,
+			expectedHTTPStatus: http.StatusBadRequest,
+		},
+		"a TENANT_LIMIT error cause gets translated into a HTTP 400": {
+			errorCause:         mimirpb.TENANT_LIMIT,
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
 		"an INGESTION_RATE_LIMITED error cause without serviceOverloadErrorEnabled gets translated into a HTTP 429": {
