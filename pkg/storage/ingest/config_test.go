@@ -95,6 +95,36 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: ErrInvalidProducerMaxRecordSizeBytes,
 		},
+		"should fail if target consumer lag is enabled but max consumer lag is not": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.TargetConsumerLagAtStartup = 2 * time.Second
+				cfg.KafkaConfig.MaxConsumerLagAtStartup = 0
+			},
+			expectedErr: ErrInconsistentConsumerLagAtStartup,
+		},
+		"should fail if max consumer lag is enabled but target consumer lag is not": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.TargetConsumerLagAtStartup = 0
+				cfg.KafkaConfig.MaxConsumerLagAtStartup = 2 * time.Second
+			},
+			expectedErr: ErrInconsistentConsumerLagAtStartup,
+		},
+		"should fail if target consumer lag is > max consumer lag": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.TargetConsumerLagAtStartup = 2 * time.Second
+				cfg.KafkaConfig.MaxConsumerLagAtStartup = 1 * time.Second
+			},
+			expectedErr: ErrInvalidMaxConsumerLagAtStartup,
+		},
 	}
 
 	for testName, testData := range tests {
