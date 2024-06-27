@@ -61,7 +61,6 @@
         {
           alert: $.alertName('StartingIngesterKafkaReceiveDelayIncreasing'),
           'for': '5m',
-          // We're using series from classic histogram here, because mixtool lint doesn't support histogram_sum, histogram_count functions yet.
           expr: |||
             deriv((
                 sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="starting"}[1m]))
@@ -83,7 +82,6 @@
         {
           alert: $.alertName('RunningIngesterReceiveDelayTooHigh'),
           'for': '3m',
-          // We're using series from classic histogram here, because mixtool lint doesn't support histogram_sum, histogram_count functions yet.
           expr: |||
             (
               sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="running"}[1m]))
@@ -104,7 +102,6 @@
         {
           alert: $.alertName('RunningIngesterReceiveDelayTooHigh'),
           'for': '15m',
-          // We're using series from classic histogram here, because mixtool lint doesn't support histogram_sum, histogram_count functions yet.
           expr: |||
             (
               sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="running"}[1m]))
