@@ -383,6 +383,7 @@ func (am *Alertmanager) TestReceiversHandler(w http.ResponseWriter, r *http.Requ
 			fmt.Sprintf("error unmarshalling test receivers config JSON: %s", err.Error()),
 			http.StatusBadRequest)
 	}
+
 	response, err := alertingNotify.TestReceivers(r.Context(), c, am.cfg.Templates, am.buildGrafanaReceiverIntegrations, am.cfg.ExternalURL.String())
 	if err != nil {
 		http.Error(w,
@@ -424,6 +425,8 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		return err
 	}
 	tmpl.ExternalURL = tmplExternalURL
+
+	am.cfg.Templates = tmpls
 
 	cfg := definition.GrafanaToUpstreamConfig(conf)
 	am.api.Update(&cfg, func(_ model.LabelSet) {})
@@ -597,12 +600,7 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 				}
 				gTmpl.ExternalURL = tmpl.ExternalURL
 			}
-<<<<<<< HEAD
-
-			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, rcv, gTmpl, am.logger)
-=======
-			integrations, err = buildGrafanaReceiverIntegrations(gCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), gTmpl, am.logger)
->>>>>>> 3e82a5e7f (Add integration test)
+			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), gTmpl, am.logger)
 		} else {
 			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, nw)
 		}
@@ -616,15 +614,11 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 	return integrationsMap, nil
 }
 
-<<<<<<< HEAD
-func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConfig, rcv *definition.PostableApiReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
-=======
-func (am *Alertmanager) buildGrafanaReceiverIntegrations(gCfg *config.GlobalConfig, rcv *alertingNotify.APIReceiver, tmpl *template.Template) ([]*nfstatus.Integration, error) {
-	return buildGrafanaReceiverIntegrations(gCfg, rcv, tmpl, am.logger)
+func (am *Alertmanager) buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConfig, rcv *alertingNotify.APIReceiver, tmpl *template.Template) ([]*nfstatus.Integration, error) {
+	return buildGrafanaReceiverIntegrations(emailCfg, rcv, tmpl, am.logger)
 }
 
-func buildGrafanaReceiverIntegrations(gCfg *config.GlobalConfig, rcv *alertingNotify.APIReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
->>>>>>> 3e82a5e7f (Add integration test)
+func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConfig, rcv *alertingNotify.APIReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
 	// The decrypt functions and the context are used to decrypt the configuration.
 	// We don't need to decrypt anything, so we can pass a no-op decrypt func and a context.Background().
 	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), rcv, alertingNotify.NoopDecrypt)
