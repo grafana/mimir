@@ -35,7 +35,7 @@ cards:
       height: 24
     - title: Configure
       href: ./configure/about-configurations/
-      description: Configure Grafana Mimir through a YAML-based configuration file or CLI flags. Learn about the common configurations.
+      description: Configure Grafana Mimir through a YAML-based configuration file or CLI flags and learn about common configurations.
       height: 24
     - title: Send metric data
       href: ./send/
