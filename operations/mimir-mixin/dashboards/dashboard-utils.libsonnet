@@ -1632,4 +1632,59 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
       ),
     ],
+
+  ingestStorageIngesterEndToEndLatencyWhenStartingPanel()::
+    $.timeseriesPanel('Kafka record end-to-end latency when starting') +
+    $.panelDescription(
+      'Kafka record end-to-end latency when starting',
+      |||
+        Time between writing request by distributor to Kafka and reading the record by ingester during catch-up phase, when ingesters are starting.
+        If ingesters are not starting and catching up in the selected time range, this panel will be empty.
+      |||
+    ) +
+    $.queryPanel(
+      [
+        'histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+      ],
+      [
+        'avg',
+        '99th percentile',
+        '99.9th percentile',
+        '100th percentile',
+      ],
+    ) + {
+      fieldConfig+: {
+        defaults+: { unit: 's' },
+      },
+    },
+
+  ingestStorageIngesterEndToEndLatencyWhenRunningPanel()::
+    $.timeseriesPanel('Kafka record end-to-end latency when ingesters are running') +
+    $.panelDescription(
+      'Kafka record end-to-end latency when ingesters are running',
+      |||
+        Time between writing request by distributor to Kafka and reading the record by ingester, when ingesters are running.
+      |||
+    ) +
+    $.queryPanel(
+      [
+        'histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+      ],
+      [
+        'avg',
+        '99th percentile',
+        '99.9th percentile',
+        '100th percentile',
+      ],
+    ) + {
+      fieldConfig+: {
+        defaults+: { unit: 's' },
+      },
+    },
 }

@@ -181,7 +181,7 @@ local filename = 'mimir-reads.json';
     )
     .addRowIf(
       $._config.autoscaling.querier.enabled,
-      $.row('Querier - autoscaling')
+      $.row('Querier – autoscaling')
       .addPanel(
         local title = 'Replicas';
         $.timeseriesPanel(title) +

@@ -11729,7 +11729,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Query-frontend - query splitting and results cache",
+                "title": "Query-frontend – query splitting and results cache",
                 "titleSize": "h6"
              },
              {
@@ -11871,7 +11871,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Query-frontend - query sharding",
+                "title": "Query-frontend – query sharding",
                 "titleSize": "h6"
              },
              {
@@ -20133,7 +20133,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Querier - autoscaling",
+                "title": "Querier – autoscaling",
                 "titleSize": "h6"
              },
              {
@@ -40923,7 +40923,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Ingester - shipper",
+                "title": "Ingester – shipper",
                 "titleSize": "h6"
              },
              {
@@ -41101,7 +41101,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Ingester - TSDB head",
+                "title": "Ingester – TSDB head",
                 "titleSize": "h6"
              },
              {
@@ -41421,7 +41421,7 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Ingester - TSDB write ahead log (WAL)",
+                "title": "Ingester – TSDB write ahead log (WAL)",
                 "titleSize": "h6"
              },
              {
