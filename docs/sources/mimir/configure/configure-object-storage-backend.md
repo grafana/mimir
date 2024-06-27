@@ -125,9 +125,9 @@ You must disable [hierarchical namespace](https://learn.microsoft.com/en-us/azur
 
 Mimir requires the following configuration to authenticate to and access Azure Blob Storage:
 
-- A storage account name specified either in the configuration file as `storage_account_name` or in the `AZURE_STORAGE_ACCOUNT` environment variable 
+- A storage account name specified either in the configuration file as `storage_account_name` or in the `AZURE_STORAGE_ACCOUNT` environment variable
 - One of the following credentials for accessing the storage account:
-  - A storage account access key specified either in the configuration file as `storage_account_key` or in the `AZURE_STORAGE_KEY` environment variable. 
+  - A storage account access key specified either in the configuration file as `storage_account_key` or in the `AZURE_STORAGE_KEY` environment variable.
   - An Azure managed identity that is either system or user-assigned. To use Azure managed identities, either set `use_managed_identity` to `true` in the configuration file or set `user_assigned_id` to the client ID for the managed identity you want to use.
     - For a system-assigned managed identity, you do not need to perform additional configurations.
     - For a user-assigned managed identity, set `user_assigned_id` to the client ID for the managed identity in the configuration file.
@@ -166,7 +166,7 @@ ruler_storage:
 
 #### Azure Workload Identity
 
-Here is an example configuration for using Azure Workload Identity.  
+Here is an example configuration for using Azure Workload Identity.
 
 ```yaml
 ---
@@ -204,7 +204,7 @@ global:
 
 {{< admonition type="note" >}}  
 Unlike with Tempo, federated tokens are not supported with Mimir.  
-{{< /admonition >}}  
+{{< /admonition >}}
 
 ### OpenStack SWIFT
 
