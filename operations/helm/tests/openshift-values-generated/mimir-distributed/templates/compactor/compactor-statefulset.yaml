@@ -58,6 +58,11 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: openshift-values
             app.kubernetes.io/component: compactor
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       terminationGracePeriodSeconds: 900
       volumes:
         - name: config

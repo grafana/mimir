@@ -98,6 +98,11 @@ spec:
           matchLabels:
             app: enterprise-metrics-ruler
             release: test-enterprise-legacy-label-values
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       terminationGracePeriodSeconds: 600
       volumes:
         - name: config

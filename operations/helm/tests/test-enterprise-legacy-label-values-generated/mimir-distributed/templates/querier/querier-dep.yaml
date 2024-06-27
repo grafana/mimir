@@ -99,6 +99,11 @@ spec:
           matchLabels:
             app: enterprise-metrics-querier
             release: test-enterprise-legacy-label-values
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       terminationGracePeriodSeconds: 180
       volumes:
         - name: config

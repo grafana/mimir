@@ -102,6 +102,11 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: graphite-enabled-values
             app.kubernetes.io/component: ruler
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       terminationGracePeriodSeconds: 600
       volumes:
         - name: config

@@ -101,6 +101,11 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
             app.kubernetes.io/component: ruler-query-frontend
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       terminationGracePeriodSeconds: 390
       volumes:
         - name: config

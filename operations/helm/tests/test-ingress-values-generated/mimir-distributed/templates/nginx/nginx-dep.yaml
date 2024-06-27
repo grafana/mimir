@@ -82,6 +82,11 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-ingress-values
             app.kubernetes.io/component: nginx
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       volumes:
         - name: config
           configMap:

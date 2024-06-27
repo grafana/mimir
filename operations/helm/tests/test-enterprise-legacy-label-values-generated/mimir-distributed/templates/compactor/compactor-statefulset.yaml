@@ -57,6 +57,11 @@ spec:
           matchLabels:
             app: enterprise-metrics-compactor
             release: test-enterprise-legacy-label-values
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       terminationGracePeriodSeconds: 900
       volumes:
         - name: config
