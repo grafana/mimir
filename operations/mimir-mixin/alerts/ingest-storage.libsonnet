@@ -77,6 +77,7 @@
           },
         },
 
+        // Alert firing if an ingester is ingesting data with a very high delay, even for a short period of time.
         {
           alert: $.alertName('RunningIngesterReceiveDelayTooHigh'),
           'for': '5m',
@@ -86,10 +87,32 @@
               sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="running"}[1m]))
               /
               sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{phase="running"}[1m]))
-            ) > (10 * 60)
+            ) > (2 * 60)
           ||| % $._config,
           labels: {
             severity: 'critical',
+            threshold: 'very_high_for_short_period',  // Add an extra label to distinguish between multiple alerts with the same name.
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s in "running" phase is too far behind in its consumption of write requests from Kafka.' % $._config,
+          },
+        },
+
+        // Alert firing if an ingester is ingesting data with a relatively high delay for a long period of time.
+        {
+          alert: $.alertName('RunningIngesterReceiveDelayTooHigh'),
+          'for': '15m',
+          // We're using series from classic histogram here, because mixtool lint doesn't support histogram_sum, histogram_count functions yet.
+          expr: |||
+            (
+              sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="running"}[1m]))
+              /
+              sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{phase="running"}[1m]))
+            ) > 30
+          ||| % $._config,
+          labels: {
+            severity: 'critical',
+            threshold: 'relatively_high_for_long_period',  // Add an extra label to distinguish between multiple alerts with the same name.
           },
           annotations: {
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s in "running" phase is too far behind in its consumption of write requests from Kafka.' % $._config,
