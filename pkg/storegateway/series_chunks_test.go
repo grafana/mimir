@@ -450,6 +450,27 @@ func TestPreloadingSetIterator_Concurrency(t *testing.T) {
 
 }
 
+func TestPreloadingSetIterator_ContextCancellation(t *testing.T) {
+	t.Cleanup(func() { test.VerifyNoLeak(t) })
+	const preloadSize = 1
+
+	// This set is unreleseable because reused by multiple test runs.
+	set := newSeriesChunksSet(1, false)
+	set.series = append(set.series, seriesChunks{
+		lset: labels.FromStrings("__name__", "metric_0"),
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	source := newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), preloadSize, set)
+	preloading := newPreloadingSetIterator[seriesChunksSet](ctx, preloadSize, source)
+
+	assert.True(t, preloading.Next())
+	require.NotZero(t, preloading.At())
+	cancel()
+	// abandon the iterator after the first Next(); This simulates the client giving up because they also detected the cancelled context
+	// At the end of the test there shouldn't be a leaking goroutine
+}
+
 type testBlock struct {
 	ulid   ulid.ULID
 	series []testBlockSeries
