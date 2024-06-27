@@ -275,11 +275,12 @@ func NewBucketStore(
 }
 
 func (s *BucketStore) subservices() []services.Service {
-	return []services.Service{s.snapshotter}
+	return []services.Service{s.snapshotter, s.indexReaderPool}
 }
 
-func (s *BucketStore) start(ctx context.Context) error {
-	return nil
+func (s *BucketStore) start(context.Context) error {
+	// Use context.Background() so that we stop the index reader pool ourselves and do it after closing all blocks.
+	return services.StartAndAwaitRunning(context.Background(), s.indexReaderPool)
 }
 
 func (s *BucketStore) stop(err error) error {
