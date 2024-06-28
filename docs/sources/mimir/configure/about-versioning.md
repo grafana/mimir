@@ -61,6 +61,8 @@ The following features are currently experimental:
   - Allow defining limits on the maximum number of rules allowed in a rule group by namespace and the maximum number of rule groups by namespace. If set, this supersedes the `-ruler.max-rules-per-rule-group` and `-ruler.max-rule-groups-per-tenant` limits.
   - `-ruler.max-rules-per-rule-group-by-namespace`
   - `-ruler.max-rule-groups-per-tenant-by-namespace`
+  - Allow protecting rule groups from modification by namespace. Rule groups can always be read, and you can use the `X-Mimir-Ruler-Override-Namespace-Protection` header with namespace names as values to override protection from modification.
+  - `-ruler.protected-namespaces`
 - Distributor
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`
