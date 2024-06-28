@@ -145,6 +145,10 @@ func (a *app) runForPod(podName string) error {
 
 func (a *app) queryPod(podName string, localPort uint16) error {
 	slog.Info("querying pod", "name", podName, "local_port", localPort)
+
+	// TODO: create gRPC client, connect to local port
+	// TODO: use gRPC client to execute query and save all chunks received to disk somewhere
+
 	return nil
 }
 
