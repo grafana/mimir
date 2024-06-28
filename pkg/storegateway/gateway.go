@@ -339,7 +339,7 @@ func (g *StoreGateway) syncStores(ctx context.Context, reason string) {
 // Series implements the storegatewaypb.StoreGatewayServer interface.
 func (g *StoreGateway) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
 	user := getUserIDFromGRPCContext(srv.Context())
-	if user == "slow" {
+	if user == "oss-self-monitoring" {
 		level.Warn(g.logger).Log("msg", "slow user detected, artificially slowing down the request")
 		time.Sleep(time.Duration(g.gatewayCfg.ArtificialSlowdown))
 	}
