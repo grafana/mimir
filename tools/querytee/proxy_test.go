@@ -86,6 +86,14 @@ func Test_NewProxy(t *testing.T) {
 			},
 			expectedError: "",
 		},
+		"single endpoint with subdirectory and port, preferred backend set and exists": {
+			cfg: ProxyConfig{
+				BackendEndpoints:                   "http://blah.com:1234/some-sub-dir/and-another",
+				PreferredBackend:                   "blah.com",
+				SecondaryBackendsRequestProportion: 1.0,
+			},
+			expectedError: "",
+		},
 		"single endpoint, preferred backend set and does not exist": {
 			cfg: ProxyConfig{
 				BackendEndpoints:                   "http://blah",
