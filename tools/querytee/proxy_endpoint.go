@@ -252,8 +252,8 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 	wg.Wait()
 	close(resCh)
 
-	// Compare responses.
-	if p.comparator != nil && len(backends) >= 2 {
+	// Compare responses, but only if comparison is enabled and we ran this request against two backends.
+	if p.comparator != nil && len(backends) == 2 {
 		expectedResponse := responses[0]
 		actualResponse := responses[1]
 		if responses[1].backend.Preferred() {
