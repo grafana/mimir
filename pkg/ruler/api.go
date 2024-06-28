@@ -321,11 +321,6 @@ var (
 	ErrBadRuleGroup = errors.New("unable to decode rule group")
 )
 
-type HTTPHeader struct {
-	Key   string
-	Value string
-}
-
 func marshalAndSend(output interface{}, w http.ResponseWriter, logger log.Logger, headers ...http.Header) {
 	d, err := yaml.Marshal(&output)
 	if err != nil {
