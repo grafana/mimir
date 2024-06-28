@@ -21,6 +21,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -57,6 +58,8 @@ type Config struct {
 
 	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
 	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
+
+	ArtificialSlowdown model.Duration `yaml:"artificial_slowdown" category:"experimental"`
 }
 
 // RegisterFlags registers the Config flags.
@@ -335,6 +338,10 @@ func (g *StoreGateway) syncStores(ctx context.Context, reason string) {
 
 // Series implements the storegatewaypb.StoreGatewayServer interface.
 func (g *StoreGateway) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
+	user := getUserIDFromGRPCContext(srv.Context())
+	if user == "slow" {
+		time.Sleep(time.Duration(g.gatewayCfg.ArtificialSlowdown))
+	}
 	ix := g.tracker.Insert(func() string {
 		return requestActivity(srv.Context(), "StoreGateway/Series", req)
 	})
