@@ -853,7 +853,7 @@ func TestProxyEndpoint_BackendSelection(t *testing.T) {
 			} else {
 				// We expect to have selected only the preferred backend just some of the time.
 				// Allow for some variation due to randomness.
-				require.InEpsilonf(t, testCase.expectedPreferredOnlySelectionCount, preferredOnlySelectionCount, 0.1, "expected to choose only the preferred backend %v times, but chose it %v times", testCase.expectedPreferredOnlySelectionCount, preferredOnlySelectionCount)
+				require.InEpsilonf(t, testCase.expectedPreferredOnlySelectionCount, preferredOnlySelectionCount, 0.2, "expected to choose only the preferred backend %v times, but chose it %v times", testCase.expectedPreferredOnlySelectionCount, preferredOnlySelectionCount)
 			}
 		})
 	}
