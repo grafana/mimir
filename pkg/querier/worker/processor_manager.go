@@ -75,18 +75,18 @@ func (pm *processorManager) concurrency(n int, cause string) {
 		pm.cancels = append(pm.cancels, cancel)
 
 		pm.wg.Add(1)
-		go func() {
+		go func(id int32) {
 			defer pm.wg.Done()
 
 			pm.currentProcessors.Inc()
 			defer pm.currentProcessors.Dec()
 
-			pm.p.processQueriesOnSingleStream(ctx, pm.conn, pm.address)
-		}()
+			pm.p.processQueriesOnSingleStream(ctx, pm.conn, pm.address, id)
+		}(int32(len(pm.cancels)) - 1)
 	}
 
 	for len(pm.cancels) > n {
-		pm.cancels[0](cancellation.NewErrorf("stopping worker: %v", cause))
-		pm.cancels = pm.cancels[1:]
+		pm.cancels[len(pm.cancels)-1](cancellation.NewErrorf("stopping worker: %v", cause))
+		pm.cancels = pm.cancels[:len(pm.cancels)-1]
 	}
 }

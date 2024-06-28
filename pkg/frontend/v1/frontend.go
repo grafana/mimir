@@ -238,7 +238,7 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 	lastTenantIndex := queue.FirstTenant()
 
 	for {
-		reqWrapper, idx, err := f.requestQueue.WaitForRequestForQuerier(server.Context(), lastTenantIndex, querierID)
+		reqWrapper, idx, err := f.requestQueue.WaitForRequestForQuerier(server.Context(), lastTenantIndex, querierID, 0)
 		if err != nil {
 			return err
 		}

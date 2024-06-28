@@ -42,7 +42,8 @@ func (d *dimensionalQueueBroker) addQuerierConnection(querierID QuerierID) (resh
 }
 
 // dequeueRequestForQuerier implements queueBrokerI.
-func (d *dimensionalQueueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID QuerierID) (*tenantRequest, *queueTenant, int, error) {
+func (d *dimensionalQueueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID QuerierID, workerID int32) (*tenantRequest, *queueTenant, int, error) {
+	// We will try at most once per queue before returning.
 	tries := len(d.queues)
 
 	var request *tenantRequest
@@ -50,14 +51,17 @@ func (d *dimensionalQueueBroker) dequeueRequestForQuerier(lastTenantIndex int, q
 	var tenantIndex int
 	var err error
 
+	// each worker prioritizes a different queue to start, and then cycles through the rest.
+	queueIndex := int(workerID) % len(d.queueOrder)
+
 	for i := 0; i < tries; i++ {
-		queue := d.queues[d.queueOrder[d.queueIndex]]
-		request, tenant, tenantIndex, err = queue.dequeueRequestForQuerier(lastTenantIndex, querierID)
+		queue := d.queues[d.queueOrder[queueIndex]]
+		request, tenant, tenantIndex, err = queue.dequeueRequestForQuerier(lastTenantIndex, querierID, workerID)
 		if tenant != nil && err == nil {
 			return request, tenant, tenantIndex, nil
 		}
 
-		d.queueIndex = (d.queueIndex + 1) % len(d.queueOrder)
+		queueIndex = (queueIndex + 1) % len(d.queueOrder)
 	}
 
 	return request, tenant, tenantIndex, err

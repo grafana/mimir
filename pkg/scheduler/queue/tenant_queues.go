@@ -107,7 +107,7 @@ func (qb *queueBroker) makeQueuePath(request *tenantRequest) (QueuePath, error) 
 	return QueuePath{string(request.tenantID)}, nil
 }
 
-func (qb *queueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID QuerierID) (*tenantRequest, *queueTenant, int, error) {
+func (qb *queueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID QuerierID, _ int32) (*tenantRequest, *queueTenant, int, error) {
 	tenant, tenantIndex, err := qb.tenantQuerierAssignments.getNextTenantForQuerier(lastTenantIndex, querierID)
 	if tenant == nil || err != nil {
 		return nil, tenant, tenantIndex, err

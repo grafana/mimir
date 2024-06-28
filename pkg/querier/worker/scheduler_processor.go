@@ -124,7 +124,7 @@ func (sp *schedulerProcessor) notifyShutdown(ctx context.Context, conn *grpc.Cli
 	}
 }
 
-func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Context, conn *grpc.ClientConn, address string) {
+func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Context, conn *grpc.ClientConn, address string, id int32) {
 	schedulerClient := sp.schedulerClientFactory(conn)
 
 	// Run the querier loop (and so all the queries) in a dedicated context that we call the "execution context".
@@ -136,7 +136,7 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Con
 	for backoff.Ongoing() {
 		c, err := schedulerClient.QuerierLoop(execCtx)
 		if err == nil {
-			err = c.Send(&schedulerpb.QuerierToScheduler{QuerierID: sp.querierID})
+			err = c.Send(&schedulerpb.QuerierToScheduler{QuerierID: sp.querierID, WorkerID: id})
 		}
 
 		if err != nil {

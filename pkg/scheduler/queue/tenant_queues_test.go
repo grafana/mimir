@@ -27,7 +27,7 @@ func TestQueues(t *testing.T) {
 	qb.addQuerierConnection("querier-1")
 	qb.addQuerierConnection("querier-2")
 
-	req, tenant, lastTenantIndex, err := qb.dequeueRequestForQuerier(-1, "querier-1")
+	req, tenant, lastTenantIndex, err := qb.dequeueRequestForQuerier(-1, "querier-1", 0)
 	assert.Nil(t, req)
 	assert.Nil(t, tenant)
 	assert.NoError(t, err)
@@ -73,7 +73,7 @@ func TestQueues(t *testing.T) {
 	qb.removeTenantQueue("four")
 	assert.NoError(t, isConsistent(qb))
 
-	req, _, _, err = qb.dequeueRequestForQuerier(lastTenantIndex, "querier-1")
+	req, _, _, err = qb.dequeueRequestForQuerier(lastTenantIndex, "querier-1", 0)
 	assert.Nil(t, req)
 	assert.NoError(t, err)
 }
@@ -126,7 +126,7 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 
 	// dequeue a request
 	qb.addQuerierConnection("querier-1")
-	dequeuedTenantReq, _, _, err := qb.dequeueRequestForQuerier(-1, "querier-1")
+	dequeuedTenantReq, _, _, err := qb.dequeueRequestForQuerier(-1, "querier-1", 0)
 	assert.NoError(t, err)
 	assert.NotNil(t, dequeuedTenantReq)
 
@@ -185,7 +185,7 @@ func TestQueuesWithQueriers(t *testing.T) {
 		qb.addQuerierConnection(qid)
 
 		// No querier has any queues yet.
-		req, tenant, _, err := qb.dequeueRequestForQuerier(-1, qid)
+		req, tenant, _, err := qb.dequeueRequestForQuerier(-1, qid, 0)
 		assert.Nil(t, req)
 		assert.Nil(t, tenant)
 		assert.NoError(t, err)

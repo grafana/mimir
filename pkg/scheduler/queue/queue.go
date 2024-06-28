@@ -103,7 +103,7 @@ type queueBrokerI interface {
 	isEmpty() bool
 	enqueueRequestFront(request *tenantRequest, tenantMaxQueriers int) error
 	enqueueRequestBack(request *tenantRequest, tenantMaxQueriers int) error
-	dequeueRequestForQuerier(lastTenantIndex int, querierID QuerierID) (*tenantRequest, *queueTenant, int, error)
+	dequeueRequestForQuerier(lastTenantIndex int, querierID QuerierID, workerID int32) (*tenantRequest, *queueTenant, int, error)
 	notifyQuerierShutdown(querierID QuerierID) (resharded bool)
 	addQuerierConnection(querierID QuerierID) (resharded bool)
 	removeQuerierConnection(querierID QuerierID, now time.Time) (resharded bool)
@@ -367,7 +367,7 @@ func (q *RequestQueue) enqueueRequestInternal(r requestToEnqueue) error {
 // a) a query request which was successfully dequeued for the querier, or
 // b) an ErrShuttingDown indicating the querier has been placed in a graceful shutdown state.
 func (q *RequestQueue) trySendNextRequestForQuerier(waitingConn *waitingQuerierConn) (done bool) {
-	req, tenant, idx, err := q.queueBroker.dequeueRequestForQuerier(waitingConn.lastTenantIndex.last, waitingConn.querierID)
+	req, tenant, idx, err := q.queueBroker.dequeueRequestForQuerier(waitingConn.lastTenantIndex.last, waitingConn.querierID, waitingConn.workerID)
 	if err != nil {
 		// If this querier has told us it's shutting down, terminate WaitForRequestForQuerier with an error now...
 		waitingConn.sendError(err)
@@ -465,10 +465,11 @@ func (q *RequestQueue) SubmitRequestToEnqueue(tenantID string, req Request, maxQ
 // If a querier-worker finds that the query request received for the tenant is already expired,
 // it can get another request for the same tenant by using TenantIndex.ReuseLastTenant.
 // Newly-connected querier-workers should pass FirstTenant as the TenantIndex to start iteration from the beginning.
-func (q *RequestQueue) WaitForRequestForQuerier(ctx context.Context, last TenantIndex, querierID string) (Request, TenantIndex, error) {
+func (q *RequestQueue) WaitForRequestForQuerier(ctx context.Context, last TenantIndex, querierID string, workerID int32) (Request, TenantIndex, error) {
 	waitingConn := &waitingQuerierConn{
 		querierConnCtx:  ctx,
 		querierID:       QuerierID(querierID),
+		workerID:        workerID,
 		lastTenantIndex: last,
 		recvChan:        make(chan requestForQuerier),
 	}
@@ -572,6 +573,7 @@ func (q *RequestQueue) processForgetDisconnectedQueriers() (resharded bool) {
 type waitingQuerierConn struct {
 	querierConnCtx  context.Context
 	querierID       QuerierID
+	workerID        int32
 	lastTenantIndex TenantIndex
 	recvChan        chan requestForQuerier
 }

@@ -390,7 +390,7 @@ type consumeRequest func(request Request) error
 func queueConsume(
 	ctx context.Context, queue *RequestQueue, querierID string, lastTenantIndex TenantIndex, consumeFunc consumeRequest,
 ) (TenantIndex, error) {
-	request, idx, err := queue.WaitForRequestForQuerier(ctx, lastTenantIndex, querierID)
+	request, idx, err := queue.WaitForRequestForQuerier(ctx, lastTenantIndex, querierID, 0)
 	if err != nil {
 		return lastTenantIndex, err
 	}
@@ -437,7 +437,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	querier2wg.Add(1)
 	go func() {
 		defer querier2wg.Done()
-		_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), "querier-2")
+		_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), "querier-2", 0)
 		require.NoError(t, err)
 	}()
 
@@ -519,7 +519,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 	querier2wg.Add(1)
 	go func() {
 		defer querier2wg.Done()
-		_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), "querier-2")
+		_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), "querier-2", 0)
 		require.NoError(t, err)
 	}()
 
@@ -580,7 +580,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 	// Calling WaitForRequestForQuerier with a context that is already cancelled should fail immediately.
 	deadCtx, cancel := context.WithCancel(context.Background())
 	cancel()
-	r, tenant, err := queue.WaitForRequestForQuerier(deadCtx, FirstTenant(), querierID)
+	r, tenant, err := queue.WaitForRequestForQuerier(deadCtx, FirstTenant(), querierID, 0)
 	assert.Nil(t, r)
 	assert.Equal(t, FirstTenant(), tenant)
 	assert.ErrorIs(t, err, context.Canceled)
@@ -590,7 +590,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
-		_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), querierID)
+		_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), querierID, 0)
 		errChan <- err
 	}()
 
@@ -630,7 +630,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 	queue.SubmitRegisterQuerierConnection(querierID)
 	queue.SubmitNotifyQuerierShutdown(querierID)
 
-	_, _, err = queue.WaitForRequestForQuerier(context.Background(), FirstTenant(), querierID)
+	_, _, err = queue.WaitForRequestForQuerier(context.Background(), FirstTenant(), querierID, 0)
 	require.EqualError(t, err, "querier has informed the scheduler it is shutting down")
 }
 
