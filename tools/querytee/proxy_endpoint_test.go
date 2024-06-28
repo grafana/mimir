@@ -843,6 +843,7 @@ func TestProxyEndpoint_BackendSelection(t *testing.T) {
 
 				if len(backends) == 1 {
 					preferredOnlySelectionCount++
+					require.Equal(t, "preferred-backend", backends[0].Name())
 				}
 			}
 
