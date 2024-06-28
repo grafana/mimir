@@ -134,42 +134,11 @@ func (a *app) parseArgs() error {
 }
 
 func (a *app) runForPod(podName string) error {
-	forwarder, readyChan, stopChan, err := a.startPortForward(podName)
+	localPort, cleanup, err := a.establishPortForward(podName)
 	if err != nil {
 		return err
 	}
-
-	finishedChan := make(chan struct{}, 1)
-	var forwardingErr error
-
-	defer func() {
-		close(stopChan)
-		<-finishedChan
-
-		if err == nil && forwardingErr != nil {
-			err = forwardingErr
-		}
-	}()
-
-	go func() {
-		slog.Info("establishing port forward to pod", "name", podName)
-		forwardingErr = forwarder.ForwardPorts()
-		close(finishedChan)
-	}()
-
-	select {
-	case <-readyChan:
-		// Port forwarding is up and running.
-	case <-finishedChan:
-		return fmt.Errorf("port forwarding could not start: %w", forwardingErr)
-	}
-
-	ports, err := forwarder.GetPorts()
-	if err != nil {
-		return fmt.Errorf("could not get local port: %w", err)
-	}
-
-	localPort := ports[0].Local
+	defer cleanup()
 
 	return a.queryPod(podName, localPort)
 }
@@ -202,6 +171,49 @@ func (a *app) loadKubeConfig() error {
 	}
 
 	return nil
+}
+
+func (a *app) establishPortForward(podName string) (uint16, func(), error) {
+	forwarder, readyChan, stopChan, err := a.startPortForward(podName)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	finishedChan := make(chan struct{}, 1)
+	var forwardingErr error
+
+	cleanup := func() {
+		close(stopChan)
+		<-finishedChan
+
+		if err == nil && forwardingErr != nil {
+			err = forwardingErr
+		}
+	}
+
+	go func() {
+		slog.Info("establishing port forward to pod", "name", podName)
+		forwardingErr = forwarder.ForwardPorts()
+		close(finishedChan)
+	}()
+
+	select {
+	case <-readyChan:
+		// Port forwarding is up and running.
+	case <-finishedChan:
+		cleanup()
+		return 0, nil, fmt.Errorf("port forwarding could not start: %w", forwardingErr)
+	}
+
+	ports, err := forwarder.GetPorts()
+	if err != nil {
+		cleanup()
+		return 0, nil, fmt.Errorf("could not get local port: %w", err)
+	}
+
+	localPort := ports[0].Local
+
+	return localPort, cleanup, nil
 }
 
 func (a *app) startPortForward(podName string) (*portforward.PortForwarder, chan struct{}, chan struct{}, error) {
