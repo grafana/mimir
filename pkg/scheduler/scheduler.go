@@ -415,6 +415,8 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 	querierID := resp.GetQuerierID()
 	workerID := resp.GetWorkerID()
 
+	level.Warn(s.log).Log("msg", "querier connected", "querier", querierID, "worker", workerID)
+
 	s.requestQueue.SubmitRegisterQuerierConnection(querierID)
 	defer s.requestQueue.SubmitUnregisterQuerierConnection(querierID)
 
