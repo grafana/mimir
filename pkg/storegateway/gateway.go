@@ -336,6 +336,7 @@ func (g *StoreGateway) syncStores(ctx context.Context, reason string) {
 func (g *StoreGateway) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
 	user := getUserIDFromGRPCContext(srv.Context())
 	if user == "slow" {
+		level.Warn(g.logger).Log("msg", "slow user detected, artificially slowing down the request")
 		time.Sleep(time.Duration(g.gatewayCfg.ArtificialSlowdown))
 	}
 	ix := g.tracker.Insert(func() string {

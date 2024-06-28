@@ -222,7 +222,7 @@ type Config struct {
 	// This config can be overridden in tests.
 	limitMetricsUpdatePeriod time.Duration `yaml:"-"`
 
-	ArtificialSlowdown model.Duration `yaml:"artificial_slowdown", category:"advanced"`
+	ArtificialSlowdown model.Duration `yaml:"artificial_slowdown" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -2084,6 +2084,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	}
 
 	if userID == "slow" {
+		level.Warn(i.logger).Log("msg", "slow user detected, artificially slowing down the request")
 		time.Sleep(time.Duration(i.cfg.ArtificialSlowdown))
 	}
 
