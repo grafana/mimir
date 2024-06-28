@@ -66,12 +66,18 @@ func (d *dimensionalQueueBroker) dequeueRequestForQuerier(lastTenantIndex int, q
 // enqueueRequestBack implements queueBrokerI.
 func (d *dimensionalQueueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueriers int) error {
 	component := request.req.(*SchedulerRequest).ExpectedQueryComponentName()
+	if component == "" {
+		component = "none"
+	}
 	return d.queues[QueryComponent(component)].enqueueRequestBack(request, tenantMaxQueriers)
 }
 
 // enqueueRequestFront implements queueBrokerI.
 func (d *dimensionalQueueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQueriers int) error {
 	component := request.req.(*SchedulerRequest).ExpectedQueryComponentName()
+	if component == "" {
+		component = "none"
+	}
 	return d.queues[QueryComponent(component)].enqueueRequestFront(request, tenantMaxQueriers)
 }
 
