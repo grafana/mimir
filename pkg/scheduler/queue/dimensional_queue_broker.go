@@ -16,10 +16,10 @@ func newDimensionalQueueBroker(
 	forgetDelay time.Duration,
 ) *dimensionalQueueBroker {
 	queueOrder := []QueryComponent{
-		storeGatewayQueueDimension,
-		ingesterQueueDimension,
-		ingesterAndStoreGatewayQueueDimension,
 		"none", // TODO: is there a constant for this?
+		ingesterQueueDimension,
+		storeGatewayQueueDimension,
+		ingesterAndStoreGatewayQueueDimension,
 	}
 
 	queues := make(map[QueryComponent]*queueBroker, len(queueOrder))
