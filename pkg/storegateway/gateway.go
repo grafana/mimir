@@ -338,10 +338,12 @@ func (g *StoreGateway) syncStores(ctx context.Context, reason string) {
 
 // Series implements the storegatewaypb.StoreGatewayServer interface.
 func (g *StoreGateway) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
-	user := getUserIDFromGRPCContext(srv.Context())
-	if user == "oss-self-monitoring" {
-		level.Warn(g.logger).Log("msg", "slow user detected, artificially slowing down the request")
-		time.Sleep(time.Duration(g.gatewayCfg.ArtificialSlowdown))
+	for _, m := range req.Matchers {
+		if m.Name == model.MetricNameLabel && m.Value == "artificially_slow_query" {
+			level.Warn(g.logger).Log("msg", "slow query detected, artificially slowing down the request")
+			time.Sleep(time.Duration(g.gatewayCfg.ArtificialSlowdown))
+			break
+		}
 	}
 	ix := g.tracker.Insert(func() string {
 		return requestActivity(srv.Context(), "StoreGateway/Series", req)
