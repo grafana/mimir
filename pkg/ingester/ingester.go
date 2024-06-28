@@ -2083,9 +2083,12 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return err
 	}
 
-	if userID == "oss-self-monitoring" {
-		level.Warn(i.logger).Log("msg", "slow user detected, artificially slowing down the request")
-		time.Sleep(time.Duration(i.cfg.ArtificialSlowdown))
+	for _, m := range req.Matchers {
+		if m.Name == model.MetricNameLabel && m.Value == "artificially_slow_query" {
+			level.Warn(i.logger).Log("msg", "slow query detected, artificially slowing down the request")
+			time.Sleep(time.Duration(i.cfg.ArtificialSlowdown))
+			break
+		}
 	}
 
 	from, through, matchers, err := client.FromQueryRequest(req)
