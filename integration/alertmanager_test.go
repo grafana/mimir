@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-kit/log"
 	alertingmodels "github.com/grafana/alerting/models"
+	alertingNotify "github.com/grafana/alerting/notify"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
@@ -1155,4 +1156,80 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 		}
 
 	}
+}
+
+func TestAlertmanagerTestReceivers(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, alertsBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	flags := mergeFlags(AlertmanagerFlags(),
+		AlertmanagerS3Flags(),
+		AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
+		AlertmanagerGrafanaCompatibilityFlags())
+
+	am := e2emimir.NewAlertmanager(
+		"alertmanager",
+		flags,
+	)
+	require.NoError(t, s.StartAndWaitReady(am))
+
+	c, err := e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-1")
+	require.NoError(t, err)
+
+	// Endpoint: POST /api/v1/grafana/receivers/test
+	trConfig := alertingNotify.TestReceiversConfigBodyParams{
+		Alert: &alertingNotify.TestReceiversConfigAlertParams{
+			Annotations: model.LabelSet{"annotation": "test annotation"},
+			Labels:      model.LabelSet{"label": "test label"},
+		},
+		Receivers: []*alertingNotify.APIReceiver{
+			{
+				GrafanaIntegrations: alertingNotify.GrafanaIntegrations{
+					Integrations: []*alertingNotify.GrafanaIntegrationConfig{
+						{
+							UID:                   "uid",
+							Name:                  "test integration",
+							Type:                  "oncall",
+							DisableResolveMessage: false,
+							Settings:              json.RawMessage(`{ "url" : "http://www.grafana.com" }`),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	res, err := c.TestReceiversExperimental(context.Background(), trConfig)
+	require.NoError(t, err)
+
+	// Default annotations from Test Alert
+	// "summary":          "Notification test",
+	// "__value_string__": "[ metric='foo' labels={instance=bar} value=10 ]"
+	expectedAnnotations := model.LabelSet{
+		"annotation":       "test annotation",
+		"summary":          "Notification test",
+		"__value_string__": "[ metric='foo' labels={instance=bar} value=10 ]",
+	}
+	require.Equal(t, expectedAnnotations, res.Alert.Annotations)
+
+	// Default labels from Test Alert
+	// "alertname": "TestAlert"
+	// "instance":  "Grafana"
+	expectedLabels := model.LabelSet{
+		"label":     "test label",
+		"alertname": "TestAlert",
+		"instance":  "Grafana",
+	}
+	require.Equal(t, expectedLabels, res.Alert.Labels)
+
+	require.Len(t, res.Receivers, 1)
+	require.Len(t, res.Receivers[0].Configs, 1)
+	require.Equal(t, trConfig.Receivers[0].GrafanaIntegrations.Integrations[0].UID, res.Receivers[0].Configs[0].UID)
+	require.Equal(t, trConfig.Receivers[0].GrafanaIntegrations.Integrations[0].Name, res.Receivers[0].Configs[0].Name)
+	require.NoError(t, res.Receivers[0].Configs[0].Error)
 }

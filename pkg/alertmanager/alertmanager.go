@@ -90,6 +90,7 @@ type Config struct {
 	ExternalURL                       *url.URL
 	Limits                            Limits
 	Features                          featurecontrol.Flagger
+	Templates                         []string
 
 	// Tenant-specific local directory where AM can store its state (notifications, silences, templates). When AM is stopped, entire dir is removed.
 	TenantDataDir string
@@ -308,10 +309,11 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		am.mux.Handle(a, http.NotFoundHandler())
 	}
 
-	// This route is an experimental Mimir extension to the receivers, API, so we put
+	// This route is an experimental Mimir extension to the receivers API, so we put
 	// it under an additional prefix to avoid any confusion with upstream Alertmanager.
 	if cfg.GrafanaAlertmanagerCompatibility {
 		am.mux.Handle("/api/v1/grafana/receivers", http.HandlerFunc(am.GetReceiversHandler))
+		am.mux.Handle("/api/v1/grafana/receivers/test", http.HandlerFunc(am.TestReceiversHandler))
 	}
 
 	am.dispatcherMetrics = dispatch.NewDispatcherMetrics(true, am.registry)
@@ -342,6 +344,28 @@ func (am *Alertmanager) GetReceiversHandler(w http.ResponseWriter, _ *http.Reque
 	}
 }
 
+func (am *Alertmanager) TestReceiversHandler(w http.ResponseWriter, r *http.Request) {
+	c := alertingNotify.TestReceiversConfigBodyParams{}
+	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+		http.Error(w,
+			fmt.Sprintf("error unmarshalling test receivers config JSON: %s", err.Error()),
+			http.StatusBadRequest)
+	}
+
+	response, err := alertingNotify.TestReceivers(r.Context(), c, am.cfg.Templates, am.buildGrafanaReceiverIntegrations, am.cfg.ExternalURL.String())
+	if err != nil {
+		http.Error(w,
+			fmt.Sprintf("error testing receivers: %s", err.Error()),
+			http.StatusInternalServerError)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
 func (am *Alertmanager) WaitInitialStateSync(ctx context.Context) error {
 	if err := am.state.AwaitRunning(ctx); err != nil {
 		return errors.Wrap(err, "failed to wait for ring-based replication service")
@@ -358,12 +382,19 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []io.Reader, rawCfg string, tmplExternalURL *url.URL) error {
-	tmpl, err := loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
+func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []string, rawCfg string, tmplExternalURL *url.URL) error {
+	tmplsReader := make([]io.Reader, len(tmpls))
+	for _, tmplString := range tmpls {
+		tmplsReader = append(tmplsReader, strings.NewReader(tmplString))
+	}
+
+	tmpl, err := loadTemplates(tmplsReader, WithCustomFunctions(am.cfg.UserID))
 	if err != nil {
 		return err
 	}
 	tmpl.ExternalURL = tmplExternalURL
+
+	am.cfg.Templates = tmpls
 
 	cfg := definition.GrafanaToUpstreamConfig(conf)
 	am.api.Update(&cfg, func(_ model.LabelSet) {})
@@ -389,7 +420,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		return d + waitFunc()
 	}
 
-	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpl, tmpls)
+	integrationsMap, err := am.buildIntegrationsMap(conf.Receivers, tmpl, tmplsReader)
 	if err != nil {
 		return err
 	}
@@ -522,7 +553,7 @@ func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceive
 				}
 				gTmpl.ExternalURL = tmpl.ExternalURL
 			}
-			integrations, err = buildGrafanaReceiverIntegrations(rcv, gTmpl, am.logger)
+			integrations, err = buildGrafanaReceiverIntegrations(alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), gTmpl, am.logger)
 		} else {
 			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, nw)
 		}
@@ -536,7 +567,11 @@ func (am *Alertmanager) buildIntegrationsMap(nc []*definition.PostableApiReceive
 	return integrationsMap, nil
 }
 
-func buildGrafanaReceiverIntegrations(rcv *definition.PostableApiReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildGrafanaReceiverIntegrations(rcv *alertingNotify.APIReceiver, tmpl *template.Template) ([]*nfstatus.Integration, error) {
+	return buildGrafanaReceiverIntegrations(rcv, tmpl, am.logger)
+}
+
+func buildGrafanaReceiverIntegrations(rcv *alertingNotify.APIReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
 	loggerFactory := newLoggerFactory(logger)
 	whFn := func(alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
 		return NewSender(logger), nil
@@ -547,7 +582,7 @@ func buildGrafanaReceiverIntegrations(rcv *definition.PostableApiReceiver, tmpl 
 
 	// The decrypt functions and the context are used to decrypt the configuration.
 	// We don't need to decrypt anything, so we can pass a no-op decrypt func and a context.Background().
-	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), alertingNotify.NoopDecrypt)
+	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), rcv, alertingNotify.NoopDecrypt)
 	if err != nil {
 		return nil, err
 	}

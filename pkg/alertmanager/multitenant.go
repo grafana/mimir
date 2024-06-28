@@ -9,7 +9,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -784,9 +783,9 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 		return fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
 	}
 
-	templates := make([]io.Reader, 0, len(cfg.Templates))
+	templates := make([]string, 0, len(cfg.Templates))
 	for _, tmpl := range cfg.Templates {
-		templates = append(templates, strings.NewReader(tmpl.Body))
+		templates = append(templates, tmpl.Body)
 	}
 
 	// If no Alertmanager instance exists for this user yet, start one.
@@ -814,7 +813,7 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
-func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []io.Reader, rawCfg string, tmplExternalURL *url.URL) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []string, rawCfg string, tmplExternalURL *url.URL) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
 	tenantDir := am.getTenantDirectory(userID)
@@ -837,6 +836,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		PersisterConfig:                   am.cfg.Persister,
 		Limits:                            am.limits,
 		Features:                          am.features,
+		Templates:                         templates,
 		GrafanaAlertmanagerCompatibility:  am.cfg.GrafanaAlertmanagerCompatibilityEnabled,
 	}, reg)
 	if err != nil {
