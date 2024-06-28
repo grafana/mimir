@@ -2083,7 +2083,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return err
 	}
 
-	if userID == "slow" {
+	if userID == "oss-self-monitoring" {
 		level.Warn(i.logger).Log("msg", "slow user detected, artificially slowing down the request")
 		time.Sleep(time.Duration(i.cfg.ArtificialSlowdown))
 	}
