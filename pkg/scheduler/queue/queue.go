@@ -99,6 +99,18 @@ func FirstTenant() TenantIndex {
 // Request stored into the queue.
 type Request interface{}
 
+type queueBrokerI interface {
+	isEmpty() bool
+	enqueueRequestFront(request *tenantRequest, tenantMaxQueriers int) error
+	enqueueRequestBack(request *tenantRequest, tenantMaxQueriers int) error
+	dequeueRequestForQuerier(lastTenantIndex int, querierID QuerierID) (*tenantRequest, *queueTenant, int, error)
+	notifyQuerierShutdown(querierID QuerierID) (resharded bool)
+	addQuerierConnection(querierID QuerierID) (resharded bool)
+	removeQuerierConnection(querierID QuerierID, now time.Time) (resharded bool)
+	forgetDisconnectedQueriers(now time.Time) (resharded bool)
+	itemCount() int
+}
+
 // RequestQueue holds incoming requests in queues, split by multiple dimensions based on properties of the request.
 // Dequeuing selects the next request from an appropriate queue given the state of the system.
 // Two separate system states are managed by the RequestQueue and used to select the next request:
@@ -145,7 +157,7 @@ type RequestQueue struct {
 	// Unlike schedulerInflightRequests, tracking begins only when the request is sent to a querier.
 	QueryComponentUtilization *QueryComponentUtilization
 
-	queueBroker *queueBroker
+	queueBroker queueBrokerI
 }
 
 type querierOperation struct {
@@ -174,6 +186,7 @@ func NewRequestQueue(
 	log log.Logger,
 	maxOutstandingPerTenant int,
 	additionalQueueDimensionsEnabled bool,
+	prioritizeQueryComponent bool,
 	forgetDelay time.Duration,
 	queueLength *prometheus.GaugeVec,
 	discardedRequests *prometheus.CounterVec,
@@ -210,7 +223,12 @@ func NewRequestQueue(
 		waitingQuerierConnsToDispatch: list.New(),
 
 		QueryComponentUtilization: queryComponentCapacity,
-		queueBroker:               newQueueBroker(maxOutstandingPerTenant, additionalQueueDimensionsEnabled, forgetDelay),
+	}
+
+	if prioritizeQueryComponent {
+		q.queueBroker = newDimensionalQueueBroker(maxOutstandingPerTenant, additionalQueueDimensionsEnabled, forgetDelay)
+	} else {
+		q.queueBroker = newQueueBroker(maxOutstandingPerTenant, additionalQueueDimensionsEnabled, forgetDelay)
 	}
 
 	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")
@@ -371,7 +389,7 @@ func (q *RequestQueue) trySendNextRequestForQuerier(waitingConn *waitingQuerierC
 			exceedsThreshold, queryComponent := q.QueryComponentUtilization.ExceedsThresholdForComponentName(
 				queryComponentName,
 				int(q.connectedQuerierWorkers.Load()),
-				q.queueBroker.tenantQueuesTree.ItemCount(),
+				q.queueBroker.itemCount(),
 				q.waitingQuerierConnsToDispatch.Len(),
 			)
 

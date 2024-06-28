@@ -95,6 +95,7 @@ type connectedFrontend struct {
 type Config struct {
 	MaxOutstandingPerTenant               int           `yaml:"max_outstanding_requests_per_tenant"`
 	AdditionalQueryQueueDimensionsEnabled bool          `yaml:"additional_query_queue_dimensions_enabled" category:"experimental"`
+	PrioritizeComponentQueues             bool          `yaml:"prioritize_component_queues" category:"experimental"`
 	QuerierForgetDelay                    time.Duration `yaml:"querier_forget_delay" category:"experimental"`
 
 	GRPCClientConfig grpcclient.Config         `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
@@ -104,6 +105,7 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxOutstandingPerTenant, "query-scheduler.max-outstanding-requests-per-tenant", 100, "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429.")
 	f.BoolVar(&cfg.AdditionalQueryQueueDimensionsEnabled, "query-scheduler.additional-query-queue-dimensions-enabled", false, "Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)")
+	f.BoolVar(&cfg.PrioritizeComponentQueues, "query-scheduler.prioritize-component-queues", false, "TODO")
 	f.DurationVar(&cfg.QuerierForgetDelay, "query-scheduler.querier-forget-delay", 0, "If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.")
 
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-scheduler.grpc-client-config", f)
@@ -160,6 +162,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		s.log,
 		cfg.MaxOutstandingPerTenant,
 		cfg.AdditionalQueryQueueDimensionsEnabled,
+		cfg.PrioritizeComponentQueues,
 		cfg.QuerierForgetDelay,
 		s.queueLength,
 		s.discardedRequests,

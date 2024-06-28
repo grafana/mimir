@@ -130,6 +130,7 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 			log.NewNopLogger(),
 			maxOutstandingRequestsPerTenant,
 			additionalQueueDimensionsEnabled,
+			false,
 			forgetQuerierDelay,
 			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 			promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
@@ -235,6 +236,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 								log.NewNopLogger(),
 								maxOutstandingRequestsPerTenant,
 								true,
+								false,
 								forgetQuerierDelay,
 								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
@@ -406,7 +408,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 
 	queue, err := NewRequestQueue(
 		log.NewNopLogger(),
-		1, true,
+		1, true, false,
 		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
@@ -475,7 +477,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 
 	queue, err := NewRequestQueue(
 		log.NewNopLogger(),
-		1, true,
+		1, true, false,
 		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
@@ -559,7 +561,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 	queue, err := NewRequestQueue(
 		log.NewNopLogger(),
 		1,
-		true,
+		true, false,
 		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
@@ -610,7 +612,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 	queue, err := NewRequestQueue(
 		log.NewNopLogger(),
 		1,
-		true,
+		true, false,
 		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
@@ -639,7 +641,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	queue, err := NewRequestQueue(
 		log.NewNopLogger(),
 		1,
-		true,
+		true, false,
 		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
