@@ -18,8 +18,8 @@ func newDimensionalQueueBroker(
 	queueOrder := []QueryComponent{
 		"none", // TODO: is there a constant for this?
 		ingesterQueueDimension,
-		storeGatewayQueueDimension,
 		ingesterAndStoreGatewayQueueDimension,
+		storeGatewayQueueDimension,
 	}
 
 	queues := make(map[QueryComponent]*queueBroker, len(queueOrder))
