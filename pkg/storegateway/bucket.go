@@ -1785,9 +1785,8 @@ func (s *bucketBlockSet) len() int {
 	return len(s.blocks)
 }
 
-// filter iterates over a time-ordered list of blocks that cover date between mint and maxt. It supports overlapping
-// blocks.
-// A block is guarantied to be not closed only inside the fn.
+// filter iterates over a time-ordered list of non-closed blocks that cover date between mint and maxt. It supports overlapping
+// blocks. A block is guarantied to be not closed only inside the fn.
 func (s *bucketBlockSet) filter(mint, maxt int64, blockMatchers []*labels.Matcher, fn func(b *bucketBlock)) {
 	if mint > maxt {
 		return
@@ -1829,8 +1828,7 @@ func (s *bucketBlockSet) filter(mint, maxt int64, blockMatchers []*labels.Matche
 	}
 }
 
-// all iterates over all blocks in the set.
-// A block is guarantied to be not closed only inside the fn.
+// all iterates over all non-closed blocks in the set. A block is guarantied to be not closed only inside the fn.
 func (s *bucketBlockSet) all(fn func(b *bucketBlock)) {
 	s.blockSet.Range(func(_, val any) bool {
 		b := val.(*bucketBlock)
