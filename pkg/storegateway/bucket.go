@@ -446,8 +446,8 @@ func (s *BucketStore) removeBlock(id ulid.ULID) (returnErr error) {
 		}
 	}()
 
-	b, ok := s.blockSet.remove(id)
-	if !ok {
+	b := s.blockSet.remove(id)
+	if b == nil {
 		return nil
 	}
 
@@ -1718,6 +1718,7 @@ func storeCachedLabelValues(ctx context.Context, indexCache indexcache.IndexCach
 
 // bucketBlockSet holds all blocks.
 type bucketBlockSet struct {
+	// mtx protects the below data strcutures, helping to keep them in sync.
 	mtx      sync.RWMutex
 	blockSet sync.Map       // Maps block's identifier to the *bucketBlock projection.
 	blocks   []*bucketBlock // Blocks sorted by mint, then maxt.
@@ -1730,11 +1731,16 @@ func newBucketBlockSet() *bucketBlockSet {
 	return &bucketBlockSet{}
 }
 
+// add adds a block to the set. If the block with the same id was already present in the set, add ignores it.
 func (s *bucketBlockSet) add(b *bucketBlock) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	s.blockSet.Store(b.meta.ULID, b)
+	// The LoadOrStore verifies the block with the same id never ended up in the set more than once.
+	_, ok := s.blockSet.LoadOrStore(b.meta.ULID, b)
+	if ok {
+		return
+	}
 
 	s.blocks = append(s.blocks, b)
 
@@ -1747,13 +1753,14 @@ func (s *bucketBlockSet) add(b *bucketBlock) {
 	})
 }
 
-func (s *bucketBlockSet) remove(id ulid.ULID) (*bucketBlock, bool) {
+// remove removes the block identified by id from the set. It returns the removed block if it was present in the set.
+func (s *bucketBlockSet) remove(id ulid.ULID) *bucketBlock {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
 	val, ok := s.blockSet.LoadAndDelete(id)
 	if !ok {
-		return nil, false
+		return nil
 	}
 
 	for i, b := range s.blocks {
@@ -1764,7 +1771,7 @@ func (s *bucketBlockSet) remove(id ulid.ULID) (*bucketBlock, bool) {
 		break
 	}
 
-	return val.(*bucketBlock), true
+	return val.(*bucketBlock)
 }
 
 func (s *bucketBlockSet) has(id ulid.ULID) bool {
