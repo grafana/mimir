@@ -33,7 +33,7 @@ func main() {
 	)
 
 	flag.BoolVar(&printSeriesEntries, "print-series", true, "Print series entries")
-	flag.BoolVar(&printSamples, "print-samples", false, "Print samples, exemplars, metadata and tombstone.")
+	flag.BoolVar(&printSamples, "print-samples", false, "Print samples, exemplars, metadata and tombstones.")
 	args, err := flagext.ParseFlagsAndArguments(flag.CommandLine)
 	if err != nil {
 		log.Fatalln(err.Error())
