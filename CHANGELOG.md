@@ -42,6 +42,7 @@
 * [BUGFIX] Querier: fix issue where "context canceled" is logged for trace spans for requests to store-gateways that return no series when chunks streaming is enabled. #8510
 * [BUGFIX] Alertmanager: Fix per-tenant silence limits not reloaded during runtime. #8456
 * [BUGFIX] Alertmanager: Fixes a number of bugs in silences which could cause an existing silence to be deleted/expired when updating the silence failed. This could happen when the replacing silence was invalid or exceeded limits. #8525
+* [BUGFIX] Alertmanager: Fix help message for utf-8-strict-mode. #8572
 
 ### Mixin
 
