@@ -100,14 +100,24 @@ func Handler(
 
 type distributorMaxWriteMessageSizeErr struct {
 	actual, limit int
+	id            globalerror.ID
 }
 
 func (e distributorMaxWriteMessageSizeErr) Error() string {
 	msgSizeDesc := fmt.Sprintf(" of %d bytes", e.actual)
+	var flag string
 	if e.actual < 0 {
 		msgSizeDesc = ""
 	}
-	return globalerror.DistributorMaxWriteMessageSize.MessageWithPerInstanceLimitConfig(fmt.Sprintf("the incoming push request has been rejected because its message size%s is larger than the allowed limit of %d bytes", msgSizeDesc, e.limit), "distributor.max-recv-msg-size")
+	if e.id == globalerror.DistributorMaxOtelCompressedMessageSize {
+		flag = "distributor.max_otel_compressed_recv_msg_size"
+	} else if e.id == globalerror.DistributorMaxOtelUncompressedMessageSize {
+		flag = "distributor.max_otel_uncompressed_recv_msg_size"
+	} else {
+		e.id = globalerror.DistributorMaxWriteMessageSize
+		flag = "distributor.max-recv-msg-size"
+	}
+	return e.id.MessageWithPerInstanceLimitConfig(fmt.Sprintf("the incoming push request has been rejected because its message size%s is larger than the allowed limit of %d bytes", msgSizeDesc, e.limit), flag)
 }
 
 func handler(

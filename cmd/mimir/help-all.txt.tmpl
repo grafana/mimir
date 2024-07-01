@@ -1199,6 +1199,10 @@ Usage of ./cmd/mimir/mimir:
     	[deprecated] When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed. (default true)
   -distributor.max-exemplars-per-series-per-request int
     	[experimental] Maximum number of exemplars per series per request. 0 to disable limit in request. The exceeding exemplars are dropped.
+  -distributor.max-otel-compressed-recv-msg-size int
+    	[experimental] Max message size in bytes that the distributors will accept for incoming compressed write requests to the otel API. If exceeded, the request will be rejected. (default 1048576)
+  -distributor.max-otel-uncompressed-recv-msg-size int
+    	[experimental] Max message size in bytes that the distributors will accept for incoming uncompressed write requests to the otel API. If exceeded, the request will be rejected. (default 10485760)
   -distributor.max-recv-msg-size int
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
   -distributor.max-request-pool-buffer-size int

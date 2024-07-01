@@ -34,6 +34,7 @@ import (
 	"github.com/grafana/mimir/pkg/distributor/otlp"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	utillog "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -53,7 +54,8 @@ type OTLPHandlerLimits interface {
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
 func OTLPHandler(
-	maxRecvMsgSize int,
+	maxOtelCompressedRecvMsgSize int,
+	maxOtelUncompressedRecvMsgSize int,
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
 	enableOtelMetadataStorage bool,
@@ -67,15 +69,32 @@ func OTLPHandler(
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 
-	return otlpHandler(maxRecvMsgSize, requestBufferPool, sourceIPs, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
+	return otlpHandler(maxOtelUncompressedRecvMsgSize, requestBufferPool, sourceIPs, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxOtelUncompressedRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
 		contentType := r.Header.Get("Content-Type")
 		contentEncoding := r.Header.Get("Content-Encoding")
 		var compression util.CompressionType
 		switch contentEncoding {
 		case "gzip":
 			compression = util.Gzip
+			// If requet is compressed, check against compressed message size limit,
+			// and from now on, all limit checks would be against uncompressed limit.
+			if r.ContentLength > int64(maxOtelCompressedRecvMsgSize) {
+				return httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
+					actual: int(r.ContentLength),
+					limit:  maxOtelCompressedRecvMsgSize,
+					id:     globalerror.DistributorMaxOtelCompressedMessageSize,
+				}.Error())
+			}
 		case "":
 			compression = util.NoCompression
+			// If request is uncompressed, check against uncompressed message size limit.
+			if r.ContentLength > int64(maxOtelUncompressedRecvMsgSize) {
+				return httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
+					actual: int(r.ContentLength),
+					limit:  maxOtelUncompressedRecvMsgSize,
+					id:     globalerror.DistributorMaxOtelUncompressedMessageSize,
+				}.Error())
+			}
 		default:
 			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\" or no compression supported", contentEncoding)
 		}
@@ -88,12 +107,13 @@ func OTLPHandler(
 				unmarshaler := otlpProtoUnmarshaler{
 					request: &exportReq,
 				}
-				protoBodySize, err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
+				protoBodySize, err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxOtelUncompressedRecvMsgSize, buffers, unmarshaler, compression)
 				var tooLargeErr util.MsgSizeTooLargeErr
 				if errors.As(err, &tooLargeErr) {
 					return exportReq, 0, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
 						actual: tooLargeErr.Actual,
 						limit:  tooLargeErr.Limit,
+						id:     globalerror.DistributorMaxOtelUncompressedMessageSize,
 					}.Error())
 				}
 				return exportReq, protoBodySize, err
@@ -116,12 +136,13 @@ func OTLPHandler(
 					}
 				}
 
-				reader = http.MaxBytesReader(nil, reader, int64(maxRecvMsgSize))
+				reader = http.MaxBytesReader(nil, reader, int64(maxOtelUncompressedRecvMsgSize))
 				if _, err := buf.ReadFrom(reader); err != nil {
 					if util.IsRequestBodyTooLarge(err) {
 						return exportReq, 0, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
 							actual: -1,
-							limit:  maxRecvMsgSize,
+							limit:  maxOtelUncompressedRecvMsgSize,
+							id:     globalerror.DistributorMaxOtelUncompressedMessageSize,
 						}.Error())
 					}
 
@@ -135,13 +156,6 @@ func OTLPHandler(
 			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
 		}
 
-		if r.ContentLength > int64(maxRecvMsgSize) {
-			return httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
-				actual: int(r.ContentLength),
-				limit:  maxRecvMsgSize,
-			}.Error())
-		}
-
 		spanLogger, ctx := spanlogger.NewWithLogger(ctx, logger, "Distributor.OTLPHandler.decodeAndConvert")
 		defer spanLogger.Span.Finish()
 
@@ -149,6 +163,7 @@ func OTLPHandler(
 		spanLogger.SetTag("content_encoding", contentEncoding)
 		spanLogger.SetTag("content_length", r.ContentLength)
 
+		// decoderFunc would return error when uncompressedBodySize is surpassing uncompressed receive message size limit
 		otlpReq, uncompressedBodySize, err := decoderFunc(r.Body)
 		if err != nil {
 			return err
@@ -209,7 +224,7 @@ func OTLPHandler(
 }
 
 func otlpHandler(
-	maxRecvMsgSize int,
+	maxOtelUncompressedRecvMsgSize int,
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
 	retryCfg RetryConfig,
@@ -229,7 +244,7 @@ func otlpHandler(
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
 			var req mimirpb.PreallocWriteRequest
-			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
+			if err := parser(ctx, r, maxOtelUncompressedRecvMsgSize, rb, &req, logger); err != nil {
 				// Check for httpgrpc error, default to client error if parsing failed
 				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
 					err = httpgrpc.Errorf(http.StatusBadRequest, err.Error())

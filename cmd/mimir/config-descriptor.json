@@ -1199,6 +1199,28 @@
         },
         {
           "kind": "field",
+          "name": "max_otel_compressed_recv_msg_size",
+          "required": false,
+          "desc": "Max message size in bytes that the distributors will accept for incoming compressed write requests to the otel API. If exceeded, the request will be rejected.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1048576,
+          "fieldFlag": "distributor.max-otel-compressed-recv-msg-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_otel_uncompressed_recv_msg_size",
+          "required": false,
+          "desc": "Max message size in bytes that the distributors will accept for incoming uncompressed write requests to the otel API. If exceeded, the request will be rejected.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10485760,
+          "fieldFlag": "distributor.max-otel-uncompressed-recv-msg-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_request_pool_buffer_size",
           "required": false,
           "desc": "Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.",
