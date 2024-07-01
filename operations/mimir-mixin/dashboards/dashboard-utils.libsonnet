@@ -601,9 +601,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
         |||
           max by (scaletargetref_name) (
             kube_horizontalpodautoscaler_status_current_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-            # HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active
-            * on (%(cluster_labels)s, horizontalpodautoscaler)
-              kube_horizontalpodautoscaler_status_condition{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s", condition="ScalingActive", status="true"}
             # Add the scaletargetref_name label for readability
             + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
               0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
@@ -635,9 +632,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.panelDescription(
       title,
       |||
-        The minimum, maximum, and current number of %s replicas.<br /><br />
-        Note: The current number of replicas can still show 1 replica even when scaled to 0.
-        Because HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.
+        The minimum, maximum, and current number of %s replicas.
       ||| % [componentTitle]
     ) +
     {
