@@ -19922,7 +19922,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Replicas\nThe maximum, and current number of querier replicas.\nPlease note that the current number of replicas can still show 1 replica even when scaled to 0.\nSince HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
+                      "description": "### Replicas\nThe maximum, and current number of querier replicas.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {

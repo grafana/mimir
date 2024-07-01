@@ -234,8 +234,6 @@ local filename = 'mimir-reads.json';
           title,
           |||
             The maximum, and current number of querier replicas.
-            Please note that the current number of replicas can still show 1 replica even when scaled to 0.
-            Since HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.
           |||
         ) +
         {
