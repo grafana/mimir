@@ -127,7 +127,6 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 				return nil
 			}
 		default:
-			// TODO: handle native histograms
 			return fmt.Errorf("unknown value type %s", valueType.String())
 		}
 	}

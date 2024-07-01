@@ -501,7 +501,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
-		"mixed series with a float following a histogram causing lookback": {
+		"mixed series with a histogram then a float": {
 			// This is unexpected, but consistent behavior between the engines
 			// See: https://github.com/prometheus/prometheus/issues/14172
 			expr: "mixed_metric_histogram_first[2m]",
@@ -520,7 +520,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
-		"mixed series with histogram following a float": {
+		"mixed series with a float then a histogram": {
 			// No incorrect lookback
 			expr: "mixed_metric_float_first[2m]",
 			ts:   baseT.Add(2 * time.Minute),

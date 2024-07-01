@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// We want to ensure fpoint+hpoint ring buffers are tested consistently,
+// We want to ensure fPoint+hPoint ring buffers are tested consistently,
 // and we don't care about performance here so we can use an interface+generics.
 type ringBuffer[T any] interface {
 	DiscardPointsBefore(t int64)
@@ -28,7 +28,7 @@ type ringBuffer[T any] interface {
 }
 
 func TestRingBuffer(t *testing.T) {
-	t.Run("test fpoint ring buffer", func(t *testing.T) {
+	t.Run("test fPoint ring buffer", func(t *testing.T) {
 		points := []promql.FPoint{
 			{T: 1, F: 100},
 			{T: 2, F: 200},
@@ -43,7 +43,7 @@ func TestRingBuffer(t *testing.T) {
 		buf := &fPointRingBufferWrapper{&FPointRingBuffer{pool: &fPointPoolForRingBufferTesting{}}}
 		testRingBuffer(t, buf, points)
 	})
-	t.Run("test hpoint ring buffer", func(t *testing.T) {
+	t.Run("test hPoint ring buffer", func(t *testing.T) {
 		points := []promql.HPoint{
 			{T: 1, H: &histogram.FloatHistogram{Count: 100}},
 			{T: 2, H: &histogram.FloatHistogram{Count: 200}},
@@ -106,7 +106,7 @@ func testRingBuffer[T any](t *testing.T, buf ringBuffer[T], points []T) {
 }
 
 func TestRingBuffer_DiscardPointsBefore_ThroughWrapAround(t *testing.T) {
-	t.Run("test fpoint ring buffer", func(t *testing.T) {
+	t.Run("test fPoint ring buffer", func(t *testing.T) {
 		points := []promql.FPoint{
 			{T: 1, F: 100},
 			{T: 2, F: 200},
@@ -118,7 +118,7 @@ func TestRingBuffer_DiscardPointsBefore_ThroughWrapAround(t *testing.T) {
 		buf := &fPointRingBufferWrapper{&FPointRingBuffer{pool: &fPointPoolForRingBufferTesting{}}}
 		testDiscardPointsBeforeThroughWrapAround(t, buf, points)
 	})
-	t.Run("test hpoint ring buffer", func(t *testing.T) {
+	t.Run("test hPoint ring buffer", func(t *testing.T) {
 		points := []promql.HPoint{
 			{T: 1, H: &histogram.FloatHistogram{Count: 100}},
 			{T: 2, H: &histogram.FloatHistogram{Count: 200}},
