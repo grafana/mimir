@@ -163,11 +163,40 @@ The following command deletes the Alertmanager configuration in the Grafana Mimi
 mimirtool alertmanager delete
 ```
 
-#### Migrate Alertmanager configuration for UTF-8 in Alertmanager 0.27 and later
+#### Migrate Alertmanager configuration for UTF-8 in Mimir 2.12 and newer
 
-The migrate-utf8 command translates any matchers that are incompatible with the UTF-8 parser into
-equivalent matchers that are compatible by enforcing double quoting on the right hand side
-of the matcher. The translation does not change their behavior.
+This requires mimirtool version 2.12 or newer. You can check the version of mimirtool with
+`mimirtool version`.
+
+In accordance with [prometheus/prometheus#13095](https://github.com/prometheus/prometheus/issues/13095)
+and [prometheus/alertmanager#3486](https://github.com/prometheus/alertmanager/issues/3486), Mimir is
+adding support for UTF-8. To support UTF-8 in alerts, routes, silences and inhibition rules,
+Alertmanager has added a new parser for matchers that has a number of backwards incompatible changes.
+More information about these changes can be found [here](https://prometheus.io/docs/alerting/latest/configuration/#label-matchers).
+
+The migrate-utf8 command migrates an existing Alertmanager configuration in preparation for when
+UTF-8 is enabled in a Mimir installation. To do this, it translates matchers that are incompatible
+with UTF-8 into equivalent matchers that are compatible. This translation is backwards compatible
+and does not change the behavior of existing matchers, and works even in Mimir installations that
+do not have UTF-8 enabled.
+
+A lot of Alertmanager configurations will not need migrating. You can verify if an existing
+Alertmanager configuration needs to be migrated for UTF-8 by running the verify command:
+
+```bash
+mimirtool alertmanager verify <config_file> [template_files...]
+```
+
+If the command succeeds without any warnings, the configuration is compatible with UTF-8 and no
+migration is required.
+
+However, if the command prints the following warning(s):
+
+```
+Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible. Alertmanager has instead parsed the input using the classic matchers parser as a fallback. To make this input compatible with the UTF-8 matchers parser please make sure all regular expressions and values are double-quoted. If you are still seeing this message please open an issue.
+```
+
+then the Alertmanager configuration needs to be migrated with the migrate-utf8 command.
 
 The command takes as input an existing configuration and template files, and prints as output
 the migrated configuration and template files:
@@ -193,15 +222,31 @@ Within the output dir, the configuration file is named `config.yaml` and the tem
 When you use the `--output-dir` flag, the command only writes the output to files and doesn't print the configuration to the console.
 {{< /admonition >}}
 
-Once you have migrated your configuration, verify it using the verify command and the
-`--utf8-strict-mode` flag:
+Once you have migrated an Alertmanager configuration, verify it using the verify command:
+
+```bash
+mimirtool alertmanager verify <config_file> [template_files...]
+```
+
+It should succeed without warnings.
+
+You can also verify an Alertmanager configuration is compatible with UTF-8 by running the
+verify command with the `--utf8-strict-mode` flag:
 
 ```bash
 mimirtool alertmanager verify <config_file> [template_files...] --utf8-strict-mode
 ```
 
-The command prints a warning with the text `UTF-8 mode enabled` to let you know the command is using
-UTF-8 strict mode to validate your configuration.
+It will print a warning with the text `UTF-8 mode enabled` to let you know the command is using
+UTF-8 strict mode to validate the Alertmanager configuration.
+
+When using the `--utf8-strict-mode` flag, the verify command does not print any warnings if a
+configuration is incompatible with UTF-8. Instead, the command will exit with an error. For example:
+
+```bash
+level=warn msg="UTF-8 strict mode enabled"
+mimirtool: error: end of input: expected label value, try --help
+```
 
 If the command exits without error, and you're satisfied with the changes made to the migrated
 configuration and template files, reload it using the `load` command.
