@@ -213,6 +213,24 @@ func (tqa *tenantQuerierAssignments) addQuerierConnection(querierID QuerierID) (
 	return tqa.recomputeTenantQueriers()
 }
 
+func (tqa *tenantQuerierAssignments) removeTenantOld(tenantID TenantID) {
+	tenant := tqa.tenantsByID[tenantID]
+	if tenant == nil {
+		return
+	}
+	delete(tqa.tenantsByID, tenantID)
+	tqa.tenantIDOrder[tenant.orderIndex] = emptyTenantID
+
+	// Shrink tenant list if possible by removing empty tenant IDs.
+	// We remove only from the end; removing from the middle would re-index all tenant IDs
+	// and skip tenants when starting iteration from a querier-provided lastTenantIndex.
+	// Empty tenant IDs stuck in the middle of the slice are handled
+	// by replacing them when a new tenant ID arrives in the queue.
+	for i := len(tqa.tenantIDOrder) - 1; i >= 0 && tqa.tenantIDOrder[i] == emptyTenantID; i-- {
+		tqa.tenantIDOrder = tqa.tenantIDOrder[:i]
+	}
+}
+
 // removeTenant only manages deletion of a *queueTenant from tenantsByID. All other
 // tenant deletion (e.g., from tenantIDOrder, or tenantNodes) is done during the dequeue operation,
 // as we cannot remove from those things arbitrarily; we must check whether other tenant

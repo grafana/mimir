@@ -15,12 +15,14 @@ import (
 )
 
 const (
-	httpPort = 8080
-	grpcPort = 9095
+	httpPort        = 8080
+	grpcPort        = 9095
+	mimirBinaryName = "mimir"
+	delveBinaryName = "dlv"
 )
 
-// GetDefaultImage returns the Docker image to use to run Mimir.
-func GetDefaultImage() string {
+// GetMimirImageOrDefault returns the Docker image to use to run Mimir.
+func GetMimirImageOrDefault() string {
 	// Get the mimir image from the MIMIR_IMAGE env variable,
 	// falling back to grafana/mimir:latest"
 	if img := os.Getenv("MIMIR_IMAGE"); img != "" {
@@ -68,20 +70,56 @@ func getExtraFlags() map[string]string {
 	return extraArgs
 }
 
-func newMimirServiceFromOptions(name string, defaultFlags, flags map[string]string, options ...Option) *MimirService {
+func newMimirServiceFromOptions(name string, defaultFlags, overrideFlags map[string]string, options ...Option) *MimirService {
 	o := newOptions(options)
-	serviceFlags := o.MapFlags(e2e.MergeFlags(defaultFlags, flags, getExtraFlags()))
-	binaryName := getBinaryNameForBackwardsCompatibility()
+	serviceFlags := o.MapFlags(e2e.MergeFlags(defaultFlags, overrideFlags, getExtraFlags()))
 
 	return NewMimirService(
 		name,
-		o.Image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(serviceFlags)...),
+		"grafana/mimir:latest",
+		e2e.NewCommandWithoutEntrypoint(mimirBinaryName, e2e.BuildArgs(serviceFlags)...),
 		e2e.NewHTTPReadinessProbe(o.HTTPPort, "/ready", 200, 299),
 		o.Environment,
 		o.HTTPPort,
 		o.GRPCPort,
-		o.OtherPorts...,
+		o.OtherPorts,
+		nil,
+	)
+}
+
+func newMimirDebugServiceFromOptions(name string, defaultFlags, flags map[string]string, options ...Option) *MimirService {
+	o := newOptions(options)
+	serviceFlags := o.MapFlags(e2e.MergeFlags(defaultFlags, flags, getExtraFlags()))
+	serviceArgs := e2e.BuildArgs(serviceFlags)
+
+	delveListenPort := o.HTTPPort + 10000 // follow convention in docker compose development environment
+
+	// delve args must be ordered correctly due to the use of `--`
+	// to delineate the end of delve args and beginning of the binary's args;
+	// do not use any interface utilizing a map structure as order will not be preserved
+	delveArgs := []string{
+		"--log",
+		"exec",
+		"mimir",
+		fmt.Sprintf("--listen=:%d", delveListenPort),
+		"--headless=true",
+		"--api-version=2",
+		"--accept-multiclient",
+		"--",
+	}
+
+	cmd := e2e.NewCommandWithoutEntrypoint(delveBinaryName, append(delveArgs, serviceArgs...)...)
+
+	return NewMimirService(
+		name,
+		o.Image,
+		cmd,
+		e2e.NewHTTPReadinessProbe(o.HTTPPort, "/ready", 200, 299),
+		o.Environment,
+		o.HTTPPort,
+		o.GRPCPort,
+		[]int{delveListenPort},
+		map[int]int{delveListenPort: delveListenPort, o.HTTPPort: o.HTTPPort},
 	)
 }
 
@@ -95,10 +133,8 @@ func NewDistributor(name string, consulAddress string, flags map[string]string, 
 			"-ingester.ring.replication-factor": "1",
 			"-distributor.remote-timeout":       "2s", // Fail fast in integration tests.
 			// Configure the ingesters ring backend
-			"-ingester.ring.store":                     "consul",
-			"-ingester.ring.consul.hostname":           consulAddress,
-			"-ingester.partition-ring.store":           "consul",
-			"-ingester.partition-ring.consul.hostname": consulAddress,
+			"-ingester.ring.store":           "consul",
+			"-ingester.ring.consul.hostname": consulAddress,
 			// Configure the distributor ring backend
 			"-distributor.ring.store": "memberlist",
 		},
@@ -115,10 +151,8 @@ func NewQuerier(name string, consulAddress string, flags map[string]string, opti
 			"-log.level":                        "warn",
 			"-ingester.ring.replication-factor": "1",
 			// Ingesters ring backend.
-			"-ingester.ring.store":                     "consul",
-			"-ingester.ring.consul.hostname":           consulAddress,
-			"-ingester.partition-ring.store":           "consul",
-			"-ingester.partition-ring.consul.hostname": consulAddress,
+			"-ingester.ring.store":           "consul",
+			"-ingester.ring.consul.hostname": consulAddress,
 			// Query-frontend worker.
 			"-querier.frontend-client.backoff-min-period": "100ms",
 			"-querier.frontend-client.backoff-max-period": "100ms",
@@ -160,10 +194,8 @@ func NewIngester(name string, consulAddress string, flags map[string]string, opt
 			"-log.level":                "warn",
 			"-ingester.ring.num-tokens": "512",
 			// Configure the ingesters ring backend
-			"-ingester.ring.store":                     "consul",
-			"-ingester.ring.consul.hostname":           consulAddress,
-			"-ingester.partition-ring.store":           "consul",
-			"-ingester.partition-ring.consul.hostname": consulAddress,
+			"-ingester.ring.store":           "consul",
+			"-ingester.ring.consul.hostname": consulAddress,
 			// Speed up the startup.
 			"-ingester.ring.min-ready-duration": "0s",
 			// Enable native histograms
@@ -174,10 +206,6 @@ func NewIngester(name string, consulAddress string, flags map[string]string, opt
 	)
 }
 
-func getBinaryNameForBackwardsCompatibility() string {
-	return "mimir"
-}
-
 func NewQueryFrontend(name string, flags map[string]string, options ...Option) *MimirService {
 	return newMimirServiceFromOptions(
 		name,
@@ -186,8 +214,6 @@ func NewQueryFrontend(name string, flags map[string]string, options ...Option) *
 			"-log.level": "warn",
 			// Quickly detect query-scheduler when running it.
 			"-query-frontend.scheduler-dns-lookup-period": "1s",
-			// Always exercise remote read limits in integration tests.
-			"-query-frontend.remote-read-limits-enabled": "true",
 		},
 		flags,
 		options...,
@@ -225,20 +251,31 @@ func NewCompactor(name string, consulAddress string, flags map[string]string, op
 	)
 }
 
-func NewSingleBinary(name string, flags map[string]string, options ...Option) *MimirService {
+var singleBinaryDefaultFlags = map[string]string{
+	// Do not pass any extra default flags (except few used to speed up the test)
+	// because the config could be driven by the config file.
+	"-target":    "all",
+	"-log.level": "warn",
+	// Speed up the startup.
+	"-ingester.ring.min-ready-duration": "0s",
+	// Enable native histograms
+	"-ingester.native-histograms-ingestion-enabled": "true",
+}
+
+func NewSingleBinary(name string, overrideFlags map[string]string, options ...Option) *MimirService {
 	return newMimirServiceFromOptions(
 		name,
-		map[string]string{
-			// Do not pass any extra default flags (except few used to speed up the test)
-			// because the config could be driven by the config file.
-			"-target":    "all",
-			"-log.level": "warn",
-			// Speed up the startup.
-			"-ingester.ring.min-ready-duration": "0s",
-			// Enable native histograms
-			"-ingester.native-histograms-ingestion-enabled": "true",
-		},
-		flags,
+		singleBinaryDefaultFlags,
+		overrideFlags,
+		options...,
+	)
+}
+
+func NewDebugSingleBinary(name string, overrideFlags map[string]string, options ...Option) *MimirService {
+	return newMimirDebugServiceFromOptions(
+		name,
+		singleBinaryDefaultFlags,
+		overrideFlags,
 		options...,
 	)
 }
@@ -304,17 +341,17 @@ func NewAlertmanagerWithTLS(name string, flags map[string]string, options ...Opt
 		"-target":    "alertmanager",
 		"-log.level": "warn",
 	}, flags, getExtraFlags()))
-	binaryName := getBinaryNameForBackwardsCompatibility()
 
 	return NewMimirService(
 		name,
-		o.Image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(serviceFlags)...),
+		"grafana/mimir:latest",
+		e2e.NewCommandWithoutEntrypoint(mimirBinaryName, e2e.BuildArgs(serviceFlags)...),
 		e2e.NewTCPReadinessProbe(o.HTTPPort),
 		o.Environment,
 		o.HTTPPort,
 		o.GRPCPort,
-		o.OtherPorts...,
+		o.OtherPorts,
+		nil,
 	)
 }
 
@@ -325,10 +362,8 @@ func NewRuler(name string, consulAddress string, flags map[string]string, option
 			"-target":    "ruler",
 			"-log.level": "warn",
 			// Configure the ingesters ring backend
-			"-ingester.ring.store":                     "consul",
-			"-ingester.ring.consul.hostname":           consulAddress,
-			"-ingester.partition-ring.store":           "consul",
-			"-ingester.partition-ring.consul.hostname": consulAddress,
+			"-ingester.ring.store":           "consul",
+			"-ingester.ring.consul.hostname": consulAddress,
 		},
 		flags,
 		options...,
@@ -363,7 +398,7 @@ type Option func(*Options)
 // newOptions creates an Options with default values and applies the options provided.
 func newOptions(options []Option) *Options {
 	o := &Options{
-		Image:       GetDefaultImage(),
+		Image:       GetMimirImageOrDefault(),
 		MapFlags:    NoopFlagMapper,
 		HTTPPort:    httpPort,
 		GRPCPort:    grpcPort,
@@ -417,7 +452,7 @@ func WithConfigFile(configFile string) Option {
 }
 
 // WithNoopOption returns an option that doesn't change anything.
-func WithNoopOption() Option { return func(*Options) {} }
+func WithNoopOption() Option { return func(options *Options) {} }
 
 // FlagMapper is the type of function that maps flags, just to reduce some verbosity.
 type FlagMapper func(flags map[string]string) map[string]string

@@ -206,7 +206,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 		queueNodeAfterDequeue := tq.getNode(queuePath)
 		if queueNodeAfterDequeue == nil {
 			// queue node was deleted due to being empty after dequeue
-			qb.tenantQuerierAssignments.removeTenant(tenant.tenantID)
+			qb.tenantQuerierAssignments.removeTenantOld(tenant.tenantID)
 		}
 	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 		queueNodeAfterDequeue := itq.GetNode(queuePath)

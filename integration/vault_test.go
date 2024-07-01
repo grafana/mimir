@@ -30,6 +30,8 @@ func TestVaultTokenRenewal(t *testing.T) {
 		nil,
 		e2e.NewHTTPReadinessProbe(httpPort, "/v1/sys/health", 200, 200),
 		httpPort,
+		nil,
+		nil,
 	)
 	vault.SetEnvVars(map[string]string{"VAULT_DEV_ROOT_TOKEN_ID": devToken})
 	require.NoError(t, s.StartAndWaitReady(vault))
