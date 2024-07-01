@@ -124,6 +124,7 @@
 * [BUGFIX] Ruler: fix native histogram recording rule result corruption. #7552
 * [BUGFIX] Querier: fix HTTP status code translations for remote read requests. Previously, remote-read had conflicting behaviours: when returning samples all internal errors were translated to HTTP 400; when returning chunks all internal errors were translated to HTTP 500. #7487
 * [BUGFIX] Query-frontend: Fix memory leak on every request. #7654
+* [BUGFIX] Alertmanager: Fix help message for utf-8-strict-mode. #8572
 
 ### Mixin
 
