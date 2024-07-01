@@ -2444,8 +2444,8 @@ alertmanager_client:
 # log lines containing `Matchers input has disagreement`. Each log line includes
 # the invalid input, a suggestion on how to fix the input (excluding ambiguous
 # matchers as these require manual correction), and the ID of the affected
-# tenant. Mimir must be run with debug level logging enabled. For more
-# information, refer to
+# tenant. Mimir must be run with debug level logging enabled otherwise these
+# lines will not be logged. For more information, refer to
 # https://prometheus.io/docs/alerting/latest/configuration/#label-matchers.
 # CLI flag: -alertmanager.utf8-strict-mode-enabled
 [utf8_strict_mode: <boolean> | default = false]
