@@ -3,9 +3,9 @@ import encoding from 'k6/encoding';
 import exec from 'k6/execution';
 import remote from 'k6/x/remotewrite';
 
-import { describe, expect } from 'https://jslib.k6.io/k6chaijs/4.3.4.1/index.js';
-import { randomIntBetween } from "https://jslib.k6.io/k6-utils/1.1.0/index.js";
 import { Httpx } from 'https://jslib.k6.io/httpx/0.0.6/index.js';
+import { randomIntBetween } from "https://jslib.k6.io/k6-utils/1.1.0/index.js";
+import { describe, expect } from 'https://jslib.k6.io/k6chaijs/4.3.4.1/index.js';
 
 /**
  * Mimir hostname to connect to on the write path.
@@ -59,15 +59,10 @@ const WRITE_SERIES_PER_REQUEST = parseInt(__ENV.K6_WRITE_SERIES_PER_REQUEST || 1
  */
 const TOTAL_SERIES = WRITE_REQUEST_RATE * WRITE_SERIES_PER_REQUEST;
 /**
- * Number of query requests per second.
- * @constant {number}
- */
-const READ_REQUEST_RATE = parseInt(__ENV.K6_READ_REQUEST_RATE ||  1);
-/**
  * Duration of the load test in minutes (including ramp up and down).
  * @constant {number}
  */
-const DURATION_MIN = parseInt(__ENV.K6_DURATION_MIN || (12*60));
+const DURATION_MIN = parseInt(__ENV.K6_DURATION_MIN || (60));
 /**
  * Duration of the ramp up period in minutes.
  * @constant {number}
@@ -100,7 +95,7 @@ const HA_CLUSTERS = parseInt(__ENV.K6_HA_CLUSTERS || 1);
  * By default, no tenant ID is specified requiring the cluster to have multi-tenancy disabled.
  * @constant {string}
  */
-const WRITE_TENANT_ID = __ENV.K6_WRITE_TENANT_ID || '';
+const WRITE_TENANT_ID = __ENV.K6_WRITE_TENANT_ID || 'oss-self-monitoring';
 
 /**
  * Tenant ID to read from to. Note that this option is mutually exclusive with
@@ -108,7 +103,7 @@ const WRITE_TENANT_ID = __ENV.K6_WRITE_TENANT_ID || '';
  * By default, no tenant ID is specified requiring the cluster to have multi-tenancy disabled.
  * @constant {string}
  */
-const READ_TENANT_ID = __ENV.K6_READ_TENANT_ID || '';
+const READ_TENANT_ID = __ENV.K6_READ_TENANT_ID || 'oss-self-monitoring';
 
 /**
  * Project ID to send k6 cloud tests to.
@@ -121,7 +116,7 @@ console.debug("Remote write URL:", remote_write_url)
 
 const write_client_headers = get_write_authentication_headers()
 
-const write_client = new remote.Client({ url: remote_write_url, timeout: '32s', tenant_name: WRITE_TENANT_ID, headers:  write_client_headers });
+const write_client = new remote.Client({ url: remote_write_url, timeout: '32s', tenant_name: WRITE_TENANT_ID, headers: write_client_headers });
 
 const query_client_headers = {
     'User-Agent': 'k6-load-test',
@@ -138,10 +133,10 @@ const query_client = new Httpx({
     timeout: 120e3 // 120s timeout.
 });
 
+// per second rates
 const query_request_rates = {
-    range_queries: Math.ceil(READ_REQUEST_RATE * 0.75), // 75%
-    instant_low_cardinality_queries: Math.ceil(READ_REQUEST_RATE * 0.20), // 20%
-    instant_high_cardinality_queries: Math.ceil(READ_REQUEST_RATE * 0.05), // 5%
+    store_gateway_queries: 1,
+    ingester_queries: 1,
 };
 
 /**
@@ -161,9 +156,11 @@ export const options = {
         // 99.9% of writes take less than 10s (SLA has no guarantee on write latency).
         [`http_req_duration{url:${remote_write_url}}`]: ['p(99.9) < 10000'],
         // SLA: 99.9% of queries succeed.
-        'checks{type:read}': ['rate > 0.999'],
-        // SLA: average query time for any 3 hours of data is less than 2s (not including Internet latency).
-        'http_req_duration{type:read}': ['avg < 2000'],
+        'checks{type:ingester}': ['rate > 0.999'],
+        'checks{type:store-gateway}': ['rate > 0.999'],
+
+        'http_req_duration{type:ingester}': ['avg < 2000'], // ingesters have 1s of slowdown, so give them 2s to respond.
+        'http_req_duration{type:store-gateway}': ['avg < 10000'], // store-gateways have 5s of slowdown, so give them 20s to respond.
     },
     scenarios: {
         // In each SCRAPE_INTERVAL_SECONDS, WRITE_REQUEST_RATE number of remote-write requests will be made.
@@ -189,44 +186,31 @@ export const options = {
                 },
             ]
         },
-        reads_range_queries: {
+        store_gateway_queries: {
             executor: 'constant-arrival-rate',
-            rate: query_request_rates.range_queries,
+            rate: query_request_rates.store_gateway_queries,
             timeUnit: '1s',
 
             duration: `${DURATION_MIN}m`,
-            exec: 'run_range_query',
+            exec: 'run_storegateway_query',
 
             // The number of VUs should be adjusted based on how much load we're pushing on the read path.
             // We estimated about 10 VU every query/sec.
-            preAllocatedVUs: query_request_rates.range_queries*10,
-            maxVus: query_request_rates.range_queries*10
+            preAllocatedVUs: query_request_rates.store_gateway_queries * 10,
+            maxVus: query_request_rates.store_gateway_queries * 100
         },
-        reads_instant_queries_low_cardinality: {
+        ingester_queries: {
             executor: 'constant-arrival-rate',
-            rate: query_request_rates.instant_low_cardinality_queries,
+            rate: query_request_rates.ingester_queries,
             timeUnit: '1s',
 
             duration: `${DURATION_MIN}m`,
-            exec: 'run_instant_query_low_cardinality',
+            exec: 'run_ingester_query',
 
             // The number of VUs should be adjusted based on how much load we're pushing on the read path.
             // We estimated about 5 VU every query/sec.
-            preAllocatedVUs: query_request_rates.instant_low_cardinality_queries*5,
-            maxVus: query_request_rates.instant_low_cardinality_queries*5,
-        },
-        reads_instant_queries_high_cardinality: {
-            executor: 'constant-arrival-rate',
-            rate: query_request_rates.instant_high_cardinality_queries,
-            timeUnit: '1s',
-
-            duration: `${DURATION_MIN}m`,
-            exec: 'run_instant_query_high_cardinality',
-
-            // The number of VUs should be adjusted based on how much load we're pushing on the read path.
-            // We estimated about 10 VU every query/sec.
-            preAllocatedVUs: query_request_rates.instant_high_cardinality_queries*10,
-            maxVus: query_request_rates.instant_high_cardinality_queries*10,
+            preAllocatedVUs: query_request_rates.ingester_queries * 10,
+            maxVus: query_request_rates.ingester_queries * 100,
         },
     },
 };
@@ -252,7 +236,7 @@ export function write() {
         const min_series_id = (iteration % (TOTAL_SERIES / WRITE_SERIES_PER_REQUEST)) * WRITE_SERIES_PER_REQUEST;
         const max_series_id = min_series_id + WRITE_SERIES_PER_REQUEST;
         const now_ms = Date.now();
-        const now_s = Math.floor(now_ms/1000);
+        const now_s = Math.floor(now_ms / 1000);
 
         const res = write_client.storeFromTemplates(
             // We're using the timestamp in seconds as a value because counters are very common in Prometheus and
@@ -550,79 +534,32 @@ function get_write_authentication_headers() {
     return auth_headers;
 }
 
-/**
- * Runs a range query randomly generated based on the configured distribution defined in range_query_distribution.
- * It validates that a successful response is received and tags requests with { type: "read" } so that requests can be distinguished from writes.
- */
-export function run_range_query() {
-    const name = "range query";
+export function run_storegateway_query() {
+    const query_store_after = 13 * 3600 * 1000
+    const ts = align_timestamp_to_step(Math.ceil((Date.now() - (query_store_after)) / 1000), 5 * 60);
 
-    const time_range = get_random_entry_from_config(range_query_distribution.time_range);
-    const step = get_range_query_step(time_range);
-    const end = align_timestamp_to_step(Math.ceil(Date.now() / 1000), step);
-    const start = align_timestamp_to_step(Math.max(end - time_range, QUERY_MIN_TIME_SECONDS), step);
-    const rate_interval = get_random_entry_from_config(range_query_distribution.rate_interval);
-    const cardinality = get_random_entry_from_config(range_query_distribution.cardinality);
-    const query = get_random_query_from_config(range_query_distribution.query, cardinality, rate_interval);
-
-    console.debug("range query - time_range:", time_range, "start:", start, "end:", end, "step:", step, "query:", query)
-
-    describe(name, () => {
-        const res = query_client.post('/query_range', {
-            query: query,
-            start: start,
-            end: end,
-            step: `${step}s`,
-        }, {
-            tags: {
-                name: name,
-                type: "read",
-            },
-        });
-
-        expect(res.status, "request status").to.equal(200);
-        expect(res).to.have.validJsonBody();
-        expect(res.json('status'), "status field is 'success'").to.equal("success");
-        expect(res.json('data.resultType'), "resultType is 'matrix'").to.equal("matrix");
-    });
+    run_simple_query(ts, {
+        name: 'store-gateway',
+        type: 'store-gateway',
+    })
 }
 
-/**
- * See run_instant_query().
- */
-export function run_instant_query_low_cardinality() {
-    run_instant_query("instant query low cardinality", instant_query_low_cardinality_distribution)
+export function run_ingester_query() {
+    const ts = align_timestamp_to_step(Math.ceil(Date.now() / 1000), 5 * 60);
+
+    run_simple_query(ts, {
+        name: 'ingester',
+        type: 'ingester',
+    })
 }
 
-/**
- * See run_instant_query().
- */
-export function run_instant_query_high_cardinality() {
-    run_instant_query("instant query high cardinality", instant_query_high_cardinality_distribution)
-}
-
-/**
- * Runs an instant query randomly generated based on the configured distribution defined in instant_query_distribution.
- * It validates that a successful response is received and tags requests with { type: "read" } so that requests can be distinguished from writes.
- * Instant queries are run with a time one minute in the past to simulate rule evaluations.
- */
-export function run_instant_query(name, config) {
-    const time = Math.ceil(Date.now() / 1000) - 60;
-    const rate_interval = get_random_entry_from_config(config.rate_interval);
-    const cardinality = get_random_entry_from_config(config.cardinality);
-    const query = get_random_query_from_config(config.query, cardinality, rate_interval);
-
-    console.debug(name, " - query: ", query)
-
-    describe(name, () => {
+export function run_simple_query(time, tags) {
+    describe(tags.name, () => {
         const res = query_client.post('/query', {
-            query: query,
+            query: `artificially_slow_query{component="${tags.type}"}`,
             time: time,
         }, {
-            tags: {
-                name: name,
-                type: "read",
-            }
+            tags: tags
         });
 
         expect(res.status, "request status").to.equal(200);
