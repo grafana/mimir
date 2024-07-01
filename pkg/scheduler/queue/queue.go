@@ -364,27 +364,27 @@ func (q *RequestQueue) trySendNextRequestForQuerier(waitingConn *waitingQuerierC
 		return false
 	}
 
-	{
-		// temporary observation of query component load balancing behavior before full implementation
-		schedulerRequest, ok := req.req.(*SchedulerRequest)
-		if ok {
-			queryComponentName := schedulerRequest.ExpectedQueryComponentName()
-			exceedsThreshold, queryComponent := q.QueryComponentUtilization.ExceedsThresholdForComponentName(
-				queryComponentName,
-				int(q.connectedQuerierWorkers.Load()),
-				q.queueBroker.tree.ItemCount(),
-				q.waitingQuerierConnsToDispatch.Len(),
-			)
-
-			if exceedsThreshold {
-				level.Info(q.log).Log(
-					"msg", "experimental: querier worker connections in use by query component exceed utilization threshold. no action taken",
-					"query_component_name", queryComponentName,
-					"overloaded_query_component", queryComponent,
-				)
-			}
-		}
-	}
+	//{
+	//	// temporary observation of query component load balancing behavior before full implementation
+	//	schedulerRequest, ok := req.req.(*SchedulerRequest)
+	//	if ok {
+	//		queryComponentName := schedulerRequest.ExpectedQueryComponentName()
+	//		exceedsThreshold, queryComponent := q.QueryComponentUtilization.ExceedsThresholdForComponentName(
+	//			queryComponentName,
+	//			int(q.connectedQuerierWorkers.Load()),
+	//			q.queueBroker.tree.ItemCount(),
+	//			q.waitingQuerierConnsToDispatch.Len(),
+	//		)
+	//
+	//		if exceedsThreshold {
+	//			level.Info(q.log).Log(
+	//				"msg", "experimental: querier worker connections in use by query component exceed utilization threshold. no action taken",
+	//				"query_component_name", queryComponentName,
+	//				"overloaded_query_component", queryComponent,
+	//			)
+	//		}
+	//	}
+	//}
 
 	reqForQuerier := requestForQuerier{
 		req:             req.req,

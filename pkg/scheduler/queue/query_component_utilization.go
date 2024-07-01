@@ -118,12 +118,8 @@ func NewQueryComponentUtilization(
 // As the inflight queries complete or fail, the component's utilization will naturally decrease.
 // This method will continue to indicate to skip queries for the component until it is back under the threshold.
 func (qcl *QueryComponentUtilization) ExceedsThresholdForComponentName(
-	name string, connectedWorkers, queueLen, waitingWorkers int,
+	name string, connectedWorkers int,
 ) (bool, QueryComponent) {
-	if waitingWorkers > queueLen {
-		// excess querier-worker capacity; no need to reserve any for now
-		return false, ""
-	}
 	if connectedWorkers <= 1 {
 		// corner case; cannot reserve capacity with only one worker available
 		return false, ""
@@ -154,6 +150,14 @@ func (qcl *QueryComponentUtilization) ExceedsThresholdForComponentName(
 		}
 	}
 	return false, ""
+}
+
+func (qcl *QueryComponentUtilization) TriggerUtilizationCheck(queueLen, waitingWorkers int) bool {
+	if waitingWorkers > queueLen {
+		// excess querier-worker capacity; no need to reserve any for now
+		return false
+	}
+	return true
 }
 
 // MarkRequestSent is called when a request is sent to a querier
