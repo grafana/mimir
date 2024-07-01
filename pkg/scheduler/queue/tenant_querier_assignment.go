@@ -223,6 +223,22 @@ func (tqa *tenantQuerierAssignments) removeTenant(tenantID TenantID) {
 		return
 	}
 	delete(tqa.tenantsByID, tenantID)
+
+	// TODO (casie): When cleaning up old TreeQueue, everything below this point can be removed, since
+	//  tenantIDOrder is updated during tree operations in MultiQueuingAlgorithmTreeQueue.
+	//  Everything below this point should be a no-op on the MultiQueuingAlgorithmTreeQueue
+	if len(tqa.tenantIDOrder) > tenant.orderIndex && tqa.tenantIDOrder[tenant.orderIndex] == tenantID {
+		tqa.tenantIDOrder[tenant.orderIndex] = emptyTenantID
+
+		// Shrink tenant list if possible by removing empty tenant IDs.
+		// We remove only from the end; removing from the middle would re-index all tenant IDs
+		// and skip tenants when starting iteration from a querier-provided lastTenantIndex.
+		// Empty tenant IDs stuck in the middle of the slice are handled
+		// by replacing them when a new tenant ID arrives in the queue.
+		for i := len(tqa.tenantIDOrder) - 1; i >= 0 && tqa.tenantIDOrder[i] == emptyTenantID; i-- {
+			tqa.tenantIDOrder = tqa.tenantIDOrder[:i]
+		}
+	}
 }
 
 func (tqa *tenantQuerierAssignments) removeQuerierConnection(querierID QuerierID, now time.Time) (resharded bool) {

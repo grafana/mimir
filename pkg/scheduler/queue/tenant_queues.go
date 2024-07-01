@@ -178,6 +178,8 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 			return nil, tenant, tenantIndex, err
 		}
 		qb.tenantQuerierAssignments.tenantOrderIndex = tenantIndex
+		// We can manually build queuePath here because TreeQueue only supports one tree structure ordering:
+		// root --> tenant --> (optional: query dimensions)
 		queuePath = QueuePath{string(tenant.tenantID)}
 		queueElement = tq.DequeueByPath(queuePath)
 	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
