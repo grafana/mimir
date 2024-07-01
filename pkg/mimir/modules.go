@@ -1043,7 +1043,12 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 }
 
 func (t *Mimir) initBlockBuilder() (_ services.Service, err error) {
+	if !t.Cfg.IngestStorage.Enabled {
+		return nil, nil
+	}
+
 	t.Cfg.BlockBuilder.BlocksStorageConfig = t.Cfg.BlocksStorage
+	t.Cfg.BlockBuilder.Kafka = t.Cfg.IngestStorage.KafkaConfig
 	t.BlockBuilder, err = blockbuilder.New(t.Cfg.BlockBuilder, util_log.Logger, t.Registerer, t.Overrides)
 	if err != nil {
 		return

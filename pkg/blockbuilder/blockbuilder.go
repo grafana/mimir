@@ -21,6 +21,7 @@ import (
 	"github.com/twmb/franz-go/plugin/kprom"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -646,13 +647,11 @@ type Config struct {
 	ConsumeInterval       time.Duration `yaml:"consume_interval"`
 	ConsumeIntervalBuffer time.Duration `yaml:"consume_interval_buffer"`
 
-	Kafka               KafkaConfig                    `yaml:"kafka"`
-	BlocksStorageConfig mimir_tsdb.BlocksStorageConfig `yaml:"-"` // TODO(codesome): check how this is passed. Copied over form ingester.
+	Kafka               ingest.KafkaConfig             `yaml:"-"`
+	BlocksStorageConfig mimir_tsdb.BlocksStorageConfig `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	cfg.Kafka.RegisterFlags(f)
-
 	f.DurationVar(&cfg.ConsumeInterval, "consume-internal", time.Hour, "Interval between block consumption cycles.")
 	f.DurationVar(&cfg.ConsumeIntervalBuffer, "consume-internal-buffer", 5*time.Minute, "Extra buffer between subsequent block consumption cycles to avoid small blocks.")
 }
@@ -666,32 +665,6 @@ func (cfg *Config) Validate() error {
 		return fmt.Errorf("-consume-interval must be non-negative")
 	}
 
-	return nil
-}
-
-// KafkaConfig holds the generic config for the Kafka backend.
-type KafkaConfig struct {
-	Address       string        `yaml:"address"`
-	Topic         string        `yaml:"topic"`
-	ClientID      string        `yaml:"client_id"`
-	DialTimeout   time.Duration `yaml:"dial_timeout"`
-	ConsumerGroup string        `yaml:"consumer_group"`
-}
-
-func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
-	cfg.RegisterFlagsWithPrefix("block-builder.kafka", f)
-}
-
-func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.Address, prefix+".address", "", "The Kafka seed broker address.")
-	f.StringVar(&cfg.Topic, prefix+".topic", "", "The Kafka topic name.")
-	f.StringVar(&cfg.ClientID, prefix+".client-id", "", "The Kafka client ID.")
-	f.DurationVar(&cfg.DialTimeout, prefix+".dial-timeout", 2*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
-	f.StringVar(&cfg.ConsumerGroup, prefix+".consumer-group", "", "The consumer group used by the consumer to track the last consumed offset.")
-}
-
-func (cfg *KafkaConfig) Validate() error {
-	// TODO(v): validate kafka config
 	return nil
 }
 

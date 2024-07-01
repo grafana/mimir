@@ -21,6 +21,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -35,7 +36,7 @@ func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Override
 	cfg := Config{
 		ConsumeInterval:       time.Hour,
 		ConsumeIntervalBuffer: 15 * time.Minute,
-		Kafka: KafkaConfig{
+		Kafka: ingest.KafkaConfig{
 			Address:       addr,
 			Topic:         testTopic,
 			ClientID:      "1",
