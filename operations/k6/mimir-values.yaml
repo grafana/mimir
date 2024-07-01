@@ -1,0 +1,79 @@
+mimir:
+  structuredConfig:
+    store_gateway:
+      artificial_slowdown: 5s
+    ingester:
+      artificial_slowdown: 1s
+    limits:
+      compactor_blocks_retention_period: 2d
+    querier:
+      max_concurrent: 4
+    query_scheduler:
+      # Use a big queue to avoid queue length as the bottleneck
+      max_outstanding_requests_per_tenant: 10000
+
+minio:
+  consoleService:
+    type: LoadBalancer
+  persistence:
+    size: 50Gi
+    storageClass: hostpath
+
+gateway:
+  enabledNonEnterprise: true
+  replicas: 1
+  service:
+    type: LoadBalancer
+
+nginx:
+  enabled: false
+
+# Disable all caches for reproducing issues
+chunks-cache:
+  enabled: false
+
+index-cache:
+  enabled: false
+
+metadata-cache:
+  enabled: false
+
+results-cache:
+  enabled: false
+
+alertmanager:
+  persistentVolume:
+    storageClass: hostpath
+
+compactor:
+  persistentVolume:
+    size: 50Gi
+    storageClass: hostpath
+
+ingester:
+  persistentVolume:
+    size: 50Gi
+    storageClass: hostpath
+  replicas: 3
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: target
+                operator: In
+                values:
+                  - ingester
+          topologyKey: "kubernetes.io/hostname"
+
+store_gateway:
+  replicas: 3
+  persistentVolume:
+    size: 50Gi
+    storageClass: hostpath
+
+querier:
+  replicas: 1
+
+query_scheduler:
+  replicas: 1
