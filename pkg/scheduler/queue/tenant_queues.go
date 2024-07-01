@@ -60,10 +60,6 @@ func newQueueBroker(
 			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
 			&roundRobinState{}, // query components; QueuingAlgorithm selects query from local queue
 		)
-		// An error building the tree is fatal; we must panic
-		if err != nil {
-			panic(fmt.Sprintf("error creating the tree queue: %v", err))
-		}
 	} else {
 		// by default, use the legacy tree queue
 		tree = NewTreeQueue("root")
