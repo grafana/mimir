@@ -59,6 +59,11 @@ spec:
         labelSelector:
           matchLabels:
             foo: bar
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
         whenUnsatisfiable: DoNotSchedule

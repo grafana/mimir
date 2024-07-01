@@ -99,11 +99,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: keda-autoscaling-global-values
             app.kubernetes.io/component: querier
-        matchLabelKeys:
-          - pod-template-hash
-        nodeAffinityPolicy: Honor
-        nodeTaintsPolicy: Honor
-        minDomains: 1
       terminationGracePeriodSeconds: 180
       volumes:
         - name: config

@@ -96,11 +96,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-logical-multizone-values
             app.kubernetes.io/component: query-frontend
-        matchLabelKeys:
-          - pod-template-hash
-        nodeAffinityPolicy: Honor
-        nodeTaintsPolicy: Honor
-        minDomains: 1
       terminationGracePeriodSeconds: 390
       volumes:
         - name: config

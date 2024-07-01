@@ -71,11 +71,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-enterprise-values
             app.kubernetes.io/component: ingester
-        matchLabelKeys:
-          - pod-template-hash
-        nodeAffinityPolicy: Honor
-        nodeTaintsPolicy: Honor
-        minDomains: 1
       terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
@@ -211,11 +206,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-enterprise-values
             app.kubernetes.io/component: ingester
-        matchLabelKeys:
-          - pod-template-hash
-        nodeAffinityPolicy: Honor
-        nodeTaintsPolicy: Honor
-        minDomains: 1
       terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
@@ -351,11 +341,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-enterprise-values
             app.kubernetes.io/component: ingester
-        matchLabelKeys:
-          - pod-template-hash
-        nodeAffinityPolicy: Honor
-        nodeTaintsPolicy: Honor
-        minDomains: 1
       terminationGracePeriodSeconds: 1200
       volumes:
         - name: config

@@ -584,11 +584,11 @@ alertmanager:
     maxSkew: 1
     topologyKey: kubernetes.io/hostname
     whenUnsatisfiable: ScheduleAnyway
-    minDomains: 1
-    nodeAffinityPolicy: Honor
-    nodeTaintsPolicy: Honor
-    matchLabelKeys:
-      - pod-template-hash
+    # minDomains: 1
+    # nodeAffinityPolicy: Honor
+    # nodeTaintsPolicy: Honor
+    # matchLabelKeys:
+    #   - pod-template-hash
   annotations: {}
   persistence:
     # SubPath in emptyDir for persistence, only enabled if alertmanager.statefulSet.enabled is false
@@ -840,11 +840,11 @@ distributor:
     maxSkew: 1
     topologyKey: kubernetes.io/hostname
     whenUnsatisfiable: ScheduleAnyway
-    minDomains: 1
-    nodeAffinityPolicy: Honor
-    nodeTaintsPolicy: Honor
-    matchLabelKeys:
-      - pod-template-hash
+    # minDomains: 1
+    # nodeAffinityPolicy: Honor
+    # nodeTaintsPolicy: Honor
+    # matchLabelKeys:
+    #   - pod-template-hash
 
   annotations: {}
   persistence:
@@ -939,11 +939,11 @@ ingester:
     maxSkew: 1
     topologyKey: kubernetes.io/hostname
     whenUnsatisfiable: ScheduleAnyway
-    minDomains: 1
-    nodeAffinityPolicy: Honor
-    nodeTaintsPolicy: Honor
-    matchLabelKeys:
-      - pod-template-hash
+    # minDomains: 1
+    # nodeAffinityPolicy: Honor
+    # nodeTaintsPolicy: Honor
+    # matchLabelKeys:
+    #   - pod-template-hash
 
   annotations: {}
 
@@ -1264,11 +1264,11 @@ ruler:
     maxSkew: 1
     topologyKey: kubernetes.io/hostname
     whenUnsatisfiable: ScheduleAnyway
-    minDomains: 1
-    nodeAffinityPolicy: Honor
-    nodeTaintsPolicy: Honor
-    matchLabelKeys:
-      - pod-template-hash
+    # minDomains: 1
+    # nodeAffinityPolicy: Honor
+    # nodeTaintsPolicy: Honor
+    # matchLabelKeys:
+    #   - pod-template-hash
 
   annotations: {}
   persistence:
@@ -1383,11 +1383,11 @@ ruler_querier:
     maxSkew: 1
     topologyKey: kubernetes.io/hostname
     whenUnsatisfiable: ScheduleAnyway
-    minDomains: 1
-    nodeAffinityPolicy: Honor
-    nodeTaintsPolicy: Honor
-    matchLabelKeys:
-      - pod-template-hash
+    # minDomains: 1
+    # nodeAffinityPolicy: Honor
+    # nodeTaintsPolicy: Honor
+    # matchLabelKeys:
+    #   - pod-template-hash
 
   annotations: {}
   persistence:
@@ -1490,11 +1490,11 @@ ruler_query_frontend:
     maxSkew: 1
     topologyKey: kubernetes.io/hostname
     whenUnsatisfiable: ScheduleAnyway
-    minDomains: 1
-    nodeAffinityPolicy: Honor
-    nodeTaintsPolicy: Honor
-    matchLabelKeys:
-      - pod-template-hash
+    # minDomains: 1
+    # nodeAffinityPolicy: Honor
+    # nodeTaintsPolicy: Honor
+    # matchLabelKeys:
+    #   - pod-template-hash
 
   annotations: {}
   persistence:
@@ -1574,11 +1574,11 @@ ruler_query_scheduler:
     maxSkew: 1
     topologyKey: kubernetes.io/hostname
     whenUnsatisfiable: ScheduleAnyway
-    minDomains: 1
-    nodeAffinityPolicy: Honor
-    nodeTaintsPolicy: Honor
-    matchLabelKeys:
-      - pod-template-hash
+    # minDomains: 1
+    # nodeAffinityPolicy: Honor
+    # nodeTaintsPolicy: Honor
+    # matchLabelKeys:
+    #   - pod-template-hash
 
   annotations: {}
   persistence:
@@ -1699,11 +1699,11 @@ querier:
     maxSkew: 1
     topologyKey: kubernetes.io/hostname
     whenUnsatisfiable: ScheduleAnyway
-    minDomains: 1
-    nodeAffinityPolicy: Honor
-    nodeTaintsPolicy: Honor
-    matchLabelKeys:
-      - pod-template-hash
+    # minDomains: 1
+    # nodeAffinityPolicy: Honor
+    # nodeTaintsPolicy: Honor
+    # matchLabelKeys:
+    #   - pod-template-hash
 
   annotations: {}
   persistence:
@@ -1805,11 +1805,11 @@ query_frontend:
     maxSkew: 1
     topologyKey: kubernetes.io/hostname
     whenUnsatisfiable: ScheduleAnyway
-    minDomains: 1
-    nodeAffinityPolicy: Honor
-    nodeTaintsPolicy: Honor
-    matchLabelKeys:
-      - pod-template-hash
+    # minDomains: 1
+    # nodeAffinityPolicy: Honor
+    # nodeTaintsPolicy: Honor
+    # matchLabelKeys:
+    #   - pod-template-hash
 
   annotations: {}
   persistence:
@@ -1889,11 +1889,11 @@ query_scheduler:
     maxSkew: 1
     topologyKey: kubernetes.io/hostname
     whenUnsatisfiable: ScheduleAnyway
-    minDomains: 1
-    nodeAffinityPolicy: Honor
-    nodeTaintsPolicy: Honor
-    matchLabelKeys:
-      - pod-template-hash
+    # minDomains: 1
+    # nodeAffinityPolicy: Honor
+    # nodeTaintsPolicy: Honor
+    # matchLabelKeys:
+    #   - pod-template-hash
 
   annotations: {}
   persistence:
@@ -1988,11 +1988,11 @@ store_gateway:
     maxSkew: 1
     topologyKey: kubernetes.io/hostname
     whenUnsatisfiable: ScheduleAnyway
-    minDomains: 1
-    nodeAffinityPolicy: Honor
-    nodeTaintsPolicy: Honor
-    matchLabelKeys:
-      - pod-template-hash
+    # minDomains: 1
+    # nodeAffinityPolicy: Honor
+    # nodeTaintsPolicy: Honor
+    # matchLabelKeys:
+    #   - pod-template-hash
 
   annotations: {}
 
@@ -2188,11 +2188,11 @@ compactor:
     maxSkew: 1
     topologyKey: kubernetes.io/hostname
     whenUnsatisfiable: ScheduleAnyway
-    minDomains: 1
-    nodeAffinityPolicy: Honor
-    nodeTaintsPolicy: Honor
-    matchLabelKeys:
-      - pod-template-hash
+    # minDomains: 1
+    # nodeAffinityPolicy: Honor
+    # nodeTaintsPolicy: Honor
+    # matchLabelKeys:
+    #   - pod-template-hash
 
   annotations: {}
 
@@ -2860,11 +2860,11 @@ nginx:
     maxSkew: 1
     topologyKey: kubernetes.io/hostname
     whenUnsatisfiable: ScheduleAnyway
-    minDomains: 1
-    nodeAffinityPolicy: Honor
-    nodeTaintsPolicy: Honor
-    matchLabelKeys:
-      - pod-template-hash
+    # minDomains: 1
+    # nodeAffinityPolicy: Honor
+    # nodeTaintsPolicy: Honor
+    # matchLabelKeys:
+    #   - pod-template-hash
 
   annotations: {}
 
@@ -3247,11 +3247,11 @@ gateway:
     maxSkew: 1
     topologyKey: kubernetes.io/hostname
     whenUnsatisfiable: ScheduleAnyway
-    minDomains: 1
-    nodeAffinityPolicy: Honor
-    nodeTaintsPolicy: Honor
-    matchLabelKeys:
-      - pod-template-hash
+    # minDomains: 1
+    # nodeAffinityPolicy: Honor
+    # nodeTaintsPolicy: Honor
+    # matchLabelKeys:
+    #   - pod-template-hash
 
   # Annotations for the Deployment
   annotations: {}
@@ -3879,11 +3879,11 @@ admin_api:
     maxSkew: 1
     topologyKey: kubernetes.io/hostname
     whenUnsatisfiable: ScheduleAnyway
-    minDomains: 1
-    nodeAffinityPolicy: Honor
-    nodeTaintsPolicy: Honor
-    matchLabelKeys:
-      - pod-template-hash
+    # minDomains: 1
+    # nodeAffinityPolicy: Honor
+    # nodeTaintsPolicy: Honor
+    # matchLabelKeys:
+    #   - pod-template-hash
 
   # Pod Disruption Budget
   podDisruptionBudget:

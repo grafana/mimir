@@ -66,11 +66,6 @@ spec:
           matchLabels:
             app: enterprise-metrics-store-gateway
             release: test-enterprise-legacy-label-values
-        matchLabelKeys:
-          - pod-template-hash
-        nodeAffinityPolicy: Honor
-        nodeTaintsPolicy: Honor
-        minDomains: 1
       terminationGracePeriodSeconds: 120
       volumes:
         - name: config
@@ -205,11 +200,6 @@ spec:
           matchLabels:
             app: enterprise-metrics-store-gateway
             release: test-enterprise-legacy-label-values
-        matchLabelKeys:
-          - pod-template-hash
-        nodeAffinityPolicy: Honor
-        nodeTaintsPolicy: Honor
-        minDomains: 1
       terminationGracePeriodSeconds: 120
       volumes:
         - name: config
@@ -344,11 +334,6 @@ spec:
           matchLabels:
             app: enterprise-metrics-store-gateway
             release: test-enterprise-legacy-label-values
-        matchLabelKeys:
-          - pod-template-hash
-        nodeAffinityPolicy: Honor
-        nodeTaintsPolicy: Honor
-        minDomains: 1
       terminationGracePeriodSeconds: 120
       volumes:
         - name: config

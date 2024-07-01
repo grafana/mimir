@@ -78,11 +78,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-vault-agent-values
             app.kubernetes.io/component: store-gateway
-        matchLabelKeys:
-          - pod-template-hash
-        nodeAffinityPolicy: Honor
-        nodeTaintsPolicy: Honor
-        minDomains: 1
       terminationGracePeriodSeconds: 120
       volumes:
         - name: config
@@ -227,11 +222,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-vault-agent-values
             app.kubernetes.io/component: store-gateway
-        matchLabelKeys:
-          - pod-template-hash
-        nodeAffinityPolicy: Honor
-        nodeTaintsPolicy: Honor
-        minDomains: 1
       terminationGracePeriodSeconds: 120
       volumes:
         - name: config
@@ -376,11 +366,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-vault-agent-values
             app.kubernetes.io/component: store-gateway
-        matchLabelKeys:
-          - pod-template-hash
-        nodeAffinityPolicy: Honor
-        nodeTaintsPolicy: Honor
-        minDomains: 1
       terminationGracePeriodSeconds: 120
       volumes:
         - name: config

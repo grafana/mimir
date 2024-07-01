@@ -69,6 +69,11 @@ spec:
         labelSelector:
           matchLabels:
             component: ingester
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
         whenUnsatisfiable: DoNotSchedule
@@ -218,6 +223,11 @@ spec:
         labelSelector:
           matchLabels:
             component: ingester
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
         whenUnsatisfiable: DoNotSchedule
@@ -367,6 +377,11 @@ spec:
         labelSelector:
           matchLabels:
             component: ingester
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
         whenUnsatisfiable: DoNotSchedule

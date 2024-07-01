@@ -107,11 +107,6 @@ spec:
           matchLabels:
             app: enterprise-metrics-distributor
             release: test-enterprise-legacy-label-values
-        matchLabelKeys:
-          - pod-template-hash
-        nodeAffinityPolicy: Honor
-        nodeTaintsPolicy: Honor
-        minDomains: 1
       terminationGracePeriodSeconds: 100
       volumes:
         - name: config

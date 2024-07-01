@@ -59,11 +59,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-logical-multizone-values
             app.kubernetes.io/component: alertmanager
-        matchLabelKeys:
-          - pod-template-hash
-        nodeAffinityPolicy: Honor
-        nodeTaintsPolicy: Honor
-        minDomains: 1
       terminationGracePeriodSeconds: 900
       volumes:
         - name: config
@@ -191,11 +186,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-logical-multizone-values
             app.kubernetes.io/component: alertmanager
-        matchLabelKeys:
-          - pod-template-hash
-        nodeAffinityPolicy: Honor
-        nodeTaintsPolicy: Honor
-        minDomains: 1
       terminationGracePeriodSeconds: 900
       volumes:
         - name: config
@@ -323,11 +313,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-logical-multizone-values
             app.kubernetes.io/component: alertmanager
-        matchLabelKeys:
-          - pod-template-hash
-        nodeAffinityPolicy: Honor
-        nodeTaintsPolicy: Honor
-        minDomains: 1
       terminationGracePeriodSeconds: 900
       volumes:
         - name: config
