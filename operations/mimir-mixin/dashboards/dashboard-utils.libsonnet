@@ -632,9 +632,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.panelDescription(
       title,
       |||
-        The minimum, maximum, and current number of %s replicas.<br /><br />
-        Note: The current number of replicas can still show 1 replica even when scaled to 0.
-        Because HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.
+        The minimum, maximum, and current number of %s replicas.
       ||| % [componentTitle]
     ) +
     {

@@ -397,9 +397,6 @@ local filename = 'mimir-writes.json';
           |||
             The minimum, maximum, and current number of replicas for the leader zone of ingesters.
             Other zones scale to follow this zone (with delay for downscale).
-            <br /><br />
-            Note: The current number of replicas can still show 1 replica even when scaled to 0.
-            Because HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.
           |||
         )
       )
@@ -432,9 +429,6 @@ local filename = 'mimir-writes.json';
           |||
             The minimum, maximum, and current number of replicas for the ReplicaTemplate object.
             Rollout-operator will keep ingester replicas updated based on this object.
-            <br /><br />
-            Note: The current number of replicas can still show 1 replica even when scaled to 0.
-            Because HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.
           |||
         )
       )
