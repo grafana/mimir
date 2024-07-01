@@ -19,6 +19,7 @@
 package otlp
 
 import (
+	"context"
 	"fmt"
 	"math"
 
@@ -33,9 +34,13 @@ import (
 
 const defaultZeroThreshold = 1e-128
 
-func (c *MimirConverter) addExponentialHistogramDataPoints(dataPoints pmetric.ExponentialHistogramDataPointSlice,
+func (c *MimirConverter) addExponentialHistogramDataPoints(ctx context.Context, dataPoints pmetric.ExponentialHistogramDataPointSlice,
 	resource pcommon.Resource, settings Settings, baseName string) error {
 	for x := 0; x < dataPoints.Len(); x++ {
+		if err := c.everyN.checkContext(ctx); err != nil {
+			return err
+		}
+
 		pt := dataPoints.At(x)
 		lbls := createAttributes(
 			resource,
@@ -54,15 +59,18 @@ func (c *MimirConverter) addExponentialHistogramDataPoints(dataPoints pmetric.Ex
 		}
 		ts.Histograms = append(ts.Histograms, histogram)
 
-		exemplars := getPromExemplars[pmetric.ExponentialHistogramDataPoint](pt)
+		exemplars, err := getPromExemplars[pmetric.ExponentialHistogramDataPoint](ctx, &c.everyN, pt)
+		if err != nil {
+			return err
+		}
 		ts.Exemplars = append(ts.Exemplars, exemplars...)
 	}
 
 	return nil
 }
 
-// exponentialToNativeHistogram  translates OTel Exponential Histogram data point
-// to Prometheus Native Histogram.
+// exponentialToNativeHistogram translates an OTel Exponential Histogram data point
+// to a Prometheus Native Histogram.
 func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (mimirpb.Histogram, error) {
 	scale := p.Scale()
 	if scale < -4 {

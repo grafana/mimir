@@ -20,13 +20,13 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	alertingmodels "github.com/grafana/alerting/models"
 	"github.com/klauspost/compress/s2"
 	alertConfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/types"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
 	"github.com/prometheus/prometheus/storage/remote"
@@ -255,18 +255,9 @@ func (c *Client) QueryRangeRaw(query string, start, end time.Time, step time.Dur
 // RemoteRead uses samples streaming. See RemoteReadChunks as well for chunks streaming.
 // RemoteRead returns the HTTP response with consumed body, the remote read protobuf response and an error.
 // In case the response is not a protobuf, the plaintext body content is returned instead of the protobuf message.
-func (c *Client) RemoteRead(metricName string, start, end time.Time) (_ *http.Response, _ *prompb.QueryResult, plaintextResponse []byte, _ error) {
+func (c *Client) RemoteRead(query *prompb.Query) (_ *http.Response, _ *prompb.QueryResult, plaintextResponse []byte, _ error) {
 	req := &prompb.ReadRequest{
-		Queries: []*prompb.Query{{
-			Matchers:         []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: metricName}},
-			StartTimestampMs: start.UnixMilli(),
-			EndTimestampMs:   end.UnixMilli(),
-			Hints: &prompb.ReadHints{
-				StepMs:  1,
-				StartMs: start.UnixMilli(),
-				EndMs:   end.UnixMilli(),
-			},
-		}},
+		Queries: []*prompb.Query{query},
 	}
 	resp, err := c.doRemoteReadReq(req)
 	if err != nil {
@@ -282,6 +273,11 @@ func (c *Client) RemoteRead(metricName string, start, end time.Time) (_ *http.Re
 			return resp, queryResult, nil, fmt.Errorf("parsing remote read response: %w", err)
 		}
 		return resp, queryResult, nil, nil
+	case "application/json":
+		// The remote read protocol does not have a way to return an error message
+		// in the response body, thus the error message is returned as a Prometheus
+		// JSON results response.
+		fallthrough
 	case "text/plain; charset=utf-8":
 		respBytes, err := io.ReadAll(resp.Body)
 		return resp, nil, respBytes, err
@@ -294,25 +290,13 @@ func (c *Client) RemoteRead(metricName string, start, end time.Time) (_ *http.Re
 // RemoteReadChunks uses chunks streaming. See RemoteRead as well for samples streaming.
 // RemoteReadChunks returns the HTTP response with consumed body, the remote read protobuf response and an error.
 // In case the response is not a protobuf, the plaintext body content is returned instead of the protobuf message.
-func (c *Client) RemoteReadChunks(metricName string, start, end time.Time) (_ *http.Response, _ []prompb.ChunkedReadResponse, plaintextResponse []byte, _ error) {
+func (c *Client) RemoteReadChunks(query *prompb.Query) (_ *http.Response, _ []prompb.ChunkedReadResponse, plaintextResponse []byte, _ error) {
 	req := &prompb.ReadRequest{
-		Queries: []*prompb.Query{{
-			Matchers:         []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: metricName}},
-			StartTimestampMs: start.UnixMilli(),
-			EndTimestampMs:   end.UnixMilli(),
-			Hints: &prompb.ReadHints{
-				StepMs:  1,
-				StartMs: start.UnixMilli(),
-				EndMs:   end.UnixMilli(),
-			},
-		}},
+		Queries:               []*prompb.Query{query},
 		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
 	}
 
 	resp, err := c.doRemoteReadReq(req)
-	if err != nil {
-		return resp, nil, nil, err
-	}
 	if err != nil {
 		return resp, nil, nil, fmt.Errorf("making remote read request: %w", err)
 	}
@@ -732,11 +716,11 @@ func (c *Client) GetPrometheusRules() ([]*promv1.RuleGroup, error) {
 }
 
 // GetRuleGroups gets the configured rule groups from the ruler.
-func (c *Client) GetRuleGroups() (map[string][]rulefmt.RuleGroup, error) {
+func (c *Client) GetRuleGroups() (*http.Response, map[string][]rulefmt.RuleGroup, error) {
 	// Create HTTP request
 	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/prometheus/config/v1/rules", c.rulerAddress), nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	req.Header.Set("X-Scope-OrgID", c.orgID)
 
@@ -744,25 +728,25 @@ func (c *Client) GetRuleGroups() (map[string][]rulefmt.RuleGroup, error) {
 	defer cancel()
 
 	// Execute HTTP request
-	res, err := c.httpClient.Do(req.WithContext(ctx))
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	defer res.Body.Close()
+	defer resp.Body.Close()
 	rgs := map[string][]rulefmt.RuleGroup{}
 
-	data, err := io.ReadAll(res.Body)
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	err = yaml.Unmarshal(data, rgs)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return rgs, nil
+	return resp, rgs, nil
 }
 
 // SetRuleGroup configures the provided rulegroup to the ruler.
@@ -833,12 +817,16 @@ func (c *Client) DeleteRuleGroup(namespace string, groupName string) error {
 	defer cancel()
 
 	// Execute HTTP request
-	res, err := c.httpClient.Do(req.WithContext(ctx))
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 
-	defer res.Body.Close()
+	if resp.StatusCode != 202 {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
 	return nil
 }
 
@@ -856,9 +844,16 @@ func (c *Client) DeleteRuleNamespace(namespace string) error {
 	defer cancel()
 
 	// Execute HTTP request
-	_, err = c.httpClient.Do(req.WithContext(ctx))
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
 		return err
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 202 {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+
 	}
 
 	return nil
@@ -1450,6 +1445,35 @@ func (c *Client) GetReceivers(ctx context.Context) ([]string, error) {
 		receivers = append(receivers, v.Name)
 	}
 	return receivers, nil
+}
+
+func (c *Client) GetReceiversExperimental(ctx context.Context) ([]alertingmodels.Receiver, error) {
+	u := c.alertmanagerClient.URL("api/v1/grafana/receivers", nil)
+
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("getting receivers failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	decoded := []alertingmodels.Receiver{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return nil, err
+	}
+
+	return decoded, nil
 }
 
 // DoGet performs a HTTP GET request towards the supplied URL. The request

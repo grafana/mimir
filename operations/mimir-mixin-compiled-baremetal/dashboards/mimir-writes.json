@@ -1065,7 +1065,7 @@
             "panels": [
                {
                   "datasource": "$datasource",
-                  "description": "### Replicas\nThe maximum and current number of distributor replicas.<br /><br />\nNote: The current number of replicas can still show 1 replica even when scaled to 0.\nBecause HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
+                  "description": "### Replicas\nThe minimum, maximum, and current number of distributor replicas.<br /><br />\nNote: The current number of replicas can still show 1 replica even when scaled to 0.\nBecause HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2328,7 +2328,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Ingester - shipper",
+            "title": "Ingester – shipper",
             "titleSize": "h6"
          },
          {
@@ -2506,7 +2506,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Ingester - TSDB head",
+            "title": "Ingester – TSDB head",
             "titleSize": "h6"
          },
          {
@@ -2826,7 +2826,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Ingester - TSDB write ahead log (WAL)",
+            "title": "Ingester – TSDB write ahead log (WAL)",
             "titleSize": "h6"
          },
          {

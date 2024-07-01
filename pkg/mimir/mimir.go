@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/signals"
 	"github.com/grafana/dskit/spanprofiler"
+	"github.com/okzk/sdnotify"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -121,7 +122,7 @@ type Config struct {
 	LimitsConfig     validation.Limits               `yaml:"limits"`
 	Worker           querier_worker.Config           `yaml:"frontend_worker"`
 	Frontend         frontend.CombinedFrontendConfig `yaml:"frontend"`
-	IngestStorage    ingest.Config                   `yaml:"ingest_storage" doc:"hidden"`
+	IngestStorage    ingest.Config                   `yaml:"ingest_storage"`
 	BlocksStorage    tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
 	Compactor        compactor.Config                `yaml:"compactor"`
 	StoreGateway     storegateway.Config             `yaml:"store_gateway"`
@@ -276,7 +277,7 @@ func (c *Config) Validate(log log.Logger) error {
 		if c.isAnyModuleEnabled(Ingester, Write, All) || !errors.Is(err, ingester.ErrSpreadMinimizingValidation) {
 			return errors.Wrap(err, "invalid ingester config")
 		}
-		level.Debug(log).Log("ingester config is invalid; moving on because the \"ingester\" module is not in this process's targets", "err", err.Error())
+		level.Debug(log).Log("msg", "ingester config is invalid; moving on because the \"ingester\" module is not in this process's targets", "err", err.Error())
 	}
 	if err := c.Worker.Validate(); err != nil {
 		return errors.Wrap(err, "invalid frontend_worker config")
@@ -886,9 +887,15 @@ func (t *Mimir) Run() error {
 		grpcutil.WithManager(sm),
 	))
 
-	// Let's listen for events from this manager, and log them.
-	healthy := func() { level.Info(util_log.Logger).Log("msg", "Application started") }
-	stopped := func() { level.Info(util_log.Logger).Log("msg", "Application stopped") }
+	// Let's listen for events from this manager, log them and send sd_notify event
+	healthy := func() {
+		level.Info(util_log.Logger).Log("msg", "Application started")
+		_ = sdnotify.Ready()
+	}
+	stopped := func() {
+		level.Info(util_log.Logger).Log("msg", "Application stopped")
+		_ = sdnotify.Stopping()
+	}
 	serviceFailed := func(service services.Service) {
 		// if any service fails, stop entire Mimir
 		sm.StopAsync()

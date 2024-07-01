@@ -11,6 +11,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/shirou/gopsutil/v4/process"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -30,8 +32,10 @@ const (
 	// DefaultReportSendInterval is the interval at which anonymous usage statistics are reported.
 	DefaultReportSendInterval = 4 * time.Hour
 
-	defaultReportCheckInterval = time.Minute
-	defaultStatsServerURL      = "https://stats.grafana.org/mimir-usage-report"
+	defaultReportCheckInterval    = time.Minute
+	defaultCPUUsageSampleInterval = time.Minute
+
+	defaultStatsServerURL = "https://stats.grafana.org/mimir-usage-report"
 )
 
 const (
@@ -77,6 +81,10 @@ type Reporter struct {
 	// How long to wait for a cluster seed file creation before using it.
 	seedFileMinStability time.Duration
 
+	// How frequently to sample CPU usage.
+	cpuUsageSampleInterval time.Duration
+	cpuUsageProc           *process.Process
+
 	client    http.Client
 	serverURL string
 
@@ -91,7 +99,11 @@ type Reporter struct {
 func NewReporter(bucketClient objstore.InstrumentedBucket, logger log.Logger, reg prometheus.Registerer) *Reporter {
 	// The cluster seed file is stored in a prefix dedicated to Mimir internals.
 	bucketClient = bucket.NewPrefixedBucketClient(bucketClient, bucket.MimirInternalsPrefix)
-
+	proc, err := process.NewProcess(int32(os.Getpid()))
+	if err != nil {
+		level.Debug(logger).Log("msg", "failed to get process for usage reporting; will not report CPU", "err", err)
+		proc = nil // the docs on process.NewProcess doesn't specify what's returned with an error, so we make sure it's nil
+	}
 	r := &Reporter{
 		logger:               logger,
 		bucket:               bucketClient,
@@ -100,6 +112,9 @@ func NewReporter(bucketClient objstore.InstrumentedBucket, logger log.Logger, re
 		reportCheckInterval:  defaultReportCheckInterval,
 		reportSendInterval:   DefaultReportSendInterval,
 		seedFileMinStability: clusterSeedFileMinStability,
+
+		cpuUsageSampleInterval: defaultCPUUsageSampleInterval,
+		cpuUsageProc:           proc,
 
 		requestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_usage_stats_report_sends_total",
@@ -145,12 +160,17 @@ func (r *Reporter) running(ctx context.Context) error {
 	// Find when to send the next report.
 	scheduleNextReport()
 
-	ticker := time.NewTicker(r.reportCheckInterval)
-	defer ticker.Stop()
+	checkTicker := time.NewTicker(r.reportCheckInterval)
+	defer checkTicker.Stop()
+
+	cpuUsageTicker := time.NewTicker(r.cpuUsageSampleInterval)
+	defer cpuUsageTicker.Stop()
 
 	for {
 		select {
-		case <-ticker.C:
+		case <-cpuUsageTicker.C:
+			r.recordCPUUsage(ctx)
+		case <-checkTicker.C:
 			if time.Now().Before(nextReportAt) {
 				continue
 			}
@@ -184,6 +204,22 @@ func (r *Reporter) running(ctx context.Context) error {
 			}
 			return nil
 		}
+	}
+}
+
+var cpuUsage = GetAndResetFloat("cpu_usage")
+
+func (r *Reporter) recordCPUUsage(ctx context.Context) {
+	if r.cpuUsageProc == nil {
+		return
+	}
+	percent, err := r.cpuUsageProc.CPUPercentWithContext(ctx)
+	if err != nil {
+		level.Debug(r.logger).Log("msg", "failed to get cpu percent for usage reporting", "err", err)
+		return
+	}
+	if cpuUsage.Value() < percent {
+		cpuUsage.Set(percent)
 	}
 }
 

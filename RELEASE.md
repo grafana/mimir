@@ -22,9 +22,10 @@ The following table contains past releases and tentative dates for upcoming rele
 | 2.10.0  | 2023-09-06 | Oleg Zaytsev       |
 | 2.11.0  | 2023-12-06 | Justin Lei         |
 | 2.12.0  | 2024-03-11 | Yuri Nikolic       |
-| 2.13.0  | 2024-06-10 | _To be announced_  |
+| 2.13.0  | 2024-06-17 | Dimitar Dimitrov   |
 | 2.14.0  | 2024-09-09 | _To be announced_  |
 | 2.15.0  | 2024-12-09 | _To be announced_  |
+| 2.16.0  | 2025-03-10 | _To be announced_  |
 
 ## Release shepherd responsibilities
 
@@ -66,8 +67,6 @@ If something is not clear, you can get back to this document to learn more about
   - After the release notes PR is merged (which usually happen after RC is published), cherry-pick them into the release branch
 - [ ] Wait for any open PR we want to get merged before cutting the release candidate
   - We shouldn't wait for the open PRs beyond the scheduled release date
-  - [ ] Eventually open a PR for every experimental feature we want to promote to stable
-  - [ ] Eventually open a PR to remove any deprecated feature or configuration option that should be removed in this release
 - [ ] Update `CHANGELOG.md`
   - [ ] Run `./tools/release/check-changelog.sh LAST-RELEASE-TAG...main` and add missing PRs to CHANGELOG
   - [ ] Ensure CHANGELOG entries are [sorted by type](https://github.com/grafana/mimir/blob/main/docs/internal/contributing/README.md#changelog)
@@ -109,6 +108,10 @@ If something is not clear, you can get back to this document to learn more about
   - [ ] Announce the release candidate on social media such as on Mimir community slack using your own Twitter, Mastodon or LinkedIn account
 - [ ] Vendor the release commit of Mimir into Grafana Enterprise Metrics (GEM)
   - _This is addressed by Grafana Labs_
+- [ ] Publish a `mimir-distributed` Helm chart release candidate. Follow the instructions in [Release process for a release candidate](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/RELEASE.md#release-process-for-a-release-candidate)
+- [ ] Promote experimental features to experimental and remove deprecated features for the **next** release:
+  - [ ] Open a PR for every experimental feature we want to promote to stable
+  - [ ] Open a PR to remove any deprecated feature or configuration option that should be removed in the next release
 
 ### Publish the stable release
 
@@ -141,7 +144,9 @@ If something is not clear, you can get back to this document to learn more about
         `main`, `release-3.1` and `release-3.0`.
   - [ ] Announce the release on socials
   - [ ] Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
+    - Keep the last 3 minor releases
   - [ ] [Publish dashboards to grafana.com](https://github.com/grafana/mimir/blob/main/RELEASE.md#publish-a-stable-release)
+  - [ ] After publishing a GEM release publish the `mimir-distributed` Helm chart. Follow the instructions in [Release process for a final release](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/RELEASE.md#release-process-for-a-final-release)
 ````
 
 ### Branch management and versioning strategy
@@ -279,6 +284,7 @@ To publish a stable release:
 1. Merge the release branch `release-x.y` into `main` (see [Merging release branch into main](#merging-release-branch-into-main))
 1. Check the `README.md` file for any broken links.
 1. Open a PR to **add** the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
+   - Keep the last 3 minor releases
 1. Publish dashboards (done by a Grafana Labs member)
    1. Login to [https://grafana.com](https://grafana.com) with your Grafana Labs account
    1. Open [https://grafana.com/orgs/grafana/dashboards](https://grafana.com/orgs/grafana/dashboards)

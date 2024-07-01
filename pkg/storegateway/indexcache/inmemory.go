@@ -277,7 +277,11 @@ func (c *InMemoryIndexCache) reset() {
 
 func copyString(s string) string {
 	var b []byte
+	// Ignore deprecation warning for now
+	//nolint:staticcheck
 	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+	// Ignore deprecation warning for now
+	//nolint:staticcheck
 	h.Data = (*reflect.StringHeader)(unsafe.Pointer(&s)).Data
 	h.Len = len(s)
 	h.Cap = len(s)

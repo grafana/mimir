@@ -506,14 +506,13 @@ load 5m
 	test_sgn{src="sgn-e"}	0
 	test_sgn{src="sgn-f"}	100
 
-# Unsupported by streaming engine.
-# eval instant at 0m sgn(test_sgn)
-# 	{src="sgn-a"}	-1
-# 	{src="sgn-b"}	1
-# 	{src="sgn-c"}	NaN
-# 	{src="sgn-d"}	-1
-# 	{src="sgn-e"}	0
-# 	{src="sgn-f"}	1
+eval instant at 0m sgn(test_sgn)
+ 	{src="sgn-a"}	-1
+ 	{src="sgn-b"}	1
+ 	{src="sgn-c"}	NaN
+ 	{src="sgn-d"}	-1
+ 	{src="sgn-e"}	0
+ 	{src="sgn-f"}	1
 
 
 # Tests for sort/sort_desc.
@@ -1353,10 +1352,9 @@ load 5m
 	exp_root_log{l="x"} 10
 	exp_root_log{l="y"} 20
 
-# Unsupported by streaming engine.
-# eval instant at 5m exp(exp_root_log)
-# 	{l="x"} 22026.465794806718
-# 	{l="y"} 485165195.4097903
+eval instant at 5m exp(exp_root_log)
+ 	{l="x"} 22026.465794806718
+ 	{l="y"} 485165195.4097903
 
 # Unsupported by streaming engine.
 # eval instant at 5m exp(exp_root_log - 10)
@@ -1368,10 +1366,9 @@ load 5m
 # 	{l="x"} 4.5399929762484854e-05
 # 	{l="y"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 5m ln(exp_root_log)
-# 	{l="x"} 2.302585092994046
-# 	{l="y"} 2.995732273553991
+eval instant at 5m ln(exp_root_log)
+ 	{l="x"} 2.302585092994046
+ 	{l="y"} 2.995732273553991
 
 # Unsupported by streaming engine.
 # eval instant at 5m ln(exp_root_log - 10)
@@ -1383,20 +1380,17 @@ load 5m
 # 	{l="y"} -Inf
 # 	{l="x"} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 5m exp(ln(exp_root_log))
-# 	{l="y"} 20
-# 	{l="x"} 10
+eval instant at 5m exp(ln(exp_root_log))
+ 	{l="y"} 20
+ 	{l="x"} 10
 
-# Unsupported by streaming engine.
-# eval instant at 5m sqrt(exp_root_log)
-# 	{l="x"} 3.1622776601683795
-# 	{l="y"} 4.47213595499958
+eval instant at 5m sqrt(exp_root_log)
+ 	{l="x"} 3.1622776601683795
+ 	{l="y"} 4.47213595499958
 
-# Unsupported by streaming engine.
-# eval instant at 5m log2(exp_root_log)
-# 	{l="x"} 3.3219280948873626
-# 	{l="y"} 4.321928094887363
+eval instant at 5m log2(exp_root_log)
+ 	{l="x"} 3.3219280948873626
+ 	{l="y"} 4.321928094887363
 
 # Unsupported by streaming engine.
 # eval instant at 5m log2(exp_root_log - 10)
@@ -1408,10 +1402,9 @@ load 5m
 # 	{l="x"} NaN
 # 	{l="y"} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 5m log10(exp_root_log)
-# 	{l="x"} 1
-# 	{l="y"} 1.301029995663981
+eval instant at 5m log10(exp_root_log)
+ 	{l="x"} 1
+ 	{l="y"} 1.301029995663981
 
 # Unsupported by streaming engine.
 # eval instant at 5m log10(exp_root_log - 10)
@@ -1424,3 +1417,12 @@ load 5m
 # 	{l="y"} -Inf
 
 clear
+
+# Test that timestamp() handles the scenario where there are more steps than samples.
+load 1m
+  metric 0+1x1000
+
+# We expect the value to be 0 for t=0s to t=59s (inclusive), then 60 for t=60s and t=61s.
+# Unsupported by streaming engine.
+# eval range from 0 to 61s step 1s timestamp(metric)
+#  {} 0x59 60 60

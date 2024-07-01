@@ -161,6 +161,8 @@ spec:
             {{- toYaml .Values.compactor.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.compactor.containerSecurityContext | nindent 12 }}
+          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.compactor }}
+          {{- if or .Values.global.extraEnv .Values.compactor.env $jaeger_queue_size }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -168,11 +170,12 @@ spec:
             {{- with .Values.compactor.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.compactor }}
             {{- if $jaeger_queue_size }}
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.compactor.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -180,3 +183,4 @@ spec:
             {{- with .Values.compactor.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}

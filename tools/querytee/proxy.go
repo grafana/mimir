@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/server"
+	"github.com/grafana/dskit/spanlogger"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -26,20 +27,21 @@ import (
 var errMinBackends = errors.New("at least 1 backend is required")
 
 type ProxyConfig struct {
-	ServerHTTPServiceAddress       string
-	ServerHTTPServicePort          int
-	ServerGRPCServiceAddress       string
-	ServerGRPCServicePort          int
-	BackendEndpoints               string
-	PreferredBackend               string
-	BackendReadTimeout             time.Duration
-	CompareResponses               bool
-	LogSlowQueryResponseThreshold  time.Duration
-	ValueComparisonTolerance       float64
-	UseRelativeError               bool
-	PassThroughNonRegisteredRoutes bool
-	SkipRecentSamples              time.Duration
-	BackendSkipTLSVerify           bool
+	ServerHTTPServiceAddress            string
+	ServerHTTPServicePort               int
+	ServerGRPCServiceAddress            string
+	ServerGRPCServicePort               int
+	BackendEndpoints                    string
+	PreferredBackend                    string
+	BackendReadTimeout                  time.Duration
+	CompareResponses                    bool
+	LogSlowQueryResponseThreshold       time.Duration
+	ValueComparisonTolerance            float64
+	UseRelativeError                    bool
+	PassThroughNonRegisteredRoutes      bool
+	SkipRecentSamples                   time.Duration
+	BackendSkipTLSVerify                bool
+	AddMissingTimeParamToInstantQueries bool
 }
 
 func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
@@ -62,14 +64,21 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.UseRelativeError, "proxy.compare-use-relative-error", false, "Use relative error tolerance when comparing floating point values.")
 	f.DurationVar(&cfg.SkipRecentSamples, "proxy.compare-skip-recent-samples", 2*time.Minute, "The window from now to skip comparing samples. 0 to disable.")
 	f.BoolVar(&cfg.PassThroughNonRegisteredRoutes, "proxy.passthrough-non-registered-routes", false, "Passthrough requests for non-registered routes to preferred backend.")
+	f.BoolVar(&cfg.AddMissingTimeParamToInstantQueries, "proxy.add-missing-time-parameter-to-instant-queries", true, "Add a 'time' parameter to proxied instant query requests if they do not have one.")
 }
 
 type Route struct {
-	Path               string
-	RouteName          string
-	Methods            []string
-	ResponseComparator ResponsesComparator
+	Path                string
+	RouteName           string
+	Methods             []string
+	ResponseComparator  ResponsesComparator
+	RequestTransformers []RequestTransformer
 }
+
+// RequestTransformer manipulates a proxied request before it is sent to downstream endpoints.
+//
+// r.Body is ignored, use body instead.
+type RequestTransformer func(r *http.Request, body []byte, logger *spanlogger.SpanLogger) (*http.Request, []byte, error)
 
 type Proxy struct {
 	cfg        ProxyConfig
@@ -211,7 +220,7 @@ func (p *Proxy) Start() error {
 		if p.cfg.CompareResponses {
 			comparator = route.ResponseComparator
 		}
-		router.Path(route.Path).Methods(route.Methods...).Handler(NewProxyEndpoint(p.backends, route.RouteName, p.metrics, p.logger, comparator, p.cfg.LogSlowQueryResponseThreshold))
+		router.Path(route.Path).Methods(route.Methods...).Handler(NewProxyEndpoint(p.backends, route, p.metrics, p.logger, comparator, p.cfg.LogSlowQueryResponseThreshold))
 	}
 
 	if p.cfg.PassThroughNonRegisteredRoutes {

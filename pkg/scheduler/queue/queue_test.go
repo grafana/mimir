@@ -134,7 +134,7 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 			promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 			promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+			promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 		)
 		require.NoError(t, err)
 
@@ -239,7 +239,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 								promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+								promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 							)
 							require.NoError(b, err)
 
@@ -411,7 +411,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 
@@ -480,7 +480,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 
@@ -564,7 +564,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 
@@ -574,6 +574,16 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 	})
 
 	queue.SubmitRegisterQuerierConnection(querierID)
+
+	// Calling WaitForRequestForQuerier with a context that is already cancelled should fail immediately.
+	deadCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	r, tenant, err := queue.WaitForRequestForQuerier(deadCtx, FirstTenant(), querierID)
+	assert.Nil(t, r)
+	assert.Equal(t, FirstTenant(), tenant)
+	assert.ErrorIs(t, err, context.Canceled)
+
+	// Further, a context canceled after WaitForRequestForQuerier publishes a request should also fail.
 	errChan := make(chan error)
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -605,7 +615,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 
@@ -634,7 +644,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
 

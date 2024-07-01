@@ -2,7 +2,7 @@ module github.com/grafana/mimir
 
 go 1.21
 
-toolchain go1.21.0
+toolchain go1.22.4
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.3.2
@@ -20,11 +20,11 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20240528015923-27d7d41066d3
+	github.com/grafana/dskit v0.0.0-20240626184720-35810fdf1c6d
 	github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/json-iterator/go v1.1.12
-	github.com/minio/minio-go/v7 v7.0.70
+	github.com/minio/minio-go/v7 v7.0.72
 	github.com/mitchellh/go-wordwrap v1.0.1
 	github.com/oklog/ulid v1.3.1
 	github.com/opentracing-contrib/go-grpc v0.0.0-20210225150812-73cb765af46e
@@ -34,7 +34,7 @@ require (
 	github.com/prometheus/alertmanager v0.27.0
 	github.com/prometheus/client_golang v1.19.1
 	github.com/prometheus/client_model v0.6.1
-	github.com/prometheus/common v0.54.1-0.20240608102853-1c9da3533702
+	github.com/prometheus/common v0.54.1-0.20240615204547-04635d2962f9
 	github.com/prometheus/prometheus v1.99.0
 	github.com/segmentio/fasthash v1.0.3
 	github.com/sirupsen/logrus v1.9.3
@@ -63,17 +63,19 @@ require (
 	github.com/google/go-github/v57 v57.0.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
-	github.com/grafana/alerting v0.0.0-20240607182251-835aff588914
+	github.com/grafana/alerting v0.0.0-20240626080128-8299cb22b8df
 	github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/vault/api v1.10.0
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
+	github.com/okzk/sdnotify v0.0.0-20180710141335-d9becc38acbd
 	github.com/prometheus/procfs v0.15.1
-	github.com/thanos-io/objstore v0.0.0-20240512204237-71ef2d0cf7c4
+	github.com/shirou/gopsutil/v4 v4.24.5
+	github.com/thanos-io/objstore v0.0.0-20240622095743-1afe5d4bc3cd
 	github.com/twmb/franz-go v1.17.0
 	github.com/twmb/franz-go/pkg/kadm v1.12.0
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20240509060506-c77d58eb5693
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20240613152313-ee4cbf59292f
 	github.com/twmb/franz-go/pkg/kmsg v1.8.0
 	github.com/twmb/franz-go/plugin/kotel v1.4.1
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
@@ -82,7 +84,7 @@ require (
 	go.opentelemetry.io/otel v1.27.0
 	go.opentelemetry.io/otel/trace v1.27.0
 	go.uber.org/multierr v1.11.0
-	golang.org/x/exp v0.0.0-20240416160154-fe59bbe5cc7f
+	golang.org/x/exp v0.0.0-20240613232115-7f521ea00fb8
 	google.golang.org/api v0.183.0
 	google.golang.org/protobuf v1.34.1
 	sigs.k8s.io/kustomize/kyaml v0.16.0
@@ -92,24 +94,31 @@ require (
 	cloud.google.com/go/auth v0.5.1 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.2 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.11.1 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.5.2 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/internal v1.6.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.6.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/internal v1.8.0 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.2.2 // indirect
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3 // indirect
 	github.com/cenkalti/backoff/v3 v3.2.2 // indirect
+	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/go-test/deep v1.1.0 // indirect
-	github.com/goccy/go-json v0.10.2 // indirect
+	github.com/goccy/go-json v0.10.3 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
 	github.com/golang/glog v1.2.0 // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.6 // indirect
-	github.com/hashicorp/go-retryablehttp v0.7.4 // indirect
+	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
 	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.7 // indirect
 	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
 	github.com/hashicorp/hcl v1.0.1-vault-5 // indirect
+	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
 	github.com/pires/go-proxyproto v0.7.0 // indirect
+	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
+	github.com/shoenig/go-m1cpu v0.1.6 // indirect
+	github.com/tklauser/go-sysconf v0.3.12 // indirect
+	github.com/tklauser/numcpus v0.6.1 // indirect
+	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.49.0 // indirect
 	gopkg.in/telebot.v3 v3.2.1 // indirect
 	k8s.io/apimachinery v0.29.3 // indirect
@@ -183,7 +192,7 @@ require (
 	github.com/hashicorp/consul/api v1.29.1 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
-	github.com/hashicorp/go-hclog v1.6.2 // indirect
+	github.com/hashicorp/go-hclog v1.6.3 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/go-msgpack v1.1.5 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
@@ -200,8 +209,8 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
-	github.com/klauspost/compress v1.17.8
-	github.com/klauspost/cpuid/v2 v2.2.6 // indirect
+	github.com/klauspost/compress v1.17.9
+	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
@@ -257,7 +266,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240610173151-6df5495fc786
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240625230403-ab397a980d39
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
@@ -284,4 +293,4 @@ replace github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentraci
 replace github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 
 // Replacing prometheus/alertmanager with our fork.
-replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240605141526-70d9d63f74fc
+replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240625192351-66ec17e3aa45

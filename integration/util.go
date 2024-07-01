@@ -12,6 +12,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/grafana/e2e"
@@ -257,4 +259,98 @@ func GenerateNHistogramSeries(nSeries, nExemplars int, name func() string, ts ti
 		})
 	}
 	return
+}
+
+func filterSamplesByTimestamp(input []prompb.Sample, startMs, endMs int64) []prompb.Sample {
+	var filtered []prompb.Sample
+
+	for _, sample := range input {
+		if sample.Timestamp >= startMs && sample.Timestamp <= endMs {
+			filtered = append(filtered, sample)
+		}
+	}
+
+	return filtered
+}
+
+func filterHistogramsByTimestamp(input []prompb.Histogram, startMs, endMs int64) []prompb.Histogram {
+	var filtered []prompb.Histogram
+
+	for _, sample := range input {
+		if sample.Timestamp >= startMs && sample.Timestamp <= endMs {
+			filtered = append(filtered, sample)
+		}
+	}
+
+	return filtered
+}
+
+func prompbLabelsToMetric(pbLabels []prompb.Label) model.Metric {
+	metric := make(model.Metric, len(pbLabels))
+
+	for _, l := range pbLabels {
+		metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+	}
+
+	return metric
+}
+
+func metricToPrompbLabels(metric model.Metric) []prompb.Label {
+	lbls := make([]prompb.Label, 0, len(metric))
+
+	for name, value := range metric {
+		lbls = append(lbls, prompb.Label{
+			Name:  string(name),
+			Value: string(value),
+		})
+	}
+
+	// Sort labels because they're expected to be sorted by contract.
+	slices.SortFunc(lbls, func(a, b prompb.Label) int {
+		cmp := strings.Compare(a.Name, b.Name)
+		if cmp != 0 {
+			return cmp
+		}
+
+		return strings.Compare(a.Value, b.Value)
+	})
+
+	return lbls
+}
+
+func vectorToPrompbTimeseries(vector model.Vector) []*prompb.TimeSeries {
+	res := make([]*prompb.TimeSeries, 0, len(vector))
+
+	for _, sample := range vector {
+		res = append(res, &prompb.TimeSeries{
+			Labels: metricToPrompbLabels(sample.Metric),
+			Samples: []prompb.Sample{
+				{
+					Value:     float64(sample.Value),
+					Timestamp: int64(sample.Timestamp),
+				},
+			},
+		})
+	}
+
+	return res
+}
+
+// remoteReadQueryByMetricName generates a prompb.Query to query series by metric name within
+// the given start / end interval.
+func remoteReadQueryByMetricName(metricName string, start, end time.Time) *prompb.Query {
+	return &prompb.Query{
+		Matchers:         remoteReadQueryMatchersByMetricName(metricName),
+		StartTimestampMs: start.UnixMilli(),
+		EndTimestampMs:   end.UnixMilli(),
+		Hints: &prompb.ReadHints{
+			StepMs:  1,
+			StartMs: start.UnixMilli(),
+			EndMs:   end.UnixMilli(),
+		},
+	}
+}
+
+func remoteReadQueryMatchersByMetricName(metricName string) []*prompb.LabelMatcher {
+	return []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: metricName}}
 }

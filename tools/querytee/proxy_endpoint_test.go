@@ -7,6 +7,7 @@ package querytee
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,6 +29,7 @@ import (
 )
 
 func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
+	testRoute := Route{RouteName: "test"}
 	backendURL1, err := url.Parse("http://backend-1/")
 	require.NoError(t, err)
 	backendURL2, err := url.Parse("http://backend-2/")
@@ -105,7 +107,7 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
-			endpoint := NewProxyEndpoint(testData.backends, "test", NewProxyMetrics(nil), log.NewNopLogger(), nil, 0)
+			endpoint := NewProxyEndpoint(testData.backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0)
 
 			// Send the responses from a dedicated goroutine.
 			resCh := make(chan *backendResponse)
@@ -130,6 +132,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 		testHandler  http.HandlerFunc
 	)
 
+	testRoute := Route{RouteName: "test"}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer wg.Done()
 		defer requestCount.Add(1)
@@ -149,7 +152,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 		NewProxyBackend("backend-1", backendURL1, time.Second, true, false),
 		NewProxyBackend("backend-2", backendURL2, time.Second, false, false),
 	}
-	endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(nil), log.NewNopLogger(), nil, 0)
+	endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0)
 
 	for _, tc := range []struct {
 		name    string
@@ -233,6 +236,8 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 }
 
 func Test_ProxyEndpoint_Comparison(t *testing.T) {
+	testRoute := Route{RouteName: "test"}
+
 	scenarios := map[string]struct {
 		preferredResponseStatusCode  int
 		secondaryResponseStatusCode  int
@@ -323,7 +328,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 				comparisonError:  scenario.comparatorError,
 			}
 
-			endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(reg), logger, comparator, 0)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0)
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -352,6 +357,8 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 }
 
 func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
+	testRoute := Route{RouteName: "test"}
+
 	scenarios := map[string]struct {
 		slowResponseThreshold         time.Duration
 		preferredResponseLatency      time.Duration
@@ -423,7 +430,7 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 				comparisonResult: ComparisonSuccess,
 			}
 
-			endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(reg), logger, comparator, scenario.slowResponseThreshold)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, scenario.slowResponseThreshold)
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -448,31 +455,33 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 }
 
 func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
+	testRoute := Route{RouteName: "test"}
+
 	scenarios := map[string]struct {
 		latencyPairs                  []latencyPair
 		expectedDurationSampleSum     float64
 		expectedProportionalSampleSum float64
 	}{
 		"secondary backend is faster than preferred": {
-			latencyPairs: []latencyPair{{
-				preferredResponseLatency: 3 * time.Second,
-				secondaryResponseLatency: 1 * time.Second,
-			}, {
-				preferredResponseLatency: 5 * time.Second,
-				secondaryResponseLatency: 2 * time.Second,
+			latencyPairs: []latencyPair{
+				{
+					preferredResponseLatency: 3 * time.Second,
+					secondaryResponseLatency: 1 * time.Second,
+				}, {
+					preferredResponseLatency: 5 * time.Second,
+					secondaryResponseLatency: 2 * time.Second,
+				},
 			},
-			},
-			expectedDurationSampleSum:     5,
-			expectedProportionalSampleSum: (3.0/1 + 5.0/2),
+			expectedDurationSampleSum:     -5,
+			expectedProportionalSampleSum: -2.0/3 + -3.0/5,
 		},
 		"preferred backend is 5 seconds faster than secondary": {
 			latencyPairs: []latencyPair{{
 				preferredResponseLatency: 2 * time.Second,
 				secondaryResponseLatency: 7 * time.Second,
-			},
-			},
-			expectedDurationSampleSum:     -5,
-			expectedProportionalSampleSum: (2.0 / 7),
+			}},
+			expectedDurationSampleSum:     5,
+			expectedProportionalSampleSum: 5.0 / 2,
 		},
 	}
 
@@ -490,7 +499,7 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 				comparisonResult: ComparisonSuccess,
 			}
 
-			endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(reg), logger, comparator, 0)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0)
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -511,12 +520,12 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 			gotDuration := filterMetrics(got, []string{"cortex_querytee_backend_response_relative_duration_seconds"})
 			require.Equal(t, 1, len(gotDuration), "Expect only one metric after filtering")
 			require.Equal(t, uint64(len(scenario.latencyPairs)), gotDuration[0].Metric[0].Histogram.GetSampleCount())
-			require.Equal(t, scenario.expectedDurationSampleSum, gotDuration[0].Metric[0].Histogram.GetSampleSum())
+			require.InDelta(t, scenario.expectedDurationSampleSum, gotDuration[0].Metric[0].Histogram.GetSampleSum(), 1e-9)
 
 			gotProportional := filterMetrics(got, []string{"cortex_querytee_backend_response_relative_duration_proportional"})
 			require.Equal(t, 1, len(gotProportional), "Expect only one metric after filtering")
 			require.Equal(t, uint64(len(scenario.latencyPairs)), gotProportional[0].Metric[0].Histogram.GetSampleCount())
-			require.Equal(t, scenario.expectedProportionalSampleSum, gotProportional[0].Metric[0].Histogram.GetSampleSum())
+			require.InDelta(t, scenario.expectedProportionalSampleSum, gotProportional[0].Metric[0].Histogram.GetSampleSum(), 1e-9)
 		})
 	}
 }
@@ -762,7 +771,7 @@ func (b *mockProxyBackend) Preferred() bool {
 	return b.preferred
 }
 
-func (b *mockProxyBackend) ForwardRequest(_ *http.Request, _ io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
+func (b *mockProxyBackend) ForwardRequest(_ context.Context, _ *http.Request, _ io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
 	resp := &http.Response{
 		StatusCode: 200,
 		Header:     make(http.Header),

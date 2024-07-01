@@ -62,6 +62,7 @@ func TestSeriesChunksSet(t *testing.T) {
 		for r := 0; r < numRuns; r++ {
 			set := newSeriesChunksSet(numSeries, true)
 
+			lset := labels.FromStrings(labels.MetricName, "metric")
 			// Ensure the series slice is made of all zero values. Then write something inside before releasing it again.
 			// The slice is expected to be picked from the pool, at least in some runs (there's an assertion on it at
 			// the end of the test).
@@ -69,7 +70,7 @@ func TestSeriesChunksSet(t *testing.T) {
 			for i := 0; i < numSeries; i++ {
 				require.Zero(t, set.series[i])
 
-				set.series[i].lset = labels.FromStrings(labels.MetricName, "metric")
+				set.series[i].lset = lset
 				set.series[i].chks = set.newSeriesAggrChunkSlice(numChunksPerSeries)
 			}
 
@@ -447,6 +448,27 @@ func TestPreloadingSetIterator_Concurrency(t *testing.T) {
 		require.Error(t, preloading.Err())
 	}
 
+}
+
+func TestPreloadingSetIterator_ContextCancellation(t *testing.T) {
+	t.Cleanup(func() { test.VerifyNoLeak(t) })
+	const preloadSize = 1
+
+	// This set is unreleseable because reused by multiple test runs.
+	set := newSeriesChunksSet(1, false)
+	set.series = append(set.series, seriesChunks{
+		lset: labels.FromStrings("__name__", "metric_0"),
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	source := newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), preloadSize, set)
+	preloading := newPreloadingSetIterator[seriesChunksSet](ctx, preloadSize, source)
+
+	assert.True(t, preloading.Next())
+	require.NotZero(t, preloading.At())
+	cancel()
+	// abandon the iterator after the first Next(); This simulates the client giving up because they also detected the cancelled context
+	// At the end of the test there shouldn't be a leaking goroutine
 }
 
 type testBlock struct {

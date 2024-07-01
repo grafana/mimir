@@ -257,7 +257,7 @@ func (e perUserSeriesLimitReachedError) Error() string {
 }
 
 func (e perUserSeriesLimitReachedError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.BAD_DATA
+	return mimirpb.TENANT_LIMIT
 }
 
 func (e perUserSeriesLimitReachedError) soft() {}
@@ -288,7 +288,7 @@ func (e perUserMetadataLimitReachedError) Error() string {
 }
 
 func (e perUserMetadataLimitReachedError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.BAD_DATA
+	return mimirpb.TENANT_LIMIT
 }
 
 func (e perUserMetadataLimitReachedError) soft() {}
@@ -324,7 +324,7 @@ func (e perMetricSeriesLimitReachedError) Error() string {
 }
 
 func (e perMetricSeriesLimitReachedError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.BAD_DATA
+	return mimirpb.TENANT_LIMIT
 }
 
 func (e perMetricSeriesLimitReachedError) soft() {}
@@ -360,7 +360,7 @@ func (e perMetricMetadataLimitReachedError) Error() string {
 }
 
 func (e perMetricMetadataLimitReachedError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.BAD_DATA
+	return mimirpb.TENANT_LIMIT
 }
 
 func (e perMetricMetadataLimitReachedError) soft() {}
@@ -494,15 +494,16 @@ func (e ingesterPushGrpcDisabledError) errorCause() mimirpb.ErrorCause {
 var _ ingesterError = ingesterPushGrpcDisabledError{}
 
 type circuitBreakerOpenError struct {
+	requestType    string
 	remainingDelay time.Duration
 }
 
-func newCircuitBreakerOpenError(remainingDelay time.Duration) circuitBreakerOpenError {
-	return circuitBreakerOpenError{remainingDelay: remainingDelay}
+func newCircuitBreakerOpenError(requestType string, remainingDelay time.Duration) circuitBreakerOpenError {
+	return circuitBreakerOpenError{requestType: requestType, remainingDelay: remainingDelay}
 }
 
 func (e circuitBreakerOpenError) Error() string {
-	return fmt.Sprintf("%s with remaining delay %s", circuitbreaker.ErrOpen.Error(), e.remainingDelay.String())
+	return fmt.Sprintf("%s on %s request type with remaining delay %s", circuitbreaker.ErrOpen.Error(), e.requestType, e.remainingDelay.String())
 }
 
 func (e circuitBreakerOpenError) errorCause() mimirpb.ErrorCause {
@@ -549,6 +550,8 @@ func mapPushErrorToErrorWithStatus(err error) error {
 	if errors.As(err, &ingesterErr) {
 		switch ingesterErr.errorCause() {
 		case mimirpb.BAD_DATA:
+			errCode = codes.InvalidArgument
+		case mimirpb.TENANT_LIMIT:
 			errCode = codes.FailedPrecondition
 		case mimirpb.SERVICE_UNAVAILABLE:
 			errCode = codes.Unavailable
@@ -559,6 +562,8 @@ func mapPushErrorToErrorWithStatus(err error) error {
 			errCode = codes.Internal
 		case mimirpb.METHOD_NOT_ALLOWED:
 			errCode = codes.Unimplemented
+		case mimirpb.CIRCUIT_BREAKER_OPEN:
+			errCode = codes.Unavailable
 		}
 	}
 	return newErrorWithStatus(wrappedErr, errCode)
@@ -572,6 +577,8 @@ func mapPushErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 		switch ingesterErr.errorCause() {
 		case mimirpb.BAD_DATA:
 			return newErrorWithHTTPStatus(err, http.StatusBadRequest)
+		case mimirpb.TENANT_LIMIT:
+			return newErrorWithHTTPStatus(err, http.StatusBadRequest)
 		case mimirpb.SERVICE_UNAVAILABLE:
 			return newErrorWithStatus(err, codes.Unavailable)
 		case mimirpb.INSTANCE_LIMIT:
@@ -580,6 +587,8 @@ func mapPushErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
 		case mimirpb.METHOD_NOT_ALLOWED:
 			return newErrorWithStatus(err, codes.Unimplemented)
+		case mimirpb.CIRCUIT_BREAKER_OPEN:
+			return newErrorWithStatus(err, codes.Unavailable)
 		}
 	}
 	return err
@@ -599,6 +608,8 @@ func mapReadErrorToErrorWithStatus(err error) error {
 			errCode = codes.Unavailable
 		case mimirpb.METHOD_NOT_ALLOWED:
 			return newErrorWithStatus(err, codes.Unimplemented)
+		case mimirpb.CIRCUIT_BREAKER_OPEN:
+			return newErrorWithStatus(err, codes.Unavailable)
 		}
 	}
 	return newErrorWithStatus(err, errCode)
@@ -618,6 +629,8 @@ func mapReadErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 			return newErrorWithStatus(err, codes.Unavailable)
 		case mimirpb.METHOD_NOT_ALLOWED:
 			return newErrorWithStatus(err, codes.Unimplemented)
+		case mimirpb.CIRCUIT_BREAKER_OPEN:
+			return newErrorWithStatus(err, codes.Unavailable)
 		}
 	}
 	return err

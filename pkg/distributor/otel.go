@@ -13,8 +13,10 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
+	"github.com/gogo/status"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
@@ -28,7 +30,6 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 	"go.uber.org/multierr"
 	"google.golang.org/grpc/codes"
-	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/distributor/otlp"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -46,13 +47,17 @@ const (
 	maxErrMsgLen   = 1024
 )
 
+type OTLPHandlerLimits interface {
+	OTelMetricSuffixesEnabled(id string) bool
+}
+
 // OTLPHandler is an http.Handler accepting OTLP write requests.
 func OTLPHandler(
 	maxRecvMsgSize int,
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
 	enableOtelMetadataStorage bool,
-	limits *validation.Overrides,
+	limits OTLPHandlerLimits,
 	retryCfg RetryConfig,
 	push PushFunc,
 	pushMetrics *PushMetrics,
@@ -162,12 +167,12 @@ func OTLPHandler(
 
 		var metrics []mimirpb.PreallocTimeseries
 		if directTranslation {
-			metrics, err = otelMetricsToTimeseries(tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
+			metrics, err = otelMetricsToTimeseries(ctx, tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 			if err != nil {
 				return err
 			}
 		} else {
-			metrics, err = otelMetricsToTimeseriesOld(tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
+			metrics, err = otelMetricsToTimeseriesOld(ctx, tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 			if err != nil {
 				return err
 			}
@@ -244,7 +249,7 @@ func otlpHandler(
 		if err := push(ctx, req); err != nil {
 			if errors.Is(err, context.Canceled) {
 				level.Warn(logger).Log("msg", "push request canceled", "err", err)
-				writeErrorToHTTPResponseBody(w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
+				writeErrorToHTTPResponseBody(r.Context(), w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
 				return
 			}
 			var (
@@ -252,12 +257,13 @@ func otlpHandler(
 				grpcCode codes.Code
 				errorMsg string
 			)
-			if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
-				// here the error would always be nil, since it is already checked in httpgrpc.HTTPResponseFromError
-				s, _ := grpcutil.ErrorToStatus(err)
-				httpCode = int(resp.Code)
-				grpcCode = s.Code() // this will be the same as httpCode.
-				errorMsg = string(resp.Body)
+			if st, ok := grpcutil.ErrorToStatus(err); ok {
+				// TODO: This code is needed for backwards compatibility,
+				// and can be removed once -ingester.return-only-grpc-errors
+				// is removed.
+				httpCode = httpRetryableToOTLPRetryable(int(st.Code()))
+				grpcCode = st.Code()
+				errorMsg = st.Message()
 			} else {
 				grpcCode, httpCode = toOtlpGRPCHTTPStatus(err)
 				errorMsg = err.Error()
@@ -271,49 +277,55 @@ func otlpHandler(
 				level.Error(logger).Log(msgs...)
 			}
 			addHeaders(w, err, r, httpCode, retryCfg)
-			writeErrorToHTTPResponseBody(w, httpCode, grpcCode, errorMsg, logger)
+			writeErrorToHTTPResponseBody(r.Context(), w, httpCode, grpcCode, errorMsg, logger)
 		}
 	})
 }
 
 // toOtlpGRPCHTTPStatus is utilized by the OTLP endpoint.
-// According to the OTLP specifications (https://opentelemetry.io/docs/specs/otlp/#failures-1), unlike Prometheus, the OTLP client only retries on HTTP status codes 429, 502, 503, and 504.
 func toOtlpGRPCHTTPStatus(pushErr error) (codes.Code, int) {
-	if !errors.Is(pushErr, context.DeadlineExceeded) {
-		var distributorErr Error
-		if errors.As(pushErr, &distributorErr) {
-			switch distributorErr.Cause() {
-			case mimirpb.BAD_DATA:
-				return codes.InvalidArgument, http.StatusBadRequest
-			case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
-				return codes.ResourceExhausted, http.StatusTooManyRequests
-			case mimirpb.REPLICAS_DID_NOT_MATCH:
-				return codes.OK, http.StatusAccepted
-			case mimirpb.TOO_MANY_CLUSTERS:
-				return codes.InvalidArgument, http.StatusBadRequest
-			case mimirpb.TSDB_UNAVAILABLE:
-				return codes.Unavailable, http.StatusServiceUnavailable
-			case mimirpb.CIRCUIT_BREAKER_OPEN:
-				return codes.Unavailable, http.StatusServiceUnavailable
-			case mimirpb.METHOD_NOT_ALLOWED:
-				return codes.Unimplemented, http.StatusNotImplemented
-			}
+	var distributorErr Error
+	if errors.Is(pushErr, context.DeadlineExceeded) || !errors.As(pushErr, &distributorErr) {
+		return codes.Internal, http.StatusServiceUnavailable
+	}
+
+	grpcStatusCode := errorCauseToGRPCStatusCode(distributorErr.Cause(), false)
+	httpStatusCode := errorCauseToHTTPStatusCode(distributorErr.Cause(), false)
+	otlpHTTPStatusCode := httpRetryableToOTLPRetryable(httpStatusCode)
+	return grpcStatusCode, otlpHTTPStatusCode
+}
+
+// httpRetryableToOTLPRetryable maps non-retryable 5xx HTTP status codes according
+// to the OTLP specifications (https://opentelemetry.io/docs/specs/otlp/#failures-1)
+// to http.StatusServiceUnavailable. In case of a non-retryable HTTP status code,
+// httpRetryableToOTLPRetryable returns the HTTP status code itself.
+// Unlike Prometheus, which retries 429 and all 5xx HTTP status codes,
+// the OTLP client only retries on HTTP status codes 429, 502, 503, and 504.
+func httpRetryableToOTLPRetryable(httpStatusCode int) int {
+	if httpStatusCode/100 == 5 {
+		mask := httpStatusCode % 100
+		// We map all 5xx except 502, 503 and 504 into 503.
+		if mask <= 1 || mask > 4 {
+			return http.StatusServiceUnavailable
 		}
 	}
-	return codes.Internal, http.StatusServiceUnavailable
+	return httpStatusCode
 }
 
 // writeErrorToHTTPResponseBody converts the given error into a grpc status and marshals it into a byte slice, in order to be written to the response body.
 // See doc https://opentelemetry.io/docs/specs/otlp/#failures-1
-func writeErrorToHTTPResponseBody(w http.ResponseWriter, httpCode int, grpcCode codes.Code, msg string, logger log.Logger) {
+func writeErrorToHTTPResponseBody(reqCtx context.Context, w http.ResponseWriter, httpCode int, grpcCode codes.Code, msg string, logger log.Logger) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if server.IsHandledByHttpgrpcServer(reqCtx) {
+		w.Header().Set(server.ErrorMessageHeaderKey, msg) // If httpgrpc Server wants to convert this HTTP response into error, use this error message, instead of using response body.
+	}
 	w.WriteHeader(httpCode)
 
-	respBytes, err := proto.Marshal(grpcstatus.New(grpcCode, msg).Proto())
+	respBytes, err := proto.Marshal(status.New(grpcCode, msg).Proto())
 	if err != nil {
 		level.Error(logger).Log("msg", "otlp response marshal failed", "err", err)
-		writeResponseFailedBody, _ := proto.Marshal(grpcstatus.New(codes.Internal, "failed to marshal OTLP response").Proto())
+		writeResponseFailedBody, _ := proto.Marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto())
 		_, _ = w.Write(writeResponseFailedBody)
 		return
 	}
@@ -393,9 +405,9 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 	return metadata
 }
 
-func otelMetricsToTimeseries(tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	converter := otlp.NewMimirConverter()
-	errs := converter.FromMetrics(md, otlp.Settings{
+	errs := converter.FromMetrics(ctx, md, otlp.Settings{
 		AddMetricSuffixes: addSuffixes,
 	})
 	mimirTS := converter.TimeSeries()
@@ -419,9 +431,9 @@ func otelMetricsToTimeseries(tenantID string, addSuffixes bool, discardedDueToOt
 }
 
 // Old, less efficient, version of otelMetricsToTimeseries.
-func otelMetricsToTimeseriesOld(tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+func otelMetricsToTimeseriesOld(ctx context.Context, tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	converter := prometheusremotewrite.NewPrometheusConverter()
-	errs := converter.FromMetrics(md, prometheusremotewrite.Settings{
+	errs := converter.FromMetrics(ctx, md, prometheusremotewrite.Settings{
 		AddMetricSuffixes: addSuffixes,
 	})
 	promTS := converter.TimeSeries()

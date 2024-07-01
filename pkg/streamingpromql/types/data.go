@@ -20,6 +20,8 @@ type InstantVectorSeriesData struct {
 	// Histograms contains histogram samples for this series.
 	// Samples must be sorted in timestamp order, earliest timestamps first.
 	// Samples must not have duplicate timestamps.
+	// HPoint contains a pointer to a histogram, so it is generally not safe to
+	// modify directly as the histogram may be used for other HPoint values, such as when lookback has occurred.
 	Histograms []promql.HPoint
 }
 

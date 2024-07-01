@@ -60,6 +60,7 @@ func newS3Config(cfg Config) (s3.Config, error) {
 		PutUserMetadata:    putUserMetadata,
 		SendContentMd5:     cfg.SendContentMd5,
 		SSEConfig:          sseCfg,
+		DisableDualstack:   !cfg.DualstackEnabled,
 		ListObjectsVersion: cfg.ListObjectsVersion,
 		BucketLookupType:   cfg.BucketLookupType,
 		AWSSDKAuth:         cfg.NativeAWSAuthEnabled,

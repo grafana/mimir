@@ -33,6 +33,8 @@ Usage of ./cmd/mimir/mimir:
     	Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: auto, path, virtual-hosted.
   -alertmanager-storage.s3.bucket-name string
     	S3 bucket name
+  -alertmanager-storage.s3.dualstack-enabled
+    	[experimental] When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region. (default true)
   -alertmanager-storage.s3.endpoint string
     	The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.
   -alertmanager-storage.s3.expect-continue-timeout duration
@@ -544,7 +546,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.max-concurrent int
     	Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants. (default 100)
   -blocks-storage.bucket-store.max-concurrent-queue-timeout duration
-    	Timeout for the queue of queries waiting for execution. If the queue is full and the timeout is reached, the query will be retried on another store-gateway. 0 means no timeout and all queries will wait indefinitely for their turn.
+    	Timeout for the queue of queries waiting for execution. If the queue is full and the timeout is reached, the query will be retried on another store-gateway. 0 means no timeout and all queries will wait indefinitely for their turn. (default 5s)
   -blocks-storage.bucket-store.meta-sync-concurrency int
     	Number of Go routines to use when syncing block meta files from object storage per tenant. (default 20)
   -blocks-storage.bucket-store.metadata-cache.backend string
@@ -691,6 +693,8 @@ Usage of ./cmd/mimir/mimir:
     	Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: auto, path, virtual-hosted.
   -blocks-storage.s3.bucket-name string
     	S3 bucket name
+  -blocks-storage.s3.dualstack-enabled
+    	[experimental] When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region. (default true)
   -blocks-storage.s3.endpoint string
     	The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.
   -blocks-storage.s3.expect-continue-timeout duration
@@ -869,6 +873,8 @@ Usage of ./cmd/mimir/mimir:
     	Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: auto, path, virtual-hosted.
   -common.storage.s3.bucket-name string
     	S3 bucket name
+  -common.storage.s3.dualstack-enabled
+    	[experimental] When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region. (default true)
   -common.storage.s3.endpoint string
     	The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.
   -common.storage.s3.expect-continue-timeout duration
@@ -970,7 +976,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.block-upload-verify-chunks
     	Verify chunks when uploading blocks via the upload API for the tenant. (default true)
   -compactor.blocks-retention-period duration
-    	Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period. 0 to disable.
+    	Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period by instant, range or remote read queries. 0 to disable.
   -compactor.cleanup-concurrency int
     	Max number of tenants for which blocks cleanup and maintenance should run concurrently. (default 20)
   -compactor.cleanup-interval duration
@@ -1299,6 +1305,48 @@ Usage of ./cmd/mimir/mimir:
     	HTTP URL path under which the Alertmanager ui and api will be served. (default "/alertmanager")
   -http.prometheus-http-prefix string
     	HTTP URL path under which the Prometheus api will be served. (default "/prometheus")
+  -ingest-storage.enabled
+    	True to enable the ingestion via object storage.
+  -ingest-storage.ingestion-partition-tenant-shard-size int
+    	[experimental] The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.
+  -ingest-storage.kafka.address string
+    	The Kafka backend address.
+  -ingest-storage.kafka.auto-create-topic-default-partitions int
+    	When auto-creation of Kafka topic is enabled and this value is positive, Kafka's num.partitions configuration option is set on Kafka brokers with this value when Mimir component that uses Kafka starts. This configuration option specifies the default number of partitions that the Kafka broker uses for auto-created topics. Note that this is a Kafka-cluster wide setting, and applies to any auto-created topic. If the setting of num.partitions fails, Mimir proceeds anyways, but auto-created topics could have an incorrect number of partitions.
+  -ingest-storage.kafka.auto-create-topic-enabled
+    	Enable auto-creation of Kafka topic if it doesn't exist. (default true)
+  -ingest-storage.kafka.client-id string
+    	The Kafka client ID.
+  -ingest-storage.kafka.consume-from-position-at-startup string
+    	From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp. (default "last-offset")
+  -ingest-storage.kafka.consume-from-timestamp-at-startup int
+    	Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is timestamp
+  -ingest-storage.kafka.consumer-group string
+    	The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.
+  -ingest-storage.kafka.consumer-group-offset-commit-interval duration
+    	How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left. (default 1s)
+  -ingest-storage.kafka.dial-timeout duration
+    	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
+  -ingest-storage.kafka.last-produced-offset-poll-interval duration
+    	How frequently to poll the last produced offset, used to enforce strong read consistency. (default 1s)
+  -ingest-storage.kafka.last-produced-offset-retry-timeout duration
+    	How long to retry a failed request to get the last produced offset. (default 10s)
+  -ingest-storage.kafka.max-consumer-lag-at-startup duration
+    	The maximum tolerated lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
+  -ingest-storage.kafka.producer-max-record-size-bytes int
+    	The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes. (default 15983616)
+  -ingest-storage.kafka.topic string
+    	The Kafka topic name.
+  -ingest-storage.kafka.wait-strong-read-consistency-timeout duration
+    	The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout. (default 20s)
+  -ingest-storage.kafka.write-clients int
+    	The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. (default 1)
+  -ingest-storage.kafka.write-timeout duration
+    	How long to wait for an incoming write request to be successfully committed to the Kafka backend. (default 10s)
+  -ingest-storage.migration.distributor-send-to-ingesters-enabled
+    	When both this option and ingest storage are enabled, distributors write to both Kafka and ingesters. A write request is considered successful only when written to both backends.
+  -ingest-storage.read-consistency string
+    	[experimental] The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual. (default "eventual")
   -ingester.active-series-custom-trackers value
     	Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo="bar"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.
   -ingester.active-series-metrics-enabled
@@ -1307,22 +1355,6 @@ Usage of ./cmd/mimir/mimir:
     	After what time a series is considered to be inactive. (default 10m0s)
   -ingester.active-series-metrics-update-period duration
     	How often to update active series metrics. (default 1m0s)
-  -ingester.circuit-breaker.cooldown-period duration
-    	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 10s)
-  -ingester.circuit-breaker.enabled
-    	[experimental] Enable circuit breaking when making requests to ingesters
-  -ingester.circuit-breaker.failure-execution-threshold uint
-    	[experimental] How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures (default 100)
-  -ingester.circuit-breaker.failure-threshold-percentage uint
-    	[experimental] Max percentage of requests that can fail over period before the circuit breaker opens (default 10)
-  -ingester.circuit-breaker.initial-delay duration
-    	[experimental] How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.
-  -ingester.circuit-breaker.push-timeout duration
-    	The maximum length of time an ingester's Push request can last before it triggers a circuit breaker. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 2s)
-  -ingester.circuit-breaker.read-timeout duration
-    	The maximum length of time an ingester's read-path request can last before it triggers a circuit breaker. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 30s)
-  -ingester.circuit-breaker.thresholding-period duration
-    	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -ingester.client.backoff-min-period duration
@@ -1417,8 +1449,94 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -query-frontend.results-cache-ttl-for-out-of-order-time-window option to specify TTL for resulting cache entry.
   -ingester.owned-series-update-interval duration
     	[experimental] How often to check for ring changes and possibly recompute owned series as a result of detected change. (default 15s)
+  -ingester.partition-ring.consul.acl-token string
+    	ACL Token used to interact with Consul.
+  -ingester.partition-ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
+  -ingester.partition-ring.consul.client-timeout duration
+    	HTTP timeout when talking to Consul (default 20s)
+  -ingester.partition-ring.consul.consistent-reads
+    	Enable consistent reads to Consul.
+  -ingester.partition-ring.consul.hostname string
+    	Hostname and port of Consul. (default "localhost:8500")
+  -ingester.partition-ring.consul.watch-burst-size int
+    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
+  -ingester.partition-ring.consul.watch-rate-limit float
+    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
+  -ingester.partition-ring.delete-inactive-partition-after duration
+    	How long to wait before an INACTIVE partition is eligible for deletion. The partition is deleted only if it has been in INACTIVE state for at least the configured duration and it has no owners registered. A value of 0 disables partitions deletion. (default 13h0m0s)
+  -ingester.partition-ring.etcd.dial-timeout duration
+    	The dial timeout for the etcd connection. (default 10s)
+  -ingester.partition-ring.etcd.endpoints string
+    	The etcd endpoints to connect to.
+  -ingester.partition-ring.etcd.max-retries int
+    	The maximum number of retries to do for failed ops. (default 10)
+  -ingester.partition-ring.etcd.password string
+    	Etcd password.
+  -ingester.partition-ring.etcd.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -ingester.partition-ring.etcd.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ingester.partition-ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -ingester.partition-ring.etcd.tls-enabled
+    	Enable TLS.
+  -ingester.partition-ring.etcd.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -ingester.partition-ring.etcd.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -ingester.partition-ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -ingester.partition-ring.etcd.tls-server-name string
+    	Override the expected name on the server certificate.
+  -ingester.partition-ring.etcd.username string
+    	Etcd username.
+  -ingester.partition-ring.min-partition-owners-count int
+    	Minimum number of owners to wait before a PENDING partition gets switched to ACTIVE. (default 1)
+  -ingester.partition-ring.min-partition-owners-duration duration
+    	How long the minimum number of owners are enforced before a PENDING partition gets switched to ACTIVE. (default 10s)
+  -ingester.partition-ring.multi.mirror-enabled
+    	Mirror writes to secondary store.
+  -ingester.partition-ring.multi.mirror-timeout duration
+    	Timeout for storing value to secondary store. (default 2s)
+  -ingester.partition-ring.multi.primary string
+    	Primary backend storage used by multi-client.
+  -ingester.partition-ring.multi.secondary string
+    	Secondary backend storage used by multi-client.
+  -ingester.partition-ring.prefix string
+    	The prefix for the keys in the store. Should end with a /. (default "collectors/")
+  -ingester.partition-ring.store string
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -ingester.push-circuit-breaker.cooldown-period duration
+    	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 10s)
+  -ingester.push-circuit-breaker.enabled
+    	[experimental] Enable circuit breaking when making requests to ingesters
+  -ingester.push-circuit-breaker.failure-execution-threshold uint
+    	[experimental] How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures (default 100)
+  -ingester.push-circuit-breaker.failure-threshold-percentage uint
+    	[experimental] Max percentage of requests that can fail over period before the circuit breaker opens (default 10)
+  -ingester.push-circuit-breaker.initial-delay duration
+    	[experimental] How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.
+  -ingester.push-circuit-breaker.request-timeout duration
+    	[experimental] The maximum duration of an ingester's request before it triggers a timeout. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 2s)
+  -ingester.push-circuit-breaker.thresholding-period duration
+    	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.rate-update-period duration
     	Period with which to update the per-tenant ingestion rates. (default 15s)
+  -ingester.read-circuit-breaker.cooldown-period duration
+    	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 10s)
+  -ingester.read-circuit-breaker.enabled
+    	[experimental] Enable circuit breaking when making requests to ingesters
+  -ingester.read-circuit-breaker.failure-execution-threshold uint
+    	[experimental] How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures (default 100)
+  -ingester.read-circuit-breaker.failure-threshold-percentage uint
+    	[experimental] Max percentage of requests that can fail over period before the circuit breaker opens (default 10)
+  -ingester.read-circuit-breaker.initial-delay duration
+    	[experimental] How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.
+  -ingester.read-circuit-breaker.request-timeout duration
+    	[experimental] The maximum duration of an ingester's request before it triggers a timeout. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 30s)
+  -ingester.read-circuit-breaker.thresholding-period duration
+    	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.read-path-cpu-utilization-limit float
     	[experimental] CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.read-path-memory-utilization-limit uint
@@ -1466,13 +1584,13 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.etcd.username string
     	Etcd username.
   -ingester.ring.excluded-zones comma-separated-list-of-strings
-    	Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode.
+    	Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode.
   -ingester.ring.final-sleep duration
     	Duration to sleep for before exiting, to ensure metrics are scraped.
   -ingester.ring.heartbeat-period duration
     	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
   -ingester.ring.heartbeat-timeout duration
-    	The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled). This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode. (default 1m0s)
+    	The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled). This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode. (default 1m0s)
   -ingester.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -ingester.ring.instance-availability-zone string
@@ -1502,7 +1620,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.prefix string
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -ingester.ring.replication-factor int
-    	Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode. (default 3)
+    	Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode. (default 3)
   -ingester.ring.spread-minimizing-join-ring-in-order
     	True to allow this ingester registering tokens in the ring only after all previous ingesters (with ID lower than the current one) have already been registered. This configuration option is supported only when the token generation strategy is set to "spread-minimizing".
   -ingester.ring.spread-minimizing-zones comma-separated-list-of-strings
@@ -1516,7 +1634,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.unregister-on-shutdown
     	Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming. (default true)
   -ingester.ring.zone-awareness-enabled
-    	True to enable the zone-awareness and replicate ingested samples across different availability zones. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode.
+    	True to enable the zone-awareness and replicate ingested samples across different availability zones. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode.
   -ingester.stream-chunks-when-using-blocks
     	Stream chunks from ingesters to queriers. (default true)
   -ingester.track-ingester-owned-series
@@ -1525,8 +1643,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Period with which to update the per-tenant TSDB configuration. (default 15s)
   -ingester.use-ingester-owned-series-for-limits
     	[experimental] When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.
-  -log.buffered
-    	[deprecated] Use a buffered logger to reduce write contention. (default true)
   -log.format string
     	Output log messages in the given format. Valid formats: [logfmt, json] (default "logfmt")
   -log.level value
@@ -1699,8 +1815,8 @@ Usage of ./cmd/mimir/mimir:
     	The default evaluation interval or step size for subqueries. This config option should be set on query-frontend too when query sharding is enabled. (default 1m0s)
   -querier.dns-lookup-period duration
     	How often to query DNS for query-frontend or query-scheduler address. (default 10s)
-  -querier.enable-promql-engine-fallback
-    	[experimental] If set to true and the streaming engine is in use, fall back to using the Prometheus PromQL engine for any queries not supported by the streaming engine. (default true)
+  -querier.enable-query-engine-fallback
+    	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -querier.frontend-address string
     	Address of the query-frontend component, in host:port format. If multiple query-frontends are running, the host should be a DNS resolving to all query-frontend instances. This option should be set only when query-scheduler component is not in use.
   -querier.frontend-client.backoff-max-period duration
@@ -1774,7 +1890,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-query-into-future duration
     	[deprecated] Maximum duration into the future you can query. 0 to disable. (default 10m0s)
   -querier.max-query-lookback duration
-    	Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.
+    	Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler for instant, range and remote read queries. For metadata queries like series, label names, label values queries the limit is enforced in the querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.
   -querier.max-query-parallelism int
     	Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers. (default 14)
   -querier.max-samples int
@@ -1784,11 +1900,11 @@ Usage of ./cmd/mimir/mimir:
   -querier.minimize-ingester-requests-hedging-delay duration
     	Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled. (default 3s)
   -querier.prefer-streaming-chunks-from-store-gateways
-    	[experimental] Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.
-  -querier.promql-engine string
-    	[experimental] PromQL engine to use, either 'prometheus' or 'mimir' (default "prometheus")
+    	[experimental] Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this. (default true)
   -querier.promql-experimental-functions-enabled
     	[experimental] Enable experimental PromQL functions. This config option should be set on query-frontend too when query sharding is enabled.
+  -querier.query-engine string
+    	[experimental] Query engine to use, either 'prometheus' or 'mimir' (default "prometheus")
   -querier.query-ingesters-within duration
     	Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester. (default 13h)
   -querier.query-store-after duration
@@ -1862,7 +1978,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.streaming-chunks-per-ingester-buffer-size uint
     	Number of series to buffer per ingester when streaming chunks from ingesters. (default 256)
   -querier.streaming-chunks-per-store-gateway-buffer-size uint
-    	[experimental] Number of series to buffer per store-gateway when streaming chunks from store-gateways. (default 256)
+    	Number of series to buffer per store-gateway when streaming chunks from store-gateways. (default 256)
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
   -query-frontend.active-series-write-timeout duration
@@ -1940,11 +2056,11 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.max-queriers-per-tenant int
     	Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.
   -query-frontend.max-query-expression-size-bytes int
-    	Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.
+    	Max size of the raw query, in bytes. This limit is enforced by the query-frontend for instant, range and remote read queries. 0 to not apply a limit to the size of the query.
   -query-frontend.max-retries-per-request int
     	Maximum number of retries for a single request; beyond this, the downstream error is returned. (default 5)
   -query-frontend.max-total-query-length duration
-    	Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query.
+    	Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received instant, range or remote read query.
   -query-frontend.not-running-timeout duration
     	Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up) (default 2s)
   -query-frontend.parallelize-shardable-queries
@@ -1963,6 +2079,8 @@ Usage of ./cmd/mimir/mimir:
     	The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
   -query-frontend.query-stats-enabled
     	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
+  -query-frontend.remote-read-limits-enabled
+    	[experimental] True to enable limits enforcement for remote read requests.
   -query-frontend.results-cache-ttl duration
     	Time to live duration for cached query results. If query falls into out-of-order time window, -query-frontend.results-cache-ttl-for-out-of-order-time-window is used instead. (default 1w)
   -query-frontend.results-cache-ttl-for-cardinality-query duration
@@ -2325,6 +2443,8 @@ Usage of ./cmd/mimir/mimir:
     	Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: auto, path, virtual-hosted.
   -ruler-storage.s3.bucket-name string
     	S3 bucket name
+  -ruler-storage.s3.dualstack-enabled
+    	[experimental] When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region. (default true)
   -ruler-storage.s3.endpoint string
     	The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.
   -ruler-storage.s3.expect-continue-timeout duration
@@ -2416,7 +2536,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.swift.username string
     	OpenStack Swift username.
   -ruler.alerting-rules-evaluation-enabled
-    	[experimental] Controls whether alerting rules evaluation is enabled. This configuration option can be used to forcefully disable alerting rules evaluation on a per-tenant basis. (default true)
+    	Controls whether alerting rules evaluation is enabled. This configuration option can be used to forcefully disable alerting rules evaluation on a per-tenant basis. (default true)
   -ruler.alertmanager-client.basic-auth-password string
     	HTTP Basic authentication password. It overrides the password set in the URL (if any).
   -ruler.alertmanager-client.basic-auth-username string
@@ -2503,14 +2623,20 @@ Usage of ./cmd/mimir/mimir:
     	Max time to tolerate outage for restoring "for" state of alert. (default 1h0m0s)
   -ruler.max-rule-groups-per-tenant int
     	Maximum number of rule groups per-tenant. 0 to disable. (default 70)
+  -ruler.max-rule-groups-per-tenant-by-namespace value
+    	Maximum number of rule groups per tenant by namespace. Value is a map, where each key is the namespace and value is the number of rule groups allowed in the namespace (int). On the command line, this map is given in a JSON format. The number of rule groups specified has the same meaning as -ruler.max-rule-groups-per-tenant, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rule-groups-per-tenant. (default {})
   -ruler.max-rules-per-rule-group int
     	Maximum number of rules per rule group per-tenant. 0 to disable. (default 20)
+  -ruler.max-rules-per-rule-group-by-namespace value
+    	Maximum number of rules per rule group by namespace. Value is a map, where each key is the namespace and value is the number of rules allowed in the namespace (int). On the command line, this map is given in a JSON format. The number of rules specified has the same meaning as -ruler.max-rules-per-rule-group, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rules-per-rule-group. (default {})
   -ruler.notification-queue-capacity int
     	Capacity of the queue for notifications to be sent to the Alertmanager. (default 10000)
   -ruler.notification-timeout duration
     	HTTP timeout duration when sending notifications to the Alertmanager. (default 10s)
   -ruler.poll-interval duration
     	How frequently the configured rule groups are re-synced from the object storage. (default 10m0s)
+  -ruler.protected-namespaces comma-separated-list-of-strings
+    	[experimental] List of namespaces that are protected from modification unless a special HTTP header is used. If a namespace is protected, it can only be read, not modified via the ruler's configuration API. The value is a list of strings, where each string is a namespace name. On the command line, this list is given as a comma-separated list.
   -ruler.query-frontend.address string
     	GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.
   -ruler.query-frontend.grpc-client-config.backoff-max-period duration
@@ -2562,7 +2688,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.query-stats-enabled
     	Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.
   -ruler.recording-rules-evaluation-enabled
-    	[experimental] Controls whether recording rules evaluation is enabled. This configuration option can be used to forcefully disable recording rules evaluation on a per-tenant basis. (default true)
+    	Controls whether recording rules evaluation is enabled. This configuration option can be used to forcefully disable recording rules evaluation on a per-tenant basis. (default true)
   -ruler.resend-delay duration
     	Minimum amount of time to wait before resending an alert to Alertmanager. (default 1m0s)
   -ruler.ring.consul.acl-token string
@@ -2838,7 +2964,7 @@ Usage of ./cmd/mimir/mimir:
   -tenant-federation.max-concurrent int
     	[experimental] The number of workers used for each tenant federated query. This setting limits the maximum number of per-tenant queries executed at a time for a tenant federated query. (default 16)
   -tenant-federation.max-tenants int
-    	[experimental] The max number of tenant IDs that may be supplied for a federated query if enabled. 0 to disable the limit.
+    	The max number of tenant IDs that may be supplied for a federated query if enabled. 0 to disable the limit.
   -tests.basic-auth-password string
     	The password to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)
   -tests.basic-auth-user string
