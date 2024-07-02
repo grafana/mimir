@@ -3,6 +3,7 @@
 package queue
 
 import (
+	"fmt"
 	"math"
 	"sync"
 
@@ -118,12 +119,8 @@ func NewQueryComponentUtilization(
 // As the inflight queries complete or fail, the component's utilization will naturally decrease.
 // This method will continue to indicate to skip queries for the component until it is back under the threshold.
 func (qcl *QueryComponentUtilization) ExceedsThresholdForComponentName(
-	name string, connectedWorkers, queueLen, waitingWorkers int,
+	name string, connectedWorkers int,
 ) (bool, QueryComponent) {
-	if waitingWorkers > queueLen {
-		// excess querier-worker capacity; no need to reserve any for now
-		return false, ""
-	}
 	if connectedWorkers <= 1 {
 		// corner case; cannot reserve capacity with only one worker available
 		return false, ""
@@ -143,6 +140,9 @@ func (qcl *QueryComponentUtilization) ExceedsThresholdForComponentName(
 	isIngester, isStoreGateway := queryComponentFlags(name)
 	qcl.inflightRequestsMu.RLock()
 	defer qcl.inflightRequestsMu.RUnlock()
+
+	fmt.Printf("during check: ingester: %d, store-gateway: %d \n", qcl.ingesterInflightRequests, qcl.storeGatewayInflightRequests)
+
 	if isIngester {
 		if connectedWorkers-(qcl.ingesterInflightRequests) <= minReservedConnections {
 			return true, Ingester
@@ -156,14 +156,28 @@ func (qcl *QueryComponentUtilization) ExceedsThresholdForComponentName(
 	return false, ""
 }
 
+func (qcl *QueryComponentUtilization) TriggerUtilizationCheck(queueLen, waitingWorkers int) bool {
+	if waitingWorkers > queueLen {
+		// excess querier-worker capacity; no need to reserve any for now
+		return false
+	}
+	return true
+}
+
 // MarkRequestSent is called when a request is sent to a querier
 func (qcl *QueryComponentUtilization) MarkRequestSent(req *SchedulerRequest) {
 	if req != nil {
 		qcl.inflightRequestsMu.Lock()
 		defer qcl.inflightRequestsMu.Unlock()
 
+		fmt.Printf("adding request to inflightRequests, req: %v\n", req)
+
 		qcl.inflightRequests[req.Key()] = req
-		qcl.incrementForComponentName(req.ExpectedQueryComponentName())
+		queryComponent := req.ExpectedQueryComponentName()
+		fmt.Printf("marking request sent for queryComponent: %s\n", queryComponent)
+		fmt.Printf("before increment: ingester: %d, store-gateway: %d \n", qcl.ingesterInflightRequests, qcl.storeGatewayInflightRequests)
+		qcl.incrementForComponentName(queryComponent)
+		fmt.Printf("after increment: ingester: %d, store-gateway: %d \n", qcl.ingesterInflightRequests, qcl.storeGatewayInflightRequests)
 	}
 }
 
@@ -173,9 +187,17 @@ func (qcl *QueryComponentUtilization) MarkRequestCompleted(req *SchedulerRequest
 		qcl.inflightRequestsMu.Lock()
 		defer qcl.inflightRequestsMu.Unlock()
 
+		fmt.Printf("removing request from inflightRequests, reqKey: %v\n", req.Key())
+
 		reqKey := req.Key()
 		if req, ok := qcl.inflightRequests[reqKey]; ok {
-			qcl.decrementForComponentName(req.ExpectedQueryComponentName())
+			queryComponent := req.ExpectedQueryComponentName()
+			fmt.Printf("marking request completed for queryComponent: %s\n", queryComponent)
+			fmt.Printf("before decrement: ingester: %d, store-gateway: %d \n", qcl.ingesterInflightRequests, qcl.storeGatewayInflightRequests)
+			qcl.decrementForComponentName(queryComponent)
+			fmt.Printf("after decrement: ingester: %d, store-gateway: %d \n", qcl.ingesterInflightRequests, qcl.storeGatewayInflightRequests)
+		} else {
+			fmt.Printf("request not found in inflightRequests for key: %v\n", reqKey)
 		}
 		delete(qcl.inflightRequests, reqKey)
 	}
