@@ -140,7 +140,7 @@ Mimir requires the following configuration to authenticate to and access Azure B
 
 #### Access key
 
-This sample configuration shows how to set up Azure blob storage using Helm charts and an access key from Kubernetes secrets.
+This sample configuration shows how to set up Azure Blob Storage using Helm charts and an access key from Kubernetes secrets.
 
 ```yaml
 common:
