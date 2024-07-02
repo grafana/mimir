@@ -467,7 +467,9 @@ func (tqa *tenantQuerierAssignments) dequeueUpdateState(node *Node, dequeuedFrom
 
 	// check tenantNodes; we only remove from tenantIDOrder if all nodes with this name are gone.
 	// If the removed child is at the _end_ of tenantIDOrder, we remove it outright; otherwise,
-	// we replace it with an empty string so as not to reindex all slice elements
+	// we replace it with an empty string. Removal of elements from anywhere other than the end of the slice
+	// would re-index all tenant IDs, resulting in skipped tenants when starting iteration from the
+	// querier-provided lastTenantIndex.
 	removeFromSharedQueueOrder := len(tqa.tenantNodes[childName]) == 0
 
 	if removeFromSharedQueueOrder {

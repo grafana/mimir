@@ -1,7 +1,7 @@
 # Changelog
 
 ## main / unreleased
-* [ENHANCEMENT] Query-scheduler: Introduce `query-scheduler.prioritize-query-components`, which allows configuration of the request queue tree to prioritize dequeuing from a specific query component more highly than dequeueing from a specific tenant. #7873
+* [ENHANCEMENT] Query-scheduler: Introduce `query-scheduler.use-multi-algorithm-query-queue`, which allows use of an experimental queue structure, with no change in external queue behavior. #7873
 
 ### Grafana Mimir
 

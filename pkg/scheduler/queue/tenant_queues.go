@@ -183,13 +183,16 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 		queuePath, queueElement = itq.Dequeue()
 	}
 
+	if queueElement == nil {
+		return nil, nil, qb.tenantQuerierAssignments.tenantOrderIndex, nil
+	}
+
 	var request *tenantRequest
 	var tenantID TenantID
-	if queueElement != nil {
-		// re-casting to same type it was enqueued as; panic would indicate a bug
-		request = queueElement.(*tenantRequest)
-		tenantID = request.tenantID
-	}
+
+	// re-casting to same type it was enqueued as; panic would indicate a bug
+	request = queueElement.(*tenantRequest)
+	tenantID = request.tenantID
 
 	var tenant *queueTenant
 	if tenantID != "" {
