@@ -14774,6 +14774,16 @@
           "fieldType": "string"
         },
         {
+          "kind": "field",
+          "name": "manage_configs_locally",
+          "required": false,
+          "desc": "Lets you provision and manage the configs locally, even when writing the state to another backend.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "alertmanager-storage.manage_configs_locally",
+          "fieldType": "boolean"
+        },
+        {
           "kind": "block",
           "name": "s3",
           "required": false,

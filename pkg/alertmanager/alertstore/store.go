@@ -7,9 +7,9 @@ package alertstore
 
 import (
 	"context"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/mimir/pkg/alertmanager/alertstore/mixed"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
@@ -17,6 +17,8 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
+
+const storageBucketName = "alertmanager-storage"
 
 // AlertStore stores and configures users rule configs
 type AlertStore interface {
@@ -79,11 +81,25 @@ func NewAlertStore(ctx context.Context, cfg Config, cfgProvider bucket.TenantCon
 		return local.NewStore(cfg.Local)
 	}
 
+	// If we manage the configs locally but want to write the state to a bucket, we create a mixed store.
+	if cfg.ManageConfigsLocally {
+		configStore, err := local.NewStore(cfg.Local)
+		if err != nil {
+			return nil, err
+		}
+		bucketClient, err := bucket.NewClient(ctx, cfg.Config, storageBucketName, logger, reg)
+		if err != nil {
+			return nil, err
+		}
+		stateStore := bucketclient.NewBucketAlertStore(bucketClient, cfgProvider, logger)
+		return mixed.NewStore(stateStore, configStore), nil
+	}
+
 	if cfg.Backend == bucket.Filesystem {
 		level.Warn(logger).Log("msg", "-alertmanager-storage.backend=filesystem is for development and testing only; you should switch to an external object store for production use or use a shared filesystem")
 	}
 
-	bucketClient, err := bucket.NewClient(ctx, cfg.Config, "alertmanager-storage", logger, reg)
+	bucketClient, err := bucket.NewClient(ctx, cfg.Config, storageBucketName, logger, reg)
 	if err != nil {
 		return nil, err
 	}
