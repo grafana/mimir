@@ -56,19 +56,20 @@ func TestQueryComponentUtilizationDequeue_DefaultRoundRobin(t *testing.T) {
 	testReservedCapacity := 0.4
 
 	var err error
-	queryComponentUtilization, err := NewQueryComponentUtilization(
-		testReservedCapacity, testQuerierInflightRequestsGauge(),
-	)
+	queryComponentUtilization, err := NewQueryComponentUtilization(testQuerierInflightRequestsGauge())
 	require.NoError(t, err)
 
-	utilizationCheckImpl := queryComponentUtilizationReserveConnections{
-		utilization:      queryComponentUtilization,
-		connectedWorkers: connectedWorkers,
-		waitingWorkers:   1,
+	utilizationTriggerCheckImpl := NewQueryComponentUtilizationTriggerCheckByQueueLenAndWaitingConns(1)
+	utilizationCheckThresholdImpl := &queryComponentUtilizationReserveConnections{
+		utilization:            queryComponentUtilization,
+		targetReservedCapacity: testReservedCapacity,
+		connectedWorkers:       connectedWorkers,
 	}
+
 	queryComponentUtilizationQueueAlgo := queryComponentUtilizationDequeueSkipOverThreshold{
-		queryComponentUtilizationThreshold: &utilizationCheckImpl,
-		currentNodeOrderIndex:              -1,
+		queryComponentUtilizationTriggerCheck:   utilizationTriggerCheckImpl,
+		queryComponentUtilizationCheckThreshold: utilizationCheckThresholdImpl,
+		currentNodeOrderIndex:                   -1,
 	}
 
 	tree, err := NewTree(&queryComponentUtilizationQueueAlgo, &roundRobinState{})
@@ -94,19 +95,20 @@ func TestQueryComponentUtilizationDequeue_SkipComponentExceedsThreshold(t *testi
 	testReservedCapacity := 0.4
 
 	var err error
-	queryComponentUtilization, err := NewQueryComponentUtilization(
-		testReservedCapacity, testQuerierInflightRequestsGauge(),
-	)
+	queryComponentUtilization, err := NewQueryComponentUtilization(testQuerierInflightRequestsGauge())
 	require.NoError(t, err)
 
-	utilizationCheckImpl := &queryComponentUtilizationReserveConnections{
-		utilization:      queryComponentUtilization,
-		connectedWorkers: connectedWorkers,
-		waitingWorkers:   1,
+	utilizationTriggerCheckImpl := NewQueryComponentUtilizationTriggerCheckByQueueLenAndWaitingConns(1)
+	utilizationCheckThresholdImpl := &queryComponentUtilizationReserveConnections{
+		utilization:            queryComponentUtilization,
+		targetReservedCapacity: testReservedCapacity,
+		connectedWorkers:       connectedWorkers,
 	}
+
 	queryComponentUtilizationQueueAlgo := queryComponentUtilizationDequeueSkipOverThreshold{
-		queryComponentUtilizationThreshold: utilizationCheckImpl,
-		currentNodeOrderIndex:              -1,
+		queryComponentUtilizationTriggerCheck:   utilizationTriggerCheckImpl,
+		queryComponentUtilizationCheckThreshold: utilizationCheckThresholdImpl,
+		currentNodeOrderIndex:                   -1,
 	}
 
 	tree, err := NewTree(&queryComponentUtilizationQueueAlgo, &roundRobinState{})
@@ -125,7 +127,7 @@ func TestQueryComponentUtilizationDequeue_SkipComponentExceedsThreshold(t *testi
 	// * ingester queue dimension exceeds the utilization threshold
 	queryComponentUtilization.querierInflightRequestsTotal = 4
 	queryComponentUtilization.ingesterInflightRequests = 4
-	utilizationCheckImpl.queueLen = tree.ItemCount()
+	utilizationTriggerCheckImpl.queueLen = tree.ItemCount()
 
 	// start dequeue
 

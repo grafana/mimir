@@ -107,18 +107,19 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	testReservedCapacity := 0.4
 
 	var err error
-	queryComponentUtilization, err := NewQueryComponentUtilization(
-		testReservedCapacity, testQuerierInflightRequestsGauge(),
+	queryComponentUtilization, err := NewQueryComponentUtilization(testQuerierInflightRequestsGauge())
+	require.NoError(t, err)
+
+	utilizationTriggerCheckImpl := NewQueryComponentUtilizationTriggerCheckByQueueLenAndWaitingConns(1)
+	utilizationCheckThresholdImpl, err := NewQueryComponentUtilizationReserveConnections(
+		queryComponentUtilization, testReservedCapacity,
 	)
 	require.NoError(t, err)
 
-	utilizationCheckImpl := queryComponentUtilizationReserveConnections{
-		utilization:    queryComponentUtilization,
-		waitingWorkers: 0,
-	}
 	queryComponentUtilizationQueueAlgo := queryComponentUtilizationDequeueSkipOverThreshold{
-		queryComponentUtilizationThreshold: &utilizationCheckImpl,
-		currentNodeOrderIndex:              -1,
+		queryComponentUtilizationTriggerCheck:   utilizationTriggerCheckImpl,
+		queryComponentUtilizationCheckThreshold: utilizationCheckThresholdImpl,
+		currentNodeOrderIndex:                   -1,
 	}
 	tqa := newTQA()
 	tree, err := NewTree(&queryComponentUtilizationQueueAlgo, tqa, &roundRobinState{})

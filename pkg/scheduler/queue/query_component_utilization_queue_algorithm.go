@@ -4,21 +4,76 @@ package queue
 
 import (
 	"math"
+
+	"github.com/pkg/errors"
 )
 
-type queryComponentUtilizationCheck interface {
-	TriggerUtilizationCheck() bool
-	ExceedsThresholdForComponentName(name string) (bool, QueryComponent)
+type QueryComponentUtilizationTriggerCheck interface {
+	TriggerThresholdCheck() bool
 }
 
-type queryComponentUtilizationReserveConnections struct {
-	utilization      *QueryComponentUtilization
-	connectedWorkers int
+type QueryComponentUtilizationTriggerCheckByQueueLenAndWaitingConns struct {
 	waitingWorkers   int
 	queueLen         int
+	queueLenMultiple int
 }
 
-// ExceedsThresholdForComponentName checks whether a query component has exceeded the capacity utilization threshold.
+func NewQueryComponentUtilizationTriggerCheckByQueueLenAndWaitingConns(queueLenMultiple int) *QueryComponentUtilizationTriggerCheckByQueueLenAndWaitingConns {
+	return &QueryComponentUtilizationTriggerCheckByQueueLenAndWaitingConns{
+		waitingWorkers:   0,
+		queueLen:         0,
+		queueLenMultiple: 1,
+	}
+}
+
+func (tc *QueryComponentUtilizationTriggerCheckByQueueLenAndWaitingConns) TriggerThresholdCheck() bool {
+	if tc.waitingWorkers > (tc.queueLen * tc.queueLenMultiple) {
+		// excess querier-worker capacity; no need to reserve any for now
+		return false
+	}
+	return true
+}
+
+type QueryComponentUtilizationCheckThreshold interface {
+	ExceedsThresholdForComponent(componentName string) (bool, QueryComponent)
+}
+
+// DefaultReservedQueryComponentCapacity reserves 1 / 3 of querier-worker connections
+// for the query component utilizing fewer of the available connections.
+// Chosen to represent an even balance between the three possible combinations of query components:
+// ingesters only, store-gateways only, or both ingesters and store-gateways.
+const DefaultReservedQueryComponentCapacity = 0.33
+
+// MaxReservedQueryComponentCapacity is an exclusive upper bound on the targetReservedCapacity.
+// The threshold for a QueryComponent's utilization of querier-worker connections
+// can only be exceeded by one QueryComponent at a time as long as targetReservedCapacity is < 0.5.
+// Therefore, one of the components will always be given the OK to dequeue queries for.
+const MaxReservedQueryComponentCapacity = 0.5
+
+type queryComponentUtilizationReserveConnections struct {
+	utilization *QueryComponentUtilization
+	// targetReservedCapacity sets the portion of querier-worker connections we attempt to reserve
+	// for queries to the less-utilized query component when the query queue becomes backlogged.
+	targetReservedCapacity float64
+	connectedWorkers       int
+}
+
+func NewQueryComponentUtilizationReserveConnections(
+	utilization *QueryComponentUtilization,
+	targetReservedCapacity float64,
+) (QueryComponentUtilizationCheckThreshold, error) {
+	if targetReservedCapacity >= MaxReservedQueryComponentCapacity {
+		return nil, errors.New("invalid targetReservedCapacity")
+	}
+
+	return &queryComponentUtilizationReserveConnections{
+		utilization:            utilization,
+		targetReservedCapacity: targetReservedCapacity,
+		connectedWorkers:       0,
+	}, nil
+}
+
+// ExceedsThresholdForComponent checks whether a query component has exceeded the capacity utilization threshold.
 // This enables the dequeuing algorithm to skip requests for a query component experiencing heavy load,
 // reserving querier-worker connection capacity to continue servicing requests for the other component.
 // If there are no requests in queue for the other, less-utilized component, the dequeuing algorithm may choose
@@ -38,7 +93,7 @@ type queryComponentUtilizationReserveConnections struct {
 // If an influx of queries then creates a backlog, this method will indicate to skip queries for the component.
 // As the inflight queries complete or fail, the component's utilization will naturally decrease.
 // This method will continue to indicate to skip queries for the component until it is back under the threshold.
-func (qcurc *queryComponentUtilizationReserveConnections) ExceedsThresholdForComponentName(name string) (bool, QueryComponent) {
+func (qcurc *queryComponentUtilizationReserveConnections) ExceedsThresholdForComponent(name string) (bool, QueryComponent) {
 	if qcurc.connectedWorkers <= 1 {
 		// corner case; cannot reserve capacity with only one worker available
 		return false, ""
@@ -46,11 +101,11 @@ func (qcurc *queryComponentUtilizationReserveConnections) ExceedsThresholdForCom
 
 	// allow the functionality to be turned off via setting targetReservedCapacity to 0
 	minReservedConnections := 0
-	if qcurc.utilization.targetReservedCapacity > 0 {
+	if qcurc.targetReservedCapacity > 0 {
 		// reserve at least one connection in case (connected workers) * (reserved capacity) is less than one
 		minReservedConnections = int(
 			math.Ceil(
-				math.Max(qcurc.utilization.targetReservedCapacity*float64(qcurc.connectedWorkers), 1),
+				math.Max(qcurc.targetReservedCapacity*float64(qcurc.connectedWorkers), 1),
 			),
 		)
 	}
@@ -70,20 +125,13 @@ func (qcurc *queryComponentUtilizationReserveConnections) ExceedsThresholdForCom
 	return false, ""
 }
 
-func (qcurc *queryComponentUtilizationReserveConnections) TriggerUtilizationCheck() bool {
-	if qcurc.waitingWorkers > qcurc.queueLen {
-		// excess querier-worker capacity; no need to reserve any for now
-		return false
-	}
-	return true
-}
-
 type queryComponentUtilizationDequeueSkipOverThreshold struct {
-	queryComponentUtilizationThreshold queryComponentUtilizationCheck
-	currentNodeOrderIndex              int
-	nodeOrder                          []string
-	nodesChecked                       int
-	nodesSkippedIndexOrder             []int
+	queryComponentUtilizationTriggerCheck   QueryComponentUtilizationTriggerCheck
+	queryComponentUtilizationCheckThreshold QueryComponentUtilizationCheckThreshold
+	currentNodeOrderIndex                   int
+	nodeOrder                               []string
+	nodesChecked                            int
+	nodesSkippedIndexOrder                  []int
 
 	// TODO implement global state to only delete nodes from rotation when all corresponding nodes are deleted from the tree
 	//queueNodeCounts                    map[string]int
@@ -136,9 +184,9 @@ func (qcud *queryComponentUtilizationDequeueSkipOverThreshold) dequeueSelectNode
 	for !checkedAllNodesBeforeSkips() {
 		// have not made it through first rotation yet
 		currentNodeName := qcud.nodeOrder[qcud.currentNodeOrderIndex]
-		if qcud.queryComponentUtilizationThreshold.TriggerUtilizationCheck() {
+		if qcud.queryComponentUtilizationTriggerCheck.TriggerThresholdCheck() {
 			// triggered a utilization check
-			exceedsThreshold, _ := qcud.queryComponentUtilizationThreshold.ExceedsThresholdForComponentName(currentNodeName)
+			exceedsThreshold, _ := qcud.queryComponentUtilizationCheckThreshold.ExceedsThresholdForComponent(currentNodeName)
 
 			if exceedsThreshold {
 				// triggered a utilization check *and* the query component for this node

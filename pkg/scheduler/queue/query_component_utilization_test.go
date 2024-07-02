@@ -239,7 +239,7 @@ func testQuerierInflightRequestsGauge() *prometheus.SummaryVec {
 //				queryComponentUtilization.MarkRequestSent(storeGatewayInflightRequest)
 //			}
 //
-//			exceedsThreshold, queryComponent := queryComponentUtilization.ExceedsThresholdForComponentName(
+//			exceedsThreshold, queryComponent := queryComponentUtilization.ExceedsThresholdForComponent(
 //				testCase.queryComponentName,
 //				int(connectedWorkers),
 //				testCase.queueLen,
@@ -250,7 +250,7 @@ func testQuerierInflightRequestsGauge() *prometheus.SummaryVec {
 //			require.Equal(t, exceedsThreshold, testCase.thresholdExceededComponent != "")
 //
 //			// with 1 connected worker, a component should never be marked as exceeding the threshold
-//			exceedsThreshold, queryComponent = queryComponentUtilization.ExceedsThresholdForComponentName(
+//			exceedsThreshold, queryComponent = queryComponentUtilization.ExceedsThresholdForComponent(
 //				testCase.queryComponentName,
 //				1,
 //				testCase.queueLen,
@@ -260,7 +260,7 @@ func testQuerierInflightRequestsGauge() *prometheus.SummaryVec {
 //			require.Equal(t, queryComponent, QueryComponent(""))
 //
 //			// a component utilization with reserved capacity 0 disables capacity checks
-//			exceedsThreshold, queryComponent = disabledComponentUtilization.ExceedsThresholdForComponentName(
+//			exceedsThreshold, queryComponent = disabledComponentUtilization.ExceedsThresholdForComponent(
 //				testCase.queryComponentName,
 //				int(connectedWorkers),
 //				testCase.queueLen,

@@ -3,10 +3,8 @@
 package queue
 
 import (
-	"math"
 	"sync"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -49,10 +47,6 @@ func queryComponentFlags(queryComponentName string) (isIngester, isStoreGateway 
 // Query requests utilizing both ingesters and store-gateways are tracked in the atomics for both component,
 // therefore the sum of inflight requests by component is likely to exceed the inflight requests total.
 type QueryComponentUtilization struct {
-	// targetReservedCapacity sets the portion of querier-worker connections we attempt to reserve
-	// for queries to the less-loaded query component when the query queue becomes backlogged.
-	targetReservedCapacity float64
-
 	inflightRequestsMu sync.RWMutex
 	// inflightRequests tracks requests from the time the request was successfully sent to a querier
 	// to the time the request was completed by the querier or failed due to cancel, timeout, or disconnect.
@@ -64,81 +58,16 @@ type QueryComponentUtilization struct {
 	querierInflightRequestsMetric *prometheus.SummaryVec
 }
 
-// DefaultReservedQueryComponentCapacity reserves 1 / 3 of querier-worker connections
-// for the query component utilizing fewer of the available connections.
-// Chosen to represent an even balance between the three possible combinations of query components:
-// ingesters only, store-gateways only, or both ingesters and store-gateways.
-const DefaultReservedQueryComponentCapacity = 0.33
-
-// MaxReservedQueryComponentCapacity is an exclusive upper bound on the targetReservedCapacity.
-// The threshold for a QueryComponent's utilization of querier-worker connections
-// can only be exceeded by one QueryComponent at a time as long as targetReservedCapacity is < 0.5.
-// Therefore, one of the components will always be given the OK to dequeue queries for.
-const MaxReservedQueryComponentCapacity = 0.5
-
 func NewQueryComponentUtilization(
-	targetReservedCapacity float64,
 	querierInflightRequestsMetric *prometheus.SummaryVec,
 ) (*QueryComponentUtilization, error) {
-
-	if targetReservedCapacity >= MaxReservedQueryComponentCapacity {
-		return nil, errors.New("invalid targetReservedCapacity")
-	}
-
 	return &QueryComponentUtilization{
-		targetReservedCapacity: targetReservedCapacity,
-
-		inflightRequests:             map[RequestKey]*SchedulerRequest{},
-		ingesterInflightRequests:     0,
-		storeGatewayInflightRequests: 0,
-		querierInflightRequestsTotal: 0,
-
+		inflightRequests:              map[RequestKey]*SchedulerRequest{},
+		ingesterInflightRequests:      0,
+		storeGatewayInflightRequests:  0,
+		querierInflightRequestsTotal:  0,
 		querierInflightRequestsMetric: querierInflightRequestsMetric,
 	}, nil
-}
-
-func (qcl *QueryComponentUtilization) ExceedsThresholdForComponentName(
-	name string, connectedWorkers int,
-) (bool, QueryComponent) {
-	if connectedWorkers <= 1 {
-		// corner case; cannot reserve capacity with only one worker available
-		return false, ""
-	}
-
-	// allow the functionality to be turned off via setting targetReservedCapacity to 0
-	minReservedConnections := 0
-	if qcl.targetReservedCapacity > 0 {
-		// reserve at least one connection in case (connected workers) * (reserved capacity) is less than one
-		minReservedConnections = int(
-			math.Ceil(
-				math.Max(qcl.targetReservedCapacity*float64(connectedWorkers), 1),
-			),
-		)
-	}
-
-	isIngester, isStoreGateway := queryComponentFlags(name)
-	qcl.inflightRequestsMu.RLock()
-	defer qcl.inflightRequestsMu.RUnlock()
-
-	if isIngester {
-		if connectedWorkers-(qcl.ingesterInflightRequests) <= minReservedConnections {
-			return true, Ingester
-		}
-	}
-	if isStoreGateway {
-		if connectedWorkers-(qcl.storeGatewayInflightRequests) <= minReservedConnections {
-			return true, StoreGateway
-		}
-	}
-	return false, ""
-}
-
-func (qcl *QueryComponentUtilization) TriggerUtilizationCheck(queueLen, waitingWorkers int) bool {
-	if waitingWorkers > queueLen {
-		// excess querier-worker capacity; no need to reserve any for now
-		return false
-	}
-	return true
 }
 
 // MarkRequestSent is called when a request is sent to a querier
