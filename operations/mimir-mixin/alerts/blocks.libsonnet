@@ -154,7 +154,7 @@
             deployment: 'single-zone',
           },
           annotations: {
-            message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s got a corrupted TSDB WAL.' % $._config,
+            message: '%(product)s Ingester in %(alert_aggregation_variables)s got a corrupted TSDB WAL.' % $._config,
           },
         },
         {
@@ -173,7 +173,7 @@
             deployment: 'multi-zone',
           },
           annotations: {
-            message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s got a corrupted TSDB WAL.' % $._config,
+            message: '%(product)s Ingester in %(alert_aggregation_variables)s got a corrupted TSDB WAL.' % $._config,
           },
         },
         {

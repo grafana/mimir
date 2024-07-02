@@ -339,7 +339,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             severity: 'warning',
           },
           annotations: {
-            message: '%(product)s store-gateway %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.' % $._config,
+            message: '%(product)s store-gateway in %(alert_aggregation_variables)s is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.' % $._config,
           },
         },
       ] + [
