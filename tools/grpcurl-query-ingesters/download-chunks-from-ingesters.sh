@@ -22,7 +22,8 @@ for POD in $PODS; do
   # Wait some time
   sleep 5
 
-  cat query.json | grpcurl \
+  # TODO: fix paths below to work from any directory - currently assumes script is running in repo root
+  cat tools/grpcurl-query-ingesters/download-chunks-from-ingesters-query.json | grpcurl \
     -d @ \
     -H "X-Scope-OrgID: $MIMIR_TENANT_ID" \
   	-proto pkg/ingester/client/ingester.proto \
