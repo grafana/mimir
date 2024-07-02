@@ -251,6 +251,7 @@ func (h *haTracker) loop(ctx context.Context) error {
 			h.electedReplicaChanges.DeleteLabelValues(user, cluster)
 			h.electedReplicaTimestamp.DeleteLabelValues(user, cluster)
 			h.lastElectionTimestamp.DeleteLabelValues(user, cluster)
+			h.totalReelections.DeleteLabelValues(user, cluster)
 
 			h.electedLock.Lock()
 			defer h.electedLock.Unlock()
