@@ -2126,7 +2126,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -2141,7 +2141,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.14.3
+        image: prom/memcached-exporter:v0.14.4
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -2180,7 +2180,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -2195,7 +2195,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.14.3
+        image: prom/memcached-exporter:v0.14.4
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -2234,7 +2234,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -2249,7 +2249,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.14.3
+        image: prom/memcached-exporter:v0.14.4
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -2288,7 +2288,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -2303,7 +2303,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.14.3
+        image: prom/memcached-exporter:v0.14.4
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:

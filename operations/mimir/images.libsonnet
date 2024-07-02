@@ -1,8 +1,8 @@
 {
   _images+:: {
     // Various third-party images.
-    memcached: 'memcached:1.6.22-alpine',
-    memcachedExporter: 'prom/memcached-exporter:v0.14.3',
+    memcached: 'memcached:1.6.28-alpine',
+    memcachedExporter: 'prom/memcached-exporter:v0.14.4',
 
     // Our services.
     mimir: 'grafana/mimir:2.12.0',
