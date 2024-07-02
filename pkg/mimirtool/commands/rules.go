@@ -93,10 +93,12 @@ type RuleCommand struct {
 	SyncConcurrency int
 
 	// Prepare Rules Config
-	InPlaceEdit                            bool
-	AggregationLabel                       string
-	AggregationLabelExcludedRuleGroups     string
-	aggregationLabelExcludedRuleGroupsList map[string]struct{}
+	InPlaceEdit                             bool
+	AggregationLabel                        string
+	AggregationLabelExcludedRuleGroups      string
+	AggregationLabelExcludedRuleGroupsRegex string
+	aggregationLabelExcludedRuleGroupsList  map[string]struct{}
+	aggregationLabelExcludedRuleGroupsRegex *regexp.Regexp
 
 	// Lint Rules Config
 	LintDryRun bool
@@ -265,6 +267,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 	).Short('i').BoolVar(&r.InPlaceEdit)
 	prepareCmd.Flag("label", "label to include as part of the aggregations.").Default(defaultPrepareAggregationLabel).Short('l').StringVar(&r.AggregationLabel)
 	prepareCmd.Flag("label-excluded-rule-groups", "Comma separated list of rule group names to exclude when including the configured label to aggregations.").StringVar(&r.AggregationLabelExcludedRuleGroups)
+	prepareCmd.Flag("label-excluded-rule-groups-regex", "Comma separated list of regexes for rule group names to exclude when including the configured label to aggregations.").StringVar(&r.AggregationLabelExcludedRuleGroupsRegex)
 
 	// Lint Command
 	lintCmd.Arg("rule-files", "The rule files to check.").ExistingFilesVar(&r.RuleFilesList)
@@ -328,7 +331,7 @@ func (r *RuleCommand) setupArgs() error {
 			if ns != "" {
 				r.ignoredNamespacesMap[ns] = struct{}{}
 			}
-		}
+	}
 	}
 
 	// Set up allowed namespaces map for sync/diff command
@@ -348,6 +351,17 @@ func (r *RuleCommand) setupArgs() error {
 			r.aggregationLabelExcludedRuleGroupsList[name] = struct{}{}
 		}
 	}
+
+	var aggregationLabelExcludedRuleGroupsRegex *regexp.Regexp = nil;
+	if r.AggregationLabelExcludedRuleGroupsRegex != ""{
+		var err error = nil;
+		aggregationLabelExcludedRuleGroupsRegex, err = regexp.Compile(fmt.Sprintf("(%s)", strings.ReplaceAll(r.AggregationLabelExcludedRuleGroupsRegex, ",", "|")))
+		if err != nil {
+			return errors.New("invalid regex for aggregation label excluded rule groups, provided by the flag --label-excluded-rule-groups-regex")
+		}
+	}
+	r.aggregationLabelExcludedRuleGroupsRegex = aggregationLabelExcludedRuleGroupsRegex
+
 
 	// TODO: Remove statement in Mimir 2.14.
 	if r.RuleFiles != "" {
@@ -725,6 +739,19 @@ func (r *RuleCommand) executeChanges(ctx context.Context, changes []rules.Namesp
 	fmt.Println()
 	fmt.Printf("Sync Summary: %v Groups Created, %v Groups Updated, %v Groups Deleted\n", created, updated, deleted)
 	return nil
+
+}
+
+// Do not apply the aggregation label to excluded rule groups.
+func (r *RuleCommand) applyTo(group rwrulefmt.RuleGroup, _ rulefmt.RuleNode) bool {
+	_, excluded := r.aggregationLabelExcludedRuleGroupsList[group.Name]
+	if excluded {
+		return false
+	}
+	if r.aggregationLabelExcludedRuleGroupsRegex != nil && r.aggregationLabelExcludedRuleGroupsRegex.MatchString(group.Name) {
+		return false
+	}
+	return true
 }
 
 func (r *RuleCommand) prepare(_ *kingpin.ParseContext) error {
@@ -738,15 +765,9 @@ func (r *RuleCommand) prepare(_ *kingpin.ParseContext) error {
 		return errors.Wrap(err, "prepare operation unsuccessful, unable to parse rules files")
 	}
 
-	// Do not apply the aggregation label to excluded rule groups.
-	applyTo := func(group rwrulefmt.RuleGroup, _ rulefmt.RuleNode) bool {
-		_, excluded := r.aggregationLabelExcludedRuleGroupsList[group.Name]
-		return !excluded
-	}
-
 	var count, mod int
 	for _, ruleNamespace := range namespaces {
-		c, m, err := ruleNamespace.AggregateBy(r.AggregationLabel, applyTo)
+		c, m, err := ruleNamespace.AggregateBy(r.AggregationLabel, r.applyTo)
 		if err != nil {
 			return err
 		}
