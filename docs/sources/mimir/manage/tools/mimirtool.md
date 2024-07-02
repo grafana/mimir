@@ -163,21 +163,20 @@ The following command deletes the Alertmanager configuration in the Grafana Mimi
 mimirtool alertmanager delete
 ```
 
-#### Migrate Alertmanager configuration for UTF-8 in Mimir 2.12 and newer
+#### Migrate Alertmanager configuration for UTF-8 in Mimir 2.12 and later
 
-This requires mimirtool version 2.12 or newer. You can check the version of mimirtool with
-`mimirtool version`.
+This requires mimirtool version 2.12 or later. To check your version of mimirtool, run `mimirtool version`.
 
 In accordance with [prometheus/prometheus#13095](https://github.com/prometheus/prometheus/issues/13095)
 and [prometheus/alertmanager#3486](https://github.com/prometheus/alertmanager/issues/3486), Mimir is
-adding support for UTF-8. To support UTF-8 in alerts, routes, silences and inhibition rules,
+adding support for UTF-8. To support UTF-8 in alerts, routes, silences, and inhibition rules,
 Alertmanager has added a new parser for matchers that has a number of backwards incompatible changes.
 More information about these changes can be found [here](https://prometheus.io/docs/alerting/latest/configuration/#label-matchers).
 
 The migrate-utf8 command migrates an existing Alertmanager configuration in preparation for when
 UTF-8 is enabled in a Mimir installation. To do this, it translates matchers that are incompatible
-with UTF-8 into equivalent matchers that are compatible. This translation is backwards compatible
-and does not change the behavior of existing matchers, and works even in Mimir installations that
+with UTF-8 into equivalent matchers that are compatible. This translation is backwards compatible,
+does not change the behavior of existing matchers, and works even in Mimir installations that
 do not have UTF-8 enabled.
 
 A lot of Alertmanager configurations will not need migrating. You can verify if an existing
@@ -187,16 +186,15 @@ Alertmanager configuration needs to be migrated for UTF-8 by running the verify 
 mimirtool alertmanager verify <config_file> [template_files...]
 ```
 
-If the command succeeds without any warnings, the configuration is compatible with UTF-8 and no
-migration is required.
+If the command succeeds without any warnings, the configuration is compatible with UTF-8 and you
+don't need to migrate it.
 
-However, if the command prints the following warning(s):
+However, if the command prints the following warning, then you need to migrate the Alertmanager
+configuration with the migrate-utf8 command.
 
 ```
 Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible. Alertmanager has instead parsed the input using the classic matchers parser as a fallback. To make this input compatible with the UTF-8 matchers parser please make sure all regular expressions and values are double-quoted. If you are still seeing this message please open an issue.
 ```
-
-then the Alertmanager configuration needs to be migrated with the migrate-utf8 command.
 
 The command takes as input an existing configuration and template files, and prints as output
 the migrated configuration and template files:
@@ -222,7 +220,7 @@ Within the output dir, the configuration file is named `config.yaml` and the tem
 When you use the `--output-dir` flag, the command only writes the output to files and doesn't print the configuration to the console.
 {{< /admonition >}}
 
-Once you have migrated an Alertmanager configuration, verify it using the verify command:
+After you migrate an Alertmanager configuration, use the verify command to verify it:
 
 ```bash
 mimirtool alertmanager verify <config_file> [template_files...]
@@ -230,18 +228,18 @@ mimirtool alertmanager verify <config_file> [template_files...]
 
 It should succeed without warnings.
 
-You can also verify an Alertmanager configuration is compatible with UTF-8 by running the
-verify command with the `--utf8-strict-mode` flag:
+You can also run the verify command with the `--utf8-strict-mode` flag to verify if an Alertmanager
+configuration is compatible with UTF-8:
 
 ```bash
 mimirtool alertmanager verify <config_file> [template_files...] --utf8-strict-mode
 ```
 
-It will print a warning with the text `UTF-8 mode enabled` to let you know the command is using
+This command prints a warning with the text `UTF-8 mode enabled` to let you know the command is using
 UTF-8 strict mode to validate the Alertmanager configuration.
 
-When using the `--utf8-strict-mode` flag, the verify command does not print any warnings if a
-configuration is incompatible with UTF-8. Instead, the command will exit with an error. For example:
+When using the `--utf8-strict-mode` flag, the verify command doesn't print any warnings if a
+configuration is incompatible with UTF-8. Instead, the command exits with an error. For example:
 
 ```bash
 level=warn msg="UTF-8 strict mode enabled"
