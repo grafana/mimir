@@ -383,7 +383,11 @@ func (am *Alertmanager) TestReceiversHandler(w http.ResponseWriter, r *http.Requ
 			http.StatusBadRequest)
 	}
 
-	response, err := alertingNotify.TestReceivers(r.Context(), c, am.templates, am.buildGrafanaReceiverIntegrations, am.cfg.ExternalURL.String())
+	am.templatesMtx.RLock()
+	tmpls := am.templates
+	am.templatesMtx.RUnlock()
+
+	response, err := alertingNotify.TestReceivers(r.Context(), c, tmpls, am.buildGrafanaReceiverIntegrations, am.cfg.ExternalURL.String())
 	if err != nil {
 		http.Error(w,
 			fmt.Sprintf("error testing receivers: %s", err.Error()),
@@ -413,10 +417,21 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
+<<<<<<< HEAD
 func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, staticHeaders map[string]string) error {
 	templates := make([]io.Reader, 0, len(tmpls))
 	for _, tmpl := range tmpls {
 		templates = append(templates, strings.NewReader(tmpl.Template))
+=======
+func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []string, rawCfg string, tmplExternalURL *url.URL) error {
+	am.templatesMtx.Lock()
+	am.templates = tmpls
+	am.templatesMtx.Unlock()
+
+	tmplsReader := make([]io.Reader, len(tmpls))
+	for _, tmplString := range tmpls {
+		tmplsReader = append(tmplsReader, strings.NewReader(tmplString))
+>>>>>>> 1d1df980c (Use lock around templates)
 	}
 
 	tmpl, err := loadTemplates(templates, WithCustomFunctions(am.cfg.UserID))
@@ -424,8 +439,6 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		return err
 	}
 	tmpl.ExternalURL = tmplExternalURL
-
-	am.templates = tmpls
 
 	cfg := definition.GrafanaToUpstreamConfig(conf)
 	am.api.Update(&cfg, func(_ model.LabelSet) {})
