@@ -499,7 +499,6 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 				limits:      am.cfg.Limits,
 				integration: integrationName,
 			}
-
 			return newRateLimitedNotifier(notifier, rl, 10*time.Second, am.rateLimitedNotifications.WithLabelValues(integrationName))
 		}
 		return notifier
