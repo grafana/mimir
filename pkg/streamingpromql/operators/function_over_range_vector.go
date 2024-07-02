@@ -20,9 +20,10 @@ type FunctionOverRangeVector struct {
 	Inner types.RangeVectorOperator
 	Pool  *pooling.LimitingPool
 
-	numSteps     int
-	rangeSeconds float64
-	buffer       *types.RingBuffer
+	numSteps        int
+	rangeSeconds    float64
+	floatBuffer     *types.FPointRingBuffer
+	histogramBuffer *types.HPointRingBuffer
 }
 
 var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
@@ -48,11 +49,16 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	if m.buffer == nil {
-		m.buffer = types.NewRingBuffer(m.Pool)
+	if m.floatBuffer == nil {
+		m.floatBuffer = types.NewFPointRingBuffer(m.Pool)
 	}
 
-	m.buffer.Reset()
+	if m.histogramBuffer == nil {
+		m.histogramBuffer = types.NewHPointRingBuffer(m.Pool)
+	}
+
+	m.floatBuffer.Reset()
+	m.histogramBuffer.Reset()
 
 	floats, err := m.Pool.GetFPointSlice(m.numSteps) // TODO: only allocate this if we have any floats (once we support native histograms)
 	if err != nil {
@@ -64,7 +70,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 	}
 
 	for {
-		step, err := m.Inner.NextStepSamples(m.buffer)
+		step, err := m.Inner.NextStepSamples(m.floatBuffer, m.histogramBuffer)
 
 		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
 		if err == types.EOS {
@@ -73,7 +79,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		head, tail := m.buffer.UnsafePoints(step.RangeEnd)
+		head, tail := m.floatBuffer.UnsafePoints(step.RangeEnd)
 		count := len(head) + len(tail)
 
 		if count < 2 {
@@ -81,8 +87,8 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			continue
 		}
 
-		firstPoint := m.buffer.First()
-		lastPoint, _ := m.buffer.LastAtOrBefore(step.RangeEnd) // We already know there is a point at or before this time, no need to check.
+		firstPoint := m.floatBuffer.First()
+		lastPoint, _ := m.floatBuffer.LastAtOrBefore(step.RangeEnd) // We already know there is a point at or before this time, no need to check.
 		delta := lastPoint.F - firstPoint.F
 		previousValue := firstPoint.F
 
@@ -149,7 +155,10 @@ func (m *FunctionOverRangeVector) calculateRate(rangeStart, rangeEnd int64, firs
 func (m *FunctionOverRangeVector) Close() {
 	m.Inner.Close()
 
-	if m.buffer != nil {
-		m.buffer.Close()
+	if m.floatBuffer != nil {
+		m.floatBuffer.Close()
+	}
+	if m.histogramBuffer != nil {
+		m.histogramBuffer.Close()
 	}
 }
