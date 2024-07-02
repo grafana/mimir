@@ -289,7 +289,7 @@ func (r *PartitionReader) processNextFetchesUntilLagHonored(ctx context.Context,
 
 		// This message is NOT expected to be logged with a very high rate. In this log we display the last measured
 		// lag. If we don't have it (lag is zero value), then it will not be logged.
-		level.Info(loggerWithCurrentLag(logger, currLag)).Log("msg", "partition reader is consuming records to honor target and max consumer lag", "partition_start_offset", partitionStartOffset, "last_produced_offset", lastProducedOffset)
+		level.Info(loggerWithCurrentLagIfSet(logger, currLag)).Log("msg", "partition reader is consuming records to honor target and max consumer lag", "partition_start_offset", partitionStartOffset, "last_produced_offset", lastProducedOffset)
 
 		for boff.Ongoing() {
 			// Continue reading until we reached the desired offset.
@@ -347,7 +347,7 @@ func isErrFetch(fetch kgo.Fetch) bool {
 	return false
 }
 
-func loggerWithCurrentLag(logger log.Logger, currLag time.Duration) log.Logger {
+func loggerWithCurrentLagIfSet(logger log.Logger, currLag time.Duration) log.Logger {
 	if currLag <= 0 {
 		return logger
 	}
