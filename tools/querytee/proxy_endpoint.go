@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"sync"
@@ -27,45 +28,48 @@ type ResponsesComparator interface {
 }
 
 type ProxyEndpoint struct {
-	backends              []ProxyBackendInterface
-	metrics               *ProxyMetrics
-	logger                log.Logger
-	comparator            ResponsesComparator
-	slowResponseThreshold time.Duration
+	backends                          []ProxyBackendInterface
+	metrics                           *ProxyMetrics
+	logger                            log.Logger
+	comparator                        ResponsesComparator
+	slowResponseThreshold             time.Duration
+	secondaryBackendRequestProportion float64
 
-	// Whether for this endpoint there's a preferred backend configured.
-	hasPreferredBackend bool
+	// The preferred backend, if any.
+	preferredBackend ProxyBackendInterface
 
 	route Route
 }
 
-func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, slowResponseThreshold time.Duration) *ProxyEndpoint {
-	hasPreferredBackend := false
+func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, slowResponseThreshold time.Duration, secondaryBackendRequestProportion float64) *ProxyEndpoint {
+	var preferredBackend ProxyBackendInterface
 	for _, backend := range backends {
 		if backend.Preferred() {
-			hasPreferredBackend = true
+			preferredBackend = backend
 			break
 		}
 	}
 
 	return &ProxyEndpoint{
-		backends:              backends,
-		route:                 route,
-		metrics:               metrics,
-		logger:                logger,
-		comparator:            comparator,
-		slowResponseThreshold: slowResponseThreshold,
-		hasPreferredBackend:   hasPreferredBackend,
+		backends:                          backends,
+		route:                             route,
+		metrics:                           metrics,
+		logger:                            logger,
+		comparator:                        comparator,
+		slowResponseThreshold:             slowResponseThreshold,
+		secondaryBackendRequestProportion: secondaryBackendRequestProportion,
+		preferredBackend:                  preferredBackend,
 	}
 }
 
 func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Send the same request to all backends.
-	resCh := make(chan *backendResponse, len(p.backends))
-	go p.executeBackendRequests(r, resCh)
+	// Send the same request to all selected backends.
+	backends := p.selectBackends()
+	resCh := make(chan *backendResponse, len(backends))
+	go p.executeBackendRequests(r, backends, resCh)
 
 	// Wait for the first response that's feasible to be sent back to the client.
-	downstreamRes := p.waitBackendResponseForDownstream(resCh)
+	downstreamRes := p.waitBackendResponseForDownstream(backends, resCh)
 
 	if downstreamRes.err != nil {
 		http.Error(w, downstreamRes.err.Error(), http.StatusInternalServerError)
@@ -80,12 +84,28 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.metrics.responsesTotal.WithLabelValues(downstreamRes.backend.Name(), r.Method, p.route.RouteName).Inc()
 }
 
-func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *backendResponse) {
+func (p *ProxyEndpoint) selectBackends() []ProxyBackendInterface {
+	if len(p.backends) == 1 || p.secondaryBackendRequestProportion == 1.0 {
+		return p.backends
+	}
+
+	if p.secondaryBackendRequestProportion == 0.0 {
+		return []ProxyBackendInterface{p.preferredBackend}
+	}
+
+	if rand.Float64() > p.secondaryBackendRequestProportion {
+		return []ProxyBackendInterface{p.preferredBackend}
+	}
+
+	return p.backends
+}
+
+func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []ProxyBackendInterface, resCh chan *backendResponse) {
 	var (
 		wg           = sync.WaitGroup{}
 		err          error
 		body         []byte
-		responses    = make([]*backendResponse, 0, len(p.backends))
+		responses    = make([]*backendResponse, 0, len(backends))
 		responsesMtx = sync.Mutex{}
 		timingMtx    = sync.Mutex{}
 		query        = req.URL.RawQuery
@@ -150,8 +170,8 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 		slowestBackend  ProxyBackendInterface
 	)
 
-	wg.Add(len(p.backends))
-	for _, b := range p.backends {
+	wg.Add(len(backends))
+	for _, b := range backends {
 		b := b
 
 		go func() {
@@ -232,8 +252,8 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 	wg.Wait()
 	close(resCh)
 
-	// Compare responses.
-	if p.comparator != nil {
+	// Compare responses, but only if comparison is enabled and we ran this request against two backends.
+	if p.comparator != nil && len(backends) == 2 {
 		expectedResponse := responses[0]
 		actualResponse := responses[1]
 		if responses[1].backend.Preferred() {
@@ -276,9 +296,9 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, resCh chan *ba
 	}
 }
 
-func (p *ProxyEndpoint) waitBackendResponseForDownstream(resCh chan *backendResponse) *backendResponse {
+func (p *ProxyEndpoint) waitBackendResponseForDownstream(backends []ProxyBackendInterface, resCh chan *backendResponse) *backendResponse {
 	var (
-		responses                 = make([]*backendResponse, 0, len(p.backends))
+		responses                 = make([]*backendResponse, 0, len(backends))
 		preferredResponseReceived = false
 	)
 
@@ -287,7 +307,7 @@ func (p *ProxyEndpoint) waitBackendResponseForDownstream(resCh chan *backendResp
 		// - There's no preferred backend configured
 		// - Or this response is from the preferred backend
 		// - Or the preferred backend response has already been received and wasn't successful
-		if res.succeeded() && (!p.hasPreferredBackend || res.backend.Preferred() || preferredResponseReceived) {
+		if res.succeeded() && (p.preferredBackend == nil || res.backend.Preferred() || preferredResponseReceived) {
 			return res
 		}
 
