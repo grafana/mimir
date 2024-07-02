@@ -154,7 +154,7 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 		}
 	}
 
-	queryRanges, queryInstants, err := t.getQueryTimeRanges(now, records)
+	queryRanges, err := t.getQueryTimeRanges(now, records)
 	if err != nil {
 		errs.Add(err)
 	}
@@ -164,12 +164,6 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 		err := t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], true, typeLabel, queryMetric, generateValue, generateSampleHistogram, records)
 		errs.Add(err)
 		err = t.runRangeQueryAndVerifyResult(ctx, timeRange[0], timeRange[1], false, typeLabel, queryMetric, generateValue, generateSampleHistogram, records)
-		errs.Add(err)
-	}
-	for _, ts := range queryInstants {
-		err := t.runInstantQueryAndVerifyResult(ctx, ts, true, typeLabel, queryMetric, generateValue, generateSampleHistogram, records)
-		errs.Add(err)
-		err = t.runInstantQueryAndVerifyResult(ctx, ts, false, typeLabel, queryMetric, generateValue, generateSampleHistogram, records)
 		errs.Add(err)
 	}
 }
@@ -221,18 +215,18 @@ func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, typeLabel string
 
 // getQueryTimeRanges returns the start/end time ranges to use to run test range queries,
 // and the timestamps to use to run test instant queries.
-func (t *WriteReadSeriesTest) getQueryTimeRanges(now time.Time, records *MetricHistory) (ranges [][2]time.Time, instants []time.Time, err error) {
+func (t *WriteReadSeriesTest) getQueryTimeRanges(now time.Time, records *MetricHistory) (ranges [][2]time.Time, err error) {
 	// The min and max allowed query timestamps are zero if there's no successfully written data yet.
 	if records.queryMinTime.IsZero() || records.queryMaxTime.IsZero() {
 		level.Info(t.logger).Log("msg", "Skipped queries because there's no valid time range to query")
-		return nil, nil, errors.New("no valid time range to query")
+		return nil, errors.New("no valid time range to query")
 	}
 
 	// Honor the configured max age.
 	adjustedQueryMinTime := maxTime(records.queryMinTime, now.Add(-t.cfg.MaxQueryAge))
 	if records.queryMaxTime.Before(adjustedQueryMinTime) {
 		level.Info(t.logger).Log("msg", "Skipped queries because there's no valid time range to query after honoring configured max query age", "min_valid_time", records.queryMinTime, "max_valid_time", records.queryMaxTime, "max_query_age", t.cfg.MaxQueryAge)
-		return nil, nil, errors.New("no valid time range to query after honoring configured max query age")
+		return nil, errors.New("no valid time range to query after honoring configured max query age")
 	}
 
 	// Compute the latest queriable timestamp
@@ -245,7 +239,6 @@ func (t *WriteReadSeriesTest) getQueryTimeRanges(now time.Time, records *MetricH
 			maxTime(adjustedQueryMinTime, now.Add(-1*time.Hour)),
 			adjustedQueryMaxTime,
 		})
-		instants = append(instants, adjustedQueryMaxTime)
 	}
 
 	// Last 24h (only if the actual time range is not already covered by "Last 1h").
@@ -254,7 +247,6 @@ func (t *WriteReadSeriesTest) getQueryTimeRanges(now time.Time, records *MetricH
 			maxTime(adjustedQueryMinTime, now.Add(-24*time.Hour)),
 			adjustedQueryMaxTime,
 		})
-		instants = append(instants, maxTime(adjustedQueryMinTime, now.Add(-24*time.Hour)))
 	}
 
 	// From last 23h to last 24h.
@@ -268,9 +260,8 @@ func (t *WriteReadSeriesTest) getQueryTimeRanges(now time.Time, records *MetricH
 	// A random time range.
 	randMinTime := randTime(adjustedQueryMinTime, adjustedQueryMaxTime)
 	ranges = append(ranges, [2]time.Time{randMinTime, randTime(randMinTime, adjustedQueryMaxTime)})
-	instants = append(instants, randMinTime)
 
-	return ranges, instants, nil
+	return ranges, nil
 }
 
 func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, start, end time.Time, resultsCacheEnabled bool, typeLabel, metricSumQuery string, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, records *MetricHistory) error {
@@ -304,58 +295,6 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Range query result check failed", "err", err, "type", typeLabel)
 		return errors.Wrap(err, "range query result check failed")
-	}
-	return nil
-}
-
-func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context, ts time.Time, resultsCacheEnabled bool, typeLabel, metricSumQuery string, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, records *MetricHistory) error {
-	// We align the query timestamp to write interval in order to avoid any false positives
-	// when checking results correctness. The min/max query time is always aligned.
-	ts = maxTime(records.queryMinTime, alignTimestampToInterval(ts, writeInterval))
-	if records.queryMaxTime.Before(ts) {
-		return nil
-	}
-
-	sp, ctx := spanlogger.NewWithLogger(ctx, t.logger, "WriteReadSeriesTest.runInstantQueryAndVerifyResult")
-	defer sp.Finish()
-
-	logger := log.With(sp, "query", metricSumQuery, "ts", ts.UnixMilli(), "results_cache", strconv.FormatBool(resultsCacheEnabled))
-	level.Debug(logger).Log("msg", "Running instant query")
-
-	t.metrics.queriesTotal.WithLabelValues(typeLabel).Inc()
-	vector, err := t.client.Query(ctx, metricSumQuery, ts, WithResultsCacheEnabled(resultsCacheEnabled))
-	if err != nil {
-		t.metrics.queriesFailedTotal.WithLabelValues(typeLabel).Inc()
-		level.Warn(logger).Log("msg", "Failed to execute instant query", "err", err)
-		return errors.Wrap(err, "failed to execute instant query")
-	}
-
-	// Convert the vector to matrix to reuse the same results comparison utility.
-	matrix := make(model.Matrix, 0, len(vector))
-	for _, entry := range vector {
-		ss := &model.SampleStream{
-			Metric: entry.Metric,
-		}
-		if entry.Histogram == nil {
-			ss.Values = []model.SamplePair{{
-				Timestamp: entry.Timestamp,
-				Value:     entry.Value,
-			}}
-		} else {
-			ss.Histograms = []model.SampleHistogramPair{{
-				Timestamp: entry.Timestamp,
-				Histogram: entry.Histogram,
-			}}
-		}
-		matrix = append(matrix, ss)
-	}
-
-	t.metrics.queryResultChecksTotal.WithLabelValues(typeLabel).Inc()
-	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, 0, generateValue, generateSampleHistogram)
-	if err != nil {
-		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
-		level.Warn(logger).Log("msg", "Instant query result check failed", "err", err, "type", typeLabel)
-		return errors.Wrap(err, "instant query result check failed")
 	}
 	return nil
 }

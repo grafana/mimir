@@ -841,10 +841,9 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 	t.Run("min/max query time has not been set yet", func(t *testing.T) {
 		test := NewWriteReadSeriesTest(cfg, &ClientMock{}, log.NewNopLogger(), nil)
 
-		actualRanges, actualInstants, err := test.getQueryTimeRanges(now, &test.floatMetric)
+		actualRanges, err := test.getQueryTimeRanges(now, &test.floatMetric)
 		assert.Error(t, err)
 		assert.Empty(t, actualRanges)
-		assert.Empty(t, actualInstants)
 	})
 
 	t.Run("min/max query time is older than max age", func(t *testing.T) {
@@ -852,10 +851,9 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.floatMetric.queryMinTime = now.Add(-cfg.MaxQueryAge).Add(-time.Minute)
 		test.floatMetric.queryMaxTime = now.Add(-cfg.MaxQueryAge).Add(-time.Minute)
 
-		actualRanges, actualInstants, err := test.getQueryTimeRanges(now, &test.floatMetric)
+		actualRanges, err := test.getQueryTimeRanges(now, &test.floatMetric)
 		assert.Error(t, err)
 		assert.Empty(t, actualRanges)
-		assert.Empty(t, actualInstants)
 	})
 
 	t.Run("min query time = max query time", func(t *testing.T) {
@@ -863,16 +861,13 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.floatMetric.queryMinTime = now.Add(-time.Minute)
 		test.floatMetric.queryMaxTime = now.Add(-time.Minute)
 
-		actualRanges, actualInstants, err := test.getQueryTimeRanges(now, &test.floatMetric)
+		actualRanges, err := test.getQueryTimeRanges(now, &test.floatMetric)
 		require.NoError(t, err)
 
 		require.Len(t, actualRanges, 2)
 		require.Equal(t, [2]time.Time{now.Add(-time.Minute), now.Add(-time.Minute)}, actualRanges[0]) // Last 1h.
 		require.Equal(t, [2]time.Time{now.Add(-time.Minute), now.Add(-time.Minute)}, actualRanges[1]) // Random time range.
 
-		require.Len(t, actualInstants, 2)
-		require.Equal(t, now.Add(-time.Minute), actualInstants[0]) // Last 1h.
-		require.Equal(t, now.Add(-time.Minute), actualInstants[1]) // Random time range.
 	})
 
 	t.Run("min and max query time are within the last 1h", func(t *testing.T) {
@@ -880,20 +875,15 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.floatMetric.queryMinTime = now.Add(-30 * time.Minute)
 		test.floatMetric.queryMaxTime = now.Add(-time.Minute)
 
-		actualRanges, actualInstants, err := test.getQueryTimeRanges(now, &test.floatMetric)
+		actualRanges, err := test.getQueryTimeRanges(now, &test.floatMetric)
 		require.NoError(t, err)
 		require.Len(t, actualRanges, 2)
 		require.Equal(t, [2]time.Time{now.Add(-30 * time.Minute), now.Add(-time.Minute)}, actualRanges[0]) // Last 1h.
-
-		require.Len(t, actualInstants, 2)
-		require.Equal(t, now.Add(-time.Minute), actualInstants[0]) // Last 1h.
 
 		// Random time range.
 		require.GreaterOrEqual(t, actualRanges[len(actualRanges)-1][0].Unix(), test.floatMetric.queryMinTime.Unix())
 		require.LessOrEqual(t, actualRanges[len(actualRanges)-1][1].Unix(), test.floatMetric.queryMaxTime.Unix())
 
-		require.GreaterOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.floatMetric.queryMinTime.Unix())
-		require.LessOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.floatMetric.queryMaxTime.Unix())
 	})
 
 	t.Run("min and max query time are within the last 2h", func(t *testing.T) {
@@ -901,20 +891,15 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.floatMetric.queryMinTime = now.Add(-90 * time.Minute)
 		test.floatMetric.queryMaxTime = now.Add(-80 * time.Minute)
 
-		actualRanges, actualInstants, err := test.getQueryTimeRanges(now, &test.floatMetric)
+		actualRanges, err := test.getQueryTimeRanges(now, &test.floatMetric)
 		require.NoError(t, err)
 		require.Len(t, actualRanges, 2)
 		require.Equal(t, [2]time.Time{now.Add(-90 * time.Minute), now.Add(-80 * time.Minute)}, actualRanges[0]) // Last 24h.
-
-		require.Len(t, actualInstants, 2)
-		require.Equal(t, now.Add(-90*time.Minute), actualInstants[0]) // Last 24h.
 
 		// Random time range.
 		require.GreaterOrEqual(t, actualRanges[len(actualRanges)-1][0].Unix(), test.floatMetric.queryMinTime.Unix())
 		require.LessOrEqual(t, actualRanges[len(actualRanges)-1][1].Unix(), test.floatMetric.queryMaxTime.Unix())
 
-		require.GreaterOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.floatMetric.queryMinTime.Unix())
-		require.LessOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.floatMetric.queryMaxTime.Unix())
 	})
 
 	t.Run("min query time is older than 24h", func(t *testing.T) {
@@ -922,23 +907,17 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.floatMetric.queryMinTime = now.Add(-30 * time.Hour)
 		test.floatMetric.queryMaxTime = now.Add(-time.Minute)
 
-		actualRanges, actualInstants, err := test.getQueryTimeRanges(now, &test.floatMetric)
+		actualRanges, err := test.getQueryTimeRanges(now, &test.floatMetric)
 		require.NoError(t, err)
 		require.Len(t, actualRanges, 4)
 		require.Equal(t, [2]time.Time{now.Add(-time.Hour), now.Add(-time.Minute)}, actualRanges[0])         // Last 1h.
 		require.Equal(t, [2]time.Time{now.Add(-24 * time.Hour), now.Add(-time.Minute)}, actualRanges[1])    // Last 24h.
 		require.Equal(t, [2]time.Time{now.Add(-24 * time.Hour), now.Add(-23 * time.Hour)}, actualRanges[2]) // From last 23h to last 24h.
 
-		require.Len(t, actualInstants, 3)
-		require.Equal(t, now.Add(-time.Minute), actualInstants[0])  // Last 1h.
-		require.Equal(t, now.Add(-24*time.Hour), actualInstants[1]) // Last 24h.
-
 		// Random time range.
 		require.GreaterOrEqual(t, actualRanges[len(actualRanges)-1][0].Unix(), test.floatMetric.queryMinTime.Unix())
 		require.LessOrEqual(t, actualRanges[len(actualRanges)-1][1].Unix(), test.floatMetric.queryMaxTime.Unix())
 
-		require.GreaterOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.floatMetric.queryMinTime.Unix())
-		require.LessOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.floatMetric.queryMaxTime.Unix())
 	})
 
 	t.Run("max query time is older than 24h but more recent than max query age", func(t *testing.T) {
@@ -946,17 +925,14 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.floatMetric.queryMinTime = now.Add(-30 * time.Hour)
 		test.floatMetric.queryMaxTime = now.Add(-25 * time.Hour)
 
-		actualRanges, actualInstants, err := test.getQueryTimeRanges(now, &test.floatMetric)
+		actualRanges, err := test.getQueryTimeRanges(now, &test.floatMetric)
 		require.NoError(t, err)
 		require.Len(t, actualRanges, 1)
-		require.Len(t, actualInstants, 1)
 
 		// Random time range.
 		require.GreaterOrEqual(t, actualRanges[len(actualRanges)-1][0].Unix(), test.floatMetric.queryMinTime.Unix())
 		require.LessOrEqual(t, actualRanges[len(actualRanges)-1][1].Unix(), test.floatMetric.queryMaxTime.Unix())
 
-		require.GreaterOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.floatMetric.queryMinTime.Unix())
-		require.LessOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.floatMetric.queryMaxTime.Unix())
 	})
 
 	t.Run("min query time is older than 24h but max query age is only 10m", func(t *testing.T) {
@@ -967,19 +943,14 @@ func TestWriteReadSeriesTest_getRangeQueryTimeRanges(t *testing.T) {
 		test.floatMetric.queryMinTime = now.Add(-30 * time.Hour)
 		test.floatMetric.queryMaxTime = now.Add(-time.Minute)
 
-		actualRanges, actualInstants, err := test.getQueryTimeRanges(now, &test.floatMetric)
+		actualRanges, err := test.getQueryTimeRanges(now, &test.floatMetric)
 		require.NoError(t, err)
 		require.Len(t, actualRanges, 2)
 		require.Equal(t, [2]time.Time{now.Add(-10 * time.Minute), now.Add(-time.Minute)}, actualRanges[0]) // Last 1h.
-
-		require.Len(t, actualInstants, 2)
-		require.Equal(t, now.Add(-time.Minute), actualInstants[0]) // Last 1h.
 
 		// Random time range.
 		require.GreaterOrEqual(t, actualRanges[len(actualRanges)-1][0].Unix(), test.floatMetric.queryMinTime.Unix())
 		require.LessOrEqual(t, actualRanges[len(actualRanges)-1][1].Unix(), test.floatMetric.queryMaxTime.Unix())
 
-		require.GreaterOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.floatMetric.queryMinTime.Unix())
-		require.LessOrEqual(t, actualInstants[len(actualInstants)-1].Unix(), test.floatMetric.queryMaxTime.Unix())
 	})
 }
