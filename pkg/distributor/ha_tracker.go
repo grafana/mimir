@@ -555,5 +555,6 @@ func (h *haTracker) cleanupHATrackerMetricsForUser(userID string) {
 	h.electedReplicaChanges.DeletePartialMatch(filter)
 	h.electedReplicaTimestamp.DeletePartialMatch(filter)
 	h.lastElectionTimestamp.DeletePartialMatch(filter)
+	h.totalReelections.DeletePartialMatch(filter)
 	h.kvCASCalls.DeletePartialMatch(filter)
 }
