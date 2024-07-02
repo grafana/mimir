@@ -148,7 +148,7 @@ func (q *TreeQueue) getOrAddNode(childPath QueuePath) (*TreeQueue, error) {
 		// the new child queue should be inserted directly before the current child
 		// queue index, essentially placing the new node at the end of the line
 		if q.currentChildQueueIndex == localQueueIndex {
-			// special case; cannot slice into childQueueOrder with index -1
+			// special case; cannot slice into queueNodeOrder with index -1
 			// place at end of slice, which is the last slot before the local queue slot
 			q.childQueueOrder = append(q.childQueueOrder, childQueue.name)
 		} else {
@@ -215,7 +215,7 @@ func (q *TreeQueue) DequeueByPath(childPath QueuePath) any {
 
 // Dequeue removes and returns an item from the front of the next nonempty queue node in the tree.
 //
-// Dequeuing from a node follows the round-robin order of the node's childQueueOrder,
+// Dequeuing from a node follows the round-robin order of the node's queueNodeOrder,
 // dequeuing either from the node's localQueue or selecting the next child node in the order
 // and recursively calling Dequeue on the child nodes until a nonempty queue is found.
 //
