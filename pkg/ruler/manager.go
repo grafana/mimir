@@ -334,7 +334,8 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 // the input shouldRemove() function returns true.
 func (r *DefaultMultiTenantManager) removeUsersIf(shouldRemove func(userID string) bool) {
 	r.userManagerMtx.Lock()
-	defer r.userManagerMtx.Unlock()
+
+	var wg sync.WaitGroup
 
 	// Check for deleted users and remove them
 	for userID, mngr := range r.userManagers {
@@ -342,7 +343,12 @@ func (r *DefaultMultiTenantManager) removeUsersIf(shouldRemove func(userID strin
 			continue
 		}
 
-		go mngr.Stop()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			mngr.Stop()
+		}()
+
 		delete(r.userManagers, userID)
 
 		r.mapper.cleanupUser(userID)
@@ -352,6 +358,27 @@ func (r *DefaultMultiTenantManager) removeUsersIf(shouldRemove func(userID strin
 		r.userManagerMetrics.RemoveUserRegistry(userID)
 		level.Info(r.logger).Log("msg", "deleted rule manager and local rule files", "user", userID)
 	}
+
+	r.userManagerMtx.Unlock()
+
+	wg.Wait()
+
+	// Now that the rule managers are stopped, let's make sure we also stop the notifiers.
+
+	r.notifiersMtx.Lock()
+	for userID, n := range r.notifiers {
+		if shouldRemove(userID) {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				n.stop()
+			}()
+			delete(r.notifiers, userID)
+		}
+	}
+	r.notifiersMtx.Unlock()
+
+	wg.Wait()
 
 	r.managersTotal.Set(float64(len(r.userManagers)))
 }
