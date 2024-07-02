@@ -2632,7 +2632,7 @@ func TestComputeConfig(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			cfg, url, err := am.computeConfig(test.cfg)
+			cfg, err := am.computeConfig(test.cfg)
 			if test.expErr != "" {
 				require.EqualError(t, err, test.expErr)
 				return
@@ -2640,7 +2640,7 @@ func TestComputeConfig(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Equal(t, test.expCfg, cfg)
-			require.Equal(t, test.expURL, url.String())
+			require.Equal(t, test.expURL, cfg.tmplExternalURL.String())
 		})
 	}
 }
