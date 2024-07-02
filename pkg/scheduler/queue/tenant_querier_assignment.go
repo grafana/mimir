@@ -84,7 +84,7 @@ type tenantQuerierAssignments struct {
 	tenantsByID   map[TenantID]*queueTenant
 	// tenantOrderIndex is the index of the _last_ tenant dequeued from; it is passed by
 	// the querier, and then updated to the index of the last tenant dequeued from, so it
-	// can be returned to the querier. Newly connected queries should pass -1 to start at the
+	// can be returned to the querier. Newly connected queriers should pass -1 to start at the
 	// beginning of tenantIDOrder.
 	tenantOrderIndex int
 	tenantNodes      map[string][]*Node

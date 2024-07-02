@@ -66,7 +66,7 @@ func Test_EnqueueBackByPath(t *testing.T) {
 		expectErr           bool
 	}{
 		{
-			name:                "enqueue tenant-querier node to round-robin node",
+			name:                "enqueue round-robin node to round-robin node",
 			treeAlgosByDepth:    []QueuingAlgorithm{&roundRobinState{}, &roundRobinState{}},
 			childPathsToEnqueue: []QueuePath{{"child-1"}},
 		},
@@ -200,10 +200,8 @@ func Test_Dequeue_RootNode(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			querierID := QuerierID("placeholder")
-			switch tt.rootAlgo.(type) {
-			case *tenantQuerierAssignments:
-				tt.rootAlgo.(*tenantQuerierAssignments).currentQuerier = querierID
+			if tqa, ok := tt.rootAlgo.(*tenantQuerierAssignments); ok {
+				tqa.updateQueuingAlgorithmState("placeholder", localQueueIndex)
 			}
 			tree, err := NewTree(tt.rootAlgo)
 			require.NoError(t, err)
@@ -559,11 +557,6 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			//currentQuerier := QuerierID("placeholder")
-			//tt.state.currentQuerier = currentQuerier
-			//
-			//// We need a reference to state in order to be able to
-			//// update the state's currentQuerier.
 			tqas := make([]*tenantQuerierAssignments, 0)
 			for _, da := range tt.treeAlgosByDepth {
 				if tqa, ok := da.(*tenantQuerierAssignments); ok {

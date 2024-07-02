@@ -6,22 +6,28 @@ package queue
 // applied at the layer-level -- every Node at the same depth in a MultiQueuingAlgorithmTreeQueue shares the same QueuingAlgorithm,
 // including any state in structs that implement QueuingAlgorithm.
 type QueuingAlgorithm interface {
-	// addChildNode creates a child Node of parent. QueuePaths passed to enqueue functions are allowed to contain
-	// node names for nodes which do not yet exist; in those cases, we create the missing nodes. Implementers are
-	// responsible for adding the newly-created node to whatever state(s) keep track of nodes in the subtree, as well
-	// as updating any positional pointers that have been shifted by the addition of a new node.
+	// addChildNode updates a parent's queueMap and other child-tracking structures with a new child Node. QueuePaths
+	// passed to enqueue functions are allowed to contain node names for nodes which do not yet exist; in those cases,
+	// we create the missing nodes. Implementers are responsible for adding the newly-created node to whatever state(s)
+	// keep track of nodes in the subtree, as well as updating any positional pointers that have been shifted by the
+	// addition of a new node.
 	addChildNode(parent, child *Node)
 
-	// dequeueSelectNode, given a node, returns the node which an element will be dequeued from next, as well
-	// as a bool representing whether the passed node and all its children have been checked for dequeue-ability.
-	// The returned node may be the same as the node passed in; this triggers the base case for the recursive
-	// Node.dequeue, and results in dequeuing from the node's local queue. dequeueSelectNode does *not*
-	// update any Node fields.
+	// dequeueSelectNode uses information in the given node and/or the QueuingAlgorithm state to select and return
+	// the node which an element will be dequeued from next, as well as a bool representing whether the passed node
+	// and all its children have been checked for dequeue-ability. The returned node may be one of the following:
+	//	- the given node: this triggers the base case for the recursive Node.dequeue, and results in dequeuing from
+	//    the node's local queue.
+	//	- a direct child of the given node: this continues the dequeue recursion.
+	// The Tree uses the bool returned to determine when no dequeue-able value can be found at this child. If all
+	// children in the subtree have been checked, but no dequeue-able value is found, the Tree traverses to the next
+	// child in the given node's order. dequeueSelectNode does *not* update any Node fields.
 	dequeueSelectNode(node *Node) (*Node, bool)
 
 	// dequeueUpdateState is called after we have finished dequeuing from a node. When a child is left empty after the
-	// dequeue operation, dequeueUpdateState performs cleanup by deleting that child from the node and all other
-	// necessary state, and updates the relevant position to point to the next node to dequeue from.
+	// dequeue operation, dequeueUpdateState should perform cleanup by deleting that child from the Node and update
+	// any other necessary state to reflect the child's removal. It should also update the relevant position to point
+	// to the next node to dequeue from.
 	dequeueUpdateState(node *Node, dequeuedFrom *Node)
 }
 
@@ -33,7 +39,7 @@ type QueuingAlgorithm interface {
 type roundRobinState struct {
 }
 
-// addChildNode creates a new child Node and adds it to the "end" of the parent's queueOrder from the perspective
+// addChildNode adds a child Node to the "end" of the parent's queueOrder from the perspective
 // of the parent's queuePosition. Thus, If queuePosition is localQueueIndex, the new child is added to the end of
 // queueOrder. Otherwise, the new child is added at queuePosition - 1, and queuePosition is incremented to keep
 // it pointed to the same child.
