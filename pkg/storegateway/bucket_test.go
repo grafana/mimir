@@ -11,7 +11,6 @@ package storegateway
 import (
 	"bytes"
 	"context"
-	cryptorand "crypto/rand"
 	"fmt"
 	"math"
 	"math/rand"
@@ -160,6 +159,28 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 	assert.Equal(t, map[string]string{}, meta.Thanos.Labels)
 }
 
+func TestBucketBlockSet_add_SkipDuplicates(t *testing.T) {
+	set := newBucketBlockSet()
+
+	type resBlock struct {
+		id         ulid.ULID
+		mint, maxt int64
+	}
+	input := []resBlock{
+		{id: ulid.MustNew(1, nil), mint: 0, maxt: 100},
+		{id: ulid.MustNew(1, nil), mint: 0, maxt: 100}, // This one is a duplicate.
+		{id: ulid.MustNew(2, nil), mint: 100, maxt: 200},
+	}
+	for _, in := range input {
+		var m block.Meta
+		m.ULID = in.id
+		m.MinTime = in.mint
+		m.MaxTime = in.maxt
+		set.add(&bucketBlock{meta: &m})
+	}
+	assert.Equal(t, 2, set.len())
+}
+
 func TestBucketBlockSet_remove(t *testing.T) {
 	set := newBucketBlockSet()
 
@@ -178,11 +199,17 @@ func TestBucketBlockSet_remove(t *testing.T) {
 		m.ULID = in.id
 		m.MinTime = in.mint
 		m.MaxTime = in.maxt
-		assert.NoError(t, set.add(&bucketBlock{meta: &m}))
+		set.add(&bucketBlock{meta: &m})
 	}
-	set.remove(input[1].id)
-	res := set.getFor(0, 300, nil)
+	b := set.remove(input[1].id)
+	require.NotNil(t, b)
 
+	require.Equal(t, 2, set.len())
+
+	res := make([]*bucketBlock, 0, len(input))
+	set.filter(0, 300, nil, func(b *bucketBlock) {
+		res = append(res, b)
+	})
 	assert.Equal(t, 2, len(res))
 	assert.Equal(t, input[0].id, res[0].meta.ULID)
 	assert.Equal(t, input[2].id, res[1].meta.ULID)
@@ -1441,10 +1468,10 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 						assert.Greater(t, int(chunksSlicePool.(*pool.TrackedPool).Gets.Load()), 0)
 					}
 
-					for _, b := range st.blocks {
+					st.blockSet.all(func(b *bucketBlock) {
 						// NOTE(bwplotka): It is 4 x 1.0 for 100mln samples. Kind of make sense: long series.
 						assert.Equal(t, 0.0, promtest.ToFloat64(b.metrics.seriesRefetches))
-					}
+					})
 
 					// Check exposed metrics.
 					assertHistograms := map[string]bool{
@@ -1792,18 +1819,16 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			LazyLoadingEnabled:     false,
 			LazyLoadingIdleTimeout: 0,
 		}, gate.NewNoop(), indexheader.NewReaderPoolMetrics(nil), nil),
-		metrics:  NewBucketStoreMetrics(nil),
-		blockSet: &bucketBlockSet{blocks: []*bucketBlock{b1, b2}},
-		blocks: map[ulid.ULID]*bucketBlock{
-			b1.meta.ULID: b1,
-			b2.meta.ULID: b2,
-		},
+		blockSet:             newBucketBlockSet(),
+		metrics:              NewBucketStoreMetrics(nil),
 		postingsStrategy:     selectAllStrategy{},
 		queryGate:            gate.NewNoop(),
 		chunksLimiterFactory: newStaticChunksLimiterFactory(0),
 		seriesLimiterFactory: newStaticSeriesLimiterFactory(0),
 		maxSeriesPerBatch:    65536,
 	}
+	store.blockSet.add(b1)
+	store.blockSet.add(b2)
 
 	srv := newStoreGatewayTestServer(t, store)
 
@@ -2495,87 +2520,6 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 	}
 }
 
-func TestBucketStore_buildStoreStats(t *testing.T) {
-	durations := []time.Duration{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
-	now := time.Now().Round(time.Hour)
-
-	type buildStoreStatsCase struct {
-		name           string
-		minTime        time.Time
-		maxTime        time.Time
-		expectedBucket time.Duration
-	}
-
-	testCases := []buildStoreStatsCase{
-		{
-			name:           "under 2h duration",
-			minTime:        now,
-			maxTime:        now.Add(90 * time.Minute),
-			expectedBucket: 2 * time.Hour,
-		},
-		{
-			name:           "exactly 2h duration",
-			minTime:        now,
-			maxTime:        now.Add(120 * time.Minute),
-			expectedBucket: 2 * time.Hour,
-		},
-		{
-			name:           "over 2h duration",
-			minTime:        now,
-			maxTime:        now.Add(125 * time.Minute),
-			expectedBucket: 12 * time.Hour,
-		},
-		{
-			name:           "double 2h duration",
-			minTime:        now,
-			maxTime:        now.Add(240 * time.Minute),
-			expectedBucket: 12 * time.Hour,
-		},
-		{
-			name:           "exactly 12h duration",
-			minTime:        now,
-			maxTime:        now.Add(12 * time.Hour),
-			expectedBucket: 12 * time.Hour,
-		},
-		{
-			name:           "over 12h duration",
-			minTime:        now,
-			maxTime:        now.Add(13 * time.Hour),
-			expectedBucket: 24 * time.Hour,
-		},
-		{
-			name:           "exactly 24h duration",
-			minTime:        now,
-			maxTime:        now.Add(24 * time.Hour),
-			expectedBucket: 24 * time.Hour,
-		},
-		{
-			name:           "over 24h duration",
-			minTime:        now,
-			maxTime:        now.Add(25 * time.Hour),
-			expectedBucket: 24 * time.Hour,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			uid := ulid.MustNew(uint64(now.UnixMilli()), cryptorand.Reader)
-			blk := &bucketBlock{
-				meta: &block.Meta{
-					BlockMeta: tsdb.BlockMeta{
-						MinTime: tc.minTime.UnixMilli(),
-						MaxTime: tc.maxTime.UnixMilli(),
-					},
-				},
-			}
-
-			stats := buildStoreStats(durations, map[ulid.ULID]*bucketBlock{uid: blk})
-			require.Contains(t, stats.BlocksLoaded, tc.expectedBucket)
-			require.Equal(t, 1, stats.BlocksLoaded[tc.expectedBucket])
-		})
-	}
-}
-
 func mustMarshalAny(pb proto.Message) *types.Any {
 	out, err := types.MarshalAny(pb)
 	if err != nil {
@@ -2879,13 +2823,13 @@ func labelNamesFromSeriesSet(series []*storepb.Series) []string {
 		}
 	}
 
-	labels := make([]string, 0, len(labelsMap))
+	ll := make([]string, 0, len(labelsMap))
 	for k := range labelsMap {
-		labels = append(labels, k)
+		ll = append(ll, k)
 	}
 
-	slices.Sort(labels)
-	return labels
+	slices.Sort(ll)
+	return ll
 }
 
 type headGenOptions struct {
