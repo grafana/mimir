@@ -7897,7 +7897,7 @@ func testIngesterInflightPushRequests(t *testing.T, i *Ingester, reg prometheus.
 
 	startCh := make(chan struct{})
 
-	const targetRequestDuration = time.Second
+	const targetRequestDuration = 250 * time.Millisecond
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
@@ -8002,7 +8002,7 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 
 			startCh := make(chan int)
 
-			const targetRequestDuration = time.Second
+			const targetRequestDuration = 250 * time.Millisecond
 
 			g, ctx := errgroup.WithContext(ctx)
 			g.Go(func() error {
