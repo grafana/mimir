@@ -66,6 +66,8 @@
 
 ### Mimir Continuous Test
 
+* [ENHANCEMENT] Add histograms to measure latency of read and write requests. #8583
+
 ### Query-tee
 
 * [ENHANCEMENT] Emit trace spans from query-tee. #8419
