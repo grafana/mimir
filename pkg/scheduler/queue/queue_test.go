@@ -378,13 +378,11 @@ func runQueueProducerIters(
 		producerIters := queueActorIterationCount(totalIters, numProducers, producerIdx)
 		tenantID := producerIdx % numTenants
 		tenantIDStr := strconv.Itoa(tenantID)
-		fmt.Println("producerIters: ", producerIters)
 
 		<-start
 
 		for i := 0; i < producerIters; i++ {
 			queryID := i
-			fmt.Println(queryID)
 			err := queueProduce(queue, maxQueriersPerTenant, uint64(queryID), tenantIDStr, additionalQueueDimensionFunc)
 			if err != nil {
 				return err
@@ -453,18 +451,15 @@ type consumeRequest func(request Request, querierID string) error
 func queueConsume(
 	ctx context.Context, queue *RequestQueue, querierID string, lastTenantIndex TenantIndex, consumeFunc consumeRequest,
 ) (TenantIndex, error) {
-	fmt.Println("waiting for request for querier: ", querierID)
 	request, idx, err := queue.WaitForRequestForQuerier(ctx, lastTenantIndex, querierID)
 	if err != nil {
 		return lastTenantIndex, err
 	}
 	lastTenantIndex = idx
 
-	fmt.Println("consuming request for querier: ", querierID)
 	if consumeFunc != nil {
 		err = consumeFunc(request, querierID)
 	}
-	fmt.Println("done consuming request for querier: ", querierID)
 	return lastTenantIndex, err
 }
 

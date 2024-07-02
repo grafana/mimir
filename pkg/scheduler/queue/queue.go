@@ -526,12 +526,6 @@ func (q *RequestQueue) submitQuerierOperation(querierID string, operation querie
 }
 
 func (q *RequestQueue) processQuerierOperation(querierOp querierOperation) (resharded bool) {
-	fmt.Printf(
-		"processQuerierOperation: %v, connected: %d \n",
-		querierOp,
-		q.connectedQuerierWorkers.Load(),
-	)
-
 	switch querierOp.operation {
 	case registerConnection:
 		return q.processRegisterQuerierConnection(querierOp.querierID)

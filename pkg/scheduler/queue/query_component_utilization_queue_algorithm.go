@@ -3,7 +3,6 @@
 package queue
 
 import (
-	"fmt"
 	"math"
 )
 
@@ -19,6 +18,26 @@ type queryComponentUtilizationReserveConnections struct {
 	queueLen         int
 }
 
+// ExceedsThresholdForComponentName checks whether a query component has exceeded the capacity utilization threshold.
+// This enables the dequeuing algorithm to skip requests for a query component experiencing heavy load,
+// reserving querier-worker connection capacity to continue servicing requests for the other component.
+// If there are no requests in queue for the other, less-utilized component, the dequeuing algorithm may choose
+// to continue servicing requests for the component which has exceeded the reserved capacity threshold.
+//
+// Capacity utilization for a QueryComponent is defined by the portion of the querier-worker connections
+// which are currently in flight processing a query which requires that QueryComponent.
+//
+// The component name can indicate the usage of one or both of ingesters and store-gateways.
+// If both ingesters and store-gateways will be used, this method will flag the threshold as exceeded
+// if either ingesters or store-gateways are currently in excess of the reserved capacity.
+//
+// Capacity reservation only occurs when the queue backlogged, where backlogged is defined as
+// (length of the query queue) >= (number of querier-worker connections waiting for a query).
+//
+// A QueryComponent's utilization is allowed to exceed the reserved capacity when the queue is not backlogged.
+// If an influx of queries then creates a backlog, this method will indicate to skip queries for the component.
+// As the inflight queries complete or fail, the component's utilization will naturally decrease.
+// This method will continue to indicate to skip queries for the component until it is back under the threshold.
 func (qcurc *queryComponentUtilizationReserveConnections) ExceedsThresholdForComponentName(name string) (bool, QueryComponent) {
 	if qcurc.connectedWorkers <= 1 {
 		// corner case; cannot reserve capacity with only one worker available
@@ -35,19 +54,16 @@ func (qcurc *queryComponentUtilizationReserveConnections) ExceedsThresholdForCom
 			),
 		)
 	}
-	fmt.Println("connected workers: ", qcurc.connectedWorkers)
-	fmt.Println("min reserved connections: ", minReservedConnections)
 
 	isIngester, isStoreGateway := queryComponentFlags(name)
+	ingesterInflightRequests, storeGatewayInflightRequests := qcurc.utilization.GetInflightRequests()
 	if isIngester {
-		if qcurc.connectedWorkers-(qcurc.utilization.ingesterInflightRequests) <= minReservedConnections {
-			fmt.Println("ingester exceeds utilization: ", qcurc.utilization.ingesterInflightRequests)
+		if qcurc.connectedWorkers-ingesterInflightRequests <= minReservedConnections {
 			return true, Ingester
 		}
 	}
 	if isStoreGateway {
-		if qcurc.connectedWorkers-(qcurc.utilization.storeGatewayInflightRequests) <= minReservedConnections {
-			fmt.Println("store-gateway exceeds utilization: ", qcurc.utilization.storeGatewayInflightRequests)
+		if qcurc.connectedWorkers-storeGatewayInflightRequests <= minReservedConnections {
 			return true, StoreGateway
 		}
 	}
@@ -117,13 +133,10 @@ func (qcud *queryComponentUtilizationDequeueSkipOverThreshold) dequeueSelectNode
 		return qcud.nodesChecked == len(qcud.nodeOrder)+1
 	}
 
-	fmt.Println("checking nodes: ", qcud.nodeOrder)
-
 	for !checkedAllNodesBeforeSkips() {
 		// have not made it through first rotation yet
 		currentNodeName := qcud.nodeOrder[qcud.currentNodeOrderIndex]
 		if qcud.queryComponentUtilizationThreshold.TriggerUtilizationCheck() {
-			fmt.Println("triggered utilization check")
 			// triggered a utilization check
 			exceedsThreshold, _ := qcud.queryComponentUtilizationThreshold.ExceedsThresholdForComponentName(currentNodeName)
 
@@ -136,8 +149,6 @@ func (qcud *queryComponentUtilizationDequeueSkipOverThreshold) dequeueSelectNode
 				qcud.nodesSkippedIndexOrder = append(qcud.nodesSkippedIndexOrder, qcud.currentNodeOrderIndex)
 				qcud.incrementWrapIndex()
 
-				fmt.Println("failed utilization check, skipping node: ", currentNodeName)
-
 				// increment nodesChecked;
 				// we will not return true for checkedAllNodes until we check the skipped nodes too
 				qcud.nodesChecked++
@@ -145,18 +156,14 @@ func (qcud *queryComponentUtilizationDequeueSkipOverThreshold) dequeueSelectNode
 				// triggered a utilization check but query component for this node is not over utilization threshold;
 				// select the current node
 				qcud.nodesChecked++
-				fmt.Printf("passed utilization check, selecting node %s with queue len %d\n", currentNodeName, node.queueMap[currentNodeName].ItemCount())
 				return node.queueMap[currentNodeName], qcud.checkedAllNodes()
 			}
 		} else {
 			// no utilization check triggered; select the current node
 			qcud.nodesChecked++
-			fmt.Printf("no utilization check, selecting node %s with queue len %d\n", currentNodeName, node.queueMap[currentNodeName].ItemCount())
 			return node.queueMap[currentNodeName], qcud.checkedAllNodes()
 		}
 	}
-
-	fmt.Printf("found nothing in non-skipped nodes, checking skipped nodes\n")
 
 	// else; we have checked all nodes the first time
 	// if we are here, none of the nodes that did not get skipped were able to be dequeued from
@@ -170,7 +177,6 @@ func (qcud *queryComponentUtilizationDequeueSkipOverThreshold) dequeueSelectNode
 		qcud.currentNodeOrderIndex = skippedNodeIndex
 		// and drop skipped node index from front of the skipped node queue list
 		qcud.nodesSkippedIndexOrder = qcud.nodesSkippedIndexOrder[1:]
-		fmt.Println("selecting skipped node: ", skippedNodeName)
 		return node.queueMap[skippedNodeName], qcud.checkedAllNodes()
 	}
 	return nil, qcud.checkedAllNodes()

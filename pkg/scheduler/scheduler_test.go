@@ -32,7 +32,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
-	"github.com/grafana/mimir/pkg/scheduler/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
@@ -602,8 +601,9 @@ func verifyQueryComponentUtilizationLeft(t *testing.T, scheduler *Scheduler) {
 	test.Poll(t, 2*time.Second, services.Terminated, func() interface{} {
 		return scheduler.State()
 	})
-	require.Zero(t, scheduler.requestQueue.QueryComponentUtilization.GetForComponent(queue.Ingester))
-	require.Zero(t, scheduler.requestQueue.QueryComponentUtilization.GetForComponent(queue.StoreGateway))
+	ingesterInflightRequests, storeGatewayInflightRequests := scheduler.requestQueue.QueryComponentUtilization.GetInflightRequests()
+	require.Zero(t, ingesterInflightRequests)
+	require.Zero(t, storeGatewayInflightRequests)
 }
 
 type limits struct {

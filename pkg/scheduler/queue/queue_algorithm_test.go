@@ -202,12 +202,10 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 		schedulerRequest := request.(*SchedulerRequest)
 		queryComponent := schedulerRequest.AdditionalQueueDimensions[0]
 
-		fmt.Printf("marking request sent for queryComponent: %s, querier: %s\n", queryComponent, querierID)
 		queue.QueryComponentUtilization.MarkRequestSent(schedulerRequest)
 		if queryComponent == slowConsumerQueueDimension {
 			time.Sleep(slowConsumerLatency)
 		}
-		fmt.Printf("marking request completed for queryComponent: %s, querier: %s\n", queryComponent, querierID)
 		queue.QueryComponentUtilization.MarkRequestCompleted(schedulerRequest)
 
 		queueTime := time.Since(schedulerRequest.EnqueueTime)
