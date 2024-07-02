@@ -179,8 +179,9 @@ with UTF-8 into equivalent matchers that are compatible. This translation is bac
 does not change the behavior of existing matchers, and works even in Mimir installations that
 do not have UTF-8 enabled.
 
-A lot of Alertmanager configurations will not need migrating. You can verify if an existing
-Alertmanager configuration needs to be migrated for UTF-8 by running the verify command:
+The need to migrate an Alertmanager configuration depends on whether it contains matchers
+incompatible with UTF-8. You can verify if an existing Alertmanager configuration needs to be
+migrated for UTF-8 by running the verify command:
 
 ```bash
 mimirtool alertmanager verify <config_file> [template_files...]
