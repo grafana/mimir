@@ -475,7 +475,7 @@ func (h *haTracker) updateCache(userID, cluster string, desc *ReplicaDesc) {
 	if desc.Replica != entry.elected.Replica {
 		h.electedReplicaChanges.WithLabelValues(userID, cluster).Inc()
 		h.lastElectionTimestamp.WithLabelValues(userID, cluster).Set(float64(desc.ElectedAt / 1000))
-		h.totalReelections.WithLabelValues(userID, cluster).Inc()
+		h.totalReelections.WithLabelValues(userID, cluster).Set(float64(desc. ElectedChanges))
 		level.Info(h.logger).Log("msg", "updating replica in cache", "user", userID, "cluster", cluster, "old_replica", entry.elected.Replica, "new_replica", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
 	}
 	entry.elected = *desc
