@@ -6580,9 +6580,19 @@
             },
             {
               "kind": "field",
+              "name": "target_consumer_lag_at_startup",
+              "required": false,
+              "desc": "The best-effort maximum lag a consumer tries to achieve at startup. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2000000000,
+              "fieldFlag": "ingest-storage.kafka.target-consumer-lag-at-startup",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
               "name": "max_consumer_lag_at_startup",
               "required": false,
-              "desc": "The maximum tolerated lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set 0 to disable waiting for maximum consumer lag being honored at startup.",
+              "desc": "The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
               "fieldValue": null,
               "fieldDefaultValue": 15000000000,
               "fieldFlag": "ingest-storage.kafka.max-consumer-lag-at-startup",

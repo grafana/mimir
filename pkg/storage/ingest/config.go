@@ -17,6 +17,10 @@ const (
 	consumeFromStart      = "start"
 	consumeFromEnd        = "end"
 	consumeFromTimestamp  = "timestamp"
+
+	kafkaConfigFlagPrefix          = "ingest-storage.kafka"
+	targetConsumerLagAtStartupFlag = kafkaConfigFlagPrefix + ".target-consumer-lag-at-startup"
+	maxConsumerLagAtStartupFlag    = kafkaConfigFlagPrefix + ".max-consumer-lag-at-startup"
 )
 
 var (
@@ -25,6 +29,8 @@ var (
 	ErrInvalidWriteClients               = errors.New("the configured number of write clients is invalid (must be greater than 0)")
 	ErrInvalidConsumePosition            = errors.New("the configured consume position is invalid")
 	ErrInvalidProducerMaxRecordSizeBytes = fmt.Errorf("the configured producer max record size bytes must be a value between %d and %d", minProducerRecordDataBytesLimit, maxProducerRecordDataBytesLimit)
+	ErrInconsistentConsumerLagAtStartup  = fmt.Errorf("the target and max consumer lag at startup must be either both set to 0 or to a value greater than 0")
+	ErrInvalidMaxConsumerLagAtStartup    = fmt.Errorf("the configured max consumer lag at startup must greater or equal than the configured target consumer lag")
 
 	consumeFromPositionOptions = []string{consumeFromLastOffset, consumeFromStart, consumeFromEnd, consumeFromTimestamp}
 )
@@ -38,7 +44,7 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "ingest-storage.enabled", false, "True to enable the ingestion via object storage.")
 
-	cfg.KafkaConfig.RegisterFlagsWithPrefix("ingest-storage.kafka", f)
+	cfg.KafkaConfig.RegisterFlagsWithPrefix(kafkaConfigFlagPrefix, f)
 	cfg.Migration.RegisterFlagsWithPrefix("ingest-storage.migration", f)
 }
 
@@ -73,6 +79,7 @@ type KafkaConfig struct {
 
 	ConsumeFromPositionAtStartup  string        `yaml:"consume_from_position_at_startup"`
 	ConsumeFromTimestampAtStartup int64         `yaml:"consume_from_timestamp_at_startup"`
+	TargetConsumerLagAtStartup    time.Duration `yaml:"target_consumer_lag_at_startup"`
 	MaxConsumerLagAtStartup       time.Duration `yaml:"max_consumer_lag_at_startup"`
 
 	AutoCreateTopicEnabled           bool `yaml:"auto_create_topic_enabled"`
@@ -106,7 +113,11 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 
 	f.StringVar(&cfg.ConsumeFromPositionAtStartup, prefix+".consume-from-position-at-startup", consumeFromLastOffset, fmt.Sprintf("From which position to start consuming the partition at startup. Supported options: %s.", strings.Join(consumeFromPositionOptions, ", ")))
 	f.Int64Var(&cfg.ConsumeFromTimestampAtStartup, prefix+".consume-from-timestamp-at-startup", 0, fmt.Sprintf("Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is %s", consumeFromTimestamp))
-	f.DurationVar(&cfg.MaxConsumerLagAtStartup, prefix+".max-consumer-lag-at-startup", 15*time.Second, "The maximum tolerated lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set 0 to disable waiting for maximum consumer lag being honored at startup.")
+
+	howToDisableConsumerLagAtStartup := fmt.Sprintf("Set both -%s and -%s to 0 to disable waiting for maximum consumer lag being honored at startup.", targetConsumerLagAtStartupFlag, maxConsumerLagAtStartupFlag)
+	f.DurationVar(&cfg.TargetConsumerLagAtStartup, targetConsumerLagAtStartupFlag, 2*time.Second, "The best-effort maximum lag a consumer tries to achieve at startup. "+howToDisableConsumerLagAtStartup)
+	f.DurationVar(&cfg.MaxConsumerLagAtStartup, maxConsumerLagAtStartupFlag, 15*time.Second, "The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. "+howToDisableConsumerLagAtStartup)
+
 	f.BoolVar(&cfg.AutoCreateTopicEnabled, prefix+".auto-create-topic-enabled", true, "Enable auto-creation of Kafka topic if it doesn't exist.")
 	f.IntVar(&cfg.AutoCreateTopicDefaultPartitions, prefix+".auto-create-topic-default-partitions", 0, "When auto-creation of Kafka topic is enabled and this value is positive, Kafka's num.partitions configuration option is set on Kafka brokers with this value when Mimir component that uses Kafka starts. This configuration option specifies the default number of partitions that the Kafka broker uses for auto-created topics. Note that this is a Kafka-cluster wide setting, and applies to any auto-created topic. If the setting of num.partitions fails, Mimir proceeds anyways, but auto-created topics could have an incorrect number of partitions.")
 
@@ -140,6 +151,12 @@ func (cfg *KafkaConfig) Validate() error {
 	}
 	if cfg.ProducerMaxRecordSizeBytes < minProducerRecordDataBytesLimit || cfg.ProducerMaxRecordSizeBytes > maxProducerRecordDataBytesLimit {
 		return ErrInvalidProducerMaxRecordSizeBytes
+	}
+	if (cfg.TargetConsumerLagAtStartup != 0) != (cfg.MaxConsumerLagAtStartup != 0) {
+		return ErrInconsistentConsumerLagAtStartup
+	}
+	if cfg.MaxConsumerLagAtStartup < cfg.TargetConsumerLagAtStartup {
+		return ErrInvalidMaxConsumerLagAtStartup
 	}
 
 	return nil
