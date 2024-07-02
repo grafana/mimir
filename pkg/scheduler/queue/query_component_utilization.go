@@ -93,9 +93,8 @@ func (qcl *QueryComponentUtilization) MarkRequestCompleted(req *SchedulerRequest
 		if req, ok := qcl.inflightRequests[reqKey]; ok {
 			queryComponent := req.ExpectedQueryComponentName()
 			qcl.decrementForComponentName(queryComponent)
-		} else {
+			delete(qcl.inflightRequests, reqKey)
 		}
-		delete(qcl.inflightRequests, reqKey)
 	}
 }
 

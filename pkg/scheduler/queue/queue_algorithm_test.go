@@ -37,7 +37,6 @@ func newTQA() *tenantQuerierAssignments {
 func newBenchmarkRequestQueue(log log.Logger,
 	maxOutstandingPerTenant int,
 	additionalQueueDimensionsEnabled bool,
-	useMultiAlgoQueue bool,
 	queryComponentUtilization *QueryComponentUtilization,
 	tenantQuerierAssignments *tenantQuerierAssignments,
 	tree Tree,
@@ -133,7 +132,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 
 	totalRequests := 1000
 	numTenants := 1
-	numProducers := 1
+	numProducers := 10
 	numConsumers := 10
 
 	normalQueueDimension := ingesterQueueDimension
@@ -160,12 +159,10 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	}, []string{"query_component"})
 
 	additionalQueueDimensionsEnabled := true
-	useMultiAlgoQueue := true
 	queue, err := newBenchmarkRequestQueue(
 		log.NewNopLogger(),
 		maxOutstandingRequestsPerTenant,
 		additionalQueueDimensionsEnabled,
-		useMultiAlgoQueue,
 		queryComponentUtilization,
 		tqa,
 		tree,
@@ -199,7 +196,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	require.NoError(t, err)
 
 	// emulate delay when consuming the slow queries
-	consumeFunc := func(request Request, querierID string) error {
+	consumeFunc := func(request Request) error {
 		schedulerRequest := request.(*SchedulerRequest)
 		queryComponent := schedulerRequest.AdditionalQueueDimensions[0]
 

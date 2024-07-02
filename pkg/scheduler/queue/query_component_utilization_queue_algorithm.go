@@ -27,11 +27,7 @@ func NewQueryComponentUtilizationTriggerCheckByQueueLenAndWaitingConns(queueLenM
 }
 
 func (tc *QueryComponentUtilizationTriggerCheckByQueueLenAndWaitingConns) TriggerThresholdCheck() bool {
-	if tc.waitingWorkers > (tc.queueLen * tc.queueLenMultiple) {
-		// excess querier-worker capacity; no need to reserve any for now
-		return false
-	}
-	return true
+	return tc.waitingWorkers <= (tc.queueLen * tc.queueLenMultiple)
 }
 
 type QueryComponentUtilizationCheckThreshold interface {

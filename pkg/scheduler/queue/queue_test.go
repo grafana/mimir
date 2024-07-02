@@ -102,11 +102,12 @@ func makeWeightedRandAdditionalQueueDimensionFunc(dimensionWeights []dimensionWe
 // When running benchmarks for memory usage, we want a relatively representative request size.
 // The size of the requests in a queue of nontrivial depth should significantly outweigh the memory
 // used by the queue mechanics, in order get a more meaningful % delta between competing queue implementations.
-func makeSchedulerRequest(queryID uint64, tenantID string, additionalQueueDimensions []string) *SchedulerRequest {
+// Producer ID and Query ID are used to emulate how the scheduler creates a unique key for inflight request tracking.
+func makeSchedulerRequest(producerID, queryID int, tenantID string, additionalQueueDimensions []string) *SchedulerRequest {
 	return &SchedulerRequest{
 		Ctx:          context.Background(),
-		FrontendAddr: "http://query-frontend:8007",
-		QueryID:      queryID,
+		FrontendAddr: fmt.Sprintf("http://query-frontend-%d:8007", producerID),
+		QueryID:      uint64(queryID),
 		UserID:       tenantID,
 		Request: &httpgrpc.HTTPRequest{
 			Method: "GET",
@@ -215,7 +216,7 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 				}
 
 				// emulate delay when consuming the slow queries
-				consumeFunc := func(request Request, _ string) error {
+				consumeFunc := func(request Request) error {
 					schedulerRequest := request.(*SchedulerRequest)
 					if schedulerRequest.AdditionalQueueDimensions[0] == slowConsumerQueueDimension {
 						time.Sleep(slowConsumerLatency)
@@ -383,7 +384,9 @@ func runQueueProducerIters(
 
 		for i := 0; i < producerIters; i++ {
 			queryID := i
-			err := queueProduce(queue, maxQueriersPerTenant, uint64(queryID), tenantIDStr, additionalQueueDimensionFunc)
+			err := queueProduce(
+				producerIdx, queryID, tenantIDStr, queue, maxQueriersPerTenant, additionalQueueDimensionFunc,
+			)
 			if err != nil {
 				return err
 			}
@@ -396,13 +399,18 @@ func runQueueProducerIters(
 }
 
 func queueProduce(
-	queue *RequestQueue, maxQueriersPerTenant int, queryID uint64, tenantID string, additionalQueueDimensionFunc func() []string,
+	producerID int,
+	queryID int,
+	tenantID string,
+	queue *RequestQueue,
+	maxQueriersPerTenant int,
+	additionalQueueDimensionFunc func() []string,
 ) error {
 	var additionalQueueDimensions []string
 	if additionalQueueDimensionFunc != nil {
 		additionalQueueDimensions = additionalQueueDimensionFunc()
 	}
-	req := makeSchedulerRequest(queryID, tenantID, additionalQueueDimensions)
+	req := makeSchedulerRequest(producerID, queryID, tenantID, additionalQueueDimensions)
 	for {
 		err := queue.SubmitRequestToEnqueue(tenantID, req, maxQueriersPerTenant, func() {})
 		if err == nil {
@@ -446,7 +454,7 @@ func runQueueConsumerIters(
 	}
 }
 
-type consumeRequest func(request Request, querierID string) error
+type consumeRequest func(request Request) error
 
 func queueConsume(
 	ctx context.Context, queue *RequestQueue, querierID string, lastTenantIndex TenantIndex, consumeFunc consumeRequest,
@@ -458,7 +466,7 @@ func queueConsume(
 	lastTenantIndex = idx
 
 	if consumeFunc != nil {
-		err = consumeFunc(request, querierID)
+		err = consumeFunc(request)
 	}
 	return lastTenantIndex, err
 }
