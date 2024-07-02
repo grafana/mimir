@@ -138,7 +138,7 @@ func newSingleBinary(name string, servername string, join string, testFlags map[
 		flags["-ingester.ring.observe-period"] = "0s" // No need to observe tokens because we're going to be the first instance.
 	}
 
-	serv := e2emimir.NewSingleBinary(
+	serv := e2emimir.NewDebugSingleBinary(
 		name,
 		mergeFlags(
 			DefaultSingleBinaryFlags(),

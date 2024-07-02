@@ -1523,7 +1523,7 @@ func (c *Client) doRequest(method, url string, body io.Reader) (*http.Response, 
 	req.Header.Set("X-Scope-OrgID", c.orgID)
 
 	client := *c.httpClient
-	client.Timeout = c.timeout
+	client.Timeout = 2 * time.Minute
 
 	return client.Do(req)
 }
