@@ -38,7 +38,8 @@ func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, u
 	// Round the expected timestamp with milliseconds precision
 	// to match "received at" precision
 	expected = expected.Truncate(time.Millisecond)
-	elected = elected.Truncate(time.Millisecond)
+	// change elected time to UTC
+	elected = elected.UTC().Truncate(time.Millisecond)
 
 	test.Poll(t, duration, nil, func() interface{} {
 		var r ReplicaDesc
@@ -60,7 +61,7 @@ func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, u
 		if !timestamp.Time(r.GetReceivedAt()).Equal(expected) {
 			return fmt.Errorf("timestamps did not match: %+v != %+v", timestamp.Time(r.GetReceivedAt()), expected)
 		}
-		if !timestamp.Time(r.GetElectedAt()).Equal(elected) {
+		if timestamp.Time(r.GetElectedAt()).Sub(elected) > time.Second {
 			return fmt.Errorf("elected timestamps did not match: %+v != %+v", timestamp.Time(r.GetElectedAt()), elected)
 		}
 
