@@ -165,11 +165,11 @@ func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 		}, []string{"user", "cluster"}),
 		lastElectionTimestamp: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ha_tracker_last_election_timestamp_seconds",
-			Help: "The total number of reelections for a user ID/cluster, from the KVStore.",
+			Help: "The timestamp stored for the most recent election, from the KVStore.",
 		}, []string{"user", "cluster"}),
 		totalReelections: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_ha_tracker_reelections",
-			Help: "The timestamp stored for the most recent election, from the KVStore.",
+			Name: "cortex_ha_tracker_reelections_total",
+			Help: "The total number of reelections for a user ID/cluster, from the KVStore.",
 		}, []string{"user", "cluster"}),
 		electedReplicaPropagationTime: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ha_tracker_elected_replica_change_propagation_time_seconds",
