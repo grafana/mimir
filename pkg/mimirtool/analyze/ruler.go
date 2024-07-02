@@ -57,11 +57,6 @@ func ParseMetricsInRuleGroup(mir *MetricsInRuler, group rwrulefmt.RuleGroup, ns 
 		})
 	}
 
-	// remove defined recording rule metrics in same RG
-	for ruleMetric := range ruleMetrics {
-		delete(refMetrics, ruleMetric)
-	}
-
 	var metricsInGroup []string
 	var parseErrs []string
 

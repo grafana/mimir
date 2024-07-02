@@ -234,6 +234,7 @@
 ### Mimirtool
 
 * [CHANGE] Deprecated `--rule-files` flag in favor of CLI arguments. #7756
+* [CHANGE] Analyze Rules: Count recording rules used in rules group as used. #6133
 * [FEATURE] mimirtool: Add `runtime-config verify` sub-command, for verifying Mimir runtime config files. #8123
 * [ENHANCEMENT] `mimirtool promql format`: Format PromQL query with Prometheus' string or pretty-print formatter. #7742
 * [ENHANCEMENT] Add `mimir-http-prefix` configuration to set the Mimir URL prefix when using legacy routes. #8069
