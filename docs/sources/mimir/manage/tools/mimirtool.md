@@ -236,11 +236,10 @@ configuration is compatible with UTF-8:
 mimirtool alertmanager verify <config_file> [template_files...] --utf8-strict-mode
 ```
 
-This command prints a warning with the text `UTF-8 mode enabled` to let you know the command is using
-UTF-8 strict mode to validate the Alertmanager configuration.
-
-When using the `--utf8-strict-mode` flag, the verify command doesn't print any warnings if a
-configuration is incompatible with UTF-8. Instead, the command exits with an error. For example:
+When using this flag, the verify command prints a warning with the text `UTF-8 mode enabled` to let
+you know the command is using UTF-8 strict mode to validate the Alertmanager configuration. Unlike
+when the flag is omitted, it doesn't print warnings if a configuration is incompatible with UTF-8.
+Instead, the command exits with an error. For example:
 
 ```bash
 level=warn msg="UTF-8 strict mode enabled"
