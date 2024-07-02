@@ -5,8 +5,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"time"
@@ -41,31 +43,41 @@ func main() {
 	end := time.UnixMilli(endT).UTC()
 
 	for _, arg := range args {
-		res, err := parseFile(arg)
+		resps, err := parseFile(arg)
 		if err != nil {
 			fmt.Println("Failed to parse file:", err.Error())
 			os.Exit(1)
 		}
 
-		dumpResponse(res, start, end)
+		for _, res := range resps {
+			dumpResponse(res, start, end)
+		}
 	}
 }
 
-func parseFile(file string) (QueryStreamResponse, error) {
-	res := QueryStreamResponse{}
+func parseFile(file string) ([]QueryStreamResponse, error) {
+	resps := []QueryStreamResponse{}
 
 	fileData, err := os.ReadFile(file)
 	if err != nil {
-		return res, err
+		return nil, err
 	}
 
 	// Decode file.
 	decoder := json.NewDecoder(bytes.NewReader(fileData))
-	if err := decoder.Decode(&res); err != nil {
-		return res, err
+	for {
+		res := QueryStreamResponse{}
+		if err := decoder.Decode(&res); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, err
+		}
+
+		resps = append(resps, res)
 	}
 
-	return res, nil
+	return resps, nil
 }
 
 const writeInterval = 20 * time.Second
