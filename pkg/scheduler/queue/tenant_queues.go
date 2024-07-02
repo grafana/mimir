@@ -180,6 +180,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 		queueElement = tq.DequeueByPath(queuePath)
 	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 		qb.tenantQuerierAssignments.updateQueuingAlgorithmState(querierID, lastTenantIndex)
+
 		queuePath, queueElement = itq.Dequeue()
 	}
 

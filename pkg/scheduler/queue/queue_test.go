@@ -67,15 +67,46 @@ func randAdditionalQueueDimension(allowEmpty bool) []string {
 	return secondQueueDimensionOptions[idx : idx+1]
 }
 
+type dimensionWeight struct {
+	dimension string
+	weight    int
+}
+
+func weightedRandAdditionalQueueDimension(dimensionWeights []dimensionWeight) string {
+	totalWeight := 0
+	for _, dimensionWeight := range dimensionWeights {
+		totalWeight += dimensionWeight.weight
+	}
+
+	randInt := rand.Intn(totalWeight)
+
+	sum := 0
+	for _, dimensionWeight := range dimensionWeights {
+		sum += dimensionWeight.weight
+		if randInt < sum {
+			return dimensionWeight.dimension
+		}
+	}
+
+	panic("no dimension selected")
+}
+
+func makeWeightedRandAdditionalQueueDimensionFunc(dimensionWeights []dimensionWeight) func() []string {
+	return func() []string {
+		return []string{weightedRandAdditionalQueueDimension(dimensionWeights)}
+	}
+}
+
 // makeSchedulerRequest is intended to create a query request with a nontrivial size.
 //
 // When running benchmarks for memory usage, we want a relatively representative request size.
 // The size of the requests in a queue of nontrivial depth should significantly outweigh the memory
 // used by the queue mechanics, in order get a more meaningful % delta between competing queue implementations.
-func makeSchedulerRequest(tenantID string, additionalQueueDimensions []string) *SchedulerRequest {
+func makeSchedulerRequest(queryID uint64, tenantID string, additionalQueueDimensions []string) *SchedulerRequest {
 	return &SchedulerRequest{
 		Ctx:          context.Background(),
 		FrontendAddr: "http://query-frontend:8007",
+		QueryID:      queryID,
 		UserID:       tenantID,
 		Request: &httpgrpc.HTTPRequest{
 			Method: "GET",
@@ -184,7 +215,7 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 				}
 
 				// emulate delay when consuming the slow queries
-				consumeFunc := func(request Request) error {
+				consumeFunc := func(request Request, _ string) error {
 					schedulerRequest := request.(*SchedulerRequest)
 					if schedulerRequest.AdditionalQueueDimensions[0] == slowConsumerQueueDimension {
 						time.Sleep(slowConsumerLatency)
@@ -347,10 +378,14 @@ func runQueueProducerIters(
 		producerIters := queueActorIterationCount(totalIters, numProducers, producerIdx)
 		tenantID := producerIdx % numTenants
 		tenantIDStr := strconv.Itoa(tenantID)
+		fmt.Println("producerIters: ", producerIters)
+
 		<-start
 
 		for i := 0; i < producerIters; i++ {
-			err := queueProduce(queue, maxQueriersPerTenant, tenantIDStr, additionalQueueDimensionFunc)
+			queryID := i
+			fmt.Println(queryID)
+			err := queueProduce(queue, maxQueriersPerTenant, uint64(queryID), tenantIDStr, additionalQueueDimensionFunc)
 			if err != nil {
 				return err
 			}
@@ -363,13 +398,13 @@ func runQueueProducerIters(
 }
 
 func queueProduce(
-	queue *RequestQueue, maxQueriersPerTenant int, tenantID string, additionalQueueDimensionFunc func() []string,
+	queue *RequestQueue, maxQueriersPerTenant int, queryID uint64, tenantID string, additionalQueueDimensionFunc func() []string,
 ) error {
 	var additionalQueueDimensions []string
 	if additionalQueueDimensionFunc != nil {
 		additionalQueueDimensions = additionalQueueDimensionFunc()
 	}
-	req := makeSchedulerRequest(tenantID, additionalQueueDimensions)
+	req := makeSchedulerRequest(queryID, tenantID, additionalQueueDimensions)
 	for {
 		err := queue.SubmitRequestToEnqueue(tenantID, req, maxQueriersPerTenant, func() {})
 		if err == nil {
@@ -413,20 +448,23 @@ func runQueueConsumerIters(
 	}
 }
 
-type consumeRequest func(request Request) error
+type consumeRequest func(request Request, querierID string) error
 
 func queueConsume(
 	ctx context.Context, queue *RequestQueue, querierID string, lastTenantIndex TenantIndex, consumeFunc consumeRequest,
 ) (TenantIndex, error) {
+	fmt.Println("waiting for request for querier: ", querierID)
 	request, idx, err := queue.WaitForRequestForQuerier(ctx, lastTenantIndex, querierID)
 	if err != nil {
 		return lastTenantIndex, err
 	}
 	lastTenantIndex = idx
 
+	fmt.Println("consuming request for querier: ", querierID)
 	if consumeFunc != nil {
-		err = consumeFunc(request)
+		err = consumeFunc(request, querierID)
 	}
+	fmt.Println("done consuming request for querier: ", querierID)
 	return lastTenantIndex, err
 }
 

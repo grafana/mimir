@@ -6,7 +6,6 @@ import (
 	"container/list"
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -103,7 +102,6 @@ func newBenchmarkRequestQueue(log log.Logger,
 // The queue broker then round-robins between the split queues, which has the effect of alternating between
 // dequeuing the slow queries and normal queries rather than blocking normal queries behind slow queries.
 func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
-	connectedWorkers := 10
 	// with 10 connected workers, if queue len >= waiting workers,
 	// no component can have more than 6 inflight requests.
 	testReservedCapacity := 0.4
@@ -115,9 +113,8 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	require.NoError(t, err)
 
 	utilizationCheckImpl := queryComponentUtilizationReserveConnections{
-		utilization:      queryComponentUtilization,
-		connectedWorkers: connectedWorkers,
-		waitingWorkers:   1,
+		utilization:    queryComponentUtilization,
+		waitingWorkers: 0,
 	}
 	queryComponentUtilizationQueueAlgo := queryComponentUtilizationDequeueSkipOverThreshold{
 		queryComponentUtilizationThreshold: &utilizationCheckImpl,
@@ -133,16 +130,21 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	forgetQuerierDelay := time.Duration(0)
 	maxOutstandingRequestsPerTenant := 1000
 
-	totalRequests := 100
+	totalRequests := 1000
 	numTenants := 1
-	numProducers := 10
-	numConsumers := 1
+	numProducers := 1
+	numConsumers := 10
 
-	normalQueueDimension := "normal-request"
-	slowConsumerLatency := 20 * time.Millisecond
-	slowConsumerQueueDimension := "slow-request"
-	normalQueueDimensionFunc := func() []string { return []string{normalQueueDimension} }
-	slowQueueDimensionFunc := func() []string { return []string{slowConsumerQueueDimension} }
+	normalQueueDimension := ingesterQueueDimension
+	slowConsumerLatency := 200 * time.Millisecond
+	slowConsumerQueueDimension := storeGatewayQueueDimension
+
+	queueDimensionFunc := makeWeightedRandAdditionalQueueDimensionFunc(
+		[]dimensionWeight{
+			{ingesterQueueDimension, 50},
+			{storeGatewayQueueDimension, 50},
+		},
+	)
 
 	queueDurationTotals := map[string]float64{
 		normalQueueDimension: 0.0, slowConsumerQueueDimension: 0.0,
@@ -154,7 +156,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	queueDuration := promauto.With(promRegistry).NewCounterVec(prometheus.CounterOpts{
 		Name: "test_query_scheduler_queue_duration_total_seconds",
 		Help: "[test] total time spent by items in queue before getting picked up by a consumer",
-	}, []string{"additional_queue_dimensions"})
+	}, []string{"query_component"})
 
 	additionalQueueDimensionsEnabled := true
 	useMultiAlgoQueue := true
@@ -179,35 +181,37 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 		require.NoError(t, queue.stop(nil))
 	})
 
-	// fill queue first with the slow queries, then the normal queries
-	for _, queueDimensionFunc := range []func() []string{slowQueueDimensionFunc, normalQueueDimensionFunc} {
-		startProducersChan := make(chan struct{})
-		producersErrGroup, _ := errgroup.WithContext(ctx)
+	startProducersChan := make(chan struct{})
+	producersErrGroup, _ := errgroup.WithContext(ctx)
 
-		runProducer := runQueueProducerIters(
-			queue, maxQueriersPerTenant, totalRequests/2, numProducers, numTenants, startProducersChan, queueDimensionFunc,
-		)
-		for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
-			producerIdx := producerIdx
-			producersErrGroup.Go(func() error {
-				return runProducer(producerIdx)
-			})
-		}
-		close(startProducersChan)
-		err := producersErrGroup.Wait()
-		require.NoError(t, err)
+	runProducer := runQueueProducerIters(
+		queue, maxQueriersPerTenant, totalRequests, numProducers, numTenants, startProducersChan, queueDimensionFunc,
+	)
+	for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
+		producerIdx := producerIdx
+		producersErrGroup.Go(func() error {
+			return runProducer(producerIdx)
+		})
 	}
+	close(startProducersChan)
+	err = producersErrGroup.Wait()
+	require.NoError(t, err)
 
 	// emulate delay when consuming the slow queries
-	consumeFunc := func(request Request) error {
+	consumeFunc := func(request Request, querierID string) error {
 		schedulerRequest := request.(*SchedulerRequest)
-		if schedulerRequest.AdditionalQueueDimensions[0] == slowConsumerQueueDimension {
+		queryComponent := schedulerRequest.AdditionalQueueDimensions[0]
+
+		fmt.Printf("marking request sent for queryComponent: %s, querier: %s\n", queryComponent, querierID)
+		queue.QueryComponentUtilization.MarkRequestSent(schedulerRequest)
+		if queryComponent == slowConsumerQueueDimension {
 			time.Sleep(slowConsumerLatency)
 		}
+		fmt.Printf("marking request completed for queryComponent: %s, querier: %s\n", queryComponent, querierID)
+		queue.QueryComponentUtilization.MarkRequestCompleted(schedulerRequest)
 
 		queueTime := time.Since(schedulerRequest.EnqueueTime)
-		additionalQueueDimensionLabels := strings.Join(schedulerRequest.AdditionalQueueDimensions, ":")
-		queueDuration.With(prometheus.Labels{"additional_queue_dimensions": additionalQueueDimensionLabels}).Add(queueTime.Seconds())
+		queueDuration.With(prometheus.Labels{"query_component": queryComponent}).Add(queueTime.Seconds())
 		return nil
 	}
 
@@ -230,7 +234,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	// record total queue duration by queue dimensions and whether the queue splitting was enabled
 	for _, queueDimension := range []string{normalQueueDimension, slowConsumerQueueDimension} {
 		queueDurationTotals[queueDimension] = promtest.ToFloat64(
-			queueDuration.With(prometheus.Labels{"additional_queue_dimensions": queueDimension}),
+			queueDuration.With(prometheus.Labels{"query_component": queueDimension}),
 		)
 	}
 

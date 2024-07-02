@@ -350,6 +350,15 @@ func (q *RequestQueue) enqueueRequestInternal(r requestToEnqueue) error {
 // a) a query request which was successfully dequeued for the querier, or
 // b) an ErrShuttingDown indicating the querier has been placed in a graceful shutdown state.
 func (q *RequestQueue) trySendNextRequestForQuerier(waitingConn *waitingQuerierConn) (done bool) {
+	if itq, ok := q.queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+		for _, algoState := range itq.algosByDepth {
+			if qcu, ok := algoState.(*queryComponentUtilizationDequeueSkipOverThreshold); ok {
+				if x, ok := qcu.queryComponentUtilizationThreshold.(*queryComponentUtilizationReserveConnections); ok {
+					x.connectedWorkers = int(q.connectedQuerierWorkers.Load())
+				}
+			}
+		}
+	}
 	req, tenant, idx, err := q.queueBroker.dequeueRequestForQuerier(waitingConn.lastTenantIndex.last, waitingConn.querierID)
 	if err != nil {
 		// If this querier has told us it's shutting down, terminate WaitForRequestForQuerier with an error now...
@@ -517,6 +526,12 @@ func (q *RequestQueue) submitQuerierOperation(querierID string, operation querie
 }
 
 func (q *RequestQueue) processQuerierOperation(querierOp querierOperation) (resharded bool) {
+	fmt.Printf(
+		"processQuerierOperation: %v, connected: %d \n",
+		querierOp,
+		q.connectedQuerierWorkers.Load(),
+	)
+
 	switch querierOp.operation {
 	case registerConnection:
 		return q.processRegisterQuerierConnection(querierOp.querierID)
