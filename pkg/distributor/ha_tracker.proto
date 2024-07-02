@@ -24,4 +24,6 @@ message ReplicaDesc {
     int64 deleted_at = 3;
     // This is the most recent timestamp when this replica was elected as the leader.
     int64 elected_at = 4;
+    // This is incremented every time a new replica is elected as the leader.
+    int64 elected_changes = 5;
 }

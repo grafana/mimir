@@ -122,6 +122,7 @@ type haTracker struct {
 	electedReplicaChanges         *prometheus.CounterVec
 	electedReplicaTimestamp       *prometheus.GaugeVec
 	lastElectionTimestamp         *prometheus.GaugeVec
+	totalReelections              *prometheus.GaugeVec
 	electedReplicaPropagationTime prometheus.Histogram
 	kvCASCalls                    *prometheus.CounterVec
 
@@ -164,6 +165,10 @@ func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 		}, []string{"user", "cluster"}),
 		lastElectionTimestamp: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ha_tracker_last_election_timestamp_seconds",
+			Help: "The total number of reelections for a user ID/cluster, from the KVStore.",
+		}, []string{"user", "cluster"}),
+		totalReelections: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ha_tracker_reelections",
 			Help: "The timestamp stored for the most recent election, from the KVStore.",
 		}, []string{"user", "cluster"}),
 		electedReplicaPropagationTime: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
@@ -468,6 +473,8 @@ func (h *haTracker) updateCache(userID, cluster string, desc *ReplicaDesc) {
 	}
 	if desc.Replica != entry.elected.Replica {
 		h.electedReplicaChanges.WithLabelValues(userID, cluster).Inc()
+		h.lastElectionTimestamp.WithLabelValues(userID, cluster).Set(float64(desc.ElectedAt / 1000))
+		h.totalReelections.WithLabelValues(userID, cluster).Inc()
 		level.Info(h.logger).Log("msg", "updating replica in cache", "user", userID, "cluster", cluster, "old_replica", entry.elected.Replica, "new_replica", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
 	}
 	entry.elected = *desc
@@ -488,22 +495,29 @@ func (h *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica 
 			}
 		}
 		// If our replica is different, wait until the failover time
+		var electedAtTime, electedChanges int64
+		if desc != nil {
+			electedAtTime = desc.ElectedAt
+			electedChanges = desc.ElectedChanges
+		}
 		if desc != nil && desc.Replica != replica {
 			if now.Sub(timestamp.Time(desc.ReceivedAt)) < h.cfg.FailoverTimeout {
 				level.Info(h.logger).Log("msg", "replica differs, but it's too early to failover", "user", userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
 				return nil, false, nil
 			}
 			level.Info(h.logger).Log("msg", "replica differs, attempting to update kv", "user", userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
+			electedAtTime = timestamp.FromTime(now)
+			electedChanges = desc.ElectedChanges + 1
 		}
 
 		// Attempt to update KVStore to our timestamp and replica.
 		desc = &ReplicaDesc{
-			Replica:    replica,
-			ReceivedAt: timestamp.FromTime(now),
-			DeletedAt:  0,
-			ElectedAt:  timestamp.FromTime(now),
+			Replica:        replica,
+			ReceivedAt:     timestamp.FromTime(now),
+			DeletedAt:      0,
+			ElectedAt:      electedAtTime,
+			ElectedChanges: electedChanges,
 		}
-		h.lastElectionTimestamp.WithLabelValues(userID, cluster).Set(float64(desc.ReceivedAt / 1000))
 		return desc, true, nil
 	})
 	h.kvCASCalls.WithLabelValues(userID, cluster).Inc()
