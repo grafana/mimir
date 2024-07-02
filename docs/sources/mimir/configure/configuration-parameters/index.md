@@ -2447,6 +2447,9 @@ alertmanager_client:
 # affected tenant. You must run Mimir with debug-level logging enabled.
 # Otherwise, these lines aren't logged. For more information, refer to
 # https://prometheus.io/docs/alerting/latest/configuration/#label-matchers.
+# Enabling and then disabling UTF-8 strict mode can break existing Alertmanager
+# configurations if tenants added UTF-8 characters to their Alertmanager
+# configuration while it was enabled.
 # CLI flag: -alertmanager.utf8-strict-mode-enabled
 [utf8_strict_mode: <boolean> | default = false]
 ```
