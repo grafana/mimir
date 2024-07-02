@@ -123,6 +123,25 @@ ruler_storage:
 
 You must disable [hierarchical namespace](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-namespace), otherwise Grafana Mimir will leave empty directories behind when deleting blocks.
 
+Mimir requires the following configuration to authenticate to and access Azure Blob Storage:
+
+- A storage account name specified either in the configuration file as `storage_account_name` or in the `AZURE_STORAGE_ACCOUNT` environment variable
+- One of the following credentials for accessing the storage account:
+  - A storage account access key specified either in the configuration file as `storage_account_key` or in the `AZURE_STORAGE_KEY` environment variable.
+  - An Azure managed identity that is either system or user-assigned. To use Azure managed identities, either set `use_managed_identity` to `true` in the configuration file or set `user_assigned_id` to the client ID for the managed identity you want to use.
+    - For a system-assigned managed identity, you do not need to perform additional configurations.
+    - For a user-assigned managed identity, set `user_assigned_id` to the client ID for the managed identity in the configuration file.
+  - Via Azure Workload Identity. To use Azure Workload Identity:
+    - Enable Azure Workload Identity on your cluster
+    - Add the required label and annotation to the service account
+    - Add the required pod label
+
+### Sample configuration
+
+#### Access key
+
+This sample configuration shows how to set up Azure blob storage using Helm charts and an access key from Kubernetes secrets.
+
 ```yaml
 common:
   storage:
@@ -144,6 +163,48 @@ ruler_storage:
   azure:
     container_name: mimir-ruler
 ```
+
+#### Azure Workload Identity
+
+Here is an example configuration for using Azure Workload Identity.
+
+```yaml
+---
+common:
+  storage:
+    backend: azure
+    azure:
+      account_name: mimirprod
+      endpoint_suffix: "blob.core.windows.net"
+
+blocks_storage:
+  azure:
+    container_name: mimir-blocks
+
+alertmanager_storage:
+  azure:
+    container_name: mimir-alertmanager
+
+ruler_storage:
+  azure:
+    container_name: mimir-ruler
+
+serviceAccount:
+  create: true
+  name: mimir-storage
+  annotation:
+    "azure.workload.identity/use: "true"
+  labels:
+    "azure.workload.identity/use: "true"
+
+global:
+  podlabels:
+    "azure.workload.identity/use: "true"
+```
+
+{{< admonition type="note" >}}  
+Unlike with Tempo, federated tokens are not supported with Mimir.  
+{{< /admonition >}}
 
 ### OpenStack SWIFT
 
