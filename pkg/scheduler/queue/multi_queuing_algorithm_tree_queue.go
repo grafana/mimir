@@ -204,6 +204,7 @@ func (n *Node) dequeue() (QueuePath, any) {
 	// continue until we've found a value or checked all nodes that need checking
 	for v == nil && !checkedAllNodes {
 		dequeueNode, checkedAllNodes = n.queuingAlgorithm.dequeueSelectNode(n)
+		fmt.Println("dequeueNode: ", dequeueNode)
 		switch dequeueNode {
 		// dequeuing from local queue
 		case n:
@@ -222,6 +223,7 @@ func (n *Node) dequeue() (QueuePath, any) {
 		// dequeue from a child
 		default:
 			childPath, v = dequeueNode.dequeue()
+			fmt.Printf("attempted dequeue from childPath %s, got %v", childPath, v)
 		}
 
 		if v == nil {
