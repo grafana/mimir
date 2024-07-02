@@ -122,4 +122,7 @@
 
   ruler_query_scheduler_pdb: if !$._config.ruler_remote_evaluation_enabled then null else
     $.newMimirPdb('ruler-query-scheduler'),
+
+  ruler_query_service_monitor: if !($._config.ruler_remote_evaluation_enabled && $._config.service_monitor_enabled) then null else
+    $.newMimirServiceMonitor('ruler-query-scheduler', 'ruler-query-scheduler-http-metrics'),
 }

@@ -468,6 +468,7 @@
 * [ENHANCEMENT] Query-frontend: configured `-shutdown-delay`, `-server.grpc.keepalive.max-connection-age` and termination grace period to reduce the likelihood of queries hitting terminated query-frontends. #7129
 * [ENHANCEMENT] Autoscaling: add support for KEDA's `ignoreNullValues` option for Prometheus scaler. #7471
 * [BUGFIX] Update memcached-exporter to 0.14.1 due to CVE-2023-39325. #6861
+* [FEATURE] servicemonitor in jsonnet deployment
 
 ### Mimirtool
 
