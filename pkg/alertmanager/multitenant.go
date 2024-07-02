@@ -129,7 +129,7 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 
 	f.DurationVar(&cfg.PeerTimeout, "alertmanager.peer-timeout", defaultPeerTimeout, "Time to wait between peers to send notifications.")
 
-	f.BoolVar(&cfg.UTF8StrictMode, "alertmanager.utf8-strict-mode-enabled", false, "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended to check both alertmanager_matchers_disagree_total and alertmanager_matchers_incompatible_total metrics before using this mode as otherwise some tenant configurations might fail to load.")
+	f.BoolVar(&cfg.UTF8StrictMode, "alertmanager.utf8-strict-mode-enabled", false, "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. To identify tenants with incompatible configurations, search Mimir server logs for lines containing `Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible`. To find tenant configurations that are valid but contain ambiguous matchers, search for log lines containing `Matchers input has disagreement`. Each log line includes the invalid input, a suggestion on how to fix the input (excluding ambiguous matchers, as these require manual correction), and the ID of the affected tenant. You must run Mimir with debug-level logging enabled. Otherwise, these lines aren't logged. For more information, refer to https://prometheus.io/docs/alerting/latest/configuration/#label-matchers.")
 }
 
 // Validate config and returns error on failure
@@ -707,15 +707,15 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 
 	// Grafana configuration.
 	case cfgs.Mimir.RawConfig == am.fallbackConfig:
-		level.Debug(am.logger).Log("msg", "mimir configuration is default, using grafana config", "user", cfgs.Mimir.User)
-		cfg, err = parseGrafanaConfig(cfgs.Grafana, &cfgs.Mimir)
+		level.Debug(am.logger).Log("msg", "mimir configuration is default, using grafana config with the default globals", "user", cfgs.Mimir.User)
+		cfg, err = createUsableGrafanaConfig(cfgs.Grafana, &cfgs.Mimir)
 		if err != nil {
 			return cfg, nil, err
 		}
 		externalURL, err = url.Parse(cfgs.Grafana.ExternalUrl)
 	case cfgs.Mimir.RawConfig == "":
 		level.Debug(am.logger).Log("msg", "mimir configuration is empty, using grafana config", "user", cfgs.Grafana.User)
-		cfg, err = parseGrafanaConfig(cfgs.Grafana, nil)
+		cfg, err = createUsableGrafanaConfig(cfgs.Grafana, nil)
 		if err != nil {
 			return cfg, nil, err
 		}

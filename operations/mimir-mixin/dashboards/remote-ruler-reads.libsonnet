@@ -75,13 +75,13 @@ local filename = 'mimir-remote-ruler-reads.json';
       $._config.autoscaling.ruler_querier.enabled,
       $.row('')
       .addPanel(
-        $.autoScalingDesiredReplicasByScalingMetricPanel('ruler_querier', 'CPU', 'cpu')
+        $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel('ruler_querier', 'CPU', 'cpu')
       )
       .addPanel(
-        $.autoScalingDesiredReplicasByScalingMetricPanel('ruler_querier', 'memory', 'memory')
+        $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel('ruler_querier', 'memory', 'memory')
       )
       .addPanel(
-        $.autoScalingDesiredReplicasByScalingMetricPanel('ruler_querier', 'in-flight queries', 'queries')
+        $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel('ruler_querier', 'in-flight queries', 'queries')
       )
     ),
 }

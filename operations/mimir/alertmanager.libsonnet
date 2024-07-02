@@ -23,6 +23,11 @@
       'alertmanager.sharding-ring.store': $._config.alertmanager.ring_store,
       'alertmanager.sharding-ring.consul.hostname': $._config.alertmanager.ring_hostname,
       'alertmanager.sharding-ring.replication-factor': $._config.alertmanager.ring_replication_factor,
+
+      // Prometheus HTTP client used to send alerts has a hard-coded idle
+      // timeout of 5 minutes, therefore the server timeout for Alertmanager
+      // needs to be higher to avoid connections being closed abruptly.
+      'server.http-idle-timeout': '6m',
     } +
     $.mimirRuntimeConfigFile +
     (if hasFallbackConfig then {

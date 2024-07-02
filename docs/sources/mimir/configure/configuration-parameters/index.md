@@ -2435,9 +2435,18 @@ alertmanager_client:
 
 # (experimental) Enable UTF-8 strict mode. Allows UTF-8 characters in the
 # matchers for routes and inhibition rules, in silences, and in the labels for
-# alerts. It is recommended to check both alertmanager_matchers_disagree_total
-# and alertmanager_matchers_incompatible_total metrics before using this mode as
-# otherwise some tenant configurations might fail to load.
+# alerts. It is recommended that all tenants run the `migrate-utf8` command in
+# mimirtool before enabling this mode. Otherwise, some tenant configurations
+# might fail to load. To identify tenants with incompatible configurations,
+# search Mimir server logs for lines containing `Alertmanager is moving to a new
+# parser for labels and matchers, and this input is incompatible`. To find
+# tenant configurations that are valid but contain ambiguous matchers, search
+# for log lines containing `Matchers input has disagreement`. Each log line
+# includes the invalid input, a suggestion on how to fix the input (excluding
+# ambiguous matchers, as these require manual correction), and the ID of the
+# affected tenant. You must run Mimir with debug-level logging enabled.
+# Otherwise, these lines aren't logged. For more information, refer to
+# https://prometheus.io/docs/alerting/latest/configuration/#label-matchers.
 # CLI flag: -alertmanager.utf8-strict-mode-enabled
 [utf8_strict_mode: <boolean> | default = false]
 ```
@@ -3518,6 +3527,14 @@ The `limits` block configures default and per-tenant limits imposed by component
 # namespace. If specified, it supersedes -ruler.max-rule-groups-per-tenant.
 # CLI flag: -ruler.max-rule-groups-per-tenant-by-namespace
 [ruler_max_rule_groups_per_tenant_by_namespace: <map of string to int> | default = {}]
+
+# (experimental) List of namespaces that are protected from modification unless
+# a special HTTP header is used. If a namespace is protected, it can only be
+# read, not modified via the ruler's configuration API. The value is a list of
+# strings, where each string is a namespace name. On the command line, this list
+# is given as a comma-separated list.
+# CLI flag: -ruler.protected-namespaces
+[ruler_protected_namespaces: <string> | default = ""]
 
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are

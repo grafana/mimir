@@ -167,12 +167,12 @@ func OTLPHandler(
 
 		var metrics []mimirpb.PreallocTimeseries
 		if directTranslation {
-			metrics, err = otelMetricsToTimeseries(tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
+			metrics, err = otelMetricsToTimeseries(ctx, tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 			if err != nil {
 				return err
 			}
 		} else {
-			metrics, err = otelMetricsToTimeseriesOld(tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
+			metrics, err = otelMetricsToTimeseriesOld(ctx, tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 			if err != nil {
 				return err
 			}
@@ -405,9 +405,9 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 	return metadata
 }
 
-func otelMetricsToTimeseries(tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	converter := otlp.NewMimirConverter()
-	errs := converter.FromMetrics(md, otlp.Settings{
+	errs := converter.FromMetrics(ctx, md, otlp.Settings{
 		AddMetricSuffixes: addSuffixes,
 	})
 	mimirTS := converter.TimeSeries()
@@ -431,9 +431,9 @@ func otelMetricsToTimeseries(tenantID string, addSuffixes bool, discardedDueToOt
 }
 
 // Old, less efficient, version of otelMetricsToTimeseries.
-func otelMetricsToTimeseriesOld(tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+func otelMetricsToTimeseriesOld(ctx context.Context, tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	converter := prometheusremotewrite.NewPrometheusConverter()
-	errs := converter.FromMetrics(md, prometheusremotewrite.Settings{
+	errs := converter.FromMetrics(ctx, md, prometheusremotewrite.Settings{
 		AddMetricSuffixes: addSuffixes,
 	})
 	promTS := converter.TimeSeries()

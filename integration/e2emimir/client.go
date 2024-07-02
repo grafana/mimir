@@ -716,11 +716,11 @@ func (c *Client) GetPrometheusRules() ([]*promv1.RuleGroup, error) {
 }
 
 // GetRuleGroups gets the configured rule groups from the ruler.
-func (c *Client) GetRuleGroups() (map[string][]rulefmt.RuleGroup, error) {
+func (c *Client) GetRuleGroups() (*http.Response, map[string][]rulefmt.RuleGroup, error) {
 	// Create HTTP request
 	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/prometheus/config/v1/rules", c.rulerAddress), nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	req.Header.Set("X-Scope-OrgID", c.orgID)
 
@@ -728,25 +728,25 @@ func (c *Client) GetRuleGroups() (map[string][]rulefmt.RuleGroup, error) {
 	defer cancel()
 
 	// Execute HTTP request
-	res, err := c.httpClient.Do(req.WithContext(ctx))
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	defer res.Body.Close()
+	defer resp.Body.Close()
 	rgs := map[string][]rulefmt.RuleGroup{}
 
-	data, err := io.ReadAll(res.Body)
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	err = yaml.Unmarshal(data, rgs)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return rgs, nil
+	return resp, rgs, nil
 }
 
 // SetRuleGroup configures the provided rulegroup to the ruler.
@@ -817,12 +817,16 @@ func (c *Client) DeleteRuleGroup(namespace string, groupName string) error {
 	defer cancel()
 
 	// Execute HTTP request
-	res, err := c.httpClient.Do(req.WithContext(ctx))
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 
-	defer res.Body.Close()
+	if resp.StatusCode != 202 {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
 	return nil
 }
 
@@ -840,9 +844,16 @@ func (c *Client) DeleteRuleNamespace(namespace string) error {
 	defer cancel()
 
 	// Execute HTTP request
-	_, err = c.httpClient.Do(req.WithContext(ctx))
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
 		return err
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 202 {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+
 	}
 
 	return nil
@@ -1041,7 +1052,7 @@ func (c *Client) GetGrafanaAlertmanagerConfig(ctx context.Context) (*alertmanage
 	return ugc, err
 }
 
-func (c *Client) SetGrafanaAlertmanagerConfig(ctx context.Context, createdAtTimestamp int64, cfg, hash string, isDefault bool) error {
+func (c *Client) SetGrafanaAlertmanagerConfig(ctx context.Context, createdAtTimestamp int64, cfg, hash, externalURL string, isDefault, isPromoted bool, staticHeaders map[string]string) error {
 	var grafanaConfig alertmanager.GrafanaAlertmanagerConfig
 	if err := json.Unmarshal([]byte(cfg), &grafanaConfig); err != nil {
 		return err
@@ -1053,6 +1064,9 @@ func (c *Client) SetGrafanaAlertmanagerConfig(ctx context.Context, createdAtTime
 		Hash:                      hash,
 		CreatedAt:                 createdAtTimestamp,
 		Default:                   isDefault,
+		Promoted:                  isPromoted,
+		ExternalURL:               externalURL,
+		StaticHeaders:             staticHeaders,
 	})
 	if err != nil {
 		return err
