@@ -561,7 +561,6 @@ func buildGrafanaReceiverIntegrations(gCfg *config.GlobalConfig, rcv *definition
 		KeyFile:       gCfg.HTTPConfig.TLSConfig.KeyFile,
 		SkipVerify:    !gCfg.SMTPRequireTLS,
 		StaticHeaders: staticHeaders,
-		// TODO: add static headers.
 	}
 
 	integrations, err := alertingNotify.BuildReceiverIntegrations(
