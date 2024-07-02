@@ -475,7 +475,7 @@ func (h *haTracker) updateCache(userID, cluster string, desc *ReplicaDesc) {
 	if desc.Replica != entry.elected.Replica {
 		h.electedReplicaChanges.WithLabelValues(userID, cluster).Inc()
 		h.lastElectionTimestamp.WithLabelValues(userID, cluster).Set(float64(desc.ElectedAt / 1000))
-		h.totalReelections.WithLabelValues(userID, cluster).Set(float64(desc. ElectedChanges))
+		h.totalReelections.WithLabelValues(userID, cluster).Set(float64(desc.ElectedChanges))
 		level.Info(h.logger).Log("msg", "updating replica in cache", "user", userID, "cluster", cluster, "old_replica", entry.elected.Replica, "new_replica", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
 	}
 	entry.elected = *desc
@@ -487,6 +487,7 @@ func (h *haTracker) updateCache(userID, cluster string, desc *ReplicaDesc) {
 func (h *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica string, now time.Time) error {
 	key := fmt.Sprintf("%s/%s", userID, cluster)
 	var desc *ReplicaDesc
+	var electedAtTime, electedChanges int64
 	err := h.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
 		var ok bool
 		if desc, ok = in.(*ReplicaDesc); ok && desc.DeletedAt == 0 {
@@ -494,23 +495,19 @@ func (h *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica 
 			if h.withinUpdateTimeout(now, desc.ReceivedAt) {
 				return nil, false, nil
 			}
-		}
-		// If our replica is different, wait until the failover time
-		var electedAtTime, electedChanges int64
-		if desc != nil {
 			electedAtTime = desc.ElectedAt
 			electedChanges = desc.ElectedChanges
-		}
-		if desc != nil && desc.Replica != replica {
-			if now.Sub(timestamp.Time(desc.ReceivedAt)) < h.cfg.FailoverTimeout {
-				level.Info(h.logger).Log("msg", "replica differs, but it's too early to failover", "user", userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
-				return nil, false, nil
+			// If our replica is different, wait until the failover time
+			if desc.Replica != replica {
+				if now.Sub(timestamp.Time(desc.ReceivedAt)) < h.cfg.FailoverTimeout {
+					level.Info(h.logger).Log("msg", "replica differs, but it's too early to failover", "user", userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
+					return nil, false, nil
+				}
+				level.Info(h.logger).Log("msg", "replica differs, attempting to update kv", "user", userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
+				electedAtTime = timestamp.FromTime(now)
+				electedChanges = desc.ElectedChanges + 1
 			}
-			level.Info(h.logger).Log("msg", "replica differs, attempting to update kv", "user", userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
-			electedAtTime = timestamp.FromTime(now)
-			electedChanges = desc.ElectedChanges + 1
 		}
-
 		// Attempt to update KVStore to our timestamp and replica.
 		desc = &ReplicaDesc{
 			Replica:        replica,

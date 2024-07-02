@@ -874,18 +874,3 @@ func getSumOfHistogramSampleCount(families []*dto.MetricFamily, metricName strin
 
 	return sum
 }
-
-// getReplicaDesc returns the ReplicaDesc for the given user and cluster.
-func getReplicaDesc(c *haTracker, user, cluster string) (ReplicaDesc, error) {
-	var r ReplicaDesc
-	c.electedLock.RLock()
-	info := c.clusters[user][cluster]
-	if info != nil {
-		r = info.elected
-	}
-	c.electedLock.RUnlock()
-	if info == nil {
-		return r, fmt.Errorf("no data for user %s cluster %s", user, cluster)
-	}
-	return r, nil
-}
