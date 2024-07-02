@@ -98,13 +98,12 @@ func (am *GrafanaAlertmanager) CreateSilence(ps *PostableSilence) (string, error
 		return "", err
 	}
 
-	silenceID, err := am.silences.Set(sil)
-	if err != nil {
+	if err := am.silences.Set(sil); err != nil {
 		level.Error(am.logger).Log("msg", "unable to save silence", "err", err)
 		return "", fmt.Errorf("unable to save silence: %s: %w", err.Error(), ErrCreateSilenceBadPayload)
 	}
 
-	return silenceID, nil
+	return sil.Id, nil
 }
 
 // UpsertSilence allows for the creation of a silence with a pre-set ID.
@@ -120,13 +119,12 @@ func (am *GrafanaAlertmanager) UpsertSilence(ps *PostableSilence) (string, error
 		return "", err
 	}
 
-	silenceID, err := am.silences.Upsert(sil)
-	if err != nil {
+	if err := am.silences.Upsert(sil); err != nil {
 		level.Error(am.logger).Log("msg", "unable to upsert silence", "err", err)
 		return "", fmt.Errorf("unable to upsert silence: %s: %w", err.Error(), ErrCreateSilenceBadPayload)
 	}
 
-	return silenceID, nil
+	return sil.Id, nil
 }
 
 func (am *GrafanaAlertmanager) validateSilence(sil *silencepb.Silence) error {

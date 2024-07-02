@@ -31,6 +31,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards. #7674
   * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric.
+* [ENHANCEMENT] Add missing fields in multiple topology spread constraints. #8533
 
 ## 5.4.0-rc.0
 
@@ -61,6 +62,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Helm: Allowed setting static NodePort for nginx gateway via `gateway.service.nodePort`. #6966
 * [BUGFIX] Helm: Expose AM configs in the `gateway` NGINX configuration. #8248
 * [BUGFIX] Helm: fix ServiceMonitor and PVC template to not show diff in ArgoCD. #8829
+* [BUGFIX] Alertmanager: Set -server.http-idle-timeout to avoid EOF errors in ruler. #8192
 
 ## 5.3.0
 
