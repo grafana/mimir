@@ -73,105 +73,114 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		// Floats
-		fHead, fTail := m.floatBuffer.UnsafePoints(step.RangeEnd)
-		fCount := len(fHead) + len(fTail)
-
-		// Histograms
-		hHead, hTail := m.histogramBuffer.UnsafePoints(step.RangeEnd)
-		hCount := len(hHead) + len(hTail)
-
-		if fCount > 0 && hCount > 0 {
-			// We need either at least two Histograms and no Floats, or at least two
-			// Floats and no Histograms to calculate a rate. Otherwise, drop this
-			// Vector element.
-			continue
-		}
-
-		if fCount >= 2 {
-			firstPoint := m.floatBuffer.First()
-			lastPoint, _ := m.floatBuffer.LastAtOrBefore(step.RangeEnd) // We already know there is a point at or before this time, no need to check.
-			delta := lastPoint.F - firstPoint.F
-			previousValue := firstPoint.F
-
-			accumulate := func(points []promql.FPoint) {
-				for _, p := range points {
-					if p.T > step.RangeEnd { // The buffer is already guaranteed to only contain points >= rangeStart.
-						return
-					}
-
-					if p.F < previousValue {
-						// Counter reset.
-						delta += previousValue
-					}
-
-					previousValue = p.F
-				}
-			}
-
-			accumulate(fHead)
-			accumulate(fTail)
-
-			val := m.calculateFloatRate(step.RangeStart, step.RangeEnd, firstPoint, lastPoint, delta, fCount)
-			if data.Floats == nil {
-				// Only get fPoint slice once we are sure we have float points.
-				// This potentially over-allocates as some points in the steps may be histograms,
-				// but this is expected to be rare.
-				data.Floats, err = m.Pool.GetFPointSlice(m.numSteps)
-				if err != nil {
-					return types.InstantVectorSeriesData{}, err
-				}
-			}
-			data.Floats = append(data.Floats, promql.FPoint{T: step.StepT, F: val})
-		}
-
-		if hCount >= 2 {
-			firstPoint := m.histogramBuffer.First()
-			lastPoint, _ := m.histogramBuffer.LastAtOrBefore(step.RangeEnd) // We already know there is a point at or before this time, no need to check.
-
-			currentSchema := firstPoint.H.Schema
-			if lastPoint.H.Schema < currentSchema {
-				currentSchema = lastPoint.H.Schema
-			}
-
-			delta := lastPoint.H.CopyToSchema(currentSchema)
-			delta.Sub(firstPoint.H)
-			previousValue := firstPoint.H
-
-			accumulate := func(points []promql.HPoint) {
-				for _, p := range points {
-					if p.T > step.RangeEnd { // The buffer is already guaranteed to only contain points >= rangeStart.
-						return
-					}
-
-					if p.H.DetectReset(previousValue) {
-						// Counter reset.
-						delta.Add(previousValue)
-					}
-					if p.H.Schema < currentSchema {
-						delta = delta.CopyToSchema(p.H.Schema)
-					}
-
-					previousValue = p.H
-				}
-			}
-
-			accumulate(hHead)
-			accumulate(hTail)
-
-			val := m.calculateHistogramRate(step.RangeStart, step.RangeEnd, firstPoint, lastPoint, delta, hCount)
-			if data.Histograms == nil {
-				// Only get hPoint slice once we are sure we have histogram points.
-				// This potentially over-allocates as some points in the steps may be floats,
-				// but this is expected to be rare.
-				data.Histograms, err = m.Pool.GetHPointSlice(m.numSteps)
-				if err != nil {
-					return types.InstantVectorSeriesData{}, err
-				}
-			}
-			data.Histograms = append(data.Histograms, promql.HPoint{T: step.StepT, H: val.Compact(0)})
+		err = m.computeNextStep(&data, step)
+		if err != nil {
+			return types.InstantVectorSeriesData{}, err
 		}
 	}
+}
+
+func (m *FunctionOverRangeVector) computeNextStep(data *types.InstantVectorSeriesData, step types.RangeVectorStepData) error {
+	var err error
+	// Floats
+	fHead, fTail := m.floatBuffer.UnsafePoints(step.RangeEnd)
+	fCount := len(fHead) + len(fTail)
+
+	// Histograms
+	hHead, hTail := m.histogramBuffer.UnsafePoints(step.RangeEnd)
+	hCount := len(hHead) + len(hTail)
+
+	if fCount > 0 && hCount > 0 {
+		// We need either at least two Histograms and no Floats, or at least two
+		// Floats and no Histograms to calculate a rate. Otherwise, drop this
+		// Vector element.
+		return nil
+	}
+
+	if fCount >= 2 {
+		firstPoint := m.floatBuffer.First()
+		lastPoint, _ := m.floatBuffer.LastAtOrBefore(step.RangeEnd) // We already know there is a point at or before this time, no need to check.
+		delta := lastPoint.F - firstPoint.F
+		previousValue := firstPoint.F
+
+		accumulate := func(points []promql.FPoint) {
+			for _, p := range points {
+				if p.T > step.RangeEnd { // The buffer is already guaranteed to only contain points >= rangeStart.
+					return
+				}
+
+				if p.F < previousValue {
+					// Counter reset.
+					delta += previousValue
+				}
+
+				previousValue = p.F
+			}
+		}
+
+		accumulate(fHead)
+		accumulate(fTail)
+
+		val := m.calculateFloatRate(step.RangeStart, step.RangeEnd, firstPoint, lastPoint, delta, fCount)
+		if data.Floats == nil {
+			// Only get fPoint slice once we are sure we have float points.
+			// This potentially over-allocates as some points in the steps may be histograms,
+			// but this is expected to be rare.
+			data.Floats, err = m.Pool.GetFPointSlice(m.numSteps)
+			if err != nil {
+				return err
+			}
+		}
+		data.Floats = append(data.Floats, promql.FPoint{T: step.StepT, F: val})
+	}
+
+	if hCount >= 2 {
+		firstPoint := m.histogramBuffer.First()
+		lastPoint, _ := m.histogramBuffer.LastAtOrBefore(step.RangeEnd) // We already know there is a point at or before this time, no need to check.
+
+		currentSchema := firstPoint.H.Schema
+		if lastPoint.H.Schema < currentSchema {
+			currentSchema = lastPoint.H.Schema
+		}
+
+		delta := lastPoint.H.CopyToSchema(currentSchema)
+		delta.Sub(firstPoint.H)
+		previousValue := firstPoint.H
+
+		accumulate := func(points []promql.HPoint) {
+			for _, p := range points {
+				if p.T > step.RangeEnd { // The buffer is already guaranteed to only contain points >= rangeStart.
+					return
+				}
+
+				if p.H.DetectReset(previousValue) {
+					// Counter reset.
+					delta.Add(previousValue)
+				}
+				if p.H.Schema < currentSchema {
+					delta = delta.CopyToSchema(p.H.Schema)
+				}
+
+				previousValue = p.H
+			}
+		}
+
+		accumulate(hHead)
+		accumulate(hTail)
+
+		val := m.calculateHistogramRate(step.RangeStart, step.RangeEnd, firstPoint, lastPoint, delta, hCount)
+		if data.Histograms == nil {
+			// Only get hPoint slice once we are sure we have histogram points.
+			// This potentially over-allocates as some points in the steps may be floats,
+			// but this is expected to be rare.
+			data.Histograms, err = m.Pool.GetHPointSlice(m.numSteps)
+			if err != nil {
+				return err
+			}
+		}
+		data.Histograms = append(data.Histograms, promql.HPoint{T: step.StepT, H: val.Compact(0)})
+	}
+	return nil
 }
 
 // This is based on extrapolatedRate from promql/functions.go.
