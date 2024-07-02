@@ -388,14 +388,14 @@ templates:
 	}
 	emptyMimirConfig := alertspb.AlertConfigDesc{User: "user4"}
 	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{User: "user4"}))
+	require.NoError(t, store.SetAlertConfig(ctx, emptyMimirConfig))
 
 	err = am.loadAndSyncConfigs(ctx, reasonPeriodic)
 	require.NoError(t, err)
 	require.Len(t, am.alertmanagers, 4)
 
 	// The Mimir configuration was empty, so the Grafana configuration should be chosen for user 4.
-	parsed, err := parseGrafanaConfig(userGrafanaCfg, nil)
+	parsed, err := createUsableGrafanaConfig(userGrafanaCfg, nil)
 	require.NoError(t, err)
 	require.Equal(t, parsed, am.cfgs["user4"])
 
@@ -2623,7 +2623,7 @@ func TestComputeConfig(t *testing.T) {
 			},
 			expCfg: alertspb.AlertConfigDesc{
 				User:      "user",
-				RawConfig: string(simpleConfigOne),
+				RawConfig: simpleConfigOne,
 			},
 			expURL: am.cfg.ExternalURL.String(),
 		},
