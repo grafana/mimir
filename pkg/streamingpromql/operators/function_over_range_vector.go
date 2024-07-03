@@ -178,6 +178,7 @@ func (m *FunctionOverRangeVector) computeNextStep(data *types.InstantVectorSerie
 				return err
 			}
 		}
+		val.CounterResetHint = histogram.GaugeType
 		data.Histograms = append(data.Histograms, promql.HPoint{T: step.StepT, H: val.Compact(0)})
 	}
 	return nil
