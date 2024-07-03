@@ -1468,7 +1468,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 						assert.Greater(t, int(chunksSlicePool.(*pool.TrackedPool).Gets.Load()), 0)
 					}
 
-					st.blockSet.all(func(b *bucketBlock) {
+					st.blockSet.forEach(func(b *bucketBlock) {
 						// NOTE(bwplotka): It is 4 x 1.0 for 100mln samples. Kind of make sense: long series.
 						assert.Equal(t, 0.0, promtest.ToFloat64(b.metrics.seriesRefetches))
 					})
@@ -2823,13 +2823,13 @@ func labelNamesFromSeriesSet(series []*storepb.Series) []string {
 		}
 	}
 
-	ll := make([]string, 0, len(labelsMap))
+	labels := make([]string, 0, len(labelsMap))
 	for k := range labelsMap {
-		ll = append(ll, k)
+		labels = append(labels, k)
 	}
 
-	slices.Sort(ll)
-	return ll
+	slices.Sort(labels)
+	return labels
 }
 
 type headGenOptions struct {

@@ -303,7 +303,7 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 	}
 
 	for id, meta := range metas {
-		if s.blockSet.has(id) {
+		if s.blockSet.contains(id) {
 			continue
 		}
 		select {
@@ -320,7 +320,7 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 	}
 
 	blockIDs := make([]ulid.ULID, 0)
-	s.blockSet.all(func(b *bucketBlock) {
+	s.blockSet.forEach(func(b *bucketBlock) {
 		blockIDs = append(blockIDs, b.meta.ULID)
 	})
 	for _, id := range blockIDs {
@@ -362,7 +362,7 @@ func (s *BucketStore) InitialSync(ctx context.Context) error {
 		if !ok {
 			continue
 		}
-		if s.blockSet.has(id) {
+		if s.blockSet.contains(id) {
 			continue
 		}
 
@@ -466,7 +466,7 @@ func (s *BucketStore) removeBlock(id ulid.ULID) (returnErr error) {
 
 func (s *BucketStore) removeAllBlocks() error {
 	blockIDs := make([]ulid.ULID, 0)
-	s.blockSet.all(func(b *bucketBlock) {
+	s.blockSet.forEach(func(b *bucketBlock) {
 		blockIDs = append(blockIDs, b.meta.ULID)
 	})
 
@@ -1310,7 +1310,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	var blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
 	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 
-	s.blockSet.all(func(b *bucketBlock) {
+	s.blockSet.forEach(func(b *bucketBlock) {
 		if !b.overlapsClosedInterval(req.Start, req.End) {
 			return
 		}
@@ -1497,7 +1497,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 
 	var setsMtx sync.Mutex
 	var sets [][]string
-	s.blockSet.all(func(b *bucketBlock) {
+	s.blockSet.forEach(func(b *bucketBlock) {
 		if !b.overlapsClosedInterval(req.Start, req.End) {
 			return
 		}
@@ -1774,7 +1774,7 @@ func (s *bucketBlockSet) remove(id ulid.ULID) *bucketBlock {
 	return val.(*bucketBlock)
 }
 
-func (s *bucketBlockSet) has(id ulid.ULID) bool {
+func (s *bucketBlockSet) contains(id ulid.ULID) bool {
 	_, ok := s.blockSet.Load(id)
 	return ok
 }
@@ -1786,7 +1786,7 @@ func (s *bucketBlockSet) len() int {
 }
 
 // filter iterates over a time-ordered list of non-closed blocks that cover date between mint and maxt. It supports overlapping
-// blocks. A block is guarantied to be not closed only inside the fn.
+// blocks. It only guaranties that a block is held open during the execution of fn.
 func (s *bucketBlockSet) filter(mint, maxt int64, blockMatchers []*labels.Matcher, fn func(b *bucketBlock)) {
 	if mint > maxt {
 		return
@@ -1828,8 +1828,8 @@ func (s *bucketBlockSet) filter(mint, maxt int64, blockMatchers []*labels.Matche
 	}
 }
 
-// all iterates over all non-closed blocks in the set. A block is guarantied to be not closed only inside the fn.
-func (s *bucketBlockSet) all(fn func(b *bucketBlock)) {
+// forEach iterates over all non-closed blocks in the set. It only guaranties that a block is held open during the execution of fn.
+func (s *bucketBlockSet) forEach(fn func(b *bucketBlock)) {
 	s.blockSet.Range(func(_, val any) bool {
 		b := val.(*bucketBlock)
 
