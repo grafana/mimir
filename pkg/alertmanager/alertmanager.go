@@ -505,6 +505,21 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 		return notifier
 	}
 
+	emailCfg := alertingReceivers.EmailSenderConfig{
+		AuthPassword:  string(gCfg.SMTPAuthPassword),
+		AuthUser:      gCfg.SMTPAuthUsername,
+		CertFile:      gCfg.HTTPConfig.TLSConfig.CertFile,
+		ContentTypes:  []string{"text/html"},
+		EhloIdentity:  gCfg.SMTPHello,
+		ExternalURL:   tmpl.ExternalURL.String(),
+		FromAddress:   gCfg.SMTPFrom,
+		FromName:      "Grafana",
+		Host:          gCfg.SMTPSmarthost.String(),
+		KeyFile:       gCfg.HTTPConfig.TLSConfig.KeyFile,
+		SkipVerify:    !gCfg.SMTPRequireTLS,
+		StaticHeaders: staticHeaders,
+	}
+
 	var gTmpl *template.Template
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
@@ -522,7 +537,8 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 				}
 				gTmpl.ExternalURL = tmpl.ExternalURL
 			}
-			integrations, err = buildGrafanaReceiverIntegrations(gCfg, rcv, gTmpl, staticHeaders, am.logger)
+
+			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, rcv, gTmpl, am.logger)
 		} else {
 			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, nw)
 		}
@@ -536,7 +552,7 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 	return integrationsMap, nil
 }
 
-func buildGrafanaReceiverIntegrations(gCfg *config.GlobalConfig, rcv *definition.PostableApiReceiver, tmpl *template.Template, staticHeaders map[string]string, logger log.Logger) ([]*nfstatus.Integration, error) {
+func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConfig, rcv *definition.PostableApiReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
 	// The decrypt functions and the context are used to decrypt the configuration.
 	// We don't need to decrypt anything, so we can pass a no-op decrypt func and a context.Background().
 	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), alertingNotify.NoopDecrypt)
@@ -546,21 +562,6 @@ func buildGrafanaReceiverIntegrations(gCfg *config.GlobalConfig, rcv *definition
 
 	whFn := func(alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
 		return NewSender(logger), nil
-	}
-
-	emailCfg := alertingReceivers.EmailSenderConfig{
-		AuthPassword:  string(gCfg.SMTPAuthPassword),
-		AuthUser:      gCfg.SMTPAuthUsername,
-		CertFile:      gCfg.HTTPConfig.TLSConfig.CertFile,
-		ContentTypes:  []string{"text/html"},
-		EhloIdentity:  gCfg.SMTPHello,
-		ExternalURL:   tmpl.ExternalURL.String(),
-		FromAddress:   gCfg.SMTPFrom,
-		FromName:      "Grafana",
-		Host:          gCfg.SMTPSmarthost.String(),
-		KeyFile:       gCfg.HTTPConfig.TLSConfig.KeyFile,
-		SkipVerify:    !gCfg.SMTPRequireTLS,
-		StaticHeaders: staticHeaders,
 	}
 
 	integrations, err := alertingNotify.BuildReceiverIntegrations(
