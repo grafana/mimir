@@ -307,7 +307,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		queryExpr: parseQuery(t, `{__name__=~".+"}`),
 	})
 
-	_, ctx := stats.ContextWithEmptyStats(context.Background())
+	queryDetails, ctx := ContextWithEmptyDetails(context.Background())
 	ctx = user.InjectOrgID(ctx, "1")
 	resp, err := rc.Do(ctx, req)
 	require.NoError(t, err)
@@ -318,6 +318,9 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 	// Assert query stats from context
 	queryStats := stats.FromContext(ctx)
 	assert.Equal(t, uint32(1), queryStats.LoadSplitQueries())
+
+	assert.NotZero(t, queryDetails.ResultsCacheMissBytes)
+	assert.Zero(t, queryDetails.ResultsCacheHitBytes)
 
 	// Doing same request again shouldn't change anything.
 	resp, err = rc.Do(ctx, req)
@@ -364,6 +367,132 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		# HELP cortex_frontend_query_result_cache_hits_total Total number of requests (or partial requests) fetched from the results cache.
 		# TYPE cortex_frontend_query_result_cache_hits_total counter
 		cortex_frontend_query_result_cache_hits_total{request_type="query_range"} 2
+	`)))
+}
+
+func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
+	cacheBackend := cache.NewInstrumentedMockCache()
+
+	reg := prometheus.NewPedanticRegistry()
+	mw := newSplitAndCacheMiddleware(
+		true,
+		true,
+		24*time.Hour,
+		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
+		newTestPrometheusCodec(),
+		cacheBackend,
+		DefaultCacheKeyGenerator{interval: day},
+		PrometheusResponseExtractor{},
+		resultsCacheAlwaysDisabled,
+		log.NewNopLogger(),
+		reg,
+	)
+
+	expectedResponse := &PrometheusResponse{
+		Status: "success",
+		Data: &PrometheusData{
+			ResultType: model.ValMatrix.String(),
+			Result: []SampleStream{
+				{
+					Labels: []mimirpb.LabelAdapter{
+						{Name: "foo", Value: "bar"},
+					},
+					Samples: []mimirpb.Sample{
+						{Value: 137, TimestampMs: 1634292000000},
+						{Value: 137, TimestampMs: 1634292120000},
+					},
+					Histograms: []mimirpb.FloatHistogramPair{
+						{
+							TimestampMs: 1634292000000,
+							Histogram: &mimirpb.FloatHistogram{
+								CounterResetHint: histogram.GaugeType,
+								Schema:           3,
+								ZeroThreshold:    1.23,
+								ZeroCount:        456,
+								Count:            9001,
+								Sum:              789.1,
+								PositiveSpans: []mimirpb.BucketSpan{
+									{Offset: 4, Length: 1},
+									{Offset: 3, Length: 2},
+								},
+								NegativeSpans: []mimirpb.BucketSpan{
+									{Offset: 7, Length: 3},
+									{Offset: 9, Length: 1},
+								},
+								PositiveBuckets: []float64{100, 200, 300},
+								NegativeBuckets: []float64{400, 500, 600, 700},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	downstreamReqs := 0
+	rc := mw.Wrap(HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
+		downstreamReqs++
+		return expectedResponse, nil
+	}))
+
+	step := int64(120 * 1000)
+	req := MetricsQueryRequest(&PrometheusRangeQueryRequest{
+		path:      "/api/v1/query_range",
+		start:     parseTimeRFC3339(t, "2021-10-15T10:00:00Z").Unix() * 1000,
+		end:       parseTimeRFC3339(t, "2021-10-15T12:00:00Z").Unix() * 1000,
+		step:      step,
+		queryExpr: parseQuery(t, `{__name__=~".+"}`),
+		options:   Options{CacheDisabled: true},
+	})
+
+	queryDetails, ctx := ContextWithEmptyDetails(context.Background())
+	ctx = user.InjectOrgID(ctx, "1")
+	resp, err := rc.Do(ctx, req)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, downstreamReqs)
+	require.Equal(t, expectedResponse, resp)
+	assert.Equal(t, 0, cacheBackend.CountStoreCalls())
+	// Assert query stats from context
+	queryStats := stats.FromContext(ctx)
+	assert.Equal(t, uint32(1), queryStats.LoadSplitQueries())
+
+	assert.NotZero(t, queryDetails.ResultsCacheMissBytes)
+	assert.Zero(t, queryDetails.ResultsCacheHitBytes)
+
+	// Doing same request again shouldn't change anything.
+	resp, err = rc.Do(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, 2, downstreamReqs)
+	require.Equal(t, expectedResponse, resp)
+	assert.Equal(t, 0, cacheBackend.CountStoreCalls())
+	// Assert query stats from context
+	queryStats = stats.FromContext(ctx)
+	assert.Equal(t, uint32(2), queryStats.LoadSplitQueries())
+
+	// Assert metrics
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
+		# TYPE cortex_frontend_query_result_cache_attempted_total counter
+		cortex_frontend_query_result_cache_attempted_total 0
+
+		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.
+		# TYPE cortex_frontend_query_result_cache_skipped_total counter
+		cortex_frontend_query_result_cache_skipped_total{reason="has-modifiers"} 0
+		cortex_frontend_query_result_cache_skipped_total{reason="too-new"} 0
+		cortex_frontend_query_result_cache_skipped_total{reason="unaligned-time-range"} 0
+
+		# HELP cortex_frontend_split_queries_total Total number of underlying query requests after the split by interval is applied.
+		# TYPE cortex_frontend_split_queries_total counter
+		cortex_frontend_split_queries_total 2
+
+		# HELP cortex_frontend_query_result_cache_requests_total Total number of requests (or partial requests) looked up in the results cache.
+		# TYPE cortex_frontend_query_result_cache_requests_total counter
+		cortex_frontend_query_result_cache_requests_total{request_type="query_range"} 0
+
+		# HELP cortex_frontend_query_result_cache_hits_total Total number of requests (or partial requests) fetched from the results cache.
+		# TYPE cortex_frontend_query_result_cache_hits_total counter
+		cortex_frontend_query_result_cache_hits_total{request_type="query_range"} 0
 	`)))
 }
 

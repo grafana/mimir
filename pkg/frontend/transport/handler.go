@@ -347,6 +347,9 @@ func (f *Handler) reportQueryStats(
 			"results_cache_hit_bytes", details.ResultsCacheHitBytes,
 			"results_cache_miss_bytes", details.ResultsCacheMissBytes,
 		)
+		if details.ResultsCacheNoStore {
+			logMessage = append(logMessage, "results_cache_no_store", true)
+		}
 	}
 
 	// Log the read consistency only when explicitly defined.

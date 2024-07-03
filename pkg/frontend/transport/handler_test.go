@@ -635,6 +635,18 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 				"results_cache_miss_bytes": "10",
 				"results_cache_hit_bytes":  "200",
 			},
+			// Most of the time the cache is enabled so not cluttering the logs with the enabled option.
+			expectedMissingFields: []string{"results_cache_no_store"},
+		},
+		{
+			name:              "results cache turned off on request",
+			requestFormFields: []string{},
+			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+				d.ResultsCacheNoStore = true
+			},
+			expectedLoggedFields: map[string]string{
+				"results_cache_no_store": "true",
+			},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
