@@ -153,6 +153,7 @@ message Histogram {
   ResetHint reset_hint               = 14;
   // timestamp is in ms format
   int64 timestamp = 15;
+  repeated double custom_values = 16;
 }
 
 // FloatHistogram is based on https://github.com/prometheus/prometheus/blob/main/model/histogram/float_histogram.go.
@@ -173,6 +174,7 @@ message FloatHistogram {
   repeated BucketSpan negative_spans = 8 [(gogoproto.nullable) = false];
   repeated double positive_buckets = 13;
   repeated double negative_buckets = 10;
+  repeated double custom_values = 16;
 }
 
 // A BucketSpan defines a number of consecutive buckets with their
