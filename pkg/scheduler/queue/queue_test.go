@@ -128,8 +128,8 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 			normalQueueDimension := "normal-request"
 			slowConsumerLatency := 20 * time.Millisecond
 			slowConsumerQueueDimension := "slow-request"
-			normalQueueDimensionFunc := func() []string { return []string{normalQueueDimension} }
-			slowQueueDimensionFunc := func() []string { return []string{slowConsumerQueueDimension} }
+			normalQueueDimensionFunc := func(_ string) []string { return []string{normalQueueDimension} }
+			slowQueueDimensionFunc := func(_ string) []string { return []string{slowConsumerQueueDimension} }
 
 			additionalQueueDimensionsEnabledCases := []bool{false, true}
 			queueDurationTotals := map[bool]map[string]float64{
@@ -167,7 +167,7 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 				})
 
 				// fill queue first with the slow queries, then the normal queries
-				for _, queueDimensionFunc := range []func() []string{slowQueueDimensionFunc, normalQueueDimensionFunc} {
+				for _, queueDimensionFunc := range []func(tenantID string) []string{slowQueueDimensionFunc, normalQueueDimensionFunc} {
 					startProducersChan := make(chan struct{})
 					producersErrGroup, _ := errgroup.WithContext(ctx)
 
@@ -343,7 +343,7 @@ func runQueueProducerIters(
 	numProducers int,
 	numTenants int,
 	start chan struct{},
-	additionalQueueDimensionFunc func() []string,
+	additionalQueueDimensionFunc func(tenantID string) []string,
 ) func(producerIdx int) error {
 	return func(producerIdx int) error {
 		producerIters := queueActorIterationCount(totalIters, numProducers, producerIdx)
@@ -374,11 +374,11 @@ func queueProduce(
 	tenantID string,
 	queue *RequestQueue,
 	maxQueriersPerTenant int,
-	additionalQueueDimensionFunc func() []string,
+	additionalQueueDimensionFunc func(tenantID string) []string,
 ) error {
 	var additionalQueueDimensions []string
 	if additionalQueueDimensionFunc != nil {
-		additionalQueueDimensions = additionalQueueDimensionFunc()
+		additionalQueueDimensions = additionalQueueDimensionFunc(tenantID)
 	}
 	req := makeSchedulerRequest(producerID, queryID, tenantID, additionalQueueDimensions)
 	for {
