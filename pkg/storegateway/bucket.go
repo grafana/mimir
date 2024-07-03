@@ -1720,7 +1720,7 @@ func storeCachedLabelValues(ctx context.Context, indexCache indexcache.IndexCach
 type bucketBlockSet struct {
 	// mtx protects the below data strcutures, helping to keep them in sync.
 	mtx      sync.RWMutex
-	blockSet sync.Map       // Maps block's identifier to the *bucketBlock projection.
+	blockSet sync.Map       // Maps block's ulid.ULID to the *bucketBlock.
 	blocks   []*bucketBlock // Blocks sorted by mint, then maxt.
 }
 
