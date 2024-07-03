@@ -847,7 +847,7 @@ ha_tracker:
 [max_recv_msg_size: <int> | default = 104857600]
 
 # (experimental) Maximum OTLP request size in bytes that the distributors
-# accept. Requests exceeding this limit will be rejected.
+# accept. Requests exceeding this limit are rejected.
 # CLI flag: -distributor.max-otlp-request-size
 [max_otlp_request_size: <int> | default = 83886080]
 

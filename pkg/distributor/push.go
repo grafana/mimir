@@ -110,11 +110,11 @@ func (e distributorMaxWriteMessageSizeErr) Error() string {
 	return globalerror.DistributorMaxWriteMessageSize.MessageWithPerInstanceLimitConfig(fmt.Sprintf("the incoming push request has been rejected because its message size%s is larger than the allowed limit of %d bytes", msgSizeDesc, e.limit), "distributor.max-recv-msg-size")
 }
 
-type distributorMaxOTLPWriteMessageSizeErr struct {
+type distributorMaxOTLPRequestSizeErr struct {
 	actual, limit int
 }
 
-func (e distributorMaxOTLPWriteMessageSizeErr) Error() string {
+func (e distributorMaxOTLPRequestSizeErr) Error() string {
 	msgSizeDesc := fmt.Sprintf(" of %d bytes", e.actual)
 	if e.actual < 0 {
 		msgSizeDesc = ""
