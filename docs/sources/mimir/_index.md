@@ -29,13 +29,9 @@ cards:
       href: ./get-started/
       description: Get started quickly with Grafana Mimir's extensive documentation, tutorials, and deployment tooling. Use the monolithic mode to get up and running with just one binary and no added dependencies.
       height: 24
-    - title: Set up
+    - title: Set up and configure
       href: ./set-up/
-      description: Set up Grafana Mimir with Helm, Puppet, or Jsonnet and Tanka. Migrate to Grafana Mimir from Cortex, Thanos, or Prometheus.
-      height: 24
-    - title: Configure
-      href: ./configure/about-configurations/
-      description: Configure Grafana Mimir through a YAML-based configuration file or CLI flags and learn about common configurations.
+      description: Set up Grafana Mimir with Helm, Puppet, or Jsonnet and Tanka. Then, Configure Grafana Mimir through a YAML-based configuration file or CLI flags.
       height: 24
     - title: Send metric data
       href: ./send/
@@ -51,10 +47,6 @@ cards:
     - title: Visualize data
       href: ./visualize/
       description: Query, visualize, and explore your metrics using Grafana, an open platform for metrics visualization. It supports multiple data stores including Prometheus. You can also visualize native histograms through Grafana Mimir since they are a Prometheus data type.
-      height: 24
-    - title: Reduce costs
-      href: https://grafana.com/docs/grafana-cloud/cost-management-and-billing/reduce-costs/metrics-costs/control-metrics-usage-via-adaptive-metrics/
-      description: Reduce the costs of your Grafana Cloud metrics with Adaptive Metrics. Adaptive Metrics is a cardinality optimization feature that allows you to identify and eliminate unused time series metrics data by means of aggregation.
       height: 24
 ---
 
