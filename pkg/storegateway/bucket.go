@@ -1310,14 +1310,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	var blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
 	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 
-	s.blockSet.forEach(func(b *bucketBlock) {
-		if !b.overlapsClosedInterval(req.Start, req.End) {
-			return
-		}
-		if len(reqBlockMatchers) > 0 && !b.matchLabels(reqBlockMatchers) {
-			return
-		}
-
+	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *bucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
@@ -1497,14 +1490,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 
 	var setsMtx sync.Mutex
 	var sets [][]string
-	s.blockSet.forEach(func(b *bucketBlock) {
-		if !b.overlapsClosedInterval(req.Start, req.End) {
-			return
-		}
-		if len(reqBlockMatchers) > 0 && !b.matchLabels(reqBlockMatchers) {
-			return
-		}
-
+	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *bucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
 
 		// This index reader shouldn't be used for ExpandedPostings, since it doesn't have the correct strategy.
