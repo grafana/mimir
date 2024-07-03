@@ -2238,19 +2238,19 @@ How to **fix** it:
 
 - Increase the allowed limit by using the `-distributor.max-recv-msg-size` option.
 
-### err-mimir-distributor-max-otel-decompressed-write-message-size
+### err-mimir-distributor-max-otlp-request-size
 
-This error occurs when a distributor rejects an OTEL write request because its message size is larger than the allowed limit after decompression.
+This error occurs when a distributor rejects an Otel write request because its message size is larger than the allowed limit after decompression.
 
 How it **works**:
 
-- The distributor implements an upper limit on the message size of incoming otel write requests after decompression regardless compression type. See more otlp collector [compression details](https://github.com/open-telemetry/opentelemetry-collector/blob/main/config/configgrpc/README.md#client-configuration).
-- To configure the limit, set the `-distributor.max_otel_decompressed_recv_msg_size`
+- The distributor implements an upper limit on the message size of incoming OTel write requests after decompression regardless of the compression type. Refer to [OTLP collector compression details](https://github.com/open-telemetry/opentelemetry-collector/blob/main/config/configgrpc/README.md#client-configuration) for more information.
+- Configure this limit in the `-distributor.max-otlp-request-size` setting.
 
 How to **fix** it:
 
-- Increase the allowed limit by using the `-distributor.max_otel_decompressed_recv_msg_size` option.
-- If you use batch processor in otlp collector, decrease the max batch size `send_batch_max_size` See [details](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md)
+- Increase the allowed limit in the `-distributor.max-otlp-request-size` setting.
+- If you use the batch processor in the OTLP collector, decrease the maximum batch size in the `send_batch_max_size` setting. Refer to [Batch Collector](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md) for details.
 
 ### err-mimir-distributor-max-write-request-data-item-size
 

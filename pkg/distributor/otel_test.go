@@ -245,9 +245,9 @@ func TestHandlerOTLPPush(t *testing.T) {
 		series   []prompb.TimeSeries
 		metadata []mimirpb.MetricMetadata
 
-		compression            bool
-		encoding               string
-		maxDecompressedMsgSize int
+		compression bool
+		encoding    string
+		maxMsgSize  int
 
 		verifyFunc                func(*testing.T, *Request) error
 		responseCode              int
@@ -259,7 +259,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 	}{
 		{
 			name:                      "Write samples. No compression",
-			maxDecompressedMsgSize:    100000,
+			maxMsgSize:                100000,
 			verifyFunc:                samplesVerifierFunc,
 			series:                    sampleSeries,
 			metadata:                  sampleMetadata,
@@ -268,7 +268,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 		},
 		{
 			name:                      "Write samples. Not enabled metadata ingest",
-			maxDecompressedMsgSize:    100000,
+			maxMsgSize:                100000,
 			verifyFunc:                samplesVerifierFuncDisabledMetadataIngest,
 			series:                    sampleSeries,
 			metadata:                  sampleMetadata,
@@ -278,7 +278,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 		{
 			name:                      "Write samples. With compression",
 			compression:               true,
-			maxDecompressedMsgSize:    100000,
+			maxMsgSize:                100000,
 			verifyFunc:                samplesVerifierFunc,
 			series:                    sampleSeries,
 			metadata:                  sampleMetadata,
@@ -286,25 +286,25 @@ func TestHandlerOTLPPush(t *testing.T) {
 			enableOtelMetadataStorage: true,
 		},
 		{
-			name:                   "Write samples. No compression, Request too big",
-			compression:            false,
-			maxDecompressedMsgSize: 30,
-			series:                 sampleSeries,
-			metadata:               sampleMetadata,
+			name:        "Write samples. No compression, request too big",
+			compression: false,
+			maxMsgSize:  30,
+			series:      sampleSeries,
+			metadata:    sampleMetadata,
 			verifyFunc: func(_ *testing.T, pushReq *Request) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
 			responseCode: http.StatusRequestEntityTooLarge,
 			errMessage:   "the incoming push request has been rejected because its message size of 63 bytes is larger",
-			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming push request has been rejected because its message size of 63 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otel-decompressed-write-message-size). To adjust the related limit, configure -distributor.max_otel_decompressed_recv_msg_size, or contact your service administrator." insight=true`},
+			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming push request has been rejected because its message size of 63 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
 		},
 		{
-			name:                   "Write samples. Unsupported compression",
-			encoding:               "snappy",
-			maxDecompressedMsgSize: 100000,
-			series:                 sampleSeries,
-			metadata:               sampleMetadata,
+			name:       "Write samples. Unsupported compression",
+			encoding:   "snappy",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
 			verifyFunc: func(_ *testing.T, pushReq *Request) error {
 				_, err := pushReq.WriteRequest()
 				return err
@@ -314,24 +314,24 @@ func TestHandlerOTLPPush(t *testing.T) {
 			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. Only \"gzip\" or no compression supported" insight=true`},
 		},
 		{
-			name:                   "Write samples. With compression, Request too big",
-			compression:            true,
-			maxDecompressedMsgSize: 30,
-			series:                 sampleSeries,
-			metadata:               sampleMetadata,
+			name:        "Write samples. With compression, request too big",
+			compression: true,
+			maxMsgSize:  30,
+			series:      sampleSeries,
+			metadata:    sampleMetadata,
 			verifyFunc: func(_ *testing.T, pushReq *Request) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
 			responseCode: http.StatusRequestEntityTooLarge,
 			errMessage:   "the incoming push request has been rejected because its message size of 78 bytes is larger",
-			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming push request has been rejected because its message size of 78 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otel-decompressed-write-message-size). To adjust the related limit, configure -distributor.max_otel_decompressed_recv_msg_size, or contact your service administrator." insight=true`},
+			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming push request has been rejected because its message size of 78 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
 		},
 		{
-			name:                   "Rate limited request",
-			maxDecompressedMsgSize: 100000,
-			series:                 sampleSeries,
-			metadata:               sampleMetadata,
+			name:       "Rate limited request",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
 			verifyFunc: func(*testing.T, *Request) error {
 				return httpgrpc.Errorf(http.StatusTooManyRequests, "go slower")
 			},
@@ -341,8 +341,8 @@ func TestHandlerOTLPPush(t *testing.T) {
 			expectedRetryHeader: true,
 		},
 		{
-			name:                   "Write histograms",
-			maxDecompressedMsgSize: 100000,
+			name:       "Write histograms",
+			maxMsgSize: 100000,
 			series: []prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
@@ -404,7 +404,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 
 			logs := &concurrency.SyncBuffer{}
 			retryConfig := RetryConfig{Enabled: true, BaseSeconds: 5, MaxBackoffExponent: 5}
-			handler := OTLPHandler(tt.maxDecompressedMsgSize, nil, nil, tt.enableOtelMetadataStorage, limits, retryConfig, pusher, nil, nil, level.NewFilter(log.NewLogfmtLogger(logs), level.AllowInfo()), true)
+			handler := OTLPHandler(tt.maxMsgSize, nil, nil, tt.enableOtelMetadataStorage, limits, retryConfig, pusher, nil, nil, level.NewFilter(log.NewLogfmtLogger(logs), level.AllowInfo()), true)
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -585,7 +585,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 	respStatus := &status.Status{}
 	err = proto.Unmarshal(body, respStatus)
 	assert.NoError(t, err)
-	assert.Contains(t, respStatus.GetMessage(), "the incoming push request has been rejected because its message size is larger than the allowed limit of 140 bytes (err-mimir-distributor-max-otel-decompressed-write-message-size). To adjust the related limit, configure -distributor.max_otel_decompressed_recv_msg_size, or contact your service administrator.")
+	assert.Contains(t, respStatus.GetMessage(), "the incoming push request has been rejected because its message size is larger than the allowed limit of 140 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator.")
 }
 
 func TestHandler_toOtlpGRPCHTTPStatus(t *testing.T) {

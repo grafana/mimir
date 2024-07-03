@@ -74,8 +74,8 @@ The following features are currently experimental:
     - `-distributor.retry-after-header.max-backoff-exponent`
   - Limit exemplars per series per request
     - `-distributor.max-exemplars-per-series-per-request`
-  - Limit otel write request byte size
-    - `max_otel_decompressed_recv_msg_size`
+  - Limit OTLP write request byte size
+    - `max_otlp_request_size`
   - Enforce a maximum pool buffer size for write requests
     - `-distributor.max-request-pool-buffer-size`
   - Enable direct translation from OTLP write requests to Mimir equivalents

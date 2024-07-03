@@ -34,7 +34,6 @@ import (
 	"github.com/grafana/mimir/pkg/distributor/otlp"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/globalerror"
 	utillog "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -54,7 +53,7 @@ type OTLPHandlerLimits interface {
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
 func OTLPHandler(
-	maxOtelDecompressedRecvMsgSize int,
+	maxRecvMsgSize int,
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
 	enableOtelMetadataStorage bool,
@@ -68,7 +67,7 @@ func OTLPHandler(
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 
-	return otlpHandler(maxOtelDecompressedRecvMsgSize, requestBufferPool, sourceIPs, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxOtelDecompressedRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
+	return otlpHandler(maxRecvMsgSize, requestBufferPool, sourceIPs, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
 		contentType := r.Header.Get("Content-Type")
 		contentEncoding := r.Header.Get("Content-Encoding")
 		var compression util.CompressionType
@@ -89,13 +88,12 @@ func OTLPHandler(
 				unmarshaler := otlpProtoUnmarshaler{
 					request: &exportReq,
 				}
-				protoBodySize, err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxOtelDecompressedRecvMsgSize, buffers, unmarshaler, compression)
+				protoBodySize, err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
 				var tooLargeErr util.MsgSizeTooLargeErr
 				if errors.As(err, &tooLargeErr) {
-					return exportReq, 0, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
+					return exportReq, 0, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxOTLPWriteMessageSizeErr{
 						actual: tooLargeErr.Actual,
 						limit:  tooLargeErr.Limit,
-						id:     globalerror.DistributorMaxOtelDecompressedWriteMessageSize,
 					}.Error())
 				}
 				return exportReq, protoBodySize, err
@@ -118,13 +116,12 @@ func OTLPHandler(
 					}
 				}
 
-				reader = http.MaxBytesReader(nil, reader, int64(maxOtelDecompressedRecvMsgSize))
+				reader = http.MaxBytesReader(nil, reader, int64(maxRecvMsgSize))
 				if _, err := buf.ReadFrom(reader); err != nil {
 					if util.IsRequestBodyTooLarge(err) {
-						return exportReq, 0, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
+						return exportReq, 0, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxOTLPWriteMessageSizeErr{
 							actual: -1,
-							limit:  maxOtelDecompressedRecvMsgSize,
-							id:     globalerror.DistributorMaxOtelDecompressedWriteMessageSize,
+							limit:  maxRecvMsgSize,
 						}.Error())
 					}
 
@@ -138,13 +135,12 @@ func OTLPHandler(
 			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
 		}
 
-		// Check the request size against the uncompressed message size limit, regardless of whether the request is compressed.
+		// Check the request size against the message size limit, regardless of whether the request is compressed.
 		// If the request is compressed and its compressed length already exceeds the size limit, there's no need to decompress it.
-		if r.ContentLength > int64(maxOtelDecompressedRecvMsgSize) {
-			return httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
+		if r.ContentLength > int64(maxRecvMsgSize) {
+			return httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxOTLPWriteMessageSizeErr{
 				actual: int(r.ContentLength),
-				limit:  maxOtelDecompressedRecvMsgSize,
-				id:     globalerror.DistributorMaxOtelDecompressedWriteMessageSize,
+				limit:  maxRecvMsgSize,
 			}.Error())
 		}
 
@@ -215,7 +211,7 @@ func OTLPHandler(
 }
 
 func otlpHandler(
-	maxOtelDecompressedRecvMsgSize int,
+	maxRecvMsgSize int,
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
 	retryCfg RetryConfig,
@@ -235,7 +231,7 @@ func otlpHandler(
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
 			var req mimirpb.PreallocWriteRequest
-			if err := parser(ctx, r, maxOtelDecompressedRecvMsgSize, rb, &req, logger); err != nil {
+			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
 				// Check for httpgrpc error, default to client error if parsing failed
 				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
 					err = httpgrpc.Errorf(http.StatusBadRequest, err.Error())
