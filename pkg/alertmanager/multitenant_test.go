@@ -396,9 +396,10 @@ templates:
 	require.Len(t, am.alertmanagers, 4)
 
 	// The Mimir configuration was empty, so the Grafana configuration should be chosen for user 4.
-	parsed, err := createUsableGrafanaConfig(userGrafanaCfg, nil)
+	amCfg, err := createUsableGrafanaConfig(userGrafanaCfg, nil)
 	require.NoError(t, err)
-	require.Equal(t, parsed, am.cfgs["user4"])
+	grafanaAlertConfigDesc := amCfg.AlertConfigDesc
+	require.Equal(t, grafanaAlertConfigDesc, am.cfgs["user4"])
 
 	dirs = am.getPerUserDirectories()
 	user4Dir := dirs["user4"]
@@ -428,7 +429,7 @@ templates:
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, parsed, am.cfgs["user4"])
+	require.Equal(t, grafanaAlertConfigDesc, am.cfgs["user4"])
 
 	// Add a Mimir fallback config for the same user.
 	defaultConfig := alertspb.AlertConfigDesc{
