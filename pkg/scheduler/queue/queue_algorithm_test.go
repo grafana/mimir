@@ -246,7 +246,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 			},
 		},
 		{
-			name: "single tenant, 50% slow queries",
+			name: "single tenant, 75% slow queries",
 			tenantQueueDimensionsWeights: map[string][]dimensionWeight{
 				"0": {
 					{ingesterQueueDimension, 25},
