@@ -67,36 +67,6 @@ func randAdditionalQueueDimension(allowEmpty bool) []string {
 	return secondQueueDimensionOptions[idx : idx+1]
 }
 
-type dimensionWeight struct {
-	dimension string
-	weight    int
-}
-
-func weightedRandAdditionalQueueDimension(dimensionWeights []dimensionWeight) string {
-	totalWeight := 0
-	for _, dimensionWeight := range dimensionWeights {
-		totalWeight += dimensionWeight.weight
-	}
-
-	randInt := rand.Intn(totalWeight)
-
-	sum := 0
-	for _, dimensionWeight := range dimensionWeights {
-		sum += dimensionWeight.weight
-		if randInt < sum {
-			return dimensionWeight.dimension
-		}
-	}
-
-	panic("no dimension selected")
-}
-
-func makeWeightedRandAdditionalQueueDimensionFunc(dimensionWeights []dimensionWeight) func() []string {
-	return func() []string {
-		return []string{weightedRandAdditionalQueueDimension(dimensionWeights)}
-	}
-}
-
 // makeSchedulerRequest is intended to create a query request with a nontrivial size.
 //
 // When running benchmarks for memory usage, we want a relatively representative request size.

@@ -6,6 +6,8 @@ import (
 	"container/list"
 	"context"
 	"fmt"
+	"math/rand"
+	"strconv"
 	"testing"
 	"time"
 
@@ -19,12 +21,15 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const querierForgetDelay = 0
+const maxOutStandingPerTenant = 1000
+
 func newTQA() *tenantQuerierAssignments {
 	currentQuerier := QuerierID("")
 	return &tenantQuerierAssignments{
 		queriersByID:       map[QuerierID]*querierConn{},
 		querierIDsSorted:   nil,
-		querierForgetDelay: 0,
+		querierForgetDelay: querierForgetDelay,
 		tenantIDOrder:      nil,
 		tenantsByID:        map[TenantID]*queueTenant{},
 		tenantQuerierIDs:   map[TenantID]map[QuerierID]struct{}{},
@@ -34,30 +39,24 @@ func newTQA() *tenantQuerierAssignments {
 	}
 }
 
-func newBenchmarkRequestQueue(log log.Logger,
-	maxOutstandingPerTenant int,
-	additionalQueueDimensionsEnabled bool,
+func newBenchmarkRequestQueue(
 	queryComponentUtilization *QueryComponentUtilization,
 	tenantQuerierAssignments *tenantQuerierAssignments,
 	tree Tree,
-	forgetDelay time.Duration,
-	queueLength *prometheus.GaugeVec,
-	discardedRequests *prometheus.CounterVec,
-	enqueueDuration prometheus.Histogram,
 ) (*RequestQueue, error) {
 
 	q := &RequestQueue{
 		// settings
-		log:                              log,
-		maxOutstandingPerTenant:          maxOutstandingPerTenant,
-		additionalQueueDimensionsEnabled: additionalQueueDimensionsEnabled,
-		forgetDelay:                      forgetDelay,
+		log:                              log.NewNopLogger(),
+		maxOutstandingPerTenant:          maxOutStandingPerTenant,
+		additionalQueueDimensionsEnabled: true,
+		forgetDelay:                      time.Duration(querierForgetDelay),
 
 		// metrics for reporting
 		connectedQuerierWorkers: atomic.NewInt64(0),
-		queueLength:             queueLength,
-		discardedRequests:       discardedRequests,
-		enqueueDuration:         enqueueDuration,
+		queueLength:             promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		discardedRequests:       promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+		enqueueDuration:         promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 
 		// channels must not be buffered so that we can detect when dispatcherLoop() has finished.
 		stopRequested: make(chan struct{}),
@@ -74,15 +73,116 @@ func newBenchmarkRequestQueue(log log.Logger,
 		queueBroker: &queueBroker{
 			tree:                             tree,
 			tenantQuerierAssignments:         tenantQuerierAssignments,
-			maxTenantQueueSize:               maxOutstandingPerTenant,
+			maxTenantQueueSize:               maxOutStandingPerTenant,
 			additionalQueueDimensionsEnabled: true,
 			prioritizeQueryComponents:        true,
 		},
 	}
-
 	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")
-
 	return q, nil
+}
+
+type dimensionWeight struct {
+	dimension string
+	weight    int
+}
+
+func weightedRandAdditionalQueueDimension(dimensionWeights []dimensionWeight) string {
+	totalWeight := 0
+	for _, dimensionWeight := range dimensionWeights {
+		totalWeight += dimensionWeight.weight
+	}
+
+	randInt := rand.Intn(totalWeight)
+
+	sum := 0
+	for _, dimensionWeight := range dimensionWeights {
+		sum += dimensionWeight.weight
+		if randInt < sum {
+			return dimensionWeight.dimension
+		}
+	}
+
+	panic("no dimension selected")
+}
+
+func makeWeightedRandAdditionalQueueDimensionFunc(dimensionWeights []dimensionWeight) func() []string {
+	return func() []string {
+		return []string{weightedRandAdditionalQueueDimension(dimensionWeights)}
+	}
+}
+
+//type TenantQueueContentBenchmarkScenario struct {
+//	tenantQueueDimensionsWeights map[string]dimensionWeight
+//}
+//
+//type QueryComponentUtilizationCheckThresholdQueueAlgorithmBenchmarkScenario struct {
+//	utilizationTriggerCheckQueueLenMultiple   int
+//	utilizationCheckThresholdReservedCapacity float64
+//}
+
+func makeQueueProducerGroup(
+	ctx context.Context,
+	queue *RequestQueue,
+	maxQueriersPerTenant int,
+	totalRequests int,
+	numProducers int,
+	numTenants int,
+	queueDimensionFunc func() []string,
+) (chan struct{}, *errgroup.Group) {
+	startProducersChan := make(chan struct{})
+	producersErrGroup, _ := errgroup.WithContext(ctx)
+
+	runProducer := runQueueProducerIters(
+		queue, maxQueriersPerTenant, totalRequests, numProducers, numTenants, startProducersChan, queueDimensionFunc,
+	)
+	for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
+		producerIdx := producerIdx
+		producersErrGroup.Go(func() error {
+			return runProducer(producerIdx)
+		})
+	}
+	return startProducersChan, producersErrGroup
+}
+
+func makeQueueConsumeFunc(
+	queue *RequestQueue,
+	queueDuration *prometheus.CounterVec,
+	slowConsumerQueueDimension string,
+	slowConsumerLatency time.Duration,
+) consumeRequest {
+	return func(request Request) error {
+		schedulerRequest := request.(*SchedulerRequest)
+		queryComponent := schedulerRequest.ExpectedQueryComponentName()
+
+		queue.QueryComponentUtilization.MarkRequestSent(schedulerRequest)
+		if queryComponent == slowConsumerQueueDimension {
+			time.Sleep(slowConsumerLatency)
+		}
+		queue.QueryComponentUtilization.MarkRequestCompleted(schedulerRequest)
+
+		counterLabels := prometheus.Labels{
+			"user":            schedulerRequest.UserID,
+			"query_component": queryComponent,
+		}
+		queueTime := time.Since(schedulerRequest.EnqueueTime)
+		queueDuration.With(counterLabels).Add(queueTime.Seconds())
+		return nil
+	}
+}
+
+func makeQueueConsumerGroup(ctx context.Context, queue *RequestQueue, totalRequests int, numConsumers int, consumeFunc consumeRequest) (*errgroup.Group, chan struct{}) {
+	queueConsumerErrGroup, ctx := errgroup.WithContext(ctx)
+	startConsumersChan := make(chan struct{})
+	runConsumer := runQueueConsumerIters(ctx, queue, totalRequests, numConsumers, startConsumersChan, consumeFunc)
+
+	for consumerIdx := 0; consumerIdx < numConsumers; consumerIdx++ {
+		consumerIdx := consumerIdx
+		queueConsumerErrGroup.Go(func() error {
+			return runConsumer(consumerIdx)
+		})
+	}
+	return queueConsumerErrGroup, startConsumersChan
 }
 
 // TestMultiDimensionalQueueFairnessSlowConsumerEffects emulates a simplified queue slowdown scenario
@@ -96,10 +196,6 @@ func newBenchmarkRequestQueue(log log.Logger,
 // the normal queue items must wait for all slow queue items to be cleared before they can be serviced.
 // In this way, the degraded performance of the slow query component equally degrades the performance of the
 // queries which *could* be serviced quickly, but are waiting behind the slow queries in the queue.
-//
-// With the additional queue dimensions enabled, the queues are split by which query component the query will utilize.
-// The queue broker then round-robins between the split queues, which has the effect of alternating between
-// dequeuing the slow queries and normal queries rather than blocking normal queries behind slow queries.
 func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	// with 10 connected workers, if queue len >= waiting workers,
 	// no component can have more than 6 inflight requests.
@@ -127,8 +223,6 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	promRegistry := prometheus.NewPedanticRegistry()
 
 	maxQueriersPerTenant := 0 // disable shuffle sharding
-	forgetQuerierDelay := time.Duration(0)
-	maxOutstandingRequestsPerTenant := 1000
 
 	totalRequests := 1000
 	numTenants := 1
@@ -146,8 +240,8 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 		},
 	)
 
-	queueDurationTotals := map[string]float64{
-		normalQueueDimension: 0.0, slowConsumerQueueDimension: 0.0,
+	queueDurationTotals := map[string]map[string]float64{
+		//normalQueueDimension: 0.0, slowConsumerQueueDimension: 0.0,
 	}
 
 	// Scheduler code uses a histogram for queue duration, but a counter is a more direct metric
@@ -156,21 +250,9 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	queueDuration := promauto.With(promRegistry).NewCounterVec(prometheus.CounterOpts{
 		Name: "test_query_scheduler_queue_duration_total_seconds",
 		Help: "[test] total time spent by items in queue before getting picked up by a consumer",
-	}, []string{"query_component"})
+	}, []string{"user", "query_component"})
 
-	additionalQueueDimensionsEnabled := true
-	queue, err := newBenchmarkRequestQueue(
-		log.NewNopLogger(),
-		maxOutstandingRequestsPerTenant,
-		additionalQueueDimensionsEnabled,
-		queryComponentUtilization,
-		tqa,
-		tree,
-		forgetQuerierDelay,
-		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
-		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
-		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-	)
+	queue, err := newBenchmarkRequestQueue(queryComponentUtilization, tqa, tree)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -179,59 +261,37 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 		require.NoError(t, queue.stop(nil))
 	})
 
-	startProducersChan := make(chan struct{})
-	producersErrGroup, _ := errgroup.WithContext(ctx)
-
-	runProducer := runQueueProducerIters(
-		queue, maxQueriersPerTenant, totalRequests, numProducers, numTenants, startProducersChan, queueDimensionFunc,
+	// set up queue producers
+	startProducersChan, producersErrGroup := makeQueueProducerGroup(
+		ctx, queue, maxQueriersPerTenant, totalRequests, numProducers, numTenants, queueDimensionFunc,
 	)
-	for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
-		producerIdx := producerIdx
-		producersErrGroup.Go(func() error {
-			return runProducer(producerIdx)
-		})
-	}
+	// configure queue consumers with sleep for processing slow consumer queue items
+	consumeFunc := makeQueueConsumeFunc(
+		queue, queueDuration, slowConsumerQueueDimension, slowConsumerLatency,
+	)
+	// set up queue consumers to be started by closing startConsumersChan
+	queueConsumerErrGroup, startConsumersChan := makeQueueConsumerGroup(
+		ctx, queue, totalRequests, numConsumers, consumeFunc,
+	)
+
+	// run producers to fill queue
 	close(startProducersChan)
 	err = producersErrGroup.Wait()
 	require.NoError(t, err)
 
-	// emulate delay when consuming the slow queries
-	consumeFunc := func(request Request) error {
-		schedulerRequest := request.(*SchedulerRequest)
-		queryComponent := schedulerRequest.AdditionalQueueDimensions[0]
-
-		queue.QueryComponentUtilization.MarkRequestSent(schedulerRequest)
-		if queryComponent == slowConsumerQueueDimension {
-			time.Sleep(slowConsumerLatency)
-		}
-		queue.QueryComponentUtilization.MarkRequestCompleted(schedulerRequest)
-
-		queueTime := time.Since(schedulerRequest.EnqueueTime)
-		queueDuration.With(prometheus.Labels{"query_component": queryComponent}).Add(queueTime.Seconds())
-		return nil
-	}
-
-	// consume queries
-	queueConsumerErrGroup, ctx := errgroup.WithContext(ctx)
-	startConsumersChan := make(chan struct{})
-	runConsumer := runQueueConsumerIters(ctx, queue, totalRequests, numConsumers, startConsumersChan, consumeFunc)
-
-	for consumerIdx := 0; consumerIdx < numConsumers; consumerIdx++ {
-		consumerIdx := consumerIdx
-		queueConsumerErrGroup.Go(func() error {
-			return runConsumer(consumerIdx)
-		})
-	}
-
+	// start queue consumers and wait for completion
 	close(startConsumersChan)
 	err = queueConsumerErrGroup.Wait()
 	require.NoError(t, err)
 
 	// record total queue duration by queue dimensions and whether the queue splitting was enabled
-	for _, queueDimension := range []string{normalQueueDimension, slowConsumerQueueDimension} {
-		queueDurationTotals[queueDimension] = promtest.ToFloat64(
-			queueDuration.With(prometheus.Labels{"query_component": queueDimension}),
-		)
+	for tenantIdx := 0; tenantIdx < numTenants; tenantIdx++ {
+		tenantID := strconv.Itoa(tenantIdx)
+		queueDurationTotals[tenantID] = map[string]float64{}
+		for _, queueDimension := range []string{normalQueueDimension, slowConsumerQueueDimension} {
+			counterLabels := prometheus.Labels{"user": tenantID, "query_component": queueDimension}
+			queueDurationTotals[tenantID][queueDimension] = promtest.ToFloat64(queueDuration.With(counterLabels))
+		}
 	}
 
 	promRegistry.Unregister(queueDuration)
