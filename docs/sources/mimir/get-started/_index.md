@@ -18,7 +18,7 @@ You can get started with Grafana Mimir _imperatively_ or _declaratively_:
 
 ## Before you begin
 
-- Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or [Grafana Agent](/docs/grafana-cloud/monitor-infrastructure/integrations/agent/flow/setup/install/).
+- Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_VERSION>/get-started/install).
 - Verify that you have installed [Docker](https://docs.docker.com/engine/install/).
 
 {{< admonition type="note" >}}
@@ -156,30 +156,11 @@ scrape_configs:
       - targets: ["localhost:9090"]
 ```
 
-## Configure Grafana Alloy to write to Grafana Mimir
+## Monitor Grafana Mimir with the integration for Grafana Cloud
 
-Add the following YAML snippet to one of your Agent metrics configurations (`metrics.configs`) in your Agent configuration file, and restart Grafana Agent:
+Integrate with Grafana Cloud to monitor the health of your Mimir system. The self-hosted Mimir integration for Grafana Cloud includes dashboards, as well as recording and alerting rules, to help monitor the health of your cluster. This integration uses Grafana Alloy to scrape and send metrics to Mimir.
 
-```yaml
-remote_write:
-  - url: http://localhost:9009/api/v1/push
-```
-
-The configuration for an Agent that scrapes itself for metrics and writes those metrics to Grafana Mimir looks similar to this:
-
-```yaml
-metrics:
-  wal_directory: /tmp/grafana-agent/wal
-
-  configs:
-    - name: agent
-      scrape_configs:
-        - job_name: agent
-          static_configs:
-            - targets: ["127.0.0.1:12345"]
-      remote_write:
-        - url: http://localhost:9009/api/v1/push
-```
+For more information, refer to [Self-hosted Grafana Mimir integration for Grafana Cloud](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-mimir).
 
 ## Query data in Grafana
 
