@@ -136,48 +136,6 @@ Using a custom namespace solves problems later on because you do not have to ove
 
 1. Wait until all of the pods have a status of `Running` or `Completed`, which might take a few minutes.
 
-## Generate some metrics for testing
-
-The Grafana Mimir Helm chart can collect metrics, logs, or both, about Grafana Mimir itself. This is called _metamonitoring_.
-In the example that follows, metamonitoring scrapes metrics about Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir instance.
-
-1. Download the Grafana Agent Operator Custom Resource Definitions (CRDs) from
-   https://github.com/grafana/agent/tree/main/operations/agent-static-operator/crds.
-
-   Helm only installs Custom Resource Definitions on an initial chart installation, and not on a chart upgrade.
-   For details, see [Some caveats and explanations](https://helm.sh/docs/chart_best_practices/custom_resource_definitions/#some-caveats-and-explanations).
-
-   If you did not enable metamonitoring when the chart was first installed, you must manually install the CRDs before performing a Helm upgrade to enable metamonitoring.
-
-2. Install the CRDs on your cluster:
-
-   ```bash
-   kubectl create -f operations/agent-static-operator/crds/
-   ```
-
-3. Create a YAML file called `custom.yaml` for your Helm values overrides.
-   Add the following YAML snippet to `custom.yaml` to enable metamonitoring in Mimir:
-
-   ```yaml
-   metaMonitoring:
-     serviceMonitor:
-       enabled: true
-     grafanaAgent:
-       enabled: true
-       installOperator: true
-       metrics:
-         additionalRemoteWriteConfigs:
-           - url: "http://mimir-nginx.mimir-test.svc:80/api/v1/push"
-   ```
-
-   > **Note:** In a production environment the `url` above would point to an external system, independent of your Grafana Mimir instance, such as an instance of Grafana Cloud Metrics.
-
-4. Upgrade Grafana Mimir by using the `helm` command:
-
-   ```bash
-   helm -n mimir-test upgrade mimir grafana/mimir-distributed -f custom.yaml
-   ```
-
 ## Start Grafana in Kubernetes and query metrics
 
 1. Install Grafana in the same Kubernetes cluster.
