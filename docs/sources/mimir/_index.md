@@ -31,7 +31,7 @@ cards:
       height: 24
     - title: Set up
       href: ./set-up/
-      description: Set up Grafana Mimir with Helm, Puppet, or Jsonnet and Tanka. Migrate to Grafana Mimir from Cortex, Thanos, or Prometheus. 
+      description: Set up Grafana Mimir with Helm, Puppet, or Jsonnet and Tanka. Migrate to Grafana Mimir from Cortex, Thanos, or Prometheus.
       height: 24
     - title: Configure
       href: ./configure/about-configurations/
@@ -54,7 +54,7 @@ cards:
       height: 24
     - title: Reduce costs
       href: https://grafana.com/docs/grafana-cloud/cost-management-and-billing/reduce-costs/metrics-costs/control-metrics-usage-via-adaptive-metrics/
-      description: Reduce the costs of your Grafana Cloud metrics with Adaptive Metrics. Adaptive Metrics is a cardinality optimization feature that allows you to identify and eliminate unused time series metrics data by means of aggregation. 
+      description: Reduce the costs of your Grafana Cloud metrics with Adaptive Metrics. Adaptive Metrics is a cardinality optimization feature that allows you to identify and eliminate unused time series metrics data by means of aggregation.
       height: 24
 ---
 
@@ -64,7 +64,7 @@ cards:
 
 ## Overview
 
-Grafana Mimir enables users to ingest Prometheus or OpenTelemetry metrics,  run queries, create new data through the use of recording rules, and set up alerting rules across multiple tenants to leverage tenant federation. Once deployed, the best-practice dashboards, alerts, and runbooks packaged with Grafana Mimir make it easy to monitor the health of the system.
+Grafana Mimir enables users to ingest Prometheus or OpenTelemetry metrics, run queries, create new data through the use of recording rules, and set up alerting rules across multiple tenants to leverage tenant federation. Once deployed, the best-practice dashboards, alerts, and runbooks packaged with Grafana Mimir make it easy to monitor the health of the system.
 
 ## Explore
 
