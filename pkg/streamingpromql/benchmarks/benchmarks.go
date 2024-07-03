@@ -111,8 +111,9 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "rate(a_X[1d])",
 		},
+		// Test a long range histogram. 1d slows tests down too much, so use 1h.
 		{
-			Expr: "rate(nh_X[1d])",
+			Expr: "rate(nh_X[1h])",
 		},
 		//{
 		//	Expr: "absent_over_time(a_X[1d])",
