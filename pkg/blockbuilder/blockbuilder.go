@@ -450,13 +450,13 @@ func (b *BlockBuilder) consumePartition(
 		blockMax   = blockEndAt.UnixMilli()
 	)
 	for !done {
-		if ctx.Err() != nil {
-			break
+		if err := context.Cause(ctx); err != nil {
+			return retLag, retSeenTillTs, retBlockMax, err
 		}
 
-		// Limit time client waits for a new batch. Otherwise, the client will hang if it lands on an inactive partition.
-		// TODO: make it 5 seconds after writing tests. Made it less to run tests quickly during development.
-		ctx1, cancel := context.WithTimeout(ctx, 1*time.Second)
+		// Limit the time the consumer blocks waiting for a new batch. If not set, the consumer will hang
+		// when it lands on an inactive partition.
+		ctx1, cancel := context.WithTimeout(ctx, b.cfg.Kafka.PollTimeout)
 		fetches := b.kafkaClient.PollFetches(ctx1)
 		cancel()
 
@@ -703,6 +703,7 @@ type KafkaConfig struct {
 	Topic         string        `yaml:"topic"`
 	ClientID      string        `yaml:"client_id"`
 	DialTimeout   time.Duration `yaml:"dial_timeout"`
+	PollTimeout   time.Duration `yaml:"poll_timeout"`
 	ConsumerGroup string        `yaml:"consumer_group"`
 }
 
@@ -715,6 +716,7 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.StringVar(&cfg.Topic, prefix+".topic", "", "The Kafka topic name.")
 	f.StringVar(&cfg.ClientID, prefix+".client-id", "", "The Kafka client ID.")
 	f.DurationVar(&cfg.DialTimeout, prefix+".dial-timeout", 2*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
+	f.DurationVar(&cfg.PollTimeout, prefix+".poll-timeout", 5*time.Second, "The maximum time allowed to block if data is not available in the broker to consume.")
 	f.StringVar(&cfg.ConsumerGroup, prefix+".consumer-group", "", "The consumer group used by the consumer to track the last consumed offset.")
 }
 
