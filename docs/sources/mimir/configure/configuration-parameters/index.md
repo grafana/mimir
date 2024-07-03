@@ -3763,10 +3763,19 @@ kafka:
   # CLI flag: -ingest-storage.kafka.consume-from-timestamp-at-startup
   [consume_from_timestamp_at_startup: <int> | default = 0]
 
-  # The maximum tolerated lag before a consumer is considered to have caught up
+  # The best-effort maximum lag a consumer tries to achieve at startup. Set both
+  # -ingest-storage.kafka.target-consumer-lag-at-startup and
+  # -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting
+  # for maximum consumer lag being honored at startup.
+  # CLI flag: -ingest-storage.kafka.target-consumer-lag-at-startup
+  [target_consumer_lag_at_startup: <duration> | default = 2s]
+
+  # The guaranteed maximum lag before a consumer is considered to have caught up
   # reading from a partition at startup, becomes ACTIVE in the hash ring and
-  # passes the readiness check. Set 0 to disable waiting for maximum consumer
-  # lag being honored at startup.
+  # passes the readiness check. Set both
+  # -ingest-storage.kafka.target-consumer-lag-at-startup and
+  # -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting
+  # for maximum consumer lag being honored at startup.
   # CLI flag: -ingest-storage.kafka.max-consumer-lag-at-startup
   [max_consumer_lag_at_startup: <duration> | default = 15s]
 
