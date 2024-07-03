@@ -19,6 +19,11 @@ import (
 // If provided, it assigns the global section from the Mimir config to the Grafana config.
 // The SMTP and HTTP settings in this section can be used to configure Grafana receivers.
 func createUsableGrafanaConfig(gCfg alertspb.GrafanaAlertConfigDesc, mCfg *alertspb.AlertConfigDesc) (amConfig, error) {
+	externalURL, err := url.Parse(gCfg.ExternalUrl)
+	if err != nil {
+		return amConfig{}, err
+	}
+
 	var amCfg GrafanaAlertmanagerConfig
 	if err := json.Unmarshal([]byte(gCfg.RawConfig), &amCfg); err != nil {
 		return amConfig{}, fmt.Errorf("failed to unmarshal Grafana Alertmanager configuration %w", err)
@@ -35,11 +40,6 @@ func createUsableGrafanaConfig(gCfg alertspb.GrafanaAlertConfigDesc, mCfg *alert
 	rawCfg, err := json.Marshal(amCfg.AlertmanagerConfig)
 	if err != nil {
 		return amConfig{}, fmt.Errorf("failed to marshal Grafana Alertmanager configuration %w", err)
-	}
-
-	externalURL, err := url.Parse(gCfg.ExternalUrl)
-	if err != nil {
-		return amConfig{}, err
 	}
 
 	return amConfig{
