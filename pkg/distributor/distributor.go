@@ -186,8 +186,7 @@ type Config struct {
 	HATrackerConfig HATrackerConfig `yaml:"ha_tracker"`
 
 	MaxRecvMsgSize                 int           `yaml:"max_recv_msg_size" category:"advanced"`
-	MaxOtelCompressedRecvMsgSize   int           `yaml:"max_otel_compressed_recv_msg_size" category:"experimental"`
-	MaxOtelUncompressedRecvMsgSize int           `yaml:"max_otel_uncompressed_recv_msg_size" category:"experimental"`
+	MaxOtelDecompressedRecvMsgSize int           `yaml:"max_otel_decompressed_recv_msg_size" category:"experimental"`
 	MaxRequestPoolBufferSize       int           `yaml:"max_request_pool_buffer_size" category:"experimental"`
 	RemoteTimeout                  time.Duration `yaml:"remote_timeout" category:"advanced"`
 
@@ -238,9 +237,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DistributorRing.RegisterFlags(f, logger)
 	cfg.RetryConfig.RegisterFlags(f)
 
-	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
-	f.IntVar(&cfg.MaxOtelCompressedRecvMsgSize, "distributor.max-otel-compressed-recv-msg-size", 1<<20, "Max message size in bytes that the distributors will accept for incoming compressed write requests to the otel API. If exceeded, the request will be rejected.")
-	f.IntVar(&cfg.MaxOtelUncompressedRecvMsgSize, "distributor.max-otel-uncompressed-recv-msg-size", 10<<20, "Max message size in bytes that the distributors will accept for incoming uncompressed write requests to the otel API. If exceeded, the request will be rejected.")
+	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 80<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
+	f.IntVar(&cfg.MaxOtelDecompressedRecvMsgSize, "distributor.max-otel-decompressed-recv-msg-size", 100<<20, "Maximum message size in bytes that the distributors will accept for incoming decompressed write requests to the OTEL API. Requests exceeding this limit will be rejected.")
 	f.IntVar(&cfg.MaxRequestPoolBufferSize, "distributor.max-request-pool-buffer-size", 0, "Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
 	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", true, "Enable pooling of buffers used for marshaling write requests.")

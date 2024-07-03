@@ -844,19 +844,13 @@ ha_tracker:
 # incoming push requests to the remote write API. If exceeded, the request will
 # be rejected.
 # CLI flag: -distributor.max-recv-msg-size
-[max_recv_msg_size: <int> | default = 104857600]
+[max_recv_msg_size: <int> | default = 83886080]
 
-# (experimental) Max message size in bytes that the distributors will accept for
-# incoming compressed write requests to the otel API. If exceeded, the request
-# will be rejected.
-# CLI flag: -distributor.max-otel-compressed-recv-msg-size
-[max_otel_compressed_recv_msg_size: <int> | default = 1048576]
-
-# (experimental) Max message size in bytes that the distributors will accept for
-# incoming uncompressed write requests to the otel API. If exceeded, the request
-# will be rejected.
-# CLI flag: -distributor.max-otel-uncompressed-recv-msg-size
-[max_otel_uncompressed_recv_msg_size: <int> | default = 10485760]
+# (experimental) Maximum message size in bytes that the distributors will accept
+# for incoming decompressed write requests to the OTEL API. Requests exceeding
+# this limit will be rejected.
+# CLI flag: -distributor.max-otel-decompressed-recv-msg-size
+[max_otel_decompressed_recv_msg_size: <int> | default = 104857600]
 
 # (experimental) Max size of the pooled buffers used for marshaling write
 # requests. If 0, no max size is enforced.

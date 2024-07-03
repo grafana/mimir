@@ -75,8 +75,7 @@ The following features are currently experimental:
   - Limit exemplars per series per request
     - `-distributor.max-exemplars-per-series-per-request`
   - Limit otel write request byte size
-    - `max_otel_compressed_recv_msg_size`
-    - `max_otel_uncompressed_recv_msg_size`
+    - `max_otel_decompressed_recv_msg_size`
   - Enforce a maximum pool buffer size for write requests
     - `-distributor.max-request-pool-buffer-size`
   - Enable direct translation from OTLP write requests to Mimir equivalents

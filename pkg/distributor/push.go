@@ -109,10 +109,8 @@ func (e distributorMaxWriteMessageSizeErr) Error() string {
 	if e.actual < 0 {
 		msgSizeDesc = ""
 	}
-	if e.id == globalerror.DistributorMaxOtelCompressedMessageSize {
-		flag = "distributor.max_otel_compressed_recv_msg_size"
-	} else if e.id == globalerror.DistributorMaxOtelUncompressedMessageSize {
-		flag = "distributor.max_otel_uncompressed_recv_msg_size"
+	if e.id == globalerror.DistributorMaxOtelDecompressedWriteMessageSize {
+		flag = "distributor.max_otel_decompressed_recv_msg_size"
 	} else {
 		e.id = globalerror.DistributorMaxWriteMessageSize
 		flag = "distributor.max-recv-msg-size"

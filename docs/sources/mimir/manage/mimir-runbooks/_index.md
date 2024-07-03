@@ -2238,6 +2238,20 @@ How to **fix** it:
 
 - Increase the allowed limit by using the `-distributor.max-recv-msg-size` option.
 
+### err-mimir-distributor-max-otel-decompressed-write-message-size
+
+This error occurs when a distributor rejects an OTEL write request because its message size is larger than the allowed limit after decompression.
+
+How it **works**:
+
+- The distributor implements an upper limit on the message size of incoming otel write requests after decompression regardless compression type. See more otlp collector [compression details](https://github.com/open-telemetry/opentelemetry-collector/blob/main/config/configgrpc/README.md#client-configuration).
+- To configure the limit, set the `-distributor.max_otel_decompressed_recv_msg_size`
+
+How to **fix** it:
+
+- Increase the allowed limit by using the `-distributor.max_otel_decompressed_recv_msg_size` option.
+- If you use batch processor in otlp collector, decrease the max batch size `send_batch_max_size` See [details](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md)
+
 ### err-mimir-distributor-max-write-request-data-item-size
 
 This error can only be returned when the experimental ingest storage is enabled and is caused by a write request containing a timeseries or metadata entry which is larger than the allowed limit.
