@@ -395,6 +395,7 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 
 	cfg, overrides := blockBuilderConfig(t, addr)
 
+	// Producing some records
 	kafkaTime := time.Now().Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
 	var expSamples []mimirpb.Sample
 	for i := int64(0); i < 12; i++ {
@@ -406,6 +407,8 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 		expSamples = append(expSamples, samples...)
 	}
 
+	// Fetching all the records that were produced in order to choose
+	// a record and then commit it.
 	opts := []kgo.Opt{
 		kgo.ClientID("1"), kgo.SeedBrokers(addr), kgo.ConsumeTopics(testTopic),
 		kgo.ConsumerGroup(testGroup),
@@ -423,6 +426,7 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 	}
 	require.Len(t, recs, len(expSamples))
 
+	// Choosing the midpoint record to commit and as the last seen record as well.
 	commitRec := recs[len(recs)/2]
 	lastRec := commitRec
 	blockEnd := commitRec.Timestamp.Truncate(cfg.ConsumeInterval).Add(cfg.ConsumeInterval)
