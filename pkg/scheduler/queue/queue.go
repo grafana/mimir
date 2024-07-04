@@ -352,13 +352,9 @@ func (q *RequestQueue) enqueueRequestInternal(r requestToEnqueue) error {
 func (q *RequestQueue) trySendNextRequestForQuerier(waitingConn *waitingQuerierConn) (done bool) {
 	if itq, ok := q.queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 		for _, algoState := range itq.algosByDepth {
-			if qcuAlgo, ok := algoState.(*queryComponentUtilizationDequeueSkipOverThreshold); ok {
-				if qcuTriggerCheck, ok := qcuAlgo.queryComponentUtilizationTriggerCheck.(*QueryComponentUtilizationTriggerCheckByQueueLenAndWaitingConns); ok {
-					qcuTriggerCheck.queueLen = q.queueBroker.tree.ItemCount()
-					qcuTriggerCheck.waitingWorkers = q.waitingQuerierConnsToDispatch.Len()
-				}
-				if qcuCheckThreshold, ok := qcuAlgo.queryComponentUtilizationCheckThreshold.(*queryComponentUtilizationReserveConnections); ok {
-					qcuCheckThreshold.connectedWorkers = int(q.connectedQuerierWorkers.Load())
+			if qcuAlgo, ok := algoState.(*queryComponentQueueAlgoSkipOverUtilized); ok {
+				if qcuCheckThreshold, ok := qcuAlgo.limit.(*queryComponentUtilizationLimitByConnections); ok {
+					qcuCheckThreshold.SetConnectedWorkers(int(q.connectedQuerierWorkers.Load()))
 				}
 			}
 		}
@@ -382,7 +378,7 @@ func (q *RequestQueue) trySendNextRequestForQuerier(waitingConn *waitingQuerierC
 	//	schedulerRequest, ok := req.req.(*SchedulerRequest)
 	//	if ok {
 	//		queryComponentName := schedulerRequest.ExpectedQueryComponentName()
-	//		exceedsThreshold, queryComponent := q.QueryComponentUtilization.ExceedsThresholdForComponent(
+	//		exceedsThreshold, queryComponent := q.QueryComponentUtilization.IsOverUtilized(
 	//			queryComponentName,
 	//			int(q.connectedQuerierWorkers.Load()),
 	//			q.queueBroker.tree.ItemCount(),

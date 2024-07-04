@@ -61,17 +61,15 @@ func TestQueryComponentUtilizationDequeue_DefaultRoundRobin(t *testing.T) {
 	queryComponentUtilization, err := NewQueryComponentUtilization(testQuerierInflightRequestsGauge())
 	require.NoError(t, err)
 
-	utilizationTriggerCheckImpl := NewQueryComponentUtilizationTriggerCheckByQueueLenAndWaitingConns(1)
-	utilizationCheckThresholdImpl := &queryComponentUtilizationReserveConnections{
-		utilization:            queryComponentUtilization,
+	utilizationCheckThresholdImpl := &queryComponentUtilizationLimitByConnections{
 		targetReservedCapacity: testReservedCapacity,
 		connectedWorkers:       connectedWorkers,
 	}
 
-	queryComponentUtilizationQueueAlgo := queryComponentUtilizationDequeueSkipOverThreshold{
-		queryComponentUtilizationTriggerCheck:   utilizationTriggerCheckImpl,
-		queryComponentUtilizationCheckThreshold: utilizationCheckThresholdImpl,
-		currentNodeOrderIndex:                   -1,
+	queryComponentUtilizationQueueAlgo := queryComponentQueueAlgoSkipOverUtilized{
+		utilization:           queryComponentUtilization,
+		limit:                 utilizationCheckThresholdImpl,
+		currentNodeOrderIndex: -1,
 	}
 
 	tree, err := NewTree(&queryComponentUtilizationQueueAlgo, &roundRobinState{})
@@ -100,17 +98,15 @@ func TestQueryComponentUtilizationDequeue_SkipComponentExceedsThreshold(t *testi
 	queryComponentUtilization, err := NewQueryComponentUtilization(testQuerierInflightRequestsGauge())
 	require.NoError(t, err)
 
-	utilizationTriggerCheckImpl := NewQueryComponentUtilizationTriggerCheckByQueueLenAndWaitingConns(1)
-	utilizationCheckThresholdImpl := &queryComponentUtilizationReserveConnections{
-		utilization:            queryComponentUtilization,
+	utilizationCheckThresholdImpl := &queryComponentUtilizationLimitByConnections{
 		targetReservedCapacity: testReservedCapacity,
 		connectedWorkers:       connectedWorkers,
 	}
 
-	queryComponentUtilizationQueueAlgo := queryComponentUtilizationDequeueSkipOverThreshold{
-		queryComponentUtilizationTriggerCheck:   utilizationTriggerCheckImpl,
-		queryComponentUtilizationCheckThreshold: utilizationCheckThresholdImpl,
-		currentNodeOrderIndex:                   -1,
+	queryComponentUtilizationQueueAlgo := queryComponentQueueAlgoSkipOverUtilized{
+		utilization:           queryComponentUtilization,
+		limit:                 utilizationCheckThresholdImpl,
+		currentNodeOrderIndex: -1,
 	}
 
 	tree, err := NewTree(&queryComponentUtilizationQueueAlgo, &roundRobinState{})
@@ -129,7 +125,6 @@ func TestQueryComponentUtilizationDequeue_SkipComponentExceedsThreshold(t *testi
 	// * ingester queue dimension exceeds the utilization threshold
 	queryComponentUtilization.querierInflightRequestsTotal = 4
 	queryComponentUtilization.ingesterInflightRequests = 4
-	utilizationTriggerCheckImpl.queueLen = tree.ItemCount()
 
 	// start dequeue
 
@@ -220,7 +215,7 @@ func TestQueryComponentUtilizationDequeue_SkipComponentExceedsThreshold(t *testi
 	assert.Nil(t, obj)
 }
 
-func defaultNextNodeName(queryComponentUtilizationQueueAlgo queryComponentUtilizationDequeueSkipOverThreshold) string {
+func defaultNextNodeName(queryComponentUtilizationQueueAlgo queryComponentQueueAlgoSkipOverUtilized) string {
 	// no handling of index -1 here for localQueue as the algorithm is implemented to always skip it
 	return queryComponentUtilizationQueueAlgo.nodeOrder[queryComponentUtilizationQueueAlgo.currentNodeOrderIndex]
 }
