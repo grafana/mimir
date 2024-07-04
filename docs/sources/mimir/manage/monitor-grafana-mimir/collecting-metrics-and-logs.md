@@ -40,4 +40,4 @@ logs to ones that are strictly related to the Grafana Mimir deployment. If you a
 ### Collect metrics and logs via Grafana Alloy
 
 Set up Grafana Alloy to collect logs and metrics from Mimir or GEM. To get started with Grafana Alloy,
-refer to [Get started with Grafana Alloy](https://grafana.com/docs/<ALLOY_VERSION>/latest/get-started). After deploying Alloy, refer to[Collect and forward Prometheus metrics](https://grafana.com/docs/alloy/<ALLOY_VERSION>/tasks/collect-prometheus-metrics/) for instructions on how to configure your Alloy instance to scrape Mimir or GEM.
+refer to [Get started with Grafana Alloy](https://grafana.com/docs/<ALLOY_VERSION>/latest/get-started). After deploying Alloy, refer to [Collect and forward Prometheus metrics](https://grafana.com/docs/alloy/<ALLOY_VERSION>/tasks/collect-prometheus-metrics/) for instructions on how to configure your Alloy instance to scrape Mimir or GEM.
