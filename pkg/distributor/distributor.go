@@ -34,6 +34,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -1624,7 +1625,8 @@ func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 
 		span := trace.SpanFromContext(ctx)
 		span.SetAttributes(
-			attribute.Int("write.samples", numSamples+numHistograms),
+			attribute.Int("write.samples", numSamples),
+			attribute.Int("write.histograms", numHistograms),
 			attribute.Int("write.exemplars", numExemplars),
 			attribute.Int("write.metadata", len(req.Metadata)),
 		)
@@ -2037,6 +2039,9 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 //
 // The input cleanup function is guaranteed to be called after all requests to all backends have completed.
 func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, ingestersSubring, partitionsSubring ring.DoBatchRing, cleanup func()) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "Distributor.sendWriteRequestToBackends")
+	span.SetTag("write.series", len(req.Timeseries))
+	defer span.Finish()
 	var (
 		wg            = sync.WaitGroup{}
 		partitionsErr error
