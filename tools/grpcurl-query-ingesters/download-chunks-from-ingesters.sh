@@ -28,11 +28,11 @@ for POD in $PODS; do
   cat "$SCRIPT_DIR/download-chunks-from-ingesters-query.json" | grpcurl \
     -d @ \
     -H "X-Scope-OrgID: $MIMIR_TENANT_ID" \
-  	-proto pkg/ingester/client/ingester.proto \
-  	-import-path "$SCRIPT_DIR" \
-  	-import-path "$SCRIPT_DIR/vendor" \
-  	-plaintext \
-  	localhost:9095 "cortex.Ingester/QueryStream" > "$OUTPUT_DIR/$POD"
+    -proto pkg/ingester/client/ingester.proto \
+    -import-path "$SCRIPT_DIR" \
+    -import-path "$SCRIPT_DIR/vendor" \
+    -plaintext \
+    localhost:9095 "cortex.Ingester/QueryStream" > "$OUTPUT_DIR/$POD"
 
   kill $KUBECTL_PID
   wait $KUBECTL_PID
