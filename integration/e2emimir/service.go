@@ -22,12 +22,13 @@ func NewMimirService(
 	envVars map[string]string,
 	httpPort int,
 	grpcPort int,
-	otherPorts ...int,
+	otherPorts []int,
+	portMapContainerToLocal map[int]int,
 ) *MimirService {
 	s := &MimirService{
 		// We don't expose the gRPC port cause we don't need to access it from the host
 		// (exposing ports have a negative performance impact on starting/stopping containers).
-		HTTPService: e2e.NewHTTPService(name, image, command, readiness, httpPort, otherPorts...),
+		HTTPService: e2e.NewHTTPService(name, image, command, readiness, httpPort, otherPorts, portMapContainerToLocal),
 		grpcPort:    grpcPort,
 	}
 	s.SetEnvVars(envVars)
