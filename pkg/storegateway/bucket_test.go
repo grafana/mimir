@@ -159,7 +159,7 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 	assert.Equal(t, map[string]string{}, meta.Thanos.Labels)
 }
 
-func TestBucketBlockSet_add_SkipDuplicates(t *testing.T) {
+func TestBucketBlockSet_add_FailOnDuplicates(t *testing.T) {
 	set := newBucketBlockSet()
 
 	type resBlock struct {
@@ -168,7 +168,6 @@ func TestBucketBlockSet_add_SkipDuplicates(t *testing.T) {
 	}
 	input := []resBlock{
 		{id: ulid.MustNew(1, nil), mint: 0, maxt: 100},
-		{id: ulid.MustNew(1, nil), mint: 0, maxt: 100}, // This one is a duplicate.
 		{id: ulid.MustNew(2, nil), mint: 100, maxt: 200},
 	}
 	for _, in := range input {
@@ -176,7 +175,17 @@ func TestBucketBlockSet_add_SkipDuplicates(t *testing.T) {
 		m.ULID = in.id
 		m.MinTime = in.mint
 		m.MaxTime = in.maxt
-		assert.NoError(t, set.add(&bucketBlock{meta: &m}))
+		require.NoError(t, set.add(&bucketBlock{meta: &m}))
+	}
+	assert.Equal(t, 2, set.len())
+
+	// Adding duplicate blocks results with an error.
+	for _, in := range input {
+		var m block.Meta
+		m.ULID = in.id
+		m.MinTime = in.mint
+		m.MaxTime = in.maxt
+		require.Error(t, set.add(&bucketBlock{meta: &m}))
 	}
 	assert.Equal(t, 2, set.len())
 }
