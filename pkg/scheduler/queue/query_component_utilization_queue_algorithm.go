@@ -22,12 +22,15 @@ func NewQueryComponentUtilizationTriggerCheckByQueueLenAndWaitingConns(queueLenM
 	return &QueryComponentUtilizationTriggerCheckByQueueLenAndWaitingConns{
 		waitingWorkers:   0,
 		queueLen:         0,
-		queueLenMultiple: 1,
+		queueLenMultiple: queueLenMultiple,
 	}
 }
 
 func (tc *QueryComponentUtilizationTriggerCheckByQueueLenAndWaitingConns) TriggerThresholdCheck() bool {
-	return tc.waitingWorkers <= (tc.queueLen * tc.queueLenMultiple)
+	if tc.queueLenMultiple == 0 {
+		return true
+	}
+	return (tc.queueLen * tc.queueLenMultiple) > tc.waitingWorkers
 }
 
 type QueryComponentUtilizationCheckThreshold interface {
