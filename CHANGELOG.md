@@ -103,6 +103,7 @@
 * [BUGFIX] Alertmanager: Fixes a number of bugs in silences which could cause an existing silence to be deleted/expired when updating the silence failed. This could happen when the replacing silence was invalid or exceeded limits. #8525
 * [BUGFIX] Alertmanager: Fix per-tenant silence limits not reloaded during runtime. #8456
 * [BUGFIX] Alertmanager: Fix help message for utf-8-strict-mode. #8572
+* [BUGFIX] Upgrade golang to 1.22.5 to address [CVE-2024-24791](https://nvd.nist.gov/vuln/detail/CVE-2024-24791). #8600
 
 ### Mixin
 
