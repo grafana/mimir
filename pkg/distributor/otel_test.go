@@ -296,8 +296,8 @@ func TestHandlerOTLPPush(t *testing.T) {
 				return err
 			},
 			responseCode: http.StatusRequestEntityTooLarge,
-			errMessage:   "the incoming push request has been rejected because its message size of 63 bytes is larger",
-			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming push request has been rejected because its message size of 63 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
+			errMessage:   "the incoming OTLP request has been rejected because its message size of 63 bytes is larger",
+			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 63 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
 		},
 		{
 			name:       "Write samples. Unsupported compression",
@@ -324,8 +324,8 @@ func TestHandlerOTLPPush(t *testing.T) {
 				return err
 			},
 			responseCode: http.StatusRequestEntityTooLarge,
-			errMessage:   "the incoming push request has been rejected because its message size of 78 bytes is larger",
-			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming push request has been rejected because its message size of 78 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
+			errMessage:   "the incoming OTLP request has been rejected because its message size of 78 bytes is larger",
+			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 78 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
 		},
 		{
 			name:       "Rate limited request",
@@ -585,7 +585,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 	respStatus := &status.Status{}
 	err = proto.Unmarshal(body, respStatus)
 	assert.NoError(t, err)
-	assert.Contains(t, respStatus.GetMessage(), "the incoming push request has been rejected because its message size is larger than the allowed limit of 140 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator.")
+	assert.Contains(t, respStatus.GetMessage(), "the incoming OTLP request has been rejected because its message size is larger than the allowed limit of 140 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator.")
 }
 
 func TestHandler_toOtlpGRPCHTTPStatus(t *testing.T) {
