@@ -7,7 +7,7 @@ K8S_NAMESPACE=""
 MIMIR_TENANT_ID=""
 # End of configuration.
 
-SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
+SCRIPT_DIR=$(realpath "$(dirname "${0}")")
 OUTPUT_DIR="chunks-dump"
 
 mkdir -p "$OUTPUT_DIR"
