@@ -9,7 +9,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,6 +20,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
+	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
@@ -775,9 +775,12 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 		return fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
 	}
 
-	templates := make([]io.Reader, 0, len(cfg.Templates))
+	templates := make([]alertingTemplates.TemplateDefinition, 0, len(cfg.Templates))
 	for _, tmpl := range cfg.Templates {
-		templates = append(templates, strings.NewReader(tmpl.Body))
+		templates = append(templates, alertingTemplates.TemplateDefinition{
+			Name:     tmpl.Filename,
+			Template: tmpl.Body,
+		})
 	}
 
 	// If no Alertmanager instance exists for this user yet, start one.
@@ -805,7 +808,7 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
-func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []io.Reader, rawCfg string, tmplExternalURL *url.URL, staticHeaders map[string]string) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, staticHeaders map[string]string) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
 	tenantDir := am.getTenantDirectory(userID)
