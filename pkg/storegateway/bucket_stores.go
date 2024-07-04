@@ -582,13 +582,13 @@ func selectPostingsStrategy(l log.Logger, name string, worstCaseSeriesPreference
 
 // closeBucketStoreAndDeleteLocalFilesForExcludedTenants closes bucket store and removes local "sync" directories
 // for tenants that are not included in the current shard.
-func (u *BucketStores) closeBucketStoreAndDeleteLocalFilesForExcludedTenants(includedUserIds []string) {
+func (u *BucketStores) closeBucketStoreAndDeleteLocalFilesForExcludedTenants(includedUserIDs []string) {
 	files, err := os.ReadDir(u.cfg.BucketStore.SyncDir)
 	if err != nil {
 		return
 	}
 
-	includedUserIDsMap := util.StringsMap(includedUserIds)
+	includedUserIDsMap := util.StringsMap(includedUserIDs)
 	for _, f := range files {
 		if !f.IsDir() {
 			continue
