@@ -92,10 +92,10 @@ A request sent from the query-tee to a backend includes HTTP basic authenticatio
 ### Backend selection
 
 You can use the query-tee to either send requests to all backends, or to send a proportion of requests to all backends and the remaining requests to only the preferred backend.
-You can configure this with `-proxy.secondary-backends-request-proportion`.
+You can configure this with the `-proxy.secondary-backends-request-proportion` CLI flag.
 
-For example, if you set `-proxy.secondary-backends-request-proportion` to `1.0`, then all requests are sent to all backends.
-Alternatively, if you set `-proxy.secondary-backends-request-proportion` to `0.2`, then 20% of requests are sent to all backends, and the remaining 80% of requests are sent only to your preferred backend.
+For example, if you set the `-proxy.secondary-backends-request-proportion` CLI flag to `1.0`, then all requests are sent to all backends.
+Alternatively, if you set the `-proxy.secondary-backends-request-proportion` CLI flag to `0.2`, then 20% of requests are sent to all backends, and the remaining 80% of requests are sent only to your preferred backend.
 
 ### Backend response selection
 
