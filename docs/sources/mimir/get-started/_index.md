@@ -156,6 +156,24 @@ scrape_configs:
       - targets: ["localhost:9090"]
 ```
 
+## Configure Grafana Alloy to write to Grafana Mimir
+
+Use the `prometheus.remote_write` component in Grafana Alloy to send metrics to Grafana Mimir. For example:
+
+```
+prometheus.remote_write "LABEL" {
+  endpoint {
+    url = REMOTE_WRITE_URL
+
+    ...
+  }
+
+  ...
+}
+```
+
+For more information about setting up Alloy, refer to [prometheus.remote_write](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus.remote_write/).
+
 ## Monitor Grafana Mimir with the integration for Grafana Cloud
 
 Integrate with Grafana Cloud to monitor the health of your Mimir system. The self-hosted Mimir integration for Grafana Cloud includes dashboards, as well as recording and alerting rules, to help monitor the health of your cluster. This integration uses Grafana Alloy to scrape and send metrics to Mimir.
