@@ -651,10 +651,10 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	cfg.Kafka.RegisterFlags(f)
+	cfg.Kafka.RegisterFlagsWithPrefix("block-builder.", f)
 
-	f.DurationVar(&cfg.ConsumeInterval, "consume-internal", time.Hour, "Interval between block consumption cycles.")
-	f.DurationVar(&cfg.ConsumeIntervalBuffer, "consume-internal-buffer", 5*time.Minute, "Extra buffer between subsequent block consumption cycles to avoid small blocks.")
+	f.DurationVar(&cfg.ConsumeInterval, "block-builder.consume-interval", time.Hour, "Interval between block consumption cycles.")
+	f.DurationVar(&cfg.ConsumeIntervalBuffer, "block-builder.consume-interval-buffer", 15*time.Minute, "Extra buffer between subsequent block consumption cycles to avoid small blocks.")
 }
 
 func (cfg *Config) Validate() error {
@@ -678,16 +678,12 @@ type KafkaConfig struct {
 	ConsumerGroup string        `yaml:"consumer_group"`
 }
 
-func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
-	cfg.RegisterFlagsWithPrefix("block-builder.kafka", f)
-}
-
 func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.Address, prefix+".address", "", "The Kafka seed broker address.")
-	f.StringVar(&cfg.Topic, prefix+".topic", "", "The Kafka topic name.")
-	f.StringVar(&cfg.ClientID, prefix+".client-id", "", "The Kafka client ID.")
-	f.DurationVar(&cfg.DialTimeout, prefix+".dial-timeout", 2*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
-	f.StringVar(&cfg.ConsumerGroup, prefix+".consumer-group", "", "The consumer group used by the consumer to track the last consumed offset.")
+	f.StringVar(&cfg.Address, prefix+"kafka.address", "", "The Kafka seed broker address.")
+	f.StringVar(&cfg.Topic, prefix+"kafka.topic", "", "The Kafka topic name.")
+	f.StringVar(&cfg.ClientID, prefix+"kafka.client-id", "", "The Kafka client ID.")
+	f.DurationVar(&cfg.DialTimeout, prefix+"kafka.dial-timeout", 5*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
+	f.StringVar(&cfg.ConsumerGroup, prefix+"kafka.consumer-group", "", "The consumer group used by the consumer to track the last consumed offset.")
 }
 
 func (cfg *KafkaConfig) Validate() error {
