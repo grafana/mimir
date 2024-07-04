@@ -7,11 +7,14 @@ package querier
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
@@ -120,6 +123,7 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 
 func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
 	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), matchers...)
+
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -129,14 +133,32 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		sets = append(sets, newTimeSeriesSeriesSet(results.Timeseries))
 	}
 
+	traceId, _ := tracing.ExtractTraceID(ctx)
+	var chunkInfo []string
+	if len(matchers) == 1 && matchers[0].Name == "__name__" && matchers[0].Value == "mimir_continuous_test_sine_wave" {
+		chunkInfo = make([]string, 0, len(results.Chunkseries))
+		fmt.Printf("CT: ingester streamSelect: traceid:%v mint: %v maxt: %v\n", traceId, minT, maxT)
+	}
+
 	serieses := make([]storage.Series, 0, len(results.Chunkseries))
 	for _, result := range results.Chunkseries {
+		ls := mimirpb.FromLabelAdaptersToLabels(result.Labels)
+
 		// Sometimes the ingester can send series that have no data.
 		if len(result.Chunks) == 0 {
+			if chunkInfo != nil {
+				// indicate missing chunks with a single entry with 0 start and end times.
+				chunkInfo = append(chunkInfo, fmt.Sprintf("%s:0:0", ls.Get("series_id")))
+			}
 			continue
 		}
 
-		ls := mimirpb.FromLabelAdaptersToLabels(result.Labels)
+		if chunkInfo != nil {
+			seriesId := ls.Get("series_id")
+			for _, chunk := range result.Chunks {
+				chunkInfo = append(chunkInfo, fmt.Sprintf("%s:%d:%d", seriesId, chunk.StartTimestampMs/1000, chunk.EndTimestampMs/1000))
+			}
+		}
 
 		chunks, err := client.FromChunks(ls, result.Chunks)
 		if err != nil {
@@ -147,6 +169,10 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 			labels: ls,
 			chunks: chunks,
 		})
+	}
+
+	if len(chunkInfo) > 0 {
+		fmt.Printf("CT: chunk series from ingester: trace_id:%s info:%s\n", traceId, strings.Join(chunkInfo, ","))
 	}
 
 	if len(serieses) > 0 {
@@ -160,11 +186,18 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 			queryStats:   stats.FromContext(ctx),
 		}
 
-		for _, s := range results.StreamingSeries {
+		var bldr *strings.Builder
+		if chunkInfo != nil {
+			bldr = &strings.Builder{}
+		}
+		for i, s := range results.StreamingSeries {
 			streamingSeries = append(streamingSeries, &streamingChunkSeries{
 				labels:  s.Labels,
 				sources: s.Sources,
 				context: streamingChunkSeriesConfig,
+				traceId: traceId,
+				lastOne: i == len(results.StreamingSeries)-1,
+				chunkInfo: bldr,
 			})
 		}
 

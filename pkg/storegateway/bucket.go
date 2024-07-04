@@ -599,7 +599,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 			return err
 		}
 
-		streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, seriesSet)
+		var debugSeriesIds []string
+		streamingSeriesCount, err, debugSeriesIds = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, seriesSet)
 		if err != nil {
 			return err
 		}
@@ -608,6 +609,9 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 			"num_series", streamingSeriesCount,
 			"duration", time.Since(seriesLoadStart),
 		)
+		if len(debugSeriesIds) > 0 {
+			spanLogger.DebugLog("msg", "debug series ids", "series_ids", debugSeriesIds)
+		}
 
 		if streamingSeriesCount == 0 {
 			// There is no series to send chunks for.
@@ -710,7 +714,8 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 	srv storegatewaypb.StoreGateway_SeriesServer,
 	stats *safeQueryStats,
 	seriesSet storepb.SeriesSet,
-) (numSeries int, err error) {
+) (numSeries int, err error, debugSeriesIds []string) {
+	debugSeriesIds = make([]string, 0)
 	var (
 		encodeDuration = time.Duration(0)
 		sendDuration   = time.Duration(0)
@@ -735,6 +740,10 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 		// it is safe to hold onto the labels because they are not released.
 		lset, _ = seriesSet.At()
 
+		if lset.Get("__name__") == "mimir_continuous_test_sine_wave" {
+			debugSeriesIds = append(debugSeriesIds, lset.Get("series_id"))
+		}
+
 		// We are re-using the slice for every batch this way.
 		seriesBatch.Series = seriesBatch.Series[:len(seriesBatch.Series)+1]
 		seriesBatch.Series[len(seriesBatch.Series)-1].Labels = mimirpb.FromLabelsToLabelAdapters(lset)
@@ -742,24 +751,24 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 		if len(seriesBatch.Series) == int(req.StreamingChunksBatchSize) {
 			err := s.sendMessage("streaming series", srv, storepb.NewStreamingSeriesResponse(seriesBatch), &encodeDuration, &sendDuration)
 			if err != nil {
-				return 0, err
+				return 0, err, nil
 			}
 			seriesBatch.Series = seriesBatch.Series[:0]
 		}
 	}
 	if seriesSet.Err() != nil {
-		return 0, errors.Wrap(seriesSet.Err(), "expand series set")
+		return 0, errors.Wrap(seriesSet.Err(), "expand series set"), nil
 	}
 
 	// We need to send stats before sending IsEndOfSeriesStream=true.
 	if err := s.sendStats(srv, stats); err != nil {
-		return 0, err
+		return 0, err, nil
 	}
 
 	// Send any remaining series and signal that there are no more series.
 	seriesBatch.IsEndOfSeriesStream = true
 	err = s.sendMessage("streaming series", srv, storepb.NewStreamingSeriesResponse(seriesBatch), &encodeDuration, &sendDuration)
-	return numSeries, err
+	return numSeries, err, debugSeriesIds
 }
 
 func (s *BucketStore) sendStreamingChunks(

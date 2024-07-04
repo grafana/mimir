@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -37,6 +38,10 @@ type blockStreamingQuerierSeriesSet struct {
 	nextSeriesIndex int
 
 	currSeries storage.Series
+
+	// debug
+	chunkInfo []string
+	traceId   string
 }
 
 type chunkStreamReader interface {
@@ -61,7 +66,7 @@ func (bqss *blockStreamingQuerierSeriesSet) Next() bool {
 		bqss.nextSeriesIndex++
 	}
 
-	bqss.currSeries = newBlockStreamingQuerierSeries(mimirpb.FromLabelAdaptersToLabels(currLabels), seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader)
+	bqss.currSeries = newBlockStreamingQuerierSeries(mimirpb.FromLabelAdaptersToLabels(currLabels), seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader, &bqss.chunkInfo, bqss.nextSeriesIndex >= len(bqss.series), bqss.traceId)
 	return true
 }
 
@@ -78,12 +83,15 @@ func (bqss *blockStreamingQuerierSeriesSet) Warnings() annotations.Annotations {
 }
 
 // newBlockStreamingQuerierSeries makes a new blockQuerierSeries. Input labels must be already sorted by name.
-func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamReader) *blockStreamingQuerierSeries {
+func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamReader, chunkInfo *[]string, lastOne bool, traceId string) *blockStreamingQuerierSeries {
 	return &blockStreamingQuerierSeries{
 		labels:         lbls,
 		seriesIdxStart: seriesIdxStart,
 		seriesIdxEnd:   seriesIdxEnd,
 		streamReader:   streamReader,
+		chunkInfo: 			chunkInfo,
+		lastOne:        lastOne,
+		traceId:        traceId,
 	}
 }
 
@@ -91,6 +99,11 @@ type blockStreamingQuerierSeries struct {
 	labels                       labels.Labels
 	seriesIdxStart, seriesIdxEnd int
 	streamReader                 chunkStreamReader
+
+	// debug
+	chunkInfo *[]string
+	lastOne bool
+	traceId string
 }
 
 func (bqs *blockStreamingQuerierSeries) Labels() labels.Labels {
@@ -107,6 +120,17 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 		}
 		allChunks = append(allChunks, chks...)
 	}
+
+	if bqs.labels.Get("__name__") == "mimir_continuous_test_sine_wave" {
+		seriesId := bqs.labels.Get("series_id")
+		for _, chunk := range allChunks {
+			*(bqs.chunkInfo) = append(*(bqs.chunkInfo), fmt.Sprintf("%s:%d:%d", seriesId, chunk.MinTime/1000, chunk.MaxTime/1000))
+		}
+		if bqs.lastOne {
+			fmt.Printf("CT: chunk stream from store-gateway: trace_id:%s info:%s\n", bqs.traceId, strings.Join(*(bqs.chunkInfo), ","))
+		}
+	}
+
 	if len(allChunks) == 0 {
 		// should not happen in practice, but we have a unit test for it
 		return series.NewErrIterator(errors.New("no chunks"))

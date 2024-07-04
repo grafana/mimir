@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/tracing"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -36,6 +37,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/series"
@@ -879,6 +881,16 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				}
 			}
 
+			// debug
+			var chunkInfo []string
+			for _, cm := range convertedMatchers {
+				if cm.Name == "__name__" && cm.Value == "mimir_continuous_test_sine_wave" {
+					chunkInfo = make([]string, 10)
+					break
+				}
+			}
+			traceId, _ := tracing.ExtractTraceID(ctx)
+
 			reqStats.AddFetchedIndexBytes(indexBytesFetched)
 			var streamReader *storeGatewayStreamReader
 			if len(mySeries) > 0 {
@@ -896,6 +908,16 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					"fetched index bytes", indexBytesFetched,
 					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
 					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
+				if chunkInfo != nil {
+					for _, s := range mySeries {
+						ls := mimirpb.FromLabelAdaptersToLabels(s.Labels)
+						seriesId := ls.Get("series_id")
+						for _, chunk := range s.Chunks {
+							chunkInfo = append(chunkInfo, fmt.Sprintf("%s:%d:%d", seriesId, chunk.MinTime/1000, chunk.MaxTime/1000))
+						}
+					}
+					fmt.Printf("CT: chunk series from store-gateway: trace_id:%s info:%s\n", traceId, strings.Join(chunkInfo, ","))
+				}
 			} else if len(myStreamingSeries) > 0 {
 				// FetchedChunks and FetchedChunkBytes are added by the SeriesChunksStreamReader.
 				reqStats.AddFetchedSeries(uint64(len(myStreamingSeries)))
@@ -918,7 +940,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			if len(mySeries) > 0 {
 				seriesSets = append(seriesSets, &blockQuerierSeriesSet{series: mySeries})
 			} else if len(myStreamingSeries) > 0 {
-				seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{series: myStreamingSeries, streamReader: streamReader})
+				seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{series: myStreamingSeries, streamReader: streamReader, traceId: traceId, chunkInfo: make([]string, 0)})
 				streamReaders = append(streamReaders, streamReader)
 			}
 			warnings.Merge(myWarnings)

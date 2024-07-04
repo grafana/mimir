@@ -47,9 +47,15 @@ type SeriesChunksStreamReader struct {
 	errorChan       chan error
 	err             error
 	seriesBatch     []QueryStreamSeriesChunks
+
+	ingesterName string
 }
 
-func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStreamClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, cleanup func(), log log.Logger) *SeriesChunksStreamReader {
+func (r *SeriesChunksStreamReader) GetName() string {
+	return r.ingesterName
+}
+
+func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStreamClient, ingesterName string, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, cleanup func(), log log.Logger) *SeriesChunksStreamReader {
 	return &SeriesChunksStreamReader{
 		ctx:                 ctx,
 		client:              client,
@@ -57,6 +63,7 @@ func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStrea
 		queryLimiter:        queryLimiter,
 		cleanup:             cleanup,
 		log:                 log,
+		ingesterName:        ingesterName,
 	}
 }
 
