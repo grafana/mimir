@@ -297,9 +297,6 @@ func TestBlockBuilder(t *testing.T) {
 	})
 
 	t.Run("out of order w.r.t. old cycle and future record with valid sample", func(t *testing.T) {
-		// TODO(codesome): figure out what's up with these scenario
-		t.Skip()
-
 		kafkaTime = cycleEnd
 
 		// Out of order sample w.r.t. samples in last cycle. But for this cycle,
@@ -398,6 +395,7 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 
 	cfg, overrides := blockBuilderConfig(t, addr)
 
+	// Producing some records
 	kafkaTime := time.Now().Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
 	var expSamples []mimirpb.Sample
 	for i := int64(0); i < 12; i++ {
@@ -409,6 +407,8 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 		expSamples = append(expSamples, samples...)
 	}
 
+	// Fetching all the records that were produced in order to choose
+	// a record and then commit it.
 	opts := []kgo.Opt{
 		kgo.ClientID("1"), kgo.SeedBrokers(addr), kgo.ConsumeTopics(testTopic),
 		kgo.ConsumerGroup(testGroup),
@@ -426,11 +426,13 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 	}
 	require.Len(t, recs, len(expSamples))
 
+	// Choosing the midpoint record to commit and as the last seen record as well.
 	commitRec := recs[len(recs)/2]
 	lastRec := commitRec
 	blockEnd := commitRec.Timestamp.Truncate(cfg.ConsumeInterval).Add(cfg.ConsumeInterval)
 
-	err = commitRecord(ctx, logger, kc, testTopic, commitRec, lastRec.Timestamp.UnixMilli(), blockEnd.UnixMilli())
+	meta := marshallCommitMeta(commitRec.Timestamp.UnixMilli(), lastRec.Timestamp.UnixMilli(), blockEnd.UnixMilli())
+	err = commitRecord(ctx, logger, kc, commitRec, meta)
 	require.NoError(t, err)
 	kc.CloseAllowingRebalance()
 
