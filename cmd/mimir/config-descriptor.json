@@ -1203,7 +1203,7 @@
           "required": false,
           "desc": "Maximum OTLP request size in bytes that the distributors accept. Requests exceeding this limit are rejected.",
           "fieldValue": null,
-          "fieldDefaultValue": 83886080,
+          "fieldDefaultValue": 104857600,
           "fieldFlag": "distributor.max-otlp-request-size",
           "fieldType": "int",
           "fieldCategory": "experimental"
