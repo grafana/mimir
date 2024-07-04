@@ -1199,6 +1199,17 @@
         },
         {
           "kind": "field",
+          "name": "max_otlp_request_size",
+          "required": false,
+          "desc": "Maximum OTLP request size in bytes that the distributors accept. Requests exceeding this limit are rejected.",
+          "fieldValue": null,
+          "fieldDefaultValue": 104857600,
+          "fieldFlag": "distributor.max-otlp-request-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_request_pool_buffer_size",
           "required": false,
           "desc": "Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.",

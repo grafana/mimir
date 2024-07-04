@@ -75,6 +75,7 @@ const (
 	BucketIndexTooOld           ID = "bucket-index-too-old"
 
 	DistributorMaxWriteMessageSize         ID = "distributor-max-write-message-size"
+	DistributorMaxOTLPRequestSize          ID = "distributor-max-otlp-request-size"
 	DistributorMaxWriteRequestDataItemSize ID = "distributor-max-write-request-data-item-size"
 
 	// Map Prometheus TSDB native histogram validation errors to Mimir errors.

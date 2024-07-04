@@ -846,6 +846,11 @@ ha_tracker:
 # CLI flag: -distributor.max-recv-msg-size
 [max_recv_msg_size: <int> | default = 104857600]
 
+# (experimental) Maximum OTLP request size in bytes that the distributors
+# accept. Requests exceeding this limit are rejected.
+# CLI flag: -distributor.max-otlp-request-size
+[max_otlp_request_size: <int> | default = 104857600]
+
 # (experimental) Max size of the pooled buffers used for marshaling write
 # requests. If 0, no max size is enforced.
 # CLI flag: -distributor.max-request-pool-buffer-size
