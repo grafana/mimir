@@ -93,7 +93,7 @@ type BucketStores struct {
 	blocksLoaded      *prometheus.Desc
 }
 
-// NewBucketStores makes a new BucketStores.
+// NewBucketStores makes a new BucketStores. After starting the returned BucketStores
 func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, allowedTenants *util.AllowedTenants, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
 	chunksCacheClient, err := cache.CreateClient("chunks-cache", cfg.BucketStore.ChunksCache.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {
@@ -203,7 +203,7 @@ func (u *BucketStores) initialSync(ctx context.Context) error {
 		return store.InitialSync(ctx)
 	}); err != nil {
 		level.Warn(u.logger).Log("msg", "failed to synchronize TSDB blocks", "err", err)
-		return err
+		return fmt.Errorf("initial synchronisation with bucket: %w", err)
 	}
 
 	level.Info(u.logger).Log("msg", "successfully synchronized TSDB blocks for all users")
