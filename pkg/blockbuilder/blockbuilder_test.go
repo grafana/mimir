@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package blockbuilder
 
 import (
@@ -297,7 +299,6 @@ func TestBlockBuilder(t *testing.T) {
 	t.Run("out of order w.r.t. old cycle and future record with valid sample", func(t *testing.T) {
 		// TODO(codesome): figure out what's up with these scenario
 		t.Skip()
-		return
 
 		kafkaTime = cycleEnd
 
