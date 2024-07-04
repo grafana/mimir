@@ -40,6 +40,7 @@ func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Override
 			Topic:         testTopic,
 			ClientID:      "1",
 			DialTimeout:   10 * time.Second,
+			PollTimeout:   500 * time.Millisecond,
 			ConsumerGroup: testGroup,
 		},
 	}
@@ -273,10 +274,6 @@ func TestBlockBuilder(t *testing.T) {
 			filterHistogramSamples(kafkaHSamples, cycleEnd.Add(-cfg.ConsumeIntervalBuffer)),
 			labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 		)
-	})
-
-	t.Run("restart scenario when there is a kafka commit", func(t *testing.T) {
-		// TODO(codesome): likely requires a new test because startup uses wall clock
 	})
 
 	t.Run("normal case of no lag", func(t *testing.T) {
