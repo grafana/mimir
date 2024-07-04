@@ -205,12 +205,13 @@ func (report *testScenarioQueueDurationReport) String() string {
 	}
 	slices.Sort(queryComponents)
 
-	var tenantReports []string
-	for _, tenantID := range tenantIDs {
-		tenantIDMeanDuration := mean(report.tenantIDQueueDurationObservations[tenantID])
-		tenantIDStdDev := stddev(report.tenantIDQueueDurationObservations[tenantID], tenantIDMeanDuration)
-		tenantReports = append(tenantReports, fmt.Sprintf("tenant %s: mean: %.2f stddev: %.2f", tenantID, tenantIDMeanDuration, tenantIDStdDev))
-	}
+	// punting this as we only have tested for one tenant so far
+	//var tenantReports []string
+	//for _, tenantID := range tenantIDs {
+	//	tenantIDMeanDuration := mean(report.tenantIDQueueDurationObservations[tenantID])
+	//	tenantIDStdDev := stddev(report.tenantIDQueueDurationObservations[tenantID], tenantIDMeanDuration)
+	//	tenantReports = append(tenantReports, fmt.Sprintf("tenant %s: mean: %.2f stddev: %.2f", tenantID, tenantIDMeanDuration, tenantIDStdDev))
+	//}
 
 	var queryComponentReports []string
 	for _, queryComponent := range queryComponents {
@@ -234,12 +235,11 @@ func (report *testScenarioQueueDurationReport) String() string {
 	)
 }
 
-func percentile(numbers []float64, p float64) float64 {
-	slices.Sort(numbers)
-	index := int(float64(len(numbers)) * p)
-	return numbers[index]
-
-}
+//func percentile(numbers []float64, p float64) float64 {
+//	slices.Sort(numbers)
+//	index := int(float64(len(numbers)) * p)
+//	return numbers[index]
+//}
 
 func mean(numbers []float64) float64 {
 	sum := 0.0
@@ -412,6 +412,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				)
 				testCaseReport := &testScenarioQueueDurationReport{
 					componentUtilizationTriggerCheckQueueLenMultiple: triggerCheckQueueLenMultiple,
+					componentUtilizationReservedCapacity:             testReservedCapacity,
 					tenantIDQueueDurationObservations:                map[string][]float64{},
 					queryComponentQueueDurationObservations:          map[string][]float64{},
 				}

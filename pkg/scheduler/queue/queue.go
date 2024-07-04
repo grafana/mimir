@@ -352,9 +352,13 @@ func (q *RequestQueue) enqueueRequestInternal(r requestToEnqueue) error {
 func (q *RequestQueue) trySendNextRequestForQuerier(waitingConn *waitingQuerierConn) (done bool) {
 	if itq, ok := q.queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 		for _, algoState := range itq.algosByDepth {
-			if qcu, ok := algoState.(*queryComponentUtilizationDequeueSkipOverThreshold); ok {
-				if x, ok := qcu.queryComponentUtilizationCheckThreshold.(*queryComponentUtilizationReserveConnections); ok {
-					x.connectedWorkers = int(q.connectedQuerierWorkers.Load())
+			if qcuAlgo, ok := algoState.(*queryComponentUtilizationDequeueSkipOverThreshold); ok {
+				if qcuTriggerCheck, ok := qcuAlgo.queryComponentUtilizationTriggerCheck.(*QueryComponentUtilizationTriggerCheckByQueueLenAndWaitingConns); ok {
+					qcuTriggerCheck.queueLen = q.queueBroker.tree.ItemCount()
+					qcuTriggerCheck.waitingWorkers = q.waitingQuerierConnsToDispatch.Len()
+				}
+				if qcuCheckThreshold, ok := qcuAlgo.queryComponentUtilizationCheckThreshold.(*queryComponentUtilizationReserveConnections); ok {
+					qcuCheckThreshold.connectedWorkers = int(q.connectedQuerierWorkers.Load())
 				}
 			}
 		}
