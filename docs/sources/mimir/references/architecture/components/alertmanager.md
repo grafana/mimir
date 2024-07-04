@@ -187,7 +187,7 @@ To identify affected tenant configurations, take the following steps:
 2. To identify any tenant configurations that are incompatible with UTF-8 (meaning the tenant configuration fails to load and the [fallback configuration](#fallback-configuration) is used instead), search Mimir server logs for lines containing `Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible`. Each log line includes the invalid matcher from the tenant configuration and the ID of the affected tenant. For example:
 
    ```
-   msg="Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible. Alertmanager has instead parsed the input using the classic matchers parser as a fallback. To make this input compatible with the UTF-8 matchers parser please make sure all regular expressions and values are double-quoted. If you are still seeing this message please open an issue." input="foo=" origin=api err="end of input: expected label value" suggestion="foo=\"\"" user="1"
+   msg="Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible. Alertmanager has instead parsed the input using the classic matchers parser as a fallback. To make this input compatible with the UTF-8 matchers parser please make sure all regular expressions and values are double-quoted. If you are still seeing this message please open an issue." input="foo=" err="end of input: expected label value" suggestion="foo=\"\"" user="1"
    ```
 
    In this example, the tenant with User ID `1` has an incompatible matcher in their tenant configuration `foo=` and should to be changed to the suggestion `foo=""`.
