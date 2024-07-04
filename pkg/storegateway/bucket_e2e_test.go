@@ -778,7 +778,7 @@ func TestBucketStore_EagerLoading(t *testing.T) {
 			cfg.metricsRegistry = prometheus.NewRegistry() // The store-gateway will reregister its metrics; replace the registry to prevent a panic
 			cfg.numBlocks = 0                              // we don't want to generate blocks again to speed the test up
 
-			store = prepareStoreWithTestBlocks(t, bkt, cfg)
+			_ = prepareStoreWithTestBlocks(t, bkt, cfg) // we create and start the store only to trigger eager loading.
 			assertLoadedBlocks(t, cfg, testData.expectedEagerLoadedBlocks)
 		})
 	}
