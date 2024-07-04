@@ -1254,11 +1254,13 @@ func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool,
 	s.blockSet.filter(minT, maxT, blockMatchers, func(b *bucketBlock) {
 		blocks = append(blocks, b)
 
+		// Unlike below, ensureIndexHeaderLoaded() does not retain the context after it returns.
+		b.ensureIndexHeaderLoaded(spanCtx, stats)
+
 		if indexReaders == nil {
 			indexReaders = make(map[ulid.ULID]*bucketIndexReader)
 		}
-		// Unlike below, loadedIndexReader() does not retain the context after it returns.
-		indexReaders[b.meta.ULID] = b.loadedIndexReader(spanCtx, s.postingsStrategy, stats)
+		indexReaders[b.meta.ULID] = b.indexReader(s.postingsStrategy)
 
 		if skipChunks {
 			return
@@ -1314,10 +1316,13 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		resHints.AddQueriedBlock(b.meta.ULID)
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
-		indexr := b.loadedIndexReader(gctx, s.postingsStrategy, stats)
+		// This indexReader is here to make sure its block is held open inside the goroutine below.
+		indexr := b.indexReader(s.postingsStrategy)
 
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "label names")
+
+			b.ensureIndexHeaderLoaded(gctx, stats)
 
 			result, err := blockLabelNames(gctx, indexr, reqSeriesMatchers, seriesLimiter, s.maxSeriesPerBatch, s.logger, stats)
 			if err != nil {
@@ -1494,11 +1499,13 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		resHints.AddQueriedBlock(b.meta.ULID)
 
 		// This index reader shouldn't be used for ExpandedPostings, since it doesn't have the correct strategy.
-		// It's here only to make sure the block's indexReader is held open inside the goroutine below.
-		indexr := b.loadedIndexReader(ctx, selectAllStrategy{}, stats)
+		// It's here only to make sure the block is held open inside the goroutine below.
+		indexr := b.indexReader(selectAllStrategy{})
 
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(b.logger, indexr, "close block index reader")
+
+			b.ensureIndexHeaderLoaded(ctx, stats)
 
 			result, err := blockLabelValues(gctx, b, s.postingsStrategy, s.maxSeriesPerBatch, req.Label, reqSeriesMatchers, s.logger, stats)
 			if err != nil {
@@ -1969,21 +1976,6 @@ func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length
 	return b.bkt.GetRange(ctx, b.chunkObjs[seq], off, length)
 }
 
-func (b *bucketBlock) loadedIndexReader(ctx context.Context, postingsStrategy postingsSelectionStrategy, stats *safeQueryStats) *bucketIndexReader {
-	span, _ := opentracing.StartSpanFromContext(ctx, "bucketBlock.loadedIndexReader")
-	defer span.Finish()
-	span.SetTag("blockID", b.meta.ULID)
-
-	loadStartTime := time.Now()
-	// Call IndexVersion to lazy load the index header if it lazy-loaded.
-	_, _ = b.indexHeaderReader.IndexVersion(ctx)
-	stats.update(func(stats *queryStats) {
-		stats.streamingSeriesIndexHeaderLoadDuration += time.Since(loadStartTime)
-	})
-
-	return b.indexReader(postingsStrategy)
-}
-
 func (b *bucketBlock) indexReader(postingsStrategy postingsSelectionStrategy) *bucketIndexReader {
 	b.pendingReaders.Add(1)
 	return newBucketIndexReader(b, postingsStrategy)
@@ -2009,6 +2001,20 @@ func (b *bucketBlock) overlapsClosedInterval(mint, maxt int64) bool {
 	// The block itself is a half-open interval
 	// [b.meta.MinTime, b.meta.MaxTime).
 	return b.meta.MinTime <= maxt && mint < b.meta.MaxTime
+}
+
+// ensureIndexHeaderLoaded lazy-loads block's index header and record the loading time.
+func (b *bucketBlock) ensureIndexHeaderLoaded(ctx context.Context, stats *safeQueryStats) {
+	span, _ := opentracing.StartSpanFromContext(ctx, "bucketBlock.ensureIndexHeaderLoaded")
+	defer span.Finish()
+	span.SetTag("blockID", b.meta.ULID)
+
+	loadStartTime := time.Now()
+	// Call IndexVersion to lazy load the index header if it lazy-loaded.
+	_, _ = b.indexHeaderReader.IndexVersion(ctx)
+	stats.update(func(stats *queryStats) {
+		stats.streamingSeriesIndexHeaderLoadDuration += time.Since(loadStartTime)
+	})
 }
 
 // Close waits for all pending readers to finish and then closes all underlying resources.
