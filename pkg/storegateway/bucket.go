@@ -69,9 +69,8 @@ const (
 )
 
 type BucketStoreStats struct {
-	// BlocksLoaded is the number of blocks currently loaded in the bucket store
-	// indexed by the duration of the block.
-	BlocksLoaded map[time.Duration]int
+	// BlocksLoadedTotal is the total number of blocks currently loaded in the bucket store.
+	BlocksLoadedTotal int
 }
 
 // BucketStore implements the store API backed by a bucket. It loads all index
@@ -94,9 +93,7 @@ type BucketStore struct {
 	snapshotter          *indexheader.Snapshotter
 	snapshotterStartOnce sync.Once
 
-	// Sets of blocks that have the same labels. They are indexed by a hash over their label set.
-	blocksMx sync.RWMutex
-	blocks   map[ulid.ULID]*bucketBlock
+	// Set of blocks that have the same labels
 	blockSet *bucketBlockSet
 
 	// Number of goroutines to use when syncing blocks from object storage.
@@ -220,7 +217,6 @@ func NewBucketStore(
 		fetcher:                     fetcher,
 		dir:                         dir,
 		indexCache:                  noopCache{},
-		blocks:                      map[ulid.ULID]*bucketBlock{},
 		blockSet:                    newBucketBlockSet(),
 		blockSyncConcurrency:        bucketStoreConfig.BlockSyncConcurrency,
 		queryGate:                   gate.NewNoop(),
@@ -272,36 +268,10 @@ func (s *BucketStore) RemoveBlocksAndClose() error {
 }
 
 // Stats returns statistics about the BucketStore instance.
-func (s *BucketStore) Stats(durations []time.Duration) BucketStoreStats {
-	s.blocksMx.RLock()
-	defer s.blocksMx.RUnlock()
-
-	return buildStoreStats(durations, s.blocks)
-}
-
-func buildStoreStats(durations []time.Duration, blocks map[ulid.ULID]*bucketBlock) BucketStoreStats {
-	stats := BucketStoreStats{}
-	stats.BlocksLoaded = make(map[time.Duration]int)
-
-	if len(durations) != 0 {
-		for _, b := range blocks {
-			// Bucket each block into one of the possible block durations we're creating.
-			bucketed := bucketBlockDuration(durations, b.blockDuration())
-			stats.BlocksLoaded[bucketed]++
-		}
+func (s *BucketStore) Stats() BucketStoreStats {
+	return BucketStoreStats{
+		BlocksLoadedTotal: s.blockSet.len(),
 	}
-
-	return stats
-}
-
-func bucketBlockDuration(buckets tsdb.DurationList, duration time.Duration) time.Duration {
-	for _, d := range buckets {
-		if duration <= d {
-			return d
-		}
-	}
-
-	return buckets[len(buckets)-1]
 }
 
 // SyncBlocks synchronizes the stores state with the Bucket bucket.
@@ -333,7 +303,7 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 	}
 
 	for id, meta := range metas {
-		if b := s.getBlock(id); b != nil {
+		if s.blockSet.contains(id) {
 			continue
 		}
 		select {
@@ -349,8 +319,11 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 		return metaFetchErr
 	}
 
-	// Drop all blocks that are no longer present in the bucket.
-	for id := range s.blocks {
+	blockIDs := make([]ulid.ULID, 0)
+	s.blockSet.forEach(func(b *bucketBlock) {
+		blockIDs = append(blockIDs, b.meta.ULID)
+	})
+	for _, id := range blockIDs {
 		if _, ok := metas[id]; ok {
 			continue
 		}
@@ -389,7 +362,7 @@ func (s *BucketStore) InitialSync(ctx context.Context) error {
 		if !ok {
 			continue
 		}
-		if b := s.getBlock(id); b != nil {
+		if s.blockSet.contains(id) {
 			continue
 		}
 
@@ -400,12 +373,6 @@ func (s *BucketStore) InitialSync(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func (s *BucketStore) getBlock(id ulid.ULID) *bucketBlock {
-	s.blocksMx.RLock()
-	defer s.blocksMx.RUnlock()
-	return s.blocks[id]
 }
 
 func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta, initialSync bool) (err error) {
@@ -467,13 +434,9 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta, initialSyn
 		}
 	}()
 
-	s.blocksMx.Lock()
-	defer s.blocksMx.Unlock()
-
 	if err = s.blockSet.add(b); err != nil {
 		return errors.Wrap(err, "add block to set")
 	}
-	s.blocks[b.meta.ULID] = b
 
 	return nil
 }
@@ -485,15 +448,8 @@ func (s *BucketStore) removeBlock(id ulid.ULID) (returnErr error) {
 		}
 	}()
 
-	s.blocksMx.Lock()
-	b, ok := s.blocks[id]
-	if ok {
-		s.blockSet.remove(id)
-		delete(s.blocks, id)
-	}
-	s.blocksMx.Unlock()
-
-	if !ok {
+	b := s.blockSet.remove(id)
+	if b == nil {
 		return nil
 	}
 
@@ -511,17 +467,12 @@ func (s *BucketStore) removeBlock(id ulid.ULID) (returnErr error) {
 }
 
 func (s *BucketStore) removeAllBlocks() error {
-	// Build a list of blocks to remove.
-	s.blocksMx.Lock()
-	blockIDs := make([]ulid.ULID, 0, len(s.blocks))
-	for id := range s.blocks {
-		blockIDs = append(blockIDs, id)
-	}
-	s.blocksMx.Unlock()
+	blockIDs := make([]ulid.ULID, 0)
+	s.blockSet.forEach(func(b *bucketBlock) {
+		blockIDs = append(blockIDs, b.meta.ULID)
+	})
 
-	// Close all blocks.
 	errs := multierror.New()
-
 	for _, id := range blockIDs {
 		if err := s.removeBlock(id); err != nil {
 			errs.Add(errors.Wrap(err, fmt.Sprintf("block: %s", id.String())))
@@ -533,22 +484,7 @@ func (s *BucketStore) removeAllBlocks() error {
 
 // TimeRange returns the minimum and maximum timestamp of data available in the store.
 func (s *BucketStore) TimeRange() (mint, maxt int64) {
-	s.blocksMx.RLock()
-	defer s.blocksMx.RUnlock()
-
-	mint = math.MaxInt64
-	maxt = math.MinInt64
-
-	for _, b := range s.blocks {
-		if b.meta.MinTime < mint {
-			mint = b.meta.MinTime
-		}
-		if b.meta.MaxTime > maxt {
-			maxt = b.meta.MaxTime
-		}
-	}
-
-	return mint, maxt
+	return s.blockSet.timerange()
 }
 
 type seriesChunks struct {
@@ -1310,26 +1246,34 @@ func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool,
 	span, spanCtx := opentracing.StartSpanFromContext(ctx, "bucket_store_open_blocks_for_reading")
 	defer span.Finish()
 
-	s.blocksMx.RLock()
-	defer s.blocksMx.RUnlock()
+	var (
+		blocks       []*bucketBlock
+		indexReaders map[ulid.ULID]*bucketIndexReader
+		chunkReaders map[ulid.ULID]chunkReader
+	)
 
 	// Find all blocks owned by this store-gateway instance and matching the request.
-	blocks := s.blockSet.getFor(minT, maxT, blockMatchers)
+	s.blockSet.filter(minT, maxT, blockMatchers, func(b *bucketBlock) {
+		blocks = append(blocks, b)
 
-	indexReaders := make(map[ulid.ULID]*bucketIndexReader, len(blocks))
-	for _, b := range blocks {
-		// Unlike below, loadedIndexReader() does not retain the context after it returns.
-		indexReaders[b.meta.ULID] = b.loadedIndexReader(spanCtx, s.postingsStrategy, stats)
-	}
-	if skipChunks {
-		return blocks, indexReaders, nil
-	}
+		// Unlike below, ensureIndexHeaderLoaded() does not retain the context after it returns.
+		b.ensureIndexHeaderLoaded(spanCtx, stats)
 
-	chunkReaders := make(map[ulid.ULID]chunkReader, len(blocks))
-	for _, b := range blocks {
-		// Ignore the span context from this method - chunkReader() retains the context to add spans after openBlocksForReading() returns.
+		if indexReaders == nil {
+			indexReaders = make(map[ulid.ULID]*bucketIndexReader)
+		}
+		indexReaders[b.meta.ULID] = b.indexReader(s.postingsStrategy)
+
+		if skipChunks {
+			return
+		}
+
+		if chunkReaders == nil {
+			chunkReaders = make(map[ulid.ULID]chunkReader)
+		}
+		// Ignore the span context from this method; chunkReader() retains the context to add spans after openBlocksForReading() returns.
 		chunkReaders[b.meta.ULID] = b.chunkReader(ctx)
-	}
+	})
 
 	return blocks, indexReaders, chunkReaders
 }
@@ -1365,29 +1309,22 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 	g, gctx := errgroup.WithContext(ctx)
 
-	s.blocksMx.RLock()
-
-	var mtx sync.Mutex
+	var setsMtx sync.Mutex
 	var sets [][]string
 	var blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
 	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 
-	for _, b := range s.blocks {
-		b := b
-		if !b.overlapsClosedInterval(req.Start, req.End) {
-			continue
-		}
-		if len(reqBlockMatchers) > 0 && !b.matchLabels(reqBlockMatchers) {
-			continue
-		}
-
+	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *bucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
-		indexr := b.loadedIndexReader(gctx, s.postingsStrategy, stats)
+		// This indexReader is here to make sure its block is held open inside the goroutine below.
+		indexr := b.indexReader(s.postingsStrategy)
 
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "label names")
+
+			b.ensureIndexHeaderLoaded(gctx, stats)
 
 			result, err := blockLabelNames(gctx, indexr, reqSeriesMatchers, seriesLimiter, s.maxSeriesPerBatch, s.logger, stats)
 			if err != nil {
@@ -1395,16 +1332,14 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 			}
 
 			if len(result) > 0 {
-				mtx.Lock()
+				setsMtx.Lock()
 				sets = append(sets, result)
-				mtx.Unlock()
+				setsMtx.Unlock()
 			}
 
 			return nil
 		})
-	}
-
-	s.blocksMx.RUnlock()
+	})
 
 	if err := g.Wait(); err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -1560,39 +1495,34 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		}
 	}
 
-	s.blocksMx.RLock()
-
-	var mtx sync.Mutex
+	var setsMtx sync.Mutex
 	var sets [][]string
-	for _, b := range s.blocks {
-		b := b
-
-		if !b.overlapsClosedInterval(req.Start, req.End) {
-			continue
-		}
-		if len(reqBlockMatchers) > 0 && !b.matchLabels(reqBlockMatchers) {
-			continue
-		}
-
+	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *bucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
 
+		// This index reader shouldn't be used for ExpandedPostings, since it doesn't have the correct strategy.
+		// It's here only to make sure the block is held open inside the goroutine below.
+		indexr := b.indexReader(selectAllStrategy{})
+
 		g.Go(func() error {
+			defer runutil.CloseWithLogOnErr(b.logger, indexr, "close block index reader")
+
+			b.ensureIndexHeaderLoaded(ctx, stats)
+
 			result, err := blockLabelValues(gctx, b, s.postingsStrategy, s.maxSeriesPerBatch, req.Label, reqSeriesMatchers, s.logger, stats)
 			if err != nil {
 				return errors.Wrapf(err, "block %s", b.meta.ULID)
 			}
 
 			if len(result) > 0 {
-				mtx.Lock()
+				setsMtx.Lock()
 				sets = append(sets, result)
-				mtx.Unlock()
+				setsMtx.Unlock()
 			}
 
 			return nil
 		})
-	}
-
-	s.blocksMx.RUnlock()
+	})
 
 	if err := g.Wait(); err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -1626,10 +1556,6 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 // Notice that when no matchers are provided, the list of matched postings is AllPostings,
 // so we could also intersect those with each label's postings being each one non-empty and leading to the same result.
 func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy postingsSelectionStrategy, maxSeriesPerBatch int, labelName string, matchers []*labels.Matcher, logger log.Logger, stats *safeQueryStats) ([]string, error) {
-	// This index reader shouldn't be used for ExpandedPostings, since it doesn't have the correct strategy.
-	labelValuesReader := b.loadedIndexReader(ctx, selectAllStrategy{}, stats)
-	defer runutil.CloseWithLogOnErr(b.logger, labelValuesReader, "close block index reader")
-
 	values, ok := fetchCachedLabelValues(ctx, b.indexCache, b.userID, b.meta.ULID, labelName, matchers, logger)
 	if ok {
 		return values, nil
@@ -1787,8 +1713,10 @@ func storeCachedLabelValues(ctx context.Context, indexCache indexcache.IndexCach
 
 // bucketBlockSet holds all blocks.
 type bucketBlockSet struct {
-	mtx    sync.RWMutex
-	blocks []*bucketBlock // Blocks sorted by mint, then maxt.
+	// mtx protects the below data strcutures, helping to keep them in sync.
+	mtx      sync.RWMutex
+	blockSet sync.Map       // Maps block's ulid.ULID to the *bucketBlock.
+	blocks   []*bucketBlock // Blocks sorted by mint, then maxt.
 }
 
 // newBucketBlockSet initializes a new set with the known downsampling windows hard-configured.
@@ -1798,9 +1726,17 @@ func newBucketBlockSet() *bucketBlockSet {
 	return &bucketBlockSet{}
 }
 
+// add adds a block to the set.
 func (s *bucketBlockSet) add(b *bucketBlock) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
+
+	// The LoadOrStore verifies the block with the same id never ended up in the set more than once.
+	_, ok := s.blockSet.LoadOrStore(b.meta.ULID, b)
+	if ok {
+		// This should not ever happen.
+		return fmt.Errorf("block %s already exists in the set", b.meta.ULID)
+	}
 
 	s.blocks = append(s.blocks, b)
 
@@ -1814,49 +1750,117 @@ func (s *bucketBlockSet) add(b *bucketBlock) error {
 	return nil
 }
 
-func (s *bucketBlockSet) remove(id ulid.ULID) {
+// remove removes the block identified by id from the set. It returns the removed block if it was present in the set.
+func (s *bucketBlockSet) remove(id ulid.ULID) *bucketBlock {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
+
+	val, ok := s.blockSet.LoadAndDelete(id)
+	if !ok {
+		return nil
+	}
 
 	for i, b := range s.blocks {
 		if b.meta.ULID != id {
 			continue
 		}
 		s.blocks = append(s.blocks[:i], s.blocks[i+1:]...)
-		return
+		break
 	}
+
+	return val.(*bucketBlock)
 }
 
-// getFor returns a time-ordered list of blocks that cover date between mint and maxt.
-// It supports overlapping blocks.
-//
-// NOTE: s.blocks are expected to be sorted in minTime order.
-func (s *bucketBlockSet) getFor(mint, maxt int64, blockMatchers []*labels.Matcher) (bs []*bucketBlock) {
+func (s *bucketBlockSet) contains(id ulid.ULID) bool {
+	_, ok := s.blockSet.Load(id)
+	return ok
+}
+
+func (s *bucketBlockSet) len() int {
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
+	return len(s.blocks)
+}
+
+// filter iterates over a time-ordered list of non-closed blocks that cover date between mint and maxt. It supports overlapping
+// blocks. It only guaranties that a block is held open during the execution of fn.
+func (s *bucketBlockSet) filter(mint, maxt int64, blockMatchers []*labels.Matcher, fn func(b *bucketBlock)) {
 	if mint > maxt {
-		return nil
+		return
 	}
 
 	s.mtx.RLock()
-	defer s.mtx.RUnlock()
 
 	// Fill the given interval with the blocks within the request mint and maxt.
+	bs := make([]*bucketBlock, 0, len(s.blocks))
 	for _, b := range s.blocks {
-		if b.meta.MaxTime <= mint {
-			continue
-		}
-		// NOTE: Block intervals are half-open: [b.MinTime, b.MaxTime).
+		// NOTE: s.blocks are expected to be sorted in minTime order, their intervals are half-open: [b.MinTime, b.MaxTime).
 		if b.meta.MinTime > maxt {
 			break
 		}
 
-		// Include the block in the list of matching ones only if there are no block-level matchers
-		// or they actually match.
-		if len(blockMatchers) == 0 || b.matchLabels(blockMatchers) {
-			bs = append(bs, b)
+		if b.overlapsClosedInterval(mint, maxt) {
+			// Include the block in the list of matching ones only if there are no block-level matchers
+			// or they actually match.
+			if len(blockMatchers) == 0 || b.matchLabels(blockMatchers) {
+				bs = append(bs, b)
+			}
 		}
 	}
 
-	return bs
+	s.mtx.RUnlock()
+
+	step := func(b *bucketBlock) {
+		b.closedMtx.RLock()
+		defer b.closedMtx.RUnlock()
+		if !b.closed {
+			fn(b)
+		}
+	}
+
+	for _, b := range bs {
+		step(b)
+	}
+}
+
+// forEach iterates over all non-closed blocks in the set. It only guaranties that a block is held open during the execution of fn.
+func (s *bucketBlockSet) forEach(fn func(b *bucketBlock)) {
+	s.blockSet.Range(func(_, val any) bool {
+		b := val.(*bucketBlock)
+
+		b.closedMtx.RLock()
+		defer b.closedMtx.RUnlock()
+
+		if !b.closed {
+			fn(b)
+		}
+		return true
+	})
+}
+
+// timerange returns the minimum and maximum timestamp available in the set.
+func (s *bucketBlockSet) timerange() (mint, maxt int64) {
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
+
+	if len(s.blocks) == 0 {
+		return math.MaxInt64, math.MinInt64
+	}
+
+	mint = math.MaxInt64
+	maxt = math.MinInt64
+
+	// NOTE: s.blocks are expected to be sorted in minTime order.
+	for _, b := range s.blocks {
+		if b.meta.MinTime < mint {
+			mint = b.meta.MinTime
+		}
+		if b.meta.MaxTime > maxt {
+			maxt = b.meta.MaxTime
+		}
+	}
+
+	return mint, maxt
 }
 
 // bucketBlock represents a block that is located in a bucket. It holds intermediate
@@ -1871,10 +1875,11 @@ type bucketBlock struct {
 	indexCache indexcache.IndexCache
 
 	indexHeaderReader indexheader.Reader
+	pendingReaders    sync.WaitGroup
+	closedMtx         sync.RWMutex
+	closed            bool
 
 	chunkObjs []string
-
-	pendingReaders sync.WaitGroup
 
 	partitioners blockPartitioners
 
@@ -1973,21 +1978,6 @@ func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length
 	return b.bkt.GetRange(ctx, b.chunkObjs[seq], off, length)
 }
 
-func (b *bucketBlock) loadedIndexReader(ctx context.Context, postingsStrategy postingsSelectionStrategy, stats *safeQueryStats) *bucketIndexReader {
-	span, _ := opentracing.StartSpanFromContext(ctx, "bucketBlock.loadedIndexReader")
-	defer span.Finish()
-	span.SetTag("blockID", b.meta.ULID)
-
-	loadStartTime := time.Now()
-	// Call IndexVersion to lazy load the index header if it lazy-loaded.
-	_, _ = b.indexHeaderReader.IndexVersion(ctx)
-	stats.update(func(stats *queryStats) {
-		stats.streamingSeriesIndexHeaderLoadDuration += time.Since(loadStartTime)
-	})
-
-	return b.indexReader(postingsStrategy)
-}
-
 func (b *bucketBlock) indexReader(postingsStrategy postingsSelectionStrategy) *bucketIndexReader {
 	b.pendingReaders.Add(1)
 	return newBucketIndexReader(b, postingsStrategy)
@@ -2015,14 +2005,28 @@ func (b *bucketBlock) overlapsClosedInterval(mint, maxt int64) bool {
 	return b.meta.MinTime <= maxt && mint < b.meta.MaxTime
 }
 
-// blockDuration returns the difference between the max and min time for this block.
-func (b *bucketBlock) blockDuration() time.Duration {
-	return time.Duration(b.meta.MaxTime-b.meta.MinTime) * time.Millisecond
+// ensureIndexHeaderLoaded lazy-loads block's index header and record the loading time.
+func (b *bucketBlock) ensureIndexHeaderLoaded(ctx context.Context, stats *safeQueryStats) {
+	span, _ := opentracing.StartSpanFromContext(ctx, "bucketBlock.ensureIndexHeaderLoaded")
+	defer span.Finish()
+	span.SetTag("blockID", b.meta.ULID)
+
+	loadStartTime := time.Now()
+	// Call IndexVersion to lazy load the index header if it lazy-loaded.
+	_, _ = b.indexHeaderReader.IndexVersion(ctx)
+	stats.update(func(stats *queryStats) {
+		stats.streamingSeriesIndexHeaderLoadDuration += time.Since(loadStartTime)
+	})
 }
 
 // Close waits for all pending readers to finish and then closes all underlying resources.
 func (b *bucketBlock) Close() error {
+	b.closedMtx.Lock()
+	b.closed = true
+	b.closedMtx.Unlock()
+
 	b.pendingReaders.Wait()
+
 	return b.indexHeaderReader.Close()
 }
 
