@@ -17,7 +17,7 @@ The `mimir-distributed` Helm chart provides metamonitoring support, which takes 
 For more information about Helm chart metamonitoring, refer to [Collect metrics and logs via the Helm chart](/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/).
 If you are using Helm chart metamonitoring, go to [Installing Grafana Mimir dashboards and alerts]({{< relref "./installing-dashboards-and-alerts" >}}).
 
-If you're not using the Helm chart, you must configure your Prometheus or Grafana Alloy instance must to add these labels for the dashboards and alerts to function.
+If you're not using the Helm chart, you must configure your Prometheus or Grafana Alloy instance to add these labels for the dashboards and alerts to function.
 The following table shows the required label names and whether they can be customized when [compiling dashboards or alerts from sources]({{< relref "./installing-dashboards-and-alerts" >}}).
 
 | Label name  | Configurable? | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
