@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/grpcutil"
 	dskit_metrics "github.com/grafana/dskit/metrics"
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -1548,6 +1549,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 			testData.options...,
 		)
 		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), st))
 
 		t.Run(testName, func(t test.TB) {
 			t.Cleanup(func() {
@@ -1679,6 +1681,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 						WithLogger(logger),
 					)
 					require.NoError(t, err)
+					require.NoError(t, services.StartAndAwaitRunning(ctx, store))
 					require.NoError(t, store.SyncBlocks(ctx))
 
 					t.Cleanup(func() {
@@ -2005,6 +2008,7 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 		WithIndexCache(indexCache),
 	)
 	assert.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), store))
 	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
 
 	assert.NoError(t, store.SyncBlocks(context.Background()))
@@ -2062,6 +2066,7 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 		WithQueryGate(gate.NewBlocking(0)),
 	)
 	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), store))
 	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
 
 	req := &storepb.SeriesRequest{
@@ -2129,6 +2134,7 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 		WithQueryGate(timeoutGate{timeout: maxConcurrentWaitTimeout, delegate: gate.NewBlocking(maxConcurrent)}),
 	)
 	assert.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), store))
 	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
 	require.NoError(t, store.SyncBlocks(context.Background()))
 
@@ -2210,6 +2216,7 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 		WithLogger(logger),
 	)
 	assert.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), store))
 	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
 
 	// Use an invalid matcher regex to trigger an error.
@@ -2337,7 +2344,9 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 		WithIndexCache(indexCache),
 	)
 	assert.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), store))
 	assert.NoError(t, store.SyncBlocks(context.Background()))
+	t.Cleanup(func() { assert.NoError(t, store.RemoveBlocksAndClose()) })
 
 	srv := newStoreGatewayTestServer(t, store)
 
@@ -2500,7 +2509,9 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 						NewBucketStoreMetrics(nil),
 					)
 					assert.NoError(t, err)
+					assert.NoError(t, services.StartAndAwaitRunning(ctx, store))
 					assert.NoError(t, store.SyncBlocks(ctx))
+					t.Cleanup(func() { assert.NoError(t, store.RemoveBlocksAndClose()) })
 
 					srv := newStoreGatewayTestServer(t, store)
 					for _, streamingBatchSize := range []int{0, 1, 5} {
@@ -2619,6 +2630,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 		opts...,
 	)
 	assert.NoError(tb, err)
+	assert.NoError(tb, services.StartAndAwaitRunning(context.Background(), store))
 	assert.NoError(tb, store.SyncBlocks(context.Background()))
 
 	cleanupFuncs = append(cleanupFuncs, func() { assert.NoError(t, store.RemoveBlocksAndClose()) })
