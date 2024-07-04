@@ -176,7 +176,7 @@ func TestBucketBlockSet_add_SkipDuplicates(t *testing.T) {
 		m.ULID = in.id
 		m.MinTime = in.mint
 		m.MaxTime = in.maxt
-		set.add(&bucketBlock{meta: &m})
+		assert.NoError(t, set.add(&bucketBlock{meta: &m}))
 	}
 	assert.Equal(t, 2, set.len())
 }
@@ -199,7 +199,7 @@ func TestBucketBlockSet_remove(t *testing.T) {
 		m.ULID = in.id
 		m.MinTime = in.mint
 		m.MaxTime = in.maxt
-		set.add(&bucketBlock{meta: &m})
+		assert.NoError(t, set.add(&bucketBlock{meta: &m}))
 	}
 	b := set.remove(input[1].id)
 	require.NotNil(t, b)
@@ -1827,8 +1827,8 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		seriesLimiterFactory: newStaticSeriesLimiterFactory(0),
 		maxSeriesPerBatch:    65536,
 	}
-	store.blockSet.add(b1)
-	store.blockSet.add(b2)
+	assert.NoError(t, store.blockSet.add(b1))
+	assert.NoError(t, store.blockSet.add(b2))
 
 	srv := newStoreGatewayTestServer(t, store)
 

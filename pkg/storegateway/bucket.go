@@ -434,7 +434,9 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta, initialSyn
 		}
 	}()
 
-	s.blockSet.add(b)
+	if err = s.blockSet.add(b); err != nil {
+		return errors.Wrap(err, "add block to set")
+	}
 
 	return nil
 }
@@ -1724,15 +1726,16 @@ func newBucketBlockSet() *bucketBlockSet {
 	return &bucketBlockSet{}
 }
 
-// add adds a block to the set. If the block with the same id was already present in the set, add ignores it.
-func (s *bucketBlockSet) add(b *bucketBlock) {
+// add adds a block to the set.
+func (s *bucketBlockSet) add(b *bucketBlock) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
 	// The LoadOrStore verifies the block with the same id never ended up in the set more than once.
 	_, ok := s.blockSet.LoadOrStore(b.meta.ULID, b)
 	if ok {
-		return
+		// This should not ever happen.
+		return fmt.Errorf("block %s already exists in the set", b.meta.ULID)
 	}
 
 	s.blocks = append(s.blocks, b)
@@ -1744,6 +1747,7 @@ func (s *bucketBlockSet) add(b *bucketBlock) {
 		}
 		return s.blocks[j].meta.MinTime < s.blocks[k].meta.MinTime
 	})
+	return nil
 }
 
 // remove removes the block identified by id from the set. It returns the removed block if it was present in the set.
