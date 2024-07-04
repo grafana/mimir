@@ -77,7 +77,7 @@ type Config struct {
 	VerifyOnLoad bool `yaml:"verify_on_load" category:"advanced"`
 
 	// EagerLoadingPersistInterval is injected for testing purposes only.
-	EagerLoadingPersistInterval time.Duration `yaml:"-" category:"hidden"`
+	EagerLoadingPersistInterval time.Duration `yaml:"-" doc:"hidden"`
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
