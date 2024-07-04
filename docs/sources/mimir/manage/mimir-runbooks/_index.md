@@ -2244,7 +2244,7 @@ This error occurs when a distributor rejects an Otel write request because its m
 
 How it **works**:
 
-- The distributor implements an upper limit on the message size of incoming OTel write requests after decompression regardless of the compression type. Refer to [OTLP collector compression details](https://github.com/open-telemetry/opentelemetry-collector/tree/main/config/confighttp) for more information.
+- The distributor implements an upper limit on the message size of incoming OTel write requests before and after decompression regardless of the compression type. Refer to [OTLP collector compression details](https://github.com/open-telemetry/opentelemetry-collector/tree/main/config/confighttp) for more information.
 - Configure this limit in the `-distributor.max-otlp-request-size` setting.
 
 How to **fix** it:
