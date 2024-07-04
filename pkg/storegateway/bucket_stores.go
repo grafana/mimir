@@ -199,7 +199,9 @@ func (u *BucketStores) stopBucketStores(error) error {
 func (u *BucketStores) initialSync(ctx context.Context) error {
 	level.Info(u.logger).Log("msg", "synchronizing TSDB blocks for all users")
 
-	if err := u.syncUsersBlocksWithRetries(ctx, (*BucketStore).InitialSync); err != nil {
+	if err := u.syncUsersBlocksWithRetries(ctx, func(ctx context.Context, store *BucketStore) error {
+		return store.InitialSync(ctx)
+	}); err != nil {
 		level.Warn(u.logger).Log("msg", "failed to synchronize TSDB blocks", "err", err)
 		return err
 	}
@@ -210,10 +212,12 @@ func (u *BucketStores) initialSync(ctx context.Context) error {
 
 // SyncBlocks synchronizes the stores state with the Bucket store for every user.
 func (u *BucketStores) SyncBlocks(ctx context.Context) error {
-	return u.syncUsersBlocksWithRetries(ctx, (*BucketStore).SyncBlocks)
+	return u.syncUsersBlocksWithRetries(ctx, func(ctx context.Context, store *BucketStore) error {
+		return store.SyncBlocks(ctx)
+	})
 }
 
-func (u *BucketStores) syncUsersBlocksWithRetries(ctx context.Context, f func(*BucketStore, context.Context) error) error {
+func (u *BucketStores) syncUsersBlocksWithRetries(ctx context.Context, f func(context.Context, *BucketStore) error) error {
 	retries := backoff.New(ctx, u.syncBackoffConfig)
 
 	var lastErr error
@@ -253,7 +257,7 @@ func (u *BucketStores) ownedUsers(ctx context.Context) ([]string, error) {
 	return ownedUserIDs, nil
 }
 
-func (u *BucketStores) syncUsersBlocks(ctx context.Context, includeUserIDs []string, f func(*BucketStore, context.Context) error) (returnErr error) {
+func (u *BucketStores) syncUsersBlocks(ctx context.Context, includeUserIDs []string, f func(context.Context, *BucketStore) error) (returnErr error) {
 	defer func(start time.Time) {
 		u.syncTimes.Observe(time.Since(start).Seconds())
 		if returnErr == nil {
@@ -282,7 +286,7 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, includeUserIDs []str
 			defer wg.Done()
 
 			for job := range jobs {
-				if err := f(job.store, ctx); err != nil {
+				if err := f(ctx, job.store); err != nil {
 					errsMx.Lock()
 					errs.Add(errors.Wrapf(err, "failed to synchronize TSDB blocks for user %s", job.userID))
 					errsMx.Unlock()
