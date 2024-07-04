@@ -295,10 +295,6 @@ func TestBlockBuilder(t *testing.T) {
 	})
 
 	t.Run("out of order w.r.t. old cycle and future record with valid sample", func(t *testing.T) {
-		// TODO(codesome): figure out what's up with these scenario
-		t.Skip()
-		return
-
 		kafkaTime = cycleEnd
 
 		// Out of order sample w.r.t. samples in last cycle. But for this cycle,
@@ -429,7 +425,8 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 	lastRec := commitRec
 	blockEnd := commitRec.Timestamp.Truncate(cfg.ConsumeInterval).Add(cfg.ConsumeInterval)
 
-	err = commitRecord(ctx, logger, kc, testTopic, commitRec, lastRec.Timestamp.UnixMilli(), blockEnd.UnixMilli())
+	meta := marshallCommitMeta(commitRec.Timestamp.UnixMilli(), lastRec.Timestamp.UnixMilli(), blockEnd.UnixMilli())
+	err = commitRecord(ctx, logger, kc, testTopic, commitRec, meta)
 	require.NoError(t, err)
 	kc.CloseAllowingRebalance()
 
