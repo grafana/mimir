@@ -107,7 +107,7 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
-			endpoint := NewProxyEndpoint(testData.backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0)
+			endpoint := NewProxyEndpoint(testData.backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0, 1.0)
 
 			// Send the responses from a dedicated goroutine.
 			resCh := make(chan *backendResponse)
@@ -119,7 +119,7 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 			}()
 
 			// Wait for the selected backend response.
-			actual := endpoint.waitBackendResponseForDownstream(resCh)
+			actual := endpoint.waitBackendResponseForDownstream(testData.backends, resCh)
 			assert.Equal(t, testData.expected, actual.backend)
 		})
 	}
@@ -152,7 +152,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 		NewProxyBackend("backend-1", backendURL1, time.Second, true, false),
 		NewProxyBackend("backend-2", backendURL2, time.Second, false, false),
 	}
-	endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0)
+	endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0, 1.0)
 
 	for _, tc := range []struct {
 		name    string
@@ -328,7 +328,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 				comparisonError:  scenario.comparatorError,
 			}
 
-			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0, 1.0)
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -430,7 +430,7 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 				comparisonResult: ComparisonSuccess,
 			}
 
-			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, scenario.slowResponseThreshold)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, scenario.slowResponseThreshold, 1.0)
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -499,7 +499,7 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 				comparisonResult: ComparisonSuccess,
 			}
 
-			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0, 1.0)
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -785,4 +785,76 @@ func (b *mockProxyBackend) ForwardRequest(_ context.Context, _ *http.Request, _ 
 	latency := b.fakeResponseLatencies[b.responseIndex]
 	b.responseIndex++
 	return latency, 200, []byte("{}"), resp, nil
+}
+
+func TestProxyEndpoint_BackendSelection(t *testing.T) {
+	const runCount = 1000
+
+	testCases := map[string]struct {
+		backends                            []ProxyBackendInterface
+		secondaryBackendRequestProportion   float64
+		expectedPreferredOnlySelectionCount int // Out of 1000 runs
+	}{
+		"single preferred backend, secondary request proportion 0.0": {
+			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, true, nil)},
+			secondaryBackendRequestProportion:   0.0,
+			expectedPreferredOnlySelectionCount: runCount,
+		},
+		"single preferred backend, secondary request proportion 1.0": {
+			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, true, nil)},
+			secondaryBackendRequestProportion:   1.0,
+			expectedPreferredOnlySelectionCount: runCount,
+		},
+		"single non-preferred backend, secondary request proportion 0.0": {
+			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, false, nil)},
+			secondaryBackendRequestProportion:   0.0,
+			expectedPreferredOnlySelectionCount: runCount,
+		},
+		"single non-preferred backend, secondary request proportion 1.0": {
+			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, false, nil)},
+			secondaryBackendRequestProportion:   1.0,
+			expectedPreferredOnlySelectionCount: runCount,
+		},
+		"multiple backends, secondary request proportion 0.0": {
+			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, true, nil), newMockProxyBackend("non-preferred-backend", 0, false, nil)},
+			secondaryBackendRequestProportion:   0.0,
+			expectedPreferredOnlySelectionCount: runCount,
+		},
+		"multiple backends, secondary request proportion 0.2": {
+			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, true, nil), newMockProxyBackend("non-preferred-backend", 0, false, nil)},
+			secondaryBackendRequestProportion:   0.2,
+			expectedPreferredOnlySelectionCount: 800,
+		},
+		"multiple backends, secondary request proportion 1.0": {
+			backends:                            []ProxyBackendInterface{newMockProxyBackend("preferred-backend", 0, true, nil), newMockProxyBackend("non-preferred-backend", 0, false, nil)},
+			secondaryBackendRequestProportion:   1.0,
+			expectedPreferredOnlySelectionCount: 0,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			proxyEndpoint := NewProxyEndpoint(testCase.backends, Route{}, nil, nil, nil, 0, testCase.secondaryBackendRequestProportion)
+			preferredOnlySelectionCount := 0
+
+			for i := 0; i < runCount; i++ {
+				backends := proxyEndpoint.selectBackends()
+				require.GreaterOrEqual(t, len(backends), 1)
+
+				if len(backends) == 1 {
+					preferredOnlySelectionCount++
+					require.Equal(t, "preferred-backend", backends[0].Name())
+				}
+			}
+
+			if testCase.expectedPreferredOnlySelectionCount == 0 || testCase.expectedPreferredOnlySelectionCount == runCount {
+				// We expect to have selected only the preferred backend either every time or never.
+				require.Equal(t, testCase.expectedPreferredOnlySelectionCount, preferredOnlySelectionCount)
+			} else {
+				// We expect to have selected only the preferred backend just some of the time.
+				// Allow for some variation due to randomness.
+				require.InEpsilonf(t, testCase.expectedPreferredOnlySelectionCount, preferredOnlySelectionCount, 0.2, "expected to choose only the preferred backend %v times, but chose it %v times", testCase.expectedPreferredOnlySelectionCount, preferredOnlySelectionCount)
+			}
+		})
+	}
 }

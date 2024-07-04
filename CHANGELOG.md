@@ -73,6 +73,7 @@
 * [ENHANCEMENT] Log trace ID (if present) with all log messages written while processing a request. #8419
 * [ENHANCEMENT] Log user agent when processing a request. #8419
 * [ENHANCEMENT] Add `time` parameter to proxied instant queries if it is not included in the incoming request. This is optional but enabled by default, and can be disabled with `-proxy.add-missing-time-parameter-to-instant-queries=false`. #8419
+* [ENHANCEMENT] Add support for sending only a proportion of requests to all backends, with the remainder only sent to the preferred backend. The default behaviour is to send all requests to all backends. This can be configured with `-proxy.secondary-backends-request-proportion`. #8532
 * [BUGFIX] Ensure any errors encountered while forwarding a request to a backend (eg. DNS resolution failures) are logged. #8419
 
 ### Documentation
