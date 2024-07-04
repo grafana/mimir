@@ -25,6 +25,10 @@ for POD in $PODS; do
   # Wait some time
   sleep 5
 
+  # HACK
+  # If you get an error resolving the reference to "github.com/grafana/mimir/pkg/mimirpb/mimir.proto" in
+  # pkg/ingester/client/ingester.proto, you need to manually modify the import statement to be just
+  # "pkg/mimirpb/mimir.proto".
   cat "$SCRIPT_DIR/download-chunks-from-ingesters-query.json" | grpcurl \
     -d @ \
     -H "X-Scope-OrgID: $MIMIR_TENANT_ID" \
