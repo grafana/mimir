@@ -1792,21 +1792,19 @@ func (s *bucketBlockSet) filter(mint, maxt int64, blockMatchers []*labels.Matche
 	s.mtx.RLock()
 
 	// Fill the given interval with the blocks within the request mint and maxt.
-	// NOTE: s.blocks are expected to be sorted in minTime order.
-	var bs []*bucketBlock
+	bs := make([]*bucketBlock, 0, len(s.blocks))
 	for _, b := range s.blocks {
-		if b.meta.MaxTime <= mint {
-			continue
-		}
-		// NOTE: Block intervals are half-open: [b.MinTime, b.MaxTime).
+		// NOTE: s.blocks are expected to be sorted in minTime order, their intervals are half-open: [b.MinTime, b.MaxTime).
 		if b.meta.MinTime > maxt {
 			break
 		}
 
-		// Include the block in the list of matching ones only if there are no block-level matchers
-		// or they actually match.
-		if len(blockMatchers) == 0 || b.matchLabels(blockMatchers) {
-			bs = append(bs, b)
+		if b.overlapsClosedInterval(mint, maxt) {
+			// Include the block in the list of matching ones only if there are no block-level matchers
+			// or they actually match.
+			if len(blockMatchers) == 0 || b.matchLabels(blockMatchers) {
+				bs = append(bs, b)
+			}
 		}
 	}
 
