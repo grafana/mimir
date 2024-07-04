@@ -38,6 +38,7 @@ func (p *partitions) update(list []int32) {
 	slices.Sort(list)
 
 	head := p.list[:p.cur]
+	cur := len(head) - 1
 
 	for i := 0; i < len(head); i++ {
 		j, ok := slices.BinarySearch(list, head[i])
@@ -47,14 +48,16 @@ func (p *partitions) update(list []int32) {
 		} else {
 			// Remove from the head item that isn't present the list.
 			head = append(head[:i], head[i+1:]...)
+			if cur != i {
+				// Shift the cursor beyond the head if the last item in the head was removed. Otherwise,
+				// the cursor stays at the end of the head.
+				cur--
+			}
 			i = i - 1
 		}
 	}
 
-	p.cur = len(head) - 1
-	if p.cur < 0 {
-		p.cur = 0
-	}
+	p.cur = cur
 	p.list = slices.Concat(head, list)
 }
 
