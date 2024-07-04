@@ -268,6 +268,11 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 
 	kadmClient := kadm.NewClient(b.kafkaClient)
 
+	// We start a new cycle with always resetting the partitions queue's cursor.
+	b.mu.Lock()
+	b.parts.reset()
+	b.mu.Unlock()
+
 	defer func() {
 		b.mu.Lock()
 		defer b.mu.Unlock()
@@ -276,13 +281,13 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 			b.cancelActivePart(context.Canceled)
 			b.cancelActivePart = nil
 		}
-
-		b.parts.reset()
 	}()
 
 	for ctx.Err() == nil {
 		b.mu.Lock()
-		ctx, cancel := context.WithCancelCause(ctx)
+		// The activePartCtx context is cancelled to let the processing of this partition to bail out
+		// if the partition was lost after the rebalancing.
+		activePartCtx, cancel := context.WithCancelCause(ctx)
 		b.cancelActivePart = cancel
 
 		part := b.parts.next()
@@ -294,7 +299,7 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 
 		level.Debug(b.logger).Log("msg", "next consume cycle", "part", part)
 
-		lags, err := kadmClient.Lag(ctx, b.cfg.Kafka.ConsumerGroup)
+		lags, err := kadmClient.Lag(activePartCtx, b.cfg.Kafka.ConsumerGroup)
 		if err != nil {
 			return fmt.Errorf("get consumer group lag: %w", err)
 		} else if err := lags.Error(); err != nil {
@@ -342,7 +347,7 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 			SeenTillTs:   seenTillTs,
 			LastBlockEnd: lastBlockEnd,
 		}
-		if err := b.nextConsumeCycle(ctx, pl, cycleEnd); err != nil {
+		if err := b.nextConsumeCycle(activePartCtx, pl, cycleEnd); err != nil {
 			level.Error(b.logger).Log("msg", "failed to consume partition", "err", err, "part", part)
 		}
 	}
