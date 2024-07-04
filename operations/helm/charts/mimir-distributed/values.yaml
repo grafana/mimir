@@ -712,6 +712,7 @@ alertmanager:
   # alertmanager:
   #   zoneAwareReplication:
   #     enabled: true
+  #     rolloutGroupName: alertmanager
   #     topologyKey: 'kubernetes.io/hostname'  # This generates default anti-affinity rules
   #     zones:  # Zone list has to be fully redefined for modification. Update with you actual zones or skip to use logical zones only.
   #     - name: zone-a
@@ -729,6 +730,8 @@ alertmanager:
     enabled: false
     # -- Maximum number of alertmanagers that can be unavailable per zone during rollout
     maxUnavailable: 2
+    # -- Overrides the generated name for this rollout-group.
+    rolloutGroupName: null
     # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
     # E.g.: topologyKey: 'kubernetes.io/hostname'
     topologyKey: null
@@ -1028,6 +1031,7 @@ ingester:
   # ingester:
   #   zoneAwareReplication:
   #     enabled: true
+  #     rolloutGroupName: ingester
   #     topologyKey: 'kubernetes.io/hostname'  # This generates default anti-affinity rules
   #     zones:  # Zone list has to be fully redefined for modification. Update with you actual zones or skip to use logical zones only.
   #     - name: zone-a
@@ -1048,6 +1052,8 @@ ingester:
     enabled: true
     # -- Maximum number of ingesters that can be unavailable per zone during rollout
     maxUnavailable: 50
+    # -- Overrides the generated name for this rollout-group.
+    rolloutGroupName: null
     # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
     # E.g.: topologyKey: 'kubernetes.io/hostname'
     topologyKey: null
@@ -2078,6 +2084,7 @@ store_gateway:
   # store_gateway:
   #   zoneAwareReplication:
   #     enabled: true
+  #     rolloutGroupName: 'store-gateway'
   #     topologyKey: 'kubernetes.io/hostname'  # This generates default anti-affinity rules
   #     zones:  # Zone list has to be fully redefined for modification. Update with you actual zones or skip to use logical zones only.
   #     - name: zone-a
@@ -2095,6 +2102,8 @@ store_gateway:
     enabled: true
     # -- Maximum number of store-gateways that can be unavailable per zone during rollout
     maxUnavailable: 50
+    # -- Overrides the generated name for this rollout-group.
+    rolloutGroupName: null
     # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
     # E.g.: topologyKey: 'kubernetes.io/hostname'
     topologyKey: null
