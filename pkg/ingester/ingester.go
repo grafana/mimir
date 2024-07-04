@@ -4093,16 +4093,36 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 		return nil
 	}
 
-	var cLevel string
+	var level string
 	if c, ok := api.ReadConsistencyFromContext(ctx); ok {
-		cLevel = c
+		level = c
 	} else {
-		cLevel = i.limits.IngestStorageReadConsistency(tenantID)
+		level = i.limits.IngestStorageReadConsistency(tenantID)
 	}
-	if cLevel == api.ReadConsistencyEventual {
+
+	spanLog := spanlogger.FromContext(ctx, i.logger)
+	spanLog.DebugLog("msg", "checked read consistency", "level", level)
+
+	// TODO DEBUG
+	//fmt.Println("enforceReadConsistency() consistency level:", level, "partition ID:", i.ingestPartitionID)
+
+	if level != api.ReadConsistencyStrong {
 		return nil
 	}
 
+	// Check if request already contains the minimum offset we have to guarantee being queried
+	// for our partition.
+	if offsets, ok := api.ReadConsistencyEncodedOffsetsFromContext(ctx); ok {
+		if offset, ok := offsets.Lookup(i.ingestPartitionID); ok {
+			// TODO DEBUG
+			//fmt.Println("enforceReadConsistency() offset:", offset)
+
+			spanLog.DebugLog("msg", "enforcing read consistency", "offset", offset)
+			return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilOffset(ctx, offset), "wait for read consistency")
+		}
+	}
+
+	spanLog.DebugLog("msg", "enforcing read consistency", "offset", "last produced")
 	return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilLastProducedOffset(ctx), "wait for read consistency")
 }
 

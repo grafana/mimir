@@ -731,6 +731,7 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest_ShouldPropagateHeadersInAllow
 			// Allowed.
 			{Name: compat.ForceFallbackHeaderName, Values: []string{"true"}},
 			{Name: chunkinfologger.ChunkInfoLoggingHeader, Values: []string{"label"}},
+			{Name: api.ReadConsistencyOffsetsHeader, Values: []string{string(api.EncodeOffsets(map[int32]int64{0: 1, 1: 2}))}},
 
 			// Not allowed.
 			{Name: notAllowedHeader, Values: []string{"some-value"}},
@@ -740,6 +741,7 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest_ShouldPropagateHeadersInAllow
 	require.NoError(t, err)
 	require.Equal(t, []string{"true"}, req.Header.Values(compat.ForceFallbackHeaderName))
 	require.Equal(t, []string{"label"}, req.Header.Values(chunkinfologger.ChunkInfoLoggingHeader))
+	require.Equal(t, []string{string(api.EncodeOffsets(map[int32]int64{0: 1, 1: 2}))}, req.Header.Values(api.ReadConsistencyOffsetsHeader))
 	require.Empty(t, req.Header.Values(notAllowedHeader))
 }
 

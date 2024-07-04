@@ -293,6 +293,52 @@ func TestMinDurationPerTenant(t *testing.T) {
 	}
 }
 
+func TestPreferredStringPerTenant(t *testing.T) {
+	defaults := Limits{IngestStorageReadConsistency: "eventual"}
+	tenantLimits := map[string]*Limits{
+		// tenant-a has no overrides
+		"tenant-b": {IngestStorageReadConsistency: "eventual"},
+		"tenant-c": {IngestStorageReadConsistency: "strong"},
+	}
+
+	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
+	require.NoError(t, err)
+
+	tests := []struct {
+		tenantIDs   []string
+		preferences []string
+		expected    string
+	}{
+		// Single tenant.
+		{tenantIDs: []string{"tenant-a"}, preferences: []string{"strong"}, expected: "eventual"},
+		{tenantIDs: []string{"tenant-a"}, preferences: []string{"eventual"}, expected: "eventual"},
+		{tenantIDs: []string{"tenant-b"}, preferences: []string{"strong"}, expected: "eventual"},
+		{tenantIDs: []string{"tenant-b"}, preferences: []string{"eventual"}, expected: "eventual"},
+		{tenantIDs: []string{"tenant-c"}, preferences: []string{"strong"}, expected: "strong"},
+		{tenantIDs: []string{"tenant-c"}, preferences: []string{"eventual"}, expected: "strong"},
+
+		// Multi tenant and single preference.
+		{tenantIDs: []string{"tenant-a", "tenant-b"}, preferences: []string{"strong"}, expected: "eventual"},
+		{tenantIDs: []string{"tenant-a", "tenant-b"}, preferences: []string{"eventual"}, expected: "eventual"},
+		{tenantIDs: []string{"tenant-a", "tenant-c"}, preferences: []string{"strong"}, expected: "strong"},
+		{tenantIDs: []string{"tenant-a", "tenant-c"}, preferences: []string{"eventual"}, expected: "eventual"},
+		{tenantIDs: []string{"tenant-a", "tenant-c"}, preferences: []string{"unknown"}, expected: "eventual"},
+		{tenantIDs: []string{"tenant-c", "tenant-a"}, preferences: []string{"unknown"}, expected: "strong"},
+
+		// Multi tenant and multi preference.
+		{tenantIDs: []string{"tenant-a", "tenant-b"}, preferences: []string{"strong", "eventual"}, expected: "eventual"},
+		{tenantIDs: []string{"tenant-a", "tenant-b"}, preferences: []string{"eventual", "strong"}, expected: "eventual"},
+		{tenantIDs: []string{"tenant-a", "tenant-c"}, preferences: []string{"strong", "eventual"}, expected: "strong"},
+		{tenantIDs: []string{"tenant-a", "tenant-c"}, preferences: []string{"eventual", "strong"}, expected: "eventual"},
+	}
+
+	for testID, testData := range tests {
+		t.Run(fmt.Sprintf("Test case #%d", testID), func(t *testing.T) {
+			assert.Equal(t, testData.expected, PreferredStringPerTenant(testData.tenantIDs, ov.IngestStorageReadConsistency, testData.preferences))
+		})
+	}
+}
+
 func TestMaxTotalQueryLengthWithoutDefault(t *testing.T) {
 	tenantLimits := map[string]*Limits{
 		"tenant-a": {

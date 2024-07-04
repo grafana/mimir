@@ -48,7 +48,7 @@ var (
 	allFormats        = []string{formatJSON, formatProtobuf}
 
 	// List of HTTP headers to propagate when a Prometheus request is encoded into a HTTP request.
-	prometheusCodecPropagateHeaders = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader}
+	prometheusCodecPropagateHeaders = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader, api.ReadConsistencyOffsetsHeader}
 )
 
 const (
@@ -591,8 +591,8 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
-	if consistency, ok := api.ReadConsistencyFromContext(ctx); ok {
-		req.Header.Add(api.ReadConsistencyHeader, consistency)
+	if level, ok := api.ReadConsistencyFromContext(ctx); ok {
+		req.Header.Add(api.ReadConsistencyHeader, level)
 	}
 
 	// Propagate allowed HTTP headers.
@@ -673,9 +673,11 @@ func (c prometheusCodec) EncodeLabelsQueryRequest(ctx context.Context, req Label
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
-	if consistency, ok := api.ReadConsistencyFromContext(ctx); ok {
-		r.Header.Add(api.ReadConsistencyHeader, consistency)
+	if level, ok := api.ReadConsistencyFromContext(ctx); ok {
+		r.Header.Add(api.ReadConsistencyHeader, level)
 	}
+
+	// TODO propagate the header here as well (but this function is currently not used)
 
 	return r.WithContext(ctx), nil
 }
