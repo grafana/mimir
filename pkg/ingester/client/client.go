@@ -47,8 +47,8 @@ func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics, lo
 	if cfg.CircuitBreaker.Enabled {
 		unary = append([]grpc.UnaryClientInterceptor{NewCircuitBreaker(inst, cfg.CircuitBreaker, metrics, logger)}, unary...)
 	}
-	unary = append(unary, querierapi.ReadConsistencyClientUnaryInterceptor)
-	stream = append(stream, querierapi.ReadConsistencyClientStreamInterceptor)
+	unary = append(unary, querierapi.HeaderOptionsClientUnaryInterceptor)
+	stream = append(stream, querierapi.HeaderOptionsClientStreamInterceptor)
 
 	dialOpts, err := cfg.GRPCClientConfig.DialOption(unary, stream)
 	if err != nil {

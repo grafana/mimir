@@ -34,7 +34,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -286,8 +285,7 @@ func NewQuerierHandler(
 
 	router := mux.NewRouter()
 	routeInjector := middleware.RouteInjector{RouteMatcher: router}
-	fallbackInjector := compat.EngineFallbackInjector{}
-	router.Use(routeInjector.Wrap, fallbackInjector.Wrap)
+	router.Use(routeInjector.Wrap)
 
 	// Use a separate metric for the querier in order to differentiate requests from the query-frontend when
 	// running Mimir in monolithic mode.
@@ -298,8 +296,8 @@ func NewQuerierHandler(
 		InflightRequests: inflightRequests,
 	}
 	router.Use(instrumentMiddleware.Wrap)
-	// Since we don't use the regular RegisterQueryAPI, we need to add the consistency middleware manually.
-	router.Use(querierapi.ConsistencyMiddleware().Wrap)
+	// Since we don't use the regular RegisterQueryAPI, we need to add the header options handler manually.
+	router.Use(querierapi.HeaderOptionsMiddleware(DefaultHeaderOptionsMiddlewareConfig()).Wrap)
 
 	// Define the prefixes for all routes
 	prefix := path.Join(cfg.ServerPrefix, cfg.PrometheusHTTPPrefix)

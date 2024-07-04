@@ -750,8 +750,8 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	if cfg.TenantFederation.Enabled && cfg.Ruler.TenantFederation.Enabled {
 		util_log.WarnExperimentalUse("ruler.tenant-federation")
 	}
-	cfg.Server.GRPCMiddleware = append(cfg.Server.GRPCMiddleware, querierapi.ReadConsistencyServerUnaryInterceptor)
-	cfg.Server.GRPCStreamMiddleware = append(cfg.Server.GRPCStreamMiddleware, querierapi.ReadConsistencyServerStreamInterceptor)
+	cfg.Server.GRPCMiddleware = append(cfg.Server.GRPCMiddleware, querierapi.HeaderOptionsServerUnaryInterceptor)
+	cfg.Server.GRPCStreamMiddleware = append(cfg.Server.GRPCStreamMiddleware, querierapi.HeaderOptionsServerStreamInterceptor)
 
 	cfg.API.HTTPAuthMiddleware = noauth.SetupAuthMiddleware(
 		&cfg.Server,

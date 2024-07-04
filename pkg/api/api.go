@@ -39,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	streamingcompat "github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -82,6 +83,15 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.AlertmanagerHTTPPrefix, prefix+"http.alertmanager-http-prefix", "/alertmanager", "HTTP URL path under which the Alertmanager ui and api will be served.")
 	f.StringVar(&cfg.PrometheusHTTPPrefix, prefix+"http.prometheus-http-prefix", "/prometheus", "HTTP URL path under which the Prometheus api will be served.")
+}
+
+func DefaultHeaderOptionsMiddlewareConfig() querierapi.HeaderOptionsConfig {
+	return querierapi.HeaderOptionsConfig{
+		Headers: map[string]func(string) error{
+			querierapi.ReadConsistencyHeader:        querierapi.IsValidReadConsistency,
+			streamingcompat.ForceFallbackHeaderName: streamingcompat.ForceFallbackHeaderNameValidator,
+		},
+	}
 }
 
 type API struct {
@@ -162,9 +172,8 @@ func (a *API) RegisterRoutesWithPrefix(prefix string, handler http.Handler, auth
 }
 
 func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip bool, methods ...string) (route *mux.Route) {
-	// Propagate the consistency level on all HTTP routes.
-	// They are not used everywhere, but for consistency and less surprise it's added everywhere.
-	handler = querierapi.ConsistencyMiddleware().Wrap(handler)
+	// Propagate header options everywhere.
+	handler = querierapi.HeaderOptionsMiddleware(DefaultHeaderOptionsMiddlewareConfig()).Wrap(handler)
 
 	if auth {
 		handler = a.AuthMiddleware.Wrap(handler)

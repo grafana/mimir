@@ -35,7 +35,6 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
-	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -577,18 +576,7 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
-	if consistency, ok := api.ReadConsistencyFromContext(ctx); ok {
-		req.Header.Add(api.ReadConsistencyHeader, consistency)
-	}
-
-	for _, h := range r.GetHeaders() {
-		if h.Name == compat.ForceFallbackHeaderName {
-			for _, v := range h.Values {
-				// There should only be one value, but add all of them for completeness.
-				req.Header.Add(compat.ForceFallbackHeaderName, v)
-			}
-		}
-	}
+	api.SetHeaderOptions(ctx, req)
 
 	return req.WithContext(ctx), nil
 }

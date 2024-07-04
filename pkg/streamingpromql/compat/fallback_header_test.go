@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/querier/api"
 )
 
 func TestEngineFallbackInjector(t *testing.T) {
@@ -43,7 +45,11 @@ func TestEngineFallbackInjector(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			injector := EngineFallbackInjector{}
+			injector := api.HeaderOptionsMiddleware(api.HeaderOptionsConfig{
+				Headers: map[string]func(string) error{
+					ForceFallbackHeaderName: ForceFallbackHeaderNameValidator,
+				},
+			})
 			handlerCalled := false
 			handler := injector.Wrap(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				handlerCalled = true
