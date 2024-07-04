@@ -687,15 +687,15 @@ func TestBucketStore_EagerLoading(t *testing.T) {
 	testCases := map[string]struct {
 		eagerLoadReaderEnabled       bool
 		expectedEagerLoadedBlocks    int
-		createLoadedBlocksSnapshotFn func(blockIds []ulid.ULID) map[ulid.ULID]int64
+		createLoadedBlocksSnapshotFn func([]ulid.ULID) map[ulid.ULID]int64
 	}{
 		"block is present in pre-shutdown loaded blocks and eager-loading is disabled": {
 			eagerLoadReaderEnabled:    false,
 			expectedEagerLoadedBlocks: 0,
-			createLoadedBlocksSnapshotFn: func(blockIds []ulid.ULID) map[ulid.ULID]int64 {
+			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) map[ulid.ULID]int64 {
 				snapshot := make(map[ulid.ULID]int64)
-				for _, blockId := range blockIds {
-					snapshot[blockId] = time.Now().UnixMilli()
+				for _, blockID := range blockIDs {
+					snapshot[blockID] = time.Now().UnixMilli()
 				}
 				return snapshot
 			},
@@ -703,10 +703,10 @@ func TestBucketStore_EagerLoading(t *testing.T) {
 		"block is present in pre-shutdown loaded blocks and eager-loading is enabled, loading index header during initial sync": {
 			eagerLoadReaderEnabled:    true,
 			expectedEagerLoadedBlocks: 6,
-			createLoadedBlocksSnapshotFn: func(blockIds []ulid.ULID) map[ulid.ULID]int64 {
+			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) map[ulid.ULID]int64 {
 				snapshot := make(map[ulid.ULID]int64)
-				for _, blockId := range blockIds {
-					snapshot[blockId] = time.Now().UnixMilli()
+				for _, blockID := range blockIDs {
+					snapshot[blockID] = time.Now().UnixMilli()
 				}
 				return snapshot
 			},
@@ -714,10 +714,10 @@ func TestBucketStore_EagerLoading(t *testing.T) {
 		"block is present in pre-shutdown loaded blocks and eager-loading is enabled, loading index header after initial sync": {
 			eagerLoadReaderEnabled:    true,
 			expectedEagerLoadedBlocks: 6,
-			createLoadedBlocksSnapshotFn: func(blockId []ulid.ULID) map[ulid.ULID]int64 {
+			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) map[ulid.ULID]int64 {
 				snapshot := make(map[ulid.ULID]int64)
-				for _, blockId := range blockId {
-					snapshot[blockId] = time.Now().UnixMilli()
+				for _, blockID := range blockIDs {
+					snapshot[blockID] = time.Now().UnixMilli()
 				}
 				return snapshot
 			},
