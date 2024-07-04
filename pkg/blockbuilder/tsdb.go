@@ -405,20 +405,20 @@ func (u *userTSDB) compactEverything(ctx context.Context) error {
 	return nil
 }
 
-func (u *userTSDB) PreCreation(metric labels.Labels) error {
+func (u *userTSDB) PreCreation(_ labels.Labels) error {
 	// TODO: Implement
 	return nil
 }
 
-func (u *userTSDB) PostCreation(metric labels.Labels) {
+func (u *userTSDB) PostCreation(_ labels.Labels) {
 	// TODO: Implement
 }
 
-func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) {
+func (u *userTSDB) PostDeletion(_ map[chunks.HeadSeriesRef]labels.Labels) {
 	// TODO: Implement
 }
 
-func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
+func (u *userTSDB) blocksToDelete(_ []*tsdb.Block) map[ulid.ULID]struct{} {
 	// TODO(codesome): delete all the blocks that have been shipped.
 	return map[ulid.ULID]struct{}{}
 }

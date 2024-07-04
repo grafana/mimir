@@ -241,9 +241,7 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 			// will immediately start the next consumption.
 			nextCycleTime = nextCycleTime.Add(b.cfg.ConsumeInterval)
 			waitTime = time.Until(nextCycleTime)
-			if waitTime < 0 {
-				// TODO(codesome): track "-waitTime", which is the time we ran over. Should have an alert on this.
-			}
+			// TODO(codesome): track "-waitTime" (when waitTime < 0), which is the time we ran over. Should have an alert on this.
 		case <-ctx.Done():
 			return nil
 		}
