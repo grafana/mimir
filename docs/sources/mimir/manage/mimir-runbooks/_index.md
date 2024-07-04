@@ -2240,7 +2240,7 @@ How to **fix** it:
 
 ### err-mimir-distributor-max-otlp-request-size
 
-This error occurs when a distributor rejects an Otel write request because its message size is larger than the allowed limit after decompression.
+This error occurs when a distributor rejects an OTel write request because its message size is larger than the allowed limit before or after decompression.
 
 How it **works**:
 
