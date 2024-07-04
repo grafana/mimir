@@ -263,56 +263,36 @@ For more information, see [Installing Grafana Mimir dashboards and alerts].
 
 The `mimir-distributed` Helm chart makes it easy for you to collect metrics and
 logs from Mimir. It assigns the correct labels for you so that the dashboards
-and alerts simply work. The chart uses the Grafana Agent to ship metrics to
-a Prometheus-compatible server and logs to a Loki or GEL (Grafana Enterprise
-Metrics) server.
+and alerts work.
 
-1. Download the Grafana Agent Operator Custom Resource Definitions (CRDs) from
-   https://github.com/grafana/agent/tree/main/operations/agent-static-operator/crds
-2. Install the CRDs on your cluster:
+{{< admonition type="caution" >}}
+The `mimir-distributed` Helm chart uses Grafana Agent, which is now deprecated. Use Grafana Alloy to ship metrics and logs instead.{{< /admonition >}}
 
-   ```bash
-   kubectl apply -f operations/agent-static-operator/crds/
-   ```
-
-3. Add the following YAML snippet to your
-   values file, to send metamonitoring telemetry from Mimir. Change the URLs and credentials to match your desired
-   destination.
+To send metamonitoring telemetry from Mimir, add the following YAML snippet to your
+   values file:
 
    ```yaml
    metaMonitoring:
      serviceMonitor:
        enabled: true
      grafanaAgent:
-       enabled: true
-       installOperator: true
-
-       logs:
-         remote:
-           url: "https://example.com/loki/api/v1/push"
-           auth:
-             username: 12345
-
-       metrics:
-         remote:
-           url: "https://prometehus.prometheus.svc.cluster.local./api/v1/push"
-           headers:
-             X-Scope-OrgID: metamonitoring
+       enabled: false
+       installOperator: false
    ```
 
-   For details about how to set up the credentials, see [Collecting metrics and logs from Grafana Mimir].
+   For details about how to set up the credentials, see [Collecting metrics and logs from Grafana Mimir](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/collecting-metrics-and-logs/).
 
 Your Grafana Mimir cluster can now ingest metrics in production.
 
 ## Configure clients to write metrics to Mimir
 
 To configure each client to remote-write metrics to Mimir, refer to [Configure Prometheus to write to Grafana Mimir]({{< relref "../get-started-helm-charts#configure-prometheus-to-write-to-grafana-mimir" >}})
-and [Configure Grafana Agent to write to Grafana Mimir]({{< relref "../get-started-helm-charts#configure-grafana-agent-to-write-to-grafana-mimir" >}}).
+and [Configure Grafana Alloy to write to Grafana Mimir](https://grafana.com/docs/helm-charts/mimir-distributed/latest/get-started-helm-charts/#configure-grafana-alloy-to-write-to-grafana-mimir).
 
-## Set up redundant Prometheus or Grafana Agent instances for high availability
+## Set up redundant Prometheus or Grafana Alloy instances for high availability
 
 If you need redundancy on the write path before it reaches Mimir, then you
-can set up redundant instances of Prometheus or Grafana Agent to
+can set up redundant instances of Prometheus or Grafana Alloy to
 write metrics to Mimir.
 
 For more information, see [Configure high-availability deduplication with Consul]({{< relref "./configure-helm-ha-deduplication-consul" >}}).
