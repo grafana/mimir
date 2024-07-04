@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package blockbuilder
 
 import (
@@ -426,7 +428,7 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 	blockEnd := commitRec.Timestamp.Truncate(cfg.ConsumeInterval).Add(cfg.ConsumeInterval)
 
 	meta := marshallCommitMeta(commitRec.Timestamp.UnixMilli(), lastRec.Timestamp.UnixMilli(), blockEnd.UnixMilli())
-	err = commitRecord(ctx, logger, kc, testTopic, commitRec, meta)
+	err = commitRecord(ctx, logger, kc, commitRec, meta)
 	require.NoError(t, err)
 	kc.CloseAllowingRebalance()
 
