@@ -245,7 +245,7 @@ func NewBucketStore(
 		snapConfig := indexheader.SnapshotterConfig{
 			Path:            dir,
 			UserID:          userID,
-			PersistInterval: bucketStoreConfig.IndexHeader.LazyLoadingIdleTimeout,
+			PersistInterval: bucketStoreConfig.IndexHeader.EagerLoadingPersistInterval,
 		}
 		s.snapshotter = indexheader.NewSnapshotter(s.logger, snapConfig, s.indexReaderPool)
 	} else {
