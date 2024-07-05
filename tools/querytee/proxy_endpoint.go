@@ -297,7 +297,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 }
 
 func (p *ProxyEndpoint) waitBackendResponseForDownstream(backends []ProxyBackendInterface, resCh chan *backendResponse) *backendResponse {
-	responses := make([]*backendResponse, 0, len(backends))
+	var firstResponse *backendResponse
 
 	for res := range resCh {
 		// If the response came from the preferred backend, return it immediately.
@@ -306,12 +306,14 @@ func (p *ProxyEndpoint) waitBackendResponseForDownstream(backends []ProxyBackend
 			return res
 		}
 
-		// Otherwise we keep track of it for later.
-		responses = append(responses, res)
+		// Otherwise if this was the first response, keep track of it for later.
+		if firstResponse == nil {
+			firstResponse = res
+		}
 	}
 
 	// No successful response, so let's pick the first one.
-	return responses[0]
+	return firstResponse
 }
 
 func (p *ProxyEndpoint) compareResponses(expectedResponse, actualResponse *backendResponse) (ComparisonResult, error) {
