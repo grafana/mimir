@@ -100,8 +100,13 @@ func makeExpectedMetricsMap(testTuples []WriteReadSeriesTestTuple, template stri
 }
 
 func TestWriteReadSeriesTest_Run(t *testing.T) {
-	testWriteReadSeriesTestRun(t, cfgFloat, floatTestTuples)
-	testWriteReadSeriesTestRun(t, cfgHist, histTestTuples)
+	t.Run("floats", func(t *testing.T) {
+		testWriteReadSeriesTestRun(t, cfgFloat, floatTestTuples)
+	})
+
+	t.Run("histograms", func(t *testing.T) {
+		testWriteReadSeriesTestRun(t, cfgHist, histTestTuples)
+	})
 }
 
 func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, testTuples []WriteReadSeriesTestTuple) {
@@ -416,8 +421,13 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 }
 
 func TestWriteReadSeriesTest_Init(t *testing.T) {
-	testWriteReadSeriesTestInit(t, cfgFloat, floatTestTuples)
-	testWriteReadSeriesTestInit(t, cfgHist, histTestTuples)
+	t.Run("floats", func(t *testing.T) {
+		testWriteReadSeriesTestInit(t, cfgFloat, floatTestTuples)
+	})
+
+	t.Run("histograms", func(t *testing.T) {
+		testWriteReadSeriesTestInit(t, cfgHist, histTestTuples)
+	})
 }
 
 func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, testTuples []WriteReadSeriesTestTuple) {
