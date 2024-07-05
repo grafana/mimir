@@ -94,7 +94,7 @@
 * [ENHANCEMENT] `wal-reader`: References to unknown series from Samples, Exemplars, histogram or tombstones records are now always logged. #8568
 * [ENHANCEMENT] `tsdb-series`: added `-stats` option to print min/max time of chunks, total number of samples and DPM for each series. #8420
 
-## v2.13.0-rc.0
+## 2.13.0
 
 ### Grafana Mimir
 
@@ -194,6 +194,9 @@
 * [BUGFIX] Querier: fix edge case where bucket indexes are sometimes cached forever instead of with the expected TTL. #8343
 * [BUGFIX] OTLP handler: fix errors returned by OTLP handler when used via httpgrpc tunneling. #8363
 * [BUGFIX] Update `github.com/hashicorp/go-retryablehttp` to address [CVE-2024-6104](https://github.com/advisories/GHSA-v6v8-xj6m-xwqh). #8539
+* [BUGFIX] Alertmanager: Fixes a number of bugs in silences which could cause an existing silence to be deleted/expired when updating the silence failed. This could happen when the replacing silence was invalid or exceeded limits. #8525
+* [BUGFIX] Alertmanager: Fix per-tenant silence limits not reloaded during runtime. #8456
+* [BUGFIX] Alertmanager: Fix help message for utf-8-strict-mode. #8572
 * [BUGFIX] Upgrade golang to 1.22.5 to address [CVE-2024-24791](https://nvd.nist.gov/vuln/detail/CVE-2024-24791). #8600
 
 ### Mixin
