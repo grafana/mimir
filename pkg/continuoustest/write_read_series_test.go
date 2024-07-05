@@ -85,8 +85,10 @@ func init() {
 	emCtx = util_test.NewExpectedMetricsContext()
 	emCtx.Add("mimir_continuous_test_writes_total", "Total number of attempted write requests.", "counter")
 	emCtx.Add("mimir_continuous_test_writes_failed_total", "Total number of failed write requests.", "counter")
+	emCtx.Add("mimir_continuous_test_writes_request_duration_seconds", "Duration of the write requests.", "histogram")
 	emCtx.Add("mimir_continuous_test_queries_total", "Total number of attempted query requests.", "counter")
 	emCtx.Add("mimir_continuous_test_queries_failed_total", "Total number of failed query requests.", "counter")
+	emCtx.Add("mimir_continuous_test_queries_request_duration_seconds", "Duration of the read requests.", "histogram")
 	emCtx.Add("mimir_continuous_test_query_result_checks_total", "Total number of query results checked for correctness.", "counter")
 	emCtx.Add("mimir_continuous_test_query_result_checks_failed_total", "Total number of query results failed when checking for correctness.", "counter")
 }

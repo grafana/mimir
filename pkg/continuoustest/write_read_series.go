@@ -183,9 +183,11 @@ func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, typeLabel string
 	defer sp.Finish()
 	logger := log.With(sp, "timestamp", timestamp.String(), "num_series", t.cfg.NumSeries)
 
+	start := time.Now()
 	statusCode, err := t.client.WriteSeries(ctx, series)
-
+	t.metrics.writesLatency.WithLabelValues(typeLabel).Observe(time.Since(start).Seconds())
 	t.metrics.writesTotal.WithLabelValues(typeLabel).Inc()
+
 	if statusCode/100 != 2 {
 		t.metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(statusCode), typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Failed to remote write series", "status_code", statusCode, "err", err)
@@ -295,7 +297,9 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	level.Debug(logger).Log("msg", "Running range query")
 
 	t.metrics.queriesTotal.WithLabelValues(typeLabel).Inc()
+	queryStart := time.Now()
 	matrix, err := t.client.QueryRange(ctx, metricSumQuery, start, end, step, WithResultsCacheEnabled(resultsCacheEnabled))
+	t.metrics.queriesLatency.WithLabelValues(typeLabel, strconv.FormatBool(resultsCacheEnabled)).Observe(time.Since(queryStart).Seconds())
 	if err != nil {
 		t.metrics.queriesFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Failed to execute range query", "err", err)
@@ -327,7 +331,9 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 	level.Debug(logger).Log("msg", "Running instant query")
 
 	t.metrics.queriesTotal.WithLabelValues(typeLabel).Inc()
+	queryStart := time.Now()
 	vector, err := t.client.Query(ctx, metricSumQuery, ts, WithResultsCacheEnabled(resultsCacheEnabled))
+	t.metrics.queriesLatency.WithLabelValues(typeLabel, strconv.FormatBool(resultsCacheEnabled)).Observe(time.Since(queryStart).Seconds())
 	if err != nil {
 		t.metrics.queriesFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Failed to execute instant query", "err", err)
