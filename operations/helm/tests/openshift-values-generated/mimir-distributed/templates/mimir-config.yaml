@@ -30,7 +30,6 @@ data:
     auth:
       type: enterprise
     blocks_storage:
-      backend: s3
       bucket_store:
         sync_dir: /data/tsdb-sync
       tsdb:

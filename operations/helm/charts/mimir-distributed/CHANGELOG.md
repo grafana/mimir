@@ -64,6 +64,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Helm: Expose AM configs in the `gateway` NGINX configuration. #8248
 * [BUGFIX] Helm: fix ServiceMonitor and PVC template to not show diff in ArgoCD. #8829
 * [BUGFIX] Alertmanager: Set -server.http-idle-timeout to avoid EOF errors in ruler. #8192
+* [BUGFIX] Helm: Only set blocks_storage.backend=s3 when using MinIO. #8643
 
 ## 5.3.0
 
