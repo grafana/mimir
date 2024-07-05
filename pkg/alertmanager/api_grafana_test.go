@@ -198,12 +198,16 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 		logger: test.NewTestingLogger(t),
 	}
 
+	externalURL := "http://test.grafana.com"
 	require.NoError(t, alertstore.SetGrafanaAlertConfig(context.Background(), alertspb.GrafanaAlertConfigDesc{
 		User:               "test_user",
 		RawConfig:          testGrafanaConfig,
 		Hash:               "bb788eaa294c05ec556c1ed87546b7a9",
 		CreatedAtTimestamp: now,
 		Default:            false,
+		Promoted:           true,
+		ExternalUrl:        externalURL,
+		StaticHeaders:      map[string]string{"Header-1": "Value-1", "Header-2": "Value-2"},
 	}))
 
 	require.Len(t, storage.Objects(), 1)
@@ -231,11 +235,16 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 				 "configuration_hash": "bb788eaa294c05ec556c1ed87546b7a9",
 				 "created": %d,
 				 "default": false,
-				 "promoted": false
+				 "promoted": true,
+				 "external_url": %q,
+				 "static_headers": {
+					"Header-1": "Value-1",
+					"Header-2": "Value-2"
+				 }
 			},
 			"status": "success"
 		}
-		`, testGrafanaConfig, now)
+		`, testGrafanaConfig, now, externalURL)
 
 		require.JSONEq(t, json, string(body))
 		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
@@ -347,7 +356,12 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 			"configuration_hash": "ChEKBW5mbG9nEghzb21lZGF0YQ==",
 			"created": 12312414343,
 			"default": false,
-			"promoted": true
+			"promoted": true,
+			"external_url": "http://test.grafana.com",
+			"static_headers": {
+				"Header-1": "Value-1",
+				"Header-2": "Value-2"
+			}
 		}
 		`, testGrafanaConfig)
 		req.Body = io.NopCloser(strings.NewReader(json))

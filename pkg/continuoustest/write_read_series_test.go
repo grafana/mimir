@@ -100,8 +100,13 @@ func makeExpectedMetricsMap(testTuples []WriteReadSeriesTestTuple, template stri
 }
 
 func TestWriteReadSeriesTest_Run(t *testing.T) {
-	testWriteReadSeriesTestRun(t, cfgFloat, floatTestTuples)
-	testWriteReadSeriesTestRun(t, cfgHist, histTestTuples)
+	t.Run("floats", func(t *testing.T) {
+		testWriteReadSeriesTestRun(t, cfgFloat, floatTestTuples)
+	})
+
+	t.Run("histograms", func(t *testing.T) {
+		testWriteReadSeriesTestRun(t, cfgHist, histTestTuples)
+	})
 }
 
 func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, testTuples []WriteReadSeriesTestTuple) {
@@ -416,8 +421,13 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 }
 
 func TestWriteReadSeriesTest_Init(t *testing.T) {
-	testWriteReadSeriesTestInit(t, cfgFloat, floatTestTuples)
-	testWriteReadSeriesTestInit(t, cfgHist, histTestTuples)
+	t.Run("floats", func(t *testing.T) {
+		testWriteReadSeriesTestInit(t, cfgFloat, floatTestTuples)
+	})
+
+	t.Run("histograms", func(t *testing.T) {
+		testWriteReadSeriesTestInit(t, cfgHist, histTestTuples)
+	})
 }
 
 func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, testTuples []WriteReadSeriesTestTuple) {
@@ -434,7 +444,8 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 			client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), now.Add(-24*time.Hour).Add(writeInterval), now, writeInterval, mock.Anything).Return(model.Matrix{}, nil)
 		}
 
-		test := NewWriteReadSeriesTest(cfg, client, logger, nil)
+		reg := prometheus.NewPedanticRegistry()
+		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
 
 		require.NoError(t, test.Init(context.Background(), now))
 
@@ -446,6 +457,14 @@ func testWriteReadSeriesTestInit(t *testing.T, cfg WriteReadSeriesTestConfig, te
 			require.Zero(t, records.queryMinTime)
 			require.Zero(t, records.queryMaxTime)
 		}
+
+		em := util_test.ExpectedMetrics{Context: emCtx}
+		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 0))
+		em.AddMultiple("mimir_continuous_test_queries_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 0))
+		em.AddMultiple("mimir_continuous_test_queries_failed_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 0))
+		em.AddMultiple("mimir_continuous_test_query_result_checks_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 0))
+		em.AddMultiple("mimir_continuous_test_query_result_checks_failed_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 0))
+		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
 	t.Run("previously written data points are in the range [-2h, -1m]", func(t *testing.T) {

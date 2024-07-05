@@ -150,6 +150,7 @@ type RulesLimits interface {
 	RulerRecordingRulesEvaluationEnabled(userID string) bool
 	RulerAlertingRulesEvaluationEnabled(userID string) bool
 	RulerSyncRulesOnChangesEnabled(userID string) bool
+	RulerProtectedNamespaces(userID string) []string
 }
 
 func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Counter, remoteQuerier bool) rules.QueryFunc {

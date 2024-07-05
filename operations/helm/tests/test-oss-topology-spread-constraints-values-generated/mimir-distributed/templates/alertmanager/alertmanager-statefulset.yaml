@@ -59,6 +59,11 @@ spec:
         labelSelector:
           matchLabels:
             foo: bar
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
         whenUnsatisfiable: DoNotSchedule
@@ -67,6 +72,11 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
             app.kubernetes.io/component: alertmanager
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       terminationGracePeriodSeconds: 900
       volumes:
         - name: config
@@ -95,6 +105,10 @@ spec:
             - "-target=alertmanager"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            # Prometheus HTTP client used to send alerts has a hard-coded idle
+            # timeout of 5 minutes, therefore the server timeout for Alertmanager
+            # needs to be higher to avoid connections being closed abruptly.
+            - "-server.http-idle-timeout=6m"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir

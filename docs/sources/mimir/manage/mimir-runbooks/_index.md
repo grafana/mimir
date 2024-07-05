@@ -1388,7 +1388,9 @@ This alert fires when "receive delay" reported by ingester during "starting" pha
 
 How it **works**:
 
-- When ingester is starting, it needs to fetch and process records from Kafka until preconfigured consumption lag is honored. The maximum tolerated lag before an ingester is considered to have caught up reading from a partition at startup can be configured via `-ingest-storage.kafka.max-consumer-lag-at-startup`.
+- When an ingester starts, it needs to fetch and process records from Kafka until a preconfigured consumption lag is honored. There are two configuration options that control the lag before an ingester is considered to have caught up reading from a partition at startup:
+  - `-ingest-storage.kafka.max-consumer-lag-at-startup`: this is the guaranteed maximum lag before an ingester is considered to have caught up. The ingester doesn't become ACTIVE in the hash ring and doesn't pass the readiness check until the measured lag is below this setting.
+  - `-ingest-storage.kafka.target-consumer-lag-at-startup`: this is the desired maximum lag that an ingester sets to achieve at startup. This setting is a best-effort. The ingester is granted a "grace period" to have the measured lag below this setting. However, the ingester still starts if the target lag hasn't been reached within this "grace period", as long as the max lag is honored. The "grace period" is equal to the configured `-ingest-storage.kafka.max-consumer-lag-at-startup`.
 - Each record has a timestamp when it was sent to Kafka by the distributor. When ingester reads the record, it computes "receive delay" as a difference between current time (when record was read) and time when record was sent to Kafka. This receive delay is reported in the metric `cortex_ingest_storage_reader_receive_delay_seconds`. You can see receive delay on `Mimir / Writes` dashboard, in section "Ingester (ingest storage – end-to-end latency)".
 - Under normal conditions when ingester is processing records faster than records are appearing, receive delay should be decreasing, until `-ingest-storage.kafka.max-consumer-lag-at-startup` is honored.
 - When ingester is starting, and observed "receive delay" is increasing, alert is raised.
@@ -1454,13 +1456,14 @@ This alert fires when too many read-requests with strong consistency are failing
 How it **works**:
 
 - When read request asks for strong-consistency guarantee, ingester will read the last produced offset from Kafka, and wait until record with this offset is consumed.
-- If read request times out during this wait, that is considered to be a failure of request with strong-consistency.
+- If read request times out during this wait, either because of the request timeout or the configured `-ingest-storage.kafka.wait-strong-read-consistency-timeout` (whatever happens first), that is considered to be a failure of request with strong-consistency.
 - If requests keep failing due to failure to enforce strong-consistency, this alert is raised.
 
 How to **investigate**:
 
 - Check wait latency of requests with strong-consistency on `Mimir / Queries` dashboard.
-- Check if ingester needs to process too many records, and whether ingesters need to be scaled up (vertically or horizontally).
+- Check if ingesters are processing too many records, and they need to be scaled up (vertically or horizontally).
+- Check actual error in logs to see whether the `-ingest-storage.kafka.wait-strong-read-consistency-timeout` or the request timeout has been hit first.
 
 ### Ingester is overloaded when consuming from Kafka
 
@@ -2234,6 +2237,20 @@ How it **works**:
 How to **fix** it:
 
 - Increase the allowed limit by using the `-distributor.max-recv-msg-size` option.
+
+### err-mimir-distributor-max-otlp-request-size
+
+This error occurs when a distributor rejects an OTel write request because its message size is larger than the allowed limit before or after decompression.
+
+How it **works**:
+
+- The distributor implements an upper limit on the message size of incoming OTel write requests before and after decompression regardless of the compression type. Refer to [OTLP collector compression details](https://github.com/open-telemetry/opentelemetry-collector/tree/main/config/confighttp) for more information.
+- Configure this limit in the `-distributor.max-otlp-request-size` setting.
+
+How to **fix** it:
+
+- If you use the batch processor in the OTLP collector, decrease the maximum batch size in the `send_batch_max_size` setting. Refer to [Batch Collector](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md) for details.
+- Increase the allowed limit in the `-distributor.max-otlp-request-size` setting.
 
 ### err-mimir-distributor-max-write-request-data-item-size
 

@@ -958,6 +958,7 @@ func (c *Cluster) MoveTopicPartition(topic string, partition int32, nodeID int32
 			return
 		}
 		pd.leader = br
+		pd.epoch++
 	})
 	return err
 }

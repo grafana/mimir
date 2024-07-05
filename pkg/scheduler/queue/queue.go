@@ -133,9 +133,6 @@ type RequestQueue struct {
 	stopRequested chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
 	stopCompleted chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
 
-	// querierInflightRequests tracks requests from the time the request was successfully sent to a querier
-	// to the time the request was completed by the querier or failed due to cancel, timeout, or disconnect.
-	querierInflightRequests       map[RequestKey]*SchedulerRequest
 	requestsToEnqueue             chan requestToEnqueue
 	requestsSent                  chan *SchedulerRequest
 	requestsCompleted             chan *SchedulerRequest
@@ -181,9 +178,9 @@ func NewRequestQueue(
 	queueLength *prometheus.GaugeVec,
 	discardedRequests *prometheus.CounterVec,
 	enqueueDuration prometheus.Histogram,
-	querierInflightRequestsGauge *prometheus.GaugeVec,
+	querierInflightRequestsMetric *prometheus.SummaryVec,
 ) (*RequestQueue, error) {
-	queryComponentCapacity, err := NewQueryComponentUtilization(DefaultReservedQueryComponentCapacity, querierInflightRequestsGauge)
+	queryComponentCapacity, err := NewQueryComponentUtilization(DefaultReservedQueryComponentCapacity, querierInflightRequestsMetric)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +203,6 @@ func NewRequestQueue(
 		stopCompleted: make(chan struct{}),
 
 		requestsToEnqueue:             make(chan requestToEnqueue),
-		querierInflightRequests:       map[RequestKey]*SchedulerRequest{},
 		requestsSent:                  make(chan *SchedulerRequest),
 		requestsCompleted:             make(chan *SchedulerRequest),
 		querierOperations:             make(chan querierOperation),
@@ -217,7 +213,7 @@ func NewRequestQueue(
 		queueBroker:               newQueueBroker(maxOutstandingPerTenant, additionalQueueDimensionsEnabled, forgetDelay),
 	}
 
-	q.Service = services.NewTimerService(forgetCheckPeriod, q.starting, q.forgetDisconnectedQueriers, q.stop).WithName("request queue")
+	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")
 
 	return q, nil
 }
@@ -227,6 +223,29 @@ func (q *RequestQueue) starting(_ context.Context) error {
 	go q.dispatcherLoop()
 
 	return nil
+}
+
+func (q *RequestQueue) running(ctx context.Context) error {
+	// periodically submit a message to dispatcherLoop to forget disconnected queriers
+	forgetDisconnectedQueriersTicker := time.NewTicker(forgetCheckPeriod)
+	defer forgetDisconnectedQueriersTicker.Stop()
+
+	// periodically submit a message to dispatcherLoop to observe inflight requests;
+	// same as scheduler, we observe inflight requests frequently and at regular intervals
+	// to have a good approximation of max inflight requests over percentiles of time.
+	inflightRequestsTicker := time.NewTicker(250 * time.Millisecond)
+	defer inflightRequestsTicker.Stop()
+
+	for {
+		select {
+		case <-forgetDisconnectedQueriersTicker.C:
+			q.submitForgetDisconnectedQueriers(ctx)
+		case <-inflightRequestsTicker.C:
+			q.QueryComponentUtilization.ObserveInflightRequests()
+		case <-ctx.Done():
+			return nil
+		}
+	}
 }
 
 func (q *RequestQueue) dispatcherLoop() {
@@ -248,10 +267,6 @@ func (q *RequestQueue) dispatcherLoop() {
 			if err == nil {
 				needToDispatchQueries = true
 			}
-		case sentReq := <-q.requestsSent:
-			q.processRequestSent(sentReq)
-		case completedReq := <-q.requestsCompleted:
-			q.processRequestCompleted(completedReq)
 		case waitingConn := <-q.waitingQuerierConns:
 			requestSent := q.trySendNextRequestForQuerier(waitingConn)
 			if !requestSent {
@@ -470,9 +485,8 @@ func (q *RequestQueue) GetConnectedQuerierWorkersMetric() float64 {
 	return float64(q.connectedQuerierWorkers.Load())
 }
 
-func (q *RequestQueue) forgetDisconnectedQueriers(_ context.Context) error {
+func (q *RequestQueue) submitForgetDisconnectedQueriers(_ context.Context) {
 	q.submitQuerierOperation("", forgetDisconnected)
-	return nil
 }
 
 func (q *RequestQueue) SubmitRegisterQuerierConnection(querierID string) {
@@ -532,41 +546,6 @@ func (q *RequestQueue) processUnregisterQuerierConnection(querierID QuerierID) (
 
 func (q *RequestQueue) processForgetDisconnectedQueriers() (resharded bool) {
 	return q.queueBroker.forgetDisconnectedQueriers(time.Now())
-}
-
-func (q *RequestQueue) SubmitRequestSent(req *SchedulerRequest) {
-	if req != nil {
-		select {
-		case q.requestsSent <- req:
-		case <-q.stopCompleted:
-		}
-	}
-}
-
-func (q *RequestQueue) processRequestSent(req *SchedulerRequest) {
-	if req != nil {
-		q.querierInflightRequests[req.Key()] = req
-		q.QueryComponentUtilization.IncrementForComponentName(req.ExpectedQueryComponentName())
-	}
-}
-
-func (q *RequestQueue) SubmitRequestCompleted(req *SchedulerRequest) {
-	if req != nil {
-		select {
-		case q.requestsCompleted <- req:
-		case <-q.stopCompleted:
-		}
-	}
-}
-
-func (q *RequestQueue) processRequestCompleted(req *SchedulerRequest) {
-	if req != nil {
-		reqKey := req.Key()
-		if req, ok := q.querierInflightRequests[reqKey]; ok {
-			q.QueryComponentUtilization.DecrementForComponentName(req.ExpectedQueryComponentName())
-		}
-		delete(q.querierInflightRequests, reqKey)
-	}
 }
 
 // waitingQuerierConn is a "request" indicating that the querier is ready to receive the next query request.

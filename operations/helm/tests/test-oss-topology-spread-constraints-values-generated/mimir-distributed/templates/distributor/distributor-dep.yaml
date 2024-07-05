@@ -109,6 +109,11 @@ spec:
         labelSelector:
           matchLabels:
             component: distributor
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       terminationGracePeriodSeconds: 100
       volumes:
         - name: config

@@ -408,8 +408,10 @@ func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o t
 
 func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o types.RangeVectorOperator, series []types.SeriesMetadata) (promql.Matrix, error) {
 	m := pooling.GetMatrix(len(series))
-	b := types.NewRingBuffer(q.pool)
-	defer b.Close()
+	floatBuffer := types.NewFPointRingBuffer(q.pool)
+	histogramBuffer := types.NewHPointRingBuffer(q.pool)
+	defer floatBuffer.Close()
+	defer histogramBuffer.Close()
 
 	for i, s := range series {
 		err := o.NextSeries(ctx)
@@ -421,20 +423,27 @@ func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o typ
 			return nil, err
 		}
 
-		b.Reset()
-		step, err := o.NextStepSamples(b)
+		floatBuffer.Reset()
+		histogramBuffer.Reset()
+		step, err := o.NextStepSamples(floatBuffer, histogramBuffer)
 		if err != nil {
 			return nil, err
 		}
 
-		floats, err := b.CopyPoints(step.RangeEnd)
+		floats, err := floatBuffer.CopyPoints(step.RangeEnd)
+		if err != nil {
+			return nil, err
+		}
+
+		histograms, err := histogramBuffer.CopyPoints(step.RangeEnd)
 		if err != nil {
 			return nil, err
 		}
 
 		m = append(m, promql.Series{
-			Metric: s.Labels,
-			Floats: floats,
+			Metric:     s.Labels,
+			Floats:     floats,
+			Histograms: histograms,
 		})
 	}
 
