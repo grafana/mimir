@@ -2611,6 +2611,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -ruler.disabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants whose rules this ruler cannot evaluate. If specified, a ruler that would normally pick the specified tenant(s) for processing will ignore them instead. Subject to sharding.
+  -ruler.drain-notification-queue-on-shutdown
+    	[experimental] Drain all outstanding alert notifications when shutting down. If false, any outstanding alert notifications are dropped when shutting down.
   -ruler.enable-api
     	Enable the ruler config API. (default true)
   -ruler.enabled-tenants comma-separated-list-of-strings

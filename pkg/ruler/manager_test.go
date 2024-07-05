@@ -302,12 +302,12 @@ func TestDefaultMultiTenantManager_WaitsToDrainPendingNotificationsOnShutdown(t 
 	logger := testutil.NewTestingLogger(t)
 	user1Group1 := createRuleGroup("group-1", user, createRecordingRule("count:metric_1", "count(metric_1)"))
 
-	// TODO: configure draining on shutdown
 	cfg := Config{
-		RulePath:                  t.TempDir(),
-		AlertmanagerURL:           server.URL,
-		NotificationQueueCapacity: 1000,
-		NotificationTimeout:       10 * time.Second,
+		RulePath:                         t.TempDir(),
+		AlertmanagerURL:                  server.URL,
+		NotificationQueueCapacity:        1000,
+		NotificationTimeout:              10 * time.Second,
+		DrainNotificationQueueOnShutdown: true,
 	}
 	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil)
 	require.NoError(t, err)
