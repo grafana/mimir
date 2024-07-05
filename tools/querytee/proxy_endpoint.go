@@ -69,7 +69,7 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go p.executeBackendRequests(r, backends, resCh)
 
 	// Wait for the first response that's feasible to be sent back to the client.
-	downstreamRes := p.waitBackendResponseForDownstream(backends, resCh)
+	downstreamRes := p.waitBackendResponseForDownstream(resCh)
 
 	if downstreamRes.err != nil {
 		http.Error(w, downstreamRes.err.Error(), http.StatusInternalServerError)
@@ -296,7 +296,7 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 	}
 }
 
-func (p *ProxyEndpoint) waitBackendResponseForDownstream(backends []ProxyBackendInterface, resCh chan *backendResponse) *backendResponse {
+func (p *ProxyEndpoint) waitBackendResponseForDownstream(resCh chan *backendResponse) *backendResponse {
 	var firstResponse *backendResponse
 
 	for res := range resCh {
