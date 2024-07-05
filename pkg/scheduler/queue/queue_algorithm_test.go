@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -329,7 +330,12 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 			},
 		},
 	}
-	reservedQuerierCapacityTestCases := []float64{0.1, 0.2, 0.3, 0.4, 0.5}
+	// capacity reservations less than 0.3 and greater than 0.4 are not tested to minimize test iterations;
+	// - previous tests showed that 0.3 improved on all cases less than 0.3,
+	//  with no significant negative effects
+	// - cases greater than 0.4 showed some minor negative effects
+	//  without significantly more positive effects than the 0.4 case
+	reservedQuerierCapacityTestCases := []float64{0.3, 0.4}
 
 	maxQueriersPerTenant := 0 // disable shuffle sharding
 
@@ -449,11 +455,15 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 					t.Logf(testCaseName + ": " + testCaseReport.String())
 					testCaseNames = append(testCaseNames, testCaseName)
 					testCaseReports[testCaseName] = testCaseReport
+
+					// ensure everything was dequeued
+					path, val := tree.tree.Dequeue()
+					assert.Nil(t, val)
+					assert.Equal(t, path, QueuePath{})
 				})
 			}
 		}
 	}
-	//slices.Sort(testCaseNames)
 	for _, testCaseName := range testCaseNames {
 		t.Logf(testCaseName + ": " + testCaseReports[testCaseName].String())
 	}
