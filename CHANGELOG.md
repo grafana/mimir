@@ -68,6 +68,10 @@
 
 ### Mimir Continuous Test
 
+* [CHANGE] Use test metrics that do not pass through 0 to make identifying incorrect results easier. #8630
+* [ENHANCEMENT] Include human-friendly timestamps in diffs logged when a test fails. #8630
+* [BUGFIX] Initialize test result metrics to 0 at startup so that alerts can correctly identify the first failure after startup. #8630
+
 ### Query-tee
 
 * [ENHANCEMENT] Emit trace spans from query-tee. #8419
