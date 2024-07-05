@@ -507,9 +507,10 @@ func (h *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica 
 				electedAtTime = timestamp.FromTime(now)
 				electedChanges = desc.ElectedChanges + 1
 			}
-		}
-		if electedAtTime == 0 {
-			electedAtTime = timestamp.FromTime(now)
+		} else {
+			if desc == nil && electedAtTime == 0 {
+				electedAtTime = timestamp.FromTime(now)
+			}
 		}
 		// Attempt to update KVStore to our timestamp and replica.
 		desc = &ReplicaDesc{
