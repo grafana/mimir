@@ -285,11 +285,11 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			requestPath:   "/api/v1/query",
 			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
-				{handler: mockQueryResponse("/api/v1/query", 500, "")},
-				{handler: mockQueryResponse("/api/v1/query", 200, querySingleMetric1)},
+				{handler: mockQueryResponse("/api/v1/query", 500, querySingleMetric1)},
+				{handler: mockQueryResponse("/api/v1/query", 200, querySingleMetric2)},
 			},
 			preferredBackendIdx: 0,
-			expectedStatus:      200,
+			expectedStatus:      500,
 			expectedRes:         querySingleMetric1,
 		},
 		"non-preferred backend returns 5xx": {
@@ -307,12 +307,12 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			requestPath:   "/api/v1/query",
 			requestMethod: http.MethodGet,
 			backends: []mockedBackend{
-				{handler: mockQueryResponse("/api/v1/query", 500, "")},
+				{handler: mockQueryResponse("/api/v1/query", 500, querySingleMetric1)},
 				{handler: mockQueryResponse("/api/v1/query", 500, "")},
 			},
 			preferredBackendIdx: 0,
 			expectedStatus:      500,
-			expectedRes:         "",
+			expectedRes:         querySingleMetric1,
 		},
 		"request to route with outgoing request transformer": {
 			requestPath:   "/api/v1/query_with_transform",
@@ -698,9 +698,7 @@ func mockQueryResponseWithExpectedBody(path string, expectedBody string, status 
 
 		// Send back the mocked response.
 		w.WriteHeader(status)
-		if status == http.StatusOK {
-			_, _ = w.Write([]byte(res))
-		}
+		_, _ = w.Write([]byte(res))
 	}
 }
 

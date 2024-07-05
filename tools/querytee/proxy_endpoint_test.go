@@ -67,7 +67,7 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 				{backend: backendOther1, status: 200},
 				{backend: backendPref, status: 500},
 			},
-			expected: backendOther1,
+			expected: backendPref,
 		},
 		"the preferred backend is the 2nd response received but only the last one is successful": {
 			backends: []ProxyBackendInterface{backendPref, backendOther1, backendOther2},
@@ -76,7 +76,15 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 				{backend: backendPref, status: 500},
 				{backend: backendOther2, status: 200},
 			},
-			expected: backendOther2,
+			expected: backendPref,
+		},
+		"there's a preferred backend configured and no received response is successful": {
+			backends: []ProxyBackendInterface{backendPref, backendOther1},
+			responses: []*backendResponse{
+				{backend: backendOther1, status: 500},
+				{backend: backendPref, status: 500},
+			},
+			expected: backendPref,
 		},
 		"there's no preferred backend configured and the 1st response is successful": {
 			backends: []ProxyBackendInterface{backendOther1, backendOther2},
@@ -93,11 +101,11 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 			},
 			expected: backendOther2,
 		},
-		"no received response is successful": {
-			backends: []ProxyBackendInterface{backendPref, backendOther1},
+		"there's no preferred backend configured and no received response is successful": {
+			backends: []ProxyBackendInterface{backendOther1, backendOther2},
 			responses: []*backendResponse{
 				{backend: backendOther1, status: 500},
-				{backend: backendPref, status: 500},
+				{backend: backendOther2, status: 500},
 			},
 			expected: backendOther1,
 		},

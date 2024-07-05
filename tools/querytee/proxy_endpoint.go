@@ -297,30 +297,13 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 }
 
 func (p *ProxyEndpoint) waitBackendResponseForDownstream(backends []ProxyBackendInterface, resCh chan *backendResponse) *backendResponse {
-	var (
-		responses                 = make([]*backendResponse, 0, len(backends))
-		preferredResponseReceived = false
-	)
+	responses := make([]*backendResponse, 0, len(backends))
 
 	for res := range resCh {
-		// If the response is successful we can immediately return it if:
-		// - There's no preferred backend configured
-		// - Or this response is from the preferred backend
-		// - Or the preferred backend response has already been received and wasn't successful
-		if res.succeeded() && (p.preferredBackend == nil || res.backend.Preferred() || preferredResponseReceived) {
+		// If the response came from the preferred backend, return it immediately.
+		// If there is no preferred backend configured, return the response if it was successful.
+		if res.backend.Preferred() || (p.preferredBackend == nil && res.succeeded()) {
 			return res
-		}
-
-		// If we received a non-successful response from the preferred backend, then we can
-		// return the first successful response received so far (if any).
-		if res.backend.Preferred() && !res.succeeded() {
-			preferredResponseReceived = true
-
-			for _, prevRes := range responses {
-				if prevRes.succeeded() {
-					return prevRes
-				}
-			}
 		}
 
 		// Otherwise we keep track of it for later.
