@@ -32,14 +32,14 @@ const DefaultReservedQueryComponentCapacity = 0.33
 // Therefore, one of the components will always be given the OK to dequeue queries for.
 const MaxReservedQueryComponentCapacity = 0.5
 
-// queryComponentUtilizationLimitByConnections implements a QueryComponentUtilizationLimit.
+// QueryComponentUtilizationLimitByConnections implements a QueryComponentUtilizationLimit.
 // Capacity utilization for a QueryComponent is defined by the portion of the querier-worker connections
 // which are currently in flight processing a query which requires that QueryComponent.
 //
 // The component name can indicate the usage of one or both of ingesters and store-gateways.
 // If both ingesters and store-gateways will be used, this method will flag the threshold as exceeded
 // if either ingesters or store-gateways are currently in excess of the reserved capacity.
-type queryComponentUtilizationLimitByConnections struct {
+type QueryComponentUtilizationLimitByConnections struct {
 	// targetReservedCapacity sets the portion of querier-worker connections
 	// we aim to reserve for queries to the less-utilized query component;
 	targetReservedCapacity float64
@@ -48,49 +48,51 @@ type queryComponentUtilizationLimitByConnections struct {
 
 func NewQueryComponentUtilizationLimitByConnections(
 	targetReservedCapacity float64,
-) (QueryComponentUtilizationLimit, error) {
+) (*QueryComponentUtilizationLimitByConnections, error) {
 	if targetReservedCapacity > MaxReservedQueryComponentCapacity {
 		return nil, errors.New("invalid targetReservedCapacity")
 	}
 
-	return &queryComponentUtilizationLimitByConnections{
+	return &QueryComponentUtilizationLimitByConnections{
 		targetReservedCapacity: targetReservedCapacity,
 		connectedWorkers:       0,
 	}, nil
 }
 
-func (qcul *queryComponentUtilizationLimitByConnections) SetConnectedWorkers(connectedWorkers int) {
+func (qcul *QueryComponentUtilizationLimitByConnections) SetConnectedWorkers(connectedWorkers int) {
 	qcul.connectedWorkers = connectedWorkers
 }
 
-func (qcul *queryComponentUtilizationLimitByConnections) IsOverUtilized(
+func (qcul *QueryComponentUtilizationLimitByConnections) IsOverUtilized(
 	utilization *QueryComponentUtilization, queryComponentName string,
 ) (bool, QueryComponent) {
+	// allow the functionality to be turned off via setting targetReservedCapacity to 0
+	if qcul.targetReservedCapacity == 0 {
+		return false, ""
+	}
+
 	if qcul.connectedWorkers <= 1 {
 		// corner case; cannot reserve capacity with only one worker available
 		return false, ""
 	}
 
-	// allow the functionality to be turned off via setting targetReservedCapacity to 0
 	minReservedConnections := 0
-	if qcul.targetReservedCapacity > 0 {
-		// reserve at least one connection in case (connected workers) * (reserved capacity) is less than one
-		minReservedConnections = int(
-			math.Ceil(
-				math.Max(qcul.targetReservedCapacity*float64(qcul.connectedWorkers), 1),
-			),
-		)
-	}
+	//reserve at least one connection in case (connected workers) * (reserved capacity) is less than one
+	minReservedConnections = int(
+		math.Ceil(
+			math.Max(qcul.targetReservedCapacity*float64(qcul.connectedWorkers), 1),
+		),
+	)
 
 	isIngester, isStoreGateway := queryComponentFlags(queryComponentName)
 	ingesterInflightRequests, storeGatewayInflightRequests := utilization.GetInflightRequests()
 	if isIngester {
-		if qcul.connectedWorkers-ingesterInflightRequests < minReservedConnections {
+		if qcul.connectedWorkers-ingesterInflightRequests <= minReservedConnections {
 			return true, Ingester
 		}
 	}
 	if isStoreGateway {
-		if qcul.connectedWorkers-storeGatewayInflightRequests < minReservedConnections {
+		if qcul.connectedWorkers-storeGatewayInflightRequests <= minReservedConnections {
 			return true, StoreGateway
 		}
 	}
@@ -109,16 +111,11 @@ type queryComponentQueueAlgoSkipOverUtilized struct {
 	//queueNodeCounts                    map[string]int
 }
 
-func (qa *queryComponentQueueAlgoSkipOverUtilized) incrementWrapIndex() {
+func (qa *queryComponentQueueAlgoSkipOverUtilized) incrementWrapCurrentNodeOrderIndex() {
 	qa.currentNodeOrderIndex++
 	if qa.currentNodeOrderIndex >= len(qa.nodeOrder) {
 		qa.currentNodeOrderIndex = 0
 	}
-}
-
-func (qa *queryComponentQueueAlgoSkipOverUtilized) checkedAllNodes() bool {
-	return qa.nodesChecked == len(qa.nodeOrder)+1 && len(qa.nodesSkippedIndexOrder) == 0
-
 }
 
 func (qa *queryComponentQueueAlgoSkipOverUtilized) addChildNode(parent, child *Node) {
@@ -140,8 +137,15 @@ func (qa *queryComponentQueueAlgoSkipOverUtilized) addChildNode(parent, child *N
 			)...,
 		)
 		// update current child queue index to its new place in the expanded slice
-		qa.incrementWrapIndex()
+		qa.incrementWrapCurrentNodeOrderIndex()
 	}
+}
+
+func (qa *queryComponentQueueAlgoSkipOverUtilized) checkedAllNodesBeforeSkips() bool {
+	return qa.nodesChecked == len(qa.nodeOrder)+1
+}
+func (qa *queryComponentQueueAlgoSkipOverUtilized) checkedAllNodes() bool {
+	return qa.nodesChecked == len(qa.nodeOrder)+1 && len(qa.nodesSkippedIndexOrder) == 0
 }
 
 func (qa *queryComponentQueueAlgoSkipOverUtilized) dequeueSelectNode(node *Node) (*Node, bool) {
@@ -149,36 +153,30 @@ func (qa *queryComponentQueueAlgoSkipOverUtilized) dequeueSelectNode(node *Node)
 		return node, qa.checkedAllNodes()
 	}
 
-	checkedAllNodesBeforeSkips := func() bool {
-		return qa.nodesChecked == len(qa.nodeOrder)+1
-	}
-
-	for !checkedAllNodesBeforeSkips() {
+	for !qa.checkedAllNodesBeforeSkips() {
 		// have not made it through first rotation yet
 		currentNodeName := qa.nodeOrder[qa.currentNodeOrderIndex]
 		isOverUtilized, _ := qa.limit.IsOverUtilized(qa.utilization, currentNodeName)
 
 		if isOverUtilized {
-			// triggered a utilization check *and* the query component for this node
-			// is utilizing querier-worker connections in excess of the target threshold
-
+			// a query component associated with this queue node is utilizing
+			// querier-worker connections in excess of the target connections limit;
 			// skip over this node for now, but add to the skipped order
 			// in case we cannot find an item to dequeue from non-skipped nodes
 			qa.nodesSkippedIndexOrder = append(qa.nodesSkippedIndexOrder, qa.currentNodeOrderIndex)
-			qa.incrementWrapIndex()
+			qa.incrementWrapCurrentNodeOrderIndex()
 
 			// increment nodesChecked;
 			// we will not return true for checkedAllNodes until we check the skipped nodes too
 			qa.nodesChecked++
 		} else {
-			// triggered a utilization check but query component for this node is not over utilization threshold;
+			// no query component associated with this queue node is over the utilization limit;
 			// select the current node
 			qa.nodesChecked++
 			return node.queueMap[currentNodeName], qa.checkedAllNodes()
 		}
 
 	}
-
 	// else; we have checked all nodes the first time
 	// if we are here, none of the nodes that did not get skipped were able to be dequeued from
 	// and checkedAllNodes() has not returned true yet, so there are skipped nodes to select from
@@ -220,7 +218,7 @@ func (qa *queryComponentQueueAlgoSkipOverUtilized) dequeueUpdateState(node *Node
 			qa.currentNodeOrderIndex = 0
 		}
 	} else {
-		qa.incrementWrapIndex()
+		qa.incrementWrapCurrentNodeOrderIndex()
 	}
 
 	qa.nodesChecked = 0

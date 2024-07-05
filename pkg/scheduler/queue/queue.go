@@ -353,7 +353,7 @@ func (q *RequestQueue) trySendNextRequestForQuerier(waitingConn *waitingQuerierC
 	if itq, ok := q.queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 		for _, algoState := range itq.algosByDepth {
 			if qcuAlgo, ok := algoState.(*queryComponentQueueAlgoSkipOverUtilized); ok {
-				if qcuCheckThreshold, ok := qcuAlgo.limit.(*queryComponentUtilizationLimitByConnections); ok {
+				if qcuCheckThreshold, ok := qcuAlgo.limit.(*QueryComponentUtilizationLimitByConnections); ok {
 					qcuCheckThreshold.SetConnectedWorkers(int(q.connectedQuerierWorkers.Load()))
 				}
 			}

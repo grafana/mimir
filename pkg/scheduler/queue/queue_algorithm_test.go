@@ -351,7 +351,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 
 		for reservedCapacityTestIdx, testReservedCapacity := range reservedQuerierCapacityTestCases {
 			var err error
-			queryComponentUtilization, err := NewQueryComponentUtilization(testQuerierInflightRequestsGauge())
+			queryComponentUtilization, err := NewQueryComponentUtilization(testQuerierInflightRequestsMetric())
 			require.NoError(t, err)
 
 			utilizationCheckThresholdImpl, err := NewQueryComponentUtilizationLimitByConnections(testReservedCapacity)

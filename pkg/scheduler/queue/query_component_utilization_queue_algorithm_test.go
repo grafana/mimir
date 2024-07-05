@@ -58,10 +58,10 @@ func TestQueryComponentUtilizationDequeue_DefaultRoundRobin(t *testing.T) {
 	testReservedCapacity := 0.4
 
 	var err error
-	queryComponentUtilization, err := NewQueryComponentUtilization(testQuerierInflightRequestsGauge())
+	queryComponentUtilization, err := NewQueryComponentUtilization(testQuerierInflightRequestsMetric())
 	require.NoError(t, err)
 
-	utilizationCheckThresholdImpl := &queryComponentUtilizationLimitByConnections{
+	utilizationCheckThresholdImpl := &QueryComponentUtilizationLimitByConnections{
 		targetReservedCapacity: testReservedCapacity,
 		connectedWorkers:       connectedWorkers,
 	}
@@ -95,10 +95,10 @@ func TestQueryComponentUtilizationDequeue_SkipComponentExceedsThreshold(t *testi
 	testReservedCapacity := 0.4
 
 	var err error
-	queryComponentUtilization, err := NewQueryComponentUtilization(testQuerierInflightRequestsGauge())
+	queryComponentUtilization, err := NewQueryComponentUtilization(testQuerierInflightRequestsMetric())
 	require.NoError(t, err)
 
-	utilizationCheckThresholdImpl := &queryComponentUtilizationLimitByConnections{
+	utilizationCheckThresholdImpl := &QueryComponentUtilizationLimitByConnections{
 		targetReservedCapacity: testReservedCapacity,
 		connectedWorkers:       connectedWorkers,
 	}
