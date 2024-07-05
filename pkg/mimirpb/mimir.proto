@@ -153,7 +153,6 @@ message Histogram {
   ResetHint reset_hint               = 14;
   // timestamp is in ms format
   int64 timestamp = 15;
-  repeated double custom_values = 16;
 }
 
 // FloatHistogram is based on https://github.com/prometheus/prometheus/blob/main/model/histogram/float_histogram.go.
