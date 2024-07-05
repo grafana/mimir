@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/prometheus/model/labels"
 	promql_parser "github.com/prometheus/prometheus/promql/parser"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -147,8 +148,11 @@ func (rp *parser) processHTTPRequest(req *http.Request, body []byte) *request {
 
 	// Support POST to /otlp/v1/metrics
 	if rp.decodePush && req.Method == "POST" && strings.Contains(req.URL.Path, "/metrics") {
-		var matched bool
-		r.PushRequest, matched = rp.decodeOTLPRequest(req, body)
+		opr, matched, err := rp.decodeOTLPRequest(req, body)
+		if err != nil {
+			opr.Error = err.Error()
+		}
+		r.PushRequest = opr
 		if !matched {
 			r.ignored = true
 		}
@@ -265,60 +269,130 @@ const (
 	jsonContentType = "application/json"
 )
 
-func (rp *parser) decodeOTLPRequest(req *http.Request, body []byte) (*otlpPushRequest, bool) {
-	res := &otlpPushRequest{}
-
-	var decoderFunc func(buf []byte) (pmetricotlp.ExportRequest, error)
-
-	contentType := req.Header.Get("Content-Type")
-	switch contentType {
-	case pbContentType:
-		decoderFunc = func(buf []byte) (pmetricotlp.ExportRequest, error) {
-			req := pmetricotlp.NewExportRequest()
-			return req, req.UnmarshalProto(buf)
-		}
-
-	case jsonContentType:
-		decoderFunc = func(buf []byte) (pmetricotlp.ExportRequest, error) {
-			req := pmetricotlp.NewExportRequest()
-			return req, req.UnmarshalJSON(buf)
-		}
-
-	default:
-		res.Error = fmt.Sprintf("unsupported content type: %s", contentType)
-		return nil, false
-	}
-
+func (rp *parser) decodeOTLPRequest(req *http.Request, body []byte) (*otlpPushRequest, bool, error) {
 	// Handle compression.
 	contentEncoding := req.Header.Get("Content-Encoding")
 	switch contentEncoding {
 	case "gzip":
 		gr, err := gzip.NewReader(bytes.NewReader(body))
 		if err != nil {
-			res.Error = fmt.Sprintf("failed to decode gzip request: %v", err)
-			return nil, true
+			return nil, true, fmt.Errorf("failed to decode gzip request: %w", err)
 		}
 
 		body, err = io.ReadAll(gr)
 		if err != nil {
-			res.Error = fmt.Sprintf("failed to decode gzip request: %v", err)
-			return nil, true
+			return nil, true, fmt.Errorf("failed to decode gzip request: %w", err)
 		}
-
 	case "":
 		// No compression.
-
 	default:
-		res.Error = fmt.Sprintf("unsupported compression for otel: %s", contentEncoding)
-		return nil, true
+		return nil, true, fmt.Errorf("unsupported compression for OTLP: %q", contentEncoding)
 	}
 
-	var err error
-	res.ExportRequest, err = decoderFunc(body)
+	contentType := req.Header.Get("Content-Type")
+	expReq := pmetricotlp.NewExportRequest()
+	switch contentType {
+	case pbContentType:
+		if err := expReq.UnmarshalProto(body); err != nil {
+			return nil, false, fmt.Errorf("failed to decode protobuf encoded request", err)
+		}
+	case jsonContentType:
+		if err := expReq.UnmarshalJSON(body); err != nil {
+			return nil, false, fmt.Errorf("failed to decode JSON encoded request", err)
+		}
+	default:
+		return nil, false, fmt.Errorf("unsupported request content type: %q", contentType)
+	}
+
+	r := &otlpPushRequest{}
+	err := calcStats(expReq, r)
 	if err != nil {
-		res.Error = fmt.Sprintf("failed to decode request: %v", err)
-		return nil, true
+		panic(err)
+	}
+	fmt.Printf("Calculated num data points: %d, num histograms: %d, num histogram samples: %d\n", r.NumDataPoints, r.NumHistograms, r.NumHistogramSamples)
+	return r, true, err
+}
+
+func calcStats(expReq pmetricotlp.ExportRequest, r *otlpPushRequest) error {
+	resourceMetricsSlice := expReq.Metrics().ResourceMetrics()
+	for i := 0; i < resourceMetricsSlice.Len(); i++ {
+		resourceMetrics := resourceMetricsSlice.At(i)
+		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
+		for j := 0; j < scopeMetricsSlice.Len(); j++ {
+			metricSlice := scopeMetricsSlice.At(j).Metrics()
+			for k := 0; k < metricSlice.Len(); k++ {
+				metric := metricSlice.At(k)
+				if !isValidAggregationTemporality(metric) {
+					return fmt.Errorf("invalid temporality and type combination for metric %q", metric.Name())
+				}
+
+				// TODO: Calculate exemplars
+				//exhaustive:enforce
+				switch metric.Type() {
+				case pmetric.MetricTypeGauge:
+					dataPoints := metric.Gauge().DataPoints()
+					r.NumGauges += dataPoints.Len()
+				case pmetric.MetricTypeSum:
+					dataPoints := metric.Sum().DataPoints()
+					r.NumSums += dataPoints.Len()
+				case pmetric.MetricTypeHistogram:
+					dataPoints := metric.Histogram().DataPoints()
+					r.NumHistograms += dataPoints.Len()
+					r.NumHistogramSamples += calcHistoSamples(dataPoints)
+				case pmetric.MetricTypeExponentialHistogram:
+					dataPoints := metric.ExponentialHistogram().DataPoints()
+					r.NumExponentialHistograms += dataPoints.Len()
+				case pmetric.MetricTypeSummary:
+					dataPoints := metric.Summary().DataPoints()
+					r.NumSummaries += dataPoints.Len()
+				default:
+					return fmt.Errorf("unsupported metric type: %v", metric.Type())
+				}
+			}
+		}
 	}
 
-	return res, true
+	r.NumDataPoints = r.NumGauges + r.NumSums + r.NumHistograms + r.NumExponentialHistograms + r.NumSummaries
+	return nil
+}
+
+func calcHistoSamples(dataPoints pmetric.HistogramDataPointSlice) int {
+	numSamples := 0
+	for x := 0; x < dataPoints.Len(); x++ {
+		pt := dataPoints.At(x)
+
+		// If the sum is unset, it indicates the _sum metric point should be
+		// omitted
+		if pt.HasSum() {
+			numSamples++
+		}
+
+		// treat count as a sample in an individual TimeSeries
+		numSamples++
+
+		// process each bound, based on histograms proto definition, # of buckets = # of explicit bounds + 1
+		for i := 0; i < pt.ExplicitBounds().Len() && i < pt.BucketCounts().Len(); i++ {
+			numSamples++
+		}
+		numSamples++
+	}
+
+	return numSamples
+}
+
+// isValidAggregationTemporality checks whether an OTel metric has a valid
+// aggregation temporality for conversion to a Prometheus metric.
+func isValidAggregationTemporality(metric pmetric.Metric) bool {
+	//exhaustive:enforce
+	switch metric.Type() {
+	case pmetric.MetricTypeGauge, pmetric.MetricTypeSummary:
+		return true
+	case pmetric.MetricTypeSum:
+		return metric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityCumulative
+	case pmetric.MetricTypeHistogram:
+		return metric.Histogram().AggregationTemporality() == pmetric.AggregationTemporalityCumulative
+	case pmetric.MetricTypeExponentialHistogram:
+		return metric.ExponentialHistogram().AggregationTemporality() == pmetric.AggregationTemporalityCumulative
+	}
+	return false
 }

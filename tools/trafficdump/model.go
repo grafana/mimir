@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -63,7 +62,15 @@ type pushRequest struct {
 }
 
 type otlpPushRequest struct {
-	pmetricotlp.ExportRequest
+	NumDataPoints            int `json:"numDataPoints,omitempty"`
+	NumExemplars             int `json:"numExemplars,omitempty"`
+	NumGauges                int `json:"numGauges,omitempty"`
+	NumSums                  int `json:"numSums,omitempty"`
+	NumHistograms            int `json:"numHistograms,omitempty"`
+	NumHistogramSamples      int `json:"numHistogramSamples,omitempty"`
+	NumExponentialHistograms int `json:"numExponentialHistograms,omitempty"`
+	NumSummaries             int `json:"numSummaries,omitempty"`
+
 	Error string `json:"error,omitempty"`
 }
 
