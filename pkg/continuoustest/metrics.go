@@ -52,3 +52,13 @@ func NewTestMetrics(testName string, reg prometheus.Registerer) *TestMetrics {
 		}, []string{"type"}),
 	}
 }
+
+func (m *TestMetrics) InitializeCountersToZero(testType string) {
+	// Note that we don't initialize writesFailedTotal as we don't want to create series for every possible status code.
+
+	m.writesTotal.WithLabelValues(testType)
+	m.queriesTotal.WithLabelValues(testType)
+	m.queriesFailedTotal.WithLabelValues(testType)
+	m.queryResultChecksTotal.WithLabelValues(testType)
+	m.queryResultChecksFailedTotal.WithLabelValues(testType)
+}

@@ -85,6 +85,8 @@ func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 		if err != nil {
 			return err
 		}
+
+		t.metrics.InitializeCountersToZero(floatTypeLabel)
 	}
 	if t.cfg.WithHistograms {
 		for i, histProfile := range histogramProfiles {
@@ -92,6 +94,8 @@ func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 			if err != nil {
 				return err
 			}
+
+			t.metrics.InitializeCountersToZero(histProfile.typeLabel)
 		}
 	}
 	return nil
