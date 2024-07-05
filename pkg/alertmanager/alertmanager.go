@@ -351,6 +351,7 @@ func (am *Alertmanager) TestTemplatesHandler(w http.ResponseWriter, r *http.Requ
 		http.Error(w,
 			fmt.Sprintf("error unmarshalling test templates config JSON: %s", err.Error()),
 			http.StatusBadRequest)
+		return
 	}
 
 	am.templatesMtx.RLock()
@@ -363,6 +364,7 @@ func (am *Alertmanager) TestTemplatesHandler(w http.ResponseWriter, r *http.Requ
 		http.Error(w,
 			fmt.Sprintf("error testing templates: %s", err.Error()),
 			http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
