@@ -1159,22 +1159,23 @@ func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
-		numSamples := 0
-		numExemplars := 0
+		numSamples, numHistograms, numExemplars := 0, 0, 0
 		for _, ts := range req.Timeseries {
-			numSamples += len(ts.Samples) + len(ts.Histograms)
+			numSamples += len(ts.Samples)
+			numHistograms += len(ts.Histograms)
 			numExemplars += len(ts.Exemplars)
 		}
 
 		span := opentracing.SpanFromContext(ctx)
 		if span != nil {
 			span.SetTag("write.samples", numSamples)
+			span.SetTag("write.histograms", numHistograms)
 			span.SetTag("write.exemplars", numExemplars)
 			span.SetTag("write.metadata", len(req.Metadata))
 		}
 
 		d.incomingRequests.WithLabelValues(userID).Inc()
-		d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples))
+		d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples + numHistograms))
 		d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
 		d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
 
@@ -1580,6 +1581,9 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 }
 
 func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "Distributor.sendWriteRequestToIngesters")
+	span.SetTag("write.series", len(req.Timeseries))
+	defer span.Finish()
 	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
 		func(ingester ring.InstanceDesc, indexes []int) error {
 			req := req.ForIndexes(indexes, initialMetadataIndex)
@@ -1605,6 +1609,9 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 }
 
 func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "Distributor.sendWriteRequestToPartitions")
+	span.SetTag("write.series", len(req.Timeseries))
+	defer span.Finish()
 	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
 		func(partition ring.InstanceDesc, indexes []int) error {
 			req := req.ForIndexes(indexes, initialMetadataIndex)
