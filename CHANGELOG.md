@@ -1,6 +1,7 @@
 # Changelog
 
 ## main / unreleased
+* [ENHANCEMENT] Query-scheduler: Introduce `query-scheduler.use-multi-algorithm-query-queue`, which allows use of an experimental queue structure, with no change in external queue behavior. #7873
 
 ### Grafana Mimir
 
