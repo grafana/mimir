@@ -89,8 +89,19 @@ func (b *HPointRingBuffer) CopyPoints(maxT int64) ([]promql.HPoint, error) {
 		return nil, err
 	}
 
-	combined = append(combined, head...)
-	combined = append(combined, tail...)
+	combine := func(p []promql.HPoint) {
+		for i := range p {
+			combined = append(combined,
+				promql.HPoint{
+					T: p[i].T,
+					H: p[i].H.Copy(),
+				},
+			)
+		}
+	}
+
+	combine(head)
+	combine(tail)
 
 	return combined, nil
 }
@@ -125,6 +136,21 @@ func (b *HPointRingBuffer) ForEach(f func(p promql.HPoint)) {
 // If this buffer is non-empty, p.T must be greater than or equal to the
 // timestamp of the last point in the buffer.
 func (b *HPointRingBuffer) Append(p promql.HPoint) error {
+	hPoint, err := b.NextPoint()
+	if err != nil {
+		return err
+	}
+	hPoint.T = p.T
+	hPoint.H = p.H
+	return nil
+}
+
+// NextPoint gets the next point in this buffer, expanding it if required.
+// If this buffer is non-empty, any modification to the point p.T must be
+// greater than or equal to the timestamp of the previous point in the buffer.
+// This is used so that HPoint.H from the pool can be modified without needing
+// to assign a new HPoint when copying in a histogram.
+func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 	if b.size == len(b.points) {
 		// Create a new slice, copy the elements from the current slice.
 		newSize := b.size * 2
@@ -134,7 +160,7 @@ func (b *HPointRingBuffer) Append(p promql.HPoint) error {
 
 		newSlice, err := b.pool.GetHPointSlice(newSize)
 		if err != nil {
-			return err
+			return &promql.HPoint{}, err
 		}
 
 		newSlice = newSlice[:cap(newSlice)]
@@ -148,9 +174,22 @@ func (b *HPointRingBuffer) Append(p promql.HPoint) error {
 	}
 
 	nextIndex := (b.firstIndex + b.size) % len(b.points)
-	b.points[nextIndex] = p
 	b.size++
-	return nil
+	return &b.points[nextIndex], nil
+}
+
+func (b *HPointRingBuffer) RemoveLastPoint() {
+	if b.size == 0 {
+		return
+	}
+
+	// Remove the last point by adjusting the slice length.
+	b.points = b.points[:len(b.points)-1]
+
+	b.size--
+	if b.size == 0 {
+		b.firstIndex = 0
+	}
 }
 
 // Reset clears the contents of this buffer.

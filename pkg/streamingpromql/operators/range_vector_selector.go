@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -97,6 +98,8 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 		case chunkenc.ValFloat:
 			t, f := m.chunkIterator.At()
 			if value.IsStaleNaN(f) || t < rangeStart {
+				// Range vectors ignore stale markers
+				// https://github.com/prometheus/prometheus/issues/3746#issuecomment-361572859
 				continue
 			}
 
@@ -111,17 +114,23 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 				return nil
 			}
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
-			t, h := m.chunkIterator.AtFloatHistogram(nil)
-			if value.IsStaleNaN(h.Sum) || t < rangeStart {
+			t := m.chunkIterator.AtT()
+			if t < rangeStart {
 				continue
 			}
-
-			// We might append a sample beyond the range end, but this is OK:
-			// - callers of NextStepSamples are expected to pass the same RingBuffer to subsequent calls, so the point is not lost
-			// - callers of NextStepSamples are expected to handle the case where the buffer contains points beyond the end of the range
-			if err := histograms.Append(promql.HPoint{T: t, H: h}); err != nil {
-				return err
+			hPoint, _ := histograms.NextPoint()
+			if hPoint.H == nil {
+				hPoint.H = &histogram.FloatHistogram{}
 			}
+			t, h := m.chunkIterator.AtFloatHistogram(hPoint.H)
+			if value.IsStaleNaN(h.Sum) {
+				// Range vectors ignore stale markers
+				// https://github.com/prometheus/prometheus/issues/3746#issuecomment-361572859
+				// We have to remove the last point since we didn't actually use it, and NextPoint already allocated it.
+				histograms.RemoveLastPoint()
+				continue
+			}
+			hPoint.T = t
 
 			if t >= rangeEnd {
 				return nil
