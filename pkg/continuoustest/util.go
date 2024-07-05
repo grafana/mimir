@@ -431,7 +431,9 @@ func formatExpectedAndActualValuesComparison(matrix model.Matrix, expectedSeries
 		match := compareFloatValues(actual, expected, maxComparisonDeltaFloat)
 
 		builder.WriteString(strconv.FormatInt(int64(sample.Timestamp), 10))
-		builder.WriteString("  ")
+		builder.WriteString(" (")
+		builder.WriteString(sample.Timestamp.Time().UTC().Format(time.RFC3339))
+		builder.WriteString(")  ")
 		builder.WriteString(strconv.FormatFloat(expected, 'f', precision, 64))
 		builder.WriteString("  ")
 		builder.WriteString(strconv.FormatFloat(actual, 'f', precision, 64))
