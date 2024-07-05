@@ -148,6 +148,9 @@ func (s *state) AddState(key string, cs cluster.State, _ prometheus.Registerer) 
 
 // MergePartialState merges a received partial message with an internal state.
 func (s *state) MergePartialState(p *clusterpb.Part) error {
+	fmt.Println("Key:", p.Key)
+	fmt.Println("Data:", string(p.Data))
+	fmt.Println("States:", s.states)
 	s.partialStateMergesTotal.WithLabelValues(p.Key).Inc()
 
 	s.mtx.Lock()

@@ -554,7 +554,7 @@ func (am *MultitenantAlertmanager) loadAndSyncConfigs(ctx context.Context, syncR
 		return err
 	}
 
-	am.syncConfigs(cfgs)
+	am.syncConfigs(ctx, cfgs)
 	am.deleteUnusedLocalUserState()
 
 	// Note when cleaning up remote state, remember that the user may not necessarily be configured
@@ -640,7 +640,7 @@ func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
 	return alertmanagers.Includes(am.ringLifecycler.GetInstanceAddr())
 }
 
-func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertConfigDescs) {
+func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[string]alertspb.AlertConfigDescs) {
 	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgMap))
 	for user, cfgs := range cfgMap {
 		cfg, externalURL, err := am.computeConfig(cfgs)
@@ -649,6 +649,13 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertC
 			level.Warn(am.logger).Log("msg", "error computing config", "err", err)
 			continue
 		}
+
+		if !am.isPromoted(cfgs.Grafana.User) {
+			if err := am.promoteAndDeleteState(ctx, cfgs); err != nil {
+				level.Warn(am.logger).Log("msg", "error promoting state", "err", err)
+			}
+		}
+
 		c := amConfig{
 			AlertConfigDesc: cfg,
 			tmplExternalURL: externalURL,
@@ -684,6 +691,18 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertC
 		userAM.StopAndWait()
 		level.Info(am.logger).Log("msg", "deactivated per-tenant alertmanager", "user", userID)
 	}
+}
+
+func (am *MultitenantAlertmanager) isPromoted(user string) bool {
+	am.alertmanagersMtx.Lock()
+	defer am.alertmanagersMtx.Unlock()
+	existing, ok := am.alertmanagers[user]
+	if !ok {
+		// If the Alertmanager doesn't exist yet for a user, we return true.
+		// syncConfigs Alertmanager will be created by setConfig and the state will be promoted on the next sync if needed.
+		return true
+	}
+	return existing.promoted
 }
 
 // computeConfig takes an AlertConfigDescs struct containing Mimir and Grafana configurations.
@@ -729,6 +748,53 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	}
 
 	return cfg, externalURL, err
+}
+
+func (am *MultitenantAlertmanager) promoteAndDeleteState(ctx context.Context, cfgs alertspb.AlertConfigDescs) error {
+	switch {
+	case !cfgs.Grafana.Promoted, cfgs.Grafana.Default, cfgs.Grafana.RawConfig == "":
+		return nil
+
+	case cfgs.Mimir.RawConfig == am.fallbackConfig, cfgs.Mimir.RawConfig == "":
+		s, err := am.store.GetFullGrafanaState(ctx, cfgs.Grafana.User)
+		if err != nil {
+			if errors.Is(err, alertspb.ErrNotFound) {
+				fmt.Println("Not found!")
+				level.Debug(am.logger).Log("msg", "grafana state not found, skipping promotion", "user", cfgs.Grafana.User)
+				return nil
+			}
+			return err
+		}
+
+		am.alertmanagersMtx.Lock()
+		existing, ok := am.alertmanagers[cfgs.Grafana.User]
+		am.alertmanagersMtx.Unlock()
+		if !ok {
+			return fmt.Errorf("alertmanager for user %s not found", cfgs.Grafana.User)
+		}
+
+		for _, p := range s.State.Parts {
+			switch p.Key {
+			case "silences":
+				p.Key = "sil:" + cfgs.Grafana.User
+			case "notifications":
+				p.Key = "nfl:" + cfgs.Grafana.User
+			default:
+				return fmt.Errorf("unknown part key %s", p.Key)
+			}
+
+			if err := existing.mergePartialExternalState(&p); err != nil {
+				return err
+			}
+		}
+
+		// Delete state.
+		if err := am.store.DeleteFullGrafanaState(ctx, cfgs.Grafana.User); err != nil {
+			return fmt.Errorf("error deleting grafana state for user %s: %w", cfgs.Grafana.User, err)
+		}
+	}
+
+	return nil
 }
 
 type amConfig struct {

@@ -124,6 +124,9 @@ type Alertmanager struct {
 	receiversMtx    sync.Mutex
 	receivers       []*nfstatus.Receiver
 
+	// promoted indicates if the Grafana Alertmanager state has been merged before.
+	promoted bool
+
 	// Pipeline created during last ApplyConfig call. Used for testing only.
 	lastPipeline notify.Stage
 
