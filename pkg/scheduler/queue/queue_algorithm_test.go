@@ -329,6 +329,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 			},
 		},
 	}
+	reservedQuerierCapacityTestCases := []float64{0.1, 0.2, 0.3, 0.4, 0.5}
 
 	maxQueriersPerTenant := 0 // disable shuffle sharding
 
@@ -348,105 +349,108 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	for _, weightedQueueDimensionTestCase := range weightedQueueDimensionTestCases {
 		numTenants := len(weightedQueueDimensionTestCase.tenantQueueDimensionsWeights)
 
-		// with 10 connected workers, if queue len >= waiting workers,
-		// no component can have more than 6 inflight requests.
-		testReservedCapacity := 0.4
+		for reservedCapacityTestIdx, testReservedCapacity := range reservedQuerierCapacityTestCases {
+			var err error
+			queryComponentUtilization, err := NewQueryComponentUtilization(testQuerierInflightRequestsGauge())
+			require.NoError(t, err)
 
-		var err error
-		queryComponentUtilization, err := NewQueryComponentUtilization(testQuerierInflightRequestsGauge())
-		require.NoError(t, err)
+			utilizationCheckThresholdImpl, err := NewQueryComponentUtilizationLimitByConnections(testReservedCapacity)
+			require.NoError(t, err)
 
-		utilizationCheckThresholdImpl, err := NewQueryComponentUtilizationLimitByConnections(testReservedCapacity)
-		require.NoError(t, err)
-
-		queryComponentUtilizationQueueAlgo := queryComponentQueueAlgoSkipOverUtilized{
-			utilization:           queryComponentUtilization,
-			limit:                 utilizationCheckThresholdImpl,
-			currentNodeOrderIndex: -1,
-		}
-		tqa := newTQA()
-
-		nonFlippedRoundRobinTree, err := NewTree(tqa, &roundRobinState{}, &roundRobinState{})
-		require.NoError(t, err)
-		queryComponentUtilizationSkipTree, err := NewTree(&queryComponentUtilizationQueueAlgo, tqa, &roundRobinState{})
-		require.NoError(t, err)
-
-		trees := []struct {
-			name string
-			tree Tree
-		}{
-			{
-				"non-flip round robin tree",
-				nonFlippedRoundRobinTree,
-			},
-			{
-				"query component skip tree",
-				queryComponentUtilizationSkipTree,
-			},
-		}
-		for _, tree := range trees {
-			testCaseName := fmt.Sprintf(
-				"tree: %s, %s",
-				tree.name,
-				weightedQueueDimensionTestCase.name,
-			)
-			testCaseReport := &testScenarioQueueDurationReport{
-				componentUtilizationReservedCapacity:    testReservedCapacity,
-				tenantIDQueueDurationObservations:       map[string][]float64{},
-				queryComponentQueueDurationObservations: map[string][]float64{},
+			queryComponentUtilizationQueueAlgo := queryComponentQueueAlgoSkipOverUtilized{
+				utilization:           queryComponentUtilization,
+				limit:                 utilizationCheckThresholdImpl,
+				currentNodeOrderIndex: -1,
 			}
+			tqa := newTQA()
 
-			// only the non-flipped tree uses the old tenant -> query component hierarchy
-			prioritizeQueryComponents := tree.tree != nonFlippedRoundRobinTree
+			nonFlippedRoundRobinTree, err := NewTree(tqa, &roundRobinState{}, &roundRobinState{})
+			require.NoError(t, err)
+			queryComponentUtilizationSkipTree, err := NewTree(&queryComponentUtilizationQueueAlgo, tqa, &roundRobinState{})
+			require.NoError(t, err)
 
-			t.Run(testCaseName, func(t *testing.T) {
-				queue, err := newBenchmarkRequestQueue(queryComponentUtilization, tqa, tree.tree, prioritizeQueryComponents)
-				require.NoError(t, err)
+			trees := []struct {
+				name string
+				tree Tree
+			}{
+				{
+					"non-flip round robin tree",
+					nonFlippedRoundRobinTree,
+				},
+				{
+					"query component skip tree",
+					queryComponentUtilizationSkipTree,
+				},
+			}
+			for _, tree := range trees {
+				if tree.tree != queryComponentUtilizationSkipTree && reservedCapacityTestIdx > 0 {
+					// other trees don't use this configuration, no need to run the cases
+					continue
+				}
 
-				ctx := context.Background()
-				require.NoError(t, queue.starting(ctx))
-				t.Cleanup(func() {
-					require.NoError(t, queue.stop(nil))
+				testCaseName := fmt.Sprintf(
+					"tree: %s, reservedCapacity: %1.1f, %s",
+					tree.name,
+					testReservedCapacity,
+					weightedQueueDimensionTestCase.name,
+				)
+				testCaseReport := &testScenarioQueueDurationReport{
+					componentUtilizationReservedCapacity:    testReservedCapacity,
+					tenantIDQueueDurationObservations:       map[string][]float64{},
+					queryComponentQueueDurationObservations: map[string][]float64{},
+				}
+
+				// only the non-flipped tree uses the old tenant -> query component hierarchy
+				prioritizeQueryComponents := tree.tree != nonFlippedRoundRobinTree
+
+				t.Run(testCaseName, func(t *testing.T) {
+					queue, err := newBenchmarkRequestQueue(queryComponentUtilization, tqa, tree.tree, prioritizeQueryComponents)
+					require.NoError(t, err)
+
+					ctx := context.Background()
+					require.NoError(t, queue.starting(ctx))
+					t.Cleanup(func() {
+						require.NoError(t, queue.stop(nil))
+					})
+
+					// configure queue producers to enqueue requests with the query component
+					// assigned according to the weighted queue dimension test case
+					queueDimensionFunc := makeWeightedRandAdditionalQueueDimensionFunc(
+						weightedQueueDimensionTestCase.tenantQueueDimensionsWeights,
+					)
+					producersChan, producersErrGroup := makeQueueProducerGroup(
+						queue, maxQueriersPerTenant, totalRequests, numProducers, numTenants, queueDimensionFunc,
+					)
+
+					// configure queue consumers with sleep for processing queue items
+					consumeFunc := makeQueueConsumeFunc(
+						queue, slowConsumerQueueDimension, slowConsumerLatency, normalConsumerLatency, testCaseReport,
+					)
+					queueConsumerErrGroup, startConsumersChan := makeQueueConsumerGroup(
+						queue, totalRequests, numConsumers, consumeFunc,
+					)
+
+					// run queue consumers and producers and wait for completion
+
+					// start consumers first
+					// this allows more time for the dequeue algorithm to operate
+					// before the slow requests cause the queue to be backlogged,
+					// allowing for more fair comparison between dequeue algorithms
+					// which change behavior based on the length of the queue backlog
+					close(startConsumersChan)
+					close(producersChan)
+
+					// wait for producers and consumers to finish
+					err = producersErrGroup.Wait()
+					require.NoError(t, err)
+					err = queueConsumerErrGroup.Wait()
+					require.NoError(t, err)
+
+					t.Logf(testCaseName + ": " + testCaseReport.String())
+					testCaseNames = append(testCaseNames, testCaseName)
+					testCaseReports[testCaseName] = testCaseReport
 				})
-
-				// configure queue producers to enqueue requests with the query component
-				// assigned according to the weighted queue dimension test case
-				queueDimensionFunc := makeWeightedRandAdditionalQueueDimensionFunc(
-					weightedQueueDimensionTestCase.tenantQueueDimensionsWeights,
-				)
-				producersChan, producersErrGroup := makeQueueProducerGroup(
-					queue, maxQueriersPerTenant, totalRequests, numProducers, numTenants, queueDimensionFunc,
-				)
-
-				// configure queue consumers with sleep for processing queue items
-				consumeFunc := makeQueueConsumeFunc(
-					queue, slowConsumerQueueDimension, slowConsumerLatency, normalConsumerLatency, testCaseReport,
-				)
-				queueConsumerErrGroup, startConsumersChan := makeQueueConsumerGroup(
-					queue, totalRequests, numConsumers, consumeFunc,
-				)
-
-				// run queue consumers and producers and wait for completion
-
-				// start consumers first
-				// this allows more time for the dequeue algorithm to operate
-				// before the slow requests cause the queue to be backlogged,
-				// allowing for more fair comparison between dequeue algorithms
-				// which change behavior based on the length of the queue backlog
-				close(startConsumersChan)
-				close(producersChan)
-
-				// wait for producers and consumers to finish
-				err = producersErrGroup.Wait()
-				require.NoError(t, err)
-				err = queueConsumerErrGroup.Wait()
-				require.NoError(t, err)
-
-				t.Logf(testCaseName + ": " + testCaseReport.String())
-				testCaseNames = append(testCaseNames, testCaseName)
-				testCaseReports[testCaseName] = testCaseReport
-			})
-
+			}
 		}
 	}
 	//slices.Sort(testCaseNames)

@@ -26,7 +26,7 @@ type QueryComponentUtilizationLimit interface {
 // ingesters only, store-gateways only, or both ingesters and store-gateways.
 const DefaultReservedQueryComponentCapacity = 0.33
 
-// MaxReservedQueryComponentCapacity is an exclusive upper bound on the targetReservedCapacity.
+// MaxReservedQueryComponentCapacity is an inclusive upper bound on the targetReservedCapacity.
 // The threshold for a QueryComponent's utilization of querier-worker connections
 // can only be exceeded by one QueryComponent at a time as long as targetReservedCapacity is < 0.5.
 // Therefore, one of the components will always be given the OK to dequeue queries for.
@@ -49,7 +49,7 @@ type queryComponentUtilizationLimitByConnections struct {
 func NewQueryComponentUtilizationLimitByConnections(
 	targetReservedCapacity float64,
 ) (QueryComponentUtilizationLimit, error) {
-	if targetReservedCapacity >= MaxReservedQueryComponentCapacity {
+	if targetReservedCapacity > MaxReservedQueryComponentCapacity {
 		return nil, errors.New("invalid targetReservedCapacity")
 	}
 
@@ -85,12 +85,12 @@ func (qcul *queryComponentUtilizationLimitByConnections) IsOverUtilized(
 	isIngester, isStoreGateway := queryComponentFlags(queryComponentName)
 	ingesterInflightRequests, storeGatewayInflightRequests := utilization.GetInflightRequests()
 	if isIngester {
-		if qcul.connectedWorkers-ingesterInflightRequests <= minReservedConnections {
+		if qcul.connectedWorkers-ingesterInflightRequests < minReservedConnections {
 			return true, Ingester
 		}
 	}
 	if isStoreGateway {
-		if qcul.connectedWorkers-storeGatewayInflightRequests <= minReservedConnections {
+		if qcul.connectedWorkers-storeGatewayInflightRequests < minReservedConnections {
 			return true, StoreGateway
 		}
 	}
