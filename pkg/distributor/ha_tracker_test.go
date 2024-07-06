@@ -32,12 +32,14 @@ import (
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
 
-func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, user, cluster, replica string, expected time.Time) {
+func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, user, cluster, replica string, expected time.Time, elected time.Time) {
 	t.Helper()
 
 	// Round the expected timestamp with milliseconds precision
 	// to match "received at" precision
 	expected = expected.Truncate(time.Millisecond)
+	// change elected time to UTC
+	elected = elected.UTC().Truncate(time.Millisecond)
 
 	test.Poll(t, duration, nil, func() interface{} {
 		var r ReplicaDesc
@@ -50,7 +52,6 @@ func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, u
 		if info == nil {
 			return fmt.Errorf("no data for user %s cluster %s", user, cluster)
 		}
-
 		if r.GetReplica() != replica {
 			return fmt.Errorf("replicas did not match: %s != %s", r.GetReplica(), replica)
 		}
@@ -59,6 +60,9 @@ func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, u
 		}
 		if !timestamp.Time(r.GetReceivedAt()).Equal(expected) {
 			return fmt.Errorf("timestamps did not match: %+v != %+v", timestamp.Time(r.GetReceivedAt()), expected)
+		}
+		if timestamp.Time(r.GetElectedAt()).Sub(elected) > time.Second {
+			return fmt.Errorf("elected timestamps did not match: %+v != %+v", timestamp.Time(r.GetElectedAt()), elected)
 		}
 
 		return nil
@@ -162,7 +166,7 @@ func TestWatchPrefixAssignment(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Check to see if the value in the trackers cache is correct.
-	checkReplicaTimestamp(t, time.Second, c, "user", cluster, replica, now)
+	checkReplicaTimestamp(t, time.Second, c, "user", cluster, replica, now, now)
 }
 
 func TestCheckReplicaOverwriteTimeout(t *testing.T) {
@@ -200,7 +204,7 @@ func TestCheckReplicaOverwriteTimeout(t *testing.T) {
 	// Update KVStore - this should elect replica 2.
 	c.updateKVStoreAll(context.Background(), now)
 
-	checkReplicaTimestamp(t, time.Second, c, "user", "test", replica2, now)
+	checkReplicaTimestamp(t, time.Second, c, "user", "test", replica2, now, now)
 
 	// Now we should accept from replica 2.
 	err = c.checkReplica(context.Background(), "user", "test", replica2, now)
@@ -309,7 +313,7 @@ func TestCheckReplicaMultiClusterTimeout(t *testing.T) {
 	err = c.checkReplica(context.Background(), "user", "c1", replica2, now)
 	assert.Error(t, err)
 	c.updateKVStoreAll(context.Background(), now)
-	checkReplicaTimestamp(t, time.Second, c, "user", "c1", replica2, now)
+	checkReplicaTimestamp(t, time.Second, c, "user", "c1", replica2, now, now)
 
 	// Accept a sample from c1/replica2.
 	err = c.checkReplica(context.Background(), "user", "c1", replica2, now)
@@ -362,13 +366,13 @@ func TestCheckReplicaUpdateTimeout(t *testing.T) {
 	err = c.checkReplica(context.Background(), user, cluster, replica, startTime)
 	assert.NoError(t, err)
 
-	checkReplicaTimestamp(t, time.Second, c, user, cluster, replica, startTime)
+	checkReplicaTimestamp(t, time.Second, c, user, cluster, replica, startTime, startTime)
 
 	// Timestamp should not update here, since time has not advanced.
 	err = c.checkReplica(context.Background(), user, cluster, replica, startTime)
 	assert.NoError(t, err)
 
-	checkReplicaTimestamp(t, time.Second, c, user, cluster, replica, startTime)
+	checkReplicaTimestamp(t, time.Second, c, user, cluster, replica, startTime, startTime)
 
 	// Wait 500ms and the timestamp should still not update.
 	updateTime := time.Unix(0, startTime.UnixNano()).Add(500 * time.Millisecond)
@@ -376,7 +380,7 @@ func TestCheckReplicaUpdateTimeout(t *testing.T) {
 
 	err = c.checkReplica(context.Background(), user, cluster, replica, updateTime)
 	assert.NoError(t, err)
-	checkReplicaTimestamp(t, time.Second, c, user, cluster, replica, startTime)
+	checkReplicaTimestamp(t, time.Second, c, user, cluster, replica, startTime, startTime)
 
 	// Now we've waited > 1s, so the timestamp should update.
 	updateTime = time.Unix(0, startTime.UnixNano()).Add(1100 * time.Millisecond)
@@ -384,7 +388,7 @@ func TestCheckReplicaUpdateTimeout(t *testing.T) {
 
 	err = c.checkReplica(context.Background(), user, cluster, replica, updateTime)
 	assert.NoError(t, err)
-	checkReplicaTimestamp(t, time.Second, c, user, cluster, replica, updateTime)
+	checkReplicaTimestamp(t, time.Second, c, user, cluster, replica, updateTime, updateTime)
 }
 
 // Test that writes only happen every write timeout.
@@ -413,12 +417,12 @@ func TestCheckReplicaMultiUser(t *testing.T) {
 	// Write the first time for user 1.
 	err = c.checkReplica(context.Background(), "user1", cluster, replica, now)
 	assert.NoError(t, err)
-	checkReplicaTimestamp(t, time.Second, c, "user1", cluster, replica, now)
+	checkReplicaTimestamp(t, time.Second, c, "user1", cluster, replica, now, now)
 
 	// Write the first time for user 2.
 	err = c.checkReplica(context.Background(), "user2", cluster, replica, now)
 	assert.NoError(t, err)
-	checkReplicaTimestamp(t, time.Second, c, "user2", cluster, replica, now)
+	checkReplicaTimestamp(t, time.Second, c, "user2", cluster, replica, now, now)
 
 	// Now we've waited > 1s, so the timestamp should update.
 	updated := now.Add(1100 * time.Millisecond)
@@ -426,9 +430,9 @@ func TestCheckReplicaMultiUser(t *testing.T) {
 	assert.NoError(t, err)
 	c.updateKVStoreAll(context.Background(), updated)
 
-	checkReplicaTimestamp(t, time.Second, c, "user1", cluster, replica, updated)
+	checkReplicaTimestamp(t, time.Second, c, "user1", cluster, replica, updated, updated)
 	// No update for user2.
-	checkReplicaTimestamp(t, time.Second, c, "user2", cluster, replica, now)
+	checkReplicaTimestamp(t, time.Second, c, "user2", cluster, replica, now, now)
 }
 
 func TestCheckReplicaUpdateTimeoutJitter(t *testing.T) {
@@ -501,15 +505,15 @@ func TestCheckReplicaUpdateTimeoutJitter(t *testing.T) {
 			// Init the replica in the KV Store
 			err = c.checkReplica(ctx, "user1", "cluster", "replica-1", testData.startTime)
 			require.NoError(t, err)
-			checkReplicaTimestamp(t, time.Second, c, "user1", "cluster", "replica-1", testData.startTime)
+			checkReplicaTimestamp(t, time.Second, c, "user1", "cluster", "replica-1", testData.startTime, testData.startTime)
 
 			// Refresh the replica in the KV Store
 			err = c.checkReplica(ctx, "user1", "cluster", "replica-1", testData.updateTime)
 			require.NoError(t, err)
 			c.updateKVStoreAll(context.Background(), testData.updateTime)
 
-			// Assert on the the received timestamp
-			checkReplicaTimestamp(t, time.Second, c, "user1", "cluster", "replica-1", testData.expectedTimestamp)
+			// Assert on the received timestamp
+			checkReplicaTimestamp(t, time.Second, c, "user1", "cluster", "replica-1", testData.expectedTimestamp, testData.expectedTimestamp)
 		})
 	}
 }
@@ -612,7 +616,7 @@ func TestHAClustersLimit(t *testing.T) {
 	assert.Error(t, err)
 	// Update KVStore.
 	t1.updateKVStoreAll(context.Background(), now)
-	checkReplicaTimestamp(t, time.Second, t1, userID, "b", "b2", now)
+	checkReplicaTimestamp(t, time.Second, t1, userID, "b", "b2", now, now)
 
 	assert.NoError(t, t1.checkReplica(context.Background(), userID, "b", "b2", now))
 	waitForClustersUpdate(t, 2, t1, userID)
@@ -745,7 +749,7 @@ func TestCheckReplicaCleanup(t *testing.T) {
 
 	err = c.checkReplica(context.Background(), userID, cluster, replica, now)
 	assert.NoError(t, err)
-	checkReplicaTimestamp(t, time.Second, c, userID, cluster, replica, now)
+	checkReplicaTimestamp(t, time.Second, c, userID, cluster, replica, now, now)
 
 	// Replica is not marked for deletion yet.
 	checkReplicaDeletionState(t, time.Second, c, userID, cluster, true, true, false)
@@ -762,7 +766,7 @@ func TestCheckReplicaCleanup(t *testing.T) {
 	now = time.Now()
 	err = c.checkReplica(context.Background(), userID, cluster, replica, now)
 	assert.NoError(t, err)
-	checkReplicaTimestamp(t, time.Second, c, userID, cluster, replica, now) // This also checks that entry is not marked for deletion.
+	checkReplicaTimestamp(t, time.Second, c, userID, cluster, replica, now, now) // This also checks that entry is not marked for deletion.
 	checkUserClusters(t, time.Second, c, userID, 1)
 
 	// This will mark replica for deletion again (with new time.Now())
