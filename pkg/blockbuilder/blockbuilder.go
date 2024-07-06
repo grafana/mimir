@@ -452,14 +452,23 @@ func (b *BlockBuilder) consumePartition(
 	defer builder.close() // TODO: handle error
 
 	var (
-		done       bool
-		commitRec  *kgo.Record
-		firstRec   *kgo.Record
-		lastRec    *kgo.Record
-		blockEndAt = cycleEnd.Truncate(b.cfg.ConsumeInterval)
-		blockMax   = blockEndAt.UnixMilli()
+		done              bool
+		commitRec         *kgo.Record
+		firstRec          *kgo.Record
+		lastRec           *kgo.Record
+		blockEndAt        = cycleEnd.Truncate(b.cfg.ConsumeInterval)
+		blockMax          = blockEndAt.UnixMilli()
+		metricUpdate      = 0
+		consumerLagMetric = b.metrics.consumerLag.WithLabelValues(b.cfg.Kafka.Topic, fmt.Sprintf("%d", part))
 	)
+
 	for !done {
+		metricUpdate++
+		if metricUpdate%10000 == 0 {
+			consumerLagMetric.Set(float64(lag))
+			metricUpdate = 0
+		}
+
 		if err := context.Cause(ctx); err != nil {
 			return pl, err
 		}
@@ -540,6 +549,8 @@ func (b *BlockBuilder) consumePartition(
 
 		b.kafkaClient.AllowRebalance()
 	}
+
+	consumerLagMetric.Set(float64(lag))
 
 	if err := builder.compactAndUpload(ctx, b.blockUploaderForUser); err != nil {
 		return pl, err
