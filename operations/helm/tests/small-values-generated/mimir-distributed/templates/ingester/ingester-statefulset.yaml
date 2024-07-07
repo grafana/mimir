@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
     name: "ingester-zone-a"
-    rollout-group: ingester
+    rollout-group: small-values-mimir-ingester
     zone: zone-a
   annotations:
     rollout-max-unavailable: "50"
@@ -24,7 +24,7 @@ spec:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: small-values
       app.kubernetes.io/component: ingester
-      rollout-group: ingester
+      rollout-group: small-values-mimir-ingester
       zone: zone-a
   updateStrategy:
     type: OnDelete
@@ -49,7 +49,7 @@ spec:
         app.kubernetes.io/component: ingester
         app.kubernetes.io/part-of: memberlist
         name: "ingester-zone-a"
-        rollout-group: ingester
+        rollout-group: small-values-mimir-ingester
         zone: zone-a
       annotations:
       namespace: "citestns"
@@ -70,7 +70,7 @@ spec:
               - key: rollout-group
                 operator: In
                 values:
-                - ingester
+                - small-values-mimir-ingester
               - key: zone
                 operator: NotIn
                 values:
@@ -160,7 +160,7 @@ metadata:
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
     name: "ingester-zone-b"
-    rollout-group: ingester
+    rollout-group: small-values-mimir-ingester
     zone: zone-b
   annotations:
     rollout-max-unavailable: "50"
@@ -173,7 +173,7 @@ spec:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: small-values
       app.kubernetes.io/component: ingester
-      rollout-group: ingester
+      rollout-group: small-values-mimir-ingester
       zone: zone-b
   updateStrategy:
     type: OnDelete
@@ -198,7 +198,7 @@ spec:
         app.kubernetes.io/component: ingester
         app.kubernetes.io/part-of: memberlist
         name: "ingester-zone-b"
-        rollout-group: ingester
+        rollout-group: small-values-mimir-ingester
         zone: zone-b
       annotations:
       namespace: "citestns"
@@ -219,7 +219,7 @@ spec:
               - key: rollout-group
                 operator: In
                 values:
-                - ingester
+                - small-values-mimir-ingester
               - key: zone
                 operator: NotIn
                 values:
@@ -309,7 +309,7 @@ metadata:
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
     name: "ingester-zone-c"
-    rollout-group: ingester
+    rollout-group: small-values-mimir-ingester
     zone: zone-c
   annotations:
     rollout-max-unavailable: "50"
@@ -322,7 +322,7 @@ spec:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: small-values
       app.kubernetes.io/component: ingester
-      rollout-group: ingester
+      rollout-group: small-values-mimir-ingester
       zone: zone-c
   updateStrategy:
     type: OnDelete
@@ -347,7 +347,7 @@ spec:
         app.kubernetes.io/component: ingester
         app.kubernetes.io/part-of: memberlist
         name: "ingester-zone-c"
-        rollout-group: ingester
+        rollout-group: small-values-mimir-ingester
         zone: zone-c
       annotations:
       namespace: "citestns"
@@ -368,7 +368,7 @@ spec:
               - key: rollout-group
                 operator: In
                 values:
-                - ingester
+                - small-values-mimir-ingester
               - key: zone
                 operator: NotIn
                 values:

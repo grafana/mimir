@@ -9,7 +9,7 @@ metadata:
     heritage: Helm
     release: test-enterprise-legacy-label-values
     name: "ingester-zone-a"
-    rollout-group: ingester
+    rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-ingester
     zone: zone-a
   annotations:
     {}
@@ -28,7 +28,7 @@ spec:
   selector:
     app: enterprise-metrics-ingester
     release: test-enterprise-legacy-label-values
-    rollout-group: ingester
+    rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-ingester
     zone: zone-a
 ---
 # Source: mimir-distributed/templates/ingester/ingester-svc.yaml
@@ -41,7 +41,7 @@ metadata:
     heritage: Helm
     release: test-enterprise-legacy-label-values
     name: "ingester-zone-b"
-    rollout-group: ingester
+    rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-ingester
     zone: zone-b
   annotations:
     {}
@@ -60,7 +60,7 @@ spec:
   selector:
     app: enterprise-metrics-ingester
     release: test-enterprise-legacy-label-values
-    rollout-group: ingester
+    rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-ingester
     zone: zone-b
 ---
 # Source: mimir-distributed/templates/ingester/ingester-svc.yaml
@@ -73,7 +73,7 @@ metadata:
     heritage: Helm
     release: test-enterprise-legacy-label-values
     name: "ingester-zone-c"
-    rollout-group: ingester
+    rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-ingester
     zone: zone-c
   annotations:
     {}
@@ -92,5 +92,5 @@ spec:
   selector:
     app: enterprise-metrics-ingester
     release: test-enterprise-legacy-label-values
-    rollout-group: ingester
+    rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-ingester
     zone: zone-c
