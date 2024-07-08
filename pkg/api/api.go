@@ -482,6 +482,13 @@ func (a *API) RegisterOverridesExporter(oe *exporter.OverridesExporter) {
 	a.RegisterRoute("/overrides-exporter/ring", http.HandlerFunc(oe.RingHandler), false, true, "GET", "POST")
 }
 
+func (a *API) RegisterBlockBuilderRing(r http.Handler) {
+	a.indexPage.AddLinks(defaultWeight, "BlockBuilder", []IndexPageLink{
+		{Desc: "Ring status", Path: "/blockbuilder/ring"},
+	})
+	a.RegisterRoute("/blockbuilder/ring", r, false, true, "GET", "POST")
+}
+
 // RegisterServiceMapHandler registers the Mimir structs service handler
 // TODO: Refactor this code to be accomplished using the services.ServiceManager
 // or a future module manager #2291
