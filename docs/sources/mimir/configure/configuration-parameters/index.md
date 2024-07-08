@@ -1947,6 +1947,11 @@ alertmanager_client:
   # CLI flag: -ruler.alertmanager-client.basic-auth-password
   [basic_auth_password: <string> | default = ""]
 
+# (experimental) Drain all outstanding alert notifications when shutting down.
+# If false, any outstanding alert notifications are dropped when shutting down.
+# CLI flag: -ruler.drain-notification-queue-on-shutdown
+[drain_notification_queue_on_shutdown: <boolean> | default = false]
+
 # (advanced) Max time to tolerate outage for restoring "for" state of alert.
 # CLI flag: -ruler.for-outage-tolerance
 [for_outage_tolerance: <duration> | default = 1h]
