@@ -264,6 +264,7 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 		"host", r.Host,
 		"path", r.URL.Path,
 		"time_taken", queryResponseTime.String(),
+		"header_cache_control", r.Header.Get("Cache-Control"),
 	}, formatQueryString(details, queryString)...)
 
 	if len(f.cfg.LogQueryRequestHeaders) != 0 {
@@ -329,6 +330,7 @@ func (f *Handler) reportQueryStats(
 		"split_queries", stats.LoadSplitQueries(),
 		"estimated_series_count", stats.GetEstimatedSeriesCount(),
 		"queue_time_seconds", stats.LoadQueueTime().Seconds(),
+		"header_cache_control", r.Header.Get("Cache-Control"),
 	}, formatQueryString(details, queryString)...)
 
 	if details != nil {
@@ -346,7 +348,6 @@ func (f *Handler) reportQueryStats(
 		logMessage = append(logMessage,
 			"results_cache_hit_bytes", details.ResultsCacheHitBytes,
 			"results_cache_miss_bytes", details.ResultsCacheMissBytes,
-			"results_cache_no_store", details.ResultsCacheNoStore,
 		)
 	}
 

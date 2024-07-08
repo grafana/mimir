@@ -570,6 +570,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 	for _, tt := range []struct {
 		name                         string
 		requestFormFields            []string
+		requestAdditionalHeaders     map[string]string
 		setQueryDetails              func(*querymiddleware.QueryDetails)
 		expectedLoggedFields         map[string]string
 		expectedMissingFields        []string
@@ -634,17 +635,23 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 			expectedLoggedFields: map[string]string{
 				"results_cache_miss_bytes": "10",
 				"results_cache_hit_bytes":  "200",
-				"results_cache_no_store":   "false",
+				"header_cache_control":     "",
 			},
 		},
 		{
 			name:              "results cache turned off on request",
 			requestFormFields: []string{},
+			requestAdditionalHeaders: map[string]string{
+				"Cache-Control": "no-store",
+			},
 			setQueryDetails: func(d *querymiddleware.QueryDetails) {
-				d.ResultsCacheNoStore = true
+				d.ResultsCacheMissBytes = 200
+				d.ResultsCacheHitBytes = 0
 			},
 			expectedLoggedFields: map[string]string{
-				"results_cache_no_store": "true",
+				"results_cache_miss_bytes": "200",
+				"results_cache_hit_bytes":  "0",
+				"header_cache_control":     "no-store",
 			},
 		},
 	} {
@@ -668,6 +675,9 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 			handler := NewHandler(HandlerConfig{QueryStatsEnabled: true, MaxBodySize: 1024}, roundTripper, logger, reg, at)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/query", nil)
+			for header, value := range tt.requestAdditionalHeaders {
+				req.Header.Add(header, value)
+			}
 			req = req.WithContext(user.InjectOrgID(context.Background(), "12345"))
 			req.Form = map[string][]string{}
 			for _, field := range tt.requestFormFields {

@@ -98,9 +98,6 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 	if details == nil {
 		return
 	}
-	if req.GetOptions().CacheDisabled {
-		details.ResultsCacheNoStore = true
-	}
 	// This middleware may run multiple times for the same request in case of a remote read request
 	// (once for each query in the request). In such case, we compute the start/end time as the min/max
 	// timestamp we see across all queries in the request.
@@ -156,7 +153,6 @@ type QueryDetails struct {
 	MinT, MaxT time.Time
 	Step       time.Duration
 
-	ResultsCacheNoStore   bool // If true the client requested that the results should not be stored in the cache.
 	ResultsCacheMissBytes int
 	ResultsCacheHitBytes  int
 }
