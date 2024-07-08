@@ -69,7 +69,7 @@ func (fp *frontendProcessor) notifyShutdown(ctx context.Context, conn *grpc.Clie
 
 // processQueriesOnSingleStream tries to establish a stream to the query-frontend and then process queries received
 // on the stream. This function loops until workerCtx is canceled.
-func (fp *frontendProcessor) processQueriesOnSingleStream(workerCtx context.Context, conn *grpc.ClientConn, address string) {
+func (fp *frontendProcessor) processQueriesOnSingleStream(workerCtx context.Context, conn *grpc.ClientConn, address string, _ int32) {
 	client := fp.frontendClientFactory(conn)
 
 	// Run the gRPC client and process all the queries in a dedicated context that we call the "execution context".

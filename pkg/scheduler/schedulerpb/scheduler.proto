@@ -33,6 +33,7 @@ service SchedulerForQuerier {
 // To signal that querier is ready to accept another request, querier sends empty message.
 message QuerierToScheduler {
   string querierID = 1;
+  int32 workerID = 2;
 }
 
 message SchedulerToQuerier {

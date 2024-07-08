@@ -52,7 +52,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(&httpgrpc.HTTPResponse{}, nil)
 
-		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1", 0)
 
 		// We expect at this point, the execution context has been canceled too.
 		require.Error(t, loopClient.Context().Err())
@@ -97,7 +97,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 		}).Return(&httpgrpc.HTTPResponse{}, nil)
 
 		startTime := time.Now()
-		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1", 0)
 		assert.GreaterOrEqual(t, time.Since(startTime), time.Second)
 
 		// We expect at this point, the execution context has been canceled too.
@@ -156,7 +156,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 		// processQueriesOnSingleStream() blocks and retries until its context is cancelled, so run it in the background.
 		go func() {
-			sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+			sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1", 0)
 		}()
 
 		// It isn't strictly necessary that we report the query result to the frontend if the query is cancelled, as
@@ -192,7 +192,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(&httpgrpc.HTTPResponse{}, nil)
 
-		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1", 0)
 
 		// We expect no error in the log.
 		assert.NotContains(t, logs.String(), "error")
@@ -242,7 +242,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 		}).Return(&httpgrpc.HTTPResponse{}, nil)
 
 		go func() {
-			sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+			sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1", 0)
 		}()
 
 		// Wait for query execution to terminate.
@@ -301,7 +301,7 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 			}
 		}).Return(&httpgrpc.HTTPResponse{}, nil)
 
-		fp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+		fp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1", 0)
 
 		// We expect Send() to be called twice: first to send the querier ID to scheduler
 		// and then to send the query result.
@@ -419,7 +419,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 				func(mock.Arguments) { cancel() },
 			).Return(returnResponses(responses)())
 
-			reqProcessor.processQueriesOnSingleStream(ctx, nil, "127.0.0.1")
+			reqProcessor.processQueriesOnSingleStream(ctx, nil, "127.0.0.1", 0)
 
 			require.Equal(t, tc.expectMetadataCalls, int(frontend.queryResultStreamMetadataCalls.Load()))
 			require.Equal(t, tc.expectBodyCalls, int(frontend.queryResultStreamBodyCalls.Load()))
@@ -464,7 +464,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 		)
 
 		workerCtx, workerCancel := context.WithCancel(context.Background())
-		go sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+		go sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1", 0)
 
 		assert.Eventually(t, func() bool {
 			return int(frontend.queryResultStreamReturned.Load()) == 1
@@ -512,7 +512,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 			nil,
 		)
 
-		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1", 0)
 
 		assert.Equal(t, 1, int(frontend.queryResultStreamMetadataCalls.Load()))
 		assert.Equal(t, 1, int(frontend.queryResultStreamReturned.Load()))
@@ -551,7 +551,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 		)
 
 		workerCtx, workerCancel := context.WithCancel(context.Background())
-		go sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+		go sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1", 0)
 
 		assert.Eventually(t, func() bool {
 			return frontend.queryResultStreamReturned.Load() == 1
@@ -593,7 +593,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 			func(mock.Arguments) { cancel() },
 		).Return(returnResponses(responses)())
 
-		reqProcessor.processQueriesOnSingleStream(ctx, nil, "127.0.0.1")
+		reqProcessor.processQueriesOnSingleStream(ctx, nil, "127.0.0.1", 0)
 
 		require.Equal(t, 2, mockStreamer.totalCalls)
 	})

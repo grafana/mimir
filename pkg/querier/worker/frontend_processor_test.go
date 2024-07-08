@@ -42,7 +42,7 @@ func TestFrontendProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(&httpgrpc.HTTPResponse{}, nil)
 
-		fp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+		fp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1", 0)
 
 		// We expect at this point, the execution context has been canceled too.
 		require.Error(t, processClient.Context().Err())
@@ -84,7 +84,7 @@ func TestFrontendProcessor_processQueriesOnSingleStream(t *testing.T) {
 		}).Return(&httpgrpc.HTTPResponse{}, nil)
 
 		startTime := time.Now()
-		fp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+		fp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1", 0)
 		assert.GreaterOrEqual(t, time.Since(startTime), time.Second)
 
 		// We expect at this point, the execution context has been canceled too.
@@ -132,7 +132,7 @@ func TestFrontendProcessor_QueryTime(t *testing.T) {
 			}
 		}).Return(&httpgrpc.HTTPResponse{}, nil)
 
-		fp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+		fp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1", 0)
 
 		// We expect Send() to be called once, to send the query result.
 		processClient.AssertNumberOfCalls(t, "Send", 1)
@@ -163,7 +163,7 @@ func TestRecvFailDoesntCancelProcess(t *testing.T) {
 		running.Store(true)
 		defer running.Store(false)
 
-		mgr.processQueriesOnSingleStream(ctx, cc, "test:12345")
+		mgr.processQueriesOnSingleStream(ctx, cc, "test:12345", 0)
 	}()
 
 	test.Poll(t, time.Second, true, func() interface{} {
