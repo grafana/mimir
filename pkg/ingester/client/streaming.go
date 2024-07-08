@@ -48,6 +48,7 @@ type SeriesChunksStreamReader struct {
 	err             error
 	seriesBatch     []QueryStreamSeriesChunks
 
+	// Keeping the ingester name for debug logs.
 	ingesterName string
 }
 
