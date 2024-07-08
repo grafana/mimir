@@ -4,8 +4,6 @@ package querier
 
 import (
 	"fmt"
-	"hash/crc32"
-	"strings"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -14,6 +12,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
+	"github.com/grafana/mimir/pkg/util/chunkreplyformatter"
 )
 
 type streamingChunkSeriesContext struct {
@@ -31,10 +30,11 @@ type streamingChunkSeries struct {
 	context *streamingChunkSeriesContext
 
 	alreadyCreated bool
-	// debug
+
+	// For debug logging.
 	traceId   string
 	lastOne   bool
-	chunkInfo *strings.Builder
+	chunkInfo *chunkreplyformatter.ChunkReplyFormatter
 }
 
 func (s *streamingChunkSeries) Labels() labels.Labels {
@@ -52,16 +52,9 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 	totalChunks := 0
 
 	if s.chunkInfo != nil {
-		seriesId := s.labels.Get("series_id")
-		if (*(s.chunkInfo)).Len() > 0 {
-			(*(s.chunkInfo)).WriteString(",\"") // next series
-		} else {
-			(*(s.chunkInfo)).WriteString("{\"") // first series
-		}
-		(*(s.chunkInfo)).WriteString(seriesId)
-		(*(s.chunkInfo)).WriteString("\":{") // ingesters map
+		s.chunkInfo.StartSeries(s.labels.Get("series_id"))
 	}
-	for i, source := range s.sources {
+	for _, source := range s.sources {
 		c, err := source.StreamReader.GetChunks(source.SeriesIndex)
 
 		if err != nil {
@@ -69,21 +62,7 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 		}
 
 		if s.chunkInfo != nil {
-			if i > 0 {
-				(*(s.chunkInfo)).WriteRune(',')
-			}
-			(*(s.chunkInfo)).WriteRune('"')
-			(*(s.chunkInfo)).WriteString(source.StreamReader.GetName()[14:])
-			(*(s.chunkInfo)).WriteString("\":[") // list of chunks start
-			for j, ci := range chunkSliceInfo(c) {
-				if j > 0 {
-					(*(s.chunkInfo)).WriteRune(',')
-				}
-				(*(s.chunkInfo)).WriteRune('"')
-				(*(s.chunkInfo)).WriteString(ci)
-				(*(s.chunkInfo)).WriteRune('"')
-			}
-			(*(s.chunkInfo)).WriteString("]") // end list of chunks
+			s.chunkInfo.FormatIngesterChunkInfo(source.StreamReader.GetName(), c)
 		}
 
 		totalChunks += len(c)
@@ -102,18 +81,9 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 	}
 
 	if s.chunkInfo != nil {
-		(*(s.chunkInfo)).WriteString("}") // close ingester map
-
-		//fmt.Printf("CT: trace_id=%v: got the following from %v ingesters for series_id=%v: %v\n", s.traceId, len(perIngesterInfo), seriesId, strings.Join(perIngesterInfo, ","))
-		//fmt.Printf("CT: trace_id=%v: got %v unique chunks for series_id=%v: %v\n", s.traceId, len(uniqueChunks), seriesId, strings.Join(chunkSliceInfo(uniqueChunks), ","))
-
-		// for _, c := range uniqueChunks {
-		// 	*(s.chunkInfo) = append(*(s.chunkInfo), fmt.Sprintf("%s:%d:%d", seriesId, c.StartTimestampMs/1000, c.EndTimestampMs/1000))
-		// }
-		if s.lastOne || (*(s.chunkInfo)).Len() > 64*1024 {
-			(*(s.chunkInfo)).WriteString("}") // close series map
-			fmt.Printf("CT: chunk stream from ingester: trace_id:%s info:%s\n", s.traceId, (*(s.chunkInfo)).String())
-			(*(s.chunkInfo)).Reset()
+		needPrint := s.chunkInfo.EndSeries()
+		if s.lastOne || needPrint {
+			fmt.Printf("CT: chunk stream from ingester: trace_id:%s info:%s\n", s.traceId, s.chunkInfo.GetChunkInfo())
 		}
 	}
 
@@ -125,20 +95,4 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 	}
 
 	return batch.NewChunkMergeIterator(it, chunks)
-}
-
-func chunkSliceInfo(chks []client.Chunk) []string {
-	info := make([]string, 0, len(chks))
-	var endTime int64
-	for _, chk := range chks {
-		info = append(info, chunkInfo(chk, &endTime))
-	}
-
-	return info
-}
-
-func chunkInfo(chk client.Chunk, endTime *int64) string {
-	startTime := chk.StartTimestampMs/1000 - *endTime
-	*endTime = chk.EndTimestampMs / 1000
-	return fmt.Sprintf("%v:%v:%v:%x", startTime, chk.EndTimestampMs/1000-chk.StartTimestampMs/1000, len(chk.Data), crc32.ChecksumIEEE(chk.Data))
 }

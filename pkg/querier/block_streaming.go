@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -24,6 +23,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkreplyformatter"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -40,7 +40,7 @@ type blockStreamingQuerierSeriesSet struct {
 	currSeries storage.Series
 
 	// debug
-	chunkInfo []string
+	chunkInfo *chunkreplyformatter.ChunkReplyFormatter
 	traceId   string
 }
 
@@ -66,7 +66,7 @@ func (bqss *blockStreamingQuerierSeriesSet) Next() bool {
 		bqss.nextSeriesIndex++
 	}
 
-	bqss.currSeries = newBlockStreamingQuerierSeries(mimirpb.FromLabelAdaptersToLabels(currLabels), seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader, &bqss.chunkInfo, bqss.nextSeriesIndex >= len(bqss.series), bqss.traceId)
+	bqss.currSeries = newBlockStreamingQuerierSeries(mimirpb.FromLabelAdaptersToLabels(currLabels), seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader, bqss.chunkInfo, bqss.nextSeriesIndex >= len(bqss.series), bqss.traceId)
 	return true
 }
 
@@ -83,7 +83,7 @@ func (bqss *blockStreamingQuerierSeriesSet) Warnings() annotations.Annotations {
 }
 
 // newBlockStreamingQuerierSeries makes a new blockQuerierSeries. Input labels must be already sorted by name.
-func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamReader, chunkInfo *[]string, lastOne bool, traceId string) *blockStreamingQuerierSeries {
+func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamReader, chunkInfo *chunkreplyformatter.ChunkReplyFormatter, lastOne bool, traceId string) *blockStreamingQuerierSeries {
 	return &blockStreamingQuerierSeries{
 		labels:         lbls,
 		seriesIdxStart: seriesIdxStart,
@@ -101,7 +101,7 @@ type blockStreamingQuerierSeries struct {
 	streamReader                 chunkStreamReader
 
 	// debug
-	chunkInfo *[]string
+	chunkInfo *chunkreplyformatter.ChunkReplyFormatter
 	lastOne   bool
 	traceId   string
 }
@@ -122,12 +122,11 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 	}
 
 	if bqs.labels.Get("__name__") == "mimir_continuous_test_sine_wave" {
-		seriesId := bqs.labels.Get("series_id")
-		for _, chunk := range allChunks {
-			*(bqs.chunkInfo) = append(*(bqs.chunkInfo), fmt.Sprintf("%s:%d:%d", seriesId, chunk.MinTime/1000, chunk.MaxTime/1000))
-		}
-		if bqs.lastOne {
-			fmt.Printf("CT: chunk stream from store-gateway: trace_id:%s info:%s\n", bqs.traceId, strings.Join(*(bqs.chunkInfo), ","))
+		bqs.chunkInfo.StartSeries(bqs.labels.Get("series_id"))
+		bqs.chunkInfo.FormatStoreGatewayChunkInfo("sg", allChunks)
+		needPrint := bqs.chunkInfo.EndSeries()
+		if bqs.lastOne || needPrint {
+			fmt.Printf("CT: chunk stream from store-gateway: trace_id:%s info:%s\n", bqs.traceId, bqs.chunkInfo.GetChunkInfo())
 		}
 	}
 

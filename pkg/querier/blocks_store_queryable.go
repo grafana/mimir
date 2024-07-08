@@ -50,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkreplyformatter"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -940,7 +941,8 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			if len(mySeries) > 0 {
 				seriesSets = append(seriesSets, &blockQuerierSeriesSet{series: mySeries})
 			} else if len(myStreamingSeries) > 0 {
-				seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{series: myStreamingSeries, streamReader: streamReader, traceId: traceId, chunkInfo: make([]string, 0)})
+				c.RemoteAddress()
+				seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{series: myStreamingSeries, streamReader: streamReader, traceId: traceId, chunkInfo: chunkreplyformatter.NewChunkReplyFormatter()})
 				streamReaders = append(streamReaders, streamReader)
 			}
 			warnings.Merge(myWarnings)
