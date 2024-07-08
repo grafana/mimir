@@ -846,6 +846,11 @@ ha_tracker:
 # CLI flag: -distributor.max-recv-msg-size
 [max_recv_msg_size: <int> | default = 104857600]
 
+# (experimental) Maximum OTLP request size in bytes that the distributors
+# accept. Requests exceeding this limit are rejected.
+# CLI flag: -distributor.max-otlp-request-size
+[max_otlp_request_size: <int> | default = 104857600]
+
 # (experimental) Max size of the pooled buffers used for marshaling write
 # requests. If 0, no max size is enforced.
 # CLI flag: -distributor.max-request-pool-buffer-size
@@ -2441,9 +2446,21 @@ alertmanager_client:
 
 # (experimental) Enable UTF-8 strict mode. Allows UTF-8 characters in the
 # matchers for routes and inhibition rules, in silences, and in the labels for
-# alerts. It is recommended to check both alertmanager_matchers_disagree_total
-# and alertmanager_matchers_incompatible_total metrics before using this mode as
-# otherwise some tenant configurations might fail to load.
+# alerts. It is recommended that all tenants run the `migrate-utf8` command in
+# mimirtool before enabling this mode. Otherwise, some tenant configurations
+# might fail to load. To identify tenants with incompatible configurations,
+# search Mimir server logs for lines containing `Alertmanager is moving to a new
+# parser for labels and matchers, and this input is incompatible`. To find
+# tenant configurations that are valid but contain ambiguous matchers, search
+# for log lines containing `Matchers input has disagreement`. Each log line
+# includes the invalid input, a suggestion on how to fix the input (excluding
+# ambiguous matchers, as these require manual correction), and the ID of the
+# affected tenant. You must run Mimir with debug-level logging enabled.
+# Otherwise, these lines aren't logged. For more information, refer to
+# https://prometheus.io/docs/alerting/latest/configuration/#label-matchers.
+# Enabling and then disabling UTF-8 strict mode can break existing Alertmanager
+# configurations if tenants added UTF-8 characters to their Alertmanager
+# configuration while it was enabled.
 # CLI flag: -alertmanager.utf8-strict-mode-enabled
 [utf8_strict_mode: <boolean> | default = false]
 ```
@@ -3525,6 +3542,14 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ruler.max-rule-groups-per-tenant-by-namespace
 [ruler_max_rule_groups_per_tenant_by_namespace: <map of string to int> | default = {}]
 
+# (experimental) List of namespaces that are protected from modification unless
+# a special HTTP header is used. If a namespace is protected, it can only be
+# read, not modified via the ruler's configuration API. The value is a list of
+# strings, where each string is a namespace name. On the command line, this list
+# is given as a comma-separated list.
+# CLI flag: -ruler.protected-namespaces
+[ruler_protected_namespaces: <string> | default = ""]
+
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
 # sharded across all store-gateway replicas.
@@ -3749,10 +3774,19 @@ kafka:
   # CLI flag: -ingest-storage.kafka.consume-from-timestamp-at-startup
   [consume_from_timestamp_at_startup: <int> | default = 0]
 
-  # The maximum tolerated lag before a consumer is considered to have caught up
+  # The best-effort maximum lag a consumer tries to achieve at startup. Set both
+  # -ingest-storage.kafka.target-consumer-lag-at-startup and
+  # -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting
+  # for maximum consumer lag being honored at startup.
+  # CLI flag: -ingest-storage.kafka.target-consumer-lag-at-startup
+  [target_consumer_lag_at_startup: <duration> | default = 2s]
+
+  # The guaranteed maximum lag before a consumer is considered to have caught up
   # reading from a partition at startup, becomes ACTIVE in the hash ring and
-  # passes the readiness check. Set 0 to disable waiting for maximum consumer
-  # lag being honored at startup.
+  # passes the readiness check. Set both
+  # -ingest-storage.kafka.target-consumer-lag-at-startup and
+  # -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting
+  # for maximum consumer lag being honored at startup.
   # CLI flag: -ingest-storage.kafka.max-consumer-lag-at-startup
   [max_consumer_lag_at_startup: <duration> | default = 15s]
 
@@ -3777,6 +3811,11 @@ kafka:
   # unless for testing purposes.
   # CLI flag: -ingest-storage.kafka.producer-max-record-size-bytes
   [producer_max_record_size_bytes: <int> | default = 15983616]
+
+  # The maximum allowed for a read requests processed by an ingester to wait
+  # until strong read consistency is enforced. 0 to disable the timeout.
+  # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
+  [wait_strong_read_consistency_timeout: <duration> | default = 20s]
 
 migration:
   # When both this option and ingest storage are enabled, distributors write to

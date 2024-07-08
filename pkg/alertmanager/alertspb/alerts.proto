@@ -45,4 +45,5 @@ message GrafanaAlertConfigDesc {
   bool default = 7;
   bool promoted = 8;
   string external_url = 9;
+  map<string, string> static_headers = 10;
 }

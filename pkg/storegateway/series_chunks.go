@@ -262,7 +262,11 @@ func (p *preloadingSetIterator[Set]) preload() {
 	}
 
 	if p.from.Err() != nil {
-		p.preloaded <- preloadedSeriesChunksSet[Set]{err: p.from.Err()}
+		select {
+		case <-p.ctx.Done():
+			// If the client gives up on reading from the stream, then we will never return this error
+		case p.preloaded <- preloadedSeriesChunksSet[Set]{err: p.from.Err()}:
+		}
 	}
 }
 

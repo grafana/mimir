@@ -31,6 +31,9 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards. #7674
   * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric.
+* [ENHANCEMENT] Memcached: Update to Memcached 1.6.28 and memcached-exporter 0.14.4. #8557
+* [ENHANCEMENT] Add missing fields in multiple topology spread constraints. #8533
+* [BUGFIX] Add missing container security context to run `continuous-test` under the restricted security policy. #8653
 
 ## 5.4.0-rc.0
 
@@ -61,6 +64,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Helm: Allowed setting static NodePort for nginx gateway via `gateway.service.nodePort`. #6966
 * [BUGFIX] Helm: Expose AM configs in the `gateway` NGINX configuration. #8248
 * [BUGFIX] Helm: fix ServiceMonitor and PVC template to not show diff in ArgoCD. #8829
+* [BUGFIX] Alertmanager: Set -server.http-idle-timeout to avoid EOF errors in ruler. #8192
 
 ## 5.3.0
 

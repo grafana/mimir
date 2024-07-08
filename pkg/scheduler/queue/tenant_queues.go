@@ -180,7 +180,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 		queueElement = tq.DequeueByPath(queuePath)
 	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 		qb.tenantQuerierAssignments.updateQueuingAlgorithmState(querierID, lastTenantIndex)
-
+    francoposa/casie-tree-queue-sketch-query-component-queue-model
 		queuePath, queueElement = itq.Dequeue()
 	}
 

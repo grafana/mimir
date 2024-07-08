@@ -181,7 +181,7 @@ local filename = 'mimir-reads.json';
     )
     .addRowIf(
       $._config.autoscaling.querier.enabled,
-      $.row('Querier - autoscaling')
+      $.row('Querier – autoscaling')
       .addPanel(
         local title = 'Replicas';
         $.timeseriesPanel(title) +
@@ -202,9 +202,6 @@ local filename = 'mimir-reads.json';
             |||
               max by (scaletargetref_name) (
                 kube_horizontalpodautoscaler_status_current_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-                # HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active.
-                * on (%(cluster_labels)s, horizontalpodautoscaler)
-                  kube_horizontalpodautoscaler_status_condition{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s", condition="ScalingActive", status="true"}
                 # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
                 + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
                   0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
@@ -237,8 +234,6 @@ local filename = 'mimir-reads.json';
           title,
           |||
             The maximum, and current number of querier replicas.
-            Please note that the current number of replicas can still show 1 replica even when scaled to 0.
-            Since HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.
           |||
         ) +
         {

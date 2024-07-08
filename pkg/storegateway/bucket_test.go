@@ -11,7 +11,6 @@ package storegateway
 import (
 	"bytes"
 	"context"
-	cryptorand "crypto/rand"
 	"fmt"
 	"math"
 	"math/rand"
@@ -32,6 +31,7 @@ import (
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/grpcutil"
 	dskit_metrics "github.com/grafana/dskit/metrics"
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -160,6 +160,37 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 	assert.Equal(t, map[string]string{}, meta.Thanos.Labels)
 }
 
+func TestBucketBlockSet_add_FailOnDuplicates(t *testing.T) {
+	set := newBucketBlockSet()
+
+	type resBlock struct {
+		id         ulid.ULID
+		mint, maxt int64
+	}
+	input := []resBlock{
+		{id: ulid.MustNew(1, nil), mint: 0, maxt: 100},
+		{id: ulid.MustNew(2, nil), mint: 100, maxt: 200},
+	}
+	for _, in := range input {
+		var m block.Meta
+		m.ULID = in.id
+		m.MinTime = in.mint
+		m.MaxTime = in.maxt
+		require.NoError(t, set.add(&bucketBlock{meta: &m}))
+	}
+	assert.Equal(t, 2, set.len())
+
+	// Adding duplicate blocks results with an error.
+	for _, in := range input {
+		var m block.Meta
+		m.ULID = in.id
+		m.MinTime = in.mint
+		m.MaxTime = in.maxt
+		require.Error(t, set.add(&bucketBlock{meta: &m}))
+	}
+	assert.Equal(t, 2, set.len())
+}
+
 func TestBucketBlockSet_remove(t *testing.T) {
 	set := newBucketBlockSet()
 
@@ -180,9 +211,15 @@ func TestBucketBlockSet_remove(t *testing.T) {
 		m.MaxTime = in.maxt
 		assert.NoError(t, set.add(&bucketBlock{meta: &m}))
 	}
-	set.remove(input[1].id)
-	res := set.getFor(0, 300, nil)
+	b := set.remove(input[1].id)
+	require.NotNil(t, b)
 
+	require.Equal(t, 2, set.len())
+
+	res := make([]*bucketBlock, 0, len(input))
+	set.filter(0, 300, nil, func(b *bucketBlock) {
+		res = append(res, b)
+	})
 	assert.Equal(t, 2, len(res))
 	assert.Equal(t, input[0].id, res[0].meta.ULID)
 	assert.Equal(t, input[2].id, res[1].meta.ULID)
@@ -1381,7 +1418,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	}
 
 	ibkt := objstore.WithNoopInstr(bkt)
-	f, err := block.NewMetaFetcher(logger, 1, ibkt, "", nil, nil)
+	f, err := block.NewMetaFetcher(logger, 1, ibkt, "", nil, nil, nil)
 	assert.NoError(t, err)
 
 	runTestWithStore := func(t test.TB, st *BucketStore, reg prometheus.Gatherer) {
@@ -1441,10 +1478,10 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 						assert.Greater(t, int(chunksSlicePool.(*pool.TrackedPool).Gets.Load()), 0)
 					}
 
-					for _, b := range st.blocks {
+					st.blockSet.forEach(func(b *bucketBlock) {
 						// NOTE(bwplotka): It is 4 x 1.0 for 100mln samples. Kind of make sense: long series.
 						assert.Equal(t, 0.0, promtest.ToFloat64(b.metrics.seriesRefetches))
-					}
+					})
 
 					// Check exposed metrics.
 					assertHistograms := map[string]bool{
@@ -1512,6 +1549,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 			testData.options...,
 		)
 		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), st))
 
 		t.Run(testName, func(t test.TB) {
 			t.Cleanup(func() {
@@ -1615,7 +1653,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 					// Reset the memory pool tracker.
 					seriesChunkRefsSetPool.(*pool.TrackedPool).Reset()
 
-					metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil)
+					metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil, nil)
 					assert.NoError(t, err)
 
 					// Create the bucket store.
@@ -1643,6 +1681,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 						WithLogger(logger),
 					)
 					require.NoError(t, err)
+					require.NoError(t, services.StartAndAwaitRunning(ctx, store))
 					require.NoError(t, store.SyncBlocks(ctx))
 
 					t.Cleanup(func() {
@@ -1792,18 +1831,16 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			LazyLoadingEnabled:     false,
 			LazyLoadingIdleTimeout: 0,
 		}, gate.NewNoop(), indexheader.NewReaderPoolMetrics(nil), nil),
-		metrics:  NewBucketStoreMetrics(nil),
-		blockSet: &bucketBlockSet{blocks: []*bucketBlock{b1, b2}},
-		blocks: map[ulid.ULID]*bucketBlock{
-			b1.meta.ULID: b1,
-			b2.meta.ULID: b2,
-		},
+		blockSet:             newBucketBlockSet(),
+		metrics:              NewBucketStoreMetrics(nil),
 		postingsStrategy:     selectAllStrategy{},
 		queryGate:            gate.NewNoop(),
 		chunksLimiterFactory: newStaticChunksLimiterFactory(0),
 		seriesLimiterFactory: newStaticSeriesLimiterFactory(0),
 		maxSeriesPerBatch:    65536,
 	}
+	assert.NoError(t, store.blockSet.add(b1))
+	assert.NoError(t, store.blockSet.add(b2))
 
 	srv := newStoreGatewayTestServer(t, store)
 
@@ -1940,7 +1977,7 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 	)
 
 	// Instance a real bucket store we'll use to query the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
 	assert.NoError(t, err)
 
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
@@ -1971,6 +2008,7 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 		WithIndexCache(indexCache),
 	)
 	assert.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), store))
 	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
 
 	assert.NoError(t, store.SyncBlocks(context.Background()))
@@ -2000,7 +2038,7 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 
 	logger := log.NewNopLogger()
 	instrBkt := objstore.WithNoopInstr(bkt)
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
@@ -2028,6 +2066,7 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 		WithQueryGate(gate.NewBlocking(0)),
 	)
 	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), store))
 	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
 
 	req := &storepb.SeriesRequest{
@@ -2070,7 +2109,7 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 
 	logger := log.NewNopLogger()
 	instrBkt := objstore.WithNoopInstr(bkt)
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
 	assert.NoError(t, err)
 
 	_, blockMinT, blockMaxT := uploadTestBlock(t, tmpDir, instrBkt, []testBlockDataSetup{appendTestSeries(10000)})
@@ -2095,6 +2134,7 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 		WithQueryGate(timeoutGate{timeout: maxConcurrentWaitTimeout, delegate: gate.NewBlocking(maxConcurrent)}),
 	)
 	assert.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), store))
 	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
 	require.NoError(t, store.SyncBlocks(context.Background()))
 
@@ -2149,7 +2189,7 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 
 	logger := log.NewNopLogger()
 	instrBkt := objstore.WithNoopInstr(bkt)
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
@@ -2176,6 +2216,7 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 		WithLogger(logger),
 	)
 	assert.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), store))
 	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
 
 	// Use an invalid matcher regex to trigger an error.
@@ -2272,7 +2313,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(headOpts.ChunkDirRoot, blk.String()), nil))
 
 	// Instance a real bucket store we'll use to query the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
 	assert.NoError(t, err)
 
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
@@ -2303,7 +2344,9 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 		WithIndexCache(indexCache),
 	)
 	assert.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), store))
 	assert.NoError(t, store.SyncBlocks(context.Background()))
+	t.Cleanup(func() { assert.NoError(t, store.RemoveBlocksAndClose()) })
 
 	srv := newStoreGatewayTestServer(t, store)
 
@@ -2407,7 +2450,7 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 	instrBkt := objstore.WithNoopInstr(bkt)
 
 	// Instance a real bucket store we'll use to query the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
 	assert.NoError(t, err)
 
 	tests := map[string]struct {
@@ -2466,7 +2509,9 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 						NewBucketStoreMetrics(nil),
 					)
 					assert.NoError(t, err)
+					assert.NoError(t, services.StartAndAwaitRunning(ctx, store))
 					assert.NoError(t, store.SyncBlocks(ctx))
+					t.Cleanup(func() { assert.NoError(t, store.RemoveBlocksAndClose()) })
 
 					srv := newStoreGatewayTestServer(t, store)
 					for _, streamingBatchSize := range []int{0, 1, 5} {
@@ -2491,87 +2536,6 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 					}
 				})
 			}
-		})
-	}
-}
-
-func TestBucketStore_buildStoreStats(t *testing.T) {
-	durations := []time.Duration{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
-	now := time.Now().Round(time.Hour)
-
-	type buildStoreStatsCase struct {
-		name           string
-		minTime        time.Time
-		maxTime        time.Time
-		expectedBucket time.Duration
-	}
-
-	testCases := []buildStoreStatsCase{
-		{
-			name:           "under 2h duration",
-			minTime:        now,
-			maxTime:        now.Add(90 * time.Minute),
-			expectedBucket: 2 * time.Hour,
-		},
-		{
-			name:           "exactly 2h duration",
-			minTime:        now,
-			maxTime:        now.Add(120 * time.Minute),
-			expectedBucket: 2 * time.Hour,
-		},
-		{
-			name:           "over 2h duration",
-			minTime:        now,
-			maxTime:        now.Add(125 * time.Minute),
-			expectedBucket: 12 * time.Hour,
-		},
-		{
-			name:           "double 2h duration",
-			minTime:        now,
-			maxTime:        now.Add(240 * time.Minute),
-			expectedBucket: 12 * time.Hour,
-		},
-		{
-			name:           "exactly 12h duration",
-			minTime:        now,
-			maxTime:        now.Add(12 * time.Hour),
-			expectedBucket: 12 * time.Hour,
-		},
-		{
-			name:           "over 12h duration",
-			minTime:        now,
-			maxTime:        now.Add(13 * time.Hour),
-			expectedBucket: 24 * time.Hour,
-		},
-		{
-			name:           "exactly 24h duration",
-			minTime:        now,
-			maxTime:        now.Add(24 * time.Hour),
-			expectedBucket: 24 * time.Hour,
-		},
-		{
-			name:           "over 24h duration",
-			minTime:        now,
-			maxTime:        now.Add(25 * time.Hour),
-			expectedBucket: 24 * time.Hour,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			uid := ulid.MustNew(uint64(now.UnixMilli()), cryptorand.Reader)
-			blk := &bucketBlock{
-				meta: &block.Meta{
-					BlockMeta: tsdb.BlockMeta{
-						MinTime: tc.minTime.UnixMilli(),
-						MaxTime: tc.maxTime.UnixMilli(),
-					},
-				},
-			}
-
-			stats := buildStoreStats(durations, map[ulid.ULID]*bucketBlock{uid: blk})
-			require.Contains(t, stats.BlocksLoaded, tc.expectedBucket)
-			require.Equal(t, 1, stats.BlocksLoaded[tc.expectedBucket])
 		})
 	}
 }
@@ -2635,7 +2599,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 	}
 
 	// Instance a real bucket store we'll use to query back the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
 	assert.NoError(tb, err)
 
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
@@ -2666,6 +2630,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 		opts...,
 	)
 	assert.NoError(tb, err)
+	assert.NoError(tb, services.StartAndAwaitRunning(context.Background(), store))
 	assert.NoError(tb, store.SyncBlocks(context.Background()))
 
 	cleanupFuncs = append(cleanupFuncs, func() { assert.NoError(t, store.RemoveBlocksAndClose()) })
