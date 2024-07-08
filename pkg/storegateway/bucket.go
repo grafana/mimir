@@ -296,7 +296,8 @@ func (s *BucketStore) RemoveBlocksAndClose() error {
 	if err := services.StopAndAwaitTerminated(context.Background(), s); err != nil {
 		errs.Add(fmt.Errorf("stopping subservices: %w", err))
 	}
-	// Release other resources even if it failed to close some blocks.
+	// Remove the blocks even if the service didn't gracefully stop.
+	// We want to free up disk resources given these blocks will likely not be queried again.
 	if err := s.removeAllBlocks(); err != nil {
 		errs.Add(fmt.Errorf("remove all blocks: %w", err))
 	}
