@@ -293,6 +293,8 @@ func (s *BucketStore) stop(err error) error {
 			errs.Add(fmt.Errorf("stop %T: %w", svc, err))
 		}
 	}
+
+	s.indexReaderPool.Close()
 	return errs.Err()
 }
 
