@@ -479,17 +479,17 @@ func (b *BlockBuilder) consumePartition(
 
 	var compactionDur time.Duration
 
-	defer func(t time.Time) {
+	defer func(t time.Time, startingLag int64) {
 		dur := time.Since(t)
 		if retErr != nil {
 			level.Error(b.logger).Log("msg", "partition consumption failed", "part", part, "dur", dur, "lag", lag, "err", retErr)
 			return
 		}
 		b.metrics.processPartitionDuration.WithLabelValues(fmt.Sprintf("%d", part)).Observe(dur.Seconds())
-		level.Info(b.logger).Log("msg", "done consuming partition", "part", part, "dur", dur,
+		level.Info(b.logger).Log("msg", "done consuming partition", "part", part, "dur", dur, "start_lag", startingLag,
 			"cycle_end", cycleEnd, "last_block_end", time.UnixMilli(lastBlockMax), "curr_block_end", time.UnixMilli(retPl.LastBlockEnd),
 			"last_seen_till", time.UnixMilli(seenTillTs), "curr_seen_till", time.UnixMilli(retPl.SeenTillTs), "compaction_and_upload_dur", compactionDur)
-	}(time.Now())
+	}(time.Now(), lag)
 
 	builder := b.tsdbBuilder()
 	defer builder.close() // TODO: handle error
@@ -659,7 +659,7 @@ func (b *BlockBuilder) consumePartition(
 			Partition:   commitRec.Partition,
 			At:          commitRec.Offset + 1,
 			LeaderEpoch: commitRec.LeaderEpoch,
-			Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), seenTillTs, commitBlockMax),
+			Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), commitSeenTillTs, commitBlockMax),
 		},
 		CommitRecTs:  commitRec.Timestamp.UnixMilli(),
 		SeenTillTs:   commitSeenTillTs,
