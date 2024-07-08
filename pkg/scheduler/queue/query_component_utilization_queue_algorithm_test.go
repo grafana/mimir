@@ -215,7 +215,7 @@ func TestQueryComponentUtilizationDequeue_SkipComponentExceedsThreshold(t *testi
 	assert.Nil(t, obj)
 }
 
-func defaultNextNodeName(queryComponentUtilizationQueueAlgo queryComponentQueueAlgoSkipOverUtilized) string {
+func defaultNextNodeName(algo queryComponentQueueAlgoSkipOverUtilized) string {
 	// no handling of index -1 here for localQueue as the algorithm is implemented to always skip it
-	return queryComponentUtilizationQueueAlgo.nodeOrder[queryComponentUtilizationQueueAlgo.currentNodeOrderIndex]
+	return algo.nodeOrder[algo.currentNodeOrderIndex]
 }

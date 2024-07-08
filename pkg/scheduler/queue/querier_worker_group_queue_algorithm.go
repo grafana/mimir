@@ -9,6 +9,11 @@ type querierWorkerPrioritizationQueueAlgo struct {
 	nodesChecked          int
 }
 
+func (qa *querierWorkerPrioritizationQueueAlgo) SetCurrentQuerierWorker(workerID int32) {
+	qa.currentQuerierWorker = workerID
+	qa.currentNodeOrderIndex = int(workerID) % len(qa.nodeOrder)
+}
+
 func (qa *querierWorkerPrioritizationQueueAlgo) incrementWrapCurrentNodeOrderIndex() {
 	qa.currentNodeOrderIndex++
 	if qa.currentNodeOrderIndex >= len(qa.nodeOrder) {
@@ -27,6 +32,11 @@ func (qa *querierWorkerPrioritizationQueueAlgo) addChildNode(parent, child *Node
 	if qa.currentNodeOrderIndex == localQueueIndex {
 		// special case; cannot slice into nodeOrder with index -1
 		// place at end of slice, which is the last slot before the local queue slot
+		qa.nodeOrder = append(qa.nodeOrder, child.Name())
+	} else if qa.currentNodeOrderIndex == 0 {
+		// special case; since we are at the beginning of the order,
+		// only a simple append is needed to add the new node to the end,
+		// which also creates a more intuitive initial order for tests
 		qa.nodeOrder = append(qa.nodeOrder, child.Name())
 	} else {
 		// insert into the order behind current child queue index
@@ -75,8 +85,6 @@ func (qa *querierWorkerPrioritizationQueueAlgo) dequeueUpdateState(node *Node, d
 		if qa.currentNodeOrderIndex >= len(qa.nodeOrder) {
 			qa.currentNodeOrderIndex = 0
 		}
-	} else {
-		qa.incrementWrapCurrentNodeOrderIndex()
 	}
 
 	qa.nodesChecked = 0

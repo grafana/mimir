@@ -130,10 +130,10 @@ func (qa *queryComponentQueueAlgoSkipOverUtilized) addChildNode(parent, child *N
 		// insert into the order behind current child queue index
 		// to prevent the possibility of new nodes continually jumping the line
 		qa.nodeOrder = append(
-			qa.nodeOrder[:qa.currentNodeOrderIndex],
+			qa.nodeOrder[qa.currentNodeOrderIndex:],
 			append(
 				[]string{child.Name()},
-				qa.nodeOrder[qa.currentNodeOrderIndex:]...,
+				qa.nodeOrder[:qa.currentNodeOrderIndex]...,
 			)...,
 		)
 		// update current child queue index to its new place in the expanded slice
