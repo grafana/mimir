@@ -328,8 +328,6 @@ func (b *tsdbBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser
 	}
 	err := eg.Wait()
 
-	level.Info(b.logger).Log("msg", "compaction and upload done", "num_blocks", numBlocks)
-
 	// Clear the map so that it can be released from the memory. Not setting to nil in case
 	// we want to reuse the tsdbBuilder.
 	b.tsdbs = make(map[tsdbTenant]*userTSDB)

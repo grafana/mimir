@@ -78,8 +78,6 @@ func New(
 
 	b.Service = services.NewBasicService(b.starting, b.running, b.stopping)
 
-	// TODO(codesome): add a shipping subservice responsible for shipping the blocks to the storage.
-
 	return b, nil
 }
 
@@ -224,8 +222,6 @@ func (b *BlockBuilder) stopping(_ error) error {
 		b.kafkaClient.Close()
 	}
 
-	// TODO(codesome): wait for any active consume cycle or abort it.
-
 	return nil
 }
 
@@ -241,8 +237,6 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 	nextCycleTime := time.Now().Truncate(b.cfg.ConsumeInterval).Add(b.cfg.ConsumeInterval + b.cfg.ConsumeIntervalBuffer)
 	waitTime := time.Until(nextCycleTime)
 
-	lagMetricUpdateTicker := time.NewTicker(5 * time.Minute)
-
 	for {
 		select {
 		case cycleEnd := <-time.After(waitTime):
@@ -257,30 +251,6 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 			nextCycleTime = nextCycleTime.Add(b.cfg.ConsumeInterval)
 			waitTime = time.Until(nextCycleTime)
 		// TODO(codesome): track "-waitTime" (when waitTime < 0), which is the time we ran over. Should have an alert on this.
-
-		// Update the lag metrics regularly.
-		case <-lagMetricUpdateTicker.C:
-			newCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			lags, err := kadm.NewClient(b.kafkaClient).Lag(newCtx, b.cfg.Kafka.ConsumerGroup)
-			cancel()
-			if err != nil {
-				level.Error(b.logger).Log("msg", "failed to get consumer group lag", "err", err)
-			}
-			groupLag := lags[b.cfg.Kafka.ConsumerGroup].Lag
-
-			b.mu.Lock()
-			// Remove all metrics before assigning the latest values in order
-			// to avoid race with partition lost code and keep metrics hanging indefinitely.
-			b.metrics.consumerLag.Reset()
-			b.parts.reset()
-			for part := b.parts.next(); part >= 0; part = b.parts.next() {
-				lag, ok := groupLag.Lookup(b.cfg.Kafka.Topic, part)
-				if ok && lag.Lag > 0 {
-					b.metrics.consumerLag.WithLabelValues(lag.Topic, fmt.Sprintf("%d", lag.Partition)).Set(float64(lag.Lag))
-				}
-			}
-			b.mu.Unlock()
-
 		case <-ctx.Done():
 			return nil
 		}
@@ -495,14 +465,12 @@ func (b *BlockBuilder) consumePartition(
 	defer builder.close() // TODO: handle error
 
 	var (
-		done              bool
-		commitRec         *kgo.Record
-		firstRec          *kgo.Record
-		lastRec           *kgo.Record
-		blockEndAt        = cycleEnd.Truncate(b.cfg.ConsumeInterval)
-		blockMax          = blockEndAt.UnixMilli()
-		metricUpdate      = 0
-		consumerLagMetric = b.metrics.consumerLag.WithLabelValues(b.cfg.Kafka.Topic, fmt.Sprintf("%d", part))
+		done       bool
+		commitRec  *kgo.Record
+		firstRec   *kgo.Record
+		lastRec    *kgo.Record
+		blockEndAt = cycleEnd.Truncate(b.cfg.ConsumeInterval)
+		blockMax   = blockEndAt.UnixMilli()
 	)
 
 	level.Info(b.logger).Log(
@@ -543,12 +511,6 @@ func (b *BlockBuilder) consumePartition(
 
 		recIter := fetches.RecordIter()
 		for !recIter.Done() {
-			metricUpdate++
-			if metricUpdate%10000 == 0 {
-				consumerLagMetric.Set(float64(lag))
-				metricUpdate = 0
-			}
-
 			rec := recIter.Next()
 
 			if firstRec == nil {
@@ -598,7 +560,6 @@ func (b *BlockBuilder) consumePartition(
 		b.kafkaClient.AllowRebalance()
 	}
 
-	consumerLagMetric.Set(float64(lag))
 	start := time.Now()
 	if err := builder.compactAndUpload(ctx, b.blockUploaderForUser); err != nil {
 		return pl, err
