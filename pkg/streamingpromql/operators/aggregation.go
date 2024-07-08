@@ -316,7 +316,10 @@ func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData,
 			// of needing to loop again later like we do for floats.
 			seriesGroup.histogramPointCount++
 		} else {
-			seriesGroup.histogramSums[idx] = seriesGroup.histogramSums[idx].Add(p.H)
+			seriesGroup.histogramSums[idx], err = seriesGroup.histogramSums[idx].Add(p.H)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
