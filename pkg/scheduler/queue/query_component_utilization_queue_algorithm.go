@@ -126,14 +126,19 @@ func (qa *queryComponentQueueAlgoSkipOverUtilized) addChildNode(parent, child *N
 		// special case; cannot slice into nodeOrder with index -1
 		// place at end of slice, which is the last slot before the local queue slot
 		qa.nodeOrder = append(qa.nodeOrder, child.Name())
+	} else if qa.currentNodeOrderIndex == 0 {
+		// special case; since we are at the beginning of the order,
+		// only a simple append is needed to add the new node to the end,
+		// which also creates a more intuitive initial order for tests
+		qa.nodeOrder = append(qa.nodeOrder, child.Name())
 	} else {
 		// insert into the order behind current child queue index
 		// to prevent the possibility of new nodes continually jumping the line
 		qa.nodeOrder = append(
-			qa.nodeOrder[qa.currentNodeOrderIndex:],
+			qa.nodeOrder[:qa.currentNodeOrderIndex],
 			append(
 				[]string{child.Name()},
-				qa.nodeOrder[:qa.currentNodeOrderIndex]...,
+				qa.nodeOrder[qa.currentNodeOrderIndex:]...,
 			)...,
 		)
 		// update current child queue index to its new place in the expanded slice
