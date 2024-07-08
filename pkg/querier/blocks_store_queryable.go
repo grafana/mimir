@@ -885,7 +885,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			// debug
 			var chunkInfo *chunkreplyformatter.ChunkReplyFormatter
 			for _, cm := range convertedMatchers {
-				if cm.Name == "__name__" && cm.Value == "mimir_continuous_test_sine_wave" {
+				if cm.Name == "__name__" && cm.Value == "mimir_continuous_test_sine_wave_v2" {
 					chunkInfo = chunkreplyformatter.NewChunkReplyFormatter()
 					break
 				}

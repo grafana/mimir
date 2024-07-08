@@ -135,7 +135,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 
 	traceId, _ := tracing.ExtractTraceID(ctx)
 	var chunkInfo *chunkreplyformatter.ChunkReplyFormatter
-	if len(matchers) == 1 && matchers[0].Name == "__name__" && matchers[0].Value == "mimir_continuous_test_sine_wave" {
+	if len(matchers) == 1 && matchers[0].Name == "__name__" && matchers[0].Value == "mimir_continuous_test_sine_wave_v2" {
 		chunkInfo = chunkreplyformatter.NewChunkReplyFormatter()
 		fmt.Printf("CT: ingester streamSelect: traceid:%v mint: %v maxt: %v\n", traceId, minT, maxT)
 	}

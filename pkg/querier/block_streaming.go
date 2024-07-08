@@ -124,7 +124,7 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 		allChunks = append(allChunks, chks...)
 	}
 
-	if bqs.labels.Get("__name__") == "mimir_continuous_test_sine_wave" {
+	if bqs.chunkInfo != nil {
 		bqs.chunkInfo.StartSeries(bqs.labels.Get("series_id"))
 		bqs.chunkInfo.FormatStoreGatewayChunkInfo(bqs.remoteAddress, allChunks)
 		needPrint := bqs.chunkInfo.EndSeries()
