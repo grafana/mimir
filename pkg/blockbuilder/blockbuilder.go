@@ -275,7 +275,7 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 			b.parts.reset()
 			for part := b.parts.next(); part >= 0; part = b.parts.next() {
 				lag, ok := groupLag.Lookup(b.cfg.Kafka.Topic, part)
-				if ok {
+				if ok && lag.Lag > 0 {
 					b.metrics.consumerLag.WithLabelValues(lag.Topic, fmt.Sprintf("%d", lag.Partition)).Set(float64(lag.Lag))
 				}
 			}
@@ -477,6 +477,8 @@ func (b *BlockBuilder) consumePartition(
 	b.kafkaClient.ResumeFetchPartitions(tp)
 	defer b.kafkaClient.PauseFetchPartitions(tp)
 
+	var compactionDur time.Duration
+
 	defer func(t time.Time) {
 		dur := time.Since(t)
 		if retErr != nil {
@@ -486,7 +488,7 @@ func (b *BlockBuilder) consumePartition(
 		b.metrics.processPartitionDuration.WithLabelValues(fmt.Sprintf("%d", part)).Observe(dur.Seconds())
 		level.Info(b.logger).Log("msg", "done consuming partition", "part", part, "dur", dur,
 			"cycle_end", cycleEnd, "last_block_end", time.UnixMilli(lastBlockMax), "curr_block_end", time.UnixMilli(retPl.LastBlockEnd),
-			"last_seen_till", time.UnixMilli(seenTillTs), "curr_seen_till", time.UnixMilli(retPl.SeenTillTs))
+			"last_seen_till", time.UnixMilli(seenTillTs), "curr_seen_till", time.UnixMilli(retPl.SeenTillTs), "compaction_and_upload_dur", compactionDur)
 	}(time.Now())
 
 	builder := b.tsdbBuilder()
@@ -601,8 +603,8 @@ func (b *BlockBuilder) consumePartition(
 	if err := builder.compactAndUpload(ctx, b.blockUploaderForUser); err != nil {
 		return pl, err
 	}
-
-	b.metrics.compactAndUploadDuration.WithLabelValues(fmt.Sprintf("%d", part)).Observe(time.Since(start).Seconds())
+	compactionDur = time.Since(start)
+	b.metrics.compactAndUploadDuration.WithLabelValues(fmt.Sprintf("%d", part)).Observe(compactionDur.Seconds())
 
 	// Nothing was processed.
 	if lastRec == nil && firstRec == nil {
@@ -639,9 +641,9 @@ func (b *BlockBuilder) consumePartition(
 	// We should take the max of "seen till" timestamp. If the partition was lagging
 	// due to some record not being processed because of a future sample, we might be
 	// coming back to the same consume cycle again.
-	commiSeenTillTs := seenTillTs
-	if commiSeenTillTs < lastRec.Timestamp.UnixMilli() {
-		commiSeenTillTs = lastRec.Timestamp.UnixMilli()
+	commitSeenTillTs := seenTillTs
+	if commitSeenTillTs < lastRec.Timestamp.UnixMilli() {
+		commitSeenTillTs = lastRec.Timestamp.UnixMilli()
 	}
 	// Take the max of block max times because of same reasons above.
 	commitBlockMax := blockMax
@@ -660,7 +662,7 @@ func (b *BlockBuilder) consumePartition(
 			Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), seenTillTs, commitBlockMax),
 		},
 		CommitRecTs:  commitRec.Timestamp.UnixMilli(),
-		SeenTillTs:   commiSeenTillTs,
+		SeenTillTs:   commitSeenTillTs,
 		LastBlockEnd: commitBlockMax,
 	}
 

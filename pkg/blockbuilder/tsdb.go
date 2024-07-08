@@ -277,10 +277,11 @@ func (b *tsdbBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 
 // compactAndUpload compacts the blocks of all the TSDBs
 // and uploads them.
-// TODO(codesome): add metric
 func (b *tsdbBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser func(context.Context, string) blockUploader) error {
 	b.tsdbsMu.Lock()
 	defer b.tsdbsMu.Unlock()
+
+	level.Info(b.logger).Log("msg", "compacting and uploading blocks", "num_tsdb", len(b.tsdbs))
 
 	if len(b.tsdbs) == 0 {
 		return nil
@@ -290,6 +291,7 @@ func (b *tsdbBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser
 	if b.blocksStorageConfig.TSDB.ShipConcurrency > 0 {
 		eg.SetLimit(b.blocksStorageConfig.TSDB.ShipConcurrency)
 	}
+	numBlocks := 0
 	for tenant, db := range b.tsdbs {
 		if err := db.compactEverything(ctx); err != nil {
 			return err
@@ -304,6 +306,7 @@ func (b *tsdbBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser
 		for _, b := range db.db.Blocks() {
 			blockNames = append(blockNames, b.Meta().ULID.String())
 		}
+		numBlocks += len(blockNames)
 
 		if err := db.Close(); err != nil {
 			return err
@@ -324,6 +327,8 @@ func (b *tsdbBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser
 		})
 	}
 	err := eg.Wait()
+
+	level.Info(b.logger).Log("msg", "compaction and upload done", "num_blocks", numBlocks)
 
 	// Clear the map so that it can be released from the memory. Not setting to nil in case
 	// we want to reuse the tsdbBuilder.
