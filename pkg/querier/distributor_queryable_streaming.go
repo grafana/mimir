@@ -75,7 +75,7 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 			(*(s.chunkInfo)).WriteRune('"')
 			(*(s.chunkInfo)).WriteString(source.StreamReader.GetName()[14:])
 			(*(s.chunkInfo)).WriteString("\":[") // list of chunks start
-			for j, ci := range(chunkSliceInfo(c)) {
+			for j, ci := range chunkSliceInfo(c) {
 				if j > 0 {
 					(*(s.chunkInfo)).WriteRune(',')
 				}
@@ -102,7 +102,7 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 	}
 
 	if s.chunkInfo != nil {
-		(*(s.chunkInfo)).WriteString("}")  // close ingester map
+		(*(s.chunkInfo)).WriteString("}") // close ingester map
 
 		//fmt.Printf("CT: trace_id=%v: got the following from %v ingesters for series_id=%v: %v\n", s.traceId, len(perIngesterInfo), seriesId, strings.Join(perIngesterInfo, ","))
 		//fmt.Printf("CT: trace_id=%v: got %v unique chunks for series_id=%v: %v\n", s.traceId, len(uniqueChunks), seriesId, strings.Join(chunkSliceInfo(uniqueChunks), ","))
@@ -139,6 +139,6 @@ func chunkSliceInfo(chks []client.Chunk) []string {
 
 func chunkInfo(chk client.Chunk, endTime *int64) string {
 	startTime := chk.StartTimestampMs/1000 - *endTime
-	*endTime = chk.EndTimestampMs/1000
-	return fmt.Sprintf("%v:%v:%v:%x", startTime, chk.EndTimestampMs/1000 - chk.StartTimestampMs/1000, len(chk.Data), crc32.ChecksumIEEE(chk.Data))
+	*endTime = chk.EndTimestampMs / 1000
+	return fmt.Sprintf("%v:%v:%v:%x", startTime, chk.EndTimestampMs/1000-chk.StartTimestampMs/1000, len(chk.Data), crc32.ChecksumIEEE(chk.Data))
 }

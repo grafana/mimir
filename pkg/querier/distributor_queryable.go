@@ -192,11 +192,11 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		}
 		for i, s := range results.StreamingSeries {
 			streamingSeries = append(streamingSeries, &streamingChunkSeries{
-				labels:  s.Labels,
-				sources: s.Sources,
-				context: streamingChunkSeriesConfig,
-				traceId: traceId,
-				lastOne: i == len(results.StreamingSeries)-1,
+				labels:    s.Labels,
+				sources:   s.Sources,
+				context:   streamingChunkSeriesConfig,
+				traceId:   traceId,
+				lastOne:   i == len(results.StreamingSeries)-1,
 				chunkInfo: bldr,
 			})
 		}

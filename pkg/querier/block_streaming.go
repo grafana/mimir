@@ -89,7 +89,7 @@ func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesId
 		seriesIdxStart: seriesIdxStart,
 		seriesIdxEnd:   seriesIdxEnd,
 		streamReader:   streamReader,
-		chunkInfo: 			chunkInfo,
+		chunkInfo:      chunkInfo,
 		lastOne:        lastOne,
 		traceId:        traceId,
 	}
@@ -102,8 +102,8 @@ type blockStreamingQuerierSeries struct {
 
 	// debug
 	chunkInfo *[]string
-	lastOne bool
-	traceId string
+	lastOne   bool
+	traceId   string
 }
 
 func (bqs *blockStreamingQuerierSeries) Labels() labels.Labels {
