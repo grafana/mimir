@@ -1032,9 +1032,10 @@ github.com/prometheus/prometheus/web/api/v1
 # github.com/rainycape/unidecode v0.0.0-20150907023854-cb7f23ec59be
 ## explicit
 github.com/rainycape/unidecode
-# github.com/rs/cors v1.10.1
+# github.com/rs/cors v1.11.0
 ## explicit; go 1.13
 github.com/rs/cors
+github.com/rs/cors/internal
 # github.com/rs/xid v1.5.0
 ## explicit; go 1.12
 github.com/rs/xid
