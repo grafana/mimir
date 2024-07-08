@@ -78,8 +78,6 @@ func New(
 
 	b.Service = services.NewBasicService(b.starting, b.running, b.stopping)
 
-	// TODO(codesome): add a shipping subservice responsible for shipping the blocks to the storage.
-
 	return b, nil
 }
 
@@ -173,6 +171,17 @@ func (b *BlockBuilder) handlePartitionsLost(_ context.Context, _ *kgo.Client, lo
 	// Unpause fetching of all previously assigned partitions. After rebalance gets completed,
 	// the instance will receive a new assignment, and will start managing the set's consumption.
 	b.kafkaClient.ResumeFetchPartitions(lostAssignment)
+
+	for topic, parts := range lostAssignment {
+		if topic != b.cfg.Kafka.Topic {
+			continue
+		}
+		for _, part := range parts {
+			b.metrics.consumerLag.DeleteLabelValues(topic, fmt.Sprintf("%d", part))
+			b.metrics.processPartitionDuration.DeleteLabelValues(fmt.Sprintf("%d", part))
+			b.metrics.compactAndUploadDuration.DeleteLabelValues(fmt.Sprintf("%d", part))
+		}
+	}
 }
 
 func (b *BlockBuilder) waitKafka(ctx context.Context) error {
@@ -213,8 +222,6 @@ func (b *BlockBuilder) stopping(_ error) error {
 		b.kafkaClient.Close()
 	}
 
-	// TODO(codesome): wait for any active consume cycle or abort it.
-
 	return nil
 }
 
@@ -243,7 +250,7 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 			// will immediately start the next consumption.
 			nextCycleTime = nextCycleTime.Add(b.cfg.ConsumeInterval)
 			waitTime = time.Until(nextCycleTime)
-			// TODO(codesome): track "-waitTime" (when waitTime < 0), which is the time we ran over. Should have an alert on this.
+		// TODO(codesome): track "-waitTime" (when waitTime < 0), which is the time we ran over. Should have an alert on this.
 		case <-ctx.Done():
 			return nil
 		}
@@ -420,7 +427,7 @@ func (b *BlockBuilder) consumePartition(
 	ctx context.Context,
 	pl partitionInfo,
 	cycleEnd time.Time,
-) (partitionInfo, error) {
+) (retPl partitionInfo, retErr error) {
 	var (
 		part         = pl.Partition
 		seenTillTs   = pl.SeenTillTs
@@ -440,25 +447,36 @@ func (b *BlockBuilder) consumePartition(
 	b.kafkaClient.ResumeFetchPartitions(tp)
 	defer b.kafkaClient.PauseFetchPartitions(tp)
 
-	level.Info(b.logger).Log("msg", "consume partition", "part", part, "lag", lag, "cycle_end", cycleEnd)
+	var (
+		done                         bool
+		commitRec, firstRec, lastRec *kgo.Record
+		blockEndAt                   = cycleEnd.Truncate(b.cfg.ConsumeInterval)
+		blockMax                     = blockEndAt.UnixMilli()
+		compactionDur                time.Duration
+		numBlocks                    int
+		err                          error
+	)
 
-	defer func(t time.Time) {
+	defer func(t time.Time, startingLag int64) {
 		dur := time.Since(t)
-		b.metrics.processPartitionDuration.Observe(dur.Seconds())
-		level.Info(b.logger).Log("msg", "done consuming partition", "part", part, "dur", dur)
-	}(time.Now())
+		if retErr != nil {
+			level.Error(b.logger).Log("msg", "partition consumption failed", "part", part, "dur", dur, "lag", lag, "err", retErr)
+			return
+		}
+		b.metrics.processPartitionDuration.WithLabelValues(fmt.Sprintf("%d", part)).Observe(dur.Seconds())
+		level.Info(b.logger).Log("msg", "done consuming partition", "part", part, "dur", dur, "start_lag", startingLag,
+			"cycle_end", cycleEnd, "last_block_end", "num_blocks", numBlocks, time.UnixMilli(lastBlockMax), "curr_block_end", time.UnixMilli(retPl.LastBlockEnd),
+			"last_seen_till", time.UnixMilli(seenTillTs), "curr_seen_till", time.UnixMilli(retPl.SeenTillTs), "compact_and_upload_dur", compactionDur)
+	}(time.Now(), lag)
 
 	builder := b.tsdbBuilder()
 	defer builder.close() // TODO: handle error
 
-	var (
-		done       bool
-		commitRec  *kgo.Record
-		firstRec   *kgo.Record
-		lastRec    *kgo.Record
-		blockEndAt = cycleEnd.Truncate(b.cfg.ConsumeInterval)
-		blockMax   = blockEndAt.UnixMilli()
-	)
+	level.Info(b.logger).Log(
+		"msg", "consuming partition", "part", part, "lag", lag,
+		"cycle_end", cycleEnd, "last_block_end", time.UnixMilli(lastBlockMax), "curr_block_end", blockEndAt,
+		"last_seen_till", time.UnixMilli(seenTillTs))
+
 	for !done {
 		if err := context.Cause(ctx); err != nil {
 			return pl, err
@@ -541,9 +559,13 @@ func (b *BlockBuilder) consumePartition(
 		b.kafkaClient.AllowRebalance()
 	}
 
-	if err := builder.compactAndUpload(ctx, b.blockUploaderForUser); err != nil {
+	start := time.Now()
+	numBlocks, err = builder.compactAndUpload(ctx, b.blockUploaderForUser)
+	if err != nil {
 		return pl, err
 	}
+	compactionDur = time.Since(start)
+	b.metrics.compactAndUploadDuration.WithLabelValues(fmt.Sprintf("%d", part)).Observe(compactionDur.Seconds())
 
 	// Nothing was processed.
 	if lastRec == nil && firstRec == nil {
@@ -580,8 +602,9 @@ func (b *BlockBuilder) consumePartition(
 	// We should take the max of "seen till" timestamp. If the partition was lagging
 	// due to some record not being processed because of a future sample, we might be
 	// coming back to the same consume cycle again.
-	if seenTillTs < lastRec.Timestamp.UnixMilli() {
-		seenTillTs = lastRec.Timestamp.UnixMilli()
+	commitSeenTillTs := seenTillTs
+	if commitSeenTillTs < lastRec.Timestamp.UnixMilli() {
+		commitSeenTillTs = lastRec.Timestamp.UnixMilli()
 	}
 	// Take the max of block max times because of same reasons above.
 	commitBlockMax := blockMax
@@ -597,14 +620,14 @@ func (b *BlockBuilder) consumePartition(
 			Partition:   commitRec.Partition,
 			At:          commitRec.Offset + 1,
 			LeaderEpoch: commitRec.LeaderEpoch,
-			Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), seenTillTs, commitBlockMax),
+			Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), commitSeenTillTs, commitBlockMax),
 		},
 		CommitRecTs:  commitRec.Timestamp.UnixMilli(),
-		SeenTillTs:   seenTillTs,
+		SeenTillTs:   commitSeenTillTs,
 		LastBlockEnd: commitBlockMax,
 	}
 
-	err := commitRecord(ctx, b.logger, b.kafkaClient, commitRec, pl.Commit.Metadata)
+	err = commitRecord(ctx, b.logger, b.kafkaClient, commitRec, pl.Commit.Metadata)
 	return pl, err
 }
 
