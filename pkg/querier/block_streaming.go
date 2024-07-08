@@ -40,8 +40,9 @@ type blockStreamingQuerierSeriesSet struct {
 	currSeries storage.Series
 
 	// debug
-	chunkInfo *chunkreplyformatter.ChunkReplyFormatter
-	traceId   string
+	chunkInfo     *chunkreplyformatter.ChunkReplyFormatter
+	traceId       string
+	remoteAddress string
 }
 
 type chunkStreamReader interface {
@@ -66,7 +67,7 @@ func (bqss *blockStreamingQuerierSeriesSet) Next() bool {
 		bqss.nextSeriesIndex++
 	}
 
-	bqss.currSeries = newBlockStreamingQuerierSeries(mimirpb.FromLabelAdaptersToLabels(currLabels), seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader, bqss.chunkInfo, bqss.nextSeriesIndex >= len(bqss.series), bqss.traceId)
+	bqss.currSeries = newBlockStreamingQuerierSeries(mimirpb.FromLabelAdaptersToLabels(currLabels), seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader, bqss.chunkInfo, bqss.nextSeriesIndex >= len(bqss.series), bqss.traceId, bqss.remoteAddress)
 	return true
 }
 
@@ -83,7 +84,7 @@ func (bqss *blockStreamingQuerierSeriesSet) Warnings() annotations.Annotations {
 }
 
 // newBlockStreamingQuerierSeries makes a new blockQuerierSeries. Input labels must be already sorted by name.
-func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamReader, chunkInfo *chunkreplyformatter.ChunkReplyFormatter, lastOne bool, traceId string) *blockStreamingQuerierSeries {
+func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamReader, chunkInfo *chunkreplyformatter.ChunkReplyFormatter, lastOne bool, traceId, remoteAddress string) *blockStreamingQuerierSeries {
 	return &blockStreamingQuerierSeries{
 		labels:         lbls,
 		seriesIdxStart: seriesIdxStart,
@@ -92,6 +93,7 @@ func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesId
 		chunkInfo:      chunkInfo,
 		lastOne:        lastOne,
 		traceId:        traceId,
+		remoteAddress:  remoteAddress,
 	}
 }
 
@@ -101,9 +103,10 @@ type blockStreamingQuerierSeries struct {
 	streamReader                 chunkStreamReader
 
 	// debug
-	chunkInfo *chunkreplyformatter.ChunkReplyFormatter
-	lastOne   bool
-	traceId   string
+	chunkInfo     *chunkreplyformatter.ChunkReplyFormatter
+	lastOne       bool
+	traceId       string
+	remoteAddress string
 }
 
 func (bqs *blockStreamingQuerierSeries) Labels() labels.Labels {
@@ -123,7 +126,7 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 
 	if bqs.labels.Get("__name__") == "mimir_continuous_test_sine_wave" {
 		bqs.chunkInfo.StartSeries(bqs.labels.Get("series_id"))
-		bqs.chunkInfo.FormatStoreGatewayChunkInfo("sg", allChunks)
+		bqs.chunkInfo.FormatStoreGatewayChunkInfo(bqs.remoteAddress, allChunks)
 		needPrint := bqs.chunkInfo.EndSeries()
 		if bqs.lastOne || needPrint {
 			fmt.Printf("CT: chunk stream from store-gateway: trace_id:%s info:%s\n", bqs.traceId, bqs.chunkInfo.GetChunkInfo())

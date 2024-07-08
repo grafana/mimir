@@ -883,10 +883,10 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			}
 
 			// debug
-			var chunkInfo []string
+			var chunkInfo *chunkreplyformatter.ChunkReplyFormatter
 			for _, cm := range convertedMatchers {
 				if cm.Name == "__name__" && cm.Value == "mimir_continuous_test_sine_wave" {
-					chunkInfo = make([]string, 10)
+					chunkInfo = chunkreplyformatter.NewChunkReplyFormatter()
 					break
 				}
 			}
@@ -910,14 +910,15 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
 					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
 				if chunkInfo != nil {
-					for _, s := range mySeries {
+					for i, s := range mySeries {
 						ls := mimirpb.FromLabelAdaptersToLabels(s.Labels)
-						seriesId := ls.Get("series_id")
-						for _, chunk := range s.Chunks {
-							chunkInfo = append(chunkInfo, fmt.Sprintf("%s:%d:%d", seriesId, chunk.MinTime/1000, chunk.MaxTime/1000))
+						chunkInfo.StartSeries(ls.Get("series_id"))
+						chunkInfo.FormatStoreGatewayChunkInfo(c.RemoteAddress(), s.Chunks)
+						needPrint := chunkInfo.EndSeries()
+						if i == len(mySeries)-1 && needPrint {
+							fmt.Printf("CT: chunk series from store-gateway: trace_id:%s info:%s\n", traceId, chunkInfo.GetChunkInfo())
 						}
 					}
-					fmt.Printf("CT: chunk series from store-gateway: trace_id:%s info:%s\n", traceId, strings.Join(chunkInfo, ","))
 				}
 			} else if len(myStreamingSeries) > 0 {
 				// FetchedChunks and FetchedChunkBytes are added by the SeriesChunksStreamReader.
@@ -942,7 +943,13 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				seriesSets = append(seriesSets, &blockQuerierSeriesSet{series: mySeries})
 			} else if len(myStreamingSeries) > 0 {
 				c.RemoteAddress()
-				seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{series: myStreamingSeries, streamReader: streamReader, traceId: traceId, chunkInfo: chunkreplyformatter.NewChunkReplyFormatter()})
+				seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{
+					series:        myStreamingSeries,
+					streamReader:  streamReader,
+					traceId:       traceId,
+					chunkInfo:     chunkInfo,
+					remoteAddress: c.RemoteAddress(),
+				})
 				streamReaders = append(streamReaders, streamReader)
 			}
 			warnings.Merge(myWarnings)
