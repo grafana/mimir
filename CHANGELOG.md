@@ -70,7 +70,7 @@
 
 ### Query-tee
 
-* [CHANGE] If a preferred backend is configured, then query-tee will now always return its response, regardless of the response status code. Previously, query-tee would only return the response from the preferred backend if it did not have a 5xx status code. #8634
+* [CHANGE] If a preferred backend is configured, then query-tee always returns its response, regardless of the response status code. Previously, query-tee would only return the response from the preferred backend if it did not have a 5xx status code. #8634
 * [ENHANCEMENT] Emit trace spans from query-tee. #8419
 * [ENHANCEMENT] Log trace ID (if present) with all log messages written while processing a request. #8419
 * [ENHANCEMENT] Log user agent when processing a request. #8419

@@ -112,7 +112,7 @@ When a preferred backend is not configured, the query-tee uses the following alg
 1. If no backend response status code is 2xx or 4xx, the query-tee selects the first received response regardless of the status code.
 
 {{< admonition type="note" >}}
-The query-tee considers a 4xx response as a valid response to select because a 4xx status code generally an invalid request and not a server-side issue.
+The query-tee considers a 4xx response as a valid response to select because a 4xx status code is generally an invalid request and not a server-side issue.
 {{< /admonition >}}
 
 ### Backend results comparison
