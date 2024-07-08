@@ -1222,12 +1222,12 @@ func TestAnnotations(t *testing.T) {
 	step := time.Minute
 	endT := startT.Add(2 * step)
 
-	mixedFloatHistogramData := strings.TrimSpace(`
+	mixedFloatHistogramData := `
 		metric{type="float", series="1"} 0+1x3
 		metric{type="float", series="2"} 1+1x3
 		metric{type="histogram", series="1"} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
 		metric{type="histogram", series="2"} {{schema:0 sum:1 count:1 buckets:[1]}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
-	`)
+	`
 
 	testCases := map[string]struct {
 		data               string
@@ -1251,6 +1251,31 @@ func TestAnnotations(t *testing.T) {
 			data: mixedFloatHistogramData,
 			expr: `sum(metric{type="histogram"})`,
 		},
+
+		"rate() over suspected non-counter": {
+			data: `
+				some_metric{env="test"} 0+1x3
+				some_metric{env="prod"} 1+1x3
+			`,
+			expr:               `rate(some_metric[1m])`,
+			expectedAnnotation: `PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "some_metric" (1:1)`,
+		},
+		"rate() over metric ending in _total": {
+			data: `some_metric_total 0+1x3`,
+			expr: `rate(some_metric_total[1m])`,
+		},
+		"rate() over metric ending in _sum": {
+			data: `some_metric_sum 0+1x3`,
+			expr: `rate(some_metric_sum[1m])`,
+		},
+		"rate() over metric ending in _count": {
+			data: `some_metric_count 0+1x3`,
+			expr: `rate(some_metric_count[1m])`,
+		},
+		"rate() over metric ending in _bucket": {
+			data: `some_metric_bucket 0+1x3`,
+			expr: `rate(some_metric_bucket[1m])`,
+		},
 	}
 
 	opts := NewTestEngineOpts()
@@ -1268,7 +1293,7 @@ func TestAnnotations(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			store := promqltest.LoadedStorage(t, "load 1m\n"+testCase.data)
+			store := promqltest.LoadedStorage(t, "load 1m\n"+strings.TrimSpace(testCase.data))
 			t.Cleanup(func() { _ = store.Close() })
 
 			for queryType, generator := range queryTypes {
@@ -1280,10 +1305,12 @@ func TestAnnotations(t *testing.T) {
 					res := query.Exec(context.Background())
 					require.NoError(t, res.Err)
 
+					warnings := res.Warnings.AsStrings(testCase.expr, 0)
+
 					if testCase.expectedAnnotation == "" {
-						require.Empty(t, res.Warnings)
+						require.Empty(t, warnings)
 					} else {
-						require.Equal(t, []string{testCase.expectedAnnotation}, res.Warnings.AsStrings(testCase.expr, 0))
+						require.Equal(t, []string{testCase.expectedAnnotation}, warnings)
 					}
 				})
 			}

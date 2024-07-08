@@ -72,7 +72,7 @@ func LabelManipulationFunctionOperatorFactory(name string, metadataFunc function
 	return SingleInputVectorFunctionOperatorFactory(name, metadataFunc, functions.Passthrough)
 }
 
-func createRateFunctionOperator(args []types.Operator, pool *pooling.LimitingPool, _ *annotations.Annotations, _ posrange.PositionRange) (types.InstantVectorOperator, error) {
+func createRateFunctionOperator(args []types.Operator, pool *pooling.LimitingPool, annotations *annotations.Annotations, expressionPosition posrange.PositionRange) (types.InstantVectorOperator, error) {
 	if len(args) != 1 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 1 argument for rate, got %v", len(args))
@@ -84,7 +84,7 @@ func createRateFunctionOperator(args []types.Operator, pool *pooling.LimitingPoo
 		return nil, fmt.Errorf("expected a range vector argument for rate, got %T", args[0])
 	}
 
-	return operators.NewFunctionOverRangeVector(inner, pool), nil
+	return operators.NewFunctionOverRangeVector(inner, pool, annotations, expressionPosition), nil
 }
 
 // These functions return an instant-vector.

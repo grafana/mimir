@@ -8,8 +8,12 @@ package operators
 
 import (
 	"context"
+	"strings"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -20,6 +24,9 @@ type FunctionOverRangeVector struct {
 	Inner types.RangeVectorOperator
 	Pool  *pooling.LimitingPool
 
+	Annotations        *annotations.Annotations
+	ExpressionPosition posrange.PositionRange // Used when adding annotations.
+
 	numSteps        int
 	rangeSeconds    float64
 	floatBuffer     *types.FPointRingBuffer
@@ -28,10 +35,17 @@ type FunctionOverRangeVector struct {
 
 var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
 
-func NewFunctionOverRangeVector(inner types.RangeVectorOperator, pool *pooling.LimitingPool) *FunctionOverRangeVector {
+func NewFunctionOverRangeVector(
+	inner types.RangeVectorOperator,
+	pool *pooling.LimitingPool,
+	annotations *annotations.Annotations,
+	expressionPosition posrange.PositionRange,
+) *FunctionOverRangeVector {
 	return &FunctionOverRangeVector{
-		Inner: inner,
-		Pool:  pool,
+		Inner:              inner,
+		Pool:               pool,
+		Annotations:        annotations,
+		ExpressionPosition: expressionPosition,
 	}
 }
 
@@ -41,6 +55,8 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 		return nil, err
 	}
 
+	m.checkForPossibleNonCounterMetrics(metadata) // FIXME: only relevant for rate() and increase()
+
 	for i := range metadata {
 		metadata[i].Labels = metadata[i].Labels.DropMetricName()
 	}
@@ -49,6 +65,28 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 	m.rangeSeconds = m.Inner.Range().Seconds()
 
 	return metadata, nil
+}
+
+func (m *FunctionOverRangeVector) checkForPossibleNonCounterMetrics(metadata []types.SeriesMetadata) {
+	checkedMetricNames := make(map[string]struct{}, 1)
+
+	for _, series := range metadata {
+		metricName := series.Labels.Get(labels.MetricName)
+
+		if metricName == "" {
+			continue
+		}
+
+		if _, alreadySeen := checkedMetricNames[metricName]; alreadySeen {
+			continue
+		}
+
+		if !strings.HasSuffix(metricName, "_total") && !strings.HasSuffix(metricName, "_count") && !strings.HasSuffix(metricName, "_sum") && !strings.HasSuffix(metricName, "_bucket") {
+			m.Annotations.Add(annotations.NewPossibleNonCounterInfo(metricName, m.ExpressionPosition))
+		}
+
+		checkedMetricNames[metricName] = struct{}{}
+	}
 }
 
 func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
