@@ -31,7 +31,7 @@ import (
 
 type builder interface {
 	process(ctx context.Context, rec *kgo.Record, lastBlockMax, blockMax int64, recordProcessedBefore bool) (_ bool, err error)
-	compactAndUpload(ctx context.Context, blockUploaderForUser func(context.Context, string) blockUploader) error
+	compactAndUpload(ctx context.Context, blockUploaderForUser func(context.Context, string) blockUploader) (int, error)
 	close() error
 }
 
@@ -277,14 +277,14 @@ func (b *tsdbBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 
 // compactAndUpload compacts the blocks of all the TSDBs
 // and uploads them.
-func (b *tsdbBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser func(context.Context, string) blockUploader) error {
+func (b *tsdbBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser func(context.Context, string) blockUploader) (int, error) {
 	b.tsdbsMu.Lock()
 	defer b.tsdbsMu.Unlock()
 
 	level.Info(b.logger).Log("msg", "compacting and uploading blocks", "num_tsdb", len(b.tsdbs))
 
 	if len(b.tsdbs) == 0 {
-		return nil
+		return 0, nil
 	}
 
 	eg, ctx := errgroup.WithContext(ctx)
@@ -294,7 +294,7 @@ func (b *tsdbBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser
 	numBlocks := 0
 	for tenant, db := range b.tsdbs {
 		if err := db.compactEverything(ctx); err != nil {
-			return err
+			return numBlocks, err
 		}
 
 		// TODO(codesome): the delete() on the map does not release the memory until after the map is reset.
@@ -309,7 +309,7 @@ func (b *tsdbBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser
 		numBlocks += len(blockNames)
 
 		if err := db.Close(); err != nil {
-			return err
+			return numBlocks, err
 		}
 
 		delete(b.tsdbs, tenant)
@@ -331,7 +331,7 @@ func (b *tsdbBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser
 	// Clear the map so that it can be released from the memory. Not setting to nil in case
 	// we want to reuse the tsdbBuilder.
 	b.tsdbs = make(map[tsdbTenant]*userTSDB)
-	return err
+	return numBlocks, err
 }
 
 func (b *tsdbBuilder) close() error {

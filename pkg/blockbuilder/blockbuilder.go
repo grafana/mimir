@@ -447,7 +447,15 @@ func (b *BlockBuilder) consumePartition(
 	b.kafkaClient.ResumeFetchPartitions(tp)
 	defer b.kafkaClient.PauseFetchPartitions(tp)
 
-	var compactionDur time.Duration
+	var (
+		done                         bool
+		commitRec, firstRec, lastRec *kgo.Record
+		blockEndAt                   = cycleEnd.Truncate(b.cfg.ConsumeInterval)
+		blockMax                     = blockEndAt.UnixMilli()
+		compactionDur                time.Duration
+		numBlocks                    int
+		err                          error
+	)
 
 	defer func(t time.Time, startingLag int64) {
 		dur := time.Since(t)
@@ -457,21 +465,12 @@ func (b *BlockBuilder) consumePartition(
 		}
 		b.metrics.processPartitionDuration.WithLabelValues(fmt.Sprintf("%d", part)).Observe(dur.Seconds())
 		level.Info(b.logger).Log("msg", "done consuming partition", "part", part, "dur", dur, "start_lag", startingLag,
-			"cycle_end", cycleEnd, "last_block_end", time.UnixMilli(lastBlockMax), "curr_block_end", time.UnixMilli(retPl.LastBlockEnd),
-			"last_seen_till", time.UnixMilli(seenTillTs), "curr_seen_till", time.UnixMilli(retPl.SeenTillTs), "compaction_and_upload_dur", compactionDur)
+			"cycle_end", cycleEnd, "last_block_end", "num_blocks", numBlocks, time.UnixMilli(lastBlockMax), "curr_block_end", time.UnixMilli(retPl.LastBlockEnd),
+			"last_seen_till", time.UnixMilli(seenTillTs), "curr_seen_till", time.UnixMilli(retPl.SeenTillTs), "compact_and_upload_dur", compactionDur)
 	}(time.Now(), lag)
 
 	builder := b.tsdbBuilder()
 	defer builder.close() // TODO: handle error
-
-	var (
-		done       bool
-		commitRec  *kgo.Record
-		firstRec   *kgo.Record
-		lastRec    *kgo.Record
-		blockEndAt = cycleEnd.Truncate(b.cfg.ConsumeInterval)
-		blockMax   = blockEndAt.UnixMilli()
-	)
 
 	level.Info(b.logger).Log(
 		"msg", "consuming partition", "part", part, "lag", lag,
@@ -561,7 +560,8 @@ func (b *BlockBuilder) consumePartition(
 	}
 
 	start := time.Now()
-	if err := builder.compactAndUpload(ctx, b.blockUploaderForUser); err != nil {
+	numBlocks, err = builder.compactAndUpload(ctx, b.blockUploaderForUser)
+	if err != nil {
 		return pl, err
 	}
 	compactionDur = time.Since(start)
@@ -627,7 +627,7 @@ func (b *BlockBuilder) consumePartition(
 		LastBlockEnd: commitBlockMax,
 	}
 
-	err := commitRecord(ctx, b.logger, b.kafkaClient, commitRec, pl.Commit.Metadata)
+	err = commitRecord(ctx, b.logger, b.kafkaClient, commitRec, pl.Commit.Metadata)
 	return pl, err
 }
 

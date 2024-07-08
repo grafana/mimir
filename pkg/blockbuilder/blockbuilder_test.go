@@ -526,12 +526,12 @@ func (t testTSDBBuilder) process(ctx context.Context, rec *kgo.Record, blockMin,
 	return ok, err
 }
 
-func (t testTSDBBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser func(context.Context, string) blockUploader) error {
-	err := t.tsdbBuilder.compactAndUpload(ctx, blockUploaderForUser)
+func (t testTSDBBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser func(context.Context, string) blockUploader) (int, error) {
+	numBlocks, err := t.tsdbBuilder.compactAndUpload(ctx, blockUploaderForUser)
 	if t.compactFunc != nil {
 		t.compactFunc()
 	}
-	return err
+	return numBlocks, err
 }
 
 func (t testTSDBBuilder) close() error {
