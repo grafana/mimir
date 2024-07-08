@@ -5,13 +5,16 @@ package streamingpromql
 import (
 	"fmt"
 
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-type InstantVectorFunctionOperatorFactory func(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error)
+type InstantVectorFunctionOperatorFactory func(args []types.Operator, pool *pooling.LimitingPool, annotations *annotations.Annotations, expressionPosition posrange.PositionRange) (types.InstantVectorOperator, error)
 
 // SingleInputVectorFunctionOperatorFactory creates an InstantVectorFunctionOperatorFactory for functions
 // that have exactly 1 argument (v instant-vector).
@@ -21,7 +24,7 @@ type InstantVectorFunctionOperatorFactory func(args []types.Operator, pool *pool
 //   - metadataFunc: The function for handling metadata
 //   - seriesDataFunc: The function to handle series data
 func SingleInputVectorFunctionOperatorFactory(name string, metadataFunc functions.SeriesMetadataFunction, seriesDataFunc functions.InstantVectorFunction) InstantVectorFunctionOperatorFactory {
-	return func(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error) {
+	return func(args []types.Operator, pool *pooling.LimitingPool, _ *annotations.Annotations, _ posrange.PositionRange) (types.InstantVectorOperator, error) {
 		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", name, len(args))
@@ -69,7 +72,7 @@ func LabelManipulationFunctionOperatorFactory(name string, metadataFunc function
 	return SingleInputVectorFunctionOperatorFactory(name, metadataFunc, functions.Passthrough)
 }
 
-func createRateFunctionOperator(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error) {
+func createRateFunctionOperator(args []types.Operator, pool *pooling.LimitingPool, _ *annotations.Annotations, _ posrange.PositionRange) (types.InstantVectorOperator, error) {
 	if len(args) != 1 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 1 argument for rate, got %v", len(args))

@@ -217,7 +217,7 @@ func (q *Query) convertFunctionCallToOperator(e *parser.Call) (types.InstantVect
 		args[i] = a
 	}
 
-	return factory(args, q.pool)
+	return factory(args, q.pool, q.annotations, e.PosRange)
 }
 
 func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (types.RangeVectorOperator, error) {
