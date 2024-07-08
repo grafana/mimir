@@ -39,7 +39,7 @@ type blockStreamingQuerierSeriesSet struct {
 
 	currSeries storage.Series
 
-	// debug
+	// Debug logging for continuous test queries.
 	logger        log.Logger
 	chunkInfo     *chunkreplyformatter.ChunkReplyFormatter
 	traceId       string
@@ -104,7 +104,7 @@ type blockStreamingQuerierSeries struct {
 	seriesIdxStart, seriesIdxEnd int
 	streamReader                 chunkStreamReader
 
-	// debug
+	// Debug logging for continuous test queries.
 	logger        log.Logger
 	chunkInfo     *chunkreplyformatter.ChunkReplyFormatter
 	lastOne       bool

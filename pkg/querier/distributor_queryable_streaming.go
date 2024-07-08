@@ -32,7 +32,7 @@ type streamingChunkSeries struct {
 
 	alreadyCreated bool
 
-	// For debug logging.
+	// Debug logging for continuous test queries.
 	logger    log.Logger
 	traceId   string
 	lastOne   bool
