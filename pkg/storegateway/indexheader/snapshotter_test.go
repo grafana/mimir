@@ -45,11 +45,9 @@ func TestSnapshotter_PersistAndRestoreLoadedBlocks(t *testing.T) {
 	expected := fmt.Sprintf(`{"index_header_last_used_time":{"%s":%d},"user_id":"anonymous"}`, testBlockID, usedAt.UnixMilli())
 	require.JSONEq(t, expected, string(data))
 
-	// Another instance restores the snapshot persisted earlier.
-	s2 := NewSnapshotter(log.NewNopLogger(), config, testBlocksLoader)
-
-	restoredBlocks := s2.RestoreLoadedBlocks()
+	restoredBlocks, err := RestoreLoadedBlocks(config.Path)
 	require.Equal(t, origBlocks, restoredBlocks)
+	require.NoError(t, err)
 }
 
 func TestSnapshotter_StartStop(t *testing.T) {

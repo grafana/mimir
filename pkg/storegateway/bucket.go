@@ -74,11 +74,6 @@ type BucketStoreStats struct {
 	BlocksLoadedTotal int
 }
 
-type snapshotter interface {
-	services.Service
-	RestoreLoadedBlocks() map[ulid.ULID]int64
-}
-
 // BucketStore implements the store API backed by a bucket. It loads all index
 // files to local disk.
 //
@@ -98,7 +93,7 @@ type BucketStore struct {
 	indexReaderPool *indexheader.ReaderPool
 	seriesHashCache *hashcache.SeriesHashCache
 
-	snapshotter snapshotter
+	snapshotter services.Service
 
 	// Set of blocks that have the same labels
 	blockSet *bucketBlockSet
@@ -250,6 +245,18 @@ func NewBucketStore(
 		option(s)
 	}
 
+	lazyLoadedBlocks, err := indexheader.RestoreLoadedBlocks(dir)
+	if err != nil {
+		level.Warn(s.logger).Log(
+			"msg", "loading the list of index-headers from snapshot file failed; not eagerly loading index-headers for tenant",
+			"dir", dir,
+			"err", err,
+		)
+		// Don't fail initialization. If eager loading doesn't happen, then we will load index-headers lazily.
+		// Lazy loading which is slower, but not worth failing startup for.
+	}
+	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics, lazyLoadedBlocks)
+
 	if bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled {
 		snapConfig := indexheader.SnapshotterConfig{
 			Path:            dir,
@@ -260,7 +267,6 @@ func NewBucketStore(
 	} else {
 		s.snapshotter = noopShapshotter{services.NewIdleService(nil, nil)}
 	}
-	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics, s.snapshotter.RestoreLoadedBlocks())
 
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create dir")

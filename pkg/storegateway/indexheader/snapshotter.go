@@ -6,12 +6,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 
@@ -75,31 +77,29 @@ func (s *Snapshotter) PersistLoadedBlocks(bl BlocksLoader) error {
 	return atomicfs.CreateFile(finalPath, bytes.NewReader(data))
 }
 
-func (s *Snapshotter) RestoreLoadedBlocks() map[ulid.ULID]int64 {
-	var snapshot indexHeadersSnapshot
-	fileName := filepath.Join(s.conf.Path, lazyLoadedHeadersListFileName)
+func RestoreLoadedBlocks(directory string) (map[ulid.ULID]int64, error) {
+	var (
+		snapshot indexHeadersSnapshot
+		multiErr = multierror.MultiError{}
+	)
+	fileName := filepath.Join(directory, lazyLoadedHeadersListFileName)
 	err := loadIndexHeadersSnapshot(fileName, &snapshot)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// We didn't find the snapshot. Could be because the previous binary didn't support eager loading.
-			return nil
+			return nil, nil
 		}
-		level.Warn(s.logger).Log(
-			"msg", "loading the list of index-headers from snapshot file failed; not eagerly loading index-headers for tenant",
-			"tenant", s.conf.UserID,
-			"file", fileName,
-			"err", err,
-		)
+		multiErr.Add(fmt.Errorf("reading list of index headers from snapshot: %w", err))
 		// We will remove the file only on error.
 		// Note, in the case such as snapshot loading causing OOM, an operator will need to
 		// remove the snapshot manually and let it lazy load after server restarts.
 		// The current experience is that this is less of a problem than not eagerly loading
 		// index headers after two consecutive restarts (ref grafana/mimir#8281).
 		if err := os.Remove(fileName); err != nil {
-			level.Warn(s.logger).Log("msg", "removing the lazy-loaded index-header snapshot failed", "file", fileName, "err", err)
+			multiErr.Add(fmt.Errorf("removing the lazy-loaded index-header snapshot: %w", err))
 		}
 	}
-	return snapshot.IndexHeaderLastUsedTime
+	return snapshot.IndexHeaderLastUsedTime, multiErr.Err()
 }
 
 type indexHeadersSnapshot struct {
