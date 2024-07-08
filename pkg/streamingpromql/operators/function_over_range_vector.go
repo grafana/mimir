@@ -28,6 +28,13 @@ type FunctionOverRangeVector struct {
 
 var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
 
+func NewFunctionOverRangeVector(inner types.RangeVectorOperator, pool *pooling.LimitingPool) *FunctionOverRangeVector {
+	return &FunctionOverRangeVector{
+		Inner: inner,
+		Pool:  pool,
+	}
+}
+
 func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	metadata, err := m.Inner.SeriesMetadata(ctx)
 	if err != nil {

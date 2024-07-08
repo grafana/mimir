@@ -81,10 +81,7 @@ func createRateFunctionOperator(args []types.Operator, pool *pooling.LimitingPoo
 		return nil, fmt.Errorf("expected a range vector argument for rate, got %T", args[0])
 	}
 
-	return &operators.FunctionOverRangeVector{
-		Inner: inner,
-		Pool:  pool,
-	}, nil
+	return operators.NewFunctionOverRangeVector(inner, pool), nil
 }
 
 // These functions return an instant-vector.
