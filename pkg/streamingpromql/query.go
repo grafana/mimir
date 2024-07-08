@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
 	"golang.org/x/exp/slices"
 
@@ -33,14 +34,15 @@ var errQueryClosed = cancellation.NewErrorf("Query.Close() called")
 var errQueryFinished = cancellation.NewErrorf("query execution finished")
 
 type Query struct {
-	queryable storage.Queryable
-	opts      promql.QueryOpts
-	statement *parser.EvalStmt
-	root      types.Operator
-	engine    *Engine
-	qs        string
-	cancel    context.CancelCauseFunc
-	pool      *pooling.LimitingPool
+	queryable   storage.Queryable
+	opts        promql.QueryOpts
+	statement   *parser.EvalStmt
+	root        types.Operator
+	engine      *Engine
+	qs          string
+	cancel      context.CancelCauseFunc
+	pool        *pooling.LimitingPool
+	annotations *annotations.Annotations
 
 	result *promql.Result
 }
@@ -63,11 +65,13 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 	expr = promql.PreprocessExpr(expr, start, end)
 
 	q := &Query{
-		queryable: queryable,
-		opts:      opts,
-		engine:    engine,
-		qs:        qs,
-		pool:      pooling.NewLimitingPool(maxInMemorySamples, engine.queriesRejectedDueToPeakMemoryConsumption),
+		queryable:   queryable,
+		opts:        opts,
+		engine:      engine,
+		qs:          qs,
+		pool:        pooling.NewLimitingPool(maxInMemorySamples, engine.queriesRejectedDueToPeakMemoryConsumption),
+		annotations: annotations.New(),
+
 		statement: &parser.EvalStmt{
 			Expr:          expr,
 			Start:         start,
@@ -163,6 +167,8 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			interval,
 			e.Grouping,
 			q.pool,
+			q.annotations,
+			e.PosRange,
 		), nil
 	case *parser.Call:
 		return q.convertFunctionCallToOperator(e)
@@ -324,6 +330,8 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		// This should be caught in newQuery above.
 		return &promql.Result{Err: compat.NewNotSupportedError(fmt.Sprintf("unsupported result type %s", parser.DocumentedType(q.statement.Expr.Type())))}
 	}
+
+	q.result.Warnings = *q.annotations
 
 	return q.result
 }
