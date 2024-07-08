@@ -420,7 +420,7 @@ func (b *BlockBuilder) consumePartition(
 	ctx context.Context,
 	pl partitionInfo,
 	cycleEnd time.Time,
-) (partitionInfo, error) {
+) (retPl partitionInfo, retErr error) {
 	var (
 		part         = pl.Partition
 		seenTillTs   = pl.SeenTillTs
@@ -440,12 +440,16 @@ func (b *BlockBuilder) consumePartition(
 	b.kafkaClient.ResumeFetchPartitions(tp)
 	defer b.kafkaClient.PauseFetchPartitions(tp)
 
-	level.Info(b.logger).Log("msg", "consume partition", "part", part, "lag", lag, "cycle_end", cycleEnd)
-
 	defer func(t time.Time) {
 		dur := time.Since(t)
+		if retErr != nil {
+			level.Error(b.logger).Log("msg", "partition consumption failed", "part", part, "dur", dur, "lag", lag, "err", retErr)
+			return
+		}
 		b.metrics.processPartitionDuration.Observe(dur.Seconds())
-		level.Info(b.logger).Log("msg", "done consuming partition", "part", part, "dur", dur)
+		level.Info(b.logger).Log("msg", "done consuming partition", "part", part, "dur", dur,
+			"cycle_end", cycleEnd, "last_block_end", time.UnixMilli(lastBlockMax), "curr_block_end", time.UnixMilli(retPl.LastBlockEnd),
+			"last_seen_till", time.UnixMilli(seenTillTs), "curr_seen_till", time.UnixMilli(retPl.SeenTillTs))
 	}(time.Now())
 
 	builder := b.tsdbBuilder()
@@ -462,13 +466,12 @@ func (b *BlockBuilder) consumePartition(
 		consumerLagMetric = b.metrics.consumerLag.WithLabelValues(b.cfg.Kafka.Topic, fmt.Sprintf("%d", part))
 	)
 
-	for !done {
-		metricUpdate++
-		if metricUpdate%10000 == 0 {
-			consumerLagMetric.Set(float64(lag))
-			metricUpdate = 0
-		}
+	level.Info(b.logger).Log(
+		"msg", "consuming partition", "part", part, "lag", lag,
+		"cycle_end", cycleEnd, "last_block_end", time.UnixMilli(lastBlockMax), "curr_block_end", blockEndAt,
+		"last_seen_till", time.UnixMilli(seenTillTs))
 
+	for !done {
 		if err := context.Cause(ctx); err != nil {
 			return pl, err
 		}
@@ -501,6 +504,12 @@ func (b *BlockBuilder) consumePartition(
 
 		recIter := fetches.RecordIter()
 		for !recIter.Done() {
+			metricUpdate++
+			if metricUpdate%10000 == 0 {
+				consumerLagMetric.Set(float64(lag))
+				metricUpdate = 0
+			}
+
 			rec := recIter.Next()
 
 			if firstRec == nil {
@@ -591,8 +600,9 @@ func (b *BlockBuilder) consumePartition(
 	// We should take the max of "seen till" timestamp. If the partition was lagging
 	// due to some record not being processed because of a future sample, we might be
 	// coming back to the same consume cycle again.
-	if seenTillTs < lastRec.Timestamp.UnixMilli() {
-		seenTillTs = lastRec.Timestamp.UnixMilli()
+	commiSeenTillTs := seenTillTs
+	if commiSeenTillTs < lastRec.Timestamp.UnixMilli() {
+		commiSeenTillTs = lastRec.Timestamp.UnixMilli()
 	}
 	// Take the max of block max times because of same reasons above.
 	commitBlockMax := blockMax
@@ -611,7 +621,7 @@ func (b *BlockBuilder) consumePartition(
 			Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), seenTillTs, commitBlockMax),
 		},
 		CommitRecTs:  commitRec.Timestamp.UnixMilli(),
-		SeenTillTs:   seenTillTs,
+		SeenTillTs:   commiSeenTillTs,
 		LastBlockEnd: commitBlockMax,
 	}
 
