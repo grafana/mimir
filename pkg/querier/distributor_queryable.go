@@ -137,7 +137,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	var chunkInfo *chunkreplyformatter.ChunkReplyFormatter
 	if debugContinuousTest && len(matchers) == 1 && matchers[0].Name == "__name__" && matchers[0].Value == "mimir_continuous_test_sine_wave_v2" {
 		chunkInfo = chunkreplyformatter.NewChunkReplyFormatter()
-		q.logger.Log("msg", "ingester streamSelect: start", "traceid", traceId, "mint", minT, "maxt", maxT)
+		q.logger.Log("msg", "CT: ingester streamSelect: start", "traceid", traceId, "mint", minT, "maxt", maxT)
 	}
 
 	serieses := make([]storage.Series, 0, len(results.Chunkseries))
@@ -149,7 +149,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 			chunkInfo.FormatIngesterChunkInfo(result.FromIngesterId, result.Chunks)
 			needPrint := chunkInfo.EndSeries()
 			if i == len(results.Chunkseries)-1 || needPrint {
-				q.logger.Log("msg", "ingester chunk series", "traceid", traceId, "info", chunkInfo.GetChunkInfo())
+				q.logger.Log("msg", "CT: ingester chunk series", "traceid", traceId, "info", chunkInfo.GetChunkInfo())
 			}
 		}
 

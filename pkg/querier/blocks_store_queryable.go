@@ -920,7 +920,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 						chunkInfo.FormatStoreGatewayChunkInfo(c.RemoteAddress(), s.Chunks)
 						needPrint := chunkInfo.EndSeries()
 						if i == len(mySeries)-1 && needPrint {
-							fmt.Printf("CT: chunk series from store-gateway: trace_id:%s info:%s\n", traceId, chunkInfo.GetChunkInfo())
+							q.logger.Log("msg", "CT: chunk series from store-gateway: trace_id:%s info:%s\n", traceId, chunkInfo.GetChunkInfo())
 						}
 					}
 				}
@@ -951,6 +951,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					series:        myStreamingSeries,
 					streamReader:  streamReader,
 					traceId:       traceId,
+					logger:        q.logger,
 					chunkInfo:     chunkInfo,
 					remoteAddress: c.RemoteAddress(),
 				})

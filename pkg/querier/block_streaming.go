@@ -40,6 +40,7 @@ type blockStreamingQuerierSeriesSet struct {
 	currSeries storage.Series
 
 	// debug
+	logger        log.Logger
 	chunkInfo     *chunkreplyformatter.ChunkReplyFormatter
 	traceId       string
 	remoteAddress string
@@ -67,7 +68,7 @@ func (bqss *blockStreamingQuerierSeriesSet) Next() bool {
 		bqss.nextSeriesIndex++
 	}
 
-	bqss.currSeries = newBlockStreamingQuerierSeries(mimirpb.FromLabelAdaptersToLabels(currLabels), seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader, bqss.chunkInfo, bqss.nextSeriesIndex >= len(bqss.series), bqss.traceId, bqss.remoteAddress)
+	bqss.currSeries = newBlockStreamingQuerierSeries(mimirpb.FromLabelAdaptersToLabels(currLabels), seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader, bqss.logger, bqss.chunkInfo, bqss.nextSeriesIndex >= len(bqss.series), bqss.traceId, bqss.remoteAddress)
 	return true
 }
 
@@ -84,12 +85,13 @@ func (bqss *blockStreamingQuerierSeriesSet) Warnings() annotations.Annotations {
 }
 
 // newBlockStreamingQuerierSeries makes a new blockQuerierSeries. Input labels must be already sorted by name.
-func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamReader, chunkInfo *chunkreplyformatter.ChunkReplyFormatter, lastOne bool, traceId, remoteAddress string) *blockStreamingQuerierSeries {
+func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamReader, logger log.Logger, chunkInfo *chunkreplyformatter.ChunkReplyFormatter, lastOne bool, traceId, remoteAddress string) *blockStreamingQuerierSeries {
 	return &blockStreamingQuerierSeries{
 		labels:         lbls,
 		seriesIdxStart: seriesIdxStart,
 		seriesIdxEnd:   seriesIdxEnd,
 		streamReader:   streamReader,
+		logger:         logger,
 		chunkInfo:      chunkInfo,
 		lastOne:        lastOne,
 		traceId:        traceId,
@@ -103,6 +105,7 @@ type blockStreamingQuerierSeries struct {
 	streamReader                 chunkStreamReader
 
 	// debug
+	logger        log.Logger
 	chunkInfo     *chunkreplyformatter.ChunkReplyFormatter
 	lastOne       bool
 	traceId       string
@@ -129,7 +132,7 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 		bqs.chunkInfo.FormatStoreGatewayChunkInfo(bqs.remoteAddress, allChunks)
 		needPrint := bqs.chunkInfo.EndSeries()
 		if bqs.lastOne || needPrint {
-			fmt.Printf("CT: chunk stream from store-gateway: trace_id:%s info:%s\n", bqs.traceId, bqs.chunkInfo.GetChunkInfo())
+			bqs.logger.Log("msg", "CT: chunk stream from store-gateway", "trace_id", bqs.traceId, "info", bqs.chunkInfo.GetChunkInfo())
 		}
 	}
 
