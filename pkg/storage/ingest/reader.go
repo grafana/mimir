@@ -37,6 +37,7 @@ const (
 
 var (
 	errWaitStrongReadConsistencyTimeoutExceeded = errors.Wrap(context.DeadlineExceeded, "wait strong read consistency timeout exceeded")
+	errWaitTargetLagDeadlineExceeded            = errors.Wrap(context.DeadlineExceeded, "target lag deadline exceeded")
 )
 
 type record struct {
@@ -136,9 +137,9 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 	}
 
 	// Enforce the max consumer lag (if enabled).
-	if maxLag := r.kafkaCfg.MaxConsumerLagAtStartup; maxLag > 0 {
+	if targetLag, maxLag := r.kafkaCfg.TargetConsumerLagAtStartup, r.kafkaCfg.MaxConsumerLagAtStartup; targetLag > 0 && maxLag > 0 {
 		if startOffset != kafkaOffsetEnd {
-			if err := r.processNextFetchesUntilMaxLagHonored(ctx, maxLag); err != nil {
+			if err := r.processNextFetchesUntilTargetOrMaxLagHonored(ctx, targetLag, maxLag); err != nil {
 				return err
 			}
 		} else {
@@ -191,20 +192,80 @@ func (r *PartitionReader) processNextFetches(ctx context.Context, delayObserver 
 	r.notifyLastConsumedOffset(fetches)
 }
 
-func (r *PartitionReader) processNextFetchesUntilMaxLagHonored(ctx context.Context, maxLag time.Duration) error {
-	level.Info(r.logger).Log("msg", "partition reader is starting to consume partition until max consumer lag is honored", "max_lag", maxLag)
+// processNextFetchesUntilTargetOrMaxLagHonored process records from Kafka until at least the maxLag is honored.
+// This function does a best-effort to get lag below targetLag, but it's not guaranteed that it will be
+// reached once this function successfully returns (only maxLag is guaranteed).
+func (r *PartitionReader) processNextFetchesUntilTargetOrMaxLagHonored(ctx context.Context, targetLag, maxLag time.Duration) error {
+	logger := log.With(r.logger, "target_lag", targetLag, "max_lag", maxLag)
+	level.Info(logger).Log("msg", "partition reader is starting to consume partition until target and max consumer lag is honored")
 
+	attempts := []func() (currLag time.Duration, _ error){
+		// First process fetches until at least the max lag is honored.
+		func() (time.Duration, error) {
+			return r.processNextFetchesUntilLagHonored(ctx, maxLag, logger)
+		},
+
+		// If the target lag hasn't been reached with the first attempt (which stops once at least the max lag
+		// is honored) then we try to reach the (lower) target lag within a fixed time (best-effort).
+		// The timeout is equal to the max lag. This is done because we expect at least a 2x replay speed
+		// from Kafka (which means at most it takes 1s to ingest 2s of data): assuming new data is continuously
+		// written to the partition, we give the reader maxLag time to replay the backlog + ingest the new data
+		// written in the meanwhile.
+		func() (time.Duration, error) {
+			timedCtx, cancel := context.WithTimeoutCause(ctx, maxLag, errWaitTargetLagDeadlineExceeded)
+			defer cancel()
+
+			return r.processNextFetchesUntilLagHonored(timedCtx, targetLag, logger)
+		},
+
+		// If the target lag hasn't been reached with the previous attempt that we'll move on. However,
+		// we still need to guarantee that in the meanwhile the lag didn't increase and max lag is still honored.
+		func() (time.Duration, error) {
+			return r.processNextFetchesUntilLagHonored(ctx, maxLag, logger)
+		},
+	}
+
+	var currLag time.Duration
+	for _, attempt := range attempts {
+		var err error
+
+		currLag, err = attempt()
+		if errors.Is(err, errWaitTargetLagDeadlineExceeded) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if currLag <= targetLag {
+			level.Info(logger).Log(
+				"msg", "partition reader consumed partition and current lag is lower than configured target consumer lag",
+				"last_consumed_offset", r.consumedOffsetWatcher.LastConsumedOffset(),
+				"current_lag", currLag,
+			)
+			return nil
+		}
+	}
+
+	level.Warn(logger).Log(
+		"msg", "partition reader consumed partition and current lag is lower than configured max consumer lag but higher than target consumer lag",
+		"last_consumed_offset", r.consumedOffsetWatcher.LastConsumedOffset(),
+		"current_lag", currLag,
+	)
+	return nil
+}
+
+func (r *PartitionReader) processNextFetchesUntilLagHonored(ctx context.Context, maxLag time.Duration, logger log.Logger) (currLag time.Duration, _ error) {
 	boff := backoff.New(ctx, backoff.Config{
-		MinBackoff: 250 * time.Millisecond,
-		MaxBackoff: 2 * time.Second,
-		MaxRetries: 0, // retry forever
+		MinBackoff: 100 * time.Millisecond,
+		MaxBackoff: time.Second,
+		MaxRetries: 0, // Retry forever (unless context is canceled / deadline exceeded).
 	})
 
 	for boff.Ongoing() {
 		// Send a direct request to the Kafka backend to fetch the partition start offset.
 		partitionStartOffset, err := r.offsetReader.FetchPartitionStartOffset(ctx)
 		if err != nil {
-			level.Warn(r.logger).Log("msg", "partition reader failed to fetch partition start offset", "err", err)
+			level.Warn(logger).Log("msg", "partition reader failed to fetch partition start offset", "err", err)
 			boff.Wait()
 			continue
 		}
@@ -212,25 +273,25 @@ func (r *PartitionReader) processNextFetchesUntilMaxLagHonored(ctx context.Conte
 		// Send a direct request to the Kafka backend to fetch the last produced offset.
 		// We intentionally don't use WaitNextFetchLastProducedOffset() to not introduce further
 		// latency.
+		lastProducedOffsetRequestedAt := time.Now()
 		lastProducedOffset, err := r.offsetReader.FetchLastProducedOffset(ctx)
 		if err != nil {
-			level.Warn(r.logger).Log("msg", "partition reader failed to fetch last produced offset", "err", err)
+			level.Warn(logger).Log("msg", "partition reader failed to fetch last produced offset", "err", err)
 			boff.Wait()
 			continue
 		}
 
-		lastProducedOffsetFetchedAt := time.Now()
-
-		// Ensure there're some records to consume. For example, if the partition has been inactive for a long
+		// Ensure there are some records to consume. For example, if the partition has been inactive for a long
 		// time and all its records have been deleted, the partition start offset may be > 0 but there are no
 		// records to actually consume.
 		if partitionStartOffset > lastProducedOffset {
-			level.Info(r.logger).Log("msg", "partition reader found no records to consume because partition is empty", "partition_start_offset", partitionStartOffset, "last_produced_offset", lastProducedOffset)
-			return nil
+			level.Info(logger).Log("msg", "partition reader found no records to consume because partition is empty", "partition_start_offset", partitionStartOffset, "last_produced_offset", lastProducedOffset)
+			return 0, nil
 		}
 
-		// This message is NOT expected to be logged with a very high rate.
-		level.Info(r.logger).Log("msg", "partition reader is consuming records to honor max consumer lag", "partition_start_offset", partitionStartOffset, "last_produced_offset", lastProducedOffset)
+		// This message is NOT expected to be logged with a very high rate. In this log we display the last measured
+		// lag. If we don't have it (lag is zero value), then it will not be logged.
+		level.Info(loggerWithCurrentLagIfSet(logger, currLag)).Log("msg", "partition reader is consuming records to honor target and max consumer lag", "partition_start_offset", partitionStartOffset, "last_produced_offset", lastProducedOffset)
 
 		for boff.Ongoing() {
 			// Continue reading until we reached the desired offset.
@@ -243,18 +304,17 @@ func (r *PartitionReader) processNextFetchesUntilMaxLagHonored(ctx context.Conte
 		}
 
 		if boff.Err() != nil {
-			return boff.Err()
+			return 0, boff.ErrCause()
 		}
 
 		// If it took less than the max desired lag to replay the partition
 		// then we can stop here, otherwise we'll have to redo it.
-		if currLag := time.Since(lastProducedOffsetFetchedAt); currLag <= maxLag {
-			level.Info(r.logger).Log("msg", "partition reader consumed partition and current lag is less than configured max consumer lag", "last_consumed_offset", r.consumedOffsetWatcher.LastConsumedOffset(), "current_lag", currLag, "max_lag", maxLag)
-			return nil
+		if currLag = time.Since(lastProducedOffsetRequestedAt); currLag <= maxLag {
+			return currLag, nil
 		}
 	}
 
-	return boff.Err()
+	return 0, boff.ErrCause()
 }
 
 func filterOutErrFetches(fetches kgo.Fetches) kgo.Fetches {
@@ -277,6 +337,14 @@ func isErrFetch(fetch kgo.Fetch) bool {
 		}
 	}
 	return false
+}
+
+func loggerWithCurrentLagIfSet(logger log.Logger, currLag time.Duration) log.Logger {
+	if currLag <= 0 {
+		return logger
+	}
+
+	return log.With(logger, "current_lag", currLag)
 }
 
 func (r *PartitionReader) logFetchErrors(fetches kgo.Fetches) {

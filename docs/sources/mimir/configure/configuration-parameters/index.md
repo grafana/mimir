@@ -846,6 +846,11 @@ ha_tracker:
 # CLI flag: -distributor.max-recv-msg-size
 [max_recv_msg_size: <int> | default = 104857600]
 
+# (experimental) Maximum OTLP request size in bytes that the distributors
+# accept. Requests exceeding this limit are rejected.
+# CLI flag: -distributor.max-otlp-request-size
+[max_otlp_request_size: <int> | default = 104857600]
+
 # (experimental) Max size of the pooled buffers used for marshaling write
 # requests. If 0, no max size is enforced.
 # CLI flag: -distributor.max-request-pool-buffer-size
@@ -1707,6 +1712,12 @@ The `query_scheduler` block configures the query-scheduler.
 # effect. (default false)
 # CLI flag: -query-scheduler.additional-query-queue-dimensions-enabled
 [additional_query_queue_dimensions_enabled: <boolean> | default = false]
+
+# (experimental) Use an experimental version of the query queue which has the
+# same behavior as the existing queue, but integrates tenant selection into the
+# tree model.
+# CLI flag: -query-scheduler.use-multi-algorithm-query-queue
+[use_multi_algorithm_query_queue: <boolean> | default = false]
 
 # (experimental) If a querier disconnects without sending notification about
 # graceful shutdown, the query-scheduler will keep the querier in the tenant's
@@ -3763,10 +3774,19 @@ kafka:
   # CLI flag: -ingest-storage.kafka.consume-from-timestamp-at-startup
   [consume_from_timestamp_at_startup: <int> | default = 0]
 
-  # The maximum tolerated lag before a consumer is considered to have caught up
+  # The best-effort maximum lag a consumer tries to achieve at startup. Set both
+  # -ingest-storage.kafka.target-consumer-lag-at-startup and
+  # -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting
+  # for maximum consumer lag being honored at startup.
+  # CLI flag: -ingest-storage.kafka.target-consumer-lag-at-startup
+  [target_consumer_lag_at_startup: <duration> | default = 2s]
+
+  # The guaranteed maximum lag before a consumer is considered to have caught up
   # reading from a partition at startup, becomes ACTIVE in the hash ring and
-  # passes the readiness check. Set 0 to disable waiting for maximum consumer
-  # lag being honored at startup.
+  # passes the readiness check. Set both
+  # -ingest-storage.kafka.target-consumer-lag-at-startup and
+  # -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting
+  # for maximum consumer lag being honored at startup.
   # CLI flag: -ingest-storage.kafka.max-consumer-lag-at-startup
   [max_consumer_lag_at_startup: <duration> | default = 15s]
 

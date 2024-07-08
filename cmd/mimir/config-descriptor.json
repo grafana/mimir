@@ -1199,6 +1199,17 @@
         },
         {
           "kind": "field",
+          "name": "max_otlp_request_size",
+          "required": false,
+          "desc": "Maximum OTLP request size in bytes that the distributors accept. Requests exceeding this limit are rejected.",
+          "fieldValue": null,
+          "fieldDefaultValue": 104857600,
+          "fieldFlag": "distributor.max-otlp-request-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_request_pool_buffer_size",
           "required": false,
           "desc": "Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.",
@@ -6580,9 +6591,19 @@
             },
             {
               "kind": "field",
+              "name": "target_consumer_lag_at_startup",
+              "required": false,
+              "desc": "The best-effort maximum lag a consumer tries to achieve at startup. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2000000000,
+              "fieldFlag": "ingest-storage.kafka.target-consumer-lag-at-startup",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
               "name": "max_consumer_lag_at_startup",
               "required": false,
-              "desc": "The maximum tolerated lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set 0 to disable waiting for maximum consumer lag being honored at startup.",
+              "desc": "The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
               "fieldValue": null,
               "fieldDefaultValue": 15000000000,
               "fieldFlag": "ingest-storage.kafka.max-consumer-lag-at-startup",
@@ -15927,6 +15948,17 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-scheduler.additional-query-queue-dimensions-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "use_multi_algorithm_query_queue",
+          "required": false,
+          "desc": "Use an experimental version of the query queue which has the same behavior as the existing queue, but integrates tenant selection into the tree model.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-scheduler.use-multi-algorithm-query-queue",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
