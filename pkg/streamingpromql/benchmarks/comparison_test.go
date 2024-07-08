@@ -329,6 +329,10 @@ func (a alwaysQueryIngestersConfigProvider) QueryIngestersWithin(string) time.Du
 	return time.Duration(math.MaxInt64)
 }
 
+func (a alwaysQueryIngestersConfigProvider) DebugContinuousTest(string) bool {
+	return false
+}
+
 func sortVector(v promql.Vector) {
 	slices.SortFunc(v, func(a, b promql.Sample) int {
 		return labels.Compare(a.Metric, b.Metric)

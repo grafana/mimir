@@ -729,3 +729,7 @@ func (p *mockConfigProvider) QueryIngestersWithin(userID string) time.Duration {
 	p.seenUserIDs = append(p.seenUserIDs, userID)
 	return p.queryIngestersWithin
 }
+
+func (p *mockConfigProvider) DebugContinuousTest(userID string) bool {
+	return false
+}

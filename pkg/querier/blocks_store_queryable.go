@@ -752,6 +752,8 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		streams       []storegatewaypb.StoreGateway_SeriesClient
 	)
 
+	debugContinuousTest := queryLimiter.DebugContinuousTest()
+
 	// Concurrently fetch series from all clients.
 	for c, blockIDs := range clients {
 		// Change variables scope since it will be used in a goroutine.
@@ -884,10 +886,12 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 
 			// debug
 			var chunkInfo *chunkreplyformatter.ChunkReplyFormatter
-			for _, cm := range convertedMatchers {
-				if cm.Name == "__name__" && cm.Value == "mimir_continuous_test_sine_wave_v2" {
-					chunkInfo = chunkreplyformatter.NewChunkReplyFormatter()
-					break
+			if debugContinuousTest {
+				for _, cm := range convertedMatchers {
+					if cm.Name == "__name__" && cm.Value == "mimir_continuous_test_sine_wave_v2" {
+						chunkInfo = chunkreplyformatter.NewChunkReplyFormatter()
+						break
+					}
 				}
 			}
 			traceId, _ := tracing.ExtractTraceID(ctx)

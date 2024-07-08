@@ -213,7 +213,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 						labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
 					}
 
-					queryCtx := limiter.AddQueryLimiterToContext(userCtx, limiter.NewQueryLimiter(0, 0, testCase.maxChunksLimit, testCase.maxEstimatedChunksLimit, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
+					queryCtx := limiter.AddQueryLimiterToContext(userCtx, limiter.NewQueryLimiter(0, 0, testCase.maxChunksLimit, testCase.maxEstimatedChunksLimit, false, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
 					queryMetrics := stats.NewQueryMetrics(reg[0])
 
 					// Since the number of series (and thus chunks) is equal to the limit (but doesn't
@@ -242,7 +242,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 					require.Nil(t, err)
 
 					// Reset the query limiter in the context.
-					queryCtx = limiter.AddQueryLimiterToContext(userCtx, limiter.NewQueryLimiter(0, 0, testCase.maxChunksLimit, testCase.maxEstimatedChunksLimit, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
+					queryCtx = limiter.AddQueryLimiterToContext(userCtx, limiter.NewQueryLimiter(0, 0, testCase.maxChunksLimit, testCase.maxEstimatedChunksLimit, false, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
 
 					// Since the number of series (and thus chunks) is exceeding to the limit, we expect
 					// a query running on all series to fail.
@@ -296,7 +296,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 
 				// Since the number of series is equal to the limit (but doesn't
 				// exceed it), we expect a query running on all series to succeed.
-				queryCtx := limiter.AddQueryLimiterToContext(userCtx, limiter.NewQueryLimiter(maxSeriesLimit, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
+				queryCtx := limiter.AddQueryLimiterToContext(userCtx, limiter.NewQueryLimiter(maxSeriesLimit, 0, 0, 0, false, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
 				queryRes, err := ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
 				require.NoError(t, err)
 				if disableStreamingResponse {
@@ -319,7 +319,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 				assert.Nil(t, err)
 
 				// Reset the query limiter in the context.
-				queryCtx = limiter.AddQueryLimiterToContext(userCtx, limiter.NewQueryLimiter(maxSeriesLimit, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
+				queryCtx = limiter.AddQueryLimiterToContext(userCtx, limiter.NewQueryLimiter(maxSeriesLimit, 0, 0, 0, false, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
 
 				// Since the number of series is exceeding the limit, we expect
 				// a query running on all series to fail.
@@ -372,7 +372,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	maxBytesLimit := (seriesToAdd) * responseChunkSize
 
 	// Update the limiter with the calculated limits.
-	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, maxBytesLimit, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
+	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, maxBytesLimit, 0, 0, false, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
 
 	// Push a number of series below the max chunk bytes limit. Subtract one for the series added above.
 	writeReq = makeWriteRequest(0, seriesToAdd-1, 0, false, false, "foo")

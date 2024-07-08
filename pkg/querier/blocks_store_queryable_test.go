@@ -75,7 +75,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 		metricNameLabel  = labels.FromStrings(labels.MetricName, metricName)
 		series1Label     = labels.FromStrings(labels.MetricName, metricName, "series", "1")
 		series2Label     = labels.FromStrings(labels.MetricName, metricName, "series", "2")
-		noOpQueryLimiter = limiter.NewQueryLimiter(0, 0, 0, 0, nil)
+		noOpQueryLimiter = limiter.NewQueryLimiter(0, 0, 0, 0, false, nil)
 	)
 
 	type valueResult struct {
@@ -1029,7 +1029,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
-			queryLimiter: limiter.NewQueryLimiter(0, 0, 1, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
+			queryLimiter: limiter.NewQueryLimiter(0, 0, 1, 0, false, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
 			expectedErr:  limiter.NewMaxChunksPerQueryLimitError(1),
 			expectedMetrics: func(streamingEnabled bool) string {
 				data := struct {
@@ -1119,7 +1119,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
-			queryLimiter: limiter.NewQueryLimiter(0, 0, 0, 1, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
+			queryLimiter: limiter.NewQueryLimiter(0, 0, 0, 1, false, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
 			expectedErr:  limiter.NewMaxEstimatedChunksPerQueryLimitError(1),
 			expectedMetrics: func(streamingEnabled bool) string {
 				data := struct {
@@ -1229,7 +1229,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
-			queryLimiter: limiter.NewQueryLimiter(0, 0, 3, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
+			queryLimiter: limiter.NewQueryLimiter(0, 0, 3, 0, false, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
 			expectedErr:  limiter.NewMaxChunksPerQueryLimitError(3),
 		},
 		"max series per query limit hit while fetching chunks": {
@@ -1247,7 +1247,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				},
 			},
 			limits:       &blocksStoreLimitsMock{},
-			queryLimiter: limiter.NewQueryLimiter(1, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
+			queryLimiter: limiter.NewQueryLimiter(1, 0, 0, 0, false, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
 			expectedErr:  limiter.NewMaxSeriesHitLimitError(1),
 		},
 		"max chunk bytes per query limit hit while fetching chunks": {
@@ -1265,7 +1265,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				},
 			},
 			limits:       &blocksStoreLimitsMock{maxChunksPerQuery: 1},
-			queryLimiter: limiter.NewQueryLimiter(0, 8, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
+			queryLimiter: limiter.NewQueryLimiter(0, 8, 0, 0, false, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
 			expectedErr:  limiter.NewMaxChunkBytesHitLimitError(8),
 		},
 		"blocks with non-matching shard are filtered out": {
@@ -1891,7 +1891,7 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 
 	var (
 		block            = ulid.MustNew(1, nil)
-		noOpQueryLimiter = limiter.NewQueryLimiter(0, 0, 0, 0, nil)
+		noOpQueryLimiter = limiter.NewQueryLimiter(0, 0, 0, 0, false, nil)
 	)
 
 	canceledRequestTests := map[string]bool{

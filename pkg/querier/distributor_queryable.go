@@ -7,7 +7,6 @@ package querier
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
@@ -57,6 +56,7 @@ func NewDistributorQueryable(distributor Distributor, cfgProvider distributorQue
 
 type distributorQueryableConfigProvider interface {
 	QueryIngestersWithin(userID string) time.Duration
+	DebugContinuousTest(userID string) bool
 }
 
 type distributorQueryable struct {
@@ -118,10 +118,10 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 		return series.LabelsToSeriesSet(ms)
 	}
 
-	return q.streamingSelect(ctx, minT, maxT, matchers)
+	return q.streamingSelect(ctx, minT, maxT, matchers, q.cfgProvider.DebugContinuousTest(tenantID))
 }
 
-func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
+func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher, debugContinuousTest bool) storage.SeriesSet {
 	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), matchers...)
 
 	if err != nil {
@@ -135,9 +135,9 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 
 	traceId, _ := tracing.ExtractTraceID(ctx)
 	var chunkInfo *chunkreplyformatter.ChunkReplyFormatter
-	if len(matchers) == 1 && matchers[0].Name == "__name__" && matchers[0].Value == "mimir_continuous_test_sine_wave_v2" {
+	if debugContinuousTest && len(matchers) == 1 && matchers[0].Name == "__name__" && matchers[0].Value == "mimir_continuous_test_sine_wave_v2" {
 		chunkInfo = chunkreplyformatter.NewChunkReplyFormatter()
-		fmt.Printf("CT: ingester streamSelect: traceid:%v mint: %v maxt: %v\n", traceId, minT, maxT)
+		q.logger.Log("msg", "ingester streamSelect: start", "traceid", traceId, "mint", minT, "maxt", maxT)
 	}
 
 	serieses := make([]storage.Series, 0, len(results.Chunkseries))
@@ -149,7 +149,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 			chunkInfo.FormatIngesterChunkInfo(result.FromIngesterId, result.Chunks)
 			needPrint := chunkInfo.EndSeries()
 			if i == len(results.Chunkseries)-1 || needPrint {
-				fmt.Printf("CT: chunk series from ingester: trace_id:%s info:%s\n", traceId, chunkInfo.GetChunkInfo())
+				q.logger.Log("msg", "ingester chunk series", "traceid", traceId, "info", chunkInfo.GetChunkInfo())
 			}
 		}
 
@@ -185,6 +185,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 				labels:    s.Labels,
 				sources:   s.Sources,
 				context:   streamingChunkSeriesConfig,
+				logger:    q.logger,
 				traceId:   traceId,
 				lastOne:   i == len(results.StreamingSeries)-1,
 				chunkInfo: chunkInfo,

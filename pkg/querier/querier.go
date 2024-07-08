@@ -260,6 +260,7 @@ func (mq multiQuerier) getQueriers(ctx context.Context) (context.Context, []stor
 		mq.limits.MaxFetchedChunkBytesPerQuery(tenantID),
 		mq.limits.MaxChunksPerQuery(tenantID),
 		mq.limits.MaxEstimatedChunksPerQuery(tenantID),
+		mq.limits.DebugContinuousTest(tenantID),
 		mq.queryMetrics,
 	))
 

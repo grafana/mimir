@@ -2344,7 +2344,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 					}
 
 					// Set up limiter
-					ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(testData.maxSeriesPerQuery, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
+					ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(testData.maxSeriesPerQuery, 0, 0, 0, false, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
 
 					metrics, err := ds[0].MetricsForLabelMatchers(ctx, now, now, testData.matchers...)
 					if testData.expectedError != nil {

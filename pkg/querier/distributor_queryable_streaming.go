@@ -5,6 +5,7 @@ package querier
 import (
 	"fmt"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
@@ -32,6 +33,7 @@ type streamingChunkSeries struct {
 	alreadyCreated bool
 
 	// For debug logging.
+	logger    log.Logger
 	traceId   string
 	lastOne   bool
 	chunkInfo *chunkreplyformatter.ChunkReplyFormatter
@@ -83,7 +85,7 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 	if s.chunkInfo != nil {
 		needPrint := s.chunkInfo.EndSeries()
 		if s.lastOne || needPrint {
-			fmt.Printf("CT: chunk stream from ingester: trace_id:%s info:%s\n", s.traceId, s.chunkInfo.GetChunkInfo())
+			s.logger.Log("msg", "CT: chunk stream from ingester", "trace_id", s.traceId, "info", s.chunkInfo.GetChunkInfo())
 		}
 	}
 

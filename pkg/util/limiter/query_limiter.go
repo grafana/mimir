@@ -38,13 +38,14 @@ type QueryLimiter struct {
 	maxChunkBytesPerQuery      int
 	maxChunksPerQuery          int
 	maxEstimatedChunksPerQuery int
+	debugContinuousTest        bool
 
 	queryMetrics *stats.QueryMetrics
 }
 
 // NewQueryLimiter makes a new per-query limiter. Each query limiter is configured using the
 // maxSeriesPerQuery, maxChunkBytesPerQuery, maxChunksPerQuery and maxEstimatedChunksPerQuery limits.
-func NewQueryLimiter(maxSeriesPerQuery, maxChunkBytesPerQuery, maxChunksPerQuery int, maxEstimatedChunksPerQuery int, queryMetrics *stats.QueryMetrics) *QueryLimiter {
+func NewQueryLimiter(maxSeriesPerQuery, maxChunkBytesPerQuery, maxChunksPerQuery int, maxEstimatedChunksPerQuery int, debugContinuousTest bool, queryMetrics *stats.QueryMetrics) *QueryLimiter {
 	return &QueryLimiter{
 		uniqueSeriesMx: sync.Mutex{},
 		uniqueSeries:   map[uint64]struct{}{},
@@ -53,6 +54,7 @@ func NewQueryLimiter(maxSeriesPerQuery, maxChunkBytesPerQuery, maxChunksPerQuery
 		maxChunkBytesPerQuery:      maxChunkBytesPerQuery,
 		maxChunksPerQuery:          maxChunksPerQuery,
 		maxEstimatedChunksPerQuery: maxEstimatedChunksPerQuery,
+		debugContinuousTest:        debugContinuousTest,
 
 		queryMetrics: queryMetrics,
 	}
@@ -68,7 +70,7 @@ func QueryLimiterFromContextWithFallback(ctx context.Context) *QueryLimiter {
 	ql, ok := ctx.Value(ctxKey).(*QueryLimiter)
 	if !ok {
 		// If there's no limiter return a new unlimited limiter as a fallback
-		ql = NewQueryLimiter(0, 0, 0, 0, nil)
+		ql = NewQueryLimiter(0, 0, 0, 0, false, nil)
 	}
 	return ql
 }
@@ -159,4 +161,8 @@ func (ql *QueryLimiter) AddEstimatedChunks(count int) validation.LimitError {
 		return NewMaxEstimatedChunksPerQueryLimitError(uint64(ql.maxEstimatedChunksPerQuery))
 	}
 	return nil
+}
+
+func (ql *QueryLimiter) DebugContinuousTest() bool {
+	return ql.debugContinuousTest
 }

@@ -35,7 +35,7 @@ func TestQueryLimiter_AddSeries_ShouldReturnNoErrorOnLimitNotExceeded(t *testing
 			"series2":         "1",
 		})
 		reg     = prometheus.NewPedanticRegistry()
-		limiter = NewQueryLimiter(100, 0, 0, 0, stats.NewQueryMetrics(reg))
+		limiter = NewQueryLimiter(100, 0, 0, 0, false, stats.NewQueryMetrics(reg))
 	)
 	err := limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series1))
 	assert.NoError(t, err)
@@ -70,7 +70,7 @@ func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
 			"series2":         "1",
 		})
 		reg     = prometheus.NewPedanticRegistry()
-		limiter = NewQueryLimiter(1, 0, 0, 0, stats.NewQueryMetrics(reg))
+		limiter = NewQueryLimiter(1, 0, 0, 0, false, stats.NewQueryMetrics(reg))
 	)
 	err := limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series1))
 	require.NoError(t, err)
@@ -93,7 +93,7 @@ func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
 
 func TestQueryLimiter_AddChunkBytes(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	limiter := NewQueryLimiter(0, 100, 0, 0, stats.NewQueryMetrics(reg))
+	limiter := NewQueryLimiter(0, 100, 0, 0, false, stats.NewQueryMetrics(reg))
 
 	err := limiter.AddChunkBytes(100)
 	require.NoError(t, err)
@@ -111,7 +111,7 @@ func TestQueryLimiter_AddChunkBytes(t *testing.T) {
 
 func TestQueryLimiter_AddChunks_EnabledLimit(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	limiter := NewQueryLimiter(0, 0, 100, 0, stats.NewQueryMetrics(reg))
+	limiter := NewQueryLimiter(0, 0, 100, 0, false, stats.NewQueryMetrics(reg))
 
 	err := limiter.AddChunks(100)
 	require.NoError(t, err)
@@ -133,7 +133,7 @@ func TestQueryLimiter_AddChunks_EnabledLimit(t *testing.T) {
 
 func TestQueryLimiter_AddChunks_IgnoresDisabledLimit(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	limiter := NewQueryLimiter(0, 0, 0, 0, stats.NewQueryMetrics(reg))
+	limiter := NewQueryLimiter(0, 0, 0, 0, false, stats.NewQueryMetrics(reg))
 
 	err := limiter.AddChunks(100)
 	require.NoError(t, err)
@@ -142,7 +142,7 @@ func TestQueryLimiter_AddChunks_IgnoresDisabledLimit(t *testing.T) {
 
 func TestQueryLimiter_AddEstimatedChunks_EnabledLimit(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	limiter := NewQueryLimiter(0, 0, 0, 100, stats.NewQueryMetrics(reg))
+	limiter := NewQueryLimiter(0, 0, 0, 100, false, stats.NewQueryMetrics(reg))
 
 	err := limiter.AddEstimatedChunks(100)
 	require.NoError(t, err)
@@ -164,7 +164,7 @@ func TestQueryLimiter_AddEstimatedChunks_EnabledLimit(t *testing.T) {
 
 func TestQueryLimiter_AddEstimatedChunks_IgnoresDisabledLimit(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	limiter := NewQueryLimiter(0, 0, 0, 0, stats.NewQueryMetrics(reg))
+	limiter := NewQueryLimiter(0, 0, 0, 0, false, stats.NewQueryMetrics(reg))
 
 	err := limiter.AddEstimatedChunks(100)
 	require.NoError(t, err)
@@ -186,7 +186,7 @@ func BenchmarkQueryLimiter_AddSeries(b *testing.B) {
 	b.ResetTimer()
 
 	reg := prometheus.NewPedanticRegistry()
-	limiter := NewQueryLimiter(b.N+1, 0, 0, 0, stats.NewQueryMetrics(reg))
+	limiter := NewQueryLimiter(b.N+1, 0, 0, 0, false, stats.NewQueryMetrics(reg))
 	for _, s := range series {
 		err := limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(s))
 		assert.NoError(b, err)

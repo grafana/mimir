@@ -62,6 +62,9 @@ const (
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
+
+	// For debugging only.
+	DebugContinuousTestFlag = "debug.continuous-test"
 )
 
 var (
@@ -159,6 +162,9 @@ type Limits struct {
 	QueryShardingMaxRegexpSizeBytes       int            `yaml:"query_sharding_max_regexp_size_bytes" json:"query_sharding_max_regexp_size_bytes"`
 	SplitInstantQueriesByInterval         model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
 	QueryIngestersWithin                  model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
+
+	// Query debugging for continuous test.
+	DebugContinuousTest bool `yaml:"debug_continuous_test" json:"debug_continuous_test" category:"advanced"`
 
 	// Query-frontend limits.
 	MaxTotalQueryLength                    model.Duration  `yaml:"max_total_query_length" json:"max_total_query_length"`
@@ -300,6 +306,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.SplitInstantQueriesByInterval, "query-frontend.split-instant-queries-by-interval", "Split instant queries by an interval and execute in parallel. 0 to disable it.")
 	_ = l.QueryIngestersWithin.Set("13h")
 	f.Var(&l.QueryIngestersWithin, QueryIngestersWithinFlag, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
+	f.BoolVar(&l.DebugContinuousTest, DebugContinuousTestFlag, false, "Enable debugging continuous test queries.")
 
 	_ = l.RulerEvaluationDelay.Set("1m")
 	f.Var(&l.RulerEvaluationDelay, "ruler.evaluation-delay-duration", "Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed.")
@@ -1050,6 +1057,10 @@ func (o *Overrides) IngestStorageReadConsistency(userID string) string {
 
 func (o *Overrides) IngestionPartitionsTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).IngestionPartitionsTenantShardSize
+}
+
+func (o *Overrides) DebugContinuousTest(userID string) bool {
+	return o.getOverridesForUser(userID).DebugContinuousTest
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {
