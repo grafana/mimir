@@ -846,6 +846,11 @@ ha_tracker:
 # CLI flag: -distributor.max-recv-msg-size
 [max_recv_msg_size: <int> | default = 104857600]
 
+# (experimental) Maximum OTLP request size in bytes that the distributors
+# accept. Requests exceeding this limit are rejected.
+# CLI flag: -distributor.max-otlp-request-size
+[max_otlp_request_size: <int> | default = 104857600]
+
 # (experimental) Max size of the pooled buffers used for marshaling write
 # requests. If 0, no max size is enforced.
 # CLI flag: -distributor.max-request-pool-buffer-size
@@ -1708,6 +1713,12 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.additional-query-queue-dimensions-enabled
 [additional_query_queue_dimensions_enabled: <boolean> | default = false]
 
+# (experimental) Use an experimental version of the query queue which has the
+# same behavior as the existing queue, but integrates tenant selection into the
+# tree model.
+# CLI flag: -query-scheduler.use-multi-algorithm-query-queue
+[use_multi_algorithm_query_queue: <boolean> | default = false]
+
 # (experimental) If a querier disconnects without sending notification about
 # graceful shutdown, the query-scheduler will keep the querier in the tenant's
 # shard until the forget delay has passed. This feature is useful to reduce the
@@ -1935,6 +1946,11 @@ alertmanager_client:
   # (if any).
   # CLI flag: -ruler.alertmanager-client.basic-auth-password
   [basic_auth_password: <string> | default = ""]
+
+# (experimental) Drain all outstanding alert notifications when shutting down.
+# If false, any outstanding alert notifications are dropped when shutting down.
+# CLI flag: -ruler.drain-notification-queue-on-shutdown
+[drain_notification_queue_on_shutdown: <boolean> | default = false]
 
 # (advanced) Max time to tolerate outage for restoring "for" state of alert.
 # CLI flag: -ruler.for-outage-tolerance
@@ -2447,6 +2463,9 @@ alertmanager_client:
 # affected tenant. You must run Mimir with debug-level logging enabled.
 # Otherwise, these lines aren't logged. For more information, refer to
 # https://prometheus.io/docs/alerting/latest/configuration/#label-matchers.
+# Enabling and then disabling UTF-8 strict mode can break existing Alertmanager
+# configurations if tenants added UTF-8 characters to their Alertmanager
+# configuration while it was enabled.
 # CLI flag: -alertmanager.utf8-strict-mode-enabled
 [utf8_strict_mode: <boolean> | default = false]
 ```
@@ -3760,10 +3779,19 @@ kafka:
   # CLI flag: -ingest-storage.kafka.consume-from-timestamp-at-startup
   [consume_from_timestamp_at_startup: <int> | default = 0]
 
-  # The maximum tolerated lag before a consumer is considered to have caught up
+  # The best-effort maximum lag a consumer tries to achieve at startup. Set both
+  # -ingest-storage.kafka.target-consumer-lag-at-startup and
+  # -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting
+  # for maximum consumer lag being honored at startup.
+  # CLI flag: -ingest-storage.kafka.target-consumer-lag-at-startup
+  [target_consumer_lag_at_startup: <duration> | default = 2s]
+
+  # The guaranteed maximum lag before a consumer is considered to have caught up
   # reading from a partition at startup, becomes ACTIVE in the hash ring and
-  # passes the readiness check. Set 0 to disable waiting for maximum consumer
-  # lag being honored at startup.
+  # passes the readiness check. Set both
+  # -ingest-storage.kafka.target-consumer-lag-at-startup and
+  # -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting
+  # for maximum consumer lag being honored at startup.
   # CLI flag: -ingest-storage.kafka.max-consumer-lag-at-startup
   [max_consumer_lag_at_startup: <duration> | default = 15s]
 

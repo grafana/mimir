@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/alerting/definition"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
@@ -375,7 +376,7 @@ templates:
 	require.Equal(t, "some-template.tmpl", currentConfig.Templates[0].Filename)
 	require.Contains(t, currentConfig.Templates[0].Body, "some.template")
 
-	// Ensure that when a Grafana config is added, it is synced correctly
+	// Ensure that when a Grafana config is added, it is synced correctly.
 	userGrafanaCfg := alertspb.GrafanaAlertConfigDesc{
 		User:               "user4",
 		RawConfig:          grafanaConfig,
@@ -384,19 +385,21 @@ templates:
 		Default:            false,
 		Promoted:           true,
 		ExternalUrl:        "test.grafana.com",
+		StaticHeaders:      map[string]string{"Header1": "Value1"},
 	}
 	emptyMimirConfig := alertspb.AlertConfigDesc{User: "user4"}
 	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
-	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{User: "user4"}))
+	require.NoError(t, store.SetAlertConfig(ctx, emptyMimirConfig))
 
 	err = am.loadAndSyncConfigs(ctx, reasonPeriodic)
 	require.NoError(t, err)
 	require.Len(t, am.alertmanagers, 4)
 
 	// The Mimir configuration was empty, so the Grafana configuration should be chosen for user 4.
-	parsed, err := parseGrafanaConfig(userGrafanaCfg)
+	amCfg, err := createUsableGrafanaConfig(userGrafanaCfg, nil)
 	require.NoError(t, err)
-	require.Equal(t, parsed, am.cfgs["user4"])
+	grafanaAlertConfigDesc := amCfg.AlertConfigDesc
+	require.Equal(t, grafanaAlertConfigDesc, am.cfgs["user4"])
 
 	dirs = am.getPerUserDirectories()
 	user4Dir := dirs["user4"]
@@ -426,7 +429,34 @@ templates:
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, parsed, am.cfgs["user4"])
+	require.Equal(t, grafanaAlertConfigDesc, am.cfgs["user4"])
+
+	// Add a Mimir fallback config for the same user.
+	defaultConfig := alertspb.AlertConfigDesc{
+		User:      "user4",
+		RawConfig: am.fallbackConfig,
+	}
+	require.NoError(t, store.SetAlertConfig(ctx, defaultConfig))
+
+	// The Grafana config + Mimir global config section should be used.
+	require.NoError(t, am.loadAndSyncConfigs(context.Background(), reasonPeriodic))
+
+	var gCfg GrafanaAlertmanagerConfig
+	require.NoError(t, json.Unmarshal([]byte(userGrafanaCfg.RawConfig), &gCfg))
+	mCfg, err := definition.LoadCompat([]byte(defaultConfig.RawConfig))
+	require.NoError(t, err)
+
+	gCfg.AlertmanagerConfig.Global = mCfg.Global
+
+	rawCfg, err := json.Marshal(gCfg.AlertmanagerConfig)
+	require.NoError(t, err)
+
+	expCfg := alertspb.AlertConfigDesc{
+		User:      "user4",
+		RawConfig: string(rawCfg),
+		Templates: []*alertspb.TemplateDesc{},
+	}
+	require.Equal(t, expCfg, am.cfgs["user4"])
 
 	// Ensure the Grafana config is ignored when it's marked as default.
 	userGrafanaCfg.Default = true
@@ -434,7 +464,7 @@ templates:
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, emptyMimirConfig, am.cfgs["user4"])
+	require.Equal(t, defaultConfig, am.cfgs["user4"])
 
 	// Ensure the Grafana config is ignored when it's empty.
 	userGrafanaCfg.Default = false
@@ -443,7 +473,7 @@ templates:
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, emptyMimirConfig, am.cfgs["user4"])
+	require.Equal(t, defaultConfig, am.cfgs["user4"])
 
 	// Test Delete User, ensure config is removed and the resources are freed.
 	require.NoError(t, store.DeleteAlertConfig(ctx, "user3"))
@@ -2407,6 +2437,225 @@ func TestMultitenantAlertmanager_computeFallbackConfig(t *testing.T) {
 	fallbackConfig, err = ComputeFallbackConfig(configFile)
 	require.NoError(t, err)
 	require.Equal(t, simpleConfigOne, string(fallbackConfig))
+}
+
+func TestComputeConfig(t *testing.T) {
+	store := prepareInMemoryAlertStore()
+	reg := prometheus.NewPedanticRegistry()
+	cfg := mockAlertmanagerConfig(t)
+	am := setupSingleMultitenantAlertmanager(t, cfg, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
+
+	var grafanaCfg GrafanaAlertmanagerConfig
+	require.NoError(t, json.Unmarshal([]byte(grafanaConfig), &grafanaCfg))
+
+	rawGrafanaCfg, err := json.Marshal(grafanaCfg.AlertmanagerConfig)
+	require.NoError(t, err)
+
+	grafanaExternalURL := "https://grafana.com"
+
+	fallbackCfg, err := definition.LoadCompat([]byte(am.fallbackConfig))
+	require.NoError(t, err)
+
+	grafanaCfg.AlertmanagerConfig.Global = fallbackCfg.Global
+	combinedCfg, err := json.Marshal(grafanaCfg.AlertmanagerConfig)
+	require.NoError(t, err)
+
+	mimirExternalURL := am.cfg.ExternalURL.String()
+
+	tests := []struct {
+		name       string
+		cfg        alertspb.AlertConfigDescs
+		expErr     string
+		expCfg     alertspb.AlertConfigDesc
+		expURL     string
+		expHeaders map[string]string
+	}{
+		{
+			name: "no grafana configuration",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      "user",
+					RawConfig: simpleConfigOne,
+				},
+			},
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user",
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
+			name: "empty grafana configuration",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      "user",
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          "user",
+					RawConfig:     "",
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
+				},
+			},
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user",
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
+			name: "grafana configuration is not promoted",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      "user",
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          "user",
+					RawConfig:     grafanaConfig,
+					Promoted:      false,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
+				},
+			},
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user",
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
+			name: "grafana configuration is default",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      "user",
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          "user",
+					RawConfig:     grafanaConfig,
+					Default:       true,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
+				},
+			},
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user",
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
+			name: "no mimir configuration",
+			cfg: alertspb.AlertConfigDescs{
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          "user",
+					RawConfig:     grafanaConfig,
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
+				},
+			},
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user",
+				RawConfig: string(rawGrafanaCfg),
+				Templates: []*alertspb.TemplateDesc{},
+			},
+			expURL:     grafanaExternalURL,
+			expHeaders: map[string]string{"Test-Header": "test-value"},
+		},
+		{
+			name: "empty mimir configuration",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      "user",
+					RawConfig: "",
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          "user",
+					RawConfig:     grafanaConfig,
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
+				},
+			},
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user",
+				RawConfig: string(rawGrafanaCfg),
+				Templates: []*alertspb.TemplateDesc{},
+			},
+			expURL:     grafanaExternalURL,
+			expHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
+		},
+		{
+			name: "default mimir configuration",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      "user",
+					RawConfig: am.fallbackConfig,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          "user",
+					RawConfig:     grafanaConfig,
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
+				},
+			},
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user",
+				RawConfig: string(combinedCfg),
+				Templates: []*alertspb.TemplateDesc{},
+			},
+			expURL:     grafanaExternalURL,
+			expHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
+		},
+		{
+			// TODO: change once merging configs is implemented.
+			name: "both mimir and grafana configurations (merging not implemented)",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      "user",
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          "user",
+					RawConfig:     grafanaConfig,
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
+				},
+			},
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user",
+				RawConfig: simpleConfigOne,
+			},
+			expURL: am.cfg.ExternalURL.String(),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg, err := am.computeConfig(test.cfg)
+			if test.expErr != "" {
+				require.EqualError(t, err, test.expErr)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, test.expCfg, cfg.AlertConfigDesc)
+			require.Equal(t, test.expURL, cfg.tmplExternalURL.String())
+			require.Equal(t, test.expHeaders, cfg.staticHeaders)
+		})
+	}
 }
 
 func Test_configChanged(t *testing.T) {

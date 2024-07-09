@@ -145,6 +145,8 @@ If something is not clear, you can get back to this document to learn more about
   - [ ] Announce the release on socials
   - [ ] Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
     - Keep the last 3 minor releases
+  - [ ] Open a PR to update the mixin in ["Self-hosted Grafana Mimir" integration](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-mimir/)
+    - _This is addressed by Grafana Labs_
   - [ ] [Publish dashboards to grafana.com](https://github.com/grafana/mimir/blob/main/RELEASE.md#publish-a-stable-release)
   - [ ] After publishing a GEM release publish the `mimir-distributed` Helm chart. Follow the instructions in [Release process for a final release](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/RELEASE.md#release-process-for-a-final-release)
 ````
