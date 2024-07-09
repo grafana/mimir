@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -25,6 +27,7 @@ type SamplesResponse struct {
 	Status    string
 	ErrorType string
 	Error     string
+	Warnings  []string
 	Data      struct {
 		ResultType string
 		Result     json.RawMessage
@@ -100,7 +103,41 @@ func (s *SamplesComparator) Compare(expectedResponse, actualResponse []byte) (Co
 		return ComparisonFailed, err
 	}
 
+	// Check warnings last: they're less important compared to the other possible differences above.
+	if !slicesEqualIgnoringOrder(expected.Warnings, actual.Warnings) {
+		return ComparisonFailed, fmt.Errorf("expected warnings %s but got %s", formatWarningsForErrorMessage(expected.Warnings), formatWarningsForErrorMessage(actual.Warnings))
+	}
+
 	return ComparisonSuccess, nil
+}
+
+func slicesEqualIgnoringOrder(a, b []string) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+
+	if len(a) != len(b) {
+		return false
+	}
+
+	// Make a copy before we mutate the slices.
+	a = slices.Clone(a)
+	b = slices.Clone(b)
+
+	slices.Sort(a)
+	slices.Sort(b)
+
+	return slices.Equal(a, b)
+}
+
+func formatWarningsForErrorMessage(warnings []string) string {
+	formatted := make([]string, 0, len(warnings))
+
+	for _, warning := range warnings {
+		formatted = append(formatted, fmt.Sprintf("%q", warning))
+	}
+
+	return "[" + strings.Join(formatted, ", ") + "]"
 }
 
 func compareMatrix(expectedRaw, actualRaw json.RawMessage, opts SampleComparisonOptions) error {
