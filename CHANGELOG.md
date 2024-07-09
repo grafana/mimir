@@ -2,6 +2,7 @@
 
 ## main / unreleased
 * [ENHANCEMENT] Query-scheduler: Introduce `query-scheduler.use-multi-algorithm-query-queue`, which allows use of an experimental queue structure, with no change in external queue behavior. #7873
+* [BUGFIX] Query-frontend: Ensure that internal errors result in an HTTP 500 response code instead of 422. #8595
 
 ### Grafana Mimir
 
