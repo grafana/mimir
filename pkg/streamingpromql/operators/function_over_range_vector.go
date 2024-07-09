@@ -24,13 +24,14 @@ type FunctionOverRangeVector struct {
 	Inner types.RangeVectorOperator
 	Pool  *pooling.LimitingPool
 
-	Annotations        *annotations.Annotations
-	ExpressionPosition posrange.PositionRange // Used when adding annotations.
+	Annotations *annotations.Annotations
 
 	numSteps        int
 	rangeSeconds    float64
 	floatBuffer     *types.FPointRingBuffer
 	histogramBuffer *types.HPointRingBuffer
+
+	expressionPosition posrange.PositionRange
 }
 
 var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
@@ -45,8 +46,12 @@ func NewFunctionOverRangeVector(
 		Inner:              inner,
 		Pool:               pool,
 		Annotations:        annotations,
-		ExpressionPosition: expressionPosition,
+		expressionPosition: expressionPosition,
 	}
+}
+
+func (m *FunctionOverRangeVector) ExpressionPosition() posrange.PositionRange {
+	return m.expressionPosition
 }
 
 func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
@@ -84,7 +89,7 @@ func (m *FunctionOverRangeVector) checkForPossibleNonCounterMetrics(metadata []t
 		}
 
 		if !strings.HasSuffix(metricName, "_total") && !strings.HasSuffix(metricName, "_count") && !strings.HasSuffix(metricName, "_sum") && !strings.HasSuffix(metricName, "_bucket") {
-			m.Annotations.Add(annotations.NewPossibleNonCounterInfo(metricName, m.ExpressionPosition))
+			m.Annotations.Add(annotations.NewPossibleNonCounterInfo(metricName, m.Inner.ExpressionPosition()))
 		}
 
 		lastCheckedMetricName = metricName

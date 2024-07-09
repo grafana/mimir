@@ -12,6 +12,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -28,6 +29,10 @@ type RangeVectorSelector struct {
 }
 
 var _ types.RangeVectorOperator = &RangeVectorSelector{}
+
+func (m *RangeVectorSelector) ExpressionPosition() posrange.PositionRange {
+	return m.Selector.ExpressionPosition
+}
 
 func (m *RangeVectorSelector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	// Compute value we need on every call to NextSeries() once, here.

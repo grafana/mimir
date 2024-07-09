@@ -191,7 +191,7 @@ func TestBenchmarkSetup(t *testing.T) {
 // It's possible that floating point values are slightly different due to imprecision, but require.Equal doesn't allow us to set an allowable difference.
 func requireEqualResults(t testing.TB, expr string, expected, actual *promql.Result) {
 	require.Equal(t, expected.Err, actual.Err)
-	require.Equal(t, expected.Warnings.AsStrings(expr, 0), actual.Warnings.AsStrings(expr, 0))
+	require.ElementsMatch(t, expected.Warnings.AsStrings(expr, 0), actual.Warnings.AsStrings(expr, 0))
 	require.Equal(t, expected.Value.Type(), actual.Value.Type())
 
 	switch expected.Value.Type() {

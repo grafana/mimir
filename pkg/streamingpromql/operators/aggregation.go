@@ -33,8 +33,9 @@ type Aggregation struct {
 	Grouping []string
 	Pool     *pooling.LimitingPool
 
-	Annotations        *annotations.Annotations
-	ExpressionPosition posrange.PositionRange // Used when adding annotations.
+	Annotations *annotations.Annotations
+
+	expressionPosition posrange.PositionRange
 
 	remainingInnerSeriesToGroup []*group // One entry per series produced by Inner, value is the group for that series
 	remainingGroups             []*group // One entry per group, in the order we want to return them
@@ -62,7 +63,7 @@ func NewAggregation(
 		Grouping:           grouping,
 		Pool:               pool,
 		Annotations:        annotations,
-		ExpressionPosition: expressionPosition,
+		expressionPosition: expressionPosition,
 	}
 }
 
@@ -91,6 +92,10 @@ var _ types.InstantVectorOperator = &Aggregation{}
 var groupPool = zeropool.New(func() *group {
 	return &group{}
 })
+
+func (a *Aggregation) ExpressionPosition() posrange.PositionRange {
+	return a.expressionPosition
+}
 
 func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	// Fetch the source series
@@ -272,7 +277,7 @@ func (a *Aggregation) reconcileAndCountFloatPoints(g *group) int {
 					g.histogramPointCount--
 
 					if !a.haveEmittedMixedFloatsAndHistogramsWarning {
-						a.Annotations.Add(annotations.NewMixedFloatsHistogramsAggWarning(a.ExpressionPosition))
+						a.Annotations.Add(annotations.NewMixedFloatsHistogramsAggWarning(a.Inner.ExpressionPosition()))
 
 						// The warning description only varies based on the position of the expression this operator represents, so only emit it
 						// once, to avoid unnecessary work if there are many instances of floats and histograms conflicting.

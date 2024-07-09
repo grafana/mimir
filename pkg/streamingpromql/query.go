@@ -137,6 +137,8 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 				Interval:      interval.Milliseconds(),
 				LookbackDelta: lookbackDelta,
 				Matchers:      e.LabelMatchers,
+
+				ExpressionPosition: e.PositionRange(),
 			},
 		}, nil
 	case *parser.AggregateExpr:
@@ -191,7 +193,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, err
 		}
 
-		return operators.NewBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, q.pool)
+		return operators.NewBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, q.pool, e.PositionRange())
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
 		return q.convertToInstantVectorOperator(e.Expr)
@@ -248,6 +250,8 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (types.RangeVecto
 				Interval:  interval.Milliseconds(),
 				Range:     e.Range,
 				Matchers:  vectorSelector.LabelMatchers,
+
+				ExpressionPosition: e.PositionRange(),
 			},
 		}, nil
 	case *parser.StepInvariantExpr:

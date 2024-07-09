@@ -24,7 +24,7 @@ type InstantVectorFunctionOperatorFactory func(args []types.Operator, pool *pool
 //   - metadataFunc: The function for handling metadata
 //   - seriesDataFunc: The function to handle series data
 func SingleInputVectorFunctionOperatorFactory(name string, metadataFunc functions.SeriesMetadataFunction, seriesDataFunc functions.InstantVectorFunction) InstantVectorFunctionOperatorFactory {
-	return func(args []types.Operator, pool *pooling.LimitingPool, _ *annotations.Annotations, _ posrange.PositionRange) (types.InstantVectorOperator, error) {
+	return func(args []types.Operator, pool *pooling.LimitingPool, _ *annotations.Annotations, expressionPosition posrange.PositionRange) (types.InstantVectorOperator, error) {
 		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", name, len(args))
@@ -36,13 +36,7 @@ func SingleInputVectorFunctionOperatorFactory(name string, metadataFunc function
 			return nil, fmt.Errorf("expected an instant vector argument for %s, got %T", name, args[0])
 		}
 
-		return &operators.FunctionOverInstantVector{
-			Inner: inner,
-			Pool:  pool,
-
-			MetadataFunc:   metadataFunc,
-			SeriesDataFunc: seriesDataFunc,
-		}, nil
+		return operators.NewFunctionOverInstantVector(inner, pool, metadataFunc, seriesDataFunc, expressionPosition), nil
 	}
 }
 
