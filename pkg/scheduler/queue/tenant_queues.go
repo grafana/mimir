@@ -26,6 +26,10 @@ type tenantRequest struct {
 type queueBroker struct {
 	tree Tree
 
+	// This should _never_ be modified by queueBroker; temporarily,
+	// tenantSelectionState.tenantOrderIndex will be modified when
+	// the queueBroker tree is using *TreeQueue.
+	tenantSelectionState     *tenantSelectionState
 	tenantQuerierAssignments *tenantQuerierAssignments
 
 	maxTenantQueueSize               int
@@ -39,24 +43,32 @@ func newQueueBroker(
 	useMultiAlgoTreeQueue bool,
 	forgetDelay time.Duration,
 ) *queueBroker {
-	currentQuerier := QuerierID("")
 	tqas := &tenantQuerierAssignments{
 		queriersByID:       map[QuerierID]*querierConn{},
 		querierIDsSorted:   nil,
 		querierForgetDelay: forgetDelay,
-		tenantIDOrder:      nil,
 		tenantsByID:        map[TenantID]*queueTenant{},
 		tenantQuerierIDs:   map[TenantID]map[QuerierID]struct{}{},
-		tenantNodes:        map[string][]*Node{},
-		currentQuerier:     currentQuerier,
-		tenantOrderIndex:   localQueueIndex,
+		// TODO (casie): Remove these
+		tenantIDOrder:    nil,
+		tenantNodes:      map[string][]*Node{},
+		currentQuerier:   "",
+		tenantOrderIndex: localQueueIndex,
+	}
+
+	tss := &tenantSelectionState{
+		tenantIDOrder:    nil,
+		tenantOrderIndex: localQueueIndex,
+		tenantNodes:      map[string][]*Node{},
+		tenantQuerierIDs: tqas.tenantQuerierIDs,
+		currentQuerier:   "",
 	}
 
 	var tree Tree
 	var err error
 	if useMultiAlgoTreeQueue {
 		tree, err = NewTree(
-			tqas,               // root; QueuingAlgorithm selects tenants
+			tss,                // root; QueuingAlgorithm selects tenants
 			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
 			&roundRobinState{}, // query components; QueuingAlgorithm selects query from local queue
 		)
@@ -72,6 +84,7 @@ func newQueueBroker(
 	qb := &queueBroker{
 		tree:                             tree,
 		tenantQuerierAssignments:         tqas,
+		tenantSelectionState:             tss,
 		maxTenantQueueSize:               maxTenantQueueSize,
 		additionalQueueDimensionsEnabled: additionalQueueDimensionsEnabled,
 	}
@@ -98,8 +111,6 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 	}
 
 	// TODO (casie): When deprecating TreeQueue, clean this up.
-	// Technically, the MultiQueuingAlgorithmTreeQueue approach is adequate for both tree types, but we are temporarily
-	// maintaining the legacy tree behavior as much as possible for stability reasons.
 	if tq, ok := qb.tree.(*TreeQueue); ok {
 		if tenantQueueNode := tq.getNode(queuePath[:1]); tenantQueueNode != nil {
 			if tenantQueueNode.ItemCount()+1 > qb.maxTenantQueueSize {
@@ -107,10 +118,7 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 			}
 		}
 	} else if _, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-		itemCount := 0
-		for _, tenantNode := range qb.tenantQuerierAssignments.tenantNodes[string(request.tenantID)] {
-			itemCount += tenantNode.ItemCount()
-		}
+		itemCount := qb.tenantSelectionState.itemCountForTenant(string(request.tenantID))
 		if itemCount+1 > qb.maxTenantQueueSize {
 			return ErrTooManyRequests
 		}
@@ -163,7 +171,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 ) {
 	// check if querier is registered and is not shutting down
 	if q := qb.tenantQuerierAssignments.queriersByID[querierID]; q == nil || q.shuttingDown {
-		return nil, nil, qb.tenantQuerierAssignments.tenantOrderIndex, ErrQuerierShuttingDown
+		return nil, nil, qb.tenantSelectionState.tenantOrderIndex, ErrQuerierShuttingDown
 	}
 
 	var queuePath QueuePath
@@ -173,18 +181,18 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 		if tenant == nil || err != nil {
 			return nil, tenant, tenantIndex, err
 		}
-		qb.tenantQuerierAssignments.tenantOrderIndex = tenantIndex
+		qb.tenantSelectionState.tenantOrderIndex = tenantIndex
 		// We can manually build queuePath here because TreeQueue only supports one tree structure ordering:
 		// root --> tenant --> (optional: query dimensions)
 		queuePath = QueuePath{string(tenant.tenantID)}
 		queueElement = tq.DequeueByPath(queuePath)
 	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-		qb.tenantQuerierAssignments.updateQueuingAlgorithmState(querierID, lastTenantIndex)
+		qb.tenantSelectionState.updateQueuingAlgorithmState(querierID, lastTenantIndex)
 		queuePath, queueElement = itq.Dequeue()
 	}
 
 	if queueElement == nil {
-		return nil, nil, qb.tenantQuerierAssignments.tenantOrderIndex, nil
+		return nil, nil, qb.tenantSelectionState.tenantOrderIndex, nil
 	}
 
 	var request *tenantRequest
@@ -211,12 +219,12 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 		}
 	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 		queueNodeAfterDequeue := itq.GetNode(queuePath)
-		if queueNodeAfterDequeue == nil && len(qb.tenantQuerierAssignments.tenantNodes[string(tenantID)]) == 0 {
+		if queueNodeAfterDequeue == nil && len(qb.tenantSelectionState.tenantNodes[string(tenantID)]) == 0 {
 			// queue node was deleted due to being empty after dequeue
 			qb.tenantQuerierAssignments.removeTenant(tenantID)
 		}
 	}
-	return request, tenant, qb.tenantQuerierAssignments.tenantOrderIndex, nil
+	return request, tenant, qb.tenantSelectionState.tenantOrderIndex, nil
 }
 
 func (qb *queueBroker) addQuerierConnection(querierID QuerierID) (resharded bool) {
