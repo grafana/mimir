@@ -1279,14 +1279,22 @@ func TestAnnotations(t *testing.T) {
 	}
 
 	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
+	prometheusEngine := promql.NewEngine(opts)
 
-	queryTypes := map[string]func(expr string, storage storage.Queryable) (promql.Query, error){
-		"range": func(expr string, storage storage.Queryable) (promql.Query, error) {
+	engines := map[string]promql.QueryEngine{
+		"Mimir's engine": mimirEngine,
+
+		// Compare against Prometheus' engine to verify our test cases are valid.
+		"Prometheus' engine": prometheusEngine,
+	}
+
+	queryTypes := map[string]func(expr string, engine promql.QueryEngine, storage storage.Queryable) (promql.Query, error){
+		"range": func(expr string, engine promql.QueryEngine, storage storage.Queryable) (promql.Query, error) {
 			return engine.NewRangeQuery(context.Background(), storage, nil, expr, startT, endT, step)
 		},
-		"instant": func(expr string, storage storage.Queryable) (promql.Query, error) {
+		"instant": func(expr string, engine promql.QueryEngine, storage storage.Queryable) (promql.Query, error) {
 			return engine.NewInstantQuery(context.Background(), storage, nil, expr, startT)
 		},
 	}
@@ -1296,21 +1304,25 @@ func TestAnnotations(t *testing.T) {
 			store := promqltest.LoadedStorage(t, "load 1m\n"+strings.TrimSpace(testCase.data))
 			t.Cleanup(func() { _ = store.Close() })
 
-			for queryType, generator := range queryTypes {
-				t.Run(queryType, func(t *testing.T) {
-					query, err := generator(testCase.expr, store)
-					require.NoError(t, err)
-					t.Cleanup(query.Close)
+			for engineName, engine := range engines {
+				t.Run(engineName, func(t *testing.T) {
+					for queryType, generator := range queryTypes {
+						t.Run(queryType, func(t *testing.T) {
+							query, err := generator(testCase.expr, engine, store)
+							require.NoError(t, err)
+							t.Cleanup(query.Close)
 
-					res := query.Exec(context.Background())
-					require.NoError(t, res.Err)
+							res := query.Exec(context.Background())
+							require.NoError(t, res.Err)
 
-					warnings := res.Warnings.AsStrings(testCase.expr, 0)
+							warnings := res.Warnings.AsStrings(testCase.expr, 0)
 
-					if testCase.expectedAnnotation == "" {
-						require.Empty(t, warnings)
-					} else {
-						require.Equal(t, []string{testCase.expectedAnnotation}, warnings)
+							if testCase.expectedAnnotation == "" {
+								require.Empty(t, warnings)
+							} else {
+								require.Equal(t, []string{testCase.expectedAnnotation}, warnings)
+							}
+						})
 					}
 				})
 			}
