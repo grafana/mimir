@@ -2,6 +2,8 @@
 
 package queue
 
+import "fmt"
+
 type querierWorkerPrioritizationQueueAlgo struct {
 	currentQuerierWorker  int32
 	currentNodeOrderIndex int
@@ -11,7 +13,11 @@ type querierWorkerPrioritizationQueueAlgo struct {
 
 func (qa *querierWorkerPrioritizationQueueAlgo) SetCurrentQuerierWorker(workerID int32) {
 	qa.currentQuerierWorker = workerID
-	qa.currentNodeOrderIndex = int(workerID) % len(qa.nodeOrder)
+	if len(qa.nodeOrder) == 0 {
+		qa.currentNodeOrderIndex = 0
+	} else {
+		qa.currentNodeOrderIndex = int(workerID) % len(qa.nodeOrder)
+	}
 }
 
 func (qa *querierWorkerPrioritizationQueueAlgo) incrementWrapCurrentNodeOrderIndex() {
@@ -22,7 +28,7 @@ func (qa *querierWorkerPrioritizationQueueAlgo) incrementWrapCurrentNodeOrderInd
 }
 
 func (qa *querierWorkerPrioritizationQueueAlgo) checkedAllNodes() bool {
-	return qa.nodesChecked == len(qa.nodeOrder)+1 // must check local queue as well
+	return qa.nodesChecked == len(qa.nodeOrder)
 }
 
 func (qa *querierWorkerPrioritizationQueueAlgo) addChildNode(parent, child *Node) {
@@ -54,12 +60,13 @@ func (qa *querierWorkerPrioritizationQueueAlgo) addChildNode(parent, child *Node
 }
 
 func (qa *querierWorkerPrioritizationQueueAlgo) dequeueSelectNode(node *Node) (*Node, bool) {
-	if qa.currentNodeOrderIndex == localQueueIndex {
-		return node, qa.checkedAllNodes()
+	if len(qa.nodeOrder) == 2 {
+		fmt.Sprintln("")
 	}
 
 	currentNodeName := qa.nodeOrder[qa.currentNodeOrderIndex]
 	if node, ok := node.queueMap[currentNodeName]; ok {
+		qa.nodesChecked++
 		return node, qa.checkedAllNodes()
 	}
 	return nil, qa.checkedAllNodes()

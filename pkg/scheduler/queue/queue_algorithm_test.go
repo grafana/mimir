@@ -374,17 +374,23 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 			require.NoError(t, err)
 			queryComponentUtilizationSkipTree, err := NewTree(&queryComponentUtilizationQueueAlgo, tqa, &roundRobinState{})
 			require.NoError(t, err)
+			querierWorkerPrioritizationTree, err := NewTree(&querierWorkerPrioritizationQueueAlgo{}, tqa, &roundRobinState{})
+			require.NoError(t, err)
 
 			trees := []struct {
 				name string
 				tree Tree
 			}{
 				{
-					"non-flip round robin tree",
+					"non-flipped round robin tree",
 					nonFlippedRoundRobinTree,
 				},
 				{
-					"query component skip tree",
+					"querier worker priority tree",
+					querierWorkerPrioritizationTree,
+				},
+				{
+					"query component skipper tree",
 					queryComponentUtilizationSkipTree,
 				},
 			}

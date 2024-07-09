@@ -356,6 +356,8 @@ func (q *RequestQueue) trySendNextRequestForQuerier(waitingConn *waitingQuerierC
 				if qcuCheckThreshold, ok := qcuAlgo.limit.(*QueryComponentUtilizationLimitByConnections); ok {
 					qcuCheckThreshold.SetConnectedWorkers(int(q.connectedQuerierWorkers.Load()))
 				}
+			} else if qwpAlgo, ok := algoState.(*querierWorkerPrioritizationQueueAlgo); ok {
+				qwpAlgo.SetCurrentQuerierWorker(waitingConn.workerID)
 			}
 		}
 	}
@@ -457,10 +459,11 @@ func (q *RequestQueue) SubmitRequestToEnqueue(tenantID string, req Request, maxQ
 // If a querier-worker finds that the query request received for the tenant is already expired,
 // it can get another request for the same tenant by using TenantIndex.ReuseLastTenant.
 // Newly-connected querier-workers should pass FirstTenant as the TenantIndex to start iteration from the beginning.
-func (q *RequestQueue) WaitForRequestForQuerier(ctx context.Context, last TenantIndex, querierID string) (Request, TenantIndex, error) {
+func (q *RequestQueue) WaitForRequestForQuerier(ctx context.Context, last TenantIndex, querierID string, workerID int32) (Request, TenantIndex, error) {
 	waitingConn := &waitingQuerierConn{
 		querierConnCtx:  ctx,
 		querierID:       QuerierID(querierID),
+		workerID:        workerID,
 		lastTenantIndex: last,
 		recvChan:        make(chan requestForQuerier),
 	}
@@ -564,6 +567,7 @@ func (q *RequestQueue) processForgetDisconnectedQueriers() (resharded bool) {
 type waitingQuerierConn struct {
 	querierConnCtx  context.Context
 	querierID       QuerierID
+	workerID        int32
 	lastTenantIndex TenantIndex
 	recvChan        chan requestForQuerier
 }

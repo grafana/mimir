@@ -421,7 +421,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 
 	// In stopping state scheduler is not accepting new queries, but still dispatching queries in the queues.
 	for s.isRunningOrStopping() {
-		queueReq, idx, err := s.requestQueue.WaitForRequestForQuerier(querier.Context(), lastUserIndex, querierID)
+		queueReq, idx, err := s.requestQueue.WaitForRequestForQuerier(querier.Context(), lastUserIndex, querierID, resp.GetWorkerID())
 		if err != nil {
 			// Return a more clear error if the queue is stopped because the query-scheduler is not running.
 			if errors.Is(err, queue.ErrStopped) && !s.isRunning() {

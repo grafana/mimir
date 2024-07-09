@@ -226,6 +226,7 @@ func (n *Node) dequeue() (QueuePath, any) {
 
 		if v == nil {
 			n.childrenChecked++
+			//dequeueNode = nil
 		}
 
 		n.queuingAlgorithm.dequeueUpdateState(n, dequeueNode)
