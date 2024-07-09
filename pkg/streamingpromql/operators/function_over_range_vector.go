@@ -68,16 +68,18 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 }
 
 func (m *FunctionOverRangeVector) checkForPossibleNonCounterMetrics(metadata []types.SeriesMetadata) {
-	checkedMetricNames := make(map[string]struct{}, 1)
+	// Most of the time, rate() is called over series with the same metric name.
+	// So rather than tracking all metric names we've checked so far, just remember the last one we've seen.
+	// This allows us to avoid most of the suffix checks in the common case without the cost of keeping track of all metric
+	// names we've seen.
+	// Annotations.Add() does deduplication of the annotations added, so there's no risk of generating many annotations for
+	// the same metric if multiple metric names are present.
+	lastCheckedMetricName := ""
 
 	for _, series := range metadata {
 		metricName := series.Labels.Get(labels.MetricName)
 
-		if metricName == "" {
-			continue
-		}
-
-		if _, alreadySeen := checkedMetricNames[metricName]; alreadySeen {
+		if metricName == "" || metricName == lastCheckedMetricName {
 			continue
 		}
 
@@ -85,7 +87,7 @@ func (m *FunctionOverRangeVector) checkForPossibleNonCounterMetrics(metadata []t
 			m.Annotations.Add(annotations.NewPossibleNonCounterInfo(metricName, m.ExpressionPosition))
 		}
 
-		checkedMetricNames[metricName] = struct{}{}
+		lastCheckedMetricName = metricName
 	}
 }
 
