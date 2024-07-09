@@ -143,7 +143,7 @@ If something is not clear, you can get back to this document to learn more about
         For instance, if versions 3.1, 3.0 and 2.10 are configured in `renovate.json`, `renovate.json` should keep updated the following branches:
         `main`, `release-3.1` and `release-3.0`.
   - [ ] Announce the release on socials
-  - [ ] Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
+  - [ ] Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility.go`)
     - Keep the last 3 minor releases
   - [ ] Open a PR to update the mixin in ["Self-hosted Grafana Mimir" integration](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-mimir/)
     - _This is addressed by Grafana Labs_
