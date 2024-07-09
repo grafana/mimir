@@ -129,12 +129,6 @@ type BucketStore struct {
 	postingsStrategy postingsSelectionStrategy
 }
 
-type noopShapshotter struct {
-	services.Service
-}
-
-func (noopShapshotter) RestoreLoadedBlocks() map[ulid.ULID]int64 { return nil }
-
 type noopCache struct{}
 
 func (noopCache) StorePostings(string, ulid.ULID, labels.Label, []byte, time.Duration) {}
@@ -265,7 +259,7 @@ func NewBucketStore(
 		}
 		s.snapshotter = indexheader.NewSnapshotter(s.logger, snapConfig, s.indexReaderPool)
 	} else {
-		s.snapshotter = noopShapshotter{services.NewIdleService(nil, nil)}
+		s.snapshotter = services.NewIdleService(nil, nil)
 	}
 
 	if err := os.MkdirAll(dir, 0750); err != nil {
