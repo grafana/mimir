@@ -78,6 +78,8 @@ func (b *HPointRingBuffer) UnsafePoints(maxT int64) (head []promql.HPoint, tail 
 // PutHPointSlice when it is no longer needed.
 // Calling UnsafePoints is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
 // points into the slice, whereas UnsafePoints returns a view into the internal state of this buffer.
+// In addition to copying the HPoint's, CopyPoints will also duplicate the FloatHistogram values
+// so that they are also safe toe modify.
 func (b *HPointRingBuffer) CopyPoints(maxT int64) ([]promql.HPoint, error) {
 	if b.size == 0 {
 		return nil, nil
@@ -160,7 +162,7 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 
 		newSlice, err := b.pool.GetHPointSlice(newSize)
 		if err != nil {
-			return &promql.HPoint{}, err
+			return nil, err
 		}
 
 		newSlice = newSlice[:cap(newSlice)]
@@ -180,16 +182,10 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 
 func (b *HPointRingBuffer) RemoveLastPoint() {
 	if b.size == 0 {
-		return
+		panic("There are no points to remove")
 	}
-
-	// Remove the last point by adjusting the slice length.
-	b.points = b.points[:len(b.points)-1]
 
 	b.size--
-	if b.size == 0 {
-		b.firstIndex = 0
-	}
 }
 
 // Reset clears the contents of this buffer.

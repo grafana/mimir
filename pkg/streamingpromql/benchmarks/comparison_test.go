@@ -43,7 +43,6 @@ func BenchmarkQuery(b *testing.B) {
 	cases := TestCases(MetricSizes)
 
 	opts := streamingpromql.NewTestEngineOpts()
-	opts.Timeout = 1000 * time.Second
 	prometheusEngine := promql.NewEngine(opts)
 	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(b, err)
