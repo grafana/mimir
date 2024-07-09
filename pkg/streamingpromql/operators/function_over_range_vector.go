@@ -144,18 +144,24 @@ func (m *FunctionOverRangeVector) computeNextStep(data *types.InstantVectorSerie
 		}
 
 		delta := lastPoint.H.CopyToSchema(currentSchema)
-		delta.Sub(firstPoint.H)
+		_, err = delta.Sub(firstPoint.H)
+		if err != nil {
+			return err
+		}
 		previousValue := firstPoint.H
 
-		accumulate := func(points []promql.HPoint) {
+		accumulate := func(points []promql.HPoint) error {
 			for _, p := range points {
 				if p.T > step.RangeEnd { // The buffer is already guaranteed to only contain points >= rangeStart.
-					return
+					return nil
 				}
 
 				if p.H.DetectReset(previousValue) {
 					// Counter reset.
-					delta.Add(previousValue)
+					_, err = delta.Add(previousValue)
+					if err != nil {
+						return err
+					}
 				}
 				if p.H.Schema < currentSchema {
 					delta = delta.CopyToSchema(p.H.Schema)
@@ -163,10 +169,17 @@ func (m *FunctionOverRangeVector) computeNextStep(data *types.InstantVectorSerie
 
 				previousValue = p.H
 			}
+			return nil
 		}
 
-		accumulate(hHead)
-		accumulate(hTail)
+		err = accumulate(hHead)
+		if err != nil {
+			return err
+		}
+		err = accumulate(hTail)
+		if err != nil {
+			return err
+		}
 
 		val := m.calculateHistogramRate(step.RangeStart, step.RangeEnd, firstPoint, lastPoint, delta, hCount)
 		if data.Histograms == nil {
