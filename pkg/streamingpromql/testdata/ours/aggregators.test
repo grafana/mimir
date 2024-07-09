@@ -90,8 +90,7 @@ load 1m
 	single_histogram{label="value2"}  {{sum:5 count:5 buckets:[1 3 1]}}
 
 # "If either operator has to aggregate a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely."
-# TODO(jhesketh): Re-enable once we support annotations
-# eval_warn instant at 1m sum(single_histogram)
+eval_warn instant at 1m sum(single_histogram)
 
 clear
 
@@ -101,7 +100,6 @@ load 1m
 	single_histogram{label="value2"}   3
 
 # "If either operator has to aggregate a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely."
-# TODO(jhesketh): Re-enable once we support annotations
-# eval_warn instant at 1m sum(single_histogram)
+eval_warn instant at 1m sum(single_histogram)
 
 clear
