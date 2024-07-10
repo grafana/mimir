@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -44,6 +45,8 @@ func NewAggregation(
 	pool *pooling.LimitingPool,
 ) *Aggregation {
 	s, e, i := timestamp.FromTime(start), timestamp.FromTime(end), interval.Milliseconds()
+	slices.Sort(grouping)
+
 	return &Aggregation{
 		Inner:    inner,
 		Start:    s,

@@ -149,8 +149,6 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, compat.NewNotSupportedError("grouping with 'without'")
 		}
 
-		slices.Sort(e.Grouping)
-
 		inner, err := q.convertToInstantVectorOperator(e.Expr)
 		if err != nil {
 			return nil, err
