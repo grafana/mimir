@@ -21,6 +21,7 @@ spec:
   {{- range .Values.image.pullSecrets }}
     - name: {{ . }}
   {{- end }}
+  {{- end }}
   {{- with .podSecurityContext }}
   securityContext:
     {{- . | toYaml | nindent 4 }}
