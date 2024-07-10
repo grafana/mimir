@@ -3643,6 +3643,11 @@ metaMonitoring:
     #    image: grafana/agent
     #    tag: v0.29.0
 
+    # ImagePullSecrets holds an optional list of references to Secrets within the same namespace used for pulling the Grafana Agent image from registries.
+    # More info: https://kubernetes.io/docs/concepts/containers/images/#specifying-imagepullsecrets-on-a-pod
+    # imagePullSecrets:
+    #   - name: myRegistryKeySecretName
+
     # -- Controls whether to install the Grafana Agent Operator and its CRDs.
     # Note that helm will not install CRDs if this flag is enabled during an upgrade.
     # In that case install the CRDs manually from https://github.com/grafana/agent/tree/main/operations/agent-static-operator/crds
@@ -3778,6 +3783,23 @@ metaMonitoring:
     #  runAsUser: 10001
     #  capabilities:
     #    drop: [ALL]
+
+    # -- Node selector for Deployment Pods
+    nodeSelector: {}
+    # -- Tolerations for Deployment Pods
+    tolerations: []
+
+    # -- topologySpreadConstraints allows to customize the default topologySpreadConstraints.
+    # More info: https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/#topologyspreadconstraints-field
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        minDomains: 1
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        matchLabelKeys:
+          - pod-template-hash
 
 # -- Values exposed by the [Grafana agent-operator chart](https://github.com/grafana/helm-charts/blob/main/charts/agent-operator/values.yaml)
 grafana-agent-operator:
