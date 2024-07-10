@@ -319,6 +319,8 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 			continue
 		}
 
+		b.metrics.consumerLag.WithLabelValues(lag.Topic, fmt.Sprintf("%d", lag.Partition)).Set(float64(lag.Lag))
+
 		if lag.Lag <= 0 {
 			if err := lag.Err; err != nil {
 				level.Error(b.logger).Log("msg", "failed to get partition lag", "err", err, "part", part)
@@ -333,8 +335,6 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 			}
 			continue
 		}
-
-		b.metrics.consumerLag.WithLabelValues(lag.Topic, fmt.Sprintf("%d", lag.Partition)).Set(float64(lag.Lag))
 
 		// We look at the commit offset timestamp to determine how far behind we are lagging
 		// relative to the cycleEnd. We will consume the partition in parts accordingly.
@@ -431,9 +431,12 @@ func (b *BlockBuilder) consumePartition(
 	var (
 		part         = pl.Partition
 		seenTillTs   = pl.SeenTillTs
-		lastBlockMax = pl.LastBlockEnd
+		lastBlockEnd = pl.LastBlockEnd
 		lastCommit   = pl.Commit
 		lag          = pl.Lag
+
+		blockEndAt = cycleEnd.Truncate(b.cfg.ConsumeInterval)
+		blockEnd   = blockEndAt.UnixMilli()
 	)
 
 	// Make sure to unblock rebalance of the group after the partition was consumed AND after we (potentially) committed
@@ -448,13 +451,8 @@ func (b *BlockBuilder) consumePartition(
 	defer b.kafkaClient.PauseFetchPartitions(tp)
 
 	var (
-		done                         bool
-		commitRec, firstRec, lastRec *kgo.Record
-		blockEndAt                   = cycleEnd.Truncate(b.cfg.ConsumeInterval)
-		blockMax                     = blockEndAt.UnixMilli()
-		compactionDur                time.Duration
-		numBlocks                    int
-		err                          error
+		numBlocks     int
+		compactionDur time.Duration
 	)
 
 	defer func(t time.Time, startingLag int64) {
@@ -464,9 +462,11 @@ func (b *BlockBuilder) consumePartition(
 			return
 		}
 		b.metrics.processPartitionDuration.WithLabelValues(fmt.Sprintf("%d", part)).Observe(dur.Seconds())
-		level.Info(b.logger).Log("msg", "done consuming partition", "part", part, "dur", dur, "start_lag", startingLag,
-			"cycle_end", cycleEnd, "last_block_end", "num_blocks", numBlocks, time.UnixMilli(lastBlockMax), "curr_block_end", time.UnixMilli(retPl.LastBlockEnd),
-			"last_seen_till", time.UnixMilli(seenTillTs), "curr_seen_till", time.UnixMilli(retPl.SeenTillTs), "compact_and_upload_dur", compactionDur)
+		level.Info(b.logger).Log("msg", "done consuming partition", "part", part, "dur", dur,
+			"start_lag", startingLag, "cycle_end", cycleEnd,
+			"last_block_end", time.UnixMilli(lastBlockEnd), "curr_block_end", time.UnixMilli(retPl.LastBlockEnd),
+			"last_seen_till", time.UnixMilli(seenTillTs), "curr_seen_till", time.UnixMilli(retPl.SeenTillTs),
+			"num_blocks", numBlocks, "compact_and_upload_dur", compactionDur)
 	}(time.Now(), lag)
 
 	builder := b.tsdbBuilder()
@@ -474,9 +474,13 @@ func (b *BlockBuilder) consumePartition(
 
 	level.Info(b.logger).Log(
 		"msg", "consuming partition", "part", part, "lag", lag,
-		"cycle_end", cycleEnd, "last_block_end", time.UnixMilli(lastBlockMax), "curr_block_end", blockEndAt,
+		"cycle_end", cycleEnd, "last_block_end", time.UnixMilli(lastBlockEnd), "curr_block_end", blockEndAt,
 		"last_seen_till", time.UnixMilli(seenTillTs))
 
+	var (
+		done                         bool
+		commitRec, firstRec, lastRec *kgo.Record
+	)
 	for !done {
 		if err := context.Cause(ctx); err != nil {
 			return pl, err
@@ -516,7 +520,7 @@ func (b *BlockBuilder) consumePartition(
 				firstRec = rec
 			}
 
-			level.Debug(b.logger).Log("msg", "process record", "offset", rec.Offset, "rec", rec.Timestamp, "last_bmax", lastBlockMax, "bmax", blockMax)
+			level.Debug(b.logger).Log("msg", "process record", "offset", rec.Offset, "rec", rec.Timestamp, "last_bmax", lastBlockEnd, "bmax", blockEnd)
 
 			// Stop consuming after we reached the cycleEnd marker.
 			// NOTE: the timestamp of the record is when the record was produced relative to distributor's time.
@@ -528,28 +532,27 @@ func (b *BlockBuilder) consumePartition(
 			lag--
 
 			recProcessedBefore := rec.Timestamp.UnixMilli() <= seenTillTs
-			allSamplesProcessed, err := builder.process(ctx, rec, lastBlockMax, blockMax, recProcessedBefore)
+			allSamplesProcessed, err := builder.process(ctx, rec, lastBlockEnd, blockEnd, recProcessedBefore)
 			if err != nil {
 				// TODO(codesome): do we just ignore this? What if it was Mimir's issue and this leading to data loss?
 				level.Error(b.logger).Log("msg", "failed to process record", "part", part, "key", string(rec.Key), "err", err)
 				continue
 			}
 			if !allSamplesProcessed && commitRec == nil {
-				// If block builder restarts, it will start consuming from the record after this from kafka.
+				// If block builder restarts, it will start consuming from the record after this from kafka (from the commit record).
 				// So the commit record should be the last record that was fully processed and not the
 				// first record that was not fully processed.
 				commitRec = lastRec
 
-				// The first record itself was not fully processed. Meaning the record before
+				// The first record itself was not fully processed, meaning the record before
 				// this is the commit point.
 				if commitRec == nil {
-					// When the commit record does not change from the previous commit, we get nil here.
 					commitRec = &kgo.Record{
 						Timestamp:   time.UnixMilli(pl.CommitRecTs),
 						Topic:       lastCommit.Topic,
 						Partition:   lastCommit.Partition,
 						LeaderEpoch: lastCommit.LeaderEpoch,
-						Offset:      lastCommit.At - 1,
+						Offset:      lastCommit.At - 1, // TODO(v): lastCommit.At can we zero if there wasn't any commit yet
 					}
 				}
 			}
@@ -559,12 +562,13 @@ func (b *BlockBuilder) consumePartition(
 		b.kafkaClient.AllowRebalance()
 	}
 
-	start := time.Now()
+	compactStart := time.Now()
+	var err error
 	numBlocks, err = builder.compactAndUpload(ctx, b.blockUploaderForUser)
 	if err != nil {
 		return pl, err
 	}
-	compactionDur = time.Since(start)
+	compactionDur = time.Since(compactStart)
 	b.metrics.compactAndUploadDuration.WithLabelValues(fmt.Sprintf("%d", part)).Observe(compactionDur.Seconds())
 
 	// Nothing was processed.
@@ -607,9 +611,9 @@ func (b *BlockBuilder) consumePartition(
 		commitSeenTillTs = lastRec.Timestamp.UnixMilli()
 	}
 	// Take the max of block max times because of same reasons above.
-	commitBlockMax := blockMax
-	if lastBlockMax > blockMax {
-		commitBlockMax = lastBlockMax
+	commitBlockEnd := blockEnd
+	if lastBlockEnd > blockEnd {
+		commitBlockEnd = lastBlockEnd
 	}
 
 	pl = partitionInfo{
@@ -620,11 +624,11 @@ func (b *BlockBuilder) consumePartition(
 			Partition:   commitRec.Partition,
 			At:          commitRec.Offset + 1,
 			LeaderEpoch: commitRec.LeaderEpoch,
-			Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), commitSeenTillTs, commitBlockMax),
+			Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), commitSeenTillTs, commitBlockEnd),
 		},
 		CommitRecTs:  commitRec.Timestamp.UnixMilli(),
 		SeenTillTs:   commitSeenTillTs,
-		LastBlockEnd: commitBlockMax,
+		LastBlockEnd: commitBlockEnd,
 	}
 
 	err = commitRecord(ctx, b.logger, b.kafkaClient, commitRec, pl.Commit.Metadata)
