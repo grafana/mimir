@@ -695,14 +695,13 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 		}
 	}
 
-	log := spanlogger.FromContext(ctx, logger)
-
+	spanlog := spanlogger.FromContext(ctx, logger)
 	buf, err := readResponseBody(r)
 	if err != nil {
-		log.Error(err)
+		spanlog.Error(err)
 		return nil, err
 	}
-	log.LogFields(otlog.String("message", "ParseQueryRangeResponse"),
+	spanlog.LogFields(otlog.String("message", "ParseQueryRangeResponse"),
 		otlog.Int("status_code", r.StatusCode),
 		otlog.Int("bytes", len(buf)))
 

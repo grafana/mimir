@@ -93,8 +93,7 @@ type BucketStore struct {
 	indexReaderPool *indexheader.ReaderPool
 	seriesHashCache *hashcache.SeriesHashCache
 
-	snapshotter          *indexheader.Snapshotter
-	snapshotterStartOnce sync.Once
+	snapshotter services.Service
 
 	// Set of blocks that have the same labels
 	blockSet *bucketBlockSet
@@ -240,17 +239,28 @@ func NewBucketStore(
 		option(s)
 	}
 
-	snapConfig := indexheader.SnapshotterConfig{
-		Path:   dir,
-		UserID: userID,
-	}
-	s.snapshotter = indexheader.NewSnapshotter(s.logger, snapConfig)
-
-	var lazyLoadedBlocks map[ulid.ULID]int64
-	if bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled {
-		lazyLoadedBlocks = s.snapshotter.RestoreLoadedBlocks()
+	lazyLoadedBlocks, err := indexheader.RestoreLoadedBlocks(dir)
+	if err != nil {
+		level.Warn(s.logger).Log(
+			"msg", "loading the list of index-headers from snapshot file failed; not eagerly loading index-headers for tenant",
+			"dir", dir,
+			"err", err,
+		)
+		// Don't fail initialization. If eager loading doesn't happen, then we will load index-headers lazily.
+		// Lazy loading which is slower, but not worth failing startup for.
 	}
 	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics, lazyLoadedBlocks)
+
+	if bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled {
+		snapConfig := indexheader.SnapshotterConfig{
+			Path:            dir,
+			UserID:          userID,
+			PersistInterval: bucketStoreConfig.IndexHeader.LazyLoadingIdleTimeout,
+		}
+		s.snapshotter = indexheader.NewSnapshotter(s.logger, snapConfig, s.indexReaderPool)
+	} else {
+		s.snapshotter = services.NewIdleService(nil, nil)
+	}
 
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create dir")
@@ -260,23 +270,41 @@ func NewBucketStore(
 	return s, nil
 }
 
+func (s *BucketStore) subservices() []services.Service {
+	return []services.Service{s.snapshotter}
+}
+
 func (s *BucketStore) start(context.Context) error {
 	return nil
 }
 
-func (s *BucketStore) stop(error) error {
-	return nil
+func (s *BucketStore) stop(err error) error {
+	subservices := s.subservices()
+
+	errs := multierror.New(err)
+	for _, svc := range subservices {
+		if err := services.StopAndAwaitTerminated(context.Background(), svc); err != nil {
+			errs.Add(fmt.Errorf("stop %T: %w", svc, err))
+		}
+	}
+
+	s.indexReaderPool.Close()
+	return errs.Err()
 }
 
 // RemoveBlocksAndClose remove all blocks from local disk and releases all resources associated with the BucketStore.
 func (s *BucketStore) RemoveBlocksAndClose() error {
-	removeBlocksErr := s.removeAllBlocks()
+	errs := multierror.New()
+	if err := services.StopAndAwaitTerminated(context.Background(), s); err != nil {
+		errs.Add(fmt.Errorf("stopping subservices: %w", err))
+	}
+	// Remove the blocks even if the service didn't gracefully stop.
+	// We want to free up disk resources given these blocks will likely not be queried again.
+	if err := s.removeAllBlocks(); err != nil {
+		errs.Add(fmt.Errorf("remove all blocks: %w", err))
+	}
 
-	// Release other resources even if it failed to close some blocks.
-	s.snapshotter.Stop()
-	s.indexReaderPool.Close()
-
-	return multierror.New(removeBlocksErr, services.StopAndAwaitTerminated(context.Background(), s)).Err()
+	return errs.Err()
 }
 
 // Stats returns statistics about the BucketStore instance.
@@ -347,9 +375,9 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 
 	// Start snapshotter in the end of the sync, but do that only once per BucketStore's lifetime.
 	// We do that here, so the snapshotter watched after blocks from both initial sync and those discovered later.
-	s.snapshotterStartOnce.Do(func() {
-		s.snapshotter.Start(ctx, s.indexReaderPool)
-	})
+	// If it's already started this will return an error. We ignore that because syncBlocks can run multiple times
+	// We pass context.Background() because we want to stop it ourselves as opposed to stopping it as soon as the runtime context is cancelled..
+	_ = s.snapshotter.StartAsync(context.Background())
 
 	return nil
 }

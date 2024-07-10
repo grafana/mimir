@@ -808,13 +808,17 @@ type prometheusResponseData struct {
 	Result model.Value     `json:"result"`
 }
 
+func stringBody(message string) io.ReadCloser {
+	return io.NopCloser(strings.NewReader(message))
+}
+
 func TestDecodeFailedResponse(t *testing.T) {
 	codec := newTestPrometheusCodec()
 
 	t.Run("internal error", func(t *testing.T) {
 		_, err := codec.DecodeResponse(context.Background(), &http.Response{
 			StatusCode: http.StatusInternalServerError,
-			Body:       io.NopCloser(strings.NewReader("something failed")),
+			Body:       stringBody("something failed"),
 		}, nil, log.NewNopLogger())
 		require.Error(t, err)
 
@@ -827,7 +831,7 @@ func TestDecodeFailedResponse(t *testing.T) {
 	t.Run("too many requests", func(t *testing.T) {
 		_, err := codec.DecodeResponse(context.Background(), &http.Response{
 			StatusCode: http.StatusTooManyRequests,
-			Body:       io.NopCloser(strings.NewReader("something failed")),
+			Body:       stringBody("something failed"),
 		}, nil, log.NewNopLogger())
 		require.Error(t, err)
 
@@ -840,7 +844,7 @@ func TestDecodeFailedResponse(t *testing.T) {
 	t.Run("too large entry", func(t *testing.T) {
 		_, err := codec.DecodeResponse(context.Background(), &http.Response{
 			StatusCode: http.StatusRequestEntityTooLarge,
-			Body:       io.NopCloser(strings.NewReader("something failed")),
+			Body:       stringBody("something failed"),
 		}, nil, log.NewNopLogger())
 		require.Error(t, err)
 
@@ -853,7 +857,7 @@ func TestDecodeFailedResponse(t *testing.T) {
 	t.Run("service unavailable", func(t *testing.T) {
 		_, err := codec.DecodeResponse(context.Background(), &http.Response{
 			StatusCode: http.StatusServiceUnavailable,
-			Body:       io.NopCloser(strings.NewReader("something failed")),
+			Body:       stringBody("something failed"),
 		}, nil, log.NewNopLogger())
 		require.Error(t, err)
 

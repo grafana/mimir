@@ -11830,6 +11830,17 @@
         },
         {
           "kind": "field",
+          "name": "drain_notification_queue_on_shutdown",
+          "required": false,
+          "desc": "Drain all outstanding alert notifications when shutting down. If false, any outstanding alert notifications are dropped when shutting down.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ruler.drain-notification-queue-on-shutdown",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "for_outage_tolerance",
           "required": false,
           "desc": "Max time to tolerate outage for restoring \"for\" state of alert.",

@@ -75,6 +75,9 @@ type Config struct {
 	LazyLoadingConcurrencyQueueTimeout time.Duration `yaml:"lazy_loading_concurrency_queue_timeout" category:"experimental"`
 
 	VerifyOnLoad bool `yaml:"verify_on_load" category:"advanced"`
+
+	// EagerLoadingPersistInterval is injected for testing purposes only.
+	EagerLoadingPersistInterval time.Duration `yaml:"-" doc:"hidden"`
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
@@ -84,6 +87,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.IntVar(&cfg.LazyLoadingConcurrency, prefix+"lazy-loading-concurrency", 4, "Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.")
 	f.DurationVar(&cfg.LazyLoadingConcurrencyQueueTimeout, prefix+"lazy-loading-concurrency-queue-timeout", 0, "Timeout for the queue of index header loads. If the queue is full and the timeout is reached, the load will return an error. 0 means no timeout and the load will wait indefinitely.")
 	f.BoolVar(&cfg.EagerLoadingStartupEnabled, prefix+"eager-loading-startup-enabled", true, "If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. Ignored if index-header lazy loading is disabled.")
+	f.DurationVar(&cfg.EagerLoadingPersistInterval, prefix+"eager-loading-persist-interval", time.Minute, "Interval at which the store-gateway persists block IDs of lazy loaded index-headers. Ignored if index-header eager loading is disabled.")
 	f.BoolVar(&cfg.VerifyOnLoad, prefix+"verify-on-load", false, "If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.")
 }
 
