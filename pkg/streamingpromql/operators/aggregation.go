@@ -107,8 +107,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	a.remainingInnerSeriesToGroup = make([]*group, 0, len(innerSeries))
 
 	for seriesIdx, series := range innerSeries {
-		groupLabels := groupLabelsFunc(series.Labels)
-		groupLabelsString := groupLabels.String()
+		groupLabels, groupLabelsString := groupLabelsFunc(series.Labels)
 		g, groupExists := groups[groupLabelsString]
 
 		if !groupExists {
@@ -138,28 +137,30 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	return seriesMetadata, nil
 }
 
-func (a *Aggregation) seriesToGroupLabelsFunc() func(labels.Labels) labels.Labels {
+func (a *Aggregation) seriesToGroupLabelsFunc() func(labels.Labels) (labels.Labels, string) {
 	if a.Without {
 		lb := labels.NewBuilder(labels.EmptyLabels())
-		return func(m labels.Labels) labels.Labels {
+		return func(m labels.Labels) (labels.Labels, string) {
 			lb.Reset(m)
 			lb.Del(a.Grouping...)
 			lb.Del(labels.MetricName)
-			return lb.Labels()
+			l := lb.Labels()
+			return l, l.String()
 		}
 	}
 
 	if len(a.Grouping) == 0 {
-		return func(_ labels.Labels) labels.Labels {
-			return labels.EmptyLabels()
+		return func(_ labels.Labels) (labels.Labels, string) {
+			return labels.EmptyLabels(), "{}"
 		}
 	}
 
 	lb := labels.NewBuilder(labels.EmptyLabels())
-	return func(m labels.Labels) labels.Labels {
+	return func(m labels.Labels) (labels.Labels, string) {
 		lb.Reset(m)
 		lb.Keep(a.Grouping...)
-		return lb.Labels()
+		l := lb.Labels()
+		return l, l.String()
 	}
 }
 
