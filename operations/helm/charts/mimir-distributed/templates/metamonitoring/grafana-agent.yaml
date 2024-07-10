@@ -16,9 +16,10 @@ metadata:
   {{- end }}
 spec:
   serviceAccountName: {{ include "mimir.serviceAccountName" $ }}
-  {{- with .imagePullSecrets }}
+  {{- if .Values.image.pullSecrets }}
   imagePullSecrets:
-    {{- toYaml . | nindent 4 }}
+  {{- range .Values.image.pullSecrets }}
+    - name: {{ . }}
   {{- end }}
   {{- with .podSecurityContext }}
   securityContext:
@@ -54,10 +55,7 @@ spec:
   tolerations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-  {{- with .topologySpreadConstraints }}
-  topologySpreadConstraints:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
+  {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "meta-monitoring") | nindent 6 }}
   logs:
     instanceSelector:
       matchLabels:
