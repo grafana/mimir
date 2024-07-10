@@ -329,10 +329,6 @@ func newQueryMiddlewares(
 
 	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
 	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
-		shouldCache := func(r MetricsQueryRequest) bool {
-			return !r.GetOptions().CacheDisabled
-		}
-
 		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics), newSplitAndCacheMiddleware(
 			cfg.SplitQueriesByInterval > 0,
 			cfg.CacheResults,
@@ -342,7 +338,7 @@ func newQueryMiddlewares(
 			cacheClient,
 			cacheKeyGenerator,
 			cacheExtractor,
-			shouldCache,
+			resultsCacheEnabledByOption,
 			log,
 			registerer,
 		))
