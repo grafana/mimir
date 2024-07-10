@@ -764,7 +764,7 @@ func TestBucketStore_EagerLoading(t *testing.T) {
 
 			if testData.createLoadedBlocksSnapshotFn != nil {
 				// Create the snapshot manually so that we don't rely on the periodic snapshotting.
-				loadedBlocks := store.store.blockULIDs()
+				loadedBlocks := store.store.blockSet.blockULIDs()
 				staticLoader := staticLoadedBlocks(testData.createLoadedBlocksSnapshotFn(loadedBlocks))
 				snapshotter := indexheader.NewSnapshotter(cfg.logger, indexheader.SnapshotterConfig{
 					PersistInterval: time.Hour,
@@ -794,11 +794,6 @@ func TestBucketStore_PersistsLazyLoadedBlocks(t *testing.T) {
 	cfg.bucketStoreConfig.IndexHeader.EagerLoadingPersistInterval = persistInterval
 	cfg.bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled = true
 	ctx := context.Background()
-	// Set up a snapshotter in the same directory as the one the store creates.
-	snapshotter := indexheader.NewSnapshotter(cfg.logger, indexheader.SnapshotterConfig{
-		PersistInterval: time.Hour,
-		Path:            cfg.tempDir,
-	}, nil)
 
 	// Start the store so we generate some blocks and can use them in the mock snapshot.
 	store := prepareStoreWithTestBlocks(t, bkt, cfg)
@@ -806,7 +801,9 @@ func TestBucketStore_PersistsLazyLoadedBlocks(t *testing.T) {
 	time.Sleep(persistInterval * 2)
 
 	// The snapshot should be empty.
-	assert.Empty(t, snapshotter.RestoreLoadedBlocks())
+	blocks, err := indexheader.RestoreLoadedBlocks(cfg.tempDir)
+	assert.NoError(t, err)
+	assert.Empty(t, blocks)
 
 	// Run a simple request to trigger loading the blocks
 	resp, err := store.store.LabelNames(ctx, &storepb.LabelNamesRequest{End: math.MaxInt64})
@@ -815,7 +812,10 @@ func TestBucketStore_PersistsLazyLoadedBlocks(t *testing.T) {
 
 	// Wait for the snapshot to be persisted.
 	time.Sleep(persistInterval * 2)
-	assert.Len(t, snapshotter.RestoreLoadedBlocks(), cfg.numBlocks)
+
+	blocks, err = indexheader.RestoreLoadedBlocks(cfg.tempDir)
+	assert.NoError(t, err)
+	assert.Len(t, blocks, cfg.numBlocks)
 }
 
 type staticLoadedBlocks map[ulid.ULID]int64

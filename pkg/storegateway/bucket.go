@@ -349,10 +349,7 @@ func (s *BucketStore) syncBlocks(ctx context.Context) error {
 		return metaFetchErr
 	}
 
-	blockIDs := make([]ulid.ULID, 0)
-	s.blockSet.forEach(func(b *bucketBlock) {
-		blockIDs = append(blockIDs, b.meta.ULID)
-	})
+	blockIDs := s.blockSet.blockULIDs()
 	for _, id := range blockIDs {
 		if _, ok := metas[id]; ok {
 			continue
@@ -402,15 +399,14 @@ func (s *BucketStore) InitialSync(ctx context.Context) error {
 
 func (s *BucketStore) loadBlocks(ctx context.Context, blocks map[ulid.ULID]int64) {
 	// We ignore the time the block was used because it can only be in the map if it was still loaded before the shutdown
-	for id := range blocks {
-		r := s.getBlock(id)
-		if r == nil {
-			continue // we don't own this block anymore
+	s.blockSet.forEach(func(b *bucketBlock) {
+		if _, ok := blocks[b.meta.ULID]; !ok {
+			return
 		}
-		if lazyReader, ok := r.indexHeaderReader.(*indexheader.LazyBinaryReader); ok {
+		if lazyReader, ok := b.indexHeaderReader.(*indexheader.LazyBinaryReader); ok {
 			lazyReader.EagerLoad(ctx)
 		}
-	}
+	})
 }
 
 func (s *BucketStore) cleanUpUnownedBlocks() error {
@@ -531,10 +527,7 @@ func (s *BucketStore) removeBlock(id ulid.ULID) (returnErr error) {
 }
 
 func (s *BucketStore) removeAllBlocks() error {
-	blockIDs := make([]ulid.ULID, 0)
-	s.blockSet.forEach(func(b *bucketBlock) {
-		blockIDs = append(blockIDs, b.meta.ULID)
-	})
+	blockIDs := s.blockSet.blockULIDs()
 
 	errs := multierror.New()
 	for _, id := range blockIDs {
@@ -1607,18 +1600,6 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 	}, nil
 }
 
-func (s *BucketStore) blockULIDs() []ulid.ULID {
-	s.blocksMx.RLock()
-	defer s.blocksMx.RUnlock()
-
-	ulids := make([]ulid.ULID, 0, len(s.blocks))
-	for _, b := range s.blocks {
-		ulids = append(ulids, b.meta.ULID)
-	}
-
-	return ulids
-}
-
 // blockLabelValues returns sorted values of the label with requested name,
 // optionally restricting the search to the series that match the matchers provided.
 // - First we fetch all possible values for this label from the index.
@@ -1912,6 +1893,14 @@ func (s *bucketBlockSet) forEach(fn func(b *bucketBlock)) {
 		}
 		return true
 	})
+}
+
+func (s *bucketBlockSet) blockULIDs() []ulid.ULID {
+	ulids := make([]ulid.ULID, 0, s.len())
+	s.forEach(func(b *bucketBlock) {
+		ulids = append(ulids, b.meta.ULID)
+	})
+	return ulids
 }
 
 // timerange returns the minimum and maximum timestamp available in the set.
