@@ -682,30 +682,37 @@ func encodeOptions(req *http.Request, o Options) {
 }
 
 func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ MetricsQueryRequest, logger log.Logger) (Response, error) {
-	switch r.StatusCode {
-	case http.StatusServiceUnavailable:
-		return nil, apierror.New(apierror.TypeUnavailable, string(mustReadResponseBody(r)))
-	case http.StatusTooManyRequests:
-		return nil, apierror.New(apierror.TypeTooManyRequests, string(mustReadResponseBody(r)))
-	case http.StatusRequestEntityTooLarge:
-		return nil, apierror.New(apierror.TypeTooLargeEntry, string(mustReadResponseBody(r)))
-	default:
-		if r.StatusCode/100 == 5 {
-			return nil, apierror.New(apierror.TypeInternal, string(mustReadResponseBody(r)))
-		}
-	}
-
 	spanlog := spanlogger.FromContext(ctx, logger)
 	buf, err := readResponseBody(r)
 	if err != nil {
-		spanlog.Error(err)
-		return nil, err
+		return nil, spanlog.Error(err)
 	}
+
 	spanlog.LogFields(otlog.String("message", "ParseQueryRangeResponse"),
 		otlog.Int("status_code", r.StatusCode),
 		otlog.Int("bytes", len(buf)))
 
+	// Before attempting to decode a response based on the content type, check if the
+	// Content-Type header was even set. When the scheduler returns gRPC errors, they
+	// are encoded as httpgrpc.HTTPResponse objects with an HTTP status code and the
+	// error message as the body of the response with no content type. We need to handle
+	// that case here before we decode well-formed success or error responses.
 	contentType := r.Header.Get("Content-Type")
+	if contentType == "" {
+		switch r.StatusCode {
+		case http.StatusServiceUnavailable:
+			return nil, apierror.New(apierror.TypeUnavailable, string(buf))
+		case http.StatusTooManyRequests:
+			return nil, apierror.New(apierror.TypeTooManyRequests, string(buf))
+		case http.StatusRequestEntityTooLarge:
+			return nil, apierror.New(apierror.TypeTooLargeEntry, string(buf))
+		default:
+			if r.StatusCode/100 == 5 {
+				return nil, apierror.New(apierror.TypeInternal, string(buf))
+			}
+		}
+	}
+
 	formatter := findFormatter(contentType)
 	if formatter == nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "unknown response content type '%v'", contentType)
@@ -913,11 +920,6 @@ func readResponseBody(res *http.Response) ([]byte, error) {
 		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response with status %d: %v", res.StatusCode, err)
 	}
 	return buf.Bytes(), nil
-}
-
-func mustReadResponseBody(r *http.Response) []byte {
-	body, _ := readResponseBody(r)
-	return body
 }
 
 func parseDurationMs(s string) (int64, error) {
