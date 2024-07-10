@@ -145,10 +145,6 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, fmt.Errorf("unexpected parameter for %s aggregation: %s", e.Op, e.Param)
 		}
 
-		if e.Without {
-			return nil, compat.NewNotSupportedError("grouping with 'without'")
-		}
-
 		inner, err := q.convertToInstantVectorOperator(e.Expr)
 		if err != nil {
 			return nil, err
@@ -160,6 +156,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			q.statement.End,
 			interval,
 			e.Grouping,
+			e.Without,
 			q.pool,
 		), nil
 	case *parser.Call:

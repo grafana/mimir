@@ -30,6 +30,7 @@ type Aggregation struct {
 	Interval int64 // In milliseconds
 	Steps    int
 	Grouping []string
+	Without  bool
 	Pool     *pooling.LimitingPool
 
 	remainingInnerSeriesToGroup []*group // One entry per series produced by Inner, value is the group for that series
@@ -42,6 +43,7 @@ func NewAggregation(
 	end time.Time,
 	interval time.Duration,
 	grouping []string,
+	without bool,
 	pool *pooling.LimitingPool,
 ) *Aggregation {
 	s, e, i := timestamp.FromTime(start), timestamp.FromTime(end), interval.Milliseconds()
@@ -54,6 +56,7 @@ func NewAggregation(
 		Interval: i,
 		Steps:    stepCount(s, e, i),
 		Grouping: grouping,
+		Without:  without,
 		Pool:     pool,
 	}
 }
@@ -99,25 +102,21 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	}
 
 	// Determine the groups we'll return
-	groups := map[uint64]groupWithLabels{}
-	buf := make([]byte, 0, 1024)
-	lb := labels.NewBuilder(labels.EmptyLabels())
+	groups := map[string]groupWithLabels{}
+	groupLabelsFunc := a.seriesToGroupLabelsFunc()
 	a.remainingInnerSeriesToGroup = make([]*group, 0, len(innerSeries))
 
 	for seriesIdx, series := range innerSeries {
-		// Note that this doesn't handle potential hash collisions between groups.
-		// This is something we should likely fix, but at present, Prometheus' PromQL engine doesn't handle collisions either,
-		// so at least both engines will be incorrect in the same way.
-		var groupingKey uint64
-		groupingKey, buf = series.Labels.HashForLabels(buf, a.Grouping...)
-		g, groupExists := groups[groupingKey]
+		groupLabels := groupLabelsFunc(series.Labels)
+		groupLabelsString := groupLabels.String()
+		g, groupExists := groups[groupLabelsString]
 
 		if !groupExists {
-			g.labels = a.labelsForGroup(series.Labels, lb)
+			g.labels = groupLabels
 			g.group = groupPool.Get()
 			g.group.remainingSeriesCount = 0
 
-			groups[groupingKey] = g
+			groups[groupLabelsString] = g
 		}
 
 		g.group.remainingSeriesCount++
@@ -139,14 +138,29 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	return seriesMetadata, nil
 }
 
-func (a *Aggregation) labelsForGroup(m labels.Labels, lb *labels.Builder) labels.Labels {
-	if len(a.Grouping) == 0 {
-		return labels.EmptyLabels()
+func (a *Aggregation) seriesToGroupLabelsFunc() func(labels.Labels) labels.Labels {
+	if a.Without {
+		lb := labels.NewBuilder(labels.EmptyLabels())
+		return func(m labels.Labels) labels.Labels {
+			lb.Reset(m)
+			lb.Del(a.Grouping...)
+			lb.Del(labels.MetricName)
+			return lb.Labels()
+		}
 	}
 
-	lb.Reset(m)
-	lb.Keep(a.Grouping...)
-	return lb.Labels()
+	if len(a.Grouping) == 0 {
+		return func(_ labels.Labels) labels.Labels {
+			return labels.EmptyLabels()
+		}
+	}
+
+	lb := labels.NewBuilder(labels.EmptyLabels())
+	return func(m labels.Labels) labels.Labels {
+		lb.Reset(m)
+		lb.Keep(a.Grouping...)
+		return lb.Labels()
+	}
 }
 
 func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {

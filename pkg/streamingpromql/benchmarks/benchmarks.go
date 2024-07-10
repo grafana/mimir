@@ -158,12 +158,12 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "sum(a_X)",
 		},
-		//{
-		//	Expr: "sum without (l)(h_X)",
-		//},
-		//{
-		//	Expr: "sum without (le)(h_X)",
-		//},
+		{
+			Expr: "sum without (l)(h_X)",
+		},
+		{
+			Expr: "sum without (le)(h_X)",
+		},
 		{
 			Expr: "sum by (l)(h_X)",
 		},
@@ -190,12 +190,12 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "sum by (le)(rate(h_X[1m]))",
 		},
-		//{
-		//	Expr: "sum without (l)(rate(a_X[1m]))",
-		//},
-		//{
-		//	Expr: "sum without (l)(rate(a_X[1m])) / sum without (l)(rate(b_X[1m]))",
-		//},
+		{
+			Expr: "sum without (l)(rate(a_X[1m]))",
+		},
+		{
+			Expr: "sum without (l)(rate(a_X[1m])) / sum without (l)(rate(b_X[1m]))",
+		},
 		//{
 		//	Expr: "histogram_quantile(0.9, rate(h_X[5m]))",
 		//},
