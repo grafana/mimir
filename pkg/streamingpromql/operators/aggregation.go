@@ -6,11 +6,13 @@
 package operators
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -103,15 +105,16 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 
 	// Determine the groups we'll return
 	groups := map[string]groupWithLabels{}
+	groupLabelsStringFunc := a.seriesToGroupLabelsStringFunc()
 	groupLabelsFunc := a.seriesToGroupLabelsFunc()
 	a.remainingInnerSeriesToGroup = make([]*group, 0, len(innerSeries))
 
 	for seriesIdx, series := range innerSeries {
-		groupLabels, groupLabelsString := groupLabelsFunc(series.Labels)
+		groupLabelsString := groupLabelsStringFunc(series.Labels)
 		g, groupExists := groups[groupLabelsString]
 
 		if !groupExists {
-			g.labels = groupLabels
+			g.labels = groupLabelsFunc(series.Labels)
 			g.group = groupPool.Get()
 			g.group.remainingSeriesCount = 0
 
@@ -137,32 +140,114 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	return seriesMetadata, nil
 }
 
-// seriesToGroupLabelsFunc returns a function that computes the output group labels for the given
-// input series. The output group labels are returned as both a labels.Labels and a string.
-func (a *Aggregation) seriesToGroupLabelsFunc() func(labels.Labels) (labels.Labels, string) {
+// seriesToGroupLabelsStringFunc returns a function that computes a string representation of the output group labels for the given input series.
+func (a *Aggregation) seriesToGroupLabelsStringFunc() func(labels.Labels) string {
+	// Why not just use the labels.Labels computed by seriesToGroupLabelsFunc() and call String() on it?
+	//
+	// Most of the time, we don't need the labels.Labels instance, as we expect there are far fewer output groups than input series,
+	// and we only need the labels.Labels instance once per output group.
+	// However, we always need to compute the string representation for each input series, so we can look up its corresponding
+	// output group.
+	// There's not much point in using the hash of the group labels as we always need the string (or the labels.Labels) to ensure
+	// there are no hash collisions - so we might as well just go straight to the string representation.
+	//
+	// Furthermore, labels.Labels.String() doesn't allow us to reuse the buffer used when producing the string, whereas this method does.
+	// This saves us allocating a new buffer for every single input series, which has a noticeable performance impact.
+
 	if a.Without {
-		lb := labels.NewBuilder(labels.EmptyLabels())
-		return func(m labels.Labels) (labels.Labels, string) {
-			lb.Reset(m)
-			lb.Del(a.Grouping...)
-			lb.Del(labels.MetricName)
-			l := lb.Labels()
-			return l, l.String()
+		b := make([]byte, 0, 1024)
+		buf := bytes.NewBuffer(b)
+
+		return func(l labels.Labels) string {
+			buf.Reset()
+			nextGroupingIndex := 0
+			outputLabelCount := 0
+
+			l.Range(func(l labels.Label) {
+				if l.Name == labels.MetricName {
+					return
+				}
+
+				for nextGroupingIndex < len(a.Grouping) && l.Name > a.Grouping[nextGroupingIndex] {
+					nextGroupingIndex++
+				}
+
+				if nextGroupingIndex == len(a.Grouping) || l.Name != a.Grouping[nextGroupingIndex] {
+					if outputLabelCount > 0 {
+						buf.WriteByte(',')
+						buf.WriteByte(' ')
+					}
+
+					buf.WriteString(l.Name)
+					buf.WriteByte('=')
+					buf.Write(strconv.AppendQuote(buf.AvailableBuffer(), l.Value))
+
+					outputLabelCount++
+				}
+			})
+
+			return buf.String()
 		}
 	}
 
 	if len(a.Grouping) == 0 {
-		return func(_ labels.Labels) (labels.Labels, string) {
-			return labels.EmptyLabels(), "{}"
+		return func(l labels.Labels) string {
+			return ""
+		}
+	}
+
+	b := make([]byte, 0, 1024)
+	buf := bytes.NewBuffer(b)
+	return func(l labels.Labels) string {
+		buf.Reset()
+		outputLabelCount := 0
+
+		for _, labelName := range a.Grouping {
+			labelValue := l.Get(labelName)
+			if labelValue == "" {
+				continue
+			}
+
+			if outputLabelCount > 0 {
+				buf.WriteByte(',')
+				buf.WriteByte(' ')
+			}
+
+			buf.WriteString(labelName)
+			buf.WriteByte('=')
+			buf.Write(strconv.AppendQuote(buf.AvailableBuffer(), labelValue))
+			outputLabelCount++
+		}
+
+		return buf.String()
+	}
+}
+
+// seriesToGroupLabelsFunc returns a function that computes the output group labels for the given input series.
+func (a *Aggregation) seriesToGroupLabelsFunc() func(labels.Labels) labels.Labels {
+	if a.Without {
+		lb := labels.NewBuilder(labels.EmptyLabels())
+		return func(m labels.Labels) labels.Labels {
+			lb.Reset(m)
+			lb.Del(a.Grouping...)
+			lb.Del(labels.MetricName)
+			l := lb.Labels()
+			return l
+		}
+	}
+
+	if len(a.Grouping) == 0 {
+		return func(_ labels.Labels) labels.Labels {
+			return labels.EmptyLabels()
 		}
 	}
 
 	lb := labels.NewBuilder(labels.EmptyLabels())
-	return func(m labels.Labels) (labels.Labels, string) {
+	return func(m labels.Labels) labels.Labels {
 		lb.Reset(m)
 		lb.Keep(a.Grouping...)
 		l := lb.Labels()
-		return l, l.String()
+		return l
 	}
 }
 
