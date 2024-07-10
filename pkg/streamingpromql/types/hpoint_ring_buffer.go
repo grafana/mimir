@@ -78,8 +78,8 @@ func (b *HPointRingBuffer) UnsafePoints(maxT int64) (head []promql.HPoint, tail 
 // PutHPointSlice when it is no longer needed.
 // Calling UnsafePoints is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
 // points into the slice, whereas UnsafePoints returns a view into the internal state of this buffer.
-// In addition to copying the HPoint's, CopyPoints will also duplicate the FloatHistogram values
-// so that they are also safe toe modify.
+// In addition to copying the points, CopyPoints will also duplicate the FloatHistogram values
+// so that they are also safe to modify.
 func (b *HPointRingBuffer) CopyPoints(maxT int64) ([]promql.HPoint, error) {
 	if b.size == 0 {
 		return nil, nil
@@ -148,10 +148,12 @@ func (b *HPointRingBuffer) Append(p promql.HPoint) error {
 }
 
 // NextPoint gets the next point in this buffer, expanding it if required.
-// If this buffer is non-empty, any modification to the point p.T must be
-// greater than or equal to the timestamp of the previous point in the buffer.
-// This is used so that HPoint.H from the pool can be modified without needing
-// to assign a new HPoint when copying in a histogram.
+// The returned point's timestamp (HPoint.T) must be set to greater than or equal
+// to the timestamp of the last point in the buffer before further methods
+// are called on this buffer (with the exception of RemoveLastPoint, Reset or Close).
+//
+// This method allows reusing an existing HPoint in this buffer where possible,
+// reducing the number of FloatHistograms allocated.
 func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 	if b.size == len(b.points) {
 		// Create a new slice, copy the elements from the current slice.
@@ -180,12 +182,19 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 	return &b.points[nextIndex], nil
 }
 
+// Remove the last point that was allocated.
+// This is used for when NextPoint allocates a point that is then unused and
+// needs to be returned to the ring buffer.
+// This occurs when a histogram point has a stale marker.
 func (b *HPointRingBuffer) RemoveLastPoint() {
 	if b.size == 0 {
 		panic("There are no points to remove")
 	}
 
 	b.size--
+	if b.size == 0 {
+		b.firstIndex = 0
+	}
 }
 
 // Reset clears the contents of this buffer.

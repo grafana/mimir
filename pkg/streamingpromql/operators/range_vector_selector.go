@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -119,18 +118,14 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 				continue
 			}
 			hPoint, _ := histograms.NextPoint()
-			if hPoint.H == nil {
-				hPoint.H = &histogram.FloatHistogram{}
-			}
-			t, h := m.chunkIterator.AtFloatHistogram(hPoint.H)
-			if value.IsStaleNaN(h.Sum) {
+			hPoint.T, hPoint.H = m.chunkIterator.AtFloatHistogram(hPoint.H)
+			if value.IsStaleNaN(hPoint.H.Sum) {
 				// Range vectors ignore stale markers
 				// https://github.com/prometheus/prometheus/issues/3746#issuecomment-361572859
 				// We have to remove the last point since we didn't actually use it, and NextPoint already allocated it.
 				histograms.RemoveLastPoint()
 				continue
 			}
-			hPoint.T = t
 
 			if t >= rangeEnd {
 				return nil
