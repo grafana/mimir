@@ -856,6 +856,8 @@ func TestFormatRequestHeaders(t *testing.T) {
 	fields := formatRequestHeaders(&h, []string{"X-Header-To-Log", "X-Header-Not-Present"})
 
 	expected := []interface{}{
+		"header_cache_control",
+		"",
 		"header_x_header_to_log",
 		"i should be logged!",
 	}
