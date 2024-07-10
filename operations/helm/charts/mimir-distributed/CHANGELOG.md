@@ -34,6 +34,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Memcached: Update to Memcached 1.6.28 and memcached-exporter 0.14.4. #8557
 * [ENHANCEMENT] Add missing fields in multiple topology spread constraints. #8533
 * [BUGFIX] Add missing container security context to run `continuous-test` under the restricted security policy. #8653
+* [ENHANCEMENT] Add features present in the grafana agent helm chart that aren't available in the mimir grafana agent section. #8670
 
 ## 5.4.0-rc.0
 
