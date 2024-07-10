@@ -552,7 +552,7 @@ func (b *BlockBuilder) consumePartition(
 						Topic:       lastCommit.Topic,
 						Partition:   lastCommit.Partition,
 						LeaderEpoch: lastCommit.LeaderEpoch,
-						Offset:      lastCommit.At - 1, // TODO(v): lastCommit.At can we zero if there wasn't any commit yet
+						Offset:      lastCommit.At - 1, // TODO(v): lastCommit.At can be zero if there wasn't any commit yet
 					}
 				}
 			}
