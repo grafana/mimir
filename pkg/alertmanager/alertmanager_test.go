@@ -95,13 +95,8 @@ route:
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-<<<<<<< HEAD
 	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
 	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil))
-=======
-	tmpls := make([]string, 0)
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}))
->>>>>>> a35112901 (Update to use templates already in memory)
 
 	now := time.Now()
 
@@ -185,13 +180,8 @@ route:
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-<<<<<<< HEAD
 	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
 	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil))
-=======
-	tmpls := make([]string, 0)
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}))
->>>>>>> a35112901 (Update to use templates already in memory)
 
 	now := time.Now()
 	inputAlerts := []*types.Alert{
@@ -541,13 +531,8 @@ route:
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-<<<<<<< HEAD
 	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
 	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil))
-=======
-	tmpls := make([]string, 0)
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}))
->>>>>>> a35112901 (Update to use templates already in memory)
 
 	doGetReceivers := func() []alertingmodels.Receiver {
 		rr := httptest.NewRecorder()

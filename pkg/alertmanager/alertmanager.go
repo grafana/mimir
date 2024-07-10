@@ -417,21 +417,10 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-<<<<<<< HEAD
 func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, staticHeaders map[string]string) error {
 	templates := make([]io.Reader, 0, len(tmpls))
 	for _, tmpl := range tmpls {
 		templates = append(templates, strings.NewReader(tmpl.Template))
-=======
-func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []string, rawCfg string, tmplExternalURL *url.URL) error {
-	am.templatesMtx.Lock()
-	am.templates = tmpls
-	am.templatesMtx.Unlock()
-
-	tmplsReader := make([]io.Reader, len(tmpls))
-	for _, tmplString := range tmpls {
-		tmplsReader = append(tmplsReader, strings.NewReader(tmplString))
->>>>>>> 1d1df980c (Use lock around templates)
 	}
 
 	tmpl, err := loadTemplates(templates, WithCustomFunctions(am.cfg.UserID))
