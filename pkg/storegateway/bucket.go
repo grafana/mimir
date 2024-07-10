@@ -279,7 +279,6 @@ func (s *BucketStore) stop(err error) error {
 		}
 	}
 
-	s.indexReaderPool.Close()
 	return errs.Err()
 }
 
