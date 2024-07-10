@@ -234,6 +234,113 @@ func TestIngester_Start(t *testing.T) {
 	})
 }
 
+func TestIngester_PushToStorage_DeterministicOOOSamplesIngestionWithIngestStorage(t *testing.T) {
+	const (
+		metricName             = "series_1"
+		clashingOOOTimestamp   = 1100
+		firstClashingOOOValue  = 10
+		secondClashingOOOValue = 11
+	)
+
+	writeSamples1 := []mimirpb.Sample{
+		// In-order sample.
+		{TimestampMs: 2000, Value: 20},
+
+		// OOO samples.
+		{TimestampMs: 1001, Value: 1},
+		{TimestampMs: 1002, Value: 1},
+		{TimestampMs: 1003, Value: 1},
+		{TimestampMs: 1004, Value: 1},
+		{TimestampMs: clashingOOOTimestamp, Value: firstClashingOOOValue},
+
+		// OOO chunk cut.
+		{TimestampMs: clashingOOOTimestamp, Value: secondClashingOOOValue},
+	}
+
+	writeSamples2 := []mimirpb.Sample{
+		// In-order sample.
+		{TimestampMs: 2000, Value: 20},
+
+		// OOO samples.
+		{TimestampMs: 1004, Value: 1},
+		{TimestampMs: clashingOOOTimestamp, Value: firstClashingOOOValue},
+		{TimestampMs: clashingOOOTimestamp, Value: secondClashingOOOValue},
+	}
+
+	for testIdx, writeSamples := range [][]mimirpb.Sample{writeSamples1, writeSamples2} {
+		t.Run(fmt.Sprintf("Test case %d", testIdx), func(t *testing.T) {
+			var (
+				cfg    = defaultIngesterTestConfig(t)
+				limits = defaultLimitsTestConfig()
+				reg    = prometheus.NewRegistry()
+				ctx    = context.Background()
+			)
+
+			// Configures a small OOO capacity so that OOO chunks are cut every few OOO samples.
+			cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax = 5
+			limits.IngestStorageReadConsistency = api.ReadConsistencyStrong
+			limits.OutOfOrderTimeWindow = model.Duration(time.Hour)
+
+			writeReq := &mimirpb.WriteRequest{
+				Timeseries: []mimirpb.PreallocTimeseries{
+					{
+						TimeSeries: &mimirpb.TimeSeries{
+							Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, metricName)),
+							Samples: writeSamples,
+						},
+					},
+				},
+				Source: mimirpb.API,
+			}
+
+			// Create the ingester.
+			overrides, err := validation.NewOverrides(limits, nil)
+			require.NoError(t, err)
+			ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
+
+			// Start the ingester.
+			require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+			})
+
+			// Wait until the ingester is healthy.
+			test.Poll(t, 1*time.Second, 1, func() interface{} {
+				return ingester.lifecycler.HealthyInstancesCount()
+			})
+
+			// Create a Kafka writer and then write a series.
+			writer := ingest.NewWriter(cfg.IngestStorageConfig.KafkaConfig, log.NewNopLogger(), nil)
+			require.NoError(t, services.StartAndAwaitRunning(ctx, writer))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, writer))
+			})
+
+			partitionID, err := ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
+			require.NoError(t, err)
+			require.NoError(t, writer.WriteSync(ctx, partitionID, userID, writeReq))
+
+			// Ensure the query will eventually terminate.
+			queryCtx, cancel := context.WithTimeout(user.InjectOrgID(ctx, userID), 5*time.Second)
+			defer cancel()
+
+			queryRes, _, err := runTestQuery(queryCtx, t, ingester, labels.MatchEqual, labels.MetricName, metricName)
+			require.NoError(t, err)
+			require.Len(t, queryRes, 1)
+
+			// Find the value for the timestamp with clashing samples.
+			var actualValues []model.SampleValue
+			for _, sample := range queryRes[0].Values {
+				if sample.Timestamp == clashingOOOTimestamp {
+					actualValues = append(actualValues, sample.Value)
+				}
+			}
+
+			assert.Equal(t, []model.SampleValue{firstClashingOOOValue}, actualValues)
+		})
+	}
+}
+
 func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 	const (
 		metricName = "series_1"
