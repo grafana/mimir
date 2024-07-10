@@ -75,7 +75,14 @@ func (d *Distributor) isQuorumWritePath(p string) bool {
 }
 
 func (d *Distributor) isUnaryWritePath(p string) bool {
-	return strings.HasSuffix(p, "/silences")
+	if strings.HasSuffix(p, "/silences") {
+		return true
+	}
+	if strings.HasSuffix(p, "/api/v1/grafana/templates/test") {
+		return true
+	}
+
+	return false
 }
 
 func (d *Distributor) isUnaryDeletePath(p string) bool {
