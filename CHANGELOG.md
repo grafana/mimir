@@ -73,6 +73,8 @@
 
 ### Mimirtool
 
+* [CHANGE] Analyze Rules: Count recording rules used in rules group as used. #6133
+
 ### Mimir Continuous Test
 
 * [CHANGE] Use test metrics that do not pass through 0 to make identifying incorrect results easier. #8630
