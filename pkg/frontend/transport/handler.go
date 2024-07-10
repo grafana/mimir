@@ -41,6 +41,8 @@ const (
 	// StatusClientClosedRequest is the status code for when a client request cancellation of an http request
 	StatusClientClosedRequest = 499
 	ServiceTimingHeaderName   = "Server-Timing"
+	cacheControlHeader        = "Cache-Control"
+	cacheControlLogField      = "header_cache_control"
 )
 
 var (
@@ -70,6 +72,7 @@ func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
 // all other logic is inside the RoundTripper.
 type Handler struct {
 	cfg          HandlerConfig
+	headersToLog []string
 	log          log.Logger
 	roundTripper http.RoundTripper
 	at           *activitytracker.ActivityTracker
@@ -92,6 +95,7 @@ type Handler struct {
 func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logger, reg prometheus.Registerer, at *activitytracker.ActivityTracker) *Handler {
 	h := &Handler{
 		cfg:          cfg,
+		headersToLog: filterHeadersToLog(cfg.LogQueryRequestHeaders),
 		log:          log,
 		roundTripper: roundTripper,
 		at:           at,
@@ -264,12 +268,9 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 		"host", r.Host,
 		"path", r.URL.Path,
 		"time_taken", queryResponseTime.String(),
-		"header_cache_control", r.Header.Get("Cache-Control"),
 	}, formatQueryString(details, queryString)...)
 
-	if len(f.cfg.LogQueryRequestHeaders) != 0 {
-		logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.cfg.LogQueryRequestHeaders)...)
-	}
+	logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.headersToLog)...)
 
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
@@ -330,7 +331,6 @@ func (f *Handler) reportQueryStats(
 		"split_queries", stats.LoadSplitQueries(),
 		"estimated_series_count", stats.GetEstimatedSeriesCount(),
 		"queue_time_seconds", stats.LoadQueueTime().Seconds(),
-		"header_cache_control", r.Header.Get("Cache-Control"),
 	}, formatQueryString(details, queryString)...)
 
 	if details != nil {
@@ -356,9 +356,7 @@ func (f *Handler) reportQueryStats(
 		logMessage = append(logMessage, "read_consistency", consistency)
 	}
 
-	if len(f.cfg.LogQueryRequestHeaders) != 0 {
-		logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.cfg.LogQueryRequestHeaders)...)
-	}
+	logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.headersToLog)...)
 
 	if queryErr == nil && queryResponseStatusCode/100 != 2 {
 		// If downstream replied with non-2xx, log this as a failure.
@@ -421,7 +419,18 @@ func paramValueFromDetails(details *querymiddleware.QueryDetails, paramName stri
 	return ""
 }
 
+func filterHeadersToLog(headersToLog []string) (filtered []string) {
+	for _, h := range headersToLog {
+		if strings.EqualFold(h, cacheControlHeader) {
+			continue
+		}
+		filtered = append(filtered, h)
+	}
+	return filtered
+}
+
 func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []any) {
+	fields = append(fields, cacheControlLogField, h.Get(cacheControlHeader))
 	for _, s := range headersToLog {
 		if v := h.Get(s); v != "" {
 			fields = append(fields, fmt.Sprintf("header_%s", strings.ReplaceAll(strings.ToLower(s), "-", "_")), v)

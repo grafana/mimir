@@ -571,6 +571,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 		name                         string
 		requestFormFields            []string
 		requestAdditionalHeaders     map[string]string
+		logQueryRequestHeaders       []string
 		setQueryDetails              func(*querymiddleware.QueryDetails)
 		expectedLoggedFields         map[string]string
 		expectedMissingFields        []string
@@ -654,6 +655,44 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 				"header_cache_control":     "no-store",
 			},
 		},
+		{
+			name:              "header logging cache control header not logged twice upper case",
+			requestFormFields: []string{},
+			requestAdditionalHeaders: map[string]string{
+				"Cache-Control": "no-store",
+				"X-Form-ID":     "12345",
+			},
+			logQueryRequestHeaders: []string{"Cache-Control", "X-Form-ID"},
+			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+				d.ResultsCacheMissBytes = 200
+				d.ResultsCacheHitBytes = 0
+			},
+			expectedLoggedFields: map[string]string{
+				"results_cache_miss_bytes": "200",
+				"results_cache_hit_bytes":  "0",
+				"header_cache_control":     "no-store",
+				"header_x_form_id":         "12345",
+			},
+		},
+		{
+			name:              "header logging cache control header not logged twice - lower case",
+			requestFormFields: []string{},
+			requestAdditionalHeaders: map[string]string{
+				"Cache-Control": "no-store",
+				"x-form-id":     "12345",
+			},
+			logQueryRequestHeaders: []string{"cache-control", "X-Form-ID"},
+			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+				d.ResultsCacheMissBytes = 200
+				d.ResultsCacheHitBytes = 0
+			},
+			expectedLoggedFields: map[string]string{
+				"results_cache_miss_bytes": "200",
+				"results_cache_hit_bytes":  "0",
+				"header_cache_control":     "no-store",
+				"header_x_form_id":         "12345",
+			},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			activityFile := filepath.Join(t.TempDir(), "activity-tracker")
@@ -672,7 +711,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 			t.Cleanup(func() { require.NoError(t, at.Close()) })
 
 			logger := &testLogger{}
-			handler := NewHandler(HandlerConfig{QueryStatsEnabled: true, MaxBodySize: 1024}, roundTripper, logger, reg, at)
+			handler := NewHandler(HandlerConfig{QueryStatsEnabled: true, MaxBodySize: 1024, LogQueryRequestHeaders: tt.logQueryRequestHeaders}, roundTripper, logger, reg, at)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/query", nil)
 			for header, value := range tt.requestAdditionalHeaders {
@@ -692,6 +731,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 			require.Equal(t, []byte("{}"), responseData)
 
 			require.Len(t, logger.logMessages, 1)
+			require.Empty(t, logger.duplicates)
 
 			msg := logger.logMessages[0]
 			for field, expectedVal := range tt.expectedLoggedFields {
@@ -784,6 +824,7 @@ func TestHandler_ActiveSeriesWriteTimeout(t *testing.T) {
 
 type testLogger struct {
 	logMessages []map[string]interface{}
+	duplicates  []string
 }
 
 func (t *testLogger) Log(keyvals ...interface{}) error {
@@ -797,7 +838,9 @@ func (t *testLogger) Log(keyvals ...interface{}) error {
 	for i := 0; i < entryCount; i++ {
 		name := keyvals[2*i].(string)
 		value := keyvals[2*i+1]
-
+		if _, ok := msg[name]; ok {
+			t.duplicates = append(t.duplicates, name)
+		}
 		msg[name] = value
 	}
 
