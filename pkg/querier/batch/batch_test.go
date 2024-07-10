@@ -121,8 +121,8 @@ func TestNewChunkMergeIterator_ShouldGuaranteeDeterminismIteratingTwoSamplesWith
 			model.SamplePair{Timestamp: 1720588152848, Value: 169084.077208}, // Clashing sample.
 		),
 		createEncodedChunk(t, metric,
-			model.SamplePair{Timestamp: 1720588148418, Value: 23084.411222},
 			model.SamplePair{Timestamp: 1720588092946, Value: 875741.198983},
+			model.SamplePair{Timestamp: 1720588148418, Value: 23084.411222},
 			model.SamplePair{Timestamp: 1720588152848, Value: 30455667.651284}, // Clashing sample.
 		),
 	})
