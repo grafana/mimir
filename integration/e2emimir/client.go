@@ -1490,7 +1490,7 @@ func (c *Client) TestTemplatesExperimental(ctx context.Context, ttConf alertingN
 
 	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
 	if err != nil {
-		return nil, fmt.Errorf("error creating request: %v", err)
+		return nil, fmt.Errorf("error creating request: %s", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
@@ -1504,7 +1504,7 @@ func (c *Client) TestTemplatesExperimental(ctx context.Context, ttConf alertingN
 	}
 
 	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("testing templates failed with status %d and error %v", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("testing templates failed with status %d and error %s", resp.StatusCode, string(body))
 	}
 
 	decoded := alertingNotify.TestTemplatesResults{}
