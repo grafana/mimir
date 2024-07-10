@@ -137,6 +137,8 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	return seriesMetadata, nil
 }
 
+// seriesToGroupLabelsFunc returns a function that computes the output group labels for the given
+// input series. The output group labels are returned as both a labels.Labels and a string.
 func (a *Aggregation) seriesToGroupLabelsFunc() func(labels.Labels) (labels.Labels, string) {
 	if a.Without {
 		lb := labels.NewBuilder(labels.EmptyLabels())
