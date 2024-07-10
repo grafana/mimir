@@ -92,8 +92,8 @@ func TestBlockBuilder(t *testing.T) {
 	bb, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides)
 	require.NoError(t, err)
 
-	bb.tsdbBuilder = func() builder {
-		testBuilder := newTestTSDBBuilder(cfg, overrides)
+	bb.tsdbBuilder = func(part int32) builder {
+		testBuilder := newTestTSDBBuilder(cfg, overrides, part)
 		testBuilder.compactFunc = func() {
 			compactCalled <- struct{}{}
 		}
@@ -442,8 +442,8 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 	bb, err := New(cfg, logger, prometheus.NewPedanticRegistry(), overrides)
 	require.NoError(t, err)
 	compactCalled := make(chan struct{}, 10)
-	bb.tsdbBuilder = func() builder {
-		testBuilder := newTestTSDBBuilder(cfg, overrides)
+	bb.tsdbBuilder = func(part int32) builder {
+		testBuilder := newTestTSDBBuilder(cfg, overrides, part)
 		testBuilder.compactFunc = func() {
 			compactCalled <- struct{}{}
 		}
@@ -512,9 +512,11 @@ type testTSDBBuilder struct {
 	compactFunc func()
 }
 
-func newTestTSDBBuilder(cfg Config, limits *validation.Overrides) testTSDBBuilder {
+func newTestTSDBBuilder(cfg Config, limits *validation.Overrides, part int32) testTSDBBuilder {
+	dbCfg := cfg.BlocksStorageConfig
+	dbCfg.TSDB.Dir = path.Join(dbCfg.TSDB.Dir, string(part))
 	return testTSDBBuilder{
-		tsdbBuilder: newTSDBBuilder(log.NewNopLogger(), limits, cfg.BlocksStorageConfig),
+		tsdbBuilder: newTSDBBuilder(log.NewNopLogger(), limits, dbCfg),
 	}
 }
 

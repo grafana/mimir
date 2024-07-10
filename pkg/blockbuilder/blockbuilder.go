@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path"
 	"sync"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/plugin/kprom"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -44,7 +46,7 @@ type BlockBuilder struct {
 	metrics blockBuilderMetrics
 
 	// for testing
-	tsdbBuilder func() builder
+	tsdbBuilder func(part int32) builder
 
 	// mu protects the following fields
 	mu               sync.Mutex
@@ -66,8 +68,10 @@ func New(
 		metrics:  newBlockBuilderMetrics(reg),
 	}
 
-	b.tsdbBuilder = func() builder {
-		return newTSDBBuilder(b.logger, b.limits, b.cfg.BlocksStorageConfig)
+	b.tsdbBuilder = func(part int32) builder {
+		dbCfg := b.cfg.BlocksStorageConfig
+		dbCfg.TSDB.Dir = path.Join(dbCfg.TSDB.Dir, string(part))
+		return newTSDBBuilder(b.logger, b.limits, dbCfg)
 	}
 
 	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorageConfig.Bucket, "blockbuilder", logger, reg)
@@ -271,14 +275,11 @@ func cycleEndAtStartup(interval, buffer time.Duration) time.Time {
 func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time) error {
 	defer func(t time.Time) {
 		b.metrics.consumeCycleDuration.Observe(time.Since(t).Seconds())
+		// Make sure to unblock rebalance of the group after the partitions were.
+		b.kafkaClient.AllowRebalance()
 	}(time.Now())
 
 	kadmClient := kadm.NewClient(b.kafkaClient)
-
-	// We start a new cycle with always resetting the partitions queue's cursor.
-	b.mu.Lock()
-	b.parts.reset()
-	b.mu.Unlock()
 
 	defer func() {
 		b.mu.Lock()
@@ -290,33 +291,30 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 		}
 	}()
 
-	for ctx.Err() == nil {
-		b.mu.Lock()
-		// The activePartCtx context is cancelled to let the processing of this partition to bail out
-		// if the partition was lost after the rebalancing.
-		activePartCtx, cancel := context.WithCancelCause(ctx)
-		b.cancelActivePart = cancel
+	b.mu.Lock()
+	// We start a new cycle with always resetting the partitions queue's cursor.
+	b.parts.reset()
 
-		part := b.parts.next()
-		b.mu.Unlock()
+	// The activePartCtx context is cancelled to let the processing of this partition to bail out
+	// if the partition was lost after the rebalancing.
+	activePartCtx, cancel := context.WithCancelCause(ctx)
+	b.cancelActivePart = cancel
 
-		if part < 0 {
-			return nil
-		}
+	parts := b.parts.collect()
+	b.mu.Unlock()
 
-		level.Debug(b.logger).Log("msg", "next consume cycle", "part", part)
-
-		lags, err := kadmClient.Lag(activePartCtx, b.cfg.Kafka.ConsumerGroup)
-		if err != nil {
-			return fmt.Errorf("get consumer group lag: %w", err)
-		} else if err := lags.Error(); err != nil {
-			return fmt.Errorf("get consumer group lag: %w", err)
-		}
-
+	consumers := map[int32]*pconsumer{}
+	lags, err := kadmClient.Lag(activePartCtx, b.cfg.Kafka.ConsumerGroup)
+	if err != nil {
+		return fmt.Errorf("get consumer group lag: %w", err)
+	} else if err := lags.Error(); err != nil {
+		return fmt.Errorf("get consumer group lag: %w", err)
+	}
+	for _, part := range parts {
 		groupLag := lags[b.cfg.Kafka.ConsumerGroup].Lag
 		lag, ok := groupLag.Lookup(b.cfg.Kafka.Topic, part)
 		if !ok {
-			continue
+			return nil
 		}
 
 		if lag.Lag <= 0 {
@@ -333,32 +331,140 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 			}
 			continue
 		}
+		fmt.Println("CONSUMER", part)
 
-		b.metrics.consumerLag.WithLabelValues(lag.Topic, fmt.Sprintf("%d", lag.Partition)).Set(float64(lag.Lag))
-
-		// We look at the commit offset timestamp to determine how far behind we are lagging
-		// relative to the cycleEnd. We will consume the partition in parts accordingly.
-		offset := lag.Commit
-		commitRecTs, seenTillTs, lastBlockEnd, err := unmarshallCommitMeta(offset.Metadata)
-		if err != nil {
-			// If there is an error in unmarshalling the metadata, treat it as if
-			// we have no commit. There is no reason to stop the cycle for this.
-			level.Warn(b.logger).Log("msg", "error unmarshalling commit metadata", "err", err, "part", part, "offset", offset.At, "metadata", offset.Metadata)
-		}
-
-		pl := partitionInfo{
-			Partition:    part,
-			Lag:          lag.Lag,
-			Commit:       offset,
-			CommitRecTs:  commitRecTs,
-			SeenTillTs:   seenTillTs,
-			LastBlockEnd: lastBlockEnd,
-		}
-		if err := b.nextConsumeCycle(activePartCtx, pl, cycleEnd); err != nil {
-			level.Error(b.logger).Log("msg", "failed to consume partition", "err", err, "part", part)
+		consumers[part] = &pconsumer{
+			partition: 0,
+			lag:       lag,     // Used by the record consumer
+			lag2:      lag.Lag, // Used by the fetcher
+			quit:      make(chan struct{}),
+			recs:      make(chan []*kgo.Record, 5000),
 		}
 	}
-	return nil
+
+	fetcherDone := make(chan struct{})
+	go func() {
+		defer func() {
+			close(fetcherDone)
+		}()
+		// fetch records and put in channel
+		for {
+			//if err := context.Cause(ctx); err != nil {
+			//	return pl, err
+			//}
+
+			// Limit the time the consumer blocks waiting for a new batch. If not set, the consumer will hang
+			// when it lands on an inactive partition.
+			ctx1, cancel := context.WithTimeout(ctx, b.cfg.Kafka.PollTimeout)
+			fetches := b.kafkaClient.PollFetches(ctx1)
+			cancel()
+
+			if fetches.IsClientClosed() {
+				level.Warn(b.logger).Log("msg", "client closed when fetching records")
+				//return pl, nil
+			}
+
+			fetches.EachError(func(_ string, _ int32, err error) {
+				if !errors.Is(err, context.DeadlineExceeded) {
+					level.Error(b.logger).Log("msg", "failed to fetch records", "err", err)
+					b.metrics.fetchErrors.Inc()
+				}
+			})
+
+			numRecs := 0
+			fetches.EachPartition(func(p kgo.FetchTopicPartition) {
+				if p.Partition <= 0 {
+					return
+				}
+				c := consumers[p.Partition]
+				// If we have stopped consuming this partition, discard the records.
+				// TODO(codesome): how do we reset the offset? Will this situation happen?
+				select {
+				case <-c.quit:
+					return
+				default:
+				}
+
+				fmt.Println(c, p.Partition, p.Records)
+				if c.lag2 <= 0 {
+					// This partition is done. We likely did not pause the partition yet.
+					return
+				}
+				recLen := len(p.Records)
+				if recLen == 0 {
+					level.Warn(b.logger).Log("msg", "got empty fetches from broker", "part", p.Partition)
+					return
+				}
+				c.lag2 -= int64(recLen)
+				c.recs <- p.Records
+				numRecs += recLen
+				if c.lag2 <= 0 {
+					// We consumed all records that was there at the start.
+					// New records will be consumed in the next cycle.
+					close(c.quit)
+				}
+			})
+
+			b.metrics.fetchRecordsTotal.Add(float64(numRecs))
+		}
+	}()
+
+	eg, ctx := errgroup.WithContext(ctx)
+	//eg.SetLimit(2)
+	for part, pc := range consumers {
+		if part < 0 {
+			break
+		}
+		fmt.Println(part)
+
+		eg.Go(func() error {
+			// TopicPartition to resume consuming on this iteration.
+			// Note: pause/resume is a client-local state. On restart or a crash, the client will be assigned its share of partitions,
+			// during consumer group's rebalancing, and it will continue consuming as usual.
+			tp := map[string][]int32{b.cfg.Kafka.Topic: {part}}
+			b.kafkaClient.ResumeFetchPartitions(tp)
+			defer b.kafkaClient.PauseFetchPartitions(tp)
+
+			level.Debug(b.logger).Log("msg", "next consume cycle", "part", part)
+
+			b.metrics.consumerLag.WithLabelValues(pc.lag.Topic, fmt.Sprintf("%d", part)).Set(float64(pc.lag.Lag))
+
+			// We look at the commit offset timestamp to determine how far behind we are lagging
+			// relative to the cycleEnd. We will consume the partition in parts accordingly.
+			offset := pc.lag.Commit
+			commitRecTs, seenTillTs, lastBlockEnd, err := unmarshallCommitMeta(offset.Metadata)
+			if err != nil {
+				// If there is an error in unmarshalling the metadata, treat it as if
+				// we have no commit. There is no reason to stop the cycle for this.
+				level.Warn(b.logger).Log("msg", "error unmarshalling commit metadata", "err", err, "part", part, "offset", offset.At, "metadata", offset.Metadata)
+			}
+
+			pl := partitionInfo{
+				Partition:    part,
+				Lag:          pc.lag.Lag,
+				Commit:       offset,
+				CommitRecTs:  commitRecTs,
+				SeenTillTs:   seenTillTs,
+				LastBlockEnd: lastBlockEnd,
+				quit:         pc.quit,
+				recs:         pc.recs,
+			}
+			if err := b.nextConsumeCycle(activePartCtx, pl, cycleEnd, pc); err != nil {
+				level.Error(b.logger).Log("msg", "failed to consume partition", "err", err, "part", part)
+			}
+			select {
+			case <-pl.quit:
+			default:
+				close(pl.quit)
+			}
+
+			return nil
+		})
+	}
+
+	err = eg.Wait()
+	<-fetcherDone
+	return err
 }
 
 type partitionInfo struct {
@@ -369,9 +475,12 @@ type partitionInfo struct {
 	CommitRecTs  int64
 	SeenTillTs   int64
 	LastBlockEnd int64
+
+	quit chan struct{}
+	recs chan []*kgo.Record
 }
 
-func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, pl partitionInfo, cycleEnd time.Time) error {
+func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, pl partitionInfo, cycleEnd time.Time, pc *pconsumer) error {
 	// TODO(codesome): when we deploy it first, we will not have any kafka commit and we will
 	// be lagging. Add an option to block builder to start consuming from the end for the first rollout.
 	// 		TODO Optionally also explore a way to consume in parts without the presence of commit
@@ -416,6 +525,16 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, pl partitionInfo, c
 	return nil
 }
 
+type pconsumer struct {
+	partition int32
+	lag       kadm.GroupMemberLag
+	lag2      int64
+
+	quit chan struct{}
+	//done chan struct{}
+	recs chan []*kgo.Record
+}
+
 // consumePartition consumes records from the given partition until the cycleEnd timestamp.
 // If the partition is lagging behind, the caller of consumePartition needs to take care of
 // calling consumePartition in parts.
@@ -435,10 +554,6 @@ func (b *BlockBuilder) consumePartition(
 		lastCommit   = pl.Commit
 		lag          = pl.Lag
 	)
-
-	// Make sure to unblock rebalance of the group after the partition was consumed AND after we (potentially) committed
-	// this partition's offset to the group.
-	defer b.kafkaClient.AllowRebalance()
 
 	// TopicPartition to resume consuming on this iteration.
 	// Note: pause/resume is a client-local state. On restart or a crash, the client will be assigned its share of partitions,
@@ -469,7 +584,7 @@ func (b *BlockBuilder) consumePartition(
 			"last_seen_till", time.UnixMilli(seenTillTs), "curr_seen_till", time.UnixMilli(retPl.SeenTillTs), "compact_and_upload_dur", compactionDur)
 	}(time.Now(), lag)
 
-	builder := b.tsdbBuilder()
+	builder := b.tsdbBuilder(part)
 	defer builder.close() // TODO: handle error
 
 	level.Info(b.logger).Log(
@@ -477,100 +592,93 @@ func (b *BlockBuilder) consumePartition(
 		"cycle_end", cycleEnd, "last_block_end", time.UnixMilli(lastBlockMax), "curr_block_end", blockEndAt,
 		"last_seen_till", time.UnixMilli(seenTillTs))
 
+For:
 	for !done {
-		if err := context.Cause(ctx); err != nil {
-			return pl, err
-		}
+		select {
+		case recs := <-pl.recs:
+			for _, rec := range recs {
+				if firstRec == nil {
+					firstRec = rec
+				}
 
-		// Limit the time the consumer blocks waiting for a new batch. If not set, the consumer will hang
-		// when it lands on an inactive partition.
-		ctx1, cancel := context.WithTimeout(ctx, b.cfg.Kafka.PollTimeout)
-		fetches := b.kafkaClient.PollFetches(ctx1)
-		cancel()
+				level.Debug(b.logger).Log("msg", "process record", "offset", rec.Offset, "rec", rec.Timestamp, "last_bmax", lastBlockMax, "bmax", blockMax)
 
-		if fetches.IsClientClosed() {
-			level.Warn(b.logger).Log("msg", "client closed when fetching records")
-			return pl, nil
-		}
+				// Stop consuming after we reached the cycleEnd marker.
+				// NOTE: the timestamp of the record is when the record was produced relative to distributor's time.
+				if rec.Timestamp.After(cycleEnd) {
+					done = true
+					break For
+				}
 
-		fetches.EachError(func(_ string, _ int32, err error) {
-			if !errors.Is(err, context.DeadlineExceeded) {
-				level.Error(b.logger).Log("msg", "failed to fetch records", "part", part, "err", err)
-				b.metrics.fetchErrors.Inc()
-			}
-		})
+				lag--
 
-		numRecs := fetches.NumRecords()
-		if numRecs == 0 && lag <= 0 {
-			level.Warn(b.logger).Log("msg", "got empty fetches from broker", "part", part)
-			break
-		}
+				recProcessedBefore := rec.Timestamp.UnixMilli() <= seenTillTs
+				allSamplesProcessed, err := builder.process(ctx, rec, lastBlockMax, blockMax, recProcessedBefore)
+				if err != nil {
+					// TODO(codesome): do we just ignore this? What if it was Mimir's issue and this leading to data loss?
+					level.Error(b.logger).Log("msg", "failed to process record", "part", part, "key", string(rec.Key), "err", err)
+					continue
+				}
+				if !allSamplesProcessed && commitRec == nil {
+					// If block builder restarts, it will start consuming from the record after this from kafka.
+					// So the commit record should be the last record that was fully processed and not the
+					// first record that was not fully processed.
+					commitRec = lastRec
 
-		b.metrics.fetchRecordsTotal.Add(float64(numRecs))
-
-		recIter := fetches.RecordIter()
-		for !recIter.Done() {
-			rec := recIter.Next()
-
-			if firstRec == nil {
-				firstRec = rec
-			}
-
-			level.Debug(b.logger).Log("msg", "process record", "offset", rec.Offset, "rec", rec.Timestamp, "last_bmax", lastBlockMax, "bmax", blockMax)
-
-			// Stop consuming after we reached the cycleEnd marker.
-			// NOTE: the timestamp of the record is when the record was produced relative to distributor's time.
-			if rec.Timestamp.After(cycleEnd) {
-				done = true
-				break
-			}
-
-			lag--
-
-			recProcessedBefore := rec.Timestamp.UnixMilli() <= seenTillTs
-			allSamplesProcessed, err := builder.process(ctx, rec, lastBlockMax, blockMax, recProcessedBefore)
-			if err != nil {
-				// TODO(codesome): do we just ignore this? What if it was Mimir's issue and this leading to data loss?
-				level.Error(b.logger).Log("msg", "failed to process record", "part", part, "key", string(rec.Key), "err", err)
-				continue
-			}
-			if !allSamplesProcessed && commitRec == nil {
-				// If block builder restarts, it will start consuming from the record after this from kafka.
-				// So the commit record should be the last record that was fully processed and not the
-				// first record that was not fully processed.
-				commitRec = lastRec
-
-				// The first record itself was not fully processed. Meaning the record before
-				// this is the commit point.
-				if commitRec == nil {
-					// When the commit record does not change from the previous commit, we get nil here.
-					commitRec = &kgo.Record{
-						Timestamp:   time.UnixMilli(pl.CommitRecTs),
-						Topic:       lastCommit.Topic,
-						Partition:   lastCommit.Partition,
-						LeaderEpoch: lastCommit.LeaderEpoch,
-						Offset:      lastCommit.At - 1,
+					// The first record itself was not fully processed. Meaning the record before
+					// this is the commit point.
+					if commitRec == nil {
+						// When the commit record does not change from the previous commit, we get nil here.
+						commitRec = &kgo.Record{
+							Timestamp:   time.UnixMilli(pl.CommitRecTs),
+							Topic:       lastCommit.Topic,
+							Partition:   lastCommit.Partition,
+							LeaderEpoch: lastCommit.LeaderEpoch,
+							Offset:      lastCommit.At - 1,
+						}
 					}
 				}
+				lastRec = rec
 			}
-			lastRec = rec
+
+		case <-pl.quit:
+			break For
 		}
-
-		b.kafkaClient.AllowRebalance()
 	}
 
-	start := time.Now()
-	numBlocks, err = builder.compactAndUpload(ctx, b.blockUploaderForUser)
-	if err != nil {
-		return pl, err
+	// Even though we pause in the defer call as a fail-safe,
+	// we pause here to reduce the number of records gathering up
+	// and blocking the channel when the compaction is going on.
+	b.kafkaClient.PauseFetchPartitions(tp)
+	// Drain any new records fetched because we will reset back to
+	// the commit offset and re-fetch these records.
+For2:
+	for {
+		select {
+		case <-pl.recs:
+		default:
+			break For2
+		}
 	}
-	compactionDur = time.Since(start)
-	b.metrics.compactAndUploadDuration.WithLabelValues(fmt.Sprintf("%d", part)).Observe(compactionDur.Seconds())
 
 	// Nothing was processed.
 	if lastRec == nil && firstRec == nil {
 		return pl, nil
 	}
+
+	start := time.Now()
+	numBlocks, err = builder.compactAndUpload(ctx, b.blockUploaderForUser)
+	if err != nil {
+		// We need to consume these records again. Hence reset the offset.
+		rec := kgo.EpochOffset{
+			Epoch:  firstRec.LeaderEpoch,
+			Offset: firstRec.Offset,
+		}
+		b.seekPartition(part, rec)
+		return pl, err
+	}
+	compactionDur = time.Since(start)
+	b.metrics.compactAndUploadDuration.WithLabelValues(fmt.Sprintf("%d", part)).Observe(compactionDur.Seconds())
 
 	// If the very first record fetched was from the next cycle, i.e. no lastRec, we must rewind partition's
 	// offset and re-consume this record again on the next cycle.
