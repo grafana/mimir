@@ -265,7 +265,7 @@ The `mimir-distributed` Helm chart makes it easy for you to collect metrics and
 logs from Mimir. It assigns the correct labels for you so that the dashboards
 and alerts work. The chart uses the Grafana Agent to ship metrics to a Prometheus-compatible server and logs to a Loki or GEL (Grafana Enterprise Metrics) server.
 
-{{< docs/shared source="alloy" lookup="agent-deprecation.md" version="ALLOY_VERSION" >}}
+{{< docs/shared source="alloy" lookup="agent-deprecation.md" version="next" >}}
 
 ## Monitor the health of your Grafana Mimir cluster
 
@@ -280,7 +280,7 @@ and alerts simply work. The chart uses the Grafana Agent to ship metrics to
 a Prometheus-compatible server and logs to a Loki or GEL (Grafana Enterprise
 Metrics) server.
 
-{{< docs/shared source="alloy" lookup="agent-deprecation.md" version="ALLOY_VERSION" >}}
+{{< docs/shared source="alloy" lookup="agent-deprecation.md" version="next" >}}
 
 1. Download the Grafana Agent Operator Custom Resource Definitions (CRDs) from
    https://github.com/grafana/agent/tree/main/operations/agent-static-operator/crds

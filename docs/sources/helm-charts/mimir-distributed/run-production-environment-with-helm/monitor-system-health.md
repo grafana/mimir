@@ -23,7 +23,7 @@ refer to [Installing Grafana Mimir dashboards and alerts](https://grafana.com/do
 
 ## Configure the Grafana Agent operator via the Helm chart
 
-{{< docs/shared source="alloy" lookup="agent-deprecation.md" version="ALLOY_VERSION" >}}
+{{< docs/shared source="alloy" lookup="agent-deprecation.md" version="next" >}}
 
 In the Helm chart, you can configure where to send metrics and logs.
 You can send metrics to a Prometheus-compatible server
