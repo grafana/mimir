@@ -27,7 +27,6 @@ func TestPartitionOffsetClient_FetchLastProducedOffset(t *testing.T) {
 		numPartitions = 1
 		topicName     = "test"
 		partitionID   = int32(0)
-		pollInterval  = time.Second
 	)
 
 	var (
@@ -169,7 +168,6 @@ func TestPartitionOffsetClient_FetchPartitionStartOffset(t *testing.T) {
 		numPartitions = 1
 		topicName     = "test"
 		partitionID   = int32(0)
-		pollInterval  = time.Second
 	)
 
 	var (
