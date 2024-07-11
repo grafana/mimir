@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -106,7 +107,7 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 		kgo.OnPartitionsRevoked(b.handlePartitionsLost),
 		kgo.OnPartitionsLost(b.handlePartitionsLost),
 
-		kgo.ConsumeResetOffset(b.cfg.Kafka.ConsumerResetOffset.Offset()),
+		kgo.ConsumeResetOffset(kgo.Offset(b.cfg.Kafka.ConsumerResetOffset)),
 
 		kgo.FetchMinBytes(128),
 		kgo.FetchMaxBytes(fetchMaxBytes),
@@ -233,6 +234,7 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 	cycleEnd := cycleEndAtStartup(b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
 	err := b.NextConsumeCycle(ctx, cycleEnd)
 	if err != nil {
+		b.metrics.consumeCycleFailures.Inc()
 		return err
 	}
 
@@ -272,6 +274,7 @@ func cycleEndAtStartup(interval, buffer time.Duration) time.Time {
 // in this cycle. That is, Kafka records produced after the mark will be consumed in the next cycle.
 func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time) error {
 	defer func(t time.Time) {
+		b.metrics.consumeCyclesTotal.Inc()
 		b.metrics.consumeCycleDuration.Observe(time.Since(t).Seconds())
 	}(time.Now())
 
@@ -790,6 +793,11 @@ func (cfg *KafkaConfig) Validate() error {
 	return nil
 }
 
+const (
+	kafkaOffsetStart = "start"
+	kafkaOffsetEnd   = "end"
+)
+
 type kafkaOffset kgo.Offset
 
 func newKafkaOffsetValue(val kgo.Offset, p *kafkaOffset) *kafkaOffset {
@@ -800,22 +808,32 @@ func newKafkaOffsetValue(val kgo.Offset, p *kafkaOffset) *kafkaOffset {
 func (k *kafkaOffset) Set(s string) error {
 	offset := kgo.NewOffset()
 	switch s {
-	case "start":
+	case kafkaOffsetStart:
 		*k = kafkaOffset(offset.AtStart())
-	case "end":
+		return nil
+	case kafkaOffsetEnd:
 		*k = kafkaOffset(offset.AtEnd())
-	default:
-		d, err := time.ParseDuration(s)
-		if err != nil {
-			return fmt.Errorf("parse relative offset duration: %w", err)
-		}
+		return nil
+	}
+
+	if millisec, _ := strconv.ParseInt(s, 10, 64); millisec > 1e12 {
+		// The value is a millisecond timestamp.
+		*k = kafkaOffset(offset.AfterMilli(millisec))
+		return nil
+	}
+
+	if d, err := time.ParseDuration(s); err == nil {
+		// The value is an interval, relative to now.
 		if d > 0 {
 			// Convert "1h" to "-1h" for simplicity.
 			d = -d
 		}
-		*k = kafkaOffset(offset.AfterMilli(time.Now().Add(d).UnixMilli()))
+		millisec := time.Now().Add(d).UnixMilli()
+		*k = kafkaOffset(offset.AfterMilli(millisec))
+		return nil
 	}
-	return nil
+
+	return fmt.Errorf("parse kafka offset: unsupported value %q", s)
 }
 
 func (k *kafkaOffset) String() string {
@@ -823,15 +841,15 @@ func (k *kafkaOffset) String() string {
 	zero := kgo.NewOffset()
 	switch *v {
 	case zero.AtStart():
-		return "start"
+		return kafkaOffsetStart
 	case zero.AtEnd():
-		return "end"
+		return kafkaOffsetEnd
 	}
 	return v.String()
 }
 
-func (k *kafkaOffset) Offset() kgo.Offset {
-	return (kgo.Offset)(*k)
+func (k *kafkaOffset) MarshalYAML() (any, error) {
+	return k.String(), nil
 }
 
 func (k *kafkaOffset) UnmarshalYAML(unmarshal func(any) error) error {
@@ -840,10 +858,6 @@ func (k *kafkaOffset) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 	return k.Set(s)
-}
-
-func (k *kafkaOffset) MarshalYAML() (any, error) {
-	return k.String(), nil
 }
 
 type kafkaLogger struct {

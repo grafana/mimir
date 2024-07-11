@@ -8,8 +8,9 @@ import (
 )
 
 type blockBuilderMetrics struct {
-	consumeCycleDuration     prometheus.Histogram
+	consumeCyclesTotal       prometheus.Counter
 	consumeCycleFailures     prometheus.Counter
+	consumeCycleDuration     prometheus.Histogram
 	processPartitionDuration *prometheus.HistogramVec
 	compactAndUploadDuration *prometheus.HistogramVec
 	fetchRecordsTotal        prometheus.Counter
@@ -21,6 +22,10 @@ type blockBuilderMetrics struct {
 func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 	var m blockBuilderMetrics
 
+	m.consumeCyclesTotal = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_blockbuilder_consume_cycles_total",
+		Help: "Total number of consume cycles.",
+	})
 	m.consumeCycleFailures = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_blockbuilder_consume_cycle_failed_total",
 		Help: "Total number of failed consume cycles.",
