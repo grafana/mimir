@@ -178,8 +178,8 @@ func (s *OpenTelemetrySpanBridge) addEvent(name string, attributes []attribute.K
 	s.logFieldWithAttributes(log.Event(name), attributes)
 }
 
-// AddLink adds a link.
-func (s *OpenTelemetrySpanBridge) AddLink(link trace.Link) {
+// AddLink implements trace.Span.
+func (s *OpenTelemetrySpanBridge) AddLink(_ trace.Link) {
 	// Ignored: OpenTracing only lets you link spans together at creation time.
 }
 
