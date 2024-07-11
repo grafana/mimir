@@ -307,4 +307,4 @@ replace github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc
 replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240625192351-66ec17e3aa45
 
 // Replace goautoneg with a fork until https://github.com/twmb/franz-go/pull/775 is merged
-replace github.com/twmb/franz-go => github.com/pracucci/franz-go v0.0.0-20240711165048-831cca07c9a4
+replace github.com/twmb/franz-go/pkg/kadm => github.com/pracucci/franz-go/pkg/kadm v0.0.0-20240711165048-831cca07c9a4
