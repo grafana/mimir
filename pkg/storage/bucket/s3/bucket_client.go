@@ -86,4 +86,5 @@ func newS3Config(cfg Config) (s3.Config, error) {
 		SignatureV2: cfg.SignatureVersion == SignatureVersionV2,
 		STSEndpoint: cfg.STSEndpoint,
 	}, nil
+
 }

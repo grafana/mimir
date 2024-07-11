@@ -129,8 +129,9 @@ type Config struct {
 	SendContentMd5       bool                `yaml:"send_content_md5" category:"experimental"`
 	STSEndpoint          string              `yaml:"sts_endpoint"`
 
-	SSE  SSEConfig  `yaml:"sse"`
-	HTTP HTTPConfig `yaml:"http"`
+	SSE         SSEConfig   `yaml:"sse"`
+	HTTP        HTTPConfig  `yaml:"http"`
+	TraceConfig TraceConfig `yaml:"trace"`
 }
 
 // RegisterFlags registers the flags for s3 storage with the provided prefix
@@ -157,6 +158,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.STSEndpoint, prefix+"s3.sts-endpoint", "", "Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.")
 	cfg.SSE.RegisterFlagsWithPrefix(prefix+"s3.sse.", f)
 	cfg.HTTP.RegisterFlagsWithPrefix(prefix, f)
+	cfg.TraceConfig.RegisterFlagsWithPrefix(prefix+"s3.trace.", f)
 }
 
 // Validate config and returns error on failure
@@ -267,6 +269,14 @@ func parseKMSEncryptionContext(data string) (map[string]string, error) {
 	decoded := map[string]string{}
 	err := errors.Wrap(json.Unmarshal([]byte(data), &decoded), "unable to parse KMS encryption context")
 	return decoded, err
+}
+
+type TraceConfig struct {
+	Enable bool `yaml:"enable" category:"advanced"`
+}
+
+func (cfg *TraceConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.BoolVar(&cfg.Enable, prefix+"enable", false, "If enabled, low-level S3 HTTP operation info will be logged.")
 }
 
 // bucketLookupTypeValue is an adapter between s3.BucketLookupType and flag.Value.
