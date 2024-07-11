@@ -111,14 +111,14 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 
 	for seriesIdx, series := range innerSeries {
 		groupLabelsString := groupLabelsStringFunc(series.Labels)
-		g, groupExists := groups[groupLabelsString]
+		g, groupExists := groups[string(groupLabelsString)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
 
 		if !groupExists {
 			g.labels = groupLabelsFunc(series.Labels)
 			g.group = groupPool.Get()
 			g.group.remainingSeriesCount = 0
 
-			groups[groupLabelsString] = g
+			groups[string(groupLabelsString)] = g
 		}
 
 		g.group.remainingSeriesCount++
@@ -141,24 +141,27 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 }
 
 // seriesToGroupLabelsStringFunc returns a function that computes a string representation of the output group labels for the given input series.
-func (a *Aggregation) seriesToGroupLabelsStringFunc() func(labels.Labels) string {
+//
+// The returned function returns a byte slice rather than a string to make it possible to avoid unnecessarily allocating a string.
+func (a *Aggregation) seriesToGroupLabelsStringFunc() func(labels.Labels) []byte {
 	// Why not just use the labels.Labels computed by seriesToGroupLabelsFunc() and call String() on it?
 	//
 	// Most of the time, we don't need the labels.Labels instance, as we expect there are far fewer output groups than input series,
 	// and we only need the labels.Labels instance once per output group.
 	// However, we always need to compute the string representation for each input series, so we can look up its corresponding
-	// output group.
+	// output group. And we can do this without allocating a string by returning just the bytes that make up the string.
 	// There's not much point in using the hash of the group labels as we always need the string (or the labels.Labels) to ensure
 	// there are no hash collisions - so we might as well just go straight to the string representation.
 	//
-	// Furthermore, labels.Labels.String() doesn't allow us to reuse the buffer used when producing the string, whereas this method does.
-	// This saves us allocating a new buffer for every single input series, which has a noticeable performance impact.
+	// Furthermore, labels.Labels.String() doesn't allow us to reuse the buffer used when producing the string or to return a byte slice,
+	// whereas this method does.
+	// This saves us allocating a new buffer and string for every single input series, which has a noticeable performance impact.
 
 	if a.Without {
 		b := make([]byte, 0, 1024)
 		buf := bytes.NewBuffer(b)
 
-		return func(l labels.Labels) string {
+		return func(l labels.Labels) []byte {
 			buf.Reset()
 			nextGroupingIndex := 0
 			outputLabelCount := 0
@@ -186,19 +189,22 @@ func (a *Aggregation) seriesToGroupLabelsStringFunc() func(labels.Labels) string
 				}
 			})
 
-			return buf.String()
+			return buf.Bytes()
 		}
 	}
 
 	if len(a.Grouping) == 0 {
-		return func(l labels.Labels) string {
-			return ""
+		// We're grouping all input series into a single group with no labels.
+		var b []byte
+
+		return func(_ labels.Labels) []byte {
+			return b
 		}
 	}
 
 	b := make([]byte, 0, 1024)
 	buf := bytes.NewBuffer(b)
-	return func(l labels.Labels) string {
+	return func(l labels.Labels) []byte {
 		buf.Reset()
 		outputLabelCount := 0
 
@@ -219,7 +225,7 @@ func (a *Aggregation) seriesToGroupLabelsStringFunc() func(labels.Labels) string
 			outputLabelCount++
 		}
 
-		return buf.String()
+		return buf.Bytes()
 	}
 }
 

@@ -195,7 +195,7 @@ func TestAggregation_GroupLabelling(t *testing.T) {
 			stringFunc := aggregator.seriesToGroupLabelsStringFunc()
 
 			actualLabels := labelsFunc(testCase.inputSeries)
-			actualString := stringFunc(testCase.inputSeries)
+			actualString := string(stringFunc(testCase.inputSeries))
 
 			require.Equal(t, testCase.expectedOutputSeries, actualLabels)
 			require.Equal(t, testCase.expectedOutputSeries.String(), "{"+actualString+"}")
