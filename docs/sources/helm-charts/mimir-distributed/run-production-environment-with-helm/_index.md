@@ -259,19 +259,6 @@ The PodSecurityPolicy resource enforces this setting.
 To monitor the health of your Grafana Mimir cluster, which is also known as
 _metamonitoring_, you can use ready-made Grafana dashboards, and Prometheus
 alerting and recording rules.
-For more information, see [Installing Grafana Mimir dashboards and alerts].
-
-The `mimir-distributed` Helm chart makes it easy for you to collect metrics and
-logs from Mimir. It assigns the correct labels for you so that the dashboards
-and alerts work. The chart uses the Grafana Agent to ship metrics to a Prometheus-compatible server and logs to a Loki or GEL (Grafana Enterprise Metrics) server.
-
-{{< docs/shared source="alloy" lookup="agent-deprecation.md" version="next" >}}
-
-## Monitor the health of your Grafana Mimir cluster
-
-To monitor the health of your Grafana Mimir cluster, which is also known as
-_metamonitoring_, you can use ready-made Grafana dashboards, and Prometheus
-alerting and recording rules.
 For more information, see [Installing Grafana Mimir dashboards and alerts](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/installing-dashboards-and-alerts/).
 
 The `mimir-distributed` Helm chart makes it easy for you to collect metrics and
