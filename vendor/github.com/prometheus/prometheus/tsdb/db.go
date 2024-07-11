@@ -1232,11 +1232,21 @@ type dbAppender struct {
 	db *DB
 }
 
-var _ storage.GetRef = dbAppender{}
+var (
+	_ storage.GetRef     = dbAppender{}
+	_ storage.GetRefFunc = dbAppender{}
+)
 
 func (a dbAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
 	if g, ok := a.Appender.(storage.GetRef); ok {
 		return g.GetRef(lset, hash)
+	}
+	return 0, labels.EmptyLabels()
+}
+
+func (a dbAppender) GetRefFunc(hash uint64, cmp func(labels.Labels) bool) (storage.SeriesRef, labels.Labels) {
+	if g, ok := a.Appender.(storage.GetRefFunc); ok {
+		return g.GetRefFunc(hash, cmp)
 	}
 	return 0, labels.EmptyLabels()
 }
@@ -1491,6 +1501,9 @@ func (db *DB) compactHead(head *RangeHead, truncateMemory bool) error {
 	if err = db.head.truncateMemory(head.BlockMaxTime()); err != nil {
 		return fmt.Errorf("head memory truncate: %w", err)
 	}
+
+	db.head.RebuildSymbolTable(db.logger)
+
 	return nil
 }
 

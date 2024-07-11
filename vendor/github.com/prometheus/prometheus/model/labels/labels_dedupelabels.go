@@ -815,3 +815,51 @@ func (b *ScratchBuilder) Overwrite(ls *Labels) {
 	ls.syms = b.syms.nameTable
 	ls.data = yoloString(b.overwriteBuffer)
 }
+
+// Equal returns true if the Builder would build Labels the same as passed in.
+func (b *ScratchBuilder) Equal(a Labels) bool {
+	la, lb := len(a.data), len(b.add)
+	ia, ib := 0, 0
+	for ; ia < la && ib < lb; ib++ {
+		var aName, aValue string
+		aName, ia = decodeString(a.syms, a.data, ia)
+		if aName != b.add[ib].Name {
+			return false
+		}
+		aValue, ia = decodeString(a.syms, a.data, ia)
+		if aValue != b.add[ib].Value {
+			return false
+		}
+	}
+	if ia != la || ib != lb {
+		return false
+	}
+	return true
+}
+
+// Hash returns a hash value for the label set.
+// Note: the result must be consistent with what Labels.Hash() would return.
+func (b *ScratchBuilder) Hash() uint64 {
+	// Use xxhash.Sum64(b) for fast path as it's faster.
+	buf := make([]byte, 0, 1024)
+	for i, v := range b.add {
+		if len(buf)+len(v.Name)+len(v.Value)+2 >= cap(buf) {
+			// If labels entry is 1KB+ do not allocate whole entry.
+			h := xxhash.New()
+			_, _ = h.Write(buf)
+			for _, v := range b.add[i:] {
+				_, _ = h.WriteString(v.Name)
+				_, _ = h.Write(seps)
+				_, _ = h.WriteString(v.Value)
+				_, _ = h.Write(seps)
+			}
+			return h.Sum64()
+		}
+
+		buf = append(buf, v.Name...)
+		buf = append(buf, seps[0])
+		buf = append(buf, v.Value...)
+		buf = append(buf, seps[0])
+	}
+	return xxhash.Sum64(buf)
+}

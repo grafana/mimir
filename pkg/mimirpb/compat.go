@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/jsonutil"
 )
@@ -96,6 +97,14 @@ func (req *WriteRequest) AddExemplarsAt(i int, exemplars []*Exemplar) *WriteRequ
 	return req
 }
 
+func FromLabelAdaptersToMap(ls []LabelAdapter) map[string]string {
+	m := make(map[string]string, len(ls))
+	for _, la := range ls {
+		m[la.Name] = la.Value
+	}
+	return m
+}
+
 // FromLabelAdaptersToMetric converts []LabelAdapter to a model.Metric.
 // Don't do this on any performance sensitive paths.
 func FromLabelAdaptersToMetric(ls []LabelAdapter) model.Metric {
@@ -117,6 +126,14 @@ func FromLabelAdaptersToKeyString(ls []LabelAdapter) string {
 		buf = append(buf, ls[i].Value...)
 	}
 	return string(buf)
+}
+
+// FromLabelAdaptersToBuilder converts []LabelAdapter to labels.Builder.
+func FromLabelAdaptersToScratchBuilder(ls []LabelAdapter, builder *labels.ScratchBuilder) {
+	builder.Reset()
+	for _, v := range ls {
+		builder.Add(v.Name, v.Value)
+	}
 }
 
 // FromLabelAdaptersToString formats label adapters as a metric name with labels, while preserving

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//go:build stringlabels
+//go:build stringlabels || dedupelabels
 
 package mimirpb
 
@@ -20,8 +20,12 @@ func FromLabelAdaptersToLabels(ls []LabelAdapter) labels.Labels {
 
 // FromLabelAdaptersToLabelsWithCopy converts []LabelAdapter to labels.Labels.
 // The output does not retain any part of the input.
-func FromLabelAdaptersToLabelsWithCopy(input []LabelAdapter) labels.Labels {
-	return FromLabelAdaptersToLabels(input)
+func FromLabelAdaptersToLabelsWithCopy(st *labels.SymbolTable, ls []LabelAdapter) labels.Labels {
+	builder := labels.NewScratchBuilderWithSymbolTable(st, len(ls))
+	for _, v := range ls {
+		builder.Add(v.Name, v.Value)
+	}
+	return builder.Labels()
 }
 
 // Copy data in Labels, such that any future Overwrite of input won't modify the returned value.

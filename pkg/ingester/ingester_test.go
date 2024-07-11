@@ -46,7 +46,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
@@ -3220,19 +3219,22 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				require.NoError(b, err)
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
-				expectedErr := storage.ErrOutOfBounds.Error()
 
 				// Push out of bound samples.
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)) // nolint:errcheck
 
-					verifyErrorString(b, err, expectedErr)
+					verifyErrorString(b, err, "err-mimir-sample-timestamp-too-old")
 				}
 			},
 		},
 		"out-of-order samples": {
 			prepareConfig: func(*validation.Limits, *InstanceLimits) bool { return true },
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
+				// Push a single time series to set the TSDB min time.
+				req, _, _, _ := mockWriteRequest(b, labels.FromStrings(labels.MetricName, metricName, "cardinality", "0"), 0, 0)
+				_, err := ingester.Push(ctx, req)
+				require.NoError(b, err)
 				// For each series, push a single sample with a timestamp greater than next pushes.
 				for i := 0; i < numSeriesPerRequest; i++ {
 					currTimeReq := mimirpb.ToWriteRequest(
@@ -3247,13 +3249,12 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				}
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
-				expectedErr := storage.ErrOutOfOrderSample.Error()
 
 				// Push out-of-order samples.
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)) // nolint:errcheck
 
-					verifyErrorString(b, err, expectedErr)
+					verifyErrorString(b, err, "err-mimir-sample-out-of-order")
 				}
 			},
 		},
@@ -3326,7 +3327,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
-					verifyErrorString(b, err, "push rate limit reached")
+					verifyErrorString(b, err, "err-mimir-ingester-max-ingestion-rate")
 				}
 			},
 		},
@@ -3348,7 +3349,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
-					verifyErrorString(b, err, "max tenants limit reached")
+					verifyErrorString(b, err, "err-mimir-ingester-max-tenants")
 				}
 			},
 		},
@@ -3367,7 +3368,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
-					verifyErrorString(b, err, "max series limit reached")
+					verifyErrorString(b, err, "err-mimir-ingester-max-series")
 				}
 			},
 		},
@@ -3385,7 +3386,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
-					verifyErrorString(b, err, "too many inflight push requests")
+					verifyErrorString(b, err, "err-mimir-ingester-max-inflight-push-requests")
 				}
 			},
 		},

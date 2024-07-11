@@ -289,7 +289,7 @@ GO_FLAGS := -ldflags "\
 		-X $(MIMIR_VERSION).Branch=$(GIT_BRANCH) \
 		-X $(MIMIR_VERSION).Revision=$(GIT_REVISION) \
 		-X $(MIMIR_VERSION).Version=$(VERSION) \
-		-extldflags \"-static\" -s -w" -tags netgo,stringlabels
+		-extldflags \"-static\" -s -w" -tags netgo,dedupelabels
 
 ifeq ($(BUILD_IN_CONTAINER),true)
 

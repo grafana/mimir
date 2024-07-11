@@ -1810,12 +1810,27 @@ type seriesHashmap struct {
 
 func (m *seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 	if s, found := m.unique[hash]; found {
-		if labels.Equal(s.lset, lset) {
+		if labels.Equal(s.labels(), lset) {
 			return s
 		}
 	}
 	for _, s := range m.conflicts[hash] {
-		if labels.Equal(s.lset, lset) {
+		if labels.Equal(s.labels(), lset) {
+			return s
+		}
+	}
+	return nil
+}
+
+// Fetch a series from the map, given a function which says whether it's the right Labels.
+func (m *seriesHashmap) getByFunc(hash uint64, cmp func(labels.Labels) bool) *memSeries {
+	if s, found := m.unique[hash]; found {
+		if cmp(s.lset) {
+			return s
+		}
+	}
+	for _, s := range m.conflicts[hash] {
+		if cmp(s.lset) {
 			return s
 		}
 	}
@@ -1823,7 +1838,7 @@ func (m *seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 }
 
 func (m *seriesHashmap) set(hash uint64, s *memSeries) {
-	if existing, found := m.unique[hash]; !found || labels.Equal(existing.lset, s.lset) {
+	if existing, found := m.unique[hash]; !found || labels.Equal(existing.labels(), s.labels()) {
 		m.unique[hash] = s
 		return
 	}
@@ -1832,7 +1847,7 @@ func (m *seriesHashmap) set(hash uint64, s *memSeries) {
 	}
 	l := m.conflicts[hash]
 	for i, prev := range l {
-		if labels.Equal(prev.lset, s.lset) {
+		if labels.Equal(prev.labels(), s.labels()) {
 			l[i] = s
 			return
 		}
@@ -1982,7 +1997,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 		s.hashes[hashShard].del(hash, series.ref)
 		delete(s.series[refShard], series.ref)
-		deletedForCallback[series.ref] = series.lset
+		deletedForCallback[series.ref] = series.lset // OK to access lset; series is locked at the top of this function.
 	}
 
 	s.iterForDeletion(check)
@@ -2043,6 +2058,16 @@ func (s *stripeSeries) getByHash(hash uint64, lset labels.Labels) *memSeries {
 	return series
 }
 
+func (s *stripeSeries) getByHashFunc(hash uint64, cmp func(labels.Labels) bool) *memSeries {
+	i := hash & uint64(s.size-1)
+
+	s.locks[i].RLock()
+	series := s.hashes[i].getByFunc(hash, cmp)
+	s.locks[i].RUnlock()
+
+	return series
+}
+
 func (s *stripeSeries) getOrSet(hash uint64, lset labels.Labels, createSeries func() *memSeries) (*memSeries, bool, error) {
 	// PreCreation is called here to avoid calling it inside the lock.
 	// It is not necessary to call it just before creating a series,
@@ -2074,7 +2099,7 @@ func (s *stripeSeries) getOrSet(hash uint64, lset labels.Labels, createSeries fu
 	}
 	// Setting the series in the s.hashes marks the creation of series
 	// as any further calls to this methods would return that series.
-	s.seriesLifecycleCallback.PostCreation(series.lset)
+	s.seriesLifecycleCallback.PostCreation(series.labels())
 
 	i = uint64(series.ref) & uint64(s.size-1)
 
@@ -2115,10 +2140,8 @@ func (s sample) Type() chunkenc.ValueType {
 // memSeries is the in-memory representation of a series. None of its methods
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
-	sync.Mutex
-
+	// Members up to the Mutex are not changed after construction, so can be accessed without a lock.
 	ref  chunks.HeadSeriesRef
-	lset labels.Labels
 	meta *metadata.Metadata
 
 	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
@@ -2127,6 +2150,11 @@ type memSeries struct {
 
 	// Value returned by secondary hash function.
 	secondaryHash uint32
+
+	// Everything after here should only be accessed with the lock held.
+	sync.Mutex
+
+	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
 
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
