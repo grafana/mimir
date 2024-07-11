@@ -86,7 +86,7 @@ clear
 # Test native histogram aggregations
 load 1m
 	single_histogram{label="value"} {{schema:0 sum:2 count:4 buckets:[1 2 1]}} {{sum:2 count:4 buckets:[1 2 1]}}
-	single_histogram{label="value2"} {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:0 sum:2 count:4 buckets:[1 2 1]}}
+	single_histogram{label="value2"} {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:0 sum:2 count:4 buckets:[1 2 1]}} {{schema:0 sum:4 count:6 buckets:[2 2 2]}}
 	single_histogram{label="value2", another="value"} {{schema:1 sum:10 count:9 buckets:[3 3 3]}} {{schema:2 sum:2 count:4 buckets:[1 2 1]}}
 
 eval instant at 0m sum(single_histogram)
@@ -96,8 +96,12 @@ eval instant at 0m sum by (label) (single_histogram)
 	{label="value"} {{schema:0 count:4 sum:2 buckets:[1 2 1]}}
 	{label="value2"} {{schema:1 count:14 sum:15 buckets:[4 6 4]}}
 
-eval range from 0 to 1m step 1m sum(single_histogram)
-	{} {{schema:0 sum:17 count:18 buckets:[5 12 1]}} {{schema:0 sum:6 count:12 buckets:[3 7 2]}}
+# Test aggregation over a range with lookback behaviour.
+eval range from 0 to 3m step 1m sum(single_histogram)
+	{} {{schema:0 sum:17 count:18 buckets:[5 12 1]}} {{schema:0 sum:6 count:12 buckets:[3 7 2]}} {{schema:0 sum:8 count:14 buckets:[4 7 3]}} {{schema:0 sum:8 count:14 buckets:[4 7 3]}}
+
+eval range from 2m to 3m step 1m sum(single_histogram)
+	{} {{schema:0 sum:8 count:14 buckets:[4 7 3]}} {{schema:0 sum:8 count:14 buckets:[4 7 3]}}
 
 clear
 

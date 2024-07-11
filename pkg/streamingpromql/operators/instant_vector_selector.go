@@ -54,6 +54,13 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 
 	data := types.InstantVectorSeriesData{}
 
+	// Keep track of the last histogram we saw.
+	// This is important for a few reasons:
+	// - it allows us to avoid unnecessarily creating FloatHistograms when the same histogram is used at multiple points
+	//   due to lookback
+	// - it allows consuming operators that mutate histograms to avoid making copies of FloatHistograms where possible,
+	//   as they can check if the same FloatHistogram instance is used for multiple points, and then only make a copy
+	//   if the histogram is used for multiple points
 	lastHistogramT := int64(math.MinInt64)
 	var lastHistogram *histogram.FloatHistogram
 
@@ -78,7 +85,9 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			t, f = v.memoizedIterator.At()
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 			if atT := v.memoizedIterator.AtT(); atT == lastHistogramT {
-				// We're still looking at the last histogram we saw, don't bother creating another FloatHistogram.
+				// We're still looking at the last histogram we used, don't bother creating another FloatHistogram.
+				// Consuming operators are expected to check for the same FloatHistogram instance used at multiple points and copy it
+				// if they are going to mutate it, so this is safe to do.
 				t, h = atT, lastHistogram
 			} else {
 				t, h = v.memoizedIterator.AtFloatHistogram()
@@ -95,6 +104,20 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			t, f, h, ok = v.memoizedIterator.PeekPrev()
 			if !ok || t < ts-v.Selector.LookbackDelta.Milliseconds() {
 				continue
+			}
+			if h != nil {
+				if t == lastHistogramT {
+					// Reuse exactly the same FloatHistogram as last time.
+					// PeekPrev can return a new FloatHistogram instance with the same underlying bucket slices as a previous call
+					// to AtFloatHistogram.
+					// Consuming operators are expected to check for the same FloatHistogram instance used at multiple points and copy
+					// it if they are going to mutate it, but consuming operators don't check the underlying bucket slices, so without
+					// this, we can end up with incorrect query results.
+					h = lastHistogram
+				} else {
+					lastHistogramT = t
+					lastHistogram = h
+				}
 			}
 		}
 		if value.IsStaleNaN(f) || (h != nil && value.IsStaleNaN(h.Sum)) {
