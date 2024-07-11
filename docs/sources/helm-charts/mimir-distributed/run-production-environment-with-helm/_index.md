@@ -280,6 +280,8 @@ and alerts simply work. The chart uses the Grafana Agent to ship metrics to
 a Prometheus-compatible server and logs to a Loki or GEL (Grafana Enterprise
 Metrics) server.
 
+{{< docs/shared source="alloy" lookup="agent-deprecation.md" version="ALLOY_VERSION" >}}
+
 1. Download the Grafana Agent Operator Custom Resource Definitions (CRDs) from
    https://github.com/grafana/agent/tree/main/operations/agent-static-operator/crds
 2. Install the CRDs on your cluster:
