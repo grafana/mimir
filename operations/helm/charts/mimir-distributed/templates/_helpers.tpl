@@ -439,7 +439,7 @@ Examples:
   "ingester" "ingester"
   "memcached" "memcached"
   "metadata-cache" "metadata-cache"
-  "meta-monitoring"
+  "meta-monitoring" "metaMonitoring.grafanaAgent"
   "nginx" "nginx"
   "overrides-exporter" "overrides_exporter"
   "querier" "querier"
