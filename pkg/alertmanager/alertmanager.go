@@ -123,6 +123,8 @@ type Alertmanager struct {
 	registry        *prometheus.Registry
 	receiversMtx    sync.Mutex
 	receivers       []*nfstatus.Receiver
+	templatesMtx    sync.RWMutex
+	templates       []alertingTemplates.TemplateDefinition
 
 	// promoted indicates if the Grafana Alertmanager state has been merged before.
 	promoted bool
@@ -315,6 +317,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	// it under an additional prefix to avoid any confusion with upstream Alertmanager.
 	if cfg.GrafanaAlertmanagerCompatibility {
 		am.mux.Handle("/api/v1/grafana/receivers", http.HandlerFunc(am.GetReceiversHandler))
+		am.mux.Handle("/api/v1/grafana/templates/test", http.HandlerFunc(am.TestTemplatesHandler))
 	}
 
 	am.dispatcherMetrics = dispatch.NewDispatcherMetrics(true, am.registry)
@@ -345,6 +348,35 @@ func (am *Alertmanager) GetReceiversHandler(w http.ResponseWriter, _ *http.Reque
 	}
 }
 
+func (am *Alertmanager) TestTemplatesHandler(w http.ResponseWriter, r *http.Request) {
+	c := alertingNotify.TestTemplatesConfigBodyParams{}
+	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+		http.Error(w,
+			fmt.Sprintf("error unmarshalling test templates config JSON: %s", err.Error()),
+			http.StatusBadRequest)
+		return
+	}
+
+	am.templatesMtx.RLock()
+	tmpls := make([]alertingTemplates.TemplateDefinition, len(am.templates))
+	copy(tmpls, am.templates)
+	am.templatesMtx.RUnlock()
+
+	response, err := alertingNotify.TestTemplate(r.Context(), c, tmpls, am.cfg.ExternalURL.String(), am.logger)
+	if err != nil {
+		http.Error(w,
+			fmt.Sprintf("error testing templates: %s", err.Error()),
+			http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
 func (am *Alertmanager) WaitInitialStateSync(ctx context.Context) error {
 	if err := am.state.AwaitRunning(ctx); err != nil {
 		return errors.Wrap(err, "failed to wait for ring-based replication service")
@@ -361,8 +393,13 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []io.Reader, rawCfg string, tmplExternalURL *url.URL) error {
-	tmpl, err := loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
+func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, staticHeaders map[string]string) error {
+	templates := make([]io.Reader, 0, len(tmpls))
+	for _, tmpl := range tmpls {
+		templates = append(templates, strings.NewReader(tmpl.Template))
+	}
+
+	tmpl, err := loadTemplates(templates, WithCustomFunctions(am.cfg.UserID))
 	if err != nil {
 		return err
 	}
@@ -392,7 +429,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		return d + waitFunc()
 	}
 
-	integrationsMap, err := am.buildIntegrationsMap(cfg.Global, conf.Receivers, tmpl, tmpls)
+	integrationsMap, err := am.buildIntegrationsMap(cfg.Global, conf.Receivers, tmpl, templates, staticHeaders)
 	if err != nil {
 		return err
 	}
@@ -490,7 +527,7 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*definition.PostableApiReceiver, tmpl *template.Template, tmpls []io.Reader) (map[string][]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*definition.PostableApiReceiver, tmpl *template.Template, tmpls []io.Reader, staticHeaders map[string]string) (map[string][]*nfstatus.Integration, error) {
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
@@ -506,6 +543,21 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 			return newRateLimitedNotifier(notifier, rl, 10*time.Second, am.rateLimitedNotifications.WithLabelValues(integrationName))
 		}
 		return notifier
+	}
+
+	emailCfg := alertingReceivers.EmailSenderConfig{
+		AuthPassword:  string(gCfg.SMTPAuthPassword),
+		AuthUser:      gCfg.SMTPAuthUsername,
+		CertFile:      gCfg.HTTPConfig.TLSConfig.CertFile,
+		ContentTypes:  []string{"text/html"},
+		EhloIdentity:  gCfg.SMTPHello,
+		ExternalURL:   tmpl.ExternalURL.String(),
+		FromAddress:   gCfg.SMTPFrom,
+		FromName:      "Grafana",
+		Host:          gCfg.SMTPSmarthost.String(),
+		KeyFile:       gCfg.HTTPConfig.TLSConfig.KeyFile,
+		SkipVerify:    !gCfg.SMTPRequireTLS,
+		StaticHeaders: staticHeaders,
 	}
 
 	var gTmpl *template.Template
@@ -525,7 +577,8 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 				}
 				gTmpl.ExternalURL = tmpl.ExternalURL
 			}
-			integrations, err = buildGrafanaReceiverIntegrations(gCfg, rcv, gTmpl, am.logger)
+
+			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, rcv, gTmpl, am.logger)
 		} else {
 			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, nw)
 		}
@@ -539,7 +592,7 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 	return integrationsMap, nil
 }
 
-func buildGrafanaReceiverIntegrations(gCfg *config.GlobalConfig, rcv *definition.PostableApiReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
+func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConfig, rcv *definition.PostableApiReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
 	// The decrypt functions and the context are used to decrypt the configuration.
 	// We don't need to decrypt anything, so we can pass a no-op decrypt func and a context.Background().
 	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), alertingNotify.NoopDecrypt)
@@ -549,21 +602,6 @@ func buildGrafanaReceiverIntegrations(gCfg *config.GlobalConfig, rcv *definition
 
 	whFn := func(alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
 		return NewSender(logger), nil
-	}
-
-	emailCfg := alertingReceivers.EmailSenderConfig{
-		AuthPassword: string(gCfg.SMTPAuthPassword),
-		AuthUser:     gCfg.SMTPAuthUsername,
-		CertFile:     gCfg.HTTPConfig.TLSConfig.CertFile,
-		ContentTypes: []string{"text/html"},
-		EhloIdentity: gCfg.SMTPHello,
-		ExternalURL:  tmpl.ExternalURL.String(),
-		FromAddress:  gCfg.SMTPFrom,
-		FromName:     "Grafana",
-		Host:         gCfg.SMTPSmarthost.String(),
-		KeyFile:      gCfg.HTTPConfig.TLSConfig.KeyFile,
-		SkipVerify:   !gCfg.SMTPRequireTLS,
-		// TODO: add static headers.
 	}
 
 	integrations, err := alertingNotify.BuildReceiverIntegrations(

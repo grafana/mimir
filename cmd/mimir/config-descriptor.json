@@ -9428,10 +9428,10 @@
                   "required": false,
                   "desc": "Timeout for the queue of index header loads. If the queue is full and the timeout is reached, the load will return an error. 0 means no timeout and the load will wait indefinitely.",
                   "fieldValue": null,
-                  "fieldDefaultValue": 0,
+                  "fieldDefaultValue": 5000000000,
                   "fieldFlag": "blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout",
                   "fieldType": "duration",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",
@@ -11827,6 +11827,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "drain_notification_queue_on_shutdown",
+          "required": false,
+          "desc": "Drain all outstanding alert notifications when shutting down. If false, any outstanding alert notifications are dropped when shutting down.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ruler.drain-notification-queue-on-shutdown",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -15948,6 +15959,17 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-scheduler.additional-query-queue-dimensions-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "use_multi_algorithm_query_queue",
+          "required": false,
+          "desc": "Use an experimental version of the query queue which has the same behavior as the existing queue, but integrates tenant selection into the tree model.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-scheduler.use-multi-algorithm-query-queue",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },

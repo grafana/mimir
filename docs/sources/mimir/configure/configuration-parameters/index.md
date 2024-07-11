@@ -1713,6 +1713,12 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.additional-query-queue-dimensions-enabled
 [additional_query_queue_dimensions_enabled: <boolean> | default = false]
 
+# (experimental) Use an experimental version of the query queue which has the
+# same behavior as the existing queue, but integrates tenant selection into the
+# tree model.
+# CLI flag: -query-scheduler.use-multi-algorithm-query-queue
+[use_multi_algorithm_query_queue: <boolean> | default = false]
+
 # (experimental) If a querier disconnects without sending notification about
 # graceful shutdown, the query-scheduler will keep the querier in the tenant's
 # shard until the forget delay has passed. This feature is useful to reduce the
@@ -1940,6 +1946,11 @@ alertmanager_client:
   # (if any).
   # CLI flag: -ruler.alertmanager-client.basic-auth-password
   [basic_auth_password: <string> | default = ""]
+
+# (experimental) Drain all outstanding alert notifications when shutting down.
+# If false, any outstanding alert notifications are dropped when shutting down.
+# CLI flag: -ruler.drain-notification-queue-on-shutdown
+[drain_notification_queue_on_shutdown: <boolean> | default = false]
 
 # (advanced) Max time to tolerate outage for restoring "for" state of alert.
 # CLI flag: -ruler.for-outage-tolerance
@@ -4108,11 +4119,11 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header.lazy-loading-concurrency
     [lazy_loading_concurrency: <int> | default = 4]
 
-    # (experimental) Timeout for the queue of index header loads. If the queue
-    # is full and the timeout is reached, the load will return an error. 0 means
-    # no timeout and the load will wait indefinitely.
+    # (advanced) Timeout for the queue of index header loads. If the queue is
+    # full and the timeout is reached, the load will return an error. 0 means no
+    # timeout and the load will wait indefinitely.
     # CLI flag: -blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout
-    [lazy_loading_concurrency_queue_timeout: <duration> | default = 0s]
+    [lazy_loading_concurrency_queue_timeout: <duration> | default = 5s]
 
     # (advanced) If true, verify the checksum of index headers upon loading them
     # (either on startup or lazily when lazy loading is enabled). Setting to
