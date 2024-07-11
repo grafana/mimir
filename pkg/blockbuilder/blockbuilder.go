@@ -82,8 +82,6 @@ func New(
 }
 
 func (b *BlockBuilder) starting(ctx context.Context) (err error) {
-	const fetchMaxBytes = 100_000_000
-
 	// Empty any previous artifacts.
 	if err := os.RemoveAll(b.cfg.BlocksStorageConfig.TSDB.Dir); err != nil {
 		return fmt.Errorf("removing tsdb dir: %w", err)
@@ -91,6 +89,8 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	if err := os.MkdirAll(b.cfg.BlocksStorageConfig.TSDB.Dir, os.ModePerm); err != nil {
 		return fmt.Errorf("creating tsdb dir: %w", err)
 	}
+
+	const fetchMaxBytes = 100_000_000
 
 	opts := []kgo.Opt{
 		kgo.ClientID(b.cfg.Kafka.ClientID),
@@ -106,10 +106,12 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 		kgo.OnPartitionsRevoked(b.handlePartitionsLost),
 		kgo.OnPartitionsLost(b.handlePartitionsLost),
 
+		kgo.ConsumeResetOffset(b.cfg.Kafka.ConsumerResetOffset.Offset()),
+
 		kgo.FetchMinBytes(128),
 		kgo.FetchMaxBytes(fetchMaxBytes),
 		kgo.FetchMaxWait(5 * time.Second),
-		kgo.FetchMaxPartitionBytes(50_000_000),
+		kgo.FetchMaxPartitionBytes(fetchMaxBytes), // We consume one partition at a time, for now.
 
 		kgo.MetadataMinAge(10 * time.Second),
 		kgo.MetadataMaxAge(10 * time.Second),
@@ -764,12 +766,13 @@ func (cfg *Config) Validate() error {
 
 // KafkaConfig holds the generic config for the Kafka backend.
 type KafkaConfig struct {
-	Address       string        `yaml:"address"`
-	Topic         string        `yaml:"topic"`
-	ClientID      string        `yaml:"client_id"`
-	DialTimeout   time.Duration `yaml:"dial_timeout"`
-	PollTimeout   time.Duration `yaml:"poll_timeout"`
-	ConsumerGroup string        `yaml:"consumer_group"`
+	Address             string        `yaml:"address"`
+	Topic               string        `yaml:"topic"`
+	ClientID            string        `yaml:"client_id"`
+	DialTimeout         time.Duration `yaml:"dial_timeout"`
+	PollTimeout         time.Duration `yaml:"poll_timeout"`
+	ConsumerGroup       string        `yaml:"consumer_group"`
+	ConsumerResetOffset kafkaOffset   `yaml:"consumer_reset_offset" category:"experimental"`
 }
 
 func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
@@ -778,12 +781,69 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.StringVar(&cfg.ClientID, prefix+"kafka.client-id", "", "The Kafka client ID.")
 	f.DurationVar(&cfg.DialTimeout, prefix+"kafka.dial-timeout", 5*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
 	f.DurationVar(&cfg.PollTimeout, prefix+"kafka.poll-timeout", 5*time.Second, "The maximum time allowed to block if data is not available in the broker to consume.")
-	f.StringVar(&cfg.ConsumerGroup, prefix+"kafka.consumer-group", "", "The consumer group used by the consumer to track the last consumed offset.")
+	f.StringVar(&cfg.ConsumerGroup, prefix+"kafka.consumer-group", "", "The consumer group used by the consumer.")
+	f.Var(newKafkaOffsetValue(kgo.NewOffset().AtStart(), &cfg.ConsumerResetOffset), prefix+"kafka.consumer-reset-offset", "The offset to start consuming from if a partition has no commits.")
 }
 
 func (cfg *KafkaConfig) Validate() error {
 	// TODO(v): validate kafka config
 	return nil
+}
+
+type kafkaOffset kgo.Offset
+
+func newKafkaOffsetValue(val kgo.Offset, p *kafkaOffset) *kafkaOffset {
+	*p = (kafkaOffset)(val)
+	return p
+}
+
+func (k *kafkaOffset) Set(s string) error {
+	offset := kgo.NewOffset()
+	switch s {
+	case "start":
+		*k = kafkaOffset(offset.AtStart())
+	case "end":
+		*k = kafkaOffset(offset.AtEnd())
+	default:
+		d, err := time.ParseDuration(s)
+		if err != nil {
+			return fmt.Errorf("parse relative offset duration: %w", err)
+		}
+		if d > 0 {
+			// Convert "1h" to "-1h" for simplicity.
+			d = -d
+		}
+		*k = kafkaOffset(offset.AfterMilli(time.Now().Add(d).UnixMilli()))
+	}
+	return nil
+}
+
+func (k *kafkaOffset) String() string {
+	v := (*kgo.Offset)(k)
+	zero := kgo.NewOffset()
+	switch *v {
+	case zero.AtStart():
+		return "start"
+	case zero.AtEnd():
+		return "end"
+	}
+	return v.String()
+}
+
+func (k *kafkaOffset) Offset() kgo.Offset {
+	return (kgo.Offset)(*k)
+}
+
+func (k *kafkaOffset) UnmarshalYAML(unmarshal func(any) error) error {
+	var s string
+	if err := unmarshal(&s); err != nil {
+		return err
+	}
+	return k.Set(s)
+}
+
+func (k *kafkaOffset) MarshalYAML() (any, error) {
+	return k.String(), nil
 }
 
 type kafkaLogger struct {
