@@ -33,7 +33,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -299,7 +298,7 @@ func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
 					{Value: 1, Timestamp: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
 				},
 				Histograms: []prompb.Histogram{
-					remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(1))},
+					prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1))},
 			},
 		},
 	}
@@ -310,7 +309,7 @@ func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
 
 func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation bool) []byte {
 	t.Helper()
-	h := remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(1))
+	h := prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1))
 	ts := mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
 			Labels: []mimirpb.LabelAdapter{
