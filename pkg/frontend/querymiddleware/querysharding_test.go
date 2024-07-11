@@ -2165,9 +2165,12 @@ func (h *downstreamHandler) Do(ctx context.Context, r MetricsQueryRequest) (Resp
 			Result:     extracted,
 		},
 	}
-	warnings := res.Warnings.AsStrings("", 0)
+	warnings, infos := res.Warnings.AsStrings("", 0, 0)
 	if len(warnings) > 0 {
 		resp.Warnings = warnings
+	}
+	if len(infos) > 0 {
+		resp.Infos = infos
 	}
 	return resp, nil
 }
