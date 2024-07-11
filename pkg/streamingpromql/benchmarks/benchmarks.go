@@ -176,6 +176,9 @@ func TestCases(metricSizes []int) []BenchCase {
 			Expr: "sum without (le)(h_X)",
 		},
 		{
+			Expr: "sum(nh_X)",
+		},
+		{
 			Expr: "sum by (l)(h_X)",
 		},
 		{
