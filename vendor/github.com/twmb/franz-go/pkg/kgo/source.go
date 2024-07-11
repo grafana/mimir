@@ -1192,7 +1192,10 @@ func (o *cursorOffsetNext) processRespPartition(br *broker, rp *kmsg.FetchRespon
 		o.hwm = rp.HighWatermark
 	}
 
-	aborter := buildAborter(rp)
+	var aborter aborter
+	if br.cl.cfg.isolationLevel == 1 {
+		aborter = buildAborter(rp)
+	}
 
 	// A response could contain any of message v0, message v1, or record
 	// batches, and this is solely dictated by the magic byte (not the
