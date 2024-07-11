@@ -522,6 +522,10 @@ func (am *Alertmanager) mergePartialExternalState(part *clusterpb.Part) error {
 	return am.state.MergePartialState(part)
 }
 
+func (am *Alertmanager) mergeFullExternalState(fs []*clusterpb.FullState) error {
+	return am.state.MergeFullStates(fs)
+}
+
 func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 	return am.state.GetFullState()
 }

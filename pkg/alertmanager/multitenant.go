@@ -772,10 +772,10 @@ func (am *MultitenantAlertmanager) promoteAndDeleteState(ctx context.Context, cf
 			default:
 				return fmt.Errorf("unknown part key %s", p.Key)
 			}
+		}
 
-			if err := existing.mergePartialExternalState(&p); err != nil {
-				return err
-			}
+		if err := existing.mergeFullExternalState([]*clusterpb.FullState{s.State}); err != nil {
+			return err
 		}
 
 		// Delete state.
