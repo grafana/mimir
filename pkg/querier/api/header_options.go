@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
+	//lint:ignore faillint Simple import for the API error package to format the error correctly.
 	apierror "github.com/grafana/mimir/pkg/api/error"
 )
 
