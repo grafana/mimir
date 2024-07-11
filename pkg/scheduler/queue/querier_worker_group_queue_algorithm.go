@@ -2,8 +2,6 @@
 
 package queue
 
-import "fmt"
-
 type querierWorkerPrioritizationQueueAlgo struct {
 	currentQuerierWorker  int32
 	currentNodeOrderIndex int
@@ -60,10 +58,6 @@ func (qa *querierWorkerPrioritizationQueueAlgo) addChildNode(parent, child *Node
 }
 
 func (qa *querierWorkerPrioritizationQueueAlgo) dequeueSelectNode(node *Node) (*Node, bool) {
-	if len(qa.nodeOrder) == 2 {
-		fmt.Sprintln("")
-	}
-
 	currentNodeName := qa.nodeOrder[qa.currentNodeOrderIndex]
 	if node, ok := node.queueMap[currentNodeName]; ok {
 		qa.nodesChecked++

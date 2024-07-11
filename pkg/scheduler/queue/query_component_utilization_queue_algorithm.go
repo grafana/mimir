@@ -100,12 +100,11 @@ func (qcul *QueryComponentUtilizationLimitByConnections) IsOverUtilized(
 }
 
 type queryComponentQueueAlgoSkipOverUtilized struct {
-	utilization            *QueryComponentUtilization
-	limit                  QueryComponentUtilizationLimit
-	currentNodeOrderIndex  int
-	nodeOrder              []string
-	nodesChecked           int
-	nodesSkippedIndexOrder []int
+	utilization           *QueryComponentUtilization
+	limit                 QueryComponentUtilizationLimit
+	currentNodeOrderIndex int
+	nodeOrder             []string
+	nodesChecked          int
 
 	// TODO implement global state to only delete nodes from rotation when all corresponding nodes are deleted from the tree
 	//queueNodeCounts                    map[string]int
@@ -147,15 +146,21 @@ func (qa *queryComponentQueueAlgoSkipOverUtilized) addChildNode(parent, child *N
 }
 
 func (qa *queryComponentQueueAlgoSkipOverUtilized) checkedAllNodesBeforeSkips() bool {
-	return qa.nodesChecked == len(qa.nodeOrder)+1
+	return qa.nodesChecked == len(qa.nodeOrder)
 }
-func (qa *queryComponentQueueAlgoSkipOverUtilized) checkedAllNodes() bool {
-	return qa.nodesChecked == len(qa.nodeOrder)+1 && len(qa.nodesSkippedIndexOrder) == 0
+func (qa *queryComponentQueueAlgoSkipOverUtilized) checkedAllNodes(firstSkippedNodeIndex int) bool {
+	if firstSkippedNodeIndex == -1 {
+		return qa.nodesChecked == len(qa.nodeOrder)
+
+	}
+	return qa.nodesChecked == len(qa.nodeOrder)+1 // +1 for the skipped node
 }
 
 func (qa *queryComponentQueueAlgoSkipOverUtilized) dequeueSelectNode(node *Node) (*Node, bool) {
+	firstSkippedNodeIndex := -1
+
 	if qa.currentNodeOrderIndex == localQueueIndex {
-		return node, qa.checkedAllNodes()
+		return node, qa.checkedAllNodes(firstSkippedNodeIndex)
 	}
 
 	for !qa.checkedAllNodesBeforeSkips() {
@@ -168,9 +173,10 @@ func (qa *queryComponentQueueAlgoSkipOverUtilized) dequeueSelectNode(node *Node)
 			// querier-worker connections in excess of the target connections limit;
 			// skip over this node for now, but add to the skipped order
 			// in case we cannot find an item to dequeue from non-skipped nodes
-			qa.nodesSkippedIndexOrder = append(qa.nodesSkippedIndexOrder, qa.currentNodeOrderIndex)
+			if firstSkippedNodeIndex == -1 {
+				firstSkippedNodeIndex = qa.currentNodeOrderIndex
+			}
 			qa.incrementWrapCurrentNodeOrderIndex()
-
 			// increment nodesChecked;
 			// we will not return true for checkedAllNodes until we check the skipped nodes too
 			qa.nodesChecked++
@@ -178,25 +184,19 @@ func (qa *queryComponentQueueAlgoSkipOverUtilized) dequeueSelectNode(node *Node)
 			// no query component associated with this queue node is over the utilization limit;
 			// select the current node
 			qa.nodesChecked++
-			return node.queueMap[currentNodeName], qa.checkedAllNodes()
+			return node.queueMap[currentNodeName], qa.checkedAllNodes(firstSkippedNodeIndex)
 		}
 
 	}
 	// else; we have checked all nodes the first time
 	// if we are here, none of the nodes that did not get skipped were able to be dequeued from
 	// and checkedAllNodes() has not returned true yet, so there are skipped nodes to select from
-	for len(qa.nodesSkippedIndexOrder) > 0 {
-		skippedNodeIndex := qa.nodesSkippedIndexOrder[0]
-		skippedNodeName := qa.nodeOrder[skippedNodeIndex]
+	skippedNodeName := qa.nodeOrder[firstSkippedNodeIndex]
 
-		// update state before returning the first skipped node:
-		// set currentNodexOrderIndex to the index of the skipped node being selected
-		qa.currentNodeOrderIndex = skippedNodeIndex
-		// and drop skipped node index from front of the skipped node queue list
-		qa.nodesSkippedIndexOrder = qa.nodesSkippedIndexOrder[1:]
-		return node.queueMap[skippedNodeName], qa.checkedAllNodes()
-	}
-	return nil, qa.checkedAllNodes()
+	// update state before returning the first skipped node:
+	// set currentNodexOrderIndex to the index of the skipped node being selected
+	qa.currentNodeOrderIndex = firstSkippedNodeIndex
+	return node.queueMap[skippedNodeName], qa.checkedAllNodes(firstSkippedNodeIndex)
 }
 
 // dequeueUpdateState does the following:
@@ -227,5 +227,4 @@ func (qa *queryComponentQueueAlgoSkipOverUtilized) dequeueUpdateState(node *Node
 	}
 
 	qa.nodesChecked = 0
-	qa.nodesSkippedIndexOrder = nil
 }

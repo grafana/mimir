@@ -424,6 +424,53 @@ func runQueueConsumerIters(
 	}
 }
 
+func runQueueConsumerUntilEmpty(
+	ctx context.Context,
+	totalRequests int,
+	queue *RequestQueue,
+	consumeFunc consumeRequest,
+	consumedRequestsCounter chan struct{},
+	start chan struct{},
+	stop chan struct{},
+) func(consumerIdx int) error {
+	return func(consumerIdx int) error {
+		lastTenantIndex := FirstTenant()
+		querierID := fmt.Sprintf("consumer-%v", consumerIdx)
+		queue.SubmitRegisterQuerierConnection(querierID)
+		defer queue.SubmitUnregisterQuerierConnection(querierID)
+
+		consumedRequest := make(chan struct{})
+		loopQueueConsume := func() error {
+			for {
+				idx, err := queueConsume(ctx, queue, querierID, int32(consumerIdx), lastTenantIndex, consumeFunc)
+				if err != nil {
+					return err
+				}
+
+				consumedRequest <- struct{}{}
+				lastTenantIndex = idx
+			}
+		}
+		loopQueueConsumeErrGroup, _ := errgroup.WithContext(ctx)
+
+		<-start
+		loopQueueConsumeErrGroup.Go(loopQueueConsume)
+
+		for {
+			select {
+			case <-stop:
+				return nil
+			case <-consumedRequest:
+				consumedRequestsCounter <- struct{}{}
+				if len(consumedRequestsCounter) == totalRequests {
+					fmt.Println("leaving")
+					close(stop)
+				}
+			}
+		}
+	}
+}
+
 type consumeRequest func(request Request) error
 
 func queueConsume(

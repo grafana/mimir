@@ -69,7 +69,7 @@ func TestQueryComponentUtilizationDequeue_DefaultRoundRobin(t *testing.T) {
 	queryComponentUtilizationQueueAlgo := queryComponentQueueAlgoSkipOverUtilized{
 		utilization:           queryComponentUtilization,
 		limit:                 utilizationCheckThresholdImpl,
-		currentNodeOrderIndex: -1,
+		currentNodeOrderIndex: 0,
 	}
 
 	tree, err := NewTree(&queryComponentUtilizationQueueAlgo, &roundRobinState{})
@@ -106,7 +106,7 @@ func TestQueryComponentUtilizationDequeue_SkipComponentExceedsThreshold(t *testi
 	queryComponentUtilizationQueueAlgo := queryComponentQueueAlgoSkipOverUtilized{
 		utilization:           queryComponentUtilization,
 		limit:                 utilizationCheckThresholdImpl,
-		currentNodeOrderIndex: -1,
+		currentNodeOrderIndex: 0,
 	}
 
 	tree, err := NewTree(&queryComponentUtilizationQueueAlgo, &roundRobinState{})

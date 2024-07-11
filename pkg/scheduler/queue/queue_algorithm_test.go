@@ -85,15 +85,20 @@ func newBenchmarkRequestQueue(
 	return q, nil
 }
 
-func weightedRandAdditionalQueueDimension(dimensionWeights map[string]int) string {
-	totalWeight := 0
+func weightedRandAdditionalQueueDimension(dimensionWeights map[string]float64) string {
+	totalWeight := float64(0)
 	for _, dimensionWeight := range dimensionWeights {
 		totalWeight += dimensionWeight
 	}
+	roundTotalWeight := math.Round(totalWeight*10) / 10
 
-	randInt := rand.Intn(totalWeight)
+	if roundTotalWeight != 1.0 {
+		panic("dimension weights must sum to 1.0")
+	}
 
-	sum := 0
+	randInt := rand.Float64()
+
+	sum := float64(0)
 	for dimension, dimensionWeight := range dimensionWeights {
 		sum += dimensionWeight
 		if randInt < sum {
@@ -105,7 +110,7 @@ func weightedRandAdditionalQueueDimension(dimensionWeights map[string]int) strin
 }
 
 func makeWeightedRandAdditionalQueueDimensionFunc(
-	tenantDimensionWeights map[string]map[string]int,
+	tenantDimensionWeights map[string]map[string]float64,
 ) func(tenantID string) []string {
 	return func(tenantID string) []string {
 		return []string{weightedRandAdditionalQueueDimension(tenantDimensionWeights[tenantID])}
@@ -145,6 +150,9 @@ func makeQueueConsumeFunc(
 	return func(request Request) error {
 		schedulerRequest := request.(*SchedulerRequest)
 		queryComponent := schedulerRequest.ExpectedQueryComponentName()
+		if queryComponent == ingesterAndStoreGatewayQueueDimension {
+			queryComponent = storeGatewayQueueDimension
+		}
 		report.Observe(schedulerRequest.UserID, queryComponent, time.Since(schedulerRequest.EnqueueTime).Seconds())
 
 		queue.QueryComponentUtilization.MarkRequestSent(schedulerRequest)
@@ -161,8 +169,10 @@ func makeQueueConsumeFunc(
 
 func makeQueueConsumerGroup(queue *RequestQueue, totalRequests int, numConsumers int, consumeFunc consumeRequest) (*errgroup.Group, chan struct{}) {
 	queueConsumerErrGroup, ctx := errgroup.WithContext(context.Background())
+	consumedRequestsCounter := make(chan struct{}, totalRequests)
 	startConsumersChan := make(chan struct{})
-	runConsumer := runQueueConsumerIters(ctx, queue, totalRequests, numConsumers, startConsumersChan, consumeFunc)
+	stopConsumersChan := make(chan struct{})
+	runConsumer := runQueueConsumerUntilEmpty(ctx, totalRequests, queue, consumeFunc, consumedRequestsCounter, startConsumersChan, stopConsumersChan)
 
 	for consumerIdx := 0; consumerIdx < numConsumers; consumerIdx++ {
 		consumerIdx := consumerIdx
@@ -273,60 +283,96 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 
 	weightedQueueDimensionTestCases := []struct {
 		name                         string
-		tenantQueueDimensionsWeights map[string]map[string]int
+		tenantQueueDimensionsWeights map[string]map[string]float64
 	}{
 		{
 			name: "1 tenant, 01pct slow queries",
-			tenantQueueDimensionsWeights: map[string]map[string]int{
-				"0": {ingesterQueueDimension: 99, storeGatewayQueueDimension: 1},
+			tenantQueueDimensionsWeights: map[string]map[string]float64{
+				"0": {
+					ingesterQueueDimension:                .99,
+					storeGatewayQueueDimension:            .005,
+					ingesterAndStoreGatewayQueueDimension: .005,
+				},
 			},
 		},
 		{
 			name: "1 tenant, 05pct slow queries",
-			tenantQueueDimensionsWeights: map[string]map[string]int{
-				"0": {ingesterQueueDimension: 95, storeGatewayQueueDimension: 5},
+			tenantQueueDimensionsWeights: map[string]map[string]float64{
+				"0": {
+					ingesterQueueDimension:                .95,
+					storeGatewayQueueDimension:            .025,
+					ingesterAndStoreGatewayQueueDimension: .025,
+				},
 			},
 		},
 		{
 			name: "1 tenant, 10pct slow queries",
-			tenantQueueDimensionsWeights: map[string]map[string]int{
-				"0": {ingesterQueueDimension: 90, storeGatewayQueueDimension: 10},
+			tenantQueueDimensionsWeights: map[string]map[string]float64{
+				"0": {
+					ingesterQueueDimension:                .90,
+					storeGatewayQueueDimension:            .05,
+					ingesterAndStoreGatewayQueueDimension: .05,
+				},
 			},
 		},
 		{
 			name: "1 tenant, 25pct slow queries",
-			tenantQueueDimensionsWeights: map[string]map[string]int{
-				"0": {ingesterQueueDimension: 75, storeGatewayQueueDimension: 25},
+			tenantQueueDimensionsWeights: map[string]map[string]float64{
+				"0": {
+					ingesterQueueDimension:                .75,
+					storeGatewayQueueDimension:            .125,
+					ingesterAndStoreGatewayQueueDimension: .125,
+				},
 			},
 		},
 		{
 			name: "1 tenant, 50pct slow queries",
-			tenantQueueDimensionsWeights: map[string]map[string]int{
-				"0": {ingesterQueueDimension: 50, storeGatewayQueueDimension: 50},
+			tenantQueueDimensionsWeights: map[string]map[string]float64{
+				"0": {
+					ingesterQueueDimension:                .50,
+					storeGatewayQueueDimension:            .25,
+					ingesterAndStoreGatewayQueueDimension: .25,
+				},
 			},
 		},
 		{
 			name: "1 tenant, 75pct slow queries",
-			tenantQueueDimensionsWeights: map[string]map[string]int{
-				"0": {ingesterQueueDimension: 25, storeGatewayQueueDimension: 75},
+			tenantQueueDimensionsWeights: map[string]map[string]float64{
+				"0": {
+					ingesterQueueDimension:                .25,
+					storeGatewayQueueDimension:            .375,
+					ingesterAndStoreGatewayQueueDimension: .375,
+				},
 			},
 		},
 		{
 			name: "1 tenant, 90pct slow queries",
-			tenantQueueDimensionsWeights: map[string]map[string]int{
-				"0": {ingesterQueueDimension: 10, storeGatewayQueueDimension: 90},
+			tenantQueueDimensionsWeights: map[string]map[string]float64{
+				"0": {
+					ingesterQueueDimension:                .10,
+					storeGatewayQueueDimension:            .45,
+					ingesterAndStoreGatewayQueueDimension: .45,
+				},
 			},
 		},
 		{
 			name: "1 tenant, 95pct slow queries",
-			tenantQueueDimensionsWeights: map[string]map[string]int{
-				"0": {ingesterQueueDimension: 5, storeGatewayQueueDimension: 95},
+			tenantQueueDimensionsWeights: map[string]map[string]float64{
+				"0": {
+					ingesterQueueDimension:                .05,
+					storeGatewayQueueDimension:            .475,
+					ingesterAndStoreGatewayQueueDimension: .475,
+				},
 			},
 		},
 		{
 			name: "1 tenant, 99pct slow queries",
-			tenantQueueDimensionsWeights: map[string]map[string]int{
-				"0": {ingesterQueueDimension: 1, storeGatewayQueueDimension: 99},
+			tenantQueueDimensionsWeights: map[string]map[string]float64{
+				"0": {
+					ingesterQueueDimension:                .01,
+					storeGatewayQueueDimension:            .495,
+					ingesterAndStoreGatewayQueueDimension: .495,
+				},
 			},
 		},
 	}
@@ -366,7 +412,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 			queryComponentUtilizationQueueAlgo := queryComponentQueueAlgoSkipOverUtilized{
 				utilization:           queryComponentUtilization,
 				limit:                 utilizationCheckThresholdImpl,
-				currentNodeOrderIndex: -1,
+				currentNodeOrderIndex: 0,
 			}
 			tqa := newTQA()
 
@@ -401,7 +447,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				}
 
 				testCaseName := fmt.Sprintf(
-					"tree: %s, reservedCapacity: %1.1f, %s",
+					"tree: %s, reservedCapacity: %1.2f, %s",
 					tree.name,
 					testReservedCapacity,
 					weightedQueueDimensionTestCase.name,
