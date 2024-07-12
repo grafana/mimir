@@ -262,6 +262,10 @@ func TestWriter_WriteSync(t *testing.T) {
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
+		// Get the underlying Kafka client used by the writer.
+		client, err := writer.getKafkaWriterForPartition(partitionID)
+		require.NoError(t, err)
+
 		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
 			numRecords, err := getProduceRequestRecordsCount(request.(*kmsg.ProduceRequest))
 			require.NoError(t, err)
@@ -290,16 +294,29 @@ func TestWriter_WriteSync(t *testing.T) {
 		// Once the 1st Produce request is received by the server but still processing (there's a 1s sleep),
 		// issue two more requests. One with a short context timeout (expected to expire before the next Produce
 		// request will be sent) and one with no timeout.
-		runAsyncAfter(&wg, firstRequestReceived, func() {
-			ctxWithTimeout, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
-			defer cancel()
+		secondRequestCtx, cancelSecondRequest := context.WithTimeout(ctx, 00*time.Millisecond)
+		t.Cleanup(cancelSecondRequest)
 
-			assert.Equal(t, context.DeadlineExceeded, writer.WriteSync(ctxWithTimeout, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}))
+		runAsyncAfter(&wg, firstRequestReceived, func() {
+			assert.Equal(t, context.DeadlineExceeded, writer.WriteSync(secondRequestCtx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}))
 		})
 
 		runAsyncAfter(&wg, firstRequestReceived, func() {
+			// Wait until the 2nd request has been buffered, because we want this request to be buffered after it.
+			require.Eventually(t, func() bool {
+				return client.BufferedProduceRecords() == 2
+			}, time.Second, 10*time.Millisecond)
+
 			assert.NoError(t, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series3, Metadata: nil, Source: mimirpb.API}))
 		})
+
+		// Wait until all 3 requests have been buffered.
+		require.Eventually(t, func() bool {
+			return client.BufferedProduceRecords() == 3
+		}, time.Second, 10*time.Millisecond)
+
+		// Cancel the 2nd request context.
+		cancelSecondRequest()
 
 		wg.Wait()
 
