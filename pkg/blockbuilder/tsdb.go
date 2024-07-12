@@ -99,6 +99,8 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastBlockMax
 			if e := app.Rollback(); e != nil && !errors.Is(e, tsdb.ErrAppenderClosed) {
 				level.Warn(b.logger).Log("msg", "failed to rollback appender on error", "tenant", userID, "err", e)
 			}
+			// Always wrap the returned error with tenant.
+			err = fmt.Errorf("failed to process record for tenat %s: %w", userID, err)
 		}
 	}()
 
@@ -183,10 +185,9 @@ func (b *tsdbBuilder) process(ctx context.Context, rec *kgo.Record, lastBlockMax
 			return false, err
 		}
 
-		// Exemplars are not persisted in the block. So we skip it.
+		// Exemplars are not persisted in the block. So we skip them.
 	}
 
-	// TODO(codesome): wrap the error with user
 	return allSamplesProcessed, app.Commit()
 }
 
@@ -298,7 +299,7 @@ func (b *tsdbBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser
 		}
 
 		// TODO(codesome): the delete() on the map does not release the memory until after the map is reset.
-		// So, if we choose to not truncation while compacting the in-prder head above, we should try to
+		// So, if we choose to not truncation while compacting the in-order head above, we should try to
 		// truncate the entire Head efficiently before closing the DB since closing the DB does not release
 		// the memory either. NOTE: this is unnecessary if it does not reduce the memory spikes of compaction.
 		var blockNames []string
