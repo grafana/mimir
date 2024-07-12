@@ -77,7 +77,7 @@ func (p *partitionOffsetReader) getAndNotifyLastProducedOffset(ctx context.Conte
 	p.nextResultPromise = newResultPromise[int64]()
 	p.nextResultPromiseMx.Unlock()
 
-	// We call FetchLastProducedOffset() even if there are no goroutines waiting on the result in order to get
+	// We call FetchPartitionLastProducedOffset() even if there are no goroutines waiting on the result in order to get
 	// a constant load on the Kafka backend. In other words, the load produced on Kafka by this component is
 	// constant, regardless the number of received queries with strong consistency enabled.
 	offset, err := p.FetchLastProducedOffset(ctx)
@@ -93,7 +93,7 @@ func (p *partitionOffsetReader) getAndNotifyLastProducedOffset(ctx context.Conte
 // been ever produced in the partition. This function issues a single request, but the Kafka client used under the
 // hood may retry a failed request until the retry timeout is hit.
 func (p *partitionOffsetReader) FetchLastProducedOffset(ctx context.Context) (_ int64, returnErr error) {
-	return p.client.FetchLastProducedOffset(ctx, p.partitionID)
+	return p.client.FetchPartitionLastProducedOffset(ctx, p.partitionID)
 }
 
 // FetchPartitionStartOffset fetches and returns the start offset for a partition. This function returns 0 if no record has
