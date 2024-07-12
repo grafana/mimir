@@ -372,6 +372,26 @@ func (s *BucketStore) syncBlocks(ctx context.Context) error {
 // InitialSync perform blocking sync with extra step at the end to delete locally saved blocks that are no longer
 // present in the bucket. The mismatch of these can only happen between restarts, so we can do that only once per startup.
 func (s *BucketStore) InitialSync(ctx context.Context) error {
+	// Read the snapshot before running the sync. After we run a sync we'll start persisting the snapshots again,
+	// so we need to read the pre-shutdown snapshot before the sync.
+	previouslyLoadedBlocks := s.tryRestoreLoadedBlocksSet()
+
+	if err := s.syncBlocks(ctx); err != nil {
+		return errors.Wrap(err, "sync block")
+	}
+	if s.indexHeaderCfg.EagerLoadingStartupEnabled {
+		s.loadBlocks(ctx, previouslyLoadedBlocks)
+	}
+
+	err := s.cleanUpUnownedBlocks()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *BucketStore) tryRestoreLoadedBlocksSet() map[ulid.ULID]int64 {
 	previouslyLoadedBlocks, err := indexheader.RestoreLoadedBlocks(s.dir)
 	if err != nil {
 		level.Warn(s.logger).Log(
@@ -382,19 +402,7 @@ func (s *BucketStore) InitialSync(ctx context.Context) error {
 		// Don't fail initialization. If eager loading doesn't happen, then we will load index-headers lazily.
 		// Lazy loading which is slower, but not worth failing startup for.
 	}
-	if err := s.syncBlocks(ctx); err != nil {
-		return errors.Wrap(err, "sync block")
-	}
-	if s.indexHeaderCfg.EagerLoadingStartupEnabled {
-		s.loadBlocks(ctx, previouslyLoadedBlocks)
-	}
-
-	err = s.cleanUpUnownedBlocks()
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return previouslyLoadedBlocks
 }
 
 func (s *BucketStore) loadBlocks(ctx context.Context, blocks map[ulid.ULID]int64) {
