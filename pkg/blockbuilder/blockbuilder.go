@@ -372,15 +372,21 @@ type partitionInfo struct {
 }
 
 func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, pl partitionInfo, cycleEnd time.Time) error {
-	// TODO(codesome): when we deploy it first, we will not have any kafka commit and we will
-	// be lagging. Add an option to block builder to start consuming from the end for the first rollout.
-	// 		TODO Optionally also explore a way to consume in parts without the presence of commit
-	//      so that we don't go into a crash loop (because of low resources) in worst case.
+	// TODO(codesome): Add an option to block builder to start consuming from the end for the first rollout.
 	var commitRecTime time.Time
 	if pl.CommitRecTs > 0 {
 		commitRecTime = time.UnixMilli(pl.CommitRecTs)
 	}
-	lagging := !commitRecTime.IsZero() && cycleEnd.Sub(commitRecTime) > 3*b.cfg.ConsumeInterval/2
+	if commitRecTime.IsZero() {
+		// If there is no commit metadata, we use the lookback config to replay a set amount of
+		// records because it is non-trivial to peek at the first record in a partition to determine
+		// the range of replay required. Without knowing the range, we might end up trying to consume
+		// a lot of records in a single partition consumption call and end up in an OOM loop.
+		// TODO(codesome): add a test for this.
+		commitRecTime = time.Now().Add(-b.cfg.LookbackOnNoCommit).Truncate(b.cfg.ConsumeInterval)
+	}
+
+	lagging := cycleEnd.Sub(commitRecTime) > 3*b.cfg.ConsumeInterval/2
 	if !lagging {
 		// Either we did not find a commit offset or we are not lagging behind by
 		// more than 1.5 times the consume interval.
@@ -738,6 +744,7 @@ func unmarshallCommitMeta(meta string) (commitRecTs, lastRecTs, blockEnd int64, 
 type Config struct {
 	ConsumeInterval       time.Duration `yaml:"consume_interval"`
 	ConsumeIntervalBuffer time.Duration `yaml:"consume_interval_buffer"`
+	LookbackOnNoCommit    time.Duration `yaml:"lookback_on_no_commit" category:"advanced"`
 
 	Kafka               KafkaConfig                    `yaml:"kafka"`
 	BlocksStorageConfig mimir_tsdb.BlocksStorageConfig `yaml:"-"` // TODO(codesome): check how this is passed. Copied over form ingester.
@@ -748,6 +755,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	f.DurationVar(&cfg.ConsumeInterval, "block-builder.consume-interval", time.Hour, "Interval between block consumption cycles.")
 	f.DurationVar(&cfg.ConsumeIntervalBuffer, "block-builder.consume-interval-buffer", 15*time.Minute, "Extra buffer between subsequent block consumption cycles to avoid small blocks.")
+	f.DurationVar(&cfg.LookbackOnNoCommit, "block-builder.lookback-on-no-commit", 12*time.Hour, "How much of the historical records to look back when there is no kafka commit for a partition.")
 }
 
 func (cfg *Config) Validate() error {
