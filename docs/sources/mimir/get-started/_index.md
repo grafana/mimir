@@ -18,7 +18,7 @@ You can get started with Grafana Mimir _imperatively_ or _declaratively_:
 
 ## Before you begin
 
-- Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_VERSION>/get-started/install).
+- Verify that you have installed either a [Prometheus server](https://prometheus.io/docs/prometheus/latest/installation/) or [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_VERSION>/set-up/install).
 - Verify that you have installed [Docker](https://docs.docker.com/engine/install/).
 
 {{< admonition type="note" >}}
