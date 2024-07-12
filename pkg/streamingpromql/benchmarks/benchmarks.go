@@ -182,7 +182,7 @@ func TestCases(metricSizes []int) []BenchCase {
 			Expr: "sum by (le)(h_X)",
 		},
 		{
-			Expr: "histogram_sum(nh_X)",
+			Expr: "sum by (l)(nh_X)",
 		},
 		//{
 		//	Expr: "count_values('value', h_X)",
@@ -205,7 +205,7 @@ func TestCases(metricSizes []int) []BenchCase {
 			Expr: "sum by (le)(rate(h_X[1m]))",
 		},
 		{
-			Expr: "histogram_sum(rate(nh_X[1m]))",
+			Expr: "sum by (l)(rate(nh_X[1m]))",
 		},
 		//{
 		//	Expr: "sum without (l)(rate(a_X[1m]))",
