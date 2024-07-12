@@ -1447,7 +1447,9 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 			c.cfg = defaultIngesterTestConfig(t)
 			c.cfg.IngesterRing.InstanceID = fmt.Sprintf("ingester-%d", tc.registerPartitionID) // Ingester owns partition based on instance ID.
 			c.cfg.IngesterPartitionRing.KVStore.Mock = c.kvStore                               // Set ring with our in-memory KV, that we will use for watching.
-			c.cfg.BlocksStorageConfig.TSDB.Dir = ""                                            // Don't use default value, otherwise
+			c.cfg.BlocksStorageConfig.TSDB.Dir = ""
+			c.cfg.UpdateIngesterOwnedSeries = false       // Disable because we trigger updates manually, and we don't want regular checks to interfere with our triggers
+			c.cfg.UseIngesterOwnedSeriesForLimits = false // Disable because we trigger updates manually, and we don't want regular checks to interfere with our triggers
 
 			var err error
 			c.overrides, err = validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tc.limits))
