@@ -52,13 +52,11 @@ type ReaderPool struct {
 	// Keep track of all readers managed by the pool.
 	lazyReadersMx sync.Mutex
 	lazyReaders   map[*LazyBinaryReader]struct{}
-	// Snapshot of blocks loaded by the pool before the last shutdown.
-	preShutdownLoadedBlocks map[ulid.ULID]int64
 }
 
 // NewReaderPool makes a new ReaderPool. If lazy-loading is enabled, NewReaderPool also starts a background task for unloading idle Readers.
-func NewReaderPool(logger log.Logger, indexHeaderConfig Config, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics, loadedBlocks map[ulid.ULID]int64) *ReaderPool {
-	p := newReaderPool(logger, indexHeaderConfig, lazyLoadingGate, metrics, loadedBlocks)
+func NewReaderPool(logger log.Logger, indexHeaderConfig Config, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics) *ReaderPool {
+	p := newReaderPool(logger, indexHeaderConfig, lazyLoadingGate, metrics)
 
 	// Start a goroutine to close idle readers (only if required).
 	if p.lazyReaderEnabled && p.lazyReaderIdleTimeout > 0 {
@@ -83,23 +81,22 @@ func NewReaderPool(logger log.Logger, indexHeaderConfig Config, lazyLoadingGate 
 }
 
 // newReaderPool makes a new ReaderPool.
-func newReaderPool(logger log.Logger, indexHeaderConfig Config, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics, loadedBlocks map[ulid.ULID]int64) *ReaderPool {
+func newReaderPool(logger log.Logger, indexHeaderConfig Config, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics) *ReaderPool {
 	return &ReaderPool{
-		logger:                  logger,
-		metrics:                 metrics,
-		lazyReaderEnabled:       indexHeaderConfig.LazyLoadingEnabled,
-		lazyReaderIdleTimeout:   indexHeaderConfig.LazyLoadingIdleTimeout,
-		lazyReaders:             make(map[*LazyBinaryReader]struct{}),
-		close:                   make(chan struct{}),
-		preShutdownLoadedBlocks: loadedBlocks,
-		lazyLoadingGate:         lazyLoadingGate,
+		logger:                logger,
+		metrics:               metrics,
+		lazyReaderEnabled:     indexHeaderConfig.LazyLoadingEnabled,
+		lazyReaderIdleTimeout: indexHeaderConfig.LazyLoadingIdleTimeout,
+		lazyReaders:           make(map[*LazyBinaryReader]struct{}),
+		close:                 make(chan struct{}),
+		lazyLoadingGate:       lazyLoadingGate,
 	}
 }
 
 // NewBinaryReader creates and returns a new binary reader. If the pool has been configured
 // with lazy reader enabled, this function will return a lazy reader. The returned lazy reader
 // is tracked by the pool and automatically closed once the idle timeout expires.
-func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, cfg Config, initialSync bool) (Reader, error) {
+func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, cfg Config) (Reader, error) {
 	var readerFactory func() (Reader, error)
 	var reader Reader
 	var err error
@@ -109,19 +106,7 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 	}
 
 	if p.lazyReaderEnabled {
-		lazyBinaryReader, lazyErr := NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed, p.lazyLoadingGate)
-		if lazyErr != nil {
-			return nil, lazyErr
-		}
-
-		// we only try to eager load during initialSync
-		if initialSync && p.preShutdownLoadedBlocks != nil {
-			// we only eager load if we have preShutdownLoadedBlocks for the given block id
-			if p.preShutdownLoadedBlocks[id] > 0 {
-				lazyBinaryReader.EagerLoad(ctx)
-			}
-		}
-		reader, err = lazyBinaryReader, lazyErr
+		reader, err = NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed, p.lazyLoadingGate)
 	} else {
 		reader, err = readerFactory()
 	}
