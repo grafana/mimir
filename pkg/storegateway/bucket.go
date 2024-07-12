@@ -398,14 +398,14 @@ func (s *BucketStore) InitialSync(ctx context.Context) error {
 }
 
 func (s *BucketStore) loadBlocks(ctx context.Context, blocks map[ulid.ULID]int64) {
+	// This is not happening during a request so we can ignore the stats.
+	ignoredStats := newSafeQueryStats()
 	// We ignore the time the block was used because it can only be in the map if it was still loaded before the shutdown
 	s.blockSet.forEach(func(b *bucketBlock) {
 		if _, ok := blocks[b.meta.ULID]; !ok {
 			return
 		}
-		if lazyReader, ok := b.indexHeaderReader.(*indexheader.LazyBinaryReader); ok {
-			lazyReader.EagerLoad(ctx)
-		}
+		b.ensureIndexHeaderLoaded(ctx, ignoredStats)
 	})
 }
 
