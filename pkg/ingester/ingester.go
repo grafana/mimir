@@ -247,7 +247,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.limitMetricsUpdatePeriod = time.Second * 15
 }
 
-func (cfg *Config) Validate(logger log.Logger) error {
+func (cfg *Config) Validate(log.Logger) error {
 	if cfg.ErrorSampleRate < 0 {
 		return fmt.Errorf("error sample rate cannot be a negative number")
 	}
