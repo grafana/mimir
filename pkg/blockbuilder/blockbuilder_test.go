@@ -5,8 +5,11 @@ package blockbuilder
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path"
+	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,12 +17,15 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -473,6 +479,70 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 	)
 }
 
+// Testing block builder starting up with consumer reset offset.
+func TestBlockBuilder_StartupWithConsumerResetOffset(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	logger := test.NewTestingLogger(t)
+
+	_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, testTopic)
+	writeClient := newKafkaProduceClient(t, addr)
+
+	cfg, overrides := blockBuilderConfig(t, addr)
+
+	// Producing some records
+	kafkaTime := time.Now().Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
+	var expSamples []mimirpb.Sample
+	for i := int64(0); i < 12; i++ {
+		kafkaTime = kafkaTime.Add(cfg.ConsumeInterval / 2)
+		sampleTs := kafkaTime.Add(-time.Minute)
+		samples := floatSample(sampleTs.UnixMilli())
+		val := createWriteRequest(t, samples, nil)
+		produceRecords(ctx, t, writeClient, kafkaTime, "1", testTopic, 0, val)
+		expSamples = append(expSamples, samples...)
+	}
+
+	// Set the consumer to start from last known recod's timestamp if there is no commit.
+	consumerResetTime := kafkaTime.Add(-time.Minute).UnixMilli()
+	cfg.Kafka.ConsumerResetOffset = kafkaOffset(kgo.NewOffset().AfterMilli(consumerResetTime))
+
+	bb, err := New(cfg, logger, prometheus.NewPedanticRegistry(), overrides)
+	require.NoError(t, err)
+	var compactCalled atomic.Int32
+	bb.tsdbBuilder = func() builder {
+		testBuilder := newTestTSDBBuilder(cfg, overrides)
+		testBuilder.compactFunc = func() {
+			compactCalled.Add(1)
+		}
+		return testBuilder
+	}
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
+	})
+
+	// Wait for one full cycle to finish.
+	assert.Eventually(t, func() bool {
+		return promtestutil.ToFloat64(bb.metrics.consumeCyclesTotal) > 0
+	}, 30*time.Second, 10*time.Millisecond)
+
+	// require.EqualValues(t, 1, compactCalled.Load())
+
+	bucketDir := path.Join(cfg.BlocksStorageConfig.Bucket.Filesystem.Directory, "1")
+	db, err := tsdb.Open(bucketDir, log.NewNopLogger(), nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	// compareQuery(t,
+	// 	db,
+	// 	expSamples,
+	// 	nil,
+	// 	labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+	// )
+}
+
 func produceRecords(
 	ctx context.Context,
 	t *testing.T,
@@ -492,6 +562,8 @@ func produceRecords(
 	}
 	produceResult := writeClient.ProduceSync(ctx, rec)
 	require.NoError(t, produceResult.FirstErr())
+	res, _ := produceResult.First()
+	t.Logf("produce record: ts %s, off %d", res.Timestamp, res.Offset)
 	return produceResult
 }
 
@@ -557,4 +629,66 @@ func TestKafkaCommitMetaMarshalling(t *testing.T) {
 	// Error parsing
 	_, _, _, err = unmarshallCommitMeta("1,3,4")
 	require.Error(t, err)
+}
+
+func TestKafkaOffset_FlagValue(t *testing.T) {
+	now := time.Now().UTC()
+
+	cases := []struct {
+		in   string
+		want kgo.Offset
+	}{
+		{
+			"start",
+			kgo.NewOffset().AtStart(),
+		},
+		{
+			"end",
+			kgo.NewOffset().AtEnd(),
+		},
+		{
+			strconv.FormatInt(now.UnixMilli(), 10),
+			kgo.NewOffset().AfterMilli(now.UnixMilli()),
+		},
+	}
+
+	for _, tt := range cases {
+		var val kafkaOffset
+		err := val.Set(tt.in)
+		require.NoError(t, err)
+		require.Equal(t, tt.want, kgo.Offset(val))
+	}
+}
+
+func TestKafkaOffset_YAML(t *testing.T) {
+	now := time.Now().UTC()
+
+	type testStruct struct {
+		Offset kafkaOffset `yaml:"offset"`
+	}
+
+	cases := []struct {
+		in   string
+		want kgo.Offset
+	}{
+		{
+			"offset: start",
+			kgo.NewOffset().AtStart(),
+		},
+		{
+			"offset: end",
+			kgo.NewOffset().AtEnd(),
+		},
+		{
+			fmt.Sprintf("offset: %d", now.UnixMilli()),
+			kgo.NewOffset().AfterMilli(now.UnixMilli()),
+		},
+	}
+
+	for _, tt := range cases {
+		var val testStruct
+		err := yaml.Unmarshal([]byte(tt.in), &val)
+		require.NoError(t, err)
+		require.Equal(t, tt.want, kgo.Offset(val.Offset))
+	}
 }
