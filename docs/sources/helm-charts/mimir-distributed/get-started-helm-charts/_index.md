@@ -277,7 +277,7 @@ prometheus.remote_write "LABEL" {
 }
 ```
 
-For more information about the `prometheus.remote_write` component, refer to [prometheus.remote_write](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus.remote_write) in the Grafana Alloy documentation.
+For more information about the `prometheus.remote_write` component, refer to [prometheus.remote_write](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.remote_write) in the Grafana Alloy documentation.
 
 ### Query metrics in Grafana
 
