@@ -51,6 +51,7 @@
 * [BUGFIX] Alertmanager: Fixes a number of bugs in silences which could cause an existing silence to be deleted/expired when updating the silence failed. This could happen when the replacing silence was invalid or exceeded limits. #8525
 * [BUGFIX] Alertmanager: Fix help message for utf-8-strict-mode. #8572
 * [BUGFIX] Query-frontend: Ensure that internal errors result in an HTTP 500 response code instead of 422. #8595 #8666
+* [BUGFIX] Configuration: Multi line envs variables are flatten during injection to be compatible with YAML syntax
 
 ### Mixin
 
