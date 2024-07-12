@@ -359,37 +359,3 @@ func produceErrReason(err error) string {
 	}
 	return "other"
 }
-
-type writerKafkaClientMetrics struct {
-	reg prometheus.Registerer
-
-	bufferedProduceBytesPeak prometheus.Summary
-}
-
-func newWriterKafkaClientMetrics(reg prometheus.Registerer) *writerKafkaClientMetrics {
-	return &writerKafkaClientMetrics{
-		reg: reg,
-		bufferedProduceBytesPeak: promauto.With(reg).NewSummary(
-			prometheus.SummaryOpts{
-				Name:       "cortex_ingest_storage_writer_buffered_produce_bytes_peak",
-				Help:       "The peak of buffered produce records in bytes, over the last 60s.",
-				Objectives: map[float64]float64{1: 0.001},
-				MaxAge:     time.Minute,
-				AgeBuckets: 6,
-			}),
-	}
-}
-
-// OnNewClient implements the kgo.HookNewClient.
-func (m *writerKafkaClientMetrics) OnNewClient(client *kgo.Client) {
-
-}
-
-// OnClientClosed implements the kgo.HookClientClosed.
-func (m *writerKafkaClientMetrics) OnClientClosed(*kgo.Client) {
-	if m.reg == nil {
-		return
-	}
-
-	_ = m.reg.Unregister(m.bufferedProduceBytesPeak)
-}
