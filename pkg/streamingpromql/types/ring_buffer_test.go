@@ -162,6 +162,52 @@ func testDiscardPointsBeforeThroughWrapAround[T any](t *testing.T, buf ringBuffe
 	shouldHavePoints(t, buf, points[5])
 }
 
+func TestRemoveLastPoint(t *testing.T) {
+	points := []promql.HPoint{
+		{T: 1, H: &histogram.FloatHistogram{Count: 100}},
+		{T: 2, H: &histogram.FloatHistogram{Count: 200}},
+		{T: 3, H: &histogram.FloatHistogram{Count: 300}},
+		{T: 4, H: &histogram.FloatHistogram{Count: 400}},
+	}
+
+	buf := &hPointRingBufferWrapper{&HPointRingBuffer{pool: &hPointPoolForRingBufferTesting{}}}
+
+	buf.Reset()
+	for _, p := range points[:2] {
+		require.NoError(t, buf.Append(p))
+	}
+
+	shouldHavePoints(t, buf, points[:2]...)
+	require.Equal(t, 2, len(buf.GetPoints()))
+	require.Equal(t, 2, buf.size)
+
+	nextPoint, err := buf.NextPoint()
+	require.NoError(t, err)
+	require.Equal(t, 4, len(buf.GetPoints()))
+	require.Equal(t, 3, buf.size)
+
+	*nextPoint = points[2]
+	shouldHavePoints(t, buf, points[:3]...)
+
+	buf.RemoveLastPoint()
+	shouldHavePoints(t, buf, points[:2]...)
+	require.Equal(t, 4, len(buf.GetPoints()))
+	require.Equal(t, 2, buf.size)
+
+	buf.RemoveLastPoint()
+	shouldHavePoints(t, buf, points[:1]...)
+	require.Equal(t, 4, len(buf.GetPoints()))
+	require.Equal(t, 1, buf.size)
+
+	buf.RemoveLastPoint()
+	shouldHaveNoPoints(t, buf)
+	require.Equal(t, 4, len(buf.GetPoints()))
+	require.Equal(t, 0, buf.GetFirstIndex())
+	require.Equal(t, 0, buf.size)
+
+	require.Panics(t, func() { buf.RemoveLastPoint() }, "expected panic when removing point from empty buffer")
+}
+
 func shouldHaveNoPoints[T any](t *testing.T, buf ringBuffer[T]) {
 	shouldHavePoints(
 		t,
