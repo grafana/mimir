@@ -216,8 +216,6 @@ The following features or configuration parameters are currently deprecated and 
   - the metric `cortex_distributor_sample_delay_seconds`
 - Ingester
   - `-ingester.return-only-grpc-errors`
-- Ingester client
-  - `-ingester.client.report-grpc-codes-in-instrumentation-label-enabled`
 - Mimirtool
   - the flag `--rule-files`
 - Querier
