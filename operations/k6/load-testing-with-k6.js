@@ -62,7 +62,7 @@ const TOTAL_SERIES = WRITE_REQUEST_RATE * WRITE_SERIES_PER_REQUEST;
  * Duration of the load test in minutes (including ramp up and down).
  * @constant {number}
  */
-const DURATION_MIN = parseInt(__ENV.K6_DURATION_MIN || (60));
+const DURATION_MIN = parseInt(__ENV.K6_DURATION_MIN || (10));
 /**
  * Duration of the ramp up period in minutes.
  * @constant {number}
@@ -197,7 +197,7 @@ export const options = {
             // The number of VUs should be adjusted based on how much load we're pushing on the read path.
             // We estimated about 10 VU every query/sec.
             preAllocatedVUs: query_request_rates.store_gateway_queries * 10,
-            maxVus: query_request_rates.store_gateway_queries * 100
+            maxVus: query_request_rates.store_gateway_queries * 130 // enough for 2 min gateway timeout
         },
         ingester_queries: {
             executor: 'constant-arrival-rate',
@@ -210,7 +210,7 @@ export const options = {
             // The number of VUs should be adjusted based on how much load we're pushing on the read path.
             // We estimated about 5 VU every query/sec.
             preAllocatedVUs: query_request_rates.ingester_queries * 10,
-            maxVus: query_request_rates.ingester_queries * 100,
+            maxVus: query_request_rates.ingester_queries * 130, // enough for 2 min gateway timeout
         },
     },
 };
