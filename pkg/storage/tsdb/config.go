@@ -21,7 +21,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -416,25 +415,8 @@ type BucketStoreConfig struct {
 	// Controls advanced options for index-header file reading.
 	IndexHeader indexheader.Config `yaml:"index_header" category:"advanced"`
 
-	StreamingBatchSize          int    `yaml:"streaming_series_batch_size" category:"advanced"`
-	SeriesSelectionStrategyName string `yaml:"series_selection_strategy" category:"experimental"`
-	SelectionStrategies         struct {
-		WorstCaseSeriesPreference float64 `yaml:"worst_case_series_preference" category:"experimental"`
-	} `yaml:"series_selection_strategies"`
-}
-
-const (
-	SpeculativePostingsStrategy                = "speculative"
-	WorstCasePostingsStrategy                  = "worst-case"
-	WorstCaseSmallPostingListsPostingsStrategy = "worst-case-small-posting-lists"
-	AllPostingsStrategy                        = "all"
-)
-
-var validSeriesSelectionStrategies = []string{
-	SpeculativePostingsStrategy,
-	WorstCasePostingsStrategy,
-	WorstCaseSmallPostingListsPostingsStrategy,
-	AllPostingsStrategy,
+	StreamingBatchSize    int     `yaml:"streaming_series_batch_size" category:"advanced"`
+	SeriesFetchPreference float64 `yaml:"series_fetch_preference" category:"advanced"`
 }
 
 // RegisterFlags registers the BucketStore flags
@@ -459,8 +441,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.PostingOffsetsInMemSampling, "blocks-storage.bucket-store.posting-offsets-in-mem-sampling", DefaultPostingOffsetInMemorySampling, "Controls what is the ratio of postings offsets that the store will hold in memory.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
 	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 5000, "This option controls how many series to fetch per batch. The batch size must be greater than 0.")
-	f.StringVar(&cfg.SeriesSelectionStrategyName, seriesSelectionStrategyFlag, WorstCasePostingsStrategy, "This option controls the strategy to selection of series and deferring application of matchers. A more aggressive strategy will fetch less posting lists at the cost of more series. This is useful when querying large blocks in which many series share the same label name and value. Supported values (most aggressive to least aggressive): "+strings.Join(validSeriesSelectionStrategies, ", ")+".")
-	f.Float64Var(&cfg.SelectionStrategies.WorstCaseSeriesPreference, "blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference", 0.75, "This option is only used when "+seriesSelectionStrategyFlag+"="+WorstCasePostingsStrategy+". Increasing the series preference results in fetching more series than postings. Must be a positive floating point number.")
+	f.Float64Var(&cfg.SeriesFetchPreference, "blocks-storage.bucket-store.series-fetch-preference", 0.75, "This parameter controls the tradeoff in fetching series versus fetching postings to fulfill a series request. Increasing the series preference results in fetching more series and reducing the volume of postings fetched. Reducing the series preference results in the opposite. Increase this parameter to reduce the rate of fetched series bytes (see \"Mimir / Queries\" dashboard) or API calls to the object store. Must be a positive floating point number.")
 }
 
 // Validate the config.
@@ -480,10 +461,7 @@ func (cfg *BucketStoreConfig) Validate() error {
 	if err := cfg.BucketIndex.Validate(); err != nil {
 		return errors.Wrap(err, "bucket-index configuration")
 	}
-	if !util.StringsContain(validSeriesSelectionStrategies, cfg.SeriesSelectionStrategyName) {
-		return errors.New("invalid series-selection-strategy, set one of " + strings.Join(validSeriesSelectionStrategies, ", "))
-	}
-	if cfg.SeriesSelectionStrategyName == WorstCasePostingsStrategy && cfg.SelectionStrategies.WorstCaseSeriesPreference <= 0 {
+	if cfg.SeriesFetchPreference <= 0 {
 		return errors.New("invalid worst-case series preference; must be positive")
 	}
 	if err := cfg.IndexHeader.Validate(); err != nil {
