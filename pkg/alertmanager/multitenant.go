@@ -691,16 +691,12 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 	}
 }
 
+// isPromoted returns true if the Alertmanager for a user is marked as promoted.
 func (am *MultitenantAlertmanager) isPromoted(user string) bool {
 	am.alertmanagersMtx.Lock()
 	defer am.alertmanagersMtx.Unlock()
 	existing, ok := am.alertmanagers[user]
-	if !ok {
-		// If the Alertmanager doesn't exist yet for a user, we return true.
-		// syncConfigs Alertmanager will be created by setConfig and the state will be promoted on the next sync if needed.
-		return true
-	}
-	return existing.promoted
+	return ok && existing.promoted
 }
 
 // computeConfig takes an AlertConfigDescs struct containing Mimir and Grafana configurations.
