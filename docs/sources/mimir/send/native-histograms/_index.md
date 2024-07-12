@@ -180,7 +180,7 @@ To ease the migration process, you can keep the custom bucket definition for cla
 1. After configuring native histogram collection, choose one of the following ways to stop collecting classic histograms.
 
     - Remove the custom bucket definition, `Buckets`/`classicUpperBounds`, from the instrumentation.
-    - Drop the classic histogram series with [Prometheus relabeling](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) or [Grafana Alloy prometheus.relabel](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus.relabel) at the time of scraping. 
+    - Drop the classic histogram series with [Prometheus relabeling](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) or [Grafana Alloy prometheus.relabel](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.relabel) at the time of scraping. 
     - Stop scraping the classic histogram version of metrics. This option applies to all metrics of a scrape target.
 
 Code examples with both classic and native histogram defined for the same metric:
