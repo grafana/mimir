@@ -65,9 +65,11 @@ type Writer struct {
 	writers   []*kgo.Client
 
 	// Metrics.
-	writeLatency      prometheus.Histogram
-	writeBytesTotal   prometheus.Counter
-	recordsPerRequest prometheus.Histogram
+	writeRequestsTotal prometheus.Counter
+	writeFailuresTotal *prometheus.CounterVec
+	writeLatency       prometheus.Histogram
+	writeBytesTotal    prometheus.Counter
+	recordsPerRequest  prometheus.Histogram
 
 	// The following settings can only be overridden in tests.
 	maxInflightProduceRequests int
@@ -82,6 +84,14 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		maxInflightProduceRequests: 20,
 
 		// Metrics.
+		writeRequestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_writer_produce_requests_total",
+			Help: "Total number of produce requests issued to Kafka.",
+		}),
+		writeFailuresTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_writer_produce_failures_total",
+			Help: "Total number of failed produce requests issued to Kafka.",
+		}, []string{"reason"}),
 		writeLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                            "cortex_ingest_storage_writer_latency_seconds",
 			Help:                            "Latency to write an incoming request to the ingest storage.",
@@ -185,15 +195,24 @@ func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, records []
 		res       kgo.ProduceResults
 	)
 
+	w.writeRequestsTotal.Add(float64(len(records)))
+
 	for _, record := range records {
 		// We use a new context to avoid that other Produce() may be cancelled when this call's context is
 		// canceled. It's important to note that cancelling the context passed to Produce() doesn't actually
 		// prevent the data to be sent over the wire (because it's never removed from the buffer) but in some
 		// cases may cause all requests to fail with context cancelled.
-		client.Produce(context.WithoutCancel(ctx), record, func(r *kgo.Record, err error) {
+		//
+		// We use TryProduce() instead of Produce() so that it will fast fail if the produce buffer is full.
+		// If we would use Produce(), the Produce() function call will block until the buffer can accept the record.
+		client.TryProduce(context.WithoutCancel(ctx), record, func(r *kgo.Record, err error) {
 			resMx.Lock()
 			res = append(res, kgo.ProduceResult{Record: r, Err: err})
 			resMx.Unlock()
+
+			if err != nil {
+				w.writeFailuresTotal.WithLabelValues(produceErrReason(err)).Inc()
+			}
 
 			// In case of error we'll wait for all responses anyway before returning from produceSync().
 			// It allows us to keep code easier, given we don't expect this function to be frequently
@@ -250,6 +269,12 @@ func (w *Writer) newKafkaWriter(clientID int) (*kgo.Client, error) {
 		kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"client_id": strconv.Itoa(clientID)}, w.registerer)),
 		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
 
+	// Kafka client doesn't support unlimited buffered records, so we "simulate" it by setting a very high value.
+	maxBufferedRecords := w.kafkaCfg.ProducerMaxBufferedRecords
+	if maxBufferedRecords <= 0 {
+		maxBufferedRecords = math.MaxInt
+	}
+
 	opts := append(
 		commonKafkaClientOptions(w.kafkaCfg, metrics, logger),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
@@ -291,6 +316,10 @@ func (w *Writer) newKafkaWriter(clientID int) (*kgo.Client, error) {
 		kgo.RecordDeliveryTimeout(w.kafkaCfg.WriteTimeout),
 		kgo.ProduceRequestTimeout(w.kafkaCfg.WriteTimeout),
 		kgo.RequestTimeoutOverhead(writerRequestTimeoutOverhead),
+
+		// Override the produce buffer max size (both in terms of number of records and size in bytes).
+		kgo.MaxBufferedRecords(maxBufferedRecords),
+		kgo.MaxBufferedBytes(w.kafkaCfg.ProducerMaxBufferedBytes),
 	)
 	return kgo.NewClient(opts...)
 }
@@ -359,4 +388,22 @@ func successfulProduceRecordsStats(results kgo.ProduceResults) (count, sizeBytes
 	}
 
 	return
+}
+
+func produceErrReason(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, kgo.ErrRecordTimeout) {
+		return "timeout"
+	}
+	if errors.Is(err, kgo.ErrMaxBuffered) {
+		return "buffer-full"
+	}
+	if errors.Is(err, kerr.MessageTooLarge) {
+		return "record-too-large"
+	}
+	if errors.Is(err, context.Canceled) {
+		// This should never happen because we don't cancel produce requests, however we
+		// check this error anyway to detect if something unexpected happened.
+		return "canceled"
+	}
+	return "other"
 }

@@ -6641,6 +6641,26 @@
             },
             {
               "kind": "field",
+              "name": "producer_max_buffered_records",
+              "required": false,
+              "desc": "The maximum number of buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is applied per Kafka client. 0 to disable the limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.kafka.producer-max-buffered-records",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "producer_max_buffered_bytes",
+              "required": false,
+              "desc": "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is applied per Kafka client. 0 to disable the limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1073741824,
+              "fieldFlag": "ingest-storage.kafka.producer-max-buffered-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
               "name": "wait_strong_read_consistency_timeout",
               "required": false,
               "desc": "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.",
