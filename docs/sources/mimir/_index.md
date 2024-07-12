@@ -61,3 +61,6 @@ Grafana Mimir enables users to ingest Prometheus or OpenTelemetry metrics, run q
 ## Explore
 
 {{< card-grid key="cards" type="simple" >}}
+
+<br/>
+For information about using Adaptive Metrics to save costs in Grafana Cloud, refer to [Reduce metrics costs via Adaptive Metrics](https://grafana.com/docs/grafana-cloud/cost-management-and-billing/reduce-costs/metrics-costs/control-metrics-usage-via-adaptive-metrics/) in the Grafana Cloud documentation.
