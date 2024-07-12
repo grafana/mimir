@@ -726,6 +726,8 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 			c.cfg.IngesterRing.ReplicationFactor = 1 // Currently we require RF=number of zones, and we will only work with single zone.
 			c.cfg.IngesterRing.HeartbeatPeriod = defaultHeartbeatPeriod
 			c.cfg.IngesterRing.UnregisterOnShutdown = false
+			c.cfg.UpdateIngesterOwnedSeries = false       // Disable because we trigger updates manually, and we don't want regular checks to interfere with our triggers
+			c.cfg.UseIngesterOwnedSeriesForLimits = false // Disable because we trigger updates manually, and we don't want regular checks to interfere with our triggers
 
 			// Note that we don't start the ingester's owned series service (cfg.UseIngesterOwnedSeriesForLimits and cfg.UpdateIngesterOwnedSeries are false)
 			// because we'll be testing a stand-alone service to better control when it runs.
