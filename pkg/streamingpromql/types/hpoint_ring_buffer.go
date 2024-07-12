@@ -186,6 +186,7 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 // This is used for when NextPoint allocates a point that is then unused and
 // needs to be returned to the ring buffer.
 // This occurs when a histogram point has a stale marker.
+// It panics if the buffer is empty.
 func (b *HPointRingBuffer) RemoveLastPoint() {
 	if b.size == 0 {
 		panic("There are no points to remove")
