@@ -1867,17 +1867,6 @@
         },
         {
           "kind": "field",
-          "name": "prefer_streaming_chunks_from_store_gateways",
-          "required": false,
-          "desc": "Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "querier.prefer-streaming-chunks-from-store-gateways",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "streaming_chunks_per_ingester_series_buffer_size",
           "required": false,
           "desc": "Number of series to buffer per ingester when streaming chunks from ingesters.",
