@@ -33,8 +33,8 @@ for POD in $PODS; do
     -d @ \
     -H "X-Scope-OrgID: $MIMIR_TENANT_ID" \
     -proto pkg/ingester/client/ingester.proto \
-    -import-path "$SCRIPT_DIR" \
-    -import-path "$SCRIPT_DIR/vendor" \
+    -import-path "$SCRIPT_DIR/../.." \
+    -import-path "$SCRIPT_DIR/../../vendor" \
     -plaintext \
     localhost:9095 "cortex.Ingester/QueryStream" > "$OUTPUT_DIR/$POD"
 

@@ -193,9 +193,10 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 			BlockSyncConcurrency:        20,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
-				EagerLoadingStartupEnabled: true,
-				LazyLoadingEnabled:         true,
-				LazyLoadingIdleTimeout:     time.Minute,
+				EagerLoadingStartupEnabled:  true,
+				LazyLoadingEnabled:          true,
+				LazyLoadingIdleTimeout:      time.Minute,
+				EagerLoadingPersistInterval: time.Minute,
 			},
 		},
 		cfg.postingsStrategy,

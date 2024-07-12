@@ -9428,10 +9428,10 @@
                   "required": false,
                   "desc": "Timeout for the queue of index header loads. If the queue is full and the timeout is reached, the load will return an error. 0 means no timeout and the load will wait indefinitely.",
                   "fieldValue": null,
-                  "fieldDefaultValue": 0,
+                  "fieldDefaultValue": 5000000000,
                   "fieldFlag": "blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout",
                   "fieldType": "duration",
-                  "fieldCategory": "experimental"
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "field",

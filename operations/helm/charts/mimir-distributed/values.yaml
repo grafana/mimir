@@ -3779,6 +3779,23 @@ metaMonitoring:
     #  capabilities:
     #    drop: [ALL]
 
+    # -- Node selector for Deployment Pods
+    nodeSelector: {}
+    # -- Tolerations for Deployment Pods
+    tolerations: []
+
+    # -- topologySpreadConstraints allows to customize the default topologySpreadConstraints.
+    # More info: https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/#topologyspreadconstraints-field
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        # minDomains: 1
+        # nodeAffinityPolicy: Honor
+        # nodeTaintsPolicy: Honor
+        # matchLabelKeys:
+        #   - pod-template-hash
+
 # -- Values exposed by the [Grafana agent-operator chart](https://github.com/grafana/helm-charts/blob/main/charts/agent-operator/values.yaml)
 grafana-agent-operator:
   podSecurityContext:

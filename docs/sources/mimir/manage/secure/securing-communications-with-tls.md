@@ -143,6 +143,7 @@ The following Grafana Mimir components support TLS for inter-communication, whic
 - gRPC client used by distributors, queriers, and rulers to connect to ingesters: `-ingester.client.*`
 - etcd client used by all Mimir components to connect to etcd, which is required only if you're running the hash ring or HA tracker on the etcd backend: `-<prefix>.etcd.*`
 - Memberlist client used by all Mimir components to gossip the hash ring, which is required only if you're running the hash ring on memberlist: `-memberlist.`
+- Memcached client used by all Mimir components: `-blocks-storage.bucket-store.chunks-cache.memcached.*`, `-blocks-storage.bucket-store.index-cache.memcached.*`, `-blocks-storage.bucket-store.metadata-cache.memcached.*`, `-query-frontend.results-cache.memcached.*`, `-ruler-storage.cache.memcached.*`
 
 Each of the components listed above support the following TLS configuration options, which are shown with their corresponding flag suffixes:
 
@@ -151,6 +152,9 @@ Each of the components listed above support the following TLS configuration opti
 - `*.tls-insecure-skip-verify=<boolean>`: Skip validating the server certificate.
 - `*.tls-cipher-suites=<string>`: Comma-separated list of accepted cipher suites. For the list of supported cipher suites, refer to [Grafana Mimir configuration parameters]({{< relref "../../configure/configuration-parameters" >}}).
 - `*.tls-min-version=<string>`: Minimum TLS version required. For the list of supported versions, refer to [Grafana Mimir configuration parameters]({{< relref "../../configure/configuration-parameters" >}}).
+- `*.tls-cert-path=<string>`: Path to the client certificate.
+- `*.tls-key-path=<string>`: Path to the key for the client certificate.
+- `*.tls-ca-path=<string>`: Path to the CA certificates to validate server certificate against.
 
 The following example shows how to configure the gRPC client flags in the querier used to connect to the query-frontend:
 
