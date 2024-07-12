@@ -74,6 +74,12 @@
 ### Mimirtool
 
 * [CHANGE] Analyze Rules: Count recording rules used in rules group as used. #6133
+* [CHANGE] Remove deprecated `--rule-files` flag in favor of CLI arguments for the following commands: #7756
+  * `mimirtool rules load`
+  * `mimirtool rules sync`
+  * `mimirtool rules diff`
+  * `mimirtool rules check`
+  * `mimirtool rules prepare`
 
 ### Mimir Continuous Test
 
