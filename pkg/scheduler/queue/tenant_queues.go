@@ -31,12 +31,22 @@ type queueBroker struct {
 	maxTenantQueueSize               int
 	additionalQueueDimensionsEnabled bool
 	prioritizeQueryComponents        bool
+
+	whichAlgo QueueAlgo
 }
+
+type QueueAlgo string
+
+const (
+	Baseline     QueueAlgo = "baseline"
+	MultiAlgo    QueueAlgo = "multi_algo"
+	QuerierGroup QueueAlgo = "querier_group"
+)
 
 func newQueueBroker(
 	maxTenantQueueSize int,
 	additionalQueueDimensionsEnabled bool,
-	useMultiAlgoTreeQueue bool,
+	whichAlgo QueueAlgo,
 	forgetDelay time.Duration,
 ) *queueBroker {
 	currentQuerier := QuerierID("")
@@ -54,15 +64,22 @@ func newQueueBroker(
 
 	var tree Tree
 	var err error
-	if useMultiAlgoTreeQueue {
+	switch whichAlgo {
+	case Baseline:
+		tree = NewTreeQueue("root")
+	case MultiAlgo:
 		tree, err = NewTree(
 			tqas,               // root; QueuingAlgorithm selects tenants
 			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
 			&roundRobinState{}, // query components; QueuingAlgorithm selects query from local queue
 		)
-	} else {
-		// by default, use the legacy tree queue
-		tree = NewTreeQueue("root")
+	case QuerierGroup:
+		tree, err = NewTree(
+			&querierWorkerPrioritizationQueueAlgo{},
+			tqas,
+		)
+	default:
+		panic(fmt.Sprintf("unknown queue algorithm: %s", whichAlgo))
 	}
 
 	// An error building the tree is fatal; we must panic
@@ -74,6 +91,7 @@ func newQueueBroker(
 		tenantQuerierAssignments:         tqas,
 		maxTenantQueueSize:               maxTenantQueueSize,
 		additionalQueueDimensionsEnabled: additionalQueueDimensionsEnabled,
+		whichAlgo:                        whichAlgo,
 	}
 
 	return qb
@@ -139,12 +157,22 @@ func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQuer
 }
 
 func (qb *queueBroker) makeQueuePath(request *tenantRequest) (QueuePath, error) {
-	if qb.additionalQueueDimensionsEnabled {
-		if schedulerRequest, ok := request.req.(*SchedulerRequest); ok {
-			if qb.prioritizeQueryComponents {
-				return append(schedulerRequest.AdditionalQueueDimensions, string(request.tenantID)), nil
+
+	switch qb.whichAlgo {
+	case Baseline:
+		return QueuePath{string(request.tenantID)}, nil
+	case MultiAlgo:
+		if qb.additionalQueueDimensionsEnabled {
+			if schedulerRequest, ok := request.req.(*SchedulerRequest); ok {
+				if qb.prioritizeQueryComponents {
+					return append(schedulerRequest.AdditionalQueueDimensions, string(request.tenantID)), nil
+				}
+				return append(QueuePath{string(request.tenantID)}, schedulerRequest.AdditionalQueueDimensions...), nil
 			}
-			return append(QueuePath{string(request.tenantID)}, schedulerRequest.AdditionalQueueDimensions...), nil
+		}
+	case QuerierGroup:
+		if schedulerRequest, ok := request.req.(*SchedulerRequest); ok {
+			return append(schedulerRequest.AdditionalQueueDimensions, string(request.tenantID)), nil
 		}
 	}
 
