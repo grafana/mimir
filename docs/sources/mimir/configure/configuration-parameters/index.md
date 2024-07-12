@@ -3817,12 +3817,6 @@ kafka:
   # CLI flag: -ingest-storage.kafka.producer-max-record-size-bytes
   [producer_max_record_size_bytes: <int> | default = 15983616]
 
-  # The maximum number of buffered and unacknowledged produced records sent to
-  # Kafka. The produce request fails once this limit is reached. This limit is
-  # applied per Kafka client. 0 to disable the limit.
-  # CLI flag: -ingest-storage.kafka.producer-max-buffered-records
-  [producer_max_buffered_records: <int> | default = 0]
-
   # The maximum size of (uncompressed) buffered and unacknowledged produced
   # records sent to Kafka. The produce request fails once this limit is reached.
   # This limit is applied per Kafka client. 0 to disable the limit.

@@ -6641,16 +6641,6 @@
             },
             {
               "kind": "field",
-              "name": "producer_max_buffered_records",
-              "required": false,
-              "desc": "The maximum number of buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is applied per Kafka client. 0 to disable the limit.",
-              "fieldValue": null,
-              "fieldDefaultValue": 0,
-              "fieldFlag": "ingest-storage.kafka.producer-max-buffered-records",
-              "fieldType": "int"
-            },
-            {
-              "kind": "field",
               "name": "producer_max_buffered_bytes",
               "required": false,
               "desc": "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is applied per Kafka client. 0 to disable the limit.",

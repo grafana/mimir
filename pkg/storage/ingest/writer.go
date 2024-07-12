@@ -269,12 +269,6 @@ func (w *Writer) newKafkaWriter(clientID int) (*kgo.Client, error) {
 		kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"client_id": strconv.Itoa(clientID)}, w.registerer)),
 		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
 
-	// Kafka client doesn't support unlimited buffered records, so we "simulate" it by setting a very high value.
-	maxBufferedRecords := w.kafkaCfg.ProducerMaxBufferedRecords
-	if maxBufferedRecords <= 0 {
-		maxBufferedRecords = math.MaxInt
-	}
-
 	opts := append(
 		commonKafkaClientOptions(w.kafkaCfg, metrics, logger),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
@@ -317,8 +311,8 @@ func (w *Writer) newKafkaWriter(clientID int) (*kgo.Client, error) {
 		kgo.ProduceRequestTimeout(w.kafkaCfg.WriteTimeout),
 		kgo.RequestTimeoutOverhead(writerRequestTimeoutOverhead),
 
-		// Override the produce buffer max size (both in terms of number of records and size in bytes).
-		kgo.MaxBufferedRecords(maxBufferedRecords),
+		// Unlimited number of buffered records because we limit on bytes (easier to reason about).
+		kgo.MaxBufferedRecords(math.MaxInt),
 		kgo.MaxBufferedBytes(w.kafkaCfg.ProducerMaxBufferedBytes),
 	)
 	return kgo.NewClient(opts...)
