@@ -144,14 +144,14 @@ alerts to Grafana Mimir Alertmanager. In this section you're going to configure 
 tooling offered by Grafana.
 
 1. Open [Grafana Alerting](http://localhost:9000/alerting/list).
-2. Click to "New alert rule".
+2. Click to **New alert rule**.
 3. Configure the alert rule:
-   1. Select `Mimir or Loki alert` in the top selector.
-   2. Choose `Mimir` in the "Select data source" field.
-   3. Type `up == 0` in the "Metrics browser" query field.
-   4. Type `MimirNotRunning` in the "Rule name" field.
-   5. Select `example-namespace` in the "Namespace" field.
-   6. Select `example-group` in the "Group" field.
+   1. Select **Mimir or Loki alert** in the top selector.
+   2. Choose **Mimir** in the **Select data source** field.
+   3. Type `up == 0` in the **Metrics browser** query field.
+   4. Type `MimirNotRunning` in the **Rule name** field.
+   5. Select `example-namespace` in the **Namespace** field.
+   6. Select `example-group` in the **Group** field.
    7. From the upper-right corner, click the **Save and exit** button.
 
 Your `MimirNotRunning` alert rule is now being created in Grafana Mimir ruler and is expected to fire when the number of
