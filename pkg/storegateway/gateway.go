@@ -253,7 +253,6 @@ func (g *StoreGateway) starting(ctx context.Context) (err error) {
 	// At this point, the instance is registered with some tokens
 	// and we can start the bucket stores.
 	g.bucketSync.WithLabelValues(syncReasonInitial).Inc()
-	g.logger.Log("msg", "starting bucket initial sync")
 	if err = services.StartAndAwaitRunning(ctx, g.stores); err != nil {
 		return errors.Wrap(err, "starting bucket stores")
 	}
