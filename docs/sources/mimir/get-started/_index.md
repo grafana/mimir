@@ -172,7 +172,7 @@ prometheus.remote_write "LABEL" {
 }
 ```
 
-For more information about setting up Alloy, refer to [prometheus.remote_write](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus.remote_write/).
+For more information about setting up Alloy, refer to [prometheus.remote_write](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.remote_write/).
 
 ## Monitor Grafana Mimir with the integration for Grafana Cloud
 
