@@ -652,7 +652,7 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 
 		if am.shouldPromote(cfgs) && !am.isPromoted(cfgs.Grafana.User) {
 			level.Debug(am.logger).Log("msg", "promoting state", "user", cfgs.Grafana.User)
-			if err := am.promoteAndDeleteState(ctx, cfgs); err != nil {
+			if err := am.promoteAndDeleteState(ctx, cfg); err != nil {
 				level.Error(am.logger).Log("msg", "error promoting state", "err", err)
 			}
 			level.Debug(am.logger).Log("msg", "finished promoting state", "user", cfgs.Grafana.User)
@@ -742,50 +742,50 @@ func (am *MultitenantAlertmanager) shouldPromote(cfgs alertspb.AlertConfigDescs)
 	return promotableGrafanaConfig && ignorableMimirConfig
 }
 
-func (am *MultitenantAlertmanager) promoteAndDeleteState(ctx context.Context, cfgs alertspb.AlertConfigDescs) error {
-	switch {
-	case !cfgs.Grafana.Promoted, cfgs.Grafana.Default, cfgs.Grafana.RawConfig == "":
-		return nil
-
-	case cfgs.Mimir.RawConfig == am.fallbackConfig, cfgs.Mimir.RawConfig == "":
-		s, err := am.store.GetFullGrafanaState(ctx, cfgs.Grafana.User)
-		if err != nil {
-			if errors.Is(err, alertspb.ErrNotFound) {
-				fmt.Println("Not found!")
-				level.Debug(am.logger).Log("msg", "grafana state not found, skipping promotion", "user", cfgs.Grafana.User)
-				return nil
-			}
-			return err
+func (am *MultitenantAlertmanager) promoteAndDeleteState(ctx context.Context, cfg amConfig) error {
+	s, err := am.store.GetFullGrafanaState(ctx, cfg.User)
+	if err != nil {
+		if errors.Is(err, alertspb.ErrNotFound) {
+			// This is expected if the state was already promoted.
+			level.Debug(am.logger).Log("msg", "grafana state not found, skipping promotion", "user", cfg.User)
+			return nil
 		}
+		return err
+	}
 
+	am.alertmanagersMtx.Lock()
+	existing, ok := am.alertmanagers[cfg.User]
+	am.alertmanagersMtx.Unlock()
+	if !ok {
+		level.Debug(am.logger).Log("msg", "no Alertmanager found, creating new one before applying state", "user", cfg.User)
+		if err := am.setConfig(cfg); err != nil {
+			return fmt.Errorf("error creating new Alertmanager for user %s: %w", cfg.User, err)
+		}
 		am.alertmanagersMtx.Lock()
-		existing, ok := am.alertmanagers[cfgs.Grafana.User]
+		existing = am.alertmanagers[cfg.User]
 		am.alertmanagersMtx.Unlock()
-		if !ok {
-			return fmt.Errorf("alertmanager for user %s not found", cfgs.Grafana.User)
-		}
+	}
 
-		for _, p := range s.State.Parts {
-			switch p.Key {
-			case "silences":
-				p.Key = "sil:" + cfgs.Grafana.User
-			case "notifications":
-				p.Key = "nfl:" + cfgs.Grafana.User
-			default:
-				return fmt.Errorf("unknown part key %s", p.Key)
-			}
-		}
-
-		if err := existing.mergeFullExternalState([]*clusterpb.FullState{s.State}); err != nil {
-			return err
-		}
-
-		// Delete state.
-		if err := am.store.DeleteFullGrafanaState(ctx, cfgs.Grafana.User); err != nil {
-			return fmt.Errorf("error deleting grafana state for user %s: %w", cfgs.Grafana.User, err)
+	// Translate Grafana state keys to Mimir state keys.
+	for _, p := range s.State.Parts {
+		switch p.Key {
+		case "silences":
+			p.Key = "sil:" + cfg.User
+		case "notifications":
+			p.Key = "nfl:" + cfg.User
+		default:
+			return fmt.Errorf("unknown part key %s", p.Key)
 		}
 	}
 
+	if err := existing.mergeFullExternalState([]*clusterpb.FullState{s.State}); err != nil {
+		return err
+	}
+
+	// Delete state.
+	if err := am.store.DeleteFullGrafanaState(ctx, cfg.User); err != nil {
+		return fmt.Errorf("error deleting grafana state for user %s: %w", cfg.User, err)
+	}
 	return nil
 }
 
