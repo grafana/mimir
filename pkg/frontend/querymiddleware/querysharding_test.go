@@ -1724,7 +1724,7 @@ func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
 
 }
 
-func TestQuerySharding_Warnings(t *testing.T) {
+func TestQuerySharding_Annotations(t *testing.T) {
 	numSeries := 10
 	endTime := 100
 	storageSeries := make([]*promql.StorageSeries, 0, numSeries)
@@ -1778,10 +1778,15 @@ func TestQuerySharding_Warnings(t *testing.T) {
 		queryable: queryable,
 	}
 
-	templates := []string{"quantile(10, %s)", "quantile(10, sum(%s))"}
+	type template struct {
+		query     string
+		isWarning bool
+	}
+
+	templates := []template{{"quantile(10, %s)", true}, {"quantile(10, sum(%s))", true}, {"rate(%s[1m])", false}, {"increase(%s[1m])", false}}
 	for _, template := range templates {
-		t.Run(template, func(t *testing.T) {
-			query := fmt.Sprintf(template, seriesName)
+		t.Run(template.query, func(t *testing.T) {
+			query := fmt.Sprintf(template.query, seriesName)
 			req := &PrometheusRangeQueryRequest{
 				path:      "/query_range",
 				start:     0,
@@ -1796,28 +1801,36 @@ func TestQuerySharding_Warnings(t *testing.T) {
 			expectedRes, err := downstream.Do(injectedContext, req)
 			require.Nil(t, err)
 
-			// Ensure the query produces some results and warnings.
+			// Ensure the query produces some results.
 			require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
-			require.NotEmpty(t, expectedRes.(*PrometheusResponse).Warnings)
 
 			// Run the query with sharding.
 			shardedRes, err := shardingware.Wrap(downstream).Do(injectedContext, req)
 			require.Nil(t, err)
 
-			// Ensure the query produces some results and warnings.
+			// Ensure the query produces some results.
 			require.NotEmpty(t, shardedRes.(*PrometheusResponse).Data.Result)
-			require.NotEmpty(t, shardedRes.(*PrometheusResponse).Warnings)
 
 			// Run the query with splitting.
 			splitRes, err := splitware.Wrap(downstream).Do(injectedContext, req)
 			require.Nil(t, err)
 
-			// Ensure the query produces some results and warnings.
+			// Ensure the query produces some results.
 			require.NotEmpty(t, splitRes.(*PrometheusResponse).Data.Result)
-			require.NotEmpty(t, splitRes.(*PrometheusResponse).Warnings)
 
-			require.Equal(t, expectedRes.(*PrometheusResponse).Warnings, shardedRes.(*PrometheusResponse).Warnings)
-			require.Equal(t, expectedRes.(*PrometheusResponse).Warnings, splitRes.(*PrometheusResponse).Warnings)
+			if template.isWarning {
+				require.NotEmpty(t, expectedRes.(*PrometheusResponse).Warnings)
+				require.NotEmpty(t, shardedRes.(*PrometheusResponse).Warnings)
+				require.NotEmpty(t, splitRes.(*PrometheusResponse).Warnings)
+				require.Equal(t, expectedRes.(*PrometheusResponse).Warnings, shardedRes.(*PrometheusResponse).Warnings)
+				require.Equal(t, expectedRes.(*PrometheusResponse).Warnings, splitRes.(*PrometheusResponse).Warnings)
+			} else {
+				require.NotEmpty(t, expectedRes.(*PrometheusResponse).Infos)
+				require.NotEmpty(t, shardedRes.(*PrometheusResponse).Infos)
+				require.NotEmpty(t, splitRes.(*PrometheusResponse).Infos)
+				require.Equal(t, expectedRes.(*PrometheusResponse).Infos, shardedRes.(*PrometheusResponse).Infos)
+				require.Equal(t, expectedRes.(*PrometheusResponse).Infos, splitRes.(*PrometheusResponse).Infos)
+			}
 		})
 	}
 }
