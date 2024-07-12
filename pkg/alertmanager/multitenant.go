@@ -650,10 +650,12 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 			continue
 		}
 
-		if !am.isPromoted(cfgs.Grafana.User) {
+		if am.shouldPromote(cfgs) && !am.isPromoted(cfgs.Grafana.User) {
+			level.Debug(am.logger).Log("msg", "promoting state", "user", cfgs.Grafana.User)
 			if err := am.promoteAndDeleteState(ctx, cfgs); err != nil {
-				level.Warn(am.logger).Log("msg", "error promoting state", "err", err)
+				level.Error(am.logger).Log("msg", "error promoting state", "err", err)
 			}
+			level.Debug(am.logger).Log("msg", "finished promoting state", "user", cfgs.Grafana.User)
 		}
 
 		if err := am.setConfig(cfg); err != nil {
@@ -708,22 +710,11 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		AlertConfigDesc: cfgs.Mimir,
 		tmplExternalURL: am.cfg.ExternalURL.URL,
 	}
+	if !am.shouldPromote(cfgs) {
+		return cfg, nil
+	}
 
 	switch {
-	// Mimir configuration.
-	case !cfgs.Grafana.Promoted:
-		level.Debug(am.logger).Log("msg", "grafana configuration not promoted, using mimir config", "user", cfgs.Mimir.User)
-		return cfg, nil
-
-	case cfgs.Grafana.Default:
-		level.Debug(am.logger).Log("msg", "grafana configuration is default, using mimir config", "user", cfgs.Mimir.User)
-		return cfg, nil
-
-	case cfgs.Grafana.RawConfig == "":
-		level.Debug(am.logger).Log("msg", "grafana configuration is empty, using mimir config", "user", cfgs.Mimir.User)
-		return cfg, nil
-
-	// Grafana configuration.
 	case cfgs.Mimir.RawConfig == am.fallbackConfig:
 		level.Debug(am.logger).Log("msg", "mimir configuration is default, using grafana config with the default globals", "user", cfgs.Mimir.User)
 		return createUsableGrafanaConfig(cfgs.Grafana, &cfgs.Mimir)
@@ -738,6 +729,17 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", cfgs.Mimir.User)
 		return cfg, nil
 	}
+}
+
+// shouldPromote returns true if the Grafana configuration and state should be promoted.
+func (am *MultitenantAlertmanager) shouldPromote(cfgs alertspb.AlertConfigDescs) bool {
+	// A Grafana configuration can be promoted if it's marked as "promoted" and it's not default nor empty.
+	promotableGrafanaConfig := cfgs.Grafana.Promoted && !cfgs.Grafana.Default && cfgs.Grafana.RawConfig != ""
+	// A Mimir configuration can be ignored if it's default or empty.
+	ignorableMimirConfig := cfgs.Mimir.RawConfig == am.fallbackConfig || cfgs.Mimir.RawConfig == ""
+
+	// TODO: when merging configurations is implemented we should return whether the Grafana configuration is promotable.
+	return promotableGrafanaConfig && ignorableMimirConfig
 }
 
 func (am *MultitenantAlertmanager) promoteAndDeleteState(ctx context.Context, cfgs alertspb.AlertConfigDescs) error {
