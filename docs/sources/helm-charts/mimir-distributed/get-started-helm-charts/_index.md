@@ -268,7 +268,7 @@ To configure Grafana Alloy to write to Mimir, use the `prometheus.remote_write` 
 ```
 prometheus.remote_write "LABEL" {
   endpoint {
-    url = REMOTE_WRITE_URL
+    url = http://<ingress-host>/api/v1/push
 
     ...
   }

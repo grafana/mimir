@@ -151,46 +151,13 @@ Use the latest version of Prometheus or at least version 2.47.
 
 Use the latest version of [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_VERSION>).
 
-1. To scrape native histograms you need to enable the argument `enable_protobuf_negotiation` in the `prometheus.scrape` component:
+1. To scrape native histograms, you need to set the `scrape_protocols` argument in the `prometheus.scrape` component to specify `PrometheusProto` as the first protocol to negotiate:
 
    ```
-   prometheus.scrape "myapp" {
-     enable_protobuf_negotiation = true
-   }
+    scrape_protocols = ["PrometheusProto", "OpenMetricsText1.0.0", "OpenMetricsText0.0.1", "PrometheusText0.0.4"]
    ```
-
-    This flag makes Prometheus detect and scrape native histograms and ignore the classic histogram versions of metrics that also have native histograms defined. Classic histograms without native histogram definitions aren't affected. To keep scraping the classic histogram version of metrics with native histogram definitions, you need to set `scrape_classic_histograms` to `true` in your scrape jobs. For example:
-
-   ```
-   prometheus.scrape "myapp" {
-     enable_protobuf_negotiation = true
-     scrape_classic_histograms = true
-   }
-   ```
-
-   {{% admonition type="note" %}}
-   <!-- Issue: https://github.com/prometheus/prometheus/issues/11265 -->
-
-   Native histograms don't have a textual presentation at the moment on the application's `/metrics` endpoint, thus Grafana Agent negotiates a Protobuf protocol transfer in this case.
-   {{% /admonition %}}
-
-   {{% admonition type="note" %}}
-   <!-- Add link to Prometheus 2.48 documentation about labels when released.
-        Issue: https://github.com/prometheus/prometheus/issues/12984 -->
-
-   In certain situations, the protobuf parsing changes the number formatting of
-   the `le` labels of conventional histograms and the `quantile` labels of
-   summaries. Typically, this happens if the scraped target is instrumented with
-   [client_golang](https://github.com/prometheus/client_golang) provided that
-   [promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
-   is set to `false`. In such a case, integer label values are represented in the
-   text format as such, e.g. `quantile="1"` or `le="2"`. However, the protobuf parsing
-   changes the representation to float-like (following the OpenMetrics
-   specification), so the examples above become `quantile="1.0"` and `le="2.0"` after
-   ingestion into Prometheus, which changes the identity of the metric compared to
-   what was ingested before via the text format.
-   {{% /admonition %}}
-
+   For more information, refer to [prometheus.scrape](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.scrape/) in the Grafana Alloy documentation.
+  
 1. To send native histograms to a Prometheus remote write compatible receiver, such as Grafana Cloud Metrics or Mimir, set the `send_native_histograms` argument to `true` in the `prometheus.remote_write` component. For example:
 
    ```
