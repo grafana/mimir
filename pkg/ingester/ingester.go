@@ -3836,7 +3836,7 @@ func (i *Ingester) checkAvailableForPush() error {
 func (i *Ingester) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
 	err := i.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
 	if err != nil {
-		return i.mapPushErrorToErrorWithStatus(err)
+		return mapPushErrorToErrorWithStatus(err)
 	}
 	return nil
 }
@@ -3852,10 +3852,6 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 		return nil, err
 	}
 	return &mimirpb.WriteResponse{}, err
-}
-
-func (i *Ingester) mapPushErrorToErrorWithStatus(err error) error {
-	return mapPushErrorToErrorWithHTTPOrGRPCStatus(err)
 }
 
 func (i *Ingester) mapReadErrorToErrorWithStatus(err error) error {
