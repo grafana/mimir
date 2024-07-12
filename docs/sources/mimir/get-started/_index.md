@@ -163,7 +163,7 @@ Use the `prometheus.remote_write` component in Grafana Alloy to send metrics to 
 ```
 prometheus.remote_write "LABEL" {
   endpoint {
-    url = REMOTE_WRITE_URL
+    url = http://<ingress-host>/api/v1/push
 
     ...
   }
