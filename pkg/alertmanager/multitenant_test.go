@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/pprof"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,11 +36,14 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
+	"github.com/matttproud/golang_protobuf_extensions/pbutil"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	amconfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
+	pb "github.com/prometheus/alertmanager/nflog/nflogpb"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/pkg/labels"
+	"github.com/prometheus/alertmanager/silence/silencepb"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -2859,6 +2863,184 @@ func Test_configChanged(t *testing.T) {
 			assert.Equal(t, c.changed, r)
 		})
 	}
+}
+
+func TestPromoteAndDeleteState(t *testing.T) {
+	store := prepareInMemoryAlertStore()
+	am := setupSingleMultitenantAlertmanager(t,
+		mockAlertmanagerConfig(t),
+		store,
+		nil,
+		featurecontrol.NoopFlags{},
+		log.NewNopLogger(),
+		prometheus.NewPedanticRegistry(),
+	)
+	user := "test"
+	externalURL, err := url.Parse("http://test.com")
+	require.NoError(t, err)
+	cfg := amConfig{
+		AlertConfigDesc: alertspb.AlertConfigDesc{
+			User:      user,
+			RawConfig: "invalid",
+		},
+		tmplExternalURL: externalURL,
+	}
+	ctx := context.Background()
+
+	t.Run("having no grafana state should be a no-op", func(t *testing.T) {
+		require.NoError(t, am.promoteAndDeleteState(ctx, cfg))
+		// No AM should be created.
+		require.Nil(t, am.alertmanagers[user])
+	})
+
+	// Create test Grafana state.
+	var nBuf bytes.Buffer
+	_, err = pbutil.WriteDelimited(&nBuf, &pb.MeshEntry{
+		Entry: &pb.Entry{
+			Receiver:     &pb.Receiver{GroupName: `Grafana`, Integration: "grafanaIntegration", Idx: 0},
+			GroupKey:     []byte(`{}/{grafana="true"}/{receiver="grafana webhook"}:{alertname="grafana test"}`),
+			Timestamp:    time.Now(),
+			FiringAlerts: []uint64{14588439739663070854},
+		},
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	require.NoError(t, err)
+	grafanaNflog := nBuf.Bytes()
+
+	var silBuf bytes.Buffer
+	_, err = pbutil.WriteDelimited(&silBuf, &silencepb.MeshSilence{
+		Silence: &silencepb.Silence{
+			Id:       "grafana-id",
+			Matchers: []*silencepb.Matcher{{}},
+		},
+	})
+	require.NoError(t, err)
+	grafanaSilences := silBuf.Bytes()
+
+	t.Run("invalid am configuration should cause an error", func(t *testing.T) {
+		testGrafanaState := alertspb.FullStateDesc{
+			State: &clusterpb.FullState{
+				Parts: []clusterpb.Part{
+					{
+						Key:  "notifications",
+						Data: grafanaNflog,
+					},
+					{
+						Key:  "silences",
+						Data: grafanaSilences,
+					},
+				},
+			},
+		}
+
+		require.NoError(t, store.SetFullGrafanaState(ctx, user, testGrafanaState))
+		require.Error(t, am.promoteAndDeleteState(ctx, cfg))
+
+		// No Alertmanager should be created.
+		require.Nil(t, am.alertmanagers[user])
+	})
+
+	t.Run("valid alertmanager configuration causes Alertmanager creation and state promotion", func(t *testing.T) {
+		cfg.RawConfig = simpleConfigOne
+		require.Nil(t, am.alertmanagers[user])
+		require.NoError(t, am.promoteAndDeleteState(ctx, cfg))
+		require.NotNil(t, am.alertmanagers[user])
+
+		// Grafana state should be deleted after promotion.
+		_, err = store.GetFullGrafanaState(ctx, user)
+		require.Error(t, err)
+		require.Equal(t, "alertmanager storage object not found", err.Error())
+
+		// States should be merged.
+		s, err := am.alertmanagers[user].getFullState()
+		require.NoError(t, err)
+
+		// One part for notification log, another one for silences.
+		require.Len(t, s.Parts, 2)
+		require.True(t, s.Parts[0].Key == "nfl:"+user || s.Parts[1].Key == "nfl:"+user)
+		require.True(t, s.Parts[0].Key == "sil:"+user || s.Parts[1].Key == "sil:"+user)
+		require.True(t, strings.Contains(s.Parts[0].String(), "grafana webhook") || strings.Contains(s.Parts[1].String(), "grafana webhook"))
+	})
+
+	t.Run("starting with an existing alertmanager with mimir state", func(t *testing.T) {
+		// Start with an existing Alertmanager with Mimir state, promote Grafana state.
+		e2 := &pb.MeshEntry{
+			Entry: &pb.Entry{
+				Receiver:     &pb.Receiver{GroupName: `Mimir`, Integration: "mimirIntegration", Idx: 0},
+				GroupKey:     []byte(`{}/{mimir="true"}/{receiver="mimir webhook"}:{alertname="mimir test"}`),
+				Timestamp:    time.Now(),
+				FiringAlerts: []uint64{14588439739663070854},
+			},
+			ExpiresAt: time.Now().Add(time.Hour),
+		}
+		buf := bytes.Buffer{}
+		_, err = pbutil.WriteDelimited(&buf, e2)
+		require.NoError(t, err)
+
+		silBuf := bytes.Buffer{}
+		sil := &silencepb.MeshSilence{
+			Silence: &silencepb.Silence{
+				Id:       "mimir silence",
+				Matchers: []*silencepb.Matcher{{}},
+			},
+		}
+		_, err = pbutil.WriteDelimited(&silBuf, sil)
+		require.NoError(t, err)
+
+		testMimirState := alertspb.FullStateDesc{
+			State: &clusterpb.FullState{
+				Parts: []clusterpb.Part{
+					{
+						Key:  "nfl:user-2",
+						Data: grafanaNflog,
+					},
+					{
+						Key:  "sil:user-2",
+						Data: grafanaSilences,
+					},
+				},
+			},
+		}
+		store.SetFullState(ctx, "user-2", testMimirState)
+		cfg.User = "user-2"
+		require.NoError(t, am.setConfig(cfg))
+		require.NotNil(t, am.alertmanagers["user-2"])
+
+		require.NoError(t, am.alertmanagers["user-2"].WaitInitialStateSync(ctx))
+
+		testGrafanaState := alertspb.FullStateDesc{
+			State: &clusterpb.FullState{
+				Parts: []clusterpb.Part{
+					{
+						Key:  "notifications",
+						Data: buf.Bytes(),
+					},
+					{
+						Key:  "silences",
+						Data: silBuf.Bytes(),
+					},
+				},
+			},
+		}
+		store.SetFullGrafanaState(ctx, "user-2", testGrafanaState)
+		require.NoError(t, am.promoteAndDeleteState(ctx, cfg))
+
+		// Grafana state should be deleted after promotion.
+		_, err = store.GetFullGrafanaState(ctx, "user-2")
+		require.Error(t, err)
+		require.Equal(t, "alertmanager storage object not found", err.Error())
+
+		// States should be merged.
+		s, err := am.alertmanagers["user-2"].getFullState()
+		require.NoError(t, err)
+
+		// One part for notification log, another one for silences.
+		require.Len(t, s.Parts, 2)
+		require.True(t, s.Parts[0].Key == "nfl:user-2" || s.Parts[1].Key == "nfl:user-2")
+		require.True(t, s.Parts[0].Key == "sil:user-2" || s.Parts[1].Key == "sil:user-2")
+		require.True(t, strings.Contains(s.Parts[0].String(), "grafana webhook") || strings.Contains(s.Parts[1].String(), "grafana webhook"))
+		require.True(t, strings.Contains(s.Parts[0].String(), "mimir webhook") || strings.Contains(s.Parts[1].String(), "mimir webhook"))
+	})
 }
 
 type passthroughAlertmanagerClient struct {
