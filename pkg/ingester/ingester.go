@@ -122,8 +122,6 @@ const (
 	// Value used to track the limit between sequential and concurrent TSDB opernings.
 	// Below this value, TSDBs of different tenants are opened sequentially, otherwise concurrently.
 	maxTSDBOpenWithoutConcurrency = 10
-
-	deprecatedReturnOnlyGRPCErrorsFlag = "ingester.return-only-grpc-errors" // Deprecated. TODO: Remove in Mimir 2.14.
 )
 
 var (
@@ -205,8 +203,6 @@ type Config struct {
 
 	ErrorSampleRate int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"advanced"`
 
-	DeprecatedReturnOnlyGRPCErrors bool `yaml:"return_only_grpc_errors" json:"return_only_grpc_errors" category:"deprecated"`
-
 	UseIngesterOwnedSeriesForLimits bool          `yaml:"use_ingester_owned_series_for_limits" category:"experimental"`
 	UpdateIngesterOwnedSeries       bool          `yaml:"track_ingester_owned_series" category:"experimental"`
 	OwnedSeriesUpdateInterval       time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
@@ -247,12 +243,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
 	f.BoolVar(&cfg.PushGrpcMethodEnabled, "ingester.push-grpc-method-enabled", true, "Enables Push gRPC method on ingester. Can be only disabled when using ingest-storage to make sure ingesters only receive data from Kafka.")
 
-	// The ingester.return-only-grpc-errors flag has been deprecated.
-	// According to the migration plan (https://github.com/grafana/mimir/issues/6008#issuecomment-1854320098)
-	// the default behaviour of Mimir should be as this flag were set to true.
-	// TODO: Remove in Mimir 2.14.0
-	f.BoolVar(&cfg.DeprecatedReturnOnlyGRPCErrors, deprecatedReturnOnlyGRPCErrorsFlag, true, "When enabled only gRPC errors will be returned by the ingester.")
-
 	// Hardcoded config (can only be overridden in tests).
 	cfg.limitMetricsUpdatePeriod = time.Second * 15
 }
@@ -260,10 +250,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 func (cfg *Config) Validate(logger log.Logger) error {
 	if cfg.ErrorSampleRate < 0 {
 		return fmt.Errorf("error sample rate cannot be a negative number")
-	}
-
-	if !cfg.DeprecatedReturnOnlyGRPCErrors {
-		util.WarnDeprecatedConfig(deprecatedReturnOnlyGRPCErrorsFlag, logger)
 	}
 
 	return cfg.IngesterRing.Validate()
@@ -3869,9 +3855,6 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 }
 
 func (i *Ingester) mapPushErrorToErrorWithStatus(err error) error {
-	if i.cfg.DeprecatedReturnOnlyGRPCErrors {
-		return mapPushErrorToErrorWithStatus(err)
-	}
 	return mapPushErrorToErrorWithHTTPOrGRPCStatus(err)
 }
 
@@ -3884,10 +3867,7 @@ func (i *Ingester) mapReadErrorToErrorWithStatus(err error) error {
 		return err
 	}
 
-	if i.cfg.DeprecatedReturnOnlyGRPCErrors {
-		return mapReadErrorToErrorWithStatus(err)
-	}
-	return mapReadErrorToErrorWithHTTPOrGRPCStatus(err)
+	return mapReadErrorToErrorWithStatus(err)
 }
 
 // pushMetadata returns number of ingested metadata.
