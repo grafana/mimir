@@ -8439,12 +8439,15 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 	// create a data dir that survives an ingester restart
 	dataDir := t.TempDir()
 
+	// Use the same config for all ingesters because that contains the shared consul state.
+	cfg := defaultIngesterTestConfig(t)
+	// Global Ingester limits are computed based on replication factor
+	// Set RF=1 here to ensure the series and metadata limits
+	// are actually set to 1 instead of 3.
+	cfg.IngesterRing.ReplicationFactor = 1
+	cfg.IngesterRing.UnregisterOnShutdown = false // Stay in the ring, so owned series can do the initial calculation after a restart.
+
 	newIngester := func() *Ingester {
-		cfg := defaultIngesterTestConfig(t)
-		// Global Ingester limits are computed based on replication factor
-		// Set RF=1 here to ensure the series and metadata limits
-		// are actually set to 1 instead of 3.
-		cfg.IngesterRing.ReplicationFactor = 1
 		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, dataDir, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
