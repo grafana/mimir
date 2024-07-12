@@ -27,7 +27,7 @@ func TestKafkaWriterClient_ShouldTrackBufferedProduceBytes(t *testing.T) {
 
 	// Configure Kafka to block on Produce requests until the test unblocks it.
 	unblockProduceRequests := make(chan struct{})
-	cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
+	cluster.ControlKey(int16(kmsg.Produce), func(_ kmsg.Request) (kmsg.Response, error, bool) {
 		<-unblockProduceRequests
 		return nil, nil, false
 	})
