@@ -46,14 +46,14 @@ const (
 )
 
 type RetryConfig struct {
-	Enabled            bool `yaml:"enabled" category:"experimental"`
-	BaseSeconds        int  `yaml:"base_seconds" category:"experimental"`
-	MaxBackoffExponent int  `yaml:"max_backoff_exponent" category:"experimental"`
+	Enabled            bool `yaml:"enabled" category:"advanced"`
+	BaseSeconds        int  `yaml:"base_seconds" category:"advanced"`
+	MaxBackoffExponent int  `yaml:"max_backoff_exponent" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *RetryConfig) RegisterFlags(f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enabled, "distributor.retry-after-header.enabled", false, "Enabled controls inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.")
+	f.BoolVar(&cfg.Enabled, "distributor.retry-after-header.enabled", true, "Enabled controls inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.")
 	f.IntVar(&cfg.BaseSeconds, "distributor.retry-after-header.base-seconds", 3, "Base duration in seconds for calculating the Retry-After header in responses to 429/5xx errors.")
 	f.IntVar(&cfg.MaxBackoffExponent, "distributor.retry-after-header.max-backoff-exponent", 5, "Sets the upper limit on the number of Retry-Attempt considered for calculation. It caps the Retry-Attempt header without rejecting additional attempts, controlling exponential backoff calculations. For example, when the base-seconds is set to 3 and max-backoff-exponent to 5, the maximum retry duration would be 3 * 2^5 = 96 seconds.")
 }

@@ -781,10 +781,10 @@
               "required": false,
               "desc": "Enabled controls inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "distributor.retry-after-header.enabled",
               "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -795,7 +795,7 @@
               "fieldDefaultValue": 3,
               "fieldFlag": "distributor.retry-after-header.base-seconds",
               "fieldType": "int",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -806,7 +806,7 @@
               "fieldDefaultValue": 5,
               "fieldFlag": "distributor.retry-after-header.max-backoff-exponent",
               "fieldType": "int",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
