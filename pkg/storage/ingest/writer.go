@@ -198,8 +198,8 @@ func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, records []
 	w.writeRequestsTotal.Add(float64(len(records)))
 
 	for _, record := range records {
-		// We use a new context to avoid that other Produce() may be cancelled when this call's context is
-		// canceled. It's important to note that cancelling the context passed to Produce() doesn't actually
+		// We use a new context to avoid that other TryProduce() may be cancelled when this call's context is
+		// canceled. It's important to note that cancelling the context passed to TryProduce() doesn't actually
 		// prevent the data to be sent over the wire (because it's never removed from the buffer) but in some
 		// cases may cause all requests to fail with context cancelled.
 		//
