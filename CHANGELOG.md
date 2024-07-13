@@ -37,6 +37,7 @@
 * [ENHANCEMENT] Ingester, store-gateway: optimised regular expression matching for patterns like `1.*|2.*|3.*|...|1000.*`. #8632
 * [ENHANCEMENT] Query-frontend: Add `header_cache_control` to query stats. #8590
 * [ENHANCEMENT] Query-scheduler: Introduce `query-scheduler.use-multi-algorithm-query-queue`, which allows use of an experimental queue structure, with no change in external queue behavior. #7873
+* [ENHANCEMENT] Expose a new `s3.trace.enable` configuration option to enable detailed logging of operations against S3-compatible object stores. #8690
 * [BUGFIX] Ruler: add support for draining any outstanding alert notifications before shutting down. This can be enabled with the `-ruler.drain-notification-queue-on-shutdown=true` CLI flag. #8346
 * [BUGFIX] Query-frontend: fix `-querier.max-query-lookback` enforcement when `-compactor.blocks-retention-period` is not set, and viceversa. #8388
 * [BUGFIX] Ingester: fix sporadic `not found` error causing an internal server error if label names are queried with matchers during head compaction. #8391
