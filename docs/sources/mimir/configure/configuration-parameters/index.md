@@ -3817,6 +3817,12 @@ kafka:
   # CLI flag: -ingest-storage.kafka.producer-max-record-size-bytes
   [producer_max_record_size_bytes: <int> | default = 15983616]
 
+  # The maximum size of (uncompressed) buffered and unacknowledged produced
+  # records sent to Kafka. The produce request fails once this limit is reached.
+  # This limit is applied per Kafka client. 0 to disable the limit.
+  # CLI flag: -ingest-storage.kafka.producer-max-buffered-bytes
+  [producer_max_buffered_bytes: <int> | default = 1073741824]
+
   # The maximum allowed for a read requests processed by an ingester to wait
   # until strong read consistency is enforced. 0 to disable the timeout.
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
