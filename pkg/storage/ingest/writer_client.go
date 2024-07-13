@@ -22,7 +22,8 @@ type kafkaWriterClient struct {
 	closed    chan struct{}
 
 	// Custom metrics.
-	bufferedProduceBytes prometheus.Summary
+	bufferedProduceBytes      prometheus.Summary
+	bufferedProduceBytesLimit prometheus.Gauge
 }
 
 func newKafkaWriterClient(clientID int, kafkaCfg KafkaConfig, maxInflightProduceRequests int, logger log.Logger, reg prometheus.Registerer) (*kafkaWriterClient, error) {
@@ -101,7 +102,14 @@ func newKafkaWriterClient(clientID int, kafkaCfg KafkaConfig, maxInflightProduce
 				MaxAge:     time.Minute,
 				AgeBuckets: 6,
 			}),
+		bufferedProduceBytesLimit: promauto.With(reg).NewGauge(
+			prometheus.GaugeOpts{
+				Name: "cortex_ingest_storage_writer_buffered_produce_bytes_limit",
+				Help: "The bytes limit on buffered produce records. Produce requests fail once this limit is reached.",
+			}),
 	}
+
+	customClient.bufferedProduceBytesLimit.Set(float64(kafkaCfg.ProducerMaxBufferedBytes))
 
 	go customClient.updateMetricsLoop()
 

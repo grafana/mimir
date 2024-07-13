@@ -4,12 +4,14 @@ package ingest
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,6 +20,28 @@ import (
 
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
+
+func TestKafkaWriterClient_ShouldExposeBufferedBytesLimit(t *testing.T) {
+	const (
+		numPartitions = 1
+		topicName     = "test"
+	)
+
+	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+	cfg := createTestKafkaConfig(clusterAddr, topicName)
+	cfg.ProducerMaxBufferedBytes = 1024 * 1024
+
+	reg := prometheus.NewPedanticRegistry()
+	client, err := newKafkaWriterClient(1, cfg, 1, log.NewNopLogger(), reg)
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingest_storage_writer_buffered_produce_bytes_limit The bytes limit on buffered produce records. Produce requests fail once this limit is reached.
+		# TYPE cortex_ingest_storage_writer_buffered_produce_bytes_limit gauge
+		cortex_ingest_storage_writer_buffered_produce_bytes_limit{client_id="1"} 1.048576e+06
+	`), "cortex_ingest_storage_writer_buffered_produce_bytes_limit"))
+}
 
 func TestKafkaWriterClient_ShouldTrackBufferedProduceBytes(t *testing.T) {
 	const (
