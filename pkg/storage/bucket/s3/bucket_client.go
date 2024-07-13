@@ -82,6 +82,9 @@ func newS3Config(cfg Config) (s3.Config, error) {
 				ServerName: cfg.HTTP.TLSConfig.ServerName,
 			},
 		},
+		TraceConfig: s3.TraceConfig{
+			Enable: cfg.TraceConfig.Enable,
+		},
 		// Enforce signature version 2 if CLI flag is set
 		SignatureV2: cfg.SignatureVersion == SignatureVersionV2,
 		STSEndpoint: cfg.STSEndpoint,
