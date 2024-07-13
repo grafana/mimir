@@ -77,10 +77,10 @@ func newPartitionOffsetClient(client *kgo.Client, topic string, reg prometheus.R
 	}
 }
 
-// FetchLastProducedOffset fetches and returns the last produced offset for a partition, or -1 if no record has
+// FetchPartitionLastProducedOffset fetches and returns the last produced offset for a partition, or -1 if no record has
 // been ever produced in the partition. This function issues a single request, but the Kafka client used under the
 // hood may retry a failed request until the retry timeout is hit.
-func (p *partitionOffsetClient) FetchLastProducedOffset(ctx context.Context, partitionID int32) (_ int64, returnErr error) {
+func (p *partitionOffsetClient) FetchPartitionLastProducedOffset(ctx context.Context, partitionID int32) (_ int64, returnErr error) {
 	var (
 		startTime        = time.Now()
 		partitionIDLabel = strconv.Itoa(int(partitionID))
@@ -142,6 +142,8 @@ func (p *partitionOffsetClient) FetchPartitionStartOffset(ctx context.Context, p
 
 func (p *partitionOffsetClient) fetchPartitionOffset(ctx context.Context, partitionID int32, position int64) (int64, error) {
 	// Create a custom request to fetch the latest offset of a specific partition.
+	// We manually create a request so that we can request the offset for a single partition
+	// only, which is more performant than requesting the offsets for all partitions.
 	partitionReq := kmsg.NewListOffsetsRequestTopicPartition()
 	partitionReq.Partition = partitionID
 	partitionReq.Timestamp = position
@@ -191,4 +193,48 @@ func (p *partitionOffsetClient) fetchPartitionOffset(ctx context.Context, partit
 	}
 
 	return listRes.Topics[0].Partitions[0].Offset, nil
+}
+
+// FetchLastProducedOffsets fetches and returns the last produced offsets for all topic partitions. The offset is
+// -1 if a partition has been created but no record has been produced yet.
+//
+// The Kafka client used under the hood may retry a failed request until the retry timeout is hit.
+func (p *partitionOffsetClient) FetchLastProducedOffsets(ctx context.Context) (_ map[int32]int64, returnErr error) {
+	var (
+		startTime = time.Now()
+
+		// Init metrics for a partition even if they're not tracked (e.g. failures).
+		requestsTotal   = p.lastProducedOffsetRequestsTotal.WithLabelValues("all")
+		requestsLatency = p.lastProducedOffsetLatency.WithLabelValues("all")
+		failuresTotal   = p.lastProducedOffsetFailuresTotal.WithLabelValues("all")
+	)
+
+	requestsTotal.Inc()
+	defer func() {
+		// We track the latency also in case of error, so that if the request times out it gets
+		// pretty clear looking at latency too.
+		requestsLatency.Observe(time.Since(startTime).Seconds())
+
+		if returnErr != nil {
+			failuresTotal.Inc()
+		}
+	}()
+
+	res, err := p.admin.ListEndOffsets(ctx, p.topic)
+	if err != nil {
+		return nil, err
+	}
+	if err := res.Error(); err != nil {
+		return nil, err
+	}
+
+	// Build a simple map for the offsets.
+	offsets := make(map[int32]int64, len(res[p.topic]))
+	res.Each(func(offset kadm.ListedOffset) {
+		// The offsets we get is the offset at which the next message will be written, so to get the last produced offset
+		// we have to subtract 1. See DESIGN.md for more details.
+		offsets[offset.Partition] = offset.Offset - 1
+	})
+
+	return offsets, nil
 }
