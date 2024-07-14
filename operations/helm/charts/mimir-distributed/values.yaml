@@ -3643,6 +3643,22 @@ metaMonitoring:
     #    image: grafana/agent
     #    tag: v0.29.0
 
+    # -- Resource requests and limits for the grafana-agent and config-reloader containers in the meta-monitoring
+    # StatefulSet and DaemonSet created by the grafana-agent-operator. You can define one or both sections under resources.
+    resources:
+    #   configReloader:
+    #     requests:
+    #       cpu: 5m
+    #       memory: 10Mi
+    #     limits:
+    #       memory: 50Mi
+    #   grafanaAgent:
+    #     requests:
+    #       cpu: 20m
+    #       memory: 700Mi
+    #     limits:
+    #       memory: 1400Mi
+
     # -- Controls whether to install the Grafana Agent Operator and its CRDs.
     # Note that helm will not install CRDs if this flag is enabled during an upgrade.
     # In that case install the CRDs manually from https://github.com/grafana/agent/tree/main/operations/agent-static-operator/crds
