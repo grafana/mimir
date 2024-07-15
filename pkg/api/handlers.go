@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -287,7 +288,7 @@ func NewQuerierHandler(
 	router := mux.NewRouter()
 	routeInjector := middleware.RouteInjector{RouteMatcher: router}
 	fallbackInjector := compat.EngineFallbackInjector{}
-	router.Use(routeInjector.Wrap, fallbackInjector.Wrap)
+	router.Use(routeInjector.Wrap, fallbackInjector.Wrap, chunkinfologger.ChunkInfoLoggerMiddleware().Wrap)
 
 	// Use a separate metric for the querier in order to differentiate requests from the query-frontend when
 	// running Mimir in monolithic mode.

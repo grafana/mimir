@@ -752,7 +752,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		streams       []storegatewaypb.StoreGateway_SeriesClient
 	)
 
-	debugContinuousTest := chunkinfologger.EnableChunkInfoLoggingFromContext(ctx)
+	debugQuery := chunkinfologger.IsChunkInfoLoggingEnabled(ctx)
 
 	// Concurrently fetch series from all clients.
 	for c, blockIDs := range clients {
@@ -886,9 +886,9 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 
 			// debug
 			var chunkInfo *chunkinfologger.ChunkInfoLogger
-			if debugContinuousTest {
+			if debugQuery {
 				traceID, _ := tracing.ExtractTraceID(ctx)
-				chunkInfo = chunkinfologger.NewChunkInfoLogger("CT: chunk series from store-gateway", traceID, q.logger)
+				chunkInfo = chunkinfologger.NewChunkInfoLogger("chunk series from store-gateway", traceID, q.logger, chunkinfologger.ChunkInfoLoggingFromContext(ctx))
 			}
 
 			reqStats.AddFetchedIndexBytes(indexBytesFetched)
@@ -910,8 +910,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
 				if chunkInfo != nil {
 					for i, s := range mySeries {
-						ls := mimirpb.FromLabelAdaptersToLabels(s.Labels)
-						chunkInfo.StartSeries(ls.Get("series_id"))
+						chunkInfo.StartSeries(mimirpb.FromLabelAdaptersToLabels(s.Labels))
 						chunkInfo.FormatStoreGatewayChunkInfo(c.RemoteAddress(), s.Chunks)
 						chunkInfo.EndSeries(i == len(mySeries)-1)
 					}
@@ -939,7 +938,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				seriesSets = append(seriesSets, &blockQuerierSeriesSet{series: mySeries})
 			} else if len(myStreamingSeries) > 0 {
 				if chunkInfo != nil {
-					chunkInfo.SetMsg("CT: streaming series from store-gateway")
+					chunkInfo.SetMsg("streaming series from store-gateway")
 				}
 				seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{
 					series:        myStreamingSeries,
