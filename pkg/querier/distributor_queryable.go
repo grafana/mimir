@@ -135,7 +135,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	traceID, _ := tracing.ExtractTraceID(ctx)
 	var chunkInfo *chunkinfologger.ChunkInfoLogger
 	if chunkinfologger.IsChunkInfoLoggingEnabled(ctx) {
-		chunkInfo = chunkinfologger.NewChunkInfoLogger("ingester chunk series", traceID, q.logger, chunkinfologger.ChunkInfoLoggingFromContext(ctx))
+		chunkInfo = chunkinfologger.NewChunkInfoLogger("ingester message", traceID, q.logger, chunkinfologger.ChunkInfoLoggingFromContext(ctx))
 		q.logger.Log("msg", "ingester streamSelect: start", "traceid", traceID, "mint", minT, "maxt", maxT)
 	}
 
@@ -177,7 +177,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		}
 
 		if chunkInfo != nil {
-			chunkInfo.SetMsg("streaming chunks from ingesters")
+			chunkInfo.SetMsg("ingester streaming")
 		}
 
 		for i, s := range results.StreamingSeries {

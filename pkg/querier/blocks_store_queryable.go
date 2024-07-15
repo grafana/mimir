@@ -888,7 +888,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			var chunkInfo *chunkinfologger.ChunkInfoLogger
 			if debugQuery {
 				traceID, _ := tracing.ExtractTraceID(ctx)
-				chunkInfo = chunkinfologger.NewChunkInfoLogger("chunk series from store-gateway", traceID, q.logger, chunkinfologger.ChunkInfoLoggingFromContext(ctx))
+				chunkInfo = chunkinfologger.NewChunkInfoLogger("store-gateway message", traceID, q.logger, chunkinfologger.ChunkInfoLoggingFromContext(ctx))
 			}
 
 			reqStats.AddFetchedIndexBytes(indexBytesFetched)
@@ -938,7 +938,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				seriesSets = append(seriesSets, &blockQuerierSeriesSet{series: mySeries})
 			} else if len(myStreamingSeries) > 0 {
 				if chunkInfo != nil {
-					chunkInfo.SetMsg("streaming series from store-gateway")
+					chunkInfo.SetMsg("store-gateway streaming")
 				}
 				seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{
 					series:        myStreamingSeries,
