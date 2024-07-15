@@ -133,15 +133,25 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 		}
 
 		actualMetric := actual[actualMetricIndex]
-		expectedFloatMetricLen := len(expectedMetric.Values)
-		actualFloatMetricLen := len(actualMetric.Values)
+		expectedFloatSamplesCount := len(expectedMetric.Values)
+		actualFloatSamplesCount := len(actualMetric.Values)
+		expectedHistogramSamplesCount := len(expectedMetric.Histograms)
+		actualHistogramSamplesCount := len(actualMetric.Histograms)
 
-		if expectedFloatMetricLen != actualFloatMetricLen {
-			err := fmt.Errorf("expected %d float samples for metric %s but got %d", expectedFloatMetricLen, expectedMetric.Metric, actualFloatMetricLen)
-			if expectedFloatMetricLen > 0 && actualFloatMetricLen > 0 {
+		if expectedFloatSamplesCount != actualFloatSamplesCount || expectedHistogramSamplesCount != actualHistogramSamplesCount {
+			err := fmt.Errorf(
+				"expected %d float sample(s) and %d histogram sample(s) for metric %s but got %d float sample(s) and %d histogram sample(s)",
+				expectedFloatSamplesCount,
+				expectedHistogramSamplesCount,
+				expectedMetric.Metric,
+				actualFloatSamplesCount,
+				actualHistogramSamplesCount,
+			)
+
+			if expectedFloatSamplesCount > 0 && actualFloatSamplesCount > 0 {
 				level.Error(util_log.Logger).Log("msg", err.Error(), "oldest-expected-ts", expectedMetric.Values[0].Timestamp,
-					"newest-expected-ts", expectedMetric.Values[expectedFloatMetricLen-1].Timestamp,
-					"oldest-actual-ts", actualMetric.Values[0].Timestamp, "newest-actual-ts", actualMetric.Values[actualFloatMetricLen-1].Timestamp)
+					"newest-expected-ts", expectedMetric.Values[expectedFloatSamplesCount-1].Timestamp,
+					"oldest-actual-ts", actualMetric.Values[0].Timestamp, "newest-actual-ts", actualMetric.Values[actualFloatSamplesCount-1].Timestamp)
 			}
 			return err
 		}
@@ -151,6 +161,13 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 			err := compareSamplePair(expectedSamplePair, actualSamplePair, opts)
 			if err != nil {
 				return errors.Wrapf(err, "float sample pair not matching for metric %s", expectedMetric.Metric)
+			}
+		}
+
+		for i, expectedHistogramPair := range expectedMetric.Histograms {
+			actualHistogramPair := actualMetric.Histograms[i]
+			if err := compareSampleHistogramPair(expectedHistogramPair, actualHistogramPair, opts); err != nil {
+				return errors.Wrapf(err, "histogram sample pair not matching for metric %s", expectedMetric.Metric)
 			}
 		}
 	}
