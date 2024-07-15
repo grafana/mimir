@@ -308,3 +308,6 @@ replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-aler
 
 // Replace kadm with a fork until https://github.com/twmb/franz-go/pull/775 is merged
 replace github.com/twmb/franz-go/pkg/kadm => github.com/pracucci/franz-go/pkg/kadm v0.0.0-20240711165048-831cca07c9a4
+
+// Replace sdnotify with a fork until https://github.com/okzk/sdnotify/pull/4 is merged
+replace github.com/okzk/sdnotify => github.com/grafana/sdnotify v0.0.0-20240715085559-af3a9782f811

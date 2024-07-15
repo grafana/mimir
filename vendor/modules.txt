@@ -877,7 +877,7 @@ github.com/oklog/run
 # github.com/oklog/ulid v1.3.1
 ## explicit
 github.com/oklog/ulid
-# github.com/okzk/sdnotify v0.0.0-20180710141335-d9becc38acbd
+# github.com/okzk/sdnotify v0.0.0-20180710141335-d9becc38acbd => github.com/grafana/sdnotify v0.0.0-20240715085559-af3a9782f811
 ## explicit
 github.com/okzk/sdnotify
 # github.com/opentracing-contrib/go-grpc v0.0.0-20210225150812-73cb765af46e => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
@@ -1655,3 +1655,4 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240625192351-66ec17e3aa45
 # github.com/twmb/franz-go/pkg/kadm => github.com/pracucci/franz-go/pkg/kadm v0.0.0-20240711165048-831cca07c9a4
+# github.com/okzk/sdnotify => github.com/grafana/sdnotify v0.0.0-20240715085559-af3a9782f811

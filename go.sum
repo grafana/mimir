@@ -535,6 +535,8 @@ github.com/grafana/pyroscope-go/godeltaprof v0.1.6 h1:nEdZ8louGAplSvIJi1HVp7kWvF
 github.com/grafana/pyroscope-go/godeltaprof v0.1.6/go.mod h1:Tk376Nbldo4Cha9RgiU7ik8WKFkNpfds98aUzS8omLE=
 github.com/grafana/regexp v0.0.0-20240531075221-3685f1377d7b h1:oMAq12GxTpwo9jxbnG/M4F/HdpwbibTaVoxNA0NZprY=
 github.com/grafana/regexp v0.0.0-20240531075221-3685f1377d7b/go.mod h1:+JKpmjMGhpgPL+rXZ5nsZieVzvarn86asRlBg4uNGnk=
+github.com/grafana/sdnotify v0.0.0-20240715085559-af3a9782f811 h1:WU7qn1eruGFe2pcJqQFMxX+iXVt0dTpZz54wHD2m8lQ=
+github.com/grafana/sdnotify v0.0.0-20240715085559-af3a9782f811/go.mod h1:5g2fs20CVjVF/HgdbTTmZMJiI59yNXD/9EiSnYY+2Q8=
 github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0/go.mod h1:8NvIoxWQoOIhqOTXgfV/d3M/q6VIi02HzZEHgUlZvzk=
 github.com/grpc-ecosystem/grpc-gateway v1.16.0/go.mod h1:BDjrQk3hbvj6Nolgz8mAMFbcEtjT1g+wF4CSlocrBnw=
 github.com/grpc-ecosystem/grpc-opentracing v0.0.0-20180507213350-8e809c8a8645/go.mod h1:6iZfnjpejD4L/4DwD7NryNaJyCQdzwWwH2MWhCA90Kw=
@@ -768,8 +770,6 @@ github.com/oklog/run v1.1.0 h1:GEenZ1cK0+q0+wsJew9qUg/DyD8k3JzYsZAi5gYi2mA=
 github.com/oklog/run v1.1.0/go.mod h1:sVPdnTZT1zYwAJeCMu2Th4T21pA3FPOQRfWjQlk7DVU=
 github.com/oklog/ulid v1.3.1 h1:EGfNDEx6MqHz8B3uNV6QAib1UR2Lm97sHi3ocA6ESJ4=
 github.com/oklog/ulid v1.3.1/go.mod h1:CirwcVhetQ6Lv90oh/F+FBtV6XMibvdAFo93nm5qn4U=
-github.com/okzk/sdnotify v0.0.0-20180710141335-d9becc38acbd h1:+iAPaTbi1gZpcpDwe/BW1fx7Xoesv69hLNGPheoyhBs=
-github.com/okzk/sdnotify v0.0.0-20180710141335-d9becc38acbd/go.mod h1:4soZNh0zW0LtYGdQ416i0jO0EIqMGcbtaspRS4BDvRQ=
 github.com/onsi/ginkgo v1.16.5 h1:8xi0RTUf59SOSfEtZMvwTvXYMzG4gV23XVHOZiXNtnE=
 github.com/onsi/ginkgo v1.16.5/go.mod h1:+E8gABHa3K6zRBolWtd+ROzc/U5bkGt0FwiG042wbpU=
 github.com/onsi/gomega v1.29.0 h1:KIA/t2t5UBzoirT4H9tsML45GEbo3ouUnBHsCfD2tVg=
