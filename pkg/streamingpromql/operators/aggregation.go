@@ -160,7 +160,7 @@ func (a *Aggregation) seriesToGroupLabelsStringFunc() func(labels.Labels) []byte
 	// This saves us allocating a new buffer and string for every single input series, which has a noticeable performance impact.
 
 	if a.Without {
-		b := make([]byte, 0, 1024)
+		b := make([]byte, 0, 1024) // Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
 		buf := bytes.NewBuffer(b)
 
 		return func(l labels.Labels) []byte {
@@ -204,7 +204,7 @@ func (a *Aggregation) seriesToGroupLabelsStringFunc() func(labels.Labels) []byte
 		}
 	}
 
-	b := make([]byte, 0, 1024)
+	b := make([]byte, 0, 1024) // Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
 	buf := bytes.NewBuffer(b)
 	return func(l labels.Labels) []byte {
 		buf.Reset()
