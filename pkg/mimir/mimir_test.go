@@ -163,7 +163,7 @@ func TestMimir(t *testing.T) {
 			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 		}},
 		Querier: querier.Config{
-			PromQLEngine: "standard",
+			QueryEngine: "prometheus",
 		},
 	}
 	require.NoError(t, cfg.Server.LogLevel.Set("info"))
@@ -806,6 +806,7 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 		}()
 	}
 
+	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(net.JoinHostPort(cfg.Server.GRPCListenAddress, strconv.Itoa(cfg.Server.GRPCListenPort)), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	defer func() {

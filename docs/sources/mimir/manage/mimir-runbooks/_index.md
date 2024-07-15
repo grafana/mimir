@@ -85,15 +85,19 @@ How to **fix** it:
           sum by (user) ( # total in-memory series for the tenant across ingesters
               cortex_ingester_memory_series_created_total{namespace="<namespace>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>"}
           )
-          > 200000 # show only big tenants - with more than 200k series across ingesters
-          >
-          (
-              max by(user) (cortex_limits_overrides{namespace="<namespace>", limit_name="max_global_series_per_user"}) # global limit
-              *
-              scalar(max(cortex_distributor_replication_factor{namespace="<namespace>"})) # with replication
-              *
-              0.5 # 50%
+          /
+          scalar( # Account for replication
+              ( # Classic storage
+                  max(cortex_distributor_replication_factor{namespace="<namespace>"})
+              )
+              or
+              ( # Ingest storage
+                  # count the number of zones processing writes
+                  count(group by (job) (cortex_ingester_memory_series{namespace="<namespace>"}))
+              )
           )
+          > 70000 # show only big tenants - with more than 70K series before replication
+          > 0.5 * max by(user) (cortex_limits_overrides{namespace="<namespace>", limit_name="max_global_series_per_user"}) # global limit
       )
       and on (pod) ( # intersection with top 3 ingesters by in-memory series
           topk(3,
@@ -1384,7 +1388,9 @@ This alert fires when "receive delay" reported by ingester during "starting" pha
 
 How it **works**:
 
-- When ingester is starting, it needs to fetch and process records from Kafka until preconfigured consumption lag is honored. The maximum tolerated lag before an ingester is considered to have caught up reading from a partition at startup can be configured via `-ingest-storage.kafka.max-consumer-lag-at-startup`.
+- When an ingester starts, it needs to fetch and process records from Kafka until a preconfigured consumption lag is honored. There are two configuration options that control the lag before an ingester is considered to have caught up reading from a partition at startup:
+  - `-ingest-storage.kafka.max-consumer-lag-at-startup`: this is the guaranteed maximum lag before an ingester is considered to have caught up. The ingester doesn't become ACTIVE in the hash ring and doesn't pass the readiness check until the measured lag is below this setting.
+  - `-ingest-storage.kafka.target-consumer-lag-at-startup`: this is the desired maximum lag that an ingester sets to achieve at startup. This setting is a best-effort. The ingester is granted a "grace period" to have the measured lag below this setting. However, the ingester still starts if the target lag hasn't been reached within this "grace period", as long as the max lag is honored. The "grace period" is equal to the configured `-ingest-storage.kafka.max-consumer-lag-at-startup`.
 - Each record has a timestamp when it was sent to Kafka by the distributor. When ingester reads the record, it computes "receive delay" as a difference between current time (when record was read) and time when record was sent to Kafka. This receive delay is reported in the metric `cortex_ingest_storage_reader_receive_delay_seconds`. You can see receive delay on `Mimir / Writes` dashboard, in section "Ingester (ingest storage – end-to-end latency)".
 - Under normal conditions when ingester is processing records faster than records are appearing, receive delay should be decreasing, until `-ingest-storage.kafka.max-consumer-lag-at-startup` is honored.
 - When ingester is starting, and observed "receive delay" is increasing, alert is raised.
@@ -1392,6 +1398,8 @@ How it **works**:
 How to **investigate**:
 
 - Check if ingester is fast enough to process all data in Kafka.
+
+See also "[Ingester is overloaded when consuming from Kafka](#ingester-is-overloaded-when-consuming-from-kafka)".
 
 ### MimirRunningIngesterReceiveDelayTooHigh
 
@@ -1409,6 +1417,8 @@ How to **investigate**:
 - Check if ingester is fast enough to process all data in Kafka.
 - If ingesters are too slow, consider scaling ingesters horizontally to spread incoming series between more ingesters.
 
+See also "[Ingester is overloaded when consuming from Kafka](#ingester-is-overloaded-when-consuming-from-kafka)".
+
 ### MimirIngesterFailsToProcessRecordsFromKafka
 
 This alert fires when ingester is unable to process incoming records from Kafka due to internal errors. If ingest-storage wasn't used, such push requests would end up with 5xx errors.
@@ -1423,6 +1433,22 @@ How to **investigate**:
 
 - Check ingester logs to see why requests are failing, and troubleshoot based on that.
 
+### MimirIngesterStuckProcessingRecordsFromKafka
+
+This alert fires when an ingester has successfully fetched records from Kafka but it's not processing them at all.
+
+How it **works**:
+
+- Ingester reads records from Kafka, and processes them locally. Processing means unmarshalling the data and handling write requests stored in records.
+- Fetched records, containing write requests, are expected to be processed by ingesting the write requests data into the ingester.
+- This alert fires if no processing is occurring at all, like if the processing is stuck (e.g. a deadlock in ingester).
+
+How to **investigate**:
+
+- Take goroutine profile of the ingester and check if there's any routine calling `pushToStorage`:
+  - If the call exists and it's waiting on a lock then there may be a deadlock.
+  - If the call doesn't exist then it could either mean processing is not stuck (false positive) or the `pushToStorage` wasn't called at all, and so you should investigate the callers in the code.
+
 ### MimirIngesterFailsEnforceStrongConsistencyOnReadPath
 
 This alert fires when too many read-requests with strong consistency are failing.
@@ -1430,13 +1456,55 @@ This alert fires when too many read-requests with strong consistency are failing
 How it **works**:
 
 - When read request asks for strong-consistency guarantee, ingester will read the last produced offset from Kafka, and wait until record with this offset is consumed.
-- If read request times out during this wait, that is considered to be a failure of request with strong-consistency.
+- If read request times out during this wait, either because of the request timeout or the configured `-ingest-storage.kafka.wait-strong-read-consistency-timeout` (whatever happens first), that is considered to be a failure of request with strong-consistency.
 - If requests keep failing due to failure to enforce strong-consistency, this alert is raised.
 
 How to **investigate**:
 
 - Check wait latency of requests with strong-consistency on `Mimir / Queries` dashboard.
-- Check if ingester needs to process too many records, and whether ingesters need to be scaled up (vertically or horizontally).
+- Check if ingesters are processing too many records, and they need to be scaled up (vertically or horizontally).
+- Check actual error in logs to see whether the `-ingest-storage.kafka.wait-strong-read-consistency-timeout` or the request timeout has been hit first.
+
+### Ingester is overloaded when consuming from Kafka
+
+This runbook covers the case an ingester is overloaded when ingesting metrics data (consuming) from Kafka.
+
+For example, if the amount of active series written to a partition exceeds the ingester capacity, the write-path will keep writing to the partition, but then the ingesters owning that partition will fail ingesting the data. Possible symptoms of this situation:
+
+- The ingester is lagging behind replaying metrics data from Kafka, and [`MimirStartingIngesterKafkaReceiveDelayIncreasing`](#MimirStartingIngesterKafkaReceiveDelayIncreasing) or [`MimirRunningIngesterReceiveDelayTooHigh`](#MimirRunningIngesterReceiveDelayTooHigh) alerts are firing.
+- The ingester logs [`err-mimir-ingester-max-series`](#err-mimir-ingester-max-series) when ingesting metrics data from Kafka.
+- The ingester is OOMKilled.
+
+How it **works**:
+
+- An ingester owns 1 and only 1 partition. A partition can be owned by multiple ingesters, but each ingester always own a single partition.
+- Metrics data is written to a partition by distributors, and the amount of written data is driven by the incoming traffic in the write-path. Distributors don't know whether the per-partition load is "too much" for the ingesters that will consume from that partition.
+- Ingesters are expected to autoscale. When the number of active series in ingesters grow above the scaling threshold, more ingesters will be added to the cluster. When ingesters are scaled out, new partitions are added and incoming metrics data re-balanced between partitions. However, the old data (already written to partitions) will not be moved, and the load will be re-balanced only for metrics data ingested after the scaling.
+
+How to **fix**:
+
+- **Vertical scale ingesters** (no data loss)
+  - Add more CPU/memory/disk to ingesters, depending on the saturated resources.
+  - Increase the ingester max series instance limit (see [`MimirIngesterReachingSeriesLimit`](#MimirIngesterReachingSeriesLimit) runbook).
+- **Skip replaying overloading backlog from partition** (data loss)
+
+  1. Ensure ingesters have been scaled out, and the new partitions are ACTIVE in the partitions ring. If autoscaler didn't scaled out ingesters yet, manually add more ingester replicas (e.g. increasing HPA min replicas or manually setting the desired number of ingester replicas if ingester autoscaling is disabled).
+  1. Find out the timestamp at which new partitions were created and became ACTIVE in the ring (e.g. looking at new ingesters logs).
+  1. Temporarily restart ingesters with the following configuration:
+
+     ```
+     # Set <value> to the timestamp retrieved from previous step. The timestamp should be Unix epoch with milliseconds precision.
+     -ingest-storage.kafka.consume-from-position-at-startup=timestamp
+     -ingest-storage.kafka.consume-from-timestamp-at-startup=<value>
+     ```
+
+     Alternatively, if you can quickly find the timestamp at which new partitions became ACTIVE in the ring, you can temporarily configure ingesters to replay a partition from the end:
+
+     ```
+     -ingest-storage.kafka.consume-from-position-at-startup=end
+     ```
+
+  1. Once ingesters are stable, revert the temporarily config applied in the previous step.
 
 ## Errors catalog
 
@@ -1632,6 +1700,31 @@ On a per-tenant basis, you can fine tune the tolerance by configuring the `creat
 {{< admonition type="note" >}}
 Only series with invalid samples are skipped during the ingestion. Valid samples within the same request are still ingested.
 {{< /admonition >}}
+
+### err-mimir-too-far-in-past
+
+This non-critical error occurs when Mimir rejects a sample because its timestamp is too far in the past compared to the wall clock.
+
+How it **works**:
+
+- The distributor or the ingester implements an lower limit on the timestamp of incoming samples, it is used to protect the system from potential abuse or mistakes.
+- The lower limit is defined by the current wall clock minus the `out_of_order_time_window` and minus the `past_grace_period` settings.
+- The samples that are too far in the past aren't ingested.
+
+How to **fix** it:
+
+- Make sure that it is intended that the timestamps of the incoming samples are that old.
+- If the timestamps are correct, increase the `past_grace_period` setting, or set it to 0 to disable the limit.
+
+{{< admonition type="note" >}}
+Only the invalid samples are skipped during the ingestion. Valid samples within the same request are still ingested.
+{{< /admonition >}}
+
+### err-mimir-exemplar-too-far-in-past
+
+This non-critical error occurs when Mimir rejects an exemplar because its timestamp is too far in the past compared to the wall clock.
+
+Refer to [`err-mimir-too-far-in-past`](#err-mimir-too-far-in-past) for more details and how to fix it.
 
 ### err-mimir-exemplar-labels-missing
 
@@ -1886,12 +1979,14 @@ When `-ingester.error-sample-rate` is configured to a value greater than `0`, th
 This error occurs when execution of a query exceeds the limit on the number of series chunks fetched.
 
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
-To configure the limit on a per-tenant basis, use the `-querier.max-fetched-chunks-per-query` option (or `max_fetched_chunks_per_query` in the runtime configuration).
+To configure the limit on a global basis, use the `-querier.max-fetched-chunks-per-query` option.
+To configure the limit on a per-tenant basis, set the `max_fetched_chunks_per_query` per-tenant override in the runtime configuration.
 
 How to **fix** it:
 
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
-- Consider increasing the per-tenant limit by using the `-querier.max-fetched-chunks-per-query` option (or `max_fetched_chunks_per_query` in the runtime configuration).
+- Consider increasing the global limit by using the `-querier.max-fetched-chunks-per-query` option.
+- Consider increasing the limit on a per-tenant basis by using the `max_fetched_chunks_per_query` per-tenant override in the runtime configuration.
 
 ### err-mimir-max-estimated-chunks-per-query
 
@@ -1900,36 +1995,59 @@ This error occurs when execution of a query exceeds the limit on the estimated n
 The estimate is based on the actual number of chunks that will be sent from ingesters to queriers, and an estimate of the number of chunks that will be sent from store-gateways to queriers.
 
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
-To configure the limit on a per-tenant basis, use the `-querier.max-estimated-fetched-chunks-per-query-multiplier` option (or `max_estimated_fetched_chunks_per_query_multiplier` in the runtime configuration).
+To configure the limit on a global basis, use the `-querier.max-estimated-fetched-chunks-per-query-multiplier` option.
+To configure the limit on a per-tenant basis, set the `max_estimated_fetched_chunks_per_query_multiplier` per-tenant override in the runtime configuration.
 
 How to **fix** it:
 
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
-- Consider increasing the per-tenant limit by using the`-querier.max-estimated-fetched-chunks-per-query-multiplier` option (or `max_estimated_fetched_chunks_per_query_multiplier` in the runtime configuration).
+- Consider increasing the global limit by using the `-querier.max-estimated-fetched-chunks-per-query-multiplier` option.
+- Consider increasing the limit on a per-tenant basis by using the `max_estimated_fetched_chunks_per_query_multiplier` per-tenant override in the runtime configuration.
 
 ### err-mimir-max-series-per-query
 
 This error occurs when execution of a query exceeds the limit on the maximum number of series.
 
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
-To configure the limit on a per-tenant basis, use the `-querier.max-fetched-series-per-query` option (or `max_fetched_series_per_query` in the runtime configuration).
+To configure the limit on a global basis, use the `-querier.max-fetched-series-per-query` option.
+To configure the limit on a per-tenant basis, set the `max_fetched_series_per_query` per-tenant override in the runtime configuration.
 
 How to **fix** it:
 
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
-- Consider increasing the per-tenant limit by using the `-querier.max-fetched-series-per-query` option (or `max_fetched_series_per_query` in the runtime configuration).
+- Consider increasing the global limit by using the `-querier.max-fetched-series-per-query` option.
+- Consider increasing the limit on a per-tenant basis by using the `max_fetched_series_per_query` per-tenant override in the runtime configuration.
 
 ### err-mimir-max-chunks-bytes-per-query
 
 This error occurs when execution of a query exceeds the limit on aggregated size (in bytes) of fetched chunks.
 
 This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
-To configure the limit on a per-tenant basis, use the `-querier.max-fetched-chunk-bytes-per-query` option (or `max_fetched_chunk_bytes_per_query` in the runtime configuration).
+To configure the limit on a global basis, use the `-querier.max-fetched-chunk-bytes-per-query` option.
+To configure the limit on a per-tenant basis, set the `max_fetched_chunk_bytes_per_query` per-tenant override in the runtime configuration.
 
 How to **fix** it:
 
 - Consider reducing the time range and/or cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
-- Consider increasing the per-tenant limit by using the `-querier.max-fetched-chunk-bytes-per-query` option (or `max_fetched_chunk_bytes_per_query` in the runtime configuration).
+- Consider increasing the global limit by using the `-querier.max-fetched-chunk-bytes-per-query` option.
+- Consider increasing the limit on a per-tenant basis by using the `max_fetched_chunk_bytes_per_query` per-tenant override in the runtime configuration.
+
+### err-mimir-max-estimated-memory-consumption-per-query
+
+This error occurs when execution of a query exceeds the limit on the maximum estimated memory consumed by a single query.
+
+This limit is used to protect the system’s stability from potential abuse or mistakes, when running a query fetching a huge amount of data.
+This limit only applies when Mimir's query engine is used (ie. `-querier.query-engine=mimir`).
+To configure the limit on a global basis, use the `-querier.max-estimated-memory-consumption-per-query` option.
+To configure the limit on a per-tenant basis, set the `max_estimated_memory_consumption_per_query` per-tenant override in the runtime configuration.
+
+How to **fix** it:
+
+- Consider reducing the time range of the query.
+- Consider reducing the cardinality of the query. To reduce the cardinality of the query, you can add more label matchers to the query, restricting the set of matching series.
+- Consider applying aggregations such as `sum` or `avg` to the query.
+- Consider increasing the global limit by using the `-querier.max-estimated-memory-consumption-per-query` option.
+- Consider increasing the limit on a per-tenant basis by using the `max_estimated_memory_consumption_per_query` per tenant-override in the runtime configuration.
 
 ### err-mimir-max-query-length
 
@@ -2058,6 +2176,8 @@ Common **causes**:
 
 - Multiple endpoints are exporting the same metrics, or multiple Prometheus instances are scraping different metrics with identical labels.
 - Prometheus relabelling has been configured and it causes series to clash after the relabelling. Check the error message for information about which series has received a duplicate sample.
+- If this error is logged by rulers when writing the `ALERTS_FOR_STATE` metric, this can be caused by multiple alerting rules with the same alert name and labels firing at the same time.
+  Check if the alert name mentioned in the error message is defined multiple times, and if this is intentional, ensure each alert rule generates alerts with unique labels.
 
 {{< admonition type="note" >}}
 When `-ingester.error-sample-rate` is configured to a value greater than `0`, this error is logged only once every `-ingester.error-sample-rate` times.
@@ -2118,6 +2238,36 @@ How to **fix** it:
 
 - Increase the allowed limit by using the `-distributor.max-recv-msg-size` option.
 
+### err-mimir-distributor-max-otlp-request-size
+
+This error occurs when a distributor rejects an OTel write request because its message size is larger than the allowed limit before or after decompression.
+
+How it **works**:
+
+- The distributor implements an upper limit on the message size of incoming OTel write requests before and after decompression regardless of the compression type. Refer to [OTLP collector compression details](https://github.com/open-telemetry/opentelemetry-collector/tree/main/config/confighttp) for more information.
+- Configure this limit in the `-distributor.max-otlp-request-size` setting.
+
+How to **fix** it:
+
+- If you use the batch processor in the OTLP collector, decrease the maximum batch size in the `send_batch_max_size` setting. Refer to [Batch Collector](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md) for details.
+- Increase the allowed limit in the `-distributor.max-otlp-request-size` setting.
+
+### err-mimir-distributor-max-write-request-data-item-size
+
+This error can only be returned when the experimental ingest storage is enabled and is caused by a write request containing a timeseries or metadata entry which is larger than the allowed limit.
+
+How it **works**:
+
+- The distributor shards a write request into N partitions, where N is the tenant partitions shard size.
+- For each partition, the write request data is encoded into one or more Kafka records.
+- The maximum size of a Kafka record is hardcoded, so the per-partition write request data is automatically split into multiple Kafka records in order to ingest large write requests.
+- A single timeseries or metadata is the smallest splittable unit, which means that a single timeseries or metadata entry can't be split into multiple Kafka records.
+- If the write request contains a single timeseries or metadata entry whose size is bigger than the Kafka record size limit, then the ingestion of the write request will fail and the distributor will return a 4xx HTTP status code. The 4xx status code is used to ensure the client will not retry a request which will consistently fail.
+
+How to **fix** it:
+
+- Configure the client remote writing to Mimir to send smaller write requests.
+
 ### err-mimir-query-blocked
 
 This error occurs when a query-frontend blocks a read request because the query matches at least one of the rules defined in the limits.
@@ -2139,6 +2289,7 @@ This error only occurs when an administrator has explicitly define a blocked lis
 - `/cortex.Ingester/Push`
 - `api_v1_push`
 - `api_v1_push_influx_write`
+- `otlp_v1_metrics`
 
 **Read path**:
 
@@ -2408,6 +2559,87 @@ while read file; do
 gsutil cp $file ${file%#*}
 done < full-deleted-file-list
 ```
+
+### Debugging distroless container images (in Kubernetes)
+
+Mimir publishes "distroless" container images. A [distroless image](https://github.com/GoogleContainerTools/distroless/blob/main/README.md)
+contains very little outside of what is needed to run a single binary.
+They don't include any text editors, process managers, package managers, or other debugging tools, unless the application itself requires these.
+
+This can pose a challenge when diagnosing problems. There exists no shell inside the container
+to attach to or any tools to inspect configuration files and so on.
+
+However, to debug distroless containers we can take the approach of attaching a more complete
+container to the existing container's namespace. This allows us to bring in all of the
+tools we may need and to not disturb the existing environment.
+That is, we do not need to restart the running container to attach our debug tools.
+
+## Creating a debug container
+
+Kubernetes gives us a command that allows us to start an ephemeral debug container in a pre-existing pod,
+attaching it to the same namespace as other containers in that pod. More detail about the command and
+how to debug running pods is available in [the Kubernetes docs](https://kubernetes.io/docs/tasks/debug/debug-application/debug-running-pod/#ephemeral-container).
+
+```bash
+kubectl --namespace mimir debug -it pod/compactor-0 --image=ubuntu:latest --target=compactor --container=mimir-debug-container
+```
+
+- `pod/name` is the pod to attach to.
+- `--target=` is the container within that pod with which to share a kernel namespace.
+- `--image=` is the image of the debug container you wish to use.
+- `--container` is the name to use for the ephemeral container. This is optional, but useful if you want to re-use it.
+
+You can now see all of the processes running in this space. For example:
+
+```
+/ # ps aux
+PID   USER     TIME  COMMAND
+    1 root      5:36 /usr/bin/mimir -flags
+   31 root      0:00 /bin/bash
+   36 root      0:00 ps aux
+```
+
+PID 1 is the process that is executed in the target container. You can now use
+tools within your debug image to interact with the running process. However, note
+that your root path and important environment variables like $PATH will be different to
+that of the target container.
+
+The root filesystem of the target container is available in `/proc/1/root`. For
+example, `/data` would be found at `/proc/1/root/data`, and
+binaries of the target container would be somewhere like `/proc/1/root/usr/bin/mimir`.
+
+## Copying files from a distroless container
+
+Because distroless images do not have `tar` in them, it is not possible to copy files using `kubectl cp`.
+
+To work around this, you can create a debug container attached to the pod (as per above) and then use `kubectl cp` against that.
+The debug container cannot have terminated in order for us to be able to use it. This means if you run a debug container to get a shell,
+you need to keep the shell open in order to do the following.
+
+For example, after having created a debug container called `mimir-debug-container` for the `compactor-0` pod, run the following to copy `/etc/hostname` from the compactor pod to `./hostname` on your local machine:
+
+```bash
+kubectl --namespace mimir cp compactor-0:/proc/1/root/etc/hostname -c mimir-debug-container ./hostname
+```
+
+- `-c` is the debug container to execute in.
+
+Note, however, that there is a limitation with `kubectl cp` wherein it cannot follow symlinks. To get around this, we can similarly use `exec`
+to create a tar.
+
+For example, you can create a tar of the path you are interested in, and then extract it locally:
+
+```bash
+kubectl --namespace mimir exec compactor-0 -c mimir-debug-container -- tar cf - "/proc/1/root/etc/cortex" | tar xf -
+```
+
+## Cleanup and Limitations
+
+One downside of using [ephemeral containers](https://kubernetes.io/docs/concepts/workloads/pods/ephemeral-containers/#understanding-ephemeral-containers)
+(which is what `kubectl debug` is a wrapper around), is that they cannot be changed
+after they have been added to a pod. This includes not being able to delete them.
+If the process in the debug container has finished (for example, the shell has exited), the container
+will remain in the `Terminated` state. This is harmless and will remain there until the pod is deleted (eg. due to a rollout).
 
 ## Log lines
 

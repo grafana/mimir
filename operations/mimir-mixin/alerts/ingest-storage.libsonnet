@@ -61,7 +61,6 @@
         {
           alert: $.alertName('StartingIngesterKafkaReceiveDelayIncreasing'),
           'for': '5m',
-          // We're using series from classic histogram here, because mixtool lint doesn't support histogram_sum, histogram_count functions yet.
           expr: |||
             deriv((
                 sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="starting"}[1m]))
@@ -77,25 +76,49 @@
           },
         },
 
+        // Alert firing if an ingester is ingesting data with a very high delay, even for a short period of time.
+        // With a threshold of 2m, a for duration of 3m, an evaluation delay of 1m and an evaluation interval of 1m
+        // when this alert fires the ingester should be up to 2+3+1+1=7 minutes behind.
         {
           alert: $.alertName('RunningIngesterReceiveDelayTooHigh'),
-          'for': '5m',
-          // We're using series from classic histogram here, because mixtool lint doesn't support histogram_sum, histogram_count functions yet.
+          'for': '3m',
           expr: |||
             (
               sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="running"}[1m]))
               /
               sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{phase="running"}[1m]))
-            ) > (10 * 60)
+            ) > (2 * 60)
           ||| % $._config,
           labels: {
             severity: 'critical',
+            threshold: 'very_high_for_short_period',  // Add an extra label to distinguish between multiple alerts with the same name.
           },
           annotations: {
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s in "running" phase is too far behind in its consumption of write requests from Kafka.' % $._config,
           },
         },
 
+        // Alert firing if an ingester is ingesting data with a relatively high delay for a long period of time.
+        {
+          alert: $.alertName('RunningIngesterReceiveDelayTooHigh'),
+          'for': '15m',
+          expr: |||
+            (
+              sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="running"}[1m]))
+              /
+              sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{phase="running"}[1m]))
+            ) > 30
+          ||| % $._config,
+          labels: {
+            severity: 'critical',
+            threshold: 'relatively_high_for_long_period',  // Add an extra label to distinguish between multiple alerts with the same name.
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s in "running" phase is too far behind in its consumption of write requests from Kafka.' % $._config,
+          },
+        },
+
+        // Alert firing if an ingester is failing to read from Kafka.
         {
           alert: $.alertName('IngesterFailsToProcessRecordsFromKafka'),
           'for': '5m',
@@ -107,6 +130,25 @@
           },
           annotations: {
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s fails to consume write requests read from Kafka due to internal errors.' % $._config,
+          },
+        },
+
+        // Alert firing is an ingester is reading from Kafka, there are buffered records to process, but processing is stuck.
+        {
+          alert: $.alertName('IngesterStuckProcessingRecordsFromKafka'),
+          'for': '5m',
+          expr: |||
+            # Alert if the reader is not processing any records, but there buffered records to process in the Kafka client.
+            (sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_records_total[5m])) == 0)
+            and
+            # NOTE: the cortex_ingest_storage_reader_buffered_fetch_records_total metric is a gauge showing the current number of buffered records.
+            (sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingest_storage_reader_buffered_fetch_records_total) > 0)
+          ||| % $._config,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s is stuck processing write requests from Kafka.' % $._config,
           },
         },
 

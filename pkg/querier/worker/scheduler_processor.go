@@ -56,6 +56,7 @@ func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, r
 	p := &schedulerProcessor{
 		log:              log,
 		handler:          handler,
+		streamResponse:   streamResponse,
 		maxMessageSize:   cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
 		querierID:        cfg.QuerierID,
 		grpcConfig:       cfg.QueryFrontendGRPCClientConfig,
@@ -87,10 +88,20 @@ func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, r
 	return p, []services.Service{p.frontendPool}
 }
 
+type frontendResponseStreamer func(
+	ctx context.Context,
+	reqCtx context.Context,
+	c client.PoolClient,
+	queryID uint64,
+	response *httpgrpc.HTTPResponse,
+	stats *querier_stats.Stats,
+	logger log.Logger) error
+
 // Handles incoming queries from query-scheduler.
 type schedulerProcessor struct {
 	log              log.Logger
 	handler          RequestHandler
+	streamResponse   frontendResponseStreamer
 	grpcConfig       grpcclient.Config
 	maxMessageSize   int
 	querierID        string
@@ -290,16 +301,22 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 		MaxRetries: maxNotifyFrontendRetries,
 	})
 
+	var hasStreamHeader bool
+	response.Headers, hasStreamHeader = removeStreamingHeader(response.Headers)
+	shouldStream := hasStreamHeader && sp.streamingEnabled && len(response.Body) > responseStreamingBodyChunkSizeBytes
+
+	// Protect against not-yet-exited querier handler goroutines that could
+	// still be incrementing stats when sent for marshaling below.
+	stats = stats.Copy()
+
 	for bof.Ongoing() {
 		c, err = sp.frontendPool.GetClientFor(frontendAddress)
 		if err != nil {
 			break
 		}
 
-		var ok bool
-		response.Headers, ok = removeStreamingHeader(response.Headers)
-		if sp.streamingEnabled && ok && len(response.Body) > responseStreamingBodyChunkSizeBytes {
-			err = streamResponse(frontendCtx, ctx, c, queryID, response, stats, sp.log)
+		if shouldStream {
+			err = sp.streamResponse(frontendCtx, ctx, c, queryID, response, stats, sp.log)
 		} else {
 			// Response is empty and uninteresting.
 			_, err = c.(frontendv2pb.FrontendForQuerierClient).QueryResult(frontendCtx, &frontendv2pb.QueryResultRequest{
@@ -433,6 +450,7 @@ func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClie
 		return nil, err
 	}
 
+	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(addr, opts...)
 	if err != nil {
 		return nil, err

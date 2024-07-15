@@ -109,6 +109,8 @@ type Config struct {
 	NotificationTimeout time.Duration `yaml:"notification_timeout" category:"advanced"`
 	// Client configs for interacting with the Alertmanager
 	Notifier NotifierConfig `yaml:"alertmanager_client"`
+	// Enable draining the pending alert notification queue when shutting down.
+	DrainNotificationQueueOnShutdown bool `yaml:"drain_notification_queue_on_shutdown" category:"experimental"`
 
 	// Max time to tolerate outage for restoring "for" state of alert.
 	OutageTolerance time.Duration `yaml:"for_outage_tolerance" category:"advanced"`
@@ -170,6 +172,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.AlertmanagerRefreshInterval, "ruler.alertmanager-refresh-interval", 1*time.Minute, "How long to wait between refreshing DNS resolutions of Alertmanager hosts.")
 	f.IntVar(&cfg.NotificationQueueCapacity, "ruler.notification-queue-capacity", 10000, "Capacity of the queue for notifications to be sent to the Alertmanager.")
 	f.DurationVar(&cfg.NotificationTimeout, "ruler.notification-timeout", 10*time.Second, "HTTP timeout duration when sending notifications to the Alertmanager.")
+	f.BoolVar(&cfg.DrainNotificationQueueOnShutdown, "ruler.drain-notification-queue-on-shutdown", false, "Drain all outstanding alert notifications when shutting down. If false, any outstanding alert notifications are dropped when shutting down.")
 
 	f.StringVar(&cfg.RulePath, "ruler.rule-path", "./data-ruler/", "Directory to store temporary rule files loaded by the Prometheus rule managers. This directory is not required to be persisted between restarts.")
 	f.BoolVar(&cfg.EnableAPI, "ruler.enable-api", true, "Enable the ruler config API.")
@@ -1157,15 +1160,15 @@ func (r *Ruler) getLocalRules(ctx context.Context, userID string, req RulesReque
 }
 
 // IsMaxRuleGroupsLimited returns true if there is a limit set for the max
-// number of rule groups for the tenant.
-func (r *Ruler) IsMaxRuleGroupsLimited(userID string) bool {
-	return r.limits.RulerMaxRuleGroupsPerTenant(userID) > 0
+// number of rule groups for the tenant and namespace.
+func (r *Ruler) IsMaxRuleGroupsLimited(userID, namespace string) bool {
+	return r.limits.RulerMaxRuleGroupsPerTenant(userID, namespace) > 0
 }
 
 // AssertMaxRuleGroups limit has not been reached compared to the current
 // number of total rule groups in input and returns an error if so.
-func (r *Ruler) AssertMaxRuleGroups(userID string, rg int) error {
-	limit := r.limits.RulerMaxRuleGroupsPerTenant(userID)
+func (r *Ruler) AssertMaxRuleGroups(userID, namespace string, rg int) error {
+	limit := r.limits.RulerMaxRuleGroupsPerTenant(userID, namespace)
 
 	if limit <= 0 {
 		return nil
@@ -1179,9 +1182,10 @@ func (r *Ruler) AssertMaxRuleGroups(userID string, rg int) error {
 }
 
 // AssertMaxRulesPerRuleGroup limit has not been reached compared to the current
-// number of rules in a rule group in input and returns an error if so.
-func (r *Ruler) AssertMaxRulesPerRuleGroup(userID string, rules int) error {
-	limit := r.limits.RulerMaxRulesPerRuleGroup(userID)
+// number of rules in a rule group and namespace combination in input, returns an error if so.
+// If the limit is set to 0 (or less), then there is no limit.
+func (r *Ruler) AssertMaxRulesPerRuleGroup(userID, namespace string, rules int) error {
+	limit := r.limits.RulerMaxRulesPerRuleGroup(userID, namespace)
 
 	if limit <= 0 {
 		return nil

@@ -56,7 +56,7 @@ local filename = 'mimir-queries.json';
       )
     )
     .addRow(
-      $.row('Query-frontend - query splitting and results cache')
+      $.row('Query-frontend – query splitting and results cache')
       .addPanel(
         $.timeseriesPanel('Intervals per query') +
         $.queryPanel('sum(rate(cortex_frontend_split_queries_total{%s}[$__rate_interval])) / sum(rate(cortex_frontend_query_range_duration_seconds_count{%s, method="split_by_interval_and_results_cache"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'splitting rate') +
@@ -120,7 +120,7 @@ local filename = 'mimir-queries.json';
       )
     )
     .addRow(
-      $.row('Query-frontend - query sharding')
+      $.row('Query-frontend – query sharding')
       .addPanel(
         $.timeseriesPanel('Sharded queries ratio') +
         $.queryPanel(|||
@@ -149,6 +149,33 @@ local filename = 'mimir-queries.json';
         ),
       )
     )
+    .addRowIf(
+      $._config.show_ingest_storage_panels,
+      $.row('Query-frontend – strong consistency (ingest storage)')
+      .addPanel(
+        $.timeseriesPanel('Queries with strong read consistency ratio') +
+        $.panelDescription(
+          'Queries with strong read consistency ratio',
+          |||
+            Ratio between queries with strong read consistency and all other queries on query-frontends.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            |||
+              # Display the ratio by container so that it gives a quick visual clue whether requests are coming
+              # from user queries (query-frontend) or rule evaluations (ruler-query-frontend).
+              sum by(container) (rate(cortex_query_frontend_queries_consistency_total{%s,consistency="strong"}[$__rate_interval]))
+              /
+              sum by(container) (rate(cortex_query_frontend_queries_total{%s}[$__rate_interval]))
+            ||| % [$.namespaceMatcher(), $.namespaceMatcher()],
+          ],
+          ['{{container}}'],
+        )
+        + { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } }
+        + $.stack
+      )
+    )
     .addRow(
       $.row('Ingester')
       .addPanel(
@@ -169,7 +196,7 @@ local filename = 'mimir-queries.json';
     )
     .addRowIf(
       $._config.show_ingest_storage_panels,
-      ($.row('Ingester (ingest storage: strong consistency)'))
+      ($.row('Ingester – strong consistency (ingest storage)'))
       .addPanel(
         $.timeseriesPanel('Requests with strong read consistency / sec') +
         $.panelDescription(
@@ -240,13 +267,13 @@ local filename = 'mimir-queries.json';
         ) +
         $.queryPanel(
           [
-            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_avg(sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
             'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
             'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
             'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
-            '50th percentile',
+            'avg',
             '99th percentile',
             '99.9th percentile',
             '100th percentile',
@@ -260,9 +287,9 @@ local filename = 'mimir-queries.json';
     )
     .addRowIf(
       $._config.show_ingest_storage_panels,
-      ($.row('Ingester (ingest storage: last produced offset)'))
+      $.row('')
       .addPanel(
-        $.timeseriesPanel('Last produced offset requests / sec') +
+        $.timeseriesPanel('Fetch last produced offset requests / sec') +
         $.panelDescription(
           'Rate of requests to fetch last produced offset for partition',
           |||
@@ -291,7 +318,7 @@ local filename = 'mimir-queries.json';
         } + $.aliasColors({ successful: $._colors.success, failed: $._colors.failed }) + $.stack,
       )
       .addPanel(
-        $.timeseriesPanel('Last produced offset latency') +
+        $.timeseriesPanel('Fetch last produced offset latency') +
         $.panelDescription(
           'Latency',
           |||
@@ -300,13 +327,13 @@ local filename = 'mimir-queries.json';
         ) +
         $.queryPanel(
           [
-            'histogram_quantile(0.5, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_avg(sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
             'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
             'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
             'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
           ],
           [
-            '50th percentile',
+            'avg',
             '99th percentile',
             '99.9th percentile',
             '100th percentile',
@@ -316,6 +343,9 @@ local filename = 'mimir-queries.json';
             defaults+: { unit: 's' },
           },
         },
+      )
+      .addPanel(
+        $.ingestStorageIngesterEndToEndLatencyWhenRunningPanel(),
       )
     )
     .addRow(
@@ -420,6 +450,7 @@ local filename = 'mimir-queries.json';
           '{{stage}}'
         ) +
         $.stack +
+        $.showAllTooltip +
         { fieldConfig+: { defaults+: { unit: 's' } } },
       )
       .addPanel(
@@ -431,6 +462,7 @@ local filename = 'mimir-queries.json';
           '{{stage}}'
         ) +
         $.stack +
+        $.showAllTooltip +
         { fieldConfig+: { defaults+: { unit: 's' } } },
       )
       .addPanel(

@@ -379,31 +379,8 @@ func (cl *Client) updateMetadata() (retryWhy multiUpdateWhy, err error) {
 		}
 	}
 
-	// Migrating a cursor requires stopping any consumer session. If we
-	// stop a session, we need to eventually re-start any offset listing or
-	// epoch loading that was stopped. Thus, we simply merge what we
-	// stopped into what we will reload.
-	var (
-		consumerSessionStopped bool
-		reloadOffsets          listOrEpochLoads
-		tpsPrior               *topicsPartitions
-	)
-	stopConsumerSession := func() {
-		if consumerSessionStopped {
-			return
-		}
-		consumerSessionStopped = true
-		loads, tps := cl.consumer.stopSession()
-		reloadOffsets.mergeFrom(loads)
-		tpsPrior = tps
-	}
-	defer func() {
-		if consumerSessionStopped {
-			session := cl.consumer.startNewSession(tpsPrior)
-			defer session.decWorker()
-			reloadOffsets.loadWithSession(session, "resuming reload offsets after session stopped for cursor migrating in metadata")
-		}
-	}()
+	css := &consumerSessionStopper{cl: cl}
+	defer css.maybeRestart()
 
 	var missingProduceTopics []*topicPartitions
 	for _, m := range []struct {
@@ -426,8 +403,7 @@ func (cl *Client) updateMetadata() (retryWhy multiUpdateWhy, err error) {
 				priorParts,
 				newParts,
 				m.isProduce,
-				&reloadOffsets,
-				stopConsumerSession,
+				css,
 				&retryWhy,
 			)
 		}
@@ -555,6 +531,11 @@ func (cl *Client) fetchTopicMetadata(all bool, reqTopics []string) (map[string]*
 		return nil, err
 	}
 
+	// Since we've fetched the metadata for some topics we can optimistically cache it
+	// for mapped metadata too. This may reduce the number of Metadata requests issued
+	// by the client.
+	cl.storeCachedMappedMetadata(meta, nil)
+
 	topics := make(map[string]*metadataTopic, len(meta.Topics))
 
 	// Even if metadata returns a leader epoch, we do not use it unless we
@@ -661,8 +642,7 @@ func (cl *Client) mergeTopicPartitions(
 	l *topicPartitions,
 	mt *metadataTopic,
 	isProduce bool,
-	reloadOffsets *listOrEpochLoads,
-	stopConsumerSession func(),
+	css *consumerSessionStopper,
 	retryWhy *multiUpdateWhy,
 ) {
 	lv := *l.load() // copy so our field writes do not collide with reads
@@ -853,11 +833,7 @@ func (cl *Client) mergeTopicPartitions(
 			if isProduce {
 				oldTP.migrateProductionTo(newTP) // migration clears failing state
 			} else {
-				oldTP.migrateCursorTo(
-					newTP,
-					reloadOffsets,
-					stopConsumerSession,
-				)
+				oldTP.migrateCursorTo(newTP, css)
 			}
 		}
 	}

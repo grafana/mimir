@@ -215,7 +215,10 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	}
 
 	// Prepare and execute the downstream requests.
-	execReqs := splitReqs.prepareDownstreamRequests()
+	execReqs, err := splitReqs.prepareDownstreamRequests()
+	if err != nil {
+		return nil, err
+	}
 
 	// Update query stats.
 	// Only consider the actual number of downstream requests, not the cache hits.
@@ -352,7 +355,7 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 
 	// Lookup the cache.
 	s.metrics.cacheRequests.Add(float64(len(keys)))
-	founds := s.cache.Fetch(ctx, hashedKeys)
+	founds := s.cache.GetMulti(ctx, hashedKeys)
 	s.metrics.cacheHits.Add(float64(len(founds)))
 
 	// Decode all cached responses.
@@ -455,7 +458,7 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(key string, tenantIDs []stri
 		return
 	}
 
-	s.cache.StoreAsync(map[string][]byte{cacheHashKey(key): buf}, usedTTL)
+	s.cache.SetMultiAsync(map[string][]byte{cacheHashKey(key): buf}, usedTTL)
 }
 
 func getTTLForExtent(now time.Time, ttl, ttlInOOOWindow, oooWindow time.Duration, e Extent) time.Duration {
@@ -519,12 +522,12 @@ func (s *splitRequests) countDownstreamResponseBytes() int {
 
 // prepareDownstreamRequests injects a unique ID and hints to all downstream requests and
 // initialize downstream responses slice to have the same length of requests.
-func (s *splitRequests) prepareDownstreamRequests() []MetricsQueryRequest {
+func (s *splitRequests) prepareDownstreamRequests() ([]MetricsQueryRequest, error) {
 	// Count the total number of downstream requests to run and build the hints we're going
 	// to attach to each request.
 	numDownstreamRequests := s.countDownstreamRequests()
 	if numDownstreamRequests == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// Build the whole list of requests to execute. For each downstream request,
@@ -535,7 +538,15 @@ func (s *splitRequests) prepareDownstreamRequests() []MetricsQueryRequest {
 	execReqs := make([]MetricsQueryRequest, 0, numDownstreamRequests)
 	for _, splitReq := range *s {
 		for i := 0; i < len(splitReq.downstreamRequests); i++ {
-			splitReq.downstreamRequests[i] = splitReq.downstreamRequests[i].WithID(nextReqID).WithTotalQueriesHint(int32(numDownstreamRequests))
+			newRequest, err := splitReq.downstreamRequests[i].WithID(nextReqID)
+			if err != nil {
+				return nil, err
+			}
+			newRequest, err = newRequest.WithTotalQueriesHint(int32(numDownstreamRequests))
+			if err != nil {
+				return nil, err
+			}
+			splitReq.downstreamRequests[i] = newRequest
 			nextReqID++
 		}
 
@@ -543,7 +554,7 @@ func (s *splitRequests) prepareDownstreamRequests() []MetricsQueryRequest {
 		splitReq.downstreamResponses = make([]Response, len(splitReq.downstreamRequests))
 	}
 
-	return execReqs
+	return execReqs, nil
 }
 
 // storeDownstreamResponses associates the given executed requestResponse with the downstream requests
@@ -650,7 +661,10 @@ func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]Me
 		if err != nil {
 			return nil, err
 		}
-		splitReq = splitReq.WithStartEnd(start, end)
+		splitReq, err = splitReq.WithStartEnd(start, end)
+		if err != nil {
+			return nil, err
+		}
 		reqs = append(reqs, splitReq)
 
 		start = end + splitReq.GetStep()
@@ -667,14 +681,23 @@ func evaluateAtModifierFunction(query string, start, end int64) (string, error) 
 		return "", apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
 	}
 	parser.Inspect(expr, func(n parser.Node, _ []parser.Node) error {
-		if selector, ok := n.(*parser.VectorSelector); ok {
-			switch selector.StartOrEnd {
+		switch exprAt := n.(type) {
+		case *parser.VectorSelector:
+			switch exprAt.StartOrEnd {
 			case parser.START:
-				selector.Timestamp = &start
+				exprAt.Timestamp = &start
 			case parser.END:
-				selector.Timestamp = &end
+				exprAt.Timestamp = &end
 			}
-			selector.StartOrEnd = 0
+			exprAt.StartOrEnd = 0
+		case *parser.SubqueryExpr:
+			switch exprAt.StartOrEnd {
+			case parser.START:
+				exprAt.Timestamp = &start
+			case parser.END:
+				exprAt.Timestamp = &end
+			}
+			exprAt.StartOrEnd = 0
 		}
 		return nil
 	})

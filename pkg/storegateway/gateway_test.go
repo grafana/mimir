@@ -205,6 +205,7 @@ func TestStoreGateway_InitialSyncFailure(t *testing.T) {
 
 	// We expect a clean shutdown, including unregistering the instance from the ring.
 	assert.False(t, g.ringLifecycler.IsRegistered())
+	_ = services.StopAndAwaitTerminated(ctx, g) // There will be an error since the initial sync failed
 }
 
 // TestStoreGateway_InitialSyncWithWaitRingTokensStability tests the store-gateway cold start case.

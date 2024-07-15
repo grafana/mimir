@@ -354,12 +354,22 @@ func (h *Head) resetInMemoryState() error {
 		return err
 	}
 
+	if h.series != nil {
+		// reset the existing series to make sure we call the appropriated hooks
+		// and increment the series removed metrics
+		fs := h.series.iterForDeletion(func(_ int, _ uint64, s *memSeries, flushedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
+			// All series should be flushed
+			flushedForCallback[s.ref] = s.lset
+		})
+		h.metrics.seriesRemoved.Add(float64(fs))
+	}
+
+	h.series = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback)
 	h.iso = newIsolation(h.opts.IsolationDisabled)
 	h.oooIso = newOOOIsolation()
-
+	h.numSeries.Store(0)
 	h.exemplarMetrics = em
 	h.exemplars = es
-	h.series = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback)
 	h.postings = index.NewUnorderedMemPostings()
 	h.tombstones = tombstones.NewMemTombstones()
 	h.deleted = map[chunks.HeadSeriesRef]int{}
@@ -1587,7 +1597,7 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, chunksRemoved, actualInOrderMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef)
+	deleted, affected, chunksRemoved, actualInOrderMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
@@ -1596,7 +1606,7 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	h.numSeries.Sub(uint64(seriesRemoved))
 
 	// Remove deleted series IDs from the postings lists.
-	h.postings.Delete(deleted)
+	h.postings.Delete(deleted, affected)
 
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
@@ -1910,13 +1920,13 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 // but the returned map goes into postings.Delete() which expects a map[storage.SeriesRef]struct
 // and there's no easy way to cast maps.
 // minMmapFile is the min mmap file number seen in the series (in-order and out-of-order) after gc'ing the series.
-func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ int, _, _ int64, minMmapFile int) {
+func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _ int, _, _ int64, minMmapFile int) {
 	var (
-		deleted                     = map[storage.SeriesRef]struct{}{}
-		rmChunks                    = 0
-		actualMint            int64 = math.MaxInt64
-		minOOOTime            int64 = math.MaxInt64
-		deletedFromPrevStripe       = 0
+		deleted          = map[storage.SeriesRef]struct{}{}
+		affected         = map[labels.Label]struct{}{}
+		rmChunks         = 0
+		actualMint int64 = math.MaxInt64
+		minOOOTime int64 = math.MaxInt64
 	)
 	minMmapFile = math.MaxInt32
 
@@ -1969,38 +1979,48 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 		s.hashes[hashShard].del(hash, series.ref)
 		delete(s.series[refShard], series.ref)
 		deletedForCallback[series.ref] = series.lset
 	}
 
-	// Run through all series shard by shard, checking which should be deleted.
-	for i := 0; i < s.size; i++ {
-		deletedForCallback := make(map[chunks.HeadSeriesRef]labels.Labels, deletedFromPrevStripe)
-		s.locks[i].Lock()
-
-		// Delete conflicts first so seriesHashmap.del doesn't move them to the `unique` field,
-		// after deleting `unique`.
-		for hash, all := range s.hashes[i].conflicts {
-			for _, series := range all {
-				check(i, hash, series, deletedForCallback)
-			}
-		}
-		for hash, series := range s.hashes[i].unique {
-			check(i, hash, series, deletedForCallback)
-		}
-
-		s.locks[i].Unlock()
-
-		s.seriesLifecycleCallback.PostDeletion(deletedForCallback)
-		deletedFromPrevStripe = len(deletedForCallback)
-	}
+	s.iterForDeletion(check)
 
 	if actualMint == math.MaxInt64 {
 		actualMint = mint
 	}
 
-	return deleted, rmChunks, actualMint, minOOOTime, minMmapFile
+	return deleted, affected, rmChunks, actualMint, minOOOTime, minMmapFile
+}
+
+// The iterForDeletion function iterates through all series, invoking the checkDeletedFunc for each.
+// The checkDeletedFunc takes a map as input and should add to it all series that were deleted and should be included
+// when invoking the PostDeletion hook.
+func (s *stripeSeries) iterForDeletion(checkDeletedFunc func(int, uint64, *memSeries, map[chunks.HeadSeriesRef]labels.Labels)) int {
+	seriesSetFromPrevStripe := 0
+	totalDeletedSeries := 0
+	// Run through all series shard by shard
+	for i := 0; i < s.size; i++ {
+		seriesSet := make(map[chunks.HeadSeriesRef]labels.Labels, seriesSetFromPrevStripe)
+		s.locks[i].Lock()
+		// Iterate conflicts first so f doesn't move them to the `unique` field,
+		// after deleting `unique`.
+		for hash, all := range s.hashes[i].conflicts {
+			for _, series := range all {
+				checkDeletedFunc(i, hash, series, seriesSet)
+			}
+		}
+
+		for hash, series := range s.hashes[i].unique {
+			checkDeletedFunc(i, hash, series, seriesSet)
+		}
+		s.locks[i].Unlock()
+		s.seriesLifecycleCallback.PostDeletion(seriesSet)
+		totalDeletedSeries += len(seriesSet)
+		seriesSetFromPrevStripe = len(seriesSet)
+	}
+	return totalDeletedSeries
 }
 
 func (s *stripeSeries) getByID(id chunks.HeadSeriesRef) *memSeries {
@@ -2381,35 +2401,63 @@ func (h *Head) updateWALReplayStatusRead(current int) {
 	h.stats.WALReplayStatus.Current = current
 }
 
-// ForEachSecondaryHash iterates over all series in the Head, and passes secondary hashes of the series
-// to the function. Function is called with batch of hashes, in no specific order. Hash for each series
-// in the head is included exactly once. Series for corresponding hash may be deleted while the function
-// is running, and series inserted while this function runs may be reported or ignored.
+// ForEachSecondaryHash iterates over all series in the Head, and passes references and secondary hashes of the series
+// to the function. Function is called with batch of refs and hashes, in no specific order. The order of the refs
+// in the same as the order of the hashes. Each series in the head is included exactly once.
+// Series may be deleted while the function is running, and series inserted while this function runs may be reported or ignored.
 //
 // No locks are held when function is called.
 //
-// Slice of hashes passed to the function is reused between calls.
-func (h *Head) ForEachSecondaryHash(fn func(secondaryHash []uint32)) {
-	buf := make([]uint32, 512)
+// Slices passed to the function are reused between calls.
+func (h *Head) ForEachSecondaryHash(fn func(ref []chunks.HeadSeriesRef, secondaryHash []uint32)) {
+	slices := newPairOfSlices[chunks.HeadSeriesRef, uint32](512)
 
 	for i := 0; i < h.series.size; i++ {
-		buf = buf[:0]
+		slices = slices.reset()
 
 		h.series.locks[i].RLock()
 		for _, s := range h.series.hashes[i].unique {
 			// No need to lock series lock, as we're only accessing its immutable secondary hash.
-			buf = append(buf, s.secondaryHash)
+			slices = slices.append(s.ref, s.secondaryHash)
 		}
 		for _, all := range h.series.hashes[i].conflicts {
 			for _, s := range all {
 				// No need to lock series lock, as we're only accessing its immutable secondary hash.
-				buf = append(buf, s.secondaryHash)
+				slices = slices.append(s.ref, s.secondaryHash)
 			}
 		}
 		h.series.locks[i].RUnlock()
 
-		if len(buf) > 0 {
-			fn(buf)
+		if slices.len() > 0 {
+			fn(slices.slice1, slices.slice2)
 		}
 	}
+}
+
+type pairOfSlices[T1, T2 any] struct {
+	slice1 []T1
+	slice2 []T2
+}
+
+func newPairOfSlices[T1, T2 any](length int) pairOfSlices[T1, T2] {
+	return pairOfSlices[T1, T2]{
+		slice1: make([]T1, length),
+		slice2: make([]T2, length),
+	}
+}
+
+func (p pairOfSlices[T1, T2]) reset() pairOfSlices[T1, T2] {
+	p.slice1 = p.slice1[:0]
+	p.slice2 = p.slice2[:0]
+	return p
+}
+
+func (p pairOfSlices[T1, T2]) append(t1 T1, t2 T2) pairOfSlices[T1, T2] {
+	p.slice1 = append(p.slice1, t1)
+	p.slice2 = append(p.slice2, t2)
+	return p
+}
+
+func (p pairOfSlices[T1, T2]) len() int {
+	return len(p.slice1)
 }

@@ -10,14 +10,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/regexp"
-	"github.com/pkg/errors"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/plugin/kotel"
 	"github.com/twmb/franz-go/plugin/kprom"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 var (
@@ -69,7 +68,6 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		kgo.MetadataMaxAge(10 * time.Second),
 
 		kgo.WithLogger(newKafkaLogger(logger)),
-		kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(kotel.NewTracer())).Hooks()...),
 
 		kgo.RetryTimeoutFn(func(key int16) time.Duration {
 			switch key {
@@ -85,6 +83,11 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 	if cfg.AutoCreateTopicEnabled {
 		opts = append(opts, kgo.AllowAutoTopicCreation())
 	}
+
+	tracer := kotel.NewTracer(
+		kotel.TracerPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{})),
+	)
+	opts = append(opts, kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(tracer)).Hooks()...))
 
 	if metrics != nil {
 		opts = append(opts, kgo.WithHooks(metrics))
@@ -124,16 +127,6 @@ func (w *resultPromise[T]) wait(ctx context.Context) (T, error) {
 	case <-w.done:
 		return w.resultValue, w.resultErr
 	}
-}
-
-// shouldLog returns whether err should be logged.
-func shouldLog(ctx context.Context, err error) (bool, string) {
-	var optional middleware.OptionalLogging
-	if !errors.As(err, &optional) {
-		return true, ""
-	}
-
-	return optional.ShouldLog(ctx)
 }
 
 // setDefaultNumberOfPartitionsForAutocreatedTopics tries to set num.partitions config option on brokers.

@@ -54,12 +54,15 @@ The following features are currently experimental:
 - Compactor
   - Enable cleanup of remaining files in the tenant bucket when there are no blocks remaining in the bucket index.
     - `-compactor.no-blocks-file-cleanup-enabled`
+  - In-memory cache for parsed meta.json files:
+    - `-compactor.in-memory-tenant-meta-cache-size`
 - Ruler
-  - Tenant federation
-  - Disable alerting and recording rules evaluation on a per-tenant basis
-    - `-ruler.recording-rules-evaluation-enabled`
-    - `-ruler.alerting-rules-evaluation-enabled`
   - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
+  - Allow defining limits on the maximum number of rules allowed in a rule group by namespace and the maximum number of rule groups by namespace. If set, this supersedes the `-ruler.max-rules-per-rule-group` and `-ruler.max-rule-groups-per-tenant` limits.
+  - `-ruler.max-rules-per-rule-group-by-namespace`
+  - `-ruler.max-rule-groups-per-tenant-by-namespace`
+  - Allow protecting rule groups from modification by namespace. Rule groups can always be read, and you can use the `X-Mimir-Ruler-Override-Namespace-Protection` header with namespace names as values to override protection from modification.
+  - `-ruler.protected-namespaces`
 - Distributor
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`
@@ -71,6 +74,12 @@ The following features are currently experimental:
     - `-distributor.retry-after-header.max-backoff-exponent`
   - Limit exemplars per series per request
     - `-distributor.max-exemplars-per-series-per-request`
+  - Limit OTLP write request byte size
+    - `-distributor.max-otlp-request-size`
+  - Enforce a maximum pool buffer size for write requests
+    - `-distributor.max-request-pool-buffer-size`
+  - Enable direct translation from OTLP write requests to Mimir equivalents
+    - `-distributor.direct-otlp-translation-enabled`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
@@ -113,31 +122,47 @@ The following features are currently experimental:
     - `-ingester.track-ingester-owned-series`
     - `-ingester.use-ingester-owned-series-for-limits`
     - `-ingester.owned-series-update-interval`
+  - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
+    - `-ingester.push-circuit-breaker.circuit-breaker.enabled`
+    - `-ingester.push-circuit-breaker.failure-threshold-percentage`
+    - `-ingester.push-circuit-breaker.failure-execution-threshold`
+    - `-ingester.push-circuit-breaker.thresholding-period`
+    - `-ingester.push-circuit-breaker.cooldown-period`
+    - `-ingester.push-circuit-breaker.initial-delay`
+    - `-ingester.push-circuit-breaker.request-timeout`
+    - `-ingester.read-circuit-breaker.circuit-breaker.enabled`
+    - `-ingester.read-circuit-breaker.failure-threshold-percentage`
+    - `-ingester.read-circuit-breaker.failure-execution-threshold`
+    - `-ingester.read-circuit-breaker.thresholding-period`
+    - `-ingester.read-circuit-breaker.cooldown-period`
+    - `-ingester.read-circuit-breaker.initial-delay`
+    - `-ingester.read-circuit-breaker.request-timeout`
 - Ingester client
   - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
     - `-ingester.client.circuit-breaker.enabled`
     - `-ingester.client.circuit-breaker.failure-threshold`
     - `-ingester.client.circuit-breaker.failure-execution-threshold`
-    - `-ingester.client.circuit-breaker.period`
+    - `-ingester.client.circuit-breaker.thresholding-period`
     - `-ingester.client.circuit-breaker.cooldown-period`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
-  - Streaming chunks from store-gateway to querier (`-querier.prefer-streaming-chunks-from-store-gateways`, `-querier.streaming-chunks-per-store-gateway-buffer-size`)
+  - Streaming chunks from store-gateway to querier (`-querier.prefer-streaming-chunks-from-store-gateways`)
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
   - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
   - Enable PromQL experimental functions (`-querier.promql-experimental-functions-enabled`)
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
-  - Streaming PromQL engine (`-querier.promql-engine=streaming` and `-querier.enable-promql-engine-fallback`)
+  - Mimir query engine (`-querier.query-engine=mimir` and `-querier.enable-query-engine-fallback`)
+  - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
-  - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters)
+  - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
-  - Max number of tenants that may be queried at once (`-tenant-federation.max-tenants`)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
+  - Remote read request limits (`-query-frontend.remote-read-limits-enabled`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
@@ -176,16 +201,14 @@ The following features are currently experimental:
 - Server
   - [PROXY protocol](https://www.haproxy.org/download/2.3/doc/proxy-protocol.txt) support
     - `-server.proxy-protocol-enabled`
+- Kafka-based ingest storage
+  - `-ingest-storage.*`
+  - `-ingester.partition-ring.*`
 
 ## Deprecated features
 
 Deprecated features are usable up until the release that indicates their removal.
 For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "./configuration-parameters#parameter-lifecycle" >}}).
-
-The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.13**:
-
-- Logging
-  - `-log.buffered`
 
 The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.14**:
 
@@ -197,3 +220,10 @@ The following features or configuration parameters are currently deprecated and 
   - `-ingester.client.report-grpc-codes-in-instrumentation-label-enabled`
 - Mimirtool
   - the flag `--rule-files`
+- Querier
+  - the flag `-querier.prefer-streaming-chunks-from-store-gateways`
+
+The following features or configuration parameters are currently deprecated and will be **removed in a future release (to be announced)**:
+
+- Rule group configuration file
+  - `evaluation_delay` field: use `query_offset` instead

@@ -18,7 +18,7 @@ import (
 )
 
 func openPromBlocks(t testing.TB, dir string) []promtsdb.BlockReader {
-	promDB, err := promtsdb.OpenDBReadOnly(dir, log.NewNopLogger())
+	promDB, err := promtsdb.OpenDBReadOnly(dir, "", log.NewNopLogger())
 	require.NoError(t, err)
 	promBlocks, err := promDB.Blocks()
 	require.NoError(t, err)

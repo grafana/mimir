@@ -226,17 +226,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // shows all values on tooltip, descending. Also turns on exemplars, unless 4th parameter is false.
   hiddenLegendQueryPanel(queries, legends, legendLink=null, exemplars=true)::
     $.queryPanel(queries, legends, legendLink) +
+    $.showAllTooltip +
     {
-      options: {
+      options+: {
         legend+: {
           showLegend: false,
           // Work round Grafana turning showLegend back on when we have
           // schemaVersion<37. https://github.com/grafana/grafana/issues/54472
           displayMode: 'hidden',
-        },
-        tooltip+: {
-          mode: 'multi',
-          sort: 'desc',
         },
       },
       fieldConfig+: {
@@ -335,6 +332,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerCPUUsagePanel(instanceName, containerName)::
     $.timeseriesPanel('CPU') +
     $.queryPanel($.resourceUtilizationAndLimitQueries('cpu', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.showAllTooltip +
     {
       fieldConfig+: {
         overrides+: [
@@ -348,12 +346,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
       },
-      options+: {
-        tooltip: {
-          mode: 'multi',
-          sort: 'desc',
-        },
-      },
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -365,6 +357,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerMemoryWorkingSetPanel(instanceName, containerName)::
     $.timeseriesPanel('Memory (workingset)') +
     $.queryPanel($.resourceUtilizationAndLimitQueries('memory_working', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.showAllTooltip +
     {
       fieldConfig+: {
         overrides+: [
@@ -376,12 +369,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           custom+: {
             fillOpacity: 0,
           },
-        },
-      },
-      options+: {
-        tooltip: {
-          mode: 'multi',
-          sort: 'desc',
         },
       },
     },
@@ -395,6 +382,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerMemoryRSSPanel(instanceName, containerName)::
     $.timeseriesPanel('Memory (RSS)') +
     $.queryPanel($.resourceUtilizationAndLimitQueries('memory_rss', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.showAllTooltip +
     {
       fieldConfig+: {
         overrides+: [
@@ -408,12 +396,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
       },
-      options+: {
-        tooltip: {
-          mode: 'multi',
-          sort: 'desc',
-        },
-      },
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -425,6 +407,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerGoHeapInUsePanel(instanceName, containerName)::
     $.timeseriesPanel('Memory (go heap inuse)') +
     $.queryPanel($.resourceUtilizationQuery('memory_go_heap', instanceName, containerName), '{{%s}}' % $._config.per_instance_label) +
+    $.showAllTooltip +
     {
       fieldConfig+: {
         defaults+: {
@@ -432,12 +415,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           custom+: {
             fillOpacity: 0,
           },
-        },
-      },
-      options+: {
-        tooltip: {
-          mode: 'multi',
-          sort: 'desc',
         },
       },
     },
@@ -516,7 +493,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_utilization % {
         namespaceMatcher: $.namespaceMatcher(),
-        containerMatcher: $.containerLabelNameMatcher(containerName),
+        persistentVolumeClaimMatcher: $.containerPersistentVolumeClaimMatcher(containerName),
         instanceLabel: $._config.per_instance_label,
         instanceName: instanceName,
         instanceDataDir: $._config.instance_data_mountpoint,
@@ -536,9 +513,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.containerDiskSpaceUtilizationPanel($._config.instance_names[componentName], $._config.container_names[componentName]),
 
   // The provided containerName should be a regexp from $._config.container_names.
-  containerLabelNameMatcher(containerName)::
-    // Check only the prefix so that a multi-zone deployment matches too.
-    'label_name=~"(%s).*"' % containerName,
+  containerPersistentVolumeClaimMatcher(containerName)::
+    'persistentvolumeclaim=~".*(%s).*"' % containerName,
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
   containerNetworkingRowByComponent(title, componentName)::
@@ -569,7 +545,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     )
     .addPanel(
-      $.timeseriesPanel('TCP connections (per pod)') +
+      local title = 'Ingress TCP connections (per pod)';
+
+      $.timeseriesPanel(title) +
+      $.panelDescription(
+        title,
+        'The number of ingress TCP connections (HTTP and gRPC protocol).'
+      ) +
       $.queryPanel([
         'avg(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}))' % vars,
         'max(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}))' % vars,
@@ -619,9 +601,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
         |||
           max by (scaletargetref_name) (
             kube_horizontalpodautoscaler_status_current_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-            # HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active
-            * on (%(cluster_labels)s, horizontalpodautoscaler)
-              kube_horizontalpodautoscaler_status_condition{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s", condition="ScalingActive", status="true"}
             # Add the scaletargetref_name label for readability
             + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
               0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
@@ -653,9 +632,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.panelDescription(
       title,
       |||
-        The maximum and current number of %s replicas.<br /><br />
-        Note: The current number of replicas can still show 1 replica even when scaled to 0.
-        Because HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.
+        The minimum, maximum, and current number of %s replicas.
       ||| % [componentTitle]
     ) +
     {
@@ -677,7 +654,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
-  autoScalingDesiredReplicasByScalingMetricPanel(componentName, scalingMetricName, scalingMetricID)::
+  autoScalingDesiredReplicasByAverageValueScalingMetricPanel(componentName, scalingMetricName, scalingMetricID)::
     local title = if scalingMetricName != '' then 'Scaling metric (%s): Desired replicas' % scalingMetricName else 'Desired replicas';
     local scalerSelector = if scalingMetricID != '' then ('.*%s.*' % scalingMetricID) else '.+';
 
@@ -720,6 +697,54 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ),
 
   // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
+  autoScalingDesiredReplicasByValueScalingMetricPanel(componentName, scalingMetricName, scalingMetricID)::
+    local title = if scalingMetricName != '' then 'Scaling metric (%s): Desired replicas' % scalingMetricName else 'Desired replicas';
+    local scalerSelector = if scalingMetricID != '' then ('.*%s.*' % scalingMetricID) else '.+';
+
+    $.timeseriesPanel(title) +
+    $.queryPanel(
+      [
+        |||
+          sum by (scaler) (
+            label_replace(
+              keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace", scaler=~"%(scaler_selector)s"},
+              "namespace", "$1", "exported_namespace", "(.*)"
+            )
+            /
+            on(%(aggregation_labels)s, scaledObject, metric) group_left label_replace(
+              label_replace(
+                kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
+                "metric", "$1", "metric_name", "(.+)"
+              ),
+              "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)"
+            )
+            *
+            on(%(aggregation_labels)s, scaledObject) group_left label_replace(
+              kube_horizontalpodautoscaler_status_current_replicas{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
+              "scaledObject", "$1", "horizontalpodautoscaler", "keda-hpa-(.*)"
+            )
+          )
+        ||| % {
+          aggregation_labels: $._config.alert_aggregation_labels,
+          cluster_label: $._config.per_cluster_label,
+          hpa_prefix: $._config.autoscaling_hpa_prefix,
+          hpa_name: $._config.autoscaling[componentName].hpa_name,
+          namespace: $.namespaceMatcher(),
+          scaler_selector: scalerSelector,
+        },
+      ], [
+        '{{ scaler }}',
+      ]
+    ) +
+    $.panelDescription(
+      title,
+      |||
+        This panel shows the scaling metric exposed by KEDA divided by the target/threshold and multiplied by the current number of replicas.
+        It should represent the desired number of replicas, ignoring the min/max constraints applied later.
+      |||
+    ),
+
+  // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
   autoScalingFailuresPanel(componentName)::
     local title = 'Autoscaler failures rate';
 
@@ -743,10 +768,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.autoScalingActualReplicas(componentName)
     )
     .addPanel(
-      $.autoScalingDesiredReplicasByScalingMetricPanel(componentName, 'CPU', 'cpu')
+      $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel(componentName, 'CPU', 'cpu')
     )
     .addPanel(
-      $.autoScalingDesiredReplicasByScalingMetricPanel(componentName, 'memory', 'memory')
+      $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel(componentName, 'memory', 'memory')
     )
     .addPanel(
       $.autoScalingFailuresPanel(componentName)
@@ -886,6 +911,35 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  tablePanel(queries, labelStyles)::
+    super.tablePanel(queries, labelStyles={}) + {
+      // Hides styles field, as it makes Grafana 11 use the deprecate "Table (old)" plugin.
+      styles:: super.styles,
+      local stylesToProps(s) =
+        if std.type(s) == 'string' then [
+          $.overrideProperty('displayName', s),
+          $.overrideProperty('decimals', 0),
+          $.overrideProperty('unit', 'short'),
+        ] else [
+          if std.objectHas(s, 'alias') then $.overrideProperty('displayName', s.alias),
+          if std.objectHas(s, 'type') && s.type == 'hidden' then $.overrideProperty('custom.hidden', true),
+          $.overrideProperty('decimals', if std.objectHas(s, 'decimals') then s.decimals else 2),
+          $.overrideProperty('unit', if std.objectHas(s, 'unit') then s.unit else 'short'),
+        ],
+      fieldConfig+: {
+        overrides+: [
+          // Hide time column by default, like jsonnet-lib/grafana-builder does.
+          $.overrideFieldByName('Time', [
+            $.overrideProperty('displayName', 'Time'),
+            $.overrideProperty('custom.hidden', true),
+          ]),
+        ] + [
+          $.overrideFieldByName(label, std.prune(stylesToProps(labelStyles[label])))
+          for label in std.objectFields(labelStyles)
+        ],
+      },
+    },
+
   // Enables stacking of timeseries on top of each.
   // It overrites the "stack" mixin from jsonnet-lib/grafana-builder, to make it compatible with timeseriesPanel.
   stack:: {
@@ -898,6 +952,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
             mode: 'normal',
           },
         },
+      },
+    },
+  },
+
+  // Shows all series' values in the tooltip and sorts them in descending order.
+  showAllTooltip:: {
+    options+: {
+      tooltip+: {
+        mode: 'multi',
+        sort: 'desc',
       },
     },
   },
@@ -1240,6 +1304,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  latencyRecordingRulePanelNativeHistogram(metric, selectors, extra_selectors=[], multiplier='1e3', sum_by=[])::
+    utils.latencyRecordingRulePanelNativeHistogram(metric, selectors, extra_selectors, multiplier, sum_by) + {
+      // Hide yaxes from JSON Model; it's not supported by timeseriesPanel.
+      yaxes:: super.yaxes,
+      fieldConfig+: {
+        defaults+: {
+          unit: 'ms',
+          min: 0,
+        },
+      },
+    },
+
   filterNodeDiskContainer(containerName)::
     |||
       ignoring(%(instanceLabel)s) group_right() (
@@ -1426,4 +1502,232 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ],
     },
   },
+
+  capitalize(str):: std.asciiUpper(str[0]) + str[1:],
+
+  commonReadsDashboardsRows(
+    queryFrontendJobName,
+    querySchedulerJobName,
+    querierJobName,
+    queryRoutesRegex,
+    rowTitlePrefix='',
+    showQueryCacheRow=false,
+  )::
+    [
+      $.row($.capitalize(rowTitlePrefix + 'query-frontend'))
+      .addPanel(
+        $.timeseriesPanel('Requests / sec') +
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher(queryFrontendJobName), queryRoutesRegex])
+      )
+      .addPanel(
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector(queryFrontendJobName) + [utils.selector.re('route', queryRoutesRegex)])
+      )
+      .addPanel(
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.hiddenLegendQueryPanel(
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher(queryFrontendJobName), queryRoutesRegex], ''
+        )
+      ),
+      local description = |||
+        <p>
+          The query scheduler is an optional service that moves
+          the internal queue from the query-frontend into a
+          separate component.
+          If this service is not deployed,
+          these panels will show "No data."
+        </p>
+      |||;
+      $.row($.capitalize(rowTitlePrefix + 'query-scheduler'))
+      .addPanel(
+        local title = 'Requests / sec';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher(querySchedulerJobName))
+      )
+      .addPanel(
+        local title = 'Latency (Time in Queue)';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher(querySchedulerJobName))
+      )
+      .addPanel(
+        local title = 'Queue length';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.hiddenLegendQueryPanel(
+          'sum(min_over_time(cortex_query_scheduler_queue_length{%s}[$__interval]))' % [$.jobMatcher(querySchedulerJobName)],
+          'Queue length'
+        ) +
+        {
+          fieldConfig+: {
+            defaults+: {
+              unit: 'queries',
+            },
+          },
+        },
+      ),
+      local description = |||
+        <p>
+          The query scheduler can optionally create subqueues
+          in order to enforce round-robin query queuing fairness
+          across additional queue dimensions beyond the default.
+
+          By default, query queuing fairness is only applied by tenant ID.
+          Queries without additional queue dimensions are labeled 'none'.
+        </p>
+      |||;
+      local metricName = 'cortex_query_scheduler_queue_duration_seconds';
+      local selector = '{%s}' % $.jobMatcher(querySchedulerJobName);
+      local labels = ['additional_queue_dimensions'];
+      local labelReplaceArgSets = [
+        {
+          dstLabel: 'additional_queue_dimensions',
+          replacement: 'none',
+          srcLabel:
+            'additional_queue_dimensions',
+          regex: '^$',
+        },
+      ];
+      $.row($.capitalize(rowTitlePrefix + 'query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions'))
+      .addPanel(
+        local title = '99th Percentile Latency by Queue Dimension';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.latencyPanelLabelBreakout(
+          metricName=metricName,
+          selector=selector,
+          percentiles=['0.99'],
+          includeAverage=false,
+          labels=labels,
+          labelReplaceArgSets=labelReplaceArgSets,
+        )
+      )
+      .addPanel(
+        local title = '50th Percentile Latency by Queue Dimension';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.latencyPanelLabelBreakout(
+          metricName=metricName,
+          selector=selector,
+          percentiles=['0.50'],
+          includeAverage=false,
+          labels=labels,
+          labelReplaceArgSets=labelReplaceArgSets,
+        )
+      )
+      .addPanel(
+        local title = 'Average Latency by Queue Dimension';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.latencyPanelLabelBreakout(
+          metricName=metricName,
+          selector=selector,
+          percentiles=[],
+          includeAverage=true,
+          labels=labels,
+          labelReplaceArgSets=labelReplaceArgSets,
+        )
+      ),
+    ] +
+    (
+      if (!showQueryCacheRow) then [] else [
+        $.row('Cache – query results')
+        .addPanel(
+          $.timeseriesPanel('Requests / sec') +
+          $.queryPanel(
+            |||
+              sum (
+                rate(thanos_memcached_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
+                or ignoring(backend)
+                rate(thanos_cache_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
+              )
+            ||| % {
+              frontend: $.jobMatcher(queryFrontendJobName),
+            },
+            'Requests/s'
+          ) +
+          { fieldConfig+: { defaults+: { unit: 'ops' } } },
+        )
+        .addPanel(
+          $.timeseriesPanel('Latency') +
+          $.backwardsCompatibleLatencyPanel(
+            'thanos_memcached_operation_duration_seconds',
+            'thanos_cache_operation_duration_seconds',
+            '{%s, name="frontend-cache"}' % $.jobMatcher(queryFrontendJobName)
+          )
+        ),
+      ]
+    ) + [
+      $.row($.capitalize(rowTitlePrefix + 'querier'))
+      .addPanel(
+        $.timeseriesPanel('Requests / sec') +
+        $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher(querierJobName), $.queries.read_http_routes_regex])
+      )
+      .addPanel(
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector(querierJobName) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
+      )
+      .addPanel(
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.hiddenLegendQueryPanel(
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_querier_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher(querierJobName), $.queries.read_http_routes_regex], ''
+        )
+      ),
+    ],
+
+  ingestStorageIngesterEndToEndLatencyWhenStartingPanel()::
+    $.timeseriesPanel('Kafka record end-to-end latency when starting') +
+    $.panelDescription(
+      'Kafka record end-to-end latency when starting',
+      |||
+        Time between writing request by distributor to Kafka and reading the record by ingester during catch-up phase, when ingesters are starting.
+        If ingesters are not starting and catching up in the selected time range, this panel will be empty.
+      |||
+    ) +
+    $.queryPanel(
+      [
+        'histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+      ],
+      [
+        'avg',
+        '99th percentile',
+        '99.9th percentile',
+        '100th percentile',
+      ],
+    ) + {
+      fieldConfig+: {
+        defaults+: { unit: 's' },
+      },
+    },
+
+  ingestStorageIngesterEndToEndLatencyWhenRunningPanel()::
+    $.timeseriesPanel('Kafka record end-to-end latency when ingesters are running') +
+    $.panelDescription(
+      'Kafka record end-to-end latency when ingesters are running',
+      |||
+        Time between writing request by distributor to Kafka and reading the record by ingester, when ingesters are running.
+      |||
+    ) +
+    $.queryPanel(
+      [
+        'histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+      ],
+      [
+        'avg',
+        '99th percentile',
+        '99.9th percentile',
+        '100th percentile',
+      ],
+    ) + {
+      fieldConfig+: {
+        defaults+: { unit: 's' },
+      },
+    },
 }

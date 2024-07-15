@@ -214,7 +214,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### In-memory series\nThe number of series not yet flushed to object storage that are held in ingester memory.\n\n",
+                  "description": "### In-memory series\nThe number of series not yet flushed to object storage that are held in ingester memory.\nWith classic storage we the sum of series from all ingesters is divided by the replication factor.\nWith ingest storage we take the maximum series of each ingest partition.\n\n",
                   "fill": 1,
                   "format": "short",
                   "id": 4,
@@ -242,7 +242,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n/ on(cluster, namespace) group_left\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"}))\n",
+                        "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                         "format": "time_series",
                         "instant": true,
                         "refId": "A"
@@ -290,7 +290,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Exemplars in ingesters\nNumber of TSDB exemplars currently in ingesters' storage.\n\n",
+                  "description": "### Exemplars in ingesters\nNumber of TSDB exemplars currently in ingesters' storage.\nWith classic storage we the sum of exemplars from all ingesters is divided by the replication factor.\nWith ingest storage we take the maximum exemplars of each ingest partition.\n\n",
                   "fill": 1,
                   "format": "short",
                   "id": 5,
@@ -318,7 +318,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(cortex_ingester_tsdb_exemplar_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n/ on(cluster, namespace) group_left\nmax by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"}))\n",
+                        "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (cortex_ingester_tsdb_exemplar_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_tsdb_exemplar_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                         "format": "time_series",
                         "instant": true,
                         "refId": "A"
@@ -1065,7 +1065,7 @@
             "panels": [
                {
                   "datasource": "$datasource",
-                  "description": "### Replicas\nThe maximum and current number of distributor replicas.<br /><br />\nNote: The current number of replicas can still show 1 replica even when scaled to 0.\nBecause HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
+                  "description": "### Replicas\nThe minimum, maximum, and current number of distributor replicas.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -1158,7 +1158,7 @@
                         "legendLink": null
                      },
                      {
-                        "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n  # HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active\n  * on (cluster, namespace, horizontalpodautoscaler)\n    kube_horizontalpodautoscaler_status_condition{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\", condition=\"ScalingActive\", status=\"true\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n)\n",
+                        "expr": "max by (scaletargetref_name) (\n  kube_horizontalpodautoscaler_status_current_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n  # Add the scaletargetref_name label for readability\n  + on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n    0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n)\n",
                         "format": "time_series",
                         "legendFormat": "Current {{ scaletargetref_name }}",
                         "legendLink": null
@@ -2328,7 +2328,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Ingester - shipper",
+            "title": "Ingester – shipper",
             "titleSize": "h6"
          },
          {
@@ -2506,7 +2506,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Ingester - TSDB head",
+            "title": "Ingester – TSDB head",
             "titleSize": "h6"
          },
          {
@@ -2826,7 +2826,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Ingester - TSDB write ahead log (WAL)",
+            "title": "Ingester – TSDB write ahead log (WAL)",
             "titleSize": "h6"
          },
          {
@@ -2933,7 +2933,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Ingester ingested exemplars rate\nThe rate of exemplars ingested in the ingesters.\nEvery exemplar is sent to the replication factor number of ingesters, so the sum of rates from all ingesters is divided by the replication factor.\nThis ingested exemplars rate should match the distributor's received exemplars rate.\n\n",
+                  "description": "### Ingester ingested exemplars rate\nThe rate of exemplars ingested in the ingesters.\nEvery exemplar is replicated to a number of ingesters. With classic storage we the sum of rates from all ingesters is divided by the replication factor.\nWith ingest storage we take the maximum rate of each ingest partition.\nThis ingested exemplars rate should match the distributor's received exemplars rate.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2971,7 +2971,7 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "sum(\n  cluster_namespace_job:cortex_ingester_ingested_exemplars:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
+                        "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (cluster_namespace_job:cortex_ingester_ingested_exemplars:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cluster_namespace_job:cortex_ingester_ingested_exemplars:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                         "format": "time_series",
                         "legendFormat": "ingested exemplars",
                         "legendLink": null
@@ -3020,7 +3020,7 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "sum(\n  cluster_namespace_job:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
+                        "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (cluster_namespace_job:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cluster_namespace_job:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                         "format": "time_series",
                         "legendFormat": "appended exemplars",
                         "legendLink": null

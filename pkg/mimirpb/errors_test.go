@@ -44,7 +44,11 @@ func TestIsClientError(t *testing.T) {
 			expected: false,
 		},
 		"a gRPC error with BAD_DATA in details is a client error": {
-			err:      mustStatusWithDetails(codes.FailedPrecondition, BAD_DATA).Err(),
+			err:      mustStatusWithDetails(codes.InvalidArgument, BAD_DATA).Err(),
+			expected: true,
+		},
+		"a gRPC error with TENANT_LIMIT in details is a client error": {
+			err:      mustStatusWithDetails(codes.FailedPrecondition, TENANT_LIMIT).Err(),
 			expected: true,
 		},
 		"a gRPC error with TSDB_UNAVAILABLE in details is not a client error": {

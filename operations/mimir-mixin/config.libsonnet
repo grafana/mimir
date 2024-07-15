@@ -178,6 +178,7 @@
     per_cluster_label: 'cluster',
     per_namespace_label: 'namespace',
     per_job_label: 'job',
+    per_component_loki_label: 'name',
 
     // Grouping labels, to uniquely identify and group by {jobs, clusters}
     job_labels: [$._config.per_cluster_label, $._config.per_namespace_label, $._config.per_job_label],
@@ -533,15 +534,8 @@
         disk_utilization:
           |||
             max by(persistentvolumeclaim) (
-              kubelet_volume_stats_used_bytes{%(namespaceMatcher)s} /
-              kubelet_volume_stats_capacity_bytes{%(namespaceMatcher)s}
-            )
-            and
-            count by(persistentvolumeclaim) (
-              kube_persistentvolumeclaim_labels{
-                %(namespaceMatcher)s,
-                %(containerMatcher)s
-              }
+              kubelet_volume_stats_used_bytes{%(namespaceMatcher)s, %(persistentVolumeClaimMatcher)s} /
+              kubelet_volume_stats_capacity_bytes{%(namespaceMatcher)s, %(persistentVolumeClaimMatcher)s}
             )
           |||,
       },

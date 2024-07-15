@@ -642,7 +642,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Query-frontend - query splitting and results cache",
+            "title": "Query-frontend – query splitting and results cache",
             "titleSize": "h6"
          },
          {
@@ -784,7 +784,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Query-frontend - query sharding",
+            "title": "Query-frontend – query sharding",
             "titleSize": "h6"
          },
          {
@@ -1696,8 +1696,8 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
-                        "sort": "none"
+                        "mode": "multi",
+                        "sort": "desc"
                      }
                   },
                   "span": 4,
@@ -1744,8 +1744,8 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
-                        "sort": "none"
+                        "mode": "multi",
+                        "sort": "desc"
                      }
                   },
                   "span": 4,

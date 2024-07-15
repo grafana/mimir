@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
+	promtestutil "github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -605,7 +606,7 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 		MaxSamples:         1e6,
 		Timeout:            1 * time.Minute,
 	})
-	cfg := Config{PromQLEngine: standardPromQLEngine}
+	cfg := Config{QueryEngine: prometheusEngine}
 	for _, c := range testCases {
 		t.Run(c.name, func(t *testing.T) {
 			distributor := &errDistributor{}
@@ -1114,7 +1115,7 @@ func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q
 
 	require.Len(t, m, 1)
 	series := m[0]
-	require.Equal(t, q.labels, series.Metric)
+	promtestutil.RequireEqual(t, q.labels, series.Metric)
 	require.Equal(t, q.samples(from, through, step), len(series.Floats)+len(series.Histograms))
 	var ts int64
 	for _, point := range series.Floats {
@@ -1164,6 +1165,10 @@ func (m *errDistributor) ActiveSeries(context.Context, []*labels.Matcher) ([]lab
 	return nil, errDistributorError
 }
 
+func (m *errDistributor) ActiveNativeHistogramMetrics(context.Context, []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
+	return nil, errDistributorError
+}
+
 type emptyDistributor struct{}
 
 func (d *emptyDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matcher, _ cardinality.CountMethod) (*client.LabelNamesAndValuesResponse, error) {
@@ -1200,6 +1205,10 @@ func (d *emptyDistributor) LabelValuesCardinality(context.Context, []model.Label
 
 func (d *emptyDistributor) ActiveSeries(context.Context, []*labels.Matcher) ([]labels.Labels, error) {
 	return nil, nil
+}
+
+func (d *emptyDistributor) ActiveNativeHistogramMetrics(context.Context, []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
+	return &cardinality.ActiveNativeHistogramMetricsResponse{}, nil
 }
 
 func TestQuerier_QueryStoreAfterConfig(t *testing.T) {

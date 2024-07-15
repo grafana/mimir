@@ -3,7 +3,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 {
   // Helper function to produce failure rate in percentage queries for native and classic histograms.
   // Takes a metric name and a selector as strings and returns a dictionary with classic and native queries.
-  nativeClassicFailureRate(metric, selector):: {
+  ncHistogramFailureRate(metric, selector):: {
     local template = |||
       (
           # gRPC errors are not tracked as 5xx but "error".
@@ -16,12 +16,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       sum(%(countQuery)s)
     |||,
     classic: template % {
-      countFailQuery: utils.nativeClassicHistogramCountRate(metric, selector + ',status_code=~"5.*|error"').classic,
-      countQuery: utils.nativeClassicHistogramCountRate(metric, selector).classic,
+      countFailQuery: utils.ncHistogramCountRate(metric, selector + ',status_code=~"5.*|error"').classic,
+      countQuery: utils.ncHistogramCountRate(metric, selector).classic,
     },
     native: template % {
-      countFailQuery: utils.nativeClassicHistogramCountRate(metric, selector + ',status_code=~"5.*|error"').native,
-      countQuery: utils.nativeClassicHistogramCountRate(metric, selector).native,
+      countFailQuery: utils.ncHistogramCountRate(metric, selector + ',status_code=~"5.*|error"').native,
+      countQuery: utils.ncHistogramCountRate(metric, selector).native,
     },
   },
 
@@ -43,6 +43,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       perClusterLabel: $._config.per_cluster_label,
       recordingRulePrefix: $.recordingRulePrefix($.jobSelector('any')),  // The job name does not matter here.
       groupPrefixJobs: $._config.group_prefix_jobs,
+      instance: $._config.per_instance_label,
     },
 
     write_http_routes_regex: 'api_(v1|prom)_push|otlp_v1_metrics',
@@ -61,10 +62,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       readRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"' % variables,
 
       // Write failures rate as percentage of total requests.
-      writeFailuresRate: $.nativeClassicFailureRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector),
+      writeFailuresRate: $.ncHistogramFailureRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector),
 
       // Read failures rate as percentage of total requests.
-      readFailuresRate: $.nativeClassicFailureRate(p.requestsPerSecondMetric, p.readRequestsPerSecondSelector),
+      readFailuresRate: $.ncHistogramFailureRate(p.requestsPerSecondMetric, p.readRequestsPerSecondSelector),
     },
 
     distributor: {
@@ -78,7 +79,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       exemplarsPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_exemplars:rate5m{%(distributorMatcher)s})' % variables,
 
       // Write failures rate as percentage of total requests.
-      writeFailuresRate: $.nativeClassicFailureRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector),
+      writeFailuresRate: $.ncHistogramFailureRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector),
     },
 
     query_frontend: {
@@ -86,7 +87,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
 
       local p = self,
-      readRequestsPerSecondMetric: 'cortex_request_duration_seconds',
+      requestsPerSecondMetric: 'cortex_request_duration_seconds',
       readRequestsPerSecondSelector: '%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"' % variables,
       // These query routes are used in the overview and other dashboard, everythign else is considered "other" queries.
       // Has to be a list to keep the same colors as before, see overridesNonErrorColorsPalette.
@@ -120,8 +121,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         }
         for r in overviewRoutes
       ],
-      overviewRoutesPerSecond: 'sum by (route) (rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"%(overviewRoutesRegex)s"}[$__rate_interval]))' % (variables { overviewRoutesRegex: overviewRoutesRegex }),
-      nonOverviewRoutesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_.*",route!~"%(overviewRoutesRegex)s"}[$__rate_interval]))' % (variables { overviewRoutesRegex: overviewRoutesRegex }),
+      overviewRoutesPerSecondMetric: 'cortex_request_duration_seconds',
+      overviewRoutesPerSecondSelector: '%(queryFrontendMatcher)s,route=~"%(overviewRoutesRegex)s"' % (variables { overviewRoutesRegex: overviewRoutesRegex }),
+      nonOverviewRoutesPerSecondSelector: '%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_.*",route!~"%(overviewRoutesRegex)s"' % (variables { overviewRoutesRegex: overviewRoutesRegex }),
 
       local queryPerSecond(name) = 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)%(route)s"}[$__rate_interval]))' %
                                    (variables { route: std.filter(function(r) r.name == name, overviewRoutes)[0].routeLabel }),
@@ -138,7 +140,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       labelValuesCardinalityQueriesPerSecond: queryPerSecond('labelValuesCardinality'),
 
       // Read failures rate as percentage of total requests.
-      readFailuresRate: $.nativeClassicFailureRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector),
+      readFailuresRate: $.ncHistogramFailureRate(p.requestsPerSecondMetric, p.readRequestsPerSecondSelector),
     },
 
     ruler: {
@@ -232,6 +234,33 @@ local utils = import 'mixin-utils/utils.libsonnet';
         /
         sum(rate(thanos_objstore_bucket_operations_total{%(namespaceMatcher)s}[$__rate_interval]))
       ||| % variables,
+    },
+
+    ingester: {
+      ingestOrClassicDeduplicatedQuery(perIngesterQuery, groupByLabels=''):: |||
+        ( # Classic storage
+          sum by (%(groupByCluster)s, %(groupByLabels)s) (%(perIngesterQuery)s)
+          / on (%(groupByCluster)s) group_left()
+          max by (%(groupByCluster)s) (cortex_distributor_replication_factor{%(distributor)s})
+        )
+        or
+        ( # Ingest storage
+          sum by (%(groupByCluster)s, %(groupByLabels)s) (
+            max by (ingester_id, %(groupByCluster)s, %(groupByLabels)s) (
+              label_replace(
+                %(perIngesterQuery)s,
+                "ingester_id", "$1", "%(instance)s", ".*-([0-9]+)$"
+              )
+            )
+          )
+        )
+      ||| % {
+        perIngesterQuery: perIngesterQuery,
+        instance: variables.instance,
+        groupByLabels: groupByLabels,
+        groupByCluster: $._config.group_by_cluster,
+        distributor: variables.distributorMatcher,
+      },
     },
   },
 }

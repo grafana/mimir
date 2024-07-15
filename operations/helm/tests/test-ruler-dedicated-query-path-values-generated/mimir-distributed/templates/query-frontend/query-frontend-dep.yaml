@@ -1,0 +1,115 @@
+---
+# Source: mimir-distributed/templates/query-frontend/query-frontend-dep.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-ruler-dedicated-query-path-values-mimir-query-frontend
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
+    app.kubernetes.io/component: query-frontend
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  # If replicas is not number (when using values file it's float64, when using --set arg it's int64) and is false (i.e. null) don't set it
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
+      app.kubernetes.io/component: query-frontend
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: query-frontend
+      annotations:
+      namespace: "citestns"
+    spec:
+      serviceAccountName: test-ruler-dedicated-query-path-values-mimir
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: query-frontend
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=query-frontend"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            # Reduce the likelihood of queries hitting terminated query-frontends.
+            - "-server.grpc.keepalive.max-connection-age=30s"
+            - "-shutdown-delay=90s"
+          volumeMounts:
+            - name: runtime-config
+              mountPath: /var/mimir
+            - name: config
+              mountPath: /etc/mimir
+            - name: storage
+              mountPath: /data
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 45
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "5000"
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
+            app.kubernetes.io/component: query-frontend
+      terminationGracePeriodSeconds: 390
+      volumes:
+        - name: config
+          configMap:
+            name: test-ruler-dedicated-query-path-values-mimir-config
+            items:
+              - key: "mimir.yaml"
+                path: "mimir.yaml"
+        - name: runtime-config
+          configMap:
+            name: test-ruler-dedicated-query-path-values-mimir-runtime
+        - name: storage
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}

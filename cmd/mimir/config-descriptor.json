@@ -1199,6 +1199,28 @@
         },
         {
           "kind": "field",
+          "name": "max_otlp_request_size",
+          "required": false,
+          "desc": "Maximum OTLP request size in bytes that the distributors accept. Requests exceeding this limit are rejected.",
+          "fieldValue": null,
+          "fieldDefaultValue": 104857600,
+          "fieldFlag": "distributor.max-otlp-request-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_request_pool_buffer_size",
+          "required": false,
+          "desc": "Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "distributor.max-request-pool-buffer-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "remote_timeout",
           "required": false,
           "desc": "Timeout for downstream ingesters.",
@@ -1690,6 +1712,17 @@
           "fieldFlag": "distributor.reusable-ingester-push-workers",
           "fieldType": "int",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "direct_otlp_translation_enabled",
+          "required": false,
+          "desc": "When enabled, OTLP write requests are directly translated to Mimir equivalents, for optimum performance.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "distributor.direct-otlp-translation-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -1838,7 +1871,7 @@
           "required": false,
           "desc": "Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "querier.prefer-streaming-chunks-from-store-gateways",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
@@ -1863,7 +1896,7 @@
           "fieldDefaultValue": 256,
           "fieldFlag": "querier.streaming-chunks-per-store-gateway-buffer-size",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -1889,23 +1922,23 @@
         },
         {
           "kind": "field",
-          "name": "promql_engine",
+          "name": "query_engine",
           "required": false,
-          "desc": "PromQL engine to use, either 'standard' or 'streaming'",
+          "desc": "Query engine to use, either 'prometheus' or 'mimir'",
           "fieldValue": null,
-          "fieldDefaultValue": "standard",
-          "fieldFlag": "querier.promql-engine",
+          "fieldDefaultValue": "prometheus",
+          "fieldFlag": "querier.query-engine",
           "fieldType": "string",
           "fieldCategory": "experimental"
         },
         {
           "kind": "field",
-          "name": "enable_promql_engine_fallback",
+          "name": "enable_query_engine_fallback",
           "required": false,
-          "desc": "If set to true and the streaming engine is in use, fall back to using the Prometheus PromQL engine for any queries not supported by the streaming engine.",
+          "desc": "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.",
           "fieldValue": null,
           "fieldDefaultValue": true,
-          "fieldFlag": "querier.enable-promql-engine-fallback",
+          "fieldFlag": "querier.enable-query-engine-fallback",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
@@ -2672,7 +2705,7 @@
               "kind": "field",
               "name": "heartbeat_timeout",
               "required": false,
-              "desc": "The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled). This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode.",
+              "desc": "The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled). This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode.",
               "fieldValue": null,
               "fieldDefaultValue": 60000000000,
               "fieldFlag": "ingester.ring.heartbeat-timeout",
@@ -2683,7 +2716,7 @@
               "kind": "field",
               "name": "replication_factor",
               "required": false,
-              "desc": "Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode.",
+              "desc": "Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode.",
               "fieldValue": null,
               "fieldDefaultValue": 3,
               "fieldFlag": "ingester.ring.replication-factor",
@@ -2693,7 +2726,7 @@
               "kind": "field",
               "name": "zone_awareness_enabled",
               "required": false,
-              "desc": "True to enable the zone-awareness and replicate ingested samples across different availability zones. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode.",
+              "desc": "True to enable the zone-awareness and replicate ingested samples across different availability zones. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "ingester.ring.zone-awareness-enabled",
@@ -2703,7 +2736,7 @@
               "kind": "field",
               "name": "excluded_zones",
               "required": false,
-              "desc": "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode.",
+              "desc": "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ingester.ring.excluded-zones",
@@ -2873,6 +2906,367 @@
               "fieldFlag": "ingester.ring.spread-minimizing-zones",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "partition_ring",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "block",
+              "name": "kvstore",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "store",
+                  "required": false,
+                  "desc": "Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "memberlist",
+                  "fieldFlag": "ingester.partition-ring.store",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "prefix",
+                  "required": false,
+                  "desc": "The prefix for the keys in the store. Should end with a /.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "collectors/",
+                  "fieldFlag": "ingester.partition-ring.prefix",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "consul",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "host",
+                      "required": false,
+                      "desc": "Hostname and port of Consul.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "localhost:8500",
+                      "fieldFlag": "ingester.partition-ring.consul.hostname",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "acl_token",
+                      "required": false,
+                      "desc": "ACL Token used to interact with Consul.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.consul.acl-token",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "http_client_timeout",
+                      "required": false,
+                      "desc": "HTTP timeout when talking to Consul",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 20000000000,
+                      "fieldFlag": "ingester.partition-ring.consul.client-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "consistent_reads",
+                      "required": false,
+                      "desc": "Enable consistent reads to Consul.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "ingester.partition-ring.consul.consistent-reads",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "watch_rate_limit",
+                      "required": false,
+                      "desc": "Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "ingester.partition-ring.consul.watch-rate-limit",
+                      "fieldType": "float",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "watch_burst_size",
+                      "required": false,
+                      "desc": "Burst size used in rate limit. Values less than 1 are treated as 1.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "ingester.partition-ring.consul.watch-burst-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "cas_retry_delay",
+                      "required": false,
+                      "desc": "Maximum duration to wait before retrying a Compare And Swap (CAS) operation.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1000000000,
+                      "fieldFlag": "ingester.partition-ring.consul.cas-retry-delay",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "block",
+                  "name": "etcd",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "endpoints",
+                      "required": false,
+                      "desc": "The etcd endpoints to connect to.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": [],
+                      "fieldFlag": "ingester.partition-ring.etcd.endpoints",
+                      "fieldType": "list of strings"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dial_timeout",
+                      "required": false,
+                      "desc": "The dial timeout for the etcd connection.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10000000000,
+                      "fieldFlag": "ingester.partition-ring.etcd.dial-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_retries",
+                      "required": false,
+                      "desc": "The maximum number of retries to do for failed ops.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10,
+                      "fieldFlag": "ingester.partition-ring.etcd.max-retries",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_enabled",
+                      "required": false,
+                      "desc": "Enable TLS.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "ingester.partition-ring.etcd.tls-enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cert_path",
+                      "required": false,
+                      "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.etcd.tls-cert-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_key_path",
+                      "required": false,
+                      "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.etcd.tls-key-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_ca_path",
+                      "required": false,
+                      "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.etcd.tls-ca-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_server_name",
+                      "required": false,
+                      "desc": "Override the expected name on the server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.etcd.tls-server-name",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_insecure_skip_verify",
+                      "required": false,
+                      "desc": "Skip validating server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "ingester.partition-ring.etcd.tls-insecure-skip-verify",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cipher_suites",
+                      "required": false,
+                      "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.etcd.tls-cipher-suites",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_min_version",
+                      "required": false,
+                      "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.etcd.tls-min-version",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "username",
+                      "required": false,
+                      "desc": "Etcd username.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.etcd.username",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "password",
+                      "required": false,
+                      "desc": "Etcd password.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.etcd.password",
+                      "fieldType": "string"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "block",
+                  "name": "multi",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "primary",
+                      "required": false,
+                      "desc": "Primary backend storage used by multi-client.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.multi.primary",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "secondary",
+                      "required": false,
+                      "desc": "Secondary backend storage used by multi-client.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ingester.partition-ring.multi.secondary",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "mirror_enabled",
+                      "required": false,
+                      "desc": "Mirror writes to secondary store.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "ingester.partition-ring.multi.mirror-enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "mirror_timeout",
+                      "required": false,
+                      "desc": "Timeout for storing value to secondary store.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 2000000000,
+                      "fieldFlag": "ingester.partition-ring.multi.mirror-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "min_partition_owners_count",
+              "required": false,
+              "desc": "Minimum number of owners to wait before a PENDING partition gets switched to ACTIVE.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "ingester.partition-ring.min-partition-owners-count",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "min_partition_owners_duration",
+              "required": false,
+              "desc": "How long the minimum number of owners are enforced before a PENDING partition gets switched to ACTIVE.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ingester.partition-ring.min-partition-owners-duration",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "delete_inactive_partition_after",
+              "required": false,
+              "desc": "How long to wait before an INACTIVE partition is eligible for deletion. The partition is deleted only if it has been in INACTIVE state for at least the configured duration and it has no owners registered. A value of 0 disables partitions deletion.",
+              "fieldValue": null,
+              "fieldDefaultValue": 46800000000000,
+              "fieldFlag": "ingester.partition-ring.delete-inactive-partition-after",
+              "fieldType": "duration"
             }
           ],
           "fieldValue": null,
@@ -3118,6 +3512,180 @@
           "fieldFlag": "ingester.owned-series-update-interval",
           "fieldType": "duration",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "block",
+          "name": "push_circuit_breaker",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable circuit breaking when making requests to ingesters",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.push-circuit-breaker.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "failure_threshold_percentage",
+              "required": false,
+              "desc": "Max percentage of requests that can fail over period before the circuit breaker opens",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "ingester.push-circuit-breaker.failure-threshold-percentage",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "failure_execution_threshold",
+              "required": false,
+              "desc": "How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures",
+              "fieldValue": null,
+              "fieldDefaultValue": 100,
+              "fieldFlag": "ingester.push-circuit-breaker.failure-execution-threshold",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "thresholding_period",
+              "required": false,
+              "desc": "Moving window of time that the percentage of failed requests is computed over",
+              "fieldValue": null,
+              "fieldDefaultValue": 60000000000,
+              "fieldFlag": "ingester.push-circuit-breaker.thresholding-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "cooldown_period",
+              "required": false,
+              "desc": "How long the circuit breaker will stay in the open state before allowing some requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ingester.push-circuit-breaker.cooldown-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_delay",
+              "required": false,
+              "desc": "How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingester.push-circuit-breaker.initial-delay",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "request_timeout",
+              "required": false,
+              "desc": "The maximum duration of an ingester's request before it triggers a timeout. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2000000000,
+              "fieldFlag": "ingester.push-circuit-breaker.request-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "read_circuit_breaker",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable circuit breaking when making requests to ingesters",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.read-circuit-breaker.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "failure_threshold_percentage",
+              "required": false,
+              "desc": "Max percentage of requests that can fail over period before the circuit breaker opens",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "ingester.read-circuit-breaker.failure-threshold-percentage",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "failure_execution_threshold",
+              "required": false,
+              "desc": "How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures",
+              "fieldValue": null,
+              "fieldDefaultValue": 100,
+              "fieldFlag": "ingester.read-circuit-breaker.failure-execution-threshold",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "thresholding_period",
+              "required": false,
+              "desc": "Moving window of time that the percentage of failed requests is computed over",
+              "fieldValue": null,
+              "fieldDefaultValue": 60000000000,
+              "fieldFlag": "ingester.read-circuit-breaker.thresholding-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "cooldown_period",
+              "required": false,
+              "desc": "How long the circuit breaker will stay in the open state before allowing some requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ingester.read-circuit-breaker.cooldown-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_delay",
+              "required": false,
+              "desc": "How long the circuit breaker should wait between an activation request and becoming effectively active. During that time both failures and successes will not be counted.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingester.read-circuit-breaker.initial-delay",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "request_timeout",
+              "required": false,
+              "desc": "The maximum duration of an ingester's request before it triggers a timeout. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors.",
+              "fieldValue": null,
+              "fieldDefaultValue": 30000000000,
+              "fieldFlag": "ingester.read-circuit-breaker.request-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -3327,10 +3895,21 @@
           "kind": "field",
           "name": "creation_grace_period",
           "required": false,
-          "desc": "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor, ingester and query-frontend (to avoid querying too far into the future).",
+          "desc": "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester.",
           "fieldValue": null,
           "fieldDefaultValue": 600000000000,
           "fieldFlag": "validation.create-grace-period",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "past_grace_period",
+          "required": false,
+          "desc": "Controls how far into the past incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is lower than '(now - OOO window - past_grace_period)'. This configuration is enforced in the distributor and ingester. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "validation.past-grace-period",
           "fieldType": "duration",
           "fieldCategory": "advanced"
         },
@@ -3536,9 +4115,20 @@
         },
         {
           "kind": "field",
+          "name": "max_estimated_memory_consumption_per_query",
+          "required": false,
+          "desc": "The maximum estimated memory a single query can consume at once, in bytes. This limit is only enforced when Mimir's query engine is in use. This limit is enforced in the querier. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "querier.max-estimated-memory-consumption-per-query",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_query_lookback",
           "required": false,
-          "desc": "Limit how long back data (series and metadata) can be queried, up until \u003clookback\u003e duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.",
+          "desc": "Limit how long back data (series and metadata) can be queried, up until \u003clookback\u003e duration ago. This limit is enforced in the query-frontend, querier and ruler for instant, range and remote read queries. For metadata queries like series, label names, label values queries the limit is enforced in the querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "querier.max-query-lookback",
@@ -3651,7 +4241,7 @@
           "kind": "field",
           "name": "max_total_query_length",
           "required": false,
-          "desc": "Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query.",
+          "desc": "Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received instant, range or remote read query.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.max-total-query-length",
@@ -3712,7 +4302,7 @@
           "kind": "field",
           "name": "max_query_expression_size_bytes",
           "required": false,
-          "desc": "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.",
+          "desc": "Max size of the raw query, in bytes. This limit is enforced by the query-frontend for instant, range and remote read queries. 0 to not apply a limit to the size of the query.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.max-query-expression-size-bytes",
@@ -3772,7 +4362,7 @@
           "kind": "field",
           "name": "active_series_results_max_size_bytes",
           "required": false,
-          "desc": "Maximum size of an active series request result shard in bytes. 0 to disable.",
+          "desc": "Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 419430400,
           "fieldFlag": "querier.active-series-results-max-size-bytes",
@@ -3827,8 +4417,7 @@
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "ruler.recording-rules-evaluation-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
@@ -3838,8 +4427,7 @@
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "ruler.alerting-rules-evaluation-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
@@ -3851,6 +4439,39 @@
           "fieldFlag": "ruler.sync-rules-on-changes-enabled",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "ruler_max_rules_per_rule_group_by_namespace",
+          "required": false,
+          "desc": "Maximum number of rules per rule group by namespace. Value is a map, where each key is the namespace and value is the number of rules allowed in the namespace (int). On the command line, this map is given in a JSON format. The number of rules specified has the same meaning as -ruler.max-rules-per-rule-group, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rules-per-rule-group.",
+          "fieldValue": null,
+          "fieldDefaultValue": {},
+          "fieldFlag": "ruler.max-rules-per-rule-group-by-namespace",
+          "fieldType": "map of string to int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "ruler_max_rule_groups_per_tenant_by_namespace",
+          "required": false,
+          "desc": "Maximum number of rule groups per tenant by namespace. Value is a map, where each key is the namespace and value is the number of rule groups allowed in the namespace (int). On the command line, this map is given in a JSON format. The number of rule groups specified has the same meaning as -ruler.max-rule-groups-per-tenant, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rule-groups-per-tenant.",
+          "fieldValue": null,
+          "fieldDefaultValue": {},
+          "fieldFlag": "ruler.max-rule-groups-per-tenant-by-namespace",
+          "fieldType": "map of string to int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "ruler_protected_namespaces",
+          "required": false,
+          "desc": "List of namespaces that are protected from modification unless a special HTTP header is used. If a namespace is protected, it can only be read, not modified via the ruler's configuration API. The value is a list of strings, where each string is a namespace name. On the command line, this list is given as a comma-separated list.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "ruler.protected-namespaces",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -3866,7 +4487,7 @@
           "kind": "field",
           "name": "compactor_blocks_retention_period",
           "required": false,
-          "desc": "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period. 0 to disable.",
+          "desc": "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period by instant, range or remote read queries. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "compactor.blocks-retention-period",
@@ -4032,6 +4653,26 @@
         },
         {
           "kind": "field",
+          "name": "alertmanager_max_silences_count",
+          "required": false,
+          "desc": "Maximum number of silences, including expired silences, that a tenant can have at once. 0 = no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "alertmanager.max-silences-count",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "alertmanager_max_silence_size_bytes",
+          "required": false,
+          "desc": "Maximum silence size in bytes. 0 = no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "alertmanager.max-silence-size-bytes",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
           "name": "alertmanager_max_templates_count",
           "required": false,
           "desc": "Maximum number of templates in tenant's Alertmanager configuration uploaded via Alertmanager API. 0 = no limit.",
@@ -4090,6 +4731,28 @@
           "fieldFlag": "distributor.otel-metric-suffixes-enabled",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "ingest_storage_read_consistency",
+          "required": false,
+          "desc": "The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual.",
+          "fieldValue": null,
+          "fieldDefaultValue": "eventual",
+          "fieldFlag": "ingest-storage.read-consistency",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "ingestion_partitions_tenant_shard_size",
+          "required": false,
+          "desc": "The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingest-storage.ingestion-partition-tenant-shard-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -5750,6 +6413,17 @@
         },
         {
           "kind": "field",
+          "name": "remote_read_limits_enabled",
+          "required": false,
+          "desc": "True to enable limits enforcement for remote read requests.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.remote-read-limits-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "query_result_response_format",
           "required": false,
           "desc": "Format to use when retrieving query results from queriers. Supported values: json, protobuf",
@@ -5768,6 +6442,246 @@
           "fieldFlag": "query-frontend.downstream-url",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        }
+      ],
+      "fieldValue": null,
+      "fieldDefaultValue": null
+    },
+    {
+      "kind": "block",
+      "name": "ingest_storage",
+      "required": false,
+      "desc": "",
+      "blockEntries": [
+        {
+          "kind": "field",
+          "name": "enabled",
+          "required": false,
+          "desc": "True to enable the ingestion via object storage.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingest-storage.enabled",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "block",
+          "name": "kafka",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "address",
+              "required": false,
+              "desc": "The Kafka backend address.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.address",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "topic",
+              "required": false,
+              "desc": "The Kafka topic name.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.topic",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "client_id",
+              "required": false,
+              "desc": "The Kafka client ID.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.client-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "dial_timeout",
+              "required": false,
+              "desc": "The maximum time allowed to open a connection to a Kafka broker.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2000000000,
+              "fieldFlag": "ingest-storage.kafka.dial-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "write_timeout",
+              "required": false,
+              "desc": "How long to wait for an incoming write request to be successfully committed to the Kafka backend.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ingest-storage.kafka.write-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "write_clients",
+              "required": false,
+              "desc": "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "ingest-storage.kafka.write-clients",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "consumer_group",
+              "required": false,
+              "desc": "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '\u003cpartition\u003e' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ingest-storage.kafka.consumer-group",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "consumer_group_offset_commit_interval",
+              "required": false,
+              "desc": "How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "ingest-storage.kafka.consumer-group-offset-commit-interval",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "last_produced_offset_poll_interval",
+              "required": false,
+              "desc": "How frequently to poll the last produced offset, used to enforce strong read consistency.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "ingest-storage.kafka.last-produced-offset-poll-interval",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "last_produced_offset_retry_timeout",
+              "required": false,
+              "desc": "How long to retry a failed request to get the last produced offset.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10000000000,
+              "fieldFlag": "ingest-storage.kafka.last-produced-offset-retry-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "consume_from_position_at_startup",
+              "required": false,
+              "desc": "From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp.",
+              "fieldValue": null,
+              "fieldDefaultValue": "last-offset",
+              "fieldFlag": "ingest-storage.kafka.consume-from-position-at-startup",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "consume_from_timestamp_at_startup",
+              "required": false,
+              "desc": "Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is timestamp",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.kafka.consume-from-timestamp-at-startup",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "target_consumer_lag_at_startup",
+              "required": false,
+              "desc": "The best-effort maximum lag a consumer tries to achieve at startup. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2000000000,
+              "fieldFlag": "ingest-storage.kafka.target-consumer-lag-at-startup",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "max_consumer_lag_at_startup",
+              "required": false,
+              "desc": "The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup.",
+              "fieldValue": null,
+              "fieldDefaultValue": 15000000000,
+              "fieldFlag": "ingest-storage.kafka.max-consumer-lag-at-startup",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "auto_create_topic_enabled",
+              "required": false,
+              "desc": "Enable auto-creation of Kafka topic if it doesn't exist.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "ingest-storage.kafka.auto-create-topic-enabled",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "auto_create_topic_default_partitions",
+              "required": false,
+              "desc": "When auto-creation of Kafka topic is enabled and this value is positive, Kafka's num.partitions configuration option is set on Kafka brokers with this value when Mimir component that uses Kafka starts. This configuration option specifies the default number of partitions that the Kafka broker uses for auto-created topics. Note that this is a Kafka-cluster wide setting, and applies to any auto-created topic. If the setting of num.partitions fails, Mimir proceeds anyways, but auto-created topics could have an incorrect number of partitions.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.kafka.auto-create-topic-default-partitions",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "producer_max_record_size_bytes",
+              "required": false,
+              "desc": "The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes.",
+              "fieldValue": null,
+              "fieldDefaultValue": 15983616,
+              "fieldFlag": "ingest-storage.kafka.producer-max-record-size-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "producer_max_buffered_bytes",
+              "required": false,
+              "desc": "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is applied per Kafka client. 0 to disable the limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1073741824,
+              "fieldFlag": "ingest-storage.kafka.producer-max-buffered-bytes",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "wait_strong_read_consistency_timeout",
+              "required": false,
+              "desc": "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20000000000,
+              "fieldFlag": "ingest-storage.kafka.wait-strong-read-consistency-timeout",
+              "fieldType": "duration"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "migration",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "distributor_send_to_ingesters_enabled",
+              "required": false,
+              "desc": "When both this option and ingest storage are enabled, distributors write to both Kafka and ingesters. A write request is considered successful only when written to both backends.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingest-storage.migration.distributor-send-to-ingesters-enabled",
+              "fieldType": "boolean"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -5888,6 +6802,17 @@
               "fieldFlag": "blocks-storage.s3.bucket-lookup-type",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "dualstack_enabled",
+              "required": false,
+              "desc": "When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "blocks-storage.s3.dualstack-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -6500,6 +7425,17 @@
               "fieldDefaultValue": 100,
               "fieldFlag": "blocks-storage.bucket-store.max-concurrent",
               "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_concurrent_queue_timeout",
+              "required": false,
+              "desc": "Timeout for the queue of queries waiting for execution. If the queue is full and the timeout is reached, the query will be retried on another store-gateway. 0 means no timeout and all queries will wait indefinitely for their turn.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "blocks-storage.bucket-store.max-concurrent-queue-timeout",
+              "fieldType": "duration",
               "fieldCategory": "advanced"
             },
             {
@@ -8498,6 +9434,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "lazy_loading_concurrency_queue_timeout",
+                  "required": false,
+                  "desc": "Timeout for the queue of index header loads. If the queue is full and the timeout is reached, the load will return an error. 0 means no timeout and the load will wait indefinitely.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 5000000000,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
                   "name": "verify_on_load",
                   "required": false,
                   "desc": "If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.",
@@ -10147,8 +11094,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "tenant-federation.max-tenants",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldType": "int"
         }
       ],
       "fieldValue": null,
@@ -10891,6 +11837,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "drain_notification_queue_on_shutdown",
+          "required": false,
+          "desc": "Drain all outstanding alert notifications when shutting down. If false, any outstanding alert notifications are dropped when shutting down.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ruler.drain-notification-queue-on-shutdown",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -11817,6 +12774,17 @@
               "fieldFlag": "ruler-storage.s3.bucket-lookup-type",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "dualstack_enabled",
+              "required": false,
+              "desc": "When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "ruler-storage.s3.dualstack-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -13820,7 +14788,7 @@
           "kind": "field",
           "name": "utf8_strict_mode",
           "required": false,
-          "desc": "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended to check both alertmanager_matchers_disagree_total and alertmanager_matchers_incompatible_total metrics before using this mode as otherwise some tenant configurations might fail to load.",
+          "desc": "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. To identify tenants with incompatible configurations, search Mimir server logs for lines containing `Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible`. To find tenant configurations that are valid but contain ambiguous matchers, search for log lines containing `Matchers input has disagreement`. Each log line includes the invalid input, a suggestion on how to fix the input (excluding ambiguous matchers, as these require manual correction), and the ID of the affected tenant. You must run Mimir with debug-level logging enabled. Otherwise, these lines aren't logged. For more information, refer to https://prometheus.io/docs/alerting/latest/configuration/#label-matchers. Enabling and then disabling UTF-8 strict mode can break existing Alertmanager configurations if tenants added UTF-8 characters to their Alertmanager configuration while it was enabled.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "alertmanager.utf8-strict-mode-enabled",
@@ -13946,6 +14914,17 @@
               "fieldFlag": "alertmanager-storage.s3.bucket-lookup-type",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "dualstack_enabled",
+              "required": false,
+              "desc": "When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "alertmanager-storage.s3.dualstack-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -14990,6 +15969,17 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-scheduler.additional-query-queue-dimensions-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "use_multi_algorithm_query_queue",
+          "required": false,
+          "desc": "Use an experimental version of the query queue which has the same behavior as the existing queue, but integrates tenant selection into the tree model.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-scheduler.use-multi-algorithm-query-queue",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
@@ -16308,6 +17298,17 @@
                   "fieldFlag": "common.storage.s3.bucket-lookup-type",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "dualstack_enabled",
+                  "required": false,
+                  "desc": "When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": true,
+                  "fieldFlag": "common.storage.s3.dualstack-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",

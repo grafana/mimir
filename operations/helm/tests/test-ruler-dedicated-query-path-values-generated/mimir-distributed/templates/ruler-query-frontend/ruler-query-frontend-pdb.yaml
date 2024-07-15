@@ -1,0 +1,19 @@
+---
+# Source: mimir-distributed/templates/ruler-query-frontend/ruler-query-frontend-pdb.yaml
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: test-ruler-dedicated-query-path-values-mimir-ruler-query-frontend
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
+    app.kubernetes.io/component: ruler-query-frontend
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
+      app.kubernetes.io/component: ruler-query-frontend
+  maxUnavailable: 1

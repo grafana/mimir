@@ -235,6 +235,12 @@ type shouldCacheFn func(r MetricsQueryRequest) bool
 // resultsCacheAlwaysEnabled is a shouldCacheFn function always returning true.
 var resultsCacheAlwaysEnabled = func(_ MetricsQueryRequest) bool { return true }
 
+var resultsCacheAlwaysDisabled = func(_ MetricsQueryRequest) bool { return false }
+
+var resultsCacheEnabledByOption = func(r MetricsQueryRequest) bool {
+	return !r.GetOptions().CacheDisabled
+}
+
 // isRequestCachable says whether the request is eligible for caching.
 func isRequestCachable(req MetricsQueryRequest, maxCacheTime int64, cacheUnalignedRequests bool, logger log.Logger) (cachable bool, reason string) {
 	// We can run with step alignment disabled because Grafana does it already. Mimir automatically aligning start and end is not
@@ -471,7 +477,11 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 
 		// If there is a bit missing at the front, make a request for that.
 		if start < extent.Start {
-			r := req.WithStartEnd(start, extent.Start)
+			r, err := req.WithStartEnd(start, extent.Start)
+			if err != nil {
+				return nil, nil, err
+			}
+
 			requests = append(requests, r)
 		}
 		res, err := extent.toResponse()
@@ -499,7 +509,11 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 
 	// Lastly, make a request for any data missing at the end.
 	if start < req.GetEnd() {
-		r := req.WithStartEnd(start, req.GetEnd())
+		r, err := req.WithStartEnd(start, req.GetEnd())
+		if err != nil {
+			return nil, nil, err
+		}
+
 		requests = append(requests, r)
 	}
 

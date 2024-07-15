@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -40,6 +41,8 @@ const (
 	// StatusClientClosedRequest is the status code for when a client request cancellation of an http request
 	StatusClientClosedRequest = 499
 	ServiceTimingHeaderName   = "Server-Timing"
+	cacheControlHeader        = "Cache-Control"
+	cacheControlLogField      = "header_cache_control"
 )
 
 var (
@@ -69,6 +72,7 @@ func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
 // all other logic is inside the RoundTripper.
 type Handler struct {
 	cfg          HandlerConfig
+	headersToLog []string
 	log          log.Logger
 	roundTripper http.RoundTripper
 	at           *activitytracker.ActivityTracker
@@ -91,6 +95,7 @@ type Handler struct {
 func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logger, reg prometheus.Registerer, at *activitytracker.ActivityTracker) *Handler {
 	h := &Handler{
 		cfg:          cfg,
+		headersToLog: filterHeadersToLog(cfg.LogQueryRequestHeaders),
 		log:          log,
 		roundTripper: roundTripper,
 		at:           at,
@@ -184,7 +189,15 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Limit the read body size.
 	r.Body = http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize)
 
-	params, err := util.ParseRequestFormWithoutConsumingBody(r)
+	var params url.Values
+	var err error
+
+	if r.Header.Get("Content-Type") == "application/x-protobuf" && querymiddleware.IsRemoteReadQuery(r.URL.Path) {
+		params, err = querymiddleware.ParseRemoteReadRequestValuesWithoutConsumingBody(r)
+	} else {
+		params, err = util.ParseRequestFormWithoutConsumingBody(r)
+	}
+
 	if err != nil {
 		writeError(w, apierror.New(apierror.TypeBadData, err.Error()))
 		return
@@ -211,8 +224,8 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	queryResponseTime := time.Since(startTime)
 
 	if err != nil {
-		writeError(w, err)
-		f.reportQueryStats(r, params, startTime, queryResponseTime, 0, queryDetails, 0, err)
+		statusCode := writeError(w, err)
+		f.reportQueryStats(r, params, startTime, queryResponseTime, 0, queryDetails, statusCode, err)
 		return
 	}
 
@@ -257,9 +270,7 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 		"time_taken", queryResponseTime.String(),
 	}, formatQueryString(details, queryString)...)
 
-	if len(f.cfg.LogQueryRequestHeaders) != 0 {
-		logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.cfg.LogQueryRequestHeaders)...)
-	}
+	logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.headersToLog)...)
 
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
@@ -306,6 +317,7 @@ func (f *Handler) reportQueryStats(
 		"component", "query-frontend",
 		"method", r.Method,
 		"path", r.URL.Path,
+		"route_name", middleware.ExtractRouteName(r.Context()),
 		"user_agent", r.UserAgent(),
 		"status_code", queryResponseStatusCode,
 		"response_time", queryResponseTime,
@@ -344,9 +356,7 @@ func (f *Handler) reportQueryStats(
 		logMessage = append(logMessage, "read_consistency", consistency)
 	}
 
-	if len(f.cfg.LogQueryRequestHeaders) != 0 {
-		logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.cfg.LogQueryRequestHeaders)...)
-	}
+	logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.headersToLog)...)
 
 	if queryErr == nil && queryResponseStatusCode/100 != 2 {
 		// If downstream replied with non-2xx, log this as a failure.
@@ -409,7 +419,18 @@ func paramValueFromDetails(details *querymiddleware.QueryDetails, paramName stri
 	return ""
 }
 
+func filterHeadersToLog(headersToLog []string) (filtered []string) {
+	for _, h := range headersToLog {
+		if strings.EqualFold(h, cacheControlHeader) {
+			continue
+		}
+		filtered = append(filtered, h)
+	}
+	return filtered
+}
+
 func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []any) {
+	fields = append(fields, cacheControlLogField, h.Get(cacheControlHeader))
 	for _, s := range headersToLog {
 		if v := h.Get(s); v != "" {
 			fields = append(fields, fmt.Sprintf("header_%s", strings.ReplaceAll(strings.ToLower(s), "-", "_")), v)
@@ -418,7 +439,8 @@ func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []any) 
 	return fields
 }
 
-func writeError(w http.ResponseWriter, err error) {
+// writeError writes the error response to http.ResponseWriter, and returns the response HTTP status code.
+func writeError(w http.ResponseWriter, err error) int {
 	switch {
 	case errors.Is(err, context.Canceled):
 		err = errCanceled
@@ -430,13 +452,30 @@ func writeError(w http.ResponseWriter, err error) {
 		}
 	}
 
-	// if the error is an APIError, ensure it gets written as a JSON response
-	if resp, ok := apierror.HTTPResponseFromError(err); ok {
-		_ = httpgrpc.WriteResponse(w, resp)
-		return
+	var (
+		res      *httpgrpc.HTTPResponse
+		resFound bool
+	)
+
+	// If the error is an APIError, ensure it gets written as a JSON response.
+	// Otherwise, check if there's a response encoded in the gRPC error.
+	res, resFound = apierror.HTTPResponseFromError(err)
+	if !resFound {
+		res, resFound = httpgrpc.HTTPResponseFromError(err)
 	}
 
-	httpgrpc.WriteError(w, err)
+	// If we've been able to get the HTTP response from the error, then we send
+	// it with the right status code and response body content.
+	if resFound {
+		_ = httpgrpc.WriteResponse(w, res)
+		return int(res.Code)
+	}
+
+	// Otherwise, we do fallback to a 5xx error, returning the non-formatted error
+	// message in the response body.
+	statusCode := http.StatusInternalServerError
+	http.Error(w, err.Error(), statusCode)
+	return statusCode
 }
 
 func writeServiceTimingHeader(queryResponseTime time.Duration, headers http.Header, stats *querier_stats.Stats) {

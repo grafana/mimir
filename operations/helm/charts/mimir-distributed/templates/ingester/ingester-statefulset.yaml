@@ -47,7 +47,9 @@ spec:
   serviceName: {{ template "mimir.fullname" . }}-ingester{{- if not .Values.enterprise.legacyLabels -}}-headless{{- end -}}
   {{- if .Values.ingester.persistentVolume.enabled }}
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
         {{- if .Values.ingester.persistentVolume.annotations }}
         annotations:
@@ -171,7 +173,6 @@ spec:
               mountPath: "/data"
               {{- if .Values.ingester.persistentVolume.subPath }}
               subPath: {{ .Values.ingester.persistentVolume.subPath }}
-              {{- else }}
               {{- end }}
             {{- if .Values.enterprise.enabled }}
             - name: license
@@ -197,6 +198,8 @@ spec:
             {{- toYaml .Values.ingester.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.ingester.containerSecurityContext | nindent 12 }}
+          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.ingester }}
+          {{- if or .Values.global.extraEnv .Values.ingester.env $jaeger_queue_size }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -204,11 +207,12 @@ spec:
             {{- with .Values.ingester.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.ingester }}
             {{- if $jaeger_queue_size }}
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.ingester.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -216,6 +220,7 @@ spec:
             {{- with .Values.ingester.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
 ---
 {{ end }}
 {{ end }}

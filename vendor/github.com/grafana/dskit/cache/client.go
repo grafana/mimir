@@ -14,6 +14,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+// Common functionality shared between the Memcached and Redis Cache implementations
+
 const (
 	opSet            = "set"
 	opGetMulti       = "getmulti"
@@ -84,6 +86,7 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 		Help: "Total number of operations against cache that failed.",
 	}, []string{"operation", "reason"})
 	for _, op := range []string{opGetMulti, opSet, opDelete, opIncrement, opFlush, opTouch, opCompareAndSwap} {
+		cm.failures.WithLabelValues(op, reasonConnectTimeout)
 		cm.failures.WithLabelValues(op, reasonTimeout)
 		cm.failures.WithLabelValues(op, reasonMalformedKey)
 		cm.failures.WithLabelValues(op, reasonServerError)

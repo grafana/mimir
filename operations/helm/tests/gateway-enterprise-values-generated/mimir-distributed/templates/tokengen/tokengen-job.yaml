@@ -51,8 +51,6 @@ spec:
               mountPath: /license
             - name: active-queries
               mountPath: /active-query-tracker
-          env:
-          envFrom:
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

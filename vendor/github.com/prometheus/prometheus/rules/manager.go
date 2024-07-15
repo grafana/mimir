@@ -118,12 +118,11 @@ type ManagerOptions struct {
 	ForGracePeriod            time.Duration
 	ResendDelay               time.Duration
 	GroupLoader               GroupLoader
+	DefaultRuleQueryOffset    func() time.Duration
 	MaxConcurrentEvals        int64
 	ConcurrentEvalsEnabled    bool
 	RuleConcurrencyController RuleConcurrencyController
 	RuleDependencyController  RuleDependencyController
-
-	DefaultEvaluationDelay func() time.Duration
 
 	// GroupEvaluationContextFunc will be called to wrap Context based on the group being evaluated.
 	// Will be skipped if nil.
@@ -201,9 +200,17 @@ func (m *Manager) Stop() {
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
+// This method will no-op in case the manager is already stopped.
 func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
+
+	// We cannot update a stopped manager
+	select {
+	case <-m.done:
+		return nil
+	default:
+	}
 
 	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, files...)
 
@@ -346,15 +353,27 @@ func (m *Manager) LoadGroups(
 			m.opts.RuleDependencyController.AnalyseRules(rules)
 
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
-				Name:                          rg.Name,
-				File:                          fn,
-				Interval:                      itv,
-				Limit:                         rg.Limit,
-				Rules:                         rules,
-				SourceTenants:                 rg.SourceTenants,
-				ShouldRestore:                 shouldRestore,
-				Opts:                          m.opts,
-				EvaluationDelay:               (*time.Duration)(rg.EvaluationDelay),
+				Name:          rg.Name,
+				File:          fn,
+				Interval:      itv,
+				Limit:         rg.Limit,
+				Rules:         rules,
+				SourceTenants: rg.SourceTenants,
+				ShouldRestore: shouldRestore,
+				Opts:          m.opts,
+				QueryOffset: func() *time.Duration {
+					// Give preference to QueryOffset, falling back to the deprecated EvaluationDelay.
+					if rg.QueryOffset != nil {
+						return (*time.Duration)(rg.QueryOffset)
+					}
+
+					//nolint:staticcheck // We want to intentionally access a deprecated field
+					if rg.EvaluationDelay != nil {
+						return (*time.Duration)(rg.EvaluationDelay)
+					}
+
+					return nil
+				}(),
 				done:                          m.done,
 				EvalIterationFunc:             groupEvalIterationFunc,
 				AlignEvaluationTimeOnInterval: rg.AlignEvaluationTimeOnInterval,

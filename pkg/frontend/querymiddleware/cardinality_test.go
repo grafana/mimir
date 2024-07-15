@@ -227,7 +227,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 			}
 			numSetupStoreCalls := 0
 			if len(tt.cacheContent) > 0 {
-				c.StoreAsync(tt.cacheContent, time.Minute)
+				c.SetMultiAsync(tt.cacheContent, time.Minute)
 				numSetupStoreCalls++
 			}
 
@@ -278,7 +278,7 @@ func Test_cardinalityEstimateBucket_QueryRequest_requestEquality(t *testing.T) {
 			tenantA:       "1",
 			tenantB:       "1",
 			requestA:      rangeQuery,
-			requestB:      rangeQuery.WithStartEnd(rangeQuery.GetStart()+5*time.Minute.Milliseconds(), rangeQuery.GetEnd()+5*time.Minute.Milliseconds()),
+			requestB:      mustSucceed(rangeQuery.WithStartEnd(rangeQuery.GetStart()+5*time.Minute.Milliseconds(), rangeQuery.GetEnd()+5*time.Minute.Milliseconds())),
 			expectedEqual: true,
 		},
 		{
@@ -286,10 +286,10 @@ func Test_cardinalityEstimateBucket_QueryRequest_requestEquality(t *testing.T) {
 			tenantA:  "1",
 			tenantB:  "1",
 			requestA: rangeQuery,
-			requestB: rangeQuery.WithStartEnd(
+			requestB: mustSucceed(rangeQuery.WithStartEnd(
 				rangeQuery.GetStart()+2*cardinalityEstimateBucketSize.Milliseconds(),
 				rangeQuery.GetEnd()+2*cardinalityEstimateBucketSize.Milliseconds(),
-			),
+			)),
 			expectedEqual: false,
 		},
 		{
@@ -297,7 +297,7 @@ func Test_cardinalityEstimateBucket_QueryRequest_requestEquality(t *testing.T) {
 			tenantA:       "1",
 			tenantB:       "1",
 			requestA:      rangeQuery,
-			requestB:      rangeQuery.WithStartEnd(rangeQuery.GetStart(), rangeQuery.GetEnd()+time.Second.Milliseconds()),
+			requestB:      mustSucceed(rangeQuery.WithStartEnd(rangeQuery.GetStart(), rangeQuery.GetEnd()+time.Second.Milliseconds())),
 			expectedEqual: true,
 		},
 		{
@@ -305,10 +305,10 @@ func Test_cardinalityEstimateBucket_QueryRequest_requestEquality(t *testing.T) {
 			tenantA:  "1",
 			tenantB:  "1",
 			requestA: rangeQuery,
-			requestB: rangeQuery.WithStartEnd(
+			requestB: mustSucceed(rangeQuery.WithStartEnd(
 				rangeQuery.GetStart()+5*time.Minute.Milliseconds(),
 				rangeQuery.GetEnd()+2*cardinalityEstimateBucketSize.Milliseconds(),
-			),
+			)),
 			expectedEqual: false,
 		},
 		// The following two test cases test consistent hashing of queries, which is used
@@ -318,10 +318,10 @@ func Test_cardinalityEstimateBucket_QueryRequest_requestEquality(t *testing.T) {
 			tenantA:  "1",
 			tenantB:  "1",
 			requestA: rangeQuerySum,
-			requestB: rangeQuerySum.WithStartEnd(
+			requestB: mustSucceed(rangeQuerySum.WithStartEnd(
 				rangeQuery.GetStart()+(cardinalityEstimateBucketSize/2).Milliseconds(),
 				rangeQuery.GetEnd()+(cardinalityEstimateBucketSize/2).Milliseconds(),
-			),
+			)),
 			expectedEqual: false,
 		},
 		{
@@ -329,10 +329,10 @@ func Test_cardinalityEstimateBucket_QueryRequest_requestEquality(t *testing.T) {
 			tenantA:  "1",
 			tenantB:  "1",
 			requestA: rangeQuery,
-			requestB: rangeQuery.WithStartEnd(
+			requestB: mustSucceed(rangeQuery.WithStartEnd(
 				rangeQuery.GetStart()+(cardinalityEstimateBucketSize/2).Milliseconds(),
 				rangeQuery.GetEnd()+(cardinalityEstimateBucketSize/2).Milliseconds(),
-			),
+			)),
 			expectedEqual: true,
 		},
 	}

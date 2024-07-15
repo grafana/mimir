@@ -253,11 +253,24 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: |||
             (min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingester_memory_users) == 0)
             and on (%(alert_aggregation_labels)s)
-            # Only if there are more time-series than would be expected due to continuous testing load
+            # Only if there are more timeseries than would be expected due to continuous testing load
             (
-              sum by(%(alert_aggregation_labels)s) (cortex_ingester_memory_series)
-              /
-              max by(%(alert_aggregation_labels)s) (cortex_distributor_replication_factor)
+              ( # Classic storage timeseries
+                sum by(%(alert_aggregation_labels)s) (cortex_ingester_memory_series)
+                /
+                max by(%(alert_aggregation_labels)s) (cortex_distributor_replication_factor)
+              )
+              or
+              ( # Ingest storage timeseries
+                sum by(%(alert_aggregation_labels)s) (
+                  max by(ingester_id, %(alert_aggregation_labels)s) (
+                    label_replace(cortex_ingester_memory_series,
+                      "ingester_id", "$1",
+                      "%(per_instance_label)s", ".*-([0-9]+)$"
+                    )
+                  )
+                )
+              )
             ) > 100000
           ||| % $._config,
           labels: {
@@ -326,7 +339,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             severity: 'warning',
           },
           annotations: {
-            message: '%(product)s store-gateway %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.' % $._config,
+            message: '%(product)s store-gateway in %(alert_aggregation_variables)s is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.' % $._config,
           },
         },
       ] + [
