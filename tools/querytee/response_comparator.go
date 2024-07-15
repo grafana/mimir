@@ -12,6 +12,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 
@@ -147,11 +148,33 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 				actualHistogramSamplesCount,
 			)
 
+			shouldLog := false
+			logger := util_log.Logger
+
 			if expectedFloatSamplesCount > 0 && actualFloatSamplesCount > 0 {
-				level.Error(util_log.Logger).Log("msg", err.Error(), "oldest-expected-ts", expectedMetric.Values[0].Timestamp,
-					"newest-expected-ts", expectedMetric.Values[expectedFloatSamplesCount-1].Timestamp,
-					"oldest-actual-ts", actualMetric.Values[0].Timestamp, "newest-actual-ts", actualMetric.Values[actualFloatSamplesCount-1].Timestamp)
+				logger = log.With(logger,
+					"oldest-expected-float-ts", expectedMetric.Values[0].Timestamp,
+					"newest-expected-float-ts", expectedMetric.Values[expectedFloatSamplesCount-1].Timestamp,
+					"oldest-actual-float-ts", actualMetric.Values[0].Timestamp,
+					"newest-actual-float-ts", actualMetric.Values[actualFloatSamplesCount-1].Timestamp,
+				)
+				shouldLog = true
 			}
+
+			if expectedHistogramSamplesCount > 0 && actualHistogramSamplesCount > 0 {
+				logger = log.With(logger,
+					"oldest-expected-histogram-ts", expectedMetric.Histograms[0].Timestamp,
+					"newest-expected-histogram-ts", expectedMetric.Histograms[expectedHistogramSamplesCount-1].Timestamp,
+					"oldest-actual-histogram-ts", actualMetric.Histograms[0].Timestamp,
+					"newest-actual-histogram-ts", actualMetric.Histograms[actualHistogramSamplesCount-1].Timestamp,
+				)
+				shouldLog = true
+			}
+
+			if shouldLog {
+				level.Error(logger).Log("msg", err.Error())
+			}
+
 			return err
 		}
 
