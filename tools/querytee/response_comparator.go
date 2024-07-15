@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -149,7 +150,7 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 			actualSamplePair := actualMetric.Values[i]
 			err := compareSamplePair(expectedSamplePair, actualSamplePair, opts)
 			if err != nil {
-				return errors.Wrapf(err, "sample pair not matching for metric %s", expectedMetric.Metric)
+				return errors.Wrapf(err, "float sample pair not matching for metric %s", expectedMetric.Metric)
 			}
 		}
 	}
@@ -187,15 +188,33 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 		}
 
 		actualMetric := actual[actualMetricIndex]
-		err := compareSamplePair(model.SamplePair{
-			Timestamp: expectedMetric.Timestamp,
-			Value:     expectedMetric.Value,
-		}, model.SamplePair{
-			Timestamp: actualMetric.Timestamp,
-			Value:     actualMetric.Value,
-		}, opts)
-		if err != nil {
-			return errors.Wrapf(err, "sample pair not matching for metric %s", expectedMetric.Metric)
+
+		if expectedMetric.Histogram == nil && actualMetric.Histogram == nil {
+			err := compareSamplePair(model.SamplePair{
+				Timestamp: expectedMetric.Timestamp,
+				Value:     expectedMetric.Value,
+			}, model.SamplePair{
+				Timestamp: actualMetric.Timestamp,
+				Value:     actualMetric.Value,
+			}, opts)
+			if err != nil {
+				return errors.Wrapf(err, "float sample pair not matching for metric %s", expectedMetric.Metric)
+			}
+		} else if expectedMetric.Histogram != nil && actualMetric.Histogram == nil {
+			return fmt.Errorf("sample pair not matching for metric %s: expected histogram but got float value", expectedMetric.Metric)
+		} else if expectedMetric.Histogram == nil && actualMetric.Histogram != nil {
+			return fmt.Errorf("sample pair not matching for metric %s: expected float value but got histogram", expectedMetric.Metric)
+		} else { // Expected value is a histogram and the actual value is a histogram.
+			err := compareSampleHistogramPair(model.SampleHistogramPair{
+				Timestamp: expectedMetric.Timestamp,
+				Histogram: expectedMetric.Histogram,
+			}, model.SampleHistogramPair{
+				Timestamp: actualMetric.Timestamp,
+				Histogram: actualMetric.Histogram,
+			}, opts)
+			if err != nil {
+				return errors.Wrapf(err, "histogram sample pair not matching for metric %s", expectedMetric.Metric)
+			}
 		}
 	}
 
@@ -230,26 +249,64 @@ func compareSamplePair(expected, actual model.SamplePair, opts SampleComparisonO
 	if opts.SkipRecentSamples > 0 && time.Since(expected.Timestamp.Time()) < opts.SkipRecentSamples {
 		return nil
 	}
-	if !compareSampleValue(expected.Value, actual.Value, opts) {
+	if !compareSampleValue(float64(expected.Value), float64(actual.Value), opts) {
 		return fmt.Errorf("expected value %s for timestamp %v but got %s", expected.Value, expected.Timestamp, actual.Value)
 	}
 
 	return nil
 }
 
-func compareSampleValue(first, second model.SampleValue, opts SampleComparisonOptions) bool {
-	f := float64(first)
-	s := float64(second)
-
-	if (math.IsNaN(f) && math.IsNaN(s)) ||
-		(math.IsInf(f, 1) && math.IsInf(s, 1)) ||
-		(math.IsInf(f, -1) && math.IsInf(s, -1)) {
+func compareSampleValue(first, second float64, opts SampleComparisonOptions) bool {
+	if (math.IsNaN(first) && math.IsNaN(second)) ||
+		(math.IsInf(first, 1) && math.IsInf(second, 1)) ||
+		(math.IsInf(first, -1) && math.IsInf(second, -1)) {
 		return true
 	} else if opts.Tolerance <= 0 {
-		return math.Float64bits(f) == math.Float64bits(s)
+		return math.Float64bits(first) == math.Float64bits(second)
 	}
-	if opts.UseRelativeError && s != 0 {
-		return math.Abs(f-s)/math.Abs(s) <= opts.Tolerance
+	if opts.UseRelativeError && second != 0 {
+		return math.Abs(first-second)/math.Abs(second) <= opts.Tolerance
 	}
-	return math.Abs(f-s) <= opts.Tolerance
+	return math.Abs(first-second) <= opts.Tolerance
+}
+
+func compareSampleHistogramPair(expected, actual model.SampleHistogramPair, opts SampleComparisonOptions) error {
+	if expected.Timestamp != actual.Timestamp {
+		return fmt.Errorf("expected timestamp %v but got %v", expected.Timestamp, actual.Timestamp)
+	}
+
+	if opts.SkipRecentSamples > 0 && time.Since(expected.Timestamp.Time()) < opts.SkipRecentSamples {
+		return nil
+	}
+
+	if !compareSampleValue(float64(expected.Histogram.Sum), float64(actual.Histogram.Sum), opts) {
+		return fmt.Errorf("expected sum %s for timestamp %v but got %s", expected.Histogram.Sum, expected.Timestamp, actual.Histogram.Sum)
+	}
+
+	if !compareSampleValue(float64(expected.Histogram.Count), float64(actual.Histogram.Count), opts) {
+		return fmt.Errorf("expected count %s for timestamp %v but got %s", expected.Histogram.Count, expected.Timestamp, actual.Histogram.Count)
+	}
+
+	if !slices.EqualFunc(expected.Histogram.Buckets, actual.Histogram.Buckets, compareSampleHistogramBuckets(opts)) {
+		return fmt.Errorf("expected buckets %s for timestamp %v but got %s", expected.Histogram.Buckets, expected.Timestamp, actual.Histogram.Buckets)
+	}
+
+	return nil
+}
+
+func compareSampleHistogramBuckets(opts SampleComparisonOptions) func(expected, actual *model.HistogramBucket) bool {
+	return func(expected, actual *model.HistogramBucket) bool {
+		if !compareSampleValue(float64(expected.Lower), float64(actual.Lower), opts) {
+			return false
+		}
+
+		if !compareSampleValue(float64(expected.Upper), float64(actual.Upper), opts) {
+			return false
+		}
+
+		if !compareSampleValue(float64(expected.Count), float64(actual.Count), opts) {
+			return false
+		}
+		return expected.Boundaries == actual.Boundaries
+	}
 }
