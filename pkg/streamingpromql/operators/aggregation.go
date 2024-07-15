@@ -6,13 +6,11 @@
 package operators
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"slices"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -31,7 +29,7 @@ type Aggregation struct {
 	End      int64 // Milliseconds since Unix epoch
 	Interval int64 // In milliseconds
 	Steps    int
-	Grouping []string
+	Grouping []string // If this is a 'without' aggregation, NewAggregation will ensure that this slice contains __name__.
 	Without  bool
 	Pool     *pooling.LimitingPool
 
@@ -49,6 +47,14 @@ func NewAggregation(
 	pool *pooling.LimitingPool,
 ) *Aggregation {
 	s, e, i := timestamp.FromTime(start), timestamp.FromTime(end), interval.Milliseconds()
+
+	if without {
+		labelsToDrop := make([]string, 0, len(grouping)+1)
+		labelsToDrop = append(labelsToDrop, labels.MetricName)
+		labelsToDrop = append(labelsToDrop, grouping...)
+		grouping = labelsToDrop
+	}
+
 	slices.Sort(grouping)
 
 	return &Aggregation{
@@ -107,12 +113,12 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	// Note that we use a string here to uniquely identify the groups, while Prometheus' engine uses a hash without any handling of hash collisions.
 	// While rare, this may cause differences in the results returned by this engine and Prometheus' engine.
 	groups := map[string]groupWithLabels{}
-	groupLabelsStringFunc := a.seriesToGroupLabelsStringFunc()
+	groupLabelsBytesFunc := a.seriesToGroupLabelsBytesFunc()
 	groupLabelsFunc := a.seriesToGroupLabelsFunc()
 	a.remainingInnerSeriesToGroup = make([]*group, 0, len(innerSeries))
 
 	for seriesIdx, series := range innerSeries {
-		groupLabelsString := groupLabelsStringFunc(series.Labels)
+		groupLabelsString := groupLabelsBytesFunc(series.Labels)
 		g, groupExists := groups[string(groupLabelsString)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
 
 		if !groupExists {
@@ -142,92 +148,46 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	return seriesMetadata, nil
 }
 
-// seriesToGroupLabelsStringFunc returns a function that computes a string representation of the output group labels for the given input series.
+// seriesToGroupLabelsBytesFunc returns a function that computes a string-like representation of the output group labels for the given input series.
 //
 // The returned function returns a byte slice rather than a string to make it possible to avoid unnecessarily allocating a string.
-func (a *Aggregation) seriesToGroupLabelsStringFunc() func(labels.Labels) []byte {
+//
+// The byte slice returned by the returned function may contain non-printable characters.
+func (a *Aggregation) seriesToGroupLabelsBytesFunc() func(labels.Labels) []byte {
 	// Why not just use the labels.Labels computed by seriesToGroupLabelsFunc() and call String() on it?
 	//
 	// Most of the time, we don't need the labels.Labels instance, as we expect there are far fewer output groups than input series,
 	// and we only need the labels.Labels instance once per output group.
-	// However, we always need to compute the string representation for each input series, so we can look up its corresponding
+	// However, we always need to compute the string-like representation for each input series, so we can look up its corresponding
 	// output group. And we can do this without allocating a string by returning just the bytes that make up the string.
 	// There's not much point in using the hash of the group labels as we always need the string (or the labels.Labels) to ensure
-	// there are no hash collisions - so we might as well just go straight to the string representation.
+	// there are no hash collisions - so we might as well just go straight to the string-like representation.
 	//
 	// Furthermore, labels.Labels.String() doesn't allow us to reuse the buffer used when producing the string or to return a byte slice,
 	// whereas this method does.
 	// This saves us allocating a new buffer and string for every single input series, which has a noticeable performance impact.
 
 	if a.Without {
-		b := make([]byte, 0, 1024) // Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
-		buf := bytes.NewBuffer(b)
+		// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
+		b := make([]byte, 0, 1024)
 
 		return func(l labels.Labels) []byte {
-			buf.Reset()
-			nextGroupingIndex := 0
-			haveWrittenAnyLabels := false
-
-			l.Range(func(l labels.Label) {
-				if l.Name == labels.MetricName {
-					return
-				}
-
-				for nextGroupingIndex < len(a.Grouping) && l.Name > a.Grouping[nextGroupingIndex] {
-					nextGroupingIndex++
-				}
-
-				if nextGroupingIndex == len(a.Grouping) || l.Name != a.Grouping[nextGroupingIndex] {
-					if haveWrittenAnyLabels {
-						buf.WriteByte(',')
-						buf.WriteByte(' ')
-					}
-
-					buf.WriteString(l.Name)
-					buf.WriteByte('=')
-					buf.Write(strconv.AppendQuote(buf.AvailableBuffer(), l.Value))
-
-					haveWrittenAnyLabels = true
-				}
-			})
-
-			return buf.Bytes()
+			return l.BytesWithoutLabels(b, a.Grouping...) // NewAggregation will add __name__ to Grouping for 'without' aggregations, so no need to add it here.
 		}
 	}
 
 	if len(a.Grouping) == 0 {
 		// We're grouping all input series into a single group with no labels.
-		var b []byte
-
 		return func(_ labels.Labels) []byte {
-			return b
+			return nil
 		}
 	}
 
-	b := make([]byte, 0, 1024) // Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
-	buf := bytes.NewBuffer(b)
+	// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
+	b := make([]byte, 0, 1024)
+
 	return func(l labels.Labels) []byte {
-		buf.Reset()
-		haveWrittenAnyLabels := false
-
-		for _, labelName := range a.Grouping {
-			labelValue := l.Get(labelName)
-			if labelValue == "" {
-				continue
-			}
-
-			if haveWrittenAnyLabels {
-				buf.WriteByte(',')
-				buf.WriteByte(' ')
-			}
-
-			buf.WriteString(labelName)
-			buf.WriteByte('=')
-			buf.Write(strconv.AppendQuote(buf.AvailableBuffer(), labelValue))
-			haveWrittenAnyLabels = true
-		}
-
-		return buf.Bytes()
+		return l.BytesWithLabels(b, a.Grouping...)
 	}
 }
 
@@ -237,8 +197,7 @@ func (a *Aggregation) seriesToGroupLabelsFunc() func(labels.Labels) labels.Label
 		lb := labels.NewBuilder(labels.EmptyLabels())
 		return func(m labels.Labels) labels.Labels {
 			lb.Reset(m)
-			lb.Del(a.Grouping...)
-			lb.Del(labels.MetricName)
+			lb.Del(a.Grouping...) // NewAggregation will add __name__ to Grouping for 'without' aggregations, so no need to add it here.
 			l := lb.Labels()
 			return l
 		}

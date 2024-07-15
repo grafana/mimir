@@ -8,6 +8,7 @@ load 1m
   some_metric{env="prod", cluster="us"} 0+2x4
   some_metric{env="test", cluster="eu"} 0+3x4
   some_metric{env="test", cluster="us"} 0+4x4
+  some_other_metric{env="test", cluster="us"} 0+5x4
 
 # Range query, aggregating to one group.
 eval range from 0 to 4m step 1m sum(some_metric)
@@ -26,6 +27,11 @@ eval range from 0 to 4m step 1m sum without (env) (some_metric)
 # Range query, aggregating to a single group with 'without'.
 eval range from 0 to 4m step 1m sum without (env, cluster) (some_metric)
   {} 0 10 20 30 40
+
+# 'without' should always ignore the metric name.
+eval range from 0 to 4m step 1m sum without(cluster) ({cluster="us"})
+  {env="prod"} 0 2 4 6 8
+  {env="test"} 0 9 18 27 36
 
 # If no series are matched, we shouldn't return any results.
 eval range from 0 to 4m step 1m sum(some_nonexistent_metric)

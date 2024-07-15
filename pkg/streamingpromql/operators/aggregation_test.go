@@ -4,8 +4,8 @@ package operators
 
 import (
 	"context"
-	"slices"
 	"testing"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
@@ -89,15 +89,17 @@ func TestAggregation_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 
 func TestAggregation_GroupLabelling(t *testing.T) {
 	testCases := map[string]struct {
-		grouping             []string
-		without              bool
-		inputSeries          labels.Labels
-		expectedOutputSeries labels.Labels
+		grouping                    []string
+		without                     bool
+		inputSeries                 labels.Labels
+		expectedOutputSeries        labels.Labels
+		overrideExpectedOutputBytes []byte
 	}{
 		"grouping to a single series": {
-			grouping:             []string{},
-			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod"),
-			expectedOutputSeries: labels.EmptyLabels(),
+			grouping:                    []string{},
+			inputSeries:                 labels.FromStrings(labels.MetricName, "my_metric", "env", "prod"),
+			expectedOutputSeries:        labels.EmptyLabels(),
+			overrideExpectedOutputBytes: []byte{}, // Special case for grouping to a single series.
 		},
 
 		// Grouping with 'by'
@@ -184,21 +186,21 @@ func TestAggregation_GroupLabelling(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			require.True(t, slices.IsSorted(testCase.grouping), "invalid test case: grouping labels must be sorted")
-
-			aggregator := &Aggregation{
-				Grouping: testCase.grouping,
-				Without:  testCase.without,
-			}
+			aggregator := NewAggregation(nil, time.Time{}, time.Time{}, time.Minute, testCase.grouping, testCase.without, nil)
 
 			labelsFunc := aggregator.seriesToGroupLabelsFunc()
-			stringFunc := aggregator.seriesToGroupLabelsStringFunc()
+			bytesFunc := aggregator.seriesToGroupLabelsBytesFunc()
 
 			actualLabels := labelsFunc(testCase.inputSeries)
-			actualString := string(stringFunc(testCase.inputSeries))
-
 			require.Equal(t, testCase.expectedOutputSeries, actualLabels)
-			require.Equal(t, testCase.expectedOutputSeries.String(), "{"+actualString+"}")
+
+			expectedBytes := string(testCase.overrideExpectedOutputBytes)
+			if testCase.overrideExpectedOutputBytes == nil {
+				expectedBytes = string(testCase.expectedOutputSeries.Bytes(nil))
+			}
+
+			actualBytes := string(bytesFunc(testCase.inputSeries))
+			require.Equal(t, expectedBytes, actualBytes)
 		})
 	}
 }
