@@ -77,6 +77,7 @@ func newQueueBroker(
 		tree, err = NewTree(
 			&querierWorkerPrioritizationQueueAlgo{},
 			tqas,
+			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
 		)
 	default:
 		panic(fmt.Sprintf("unknown queue algorithm: %s", whichAlgo))
