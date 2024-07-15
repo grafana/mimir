@@ -323,7 +323,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 				client:               sp.client,
 				timeout:              timeout,
 				bodySizeLimit:        bodySizeLimit,
-				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, cfg.AllowUTF8Names),
+				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, sp.config.AllowUTF8Names),
 				acceptEncodingHeader: acceptEncodingHeader(enableCompression),
 			}
 			newLoop = sp.newLoop(scrapeLoopOptions{

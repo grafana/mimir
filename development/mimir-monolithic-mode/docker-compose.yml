@@ -56,7 +56,7 @@ services:
     command: [
       "-config.file=/etc/agent-config/grafana-agent.yaml", 
       "-metrics.wal-directory=/tmp",
-      "-server.http.address=127.0.0.1:9091"
+      "-server.http.address=127.0.0.1:9091",
       "-metrics.utf8-names",
       "-metrics.name-escaping-scheme=dots"]
     volumes:
