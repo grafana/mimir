@@ -16,7 +16,7 @@ const chunkInfoLoggingContextKey = chunkInfoLoggingContextType(1)
 
 const ChunkInfoLoggingHeader = "X-Mimir-Chunk-Info-Logger"
 
-func ChunkInfoLoggerMiddleware() middleware.Interface {
+func Middleware() middleware.Interface {
 	return middleware.Func(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()

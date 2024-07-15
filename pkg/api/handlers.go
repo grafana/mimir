@@ -289,7 +289,7 @@ func NewQuerierHandler(
 	router := mux.NewRouter()
 	routeInjector := middleware.RouteInjector{RouteMatcher: router}
 	fallbackInjector := compat.EngineFallbackInjector{}
-	router.Use(routeInjector.Wrap, fallbackInjector.Wrap, chunkinfologger.ChunkInfoLoggerMiddleware().Wrap)
+	router.Use(routeInjector.Wrap, fallbackInjector.Wrap, chunkinfologger.Middleware().Wrap)
 
 	// Use a separate metric for the querier in order to differentiate requests from the query-frontend when
 	// running Mimir in monolithic mode.

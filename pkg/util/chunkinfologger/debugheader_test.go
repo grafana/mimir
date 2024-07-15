@@ -40,7 +40,7 @@ func TestChunkInfoLoggerMiddleware(t *testing.T) {
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			mw := ChunkInfoLoggerMiddleware()
+			mw := Middleware()
 			var (
 				recordedOk    bool
 				recordedValue []string
