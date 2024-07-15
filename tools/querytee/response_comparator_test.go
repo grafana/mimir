@@ -1255,8 +1255,8 @@ func TestCompareSamplesResponse(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			samplesComparator := NewSamplesComparator(SampleComparisonOptions{
-				Tolerance:         float64(tc.tolerance),
-				UseRelativeError:  bool(tc.useRelativeError),
+				Tolerance:         tc.tolerance,
+				UseRelativeError:  tc.useRelativeError,
 				SkipRecentSamples: tc.skipRecentSamples,
 			})
 			result, err := samplesComparator.Compare(tc.expected, tc.actual)
