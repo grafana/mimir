@@ -122,7 +122,7 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 	}
 
 	if bqs.chunkInfo != nil {
-		bqs.chunkInfo.StartSeries(bqs.labels.Get("series_id"))
+		bqs.chunkInfo.StartSeries(bqs.labels)
 		bqs.chunkInfo.FormatStoreGatewayChunkInfo(bqs.remoteAddress, allChunks)
 		bqs.chunkInfo.EndSeries(bqs.lastOne)
 	}

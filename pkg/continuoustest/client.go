@@ -285,7 +285,7 @@ func (rt *clientRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 	}
 
 	if rt.requestDebug {
-		req.Header.Add(chunkinfologger.ChunkInfoLoggingHeader, chunkinfologger.ChunkInfoLoggingEnabled)
+		req.Header.Add(chunkinfologger.ChunkInfoLoggingHeader, "series_id")
 	}
 
 	return rt.rt.RoundTrip(req)

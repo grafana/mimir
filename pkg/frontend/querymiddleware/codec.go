@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -596,6 +597,12 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 			for _, v := range h.Values {
 				// There should only be one value, but add all of them for completeness.
 				req.Header.Add(compat.ForceFallbackHeaderName, v)
+			}
+		}
+		if h.Name == chunkinfologger.ChunkInfoLoggingHeader {
+			for _, v := range h.Values {
+				// There should only be one value, but add all of them for completeness.
+				req.Header.Add(chunkinfologger.ChunkInfoLoggingHeader, v)
 			}
 		}
 	}

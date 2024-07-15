@@ -134,9 +134,9 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 
 	traceID, _ := tracing.ExtractTraceID(ctx)
 	var chunkInfo *chunkinfologger.ChunkInfoLogger
-	if chunkinfologger.EnableChunkInfoLoggingFromContext(ctx) {
-		chunkInfo = chunkinfologger.NewChunkInfoLogger("CT: ingester chunk series", traceID, q.logger)
-		q.logger.Log("msg", "CT: ingester streamSelect: start", "traceid", traceID, "mint", minT, "maxt", maxT)
+	if chunkinfologger.IsChunkInfoLoggingEnabled(ctx) {
+		chunkInfo = chunkinfologger.NewChunkInfoLogger("ingester chunk series", traceID, q.logger, chunkinfologger.ChunkInfoLoggingFromContext(ctx))
+		q.logger.Log("msg", "ingester streamSelect: start", "traceid", traceID, "mint", minT, "maxt", maxT)
 	}
 
 	serieses := make([]storage.Series, 0, len(results.Chunkseries))
@@ -144,7 +144,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		ls := mimirpb.FromLabelAdaptersToLabels(result.Labels)
 
 		if chunkInfo != nil {
-			chunkInfo.StartSeries(ls.Get("series_id"))
+			chunkInfo.StartSeries(ls)
 			chunkInfo.FormatIngesterChunkInfo(result.FromIngesterId, result.Chunks)
 			chunkInfo.EndSeries(i == len(results.Chunkseries)-1)
 		}
@@ -177,7 +177,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		}
 
 		if chunkInfo != nil {
-			chunkInfo.SetMsg("CT: ingester streaming chunk series")
+			chunkInfo.SetMsg("streaming chunks from ingesters")
 		}
 
 		for i, s := range results.StreamingSeries {

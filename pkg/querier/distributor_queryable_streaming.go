@@ -51,7 +51,7 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 	totalChunks := 0
 
 	if s.chunkInfo != nil {
-		s.chunkInfo.StartSeries(s.labels.Get("series_id"))
+		s.chunkInfo.StartSeries(s.labels)
 	}
 	for _, source := range s.sources {
 		c, err := source.StreamReader.GetChunks(source.SeriesIndex)
