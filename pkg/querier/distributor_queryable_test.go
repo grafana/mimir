@@ -93,7 +93,7 @@ func TestDistributorQuerier_Select_ShouldHonorQueryIngestersWithin(t *testing.T)
 			const tenantID = "test"
 			ctx := user.InjectOrgID(context.Background(), tenantID)
 			configProvider := newMockConfigProvider(testData.queryIngestersWithin)
-			queryable := newDistributorQueryable(distributor, configProvider, nil, log.NewNopLogger())
+			queryable := NewDistributorQueryable(distributor, configProvider, nil, log.NewNopLogger())
 			querier, err := queryable.Querier(testData.queryMinT, testData.queryMaxT)
 			require.NoError(t, err)
 
@@ -179,7 +179,7 @@ func TestDistributorQuerier_Select(t *testing.T) {
 			d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(testCase.response, nil)
 
 			ctx := user.InjectOrgID(context.Background(), "0")
-			queryable := newDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
+			queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
 			querier, err := queryable.Querier(mint, maxt)
 			require.NoError(t, err)
 
@@ -288,7 +288,7 @@ func TestDistributorQuerier_Select_MixedChunkseriesTimeseriesAndStreamingResults
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
+	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
 	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
 
@@ -377,7 +377,7 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
+	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
 	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
 
@@ -471,7 +471,7 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
+	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
 	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
 
@@ -503,7 +503,7 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 			d.On("LabelNames", mock.Anything, model.Time(mint), model.Time(maxt), someMatchers).
 				Return(labelNames, nil)
 			ctx := user.InjectOrgID(context.Background(), "0")
-			queryable := newDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
+			queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
 			querier, err := queryable.Querier(mint, maxt)
 			require.NoError(t, err)
 
@@ -558,7 +558,7 @@ func BenchmarkDistributorQuerier_Select(b *testing.B) {
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(response, nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
+	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
 	querier, err := queryable.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(b, err)
 
@@ -709,6 +709,11 @@ func (m *mockDistributor) LabelValuesCardinality(ctx context.Context, labelNames
 func (m *mockDistributor) ActiveSeries(ctx context.Context, matchers []*labels.Matcher) ([]labels.Labels, error) {
 	args := m.Called(ctx, matchers)
 	return args.Get(0).([]labels.Labels), args.Error(1)
+}
+
+func (m *mockDistributor) ActiveNativeHistogramMetrics(ctx context.Context, matchers []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
+	args := m.Called(ctx, matchers)
+	return args.Get(0).(*cardinality.ActiveNativeHistogramMetricsResponse), args.Error(1)
 }
 
 type mockConfigProvider struct {

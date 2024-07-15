@@ -75,10 +75,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 	)
 
 	// Create a gRPC connection to the server.
-	conn, err = grpc.Dial(s.serverListener.Addr().String(),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(1024*1024*1024)),
-	)
+	conn, err = s.dialConn()
 	if err != nil {
 		return
 	}
@@ -256,6 +253,14 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 	}
 
 	return
+}
+
+func (s *storeTestServer) dialConn() (*grpc.ClientConn, error) {
+	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
+	return grpc.Dial(s.serverListener.Addr().String(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(1024*1024*1024)),
+	)
 }
 
 // Close releases all resources.

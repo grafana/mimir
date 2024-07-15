@@ -22,13 +22,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -78,6 +78,10 @@ type IndexReader interface {
 	// during background garbage collections.
 	Postings(ctx context.Context, name string, values ...string) (index.Postings, error)
 
+	// PostingsForLabelMatching returns a sorted iterator over postings having a label with the given name and a value for which match returns true.
+	// If no postings are found having at least one matching label, an empty iterator is returned.
+	PostingsForLabelMatching(ctx context.Context, name string, match func(value string) bool) index.Postings
+
 	// PostingsForMatchers assembles a single postings iterator based on the given matchers.
 	// The resulting postings are not ordered by series.
 	// If concurrent hint is set to true, call will be optimized for a (most likely) concurrent call with same matchers,
@@ -106,9 +110,16 @@ type IndexReader interface {
 	// storage.ErrNotFound is returned as error.
 	LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error)
 
-	// LabelNamesFor returns all the label names for the series referred to by IDs.
+	// LabelValuesFor returns LabelValues for the given label name in the series referred to by postings.
+	LabelValuesFor(p index.Postings, name string) storage.LabelValues
+
+	// LabelValuesExcluding returns LabelValues for the given label name in all other series than those referred to by postings.
+	// This is useful for obtaining label values for other postings than the ones you wish to exclude.
+	LabelValuesExcluding(p index.Postings, name string) storage.LabelValues
+
+	// LabelNamesFor returns all the label names for the series referred to by the postings.
 	// The names returned are sorted.
-	LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error)
+	LabelNamesFor(ctx context.Context, postings index.Postings) ([]string, error)
 
 	// Close releases the underlying resources of the reader.
 	Close() error
@@ -535,6 +546,10 @@ func (r blockIndexReader) Postings(ctx context.Context, name string, values ...s
 	return p, nil
 }
 
+func (r blockIndexReader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
+	return r.ir.PostingsForLabelMatching(ctx, name, match)
+}
+
 func (r blockIndexReader) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
 	return r.ir.PostingsForMatchers(ctx, concurrent, ms...)
 }
@@ -545,6 +560,17 @@ func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
 
 func (r blockIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
 	return r.ir.ShardedPostings(p, shardIndex, shardCount)
+}
+
+// LabelValuesFor returns LabelValues for the given label name in the series referred to by postings.
+func (r blockIndexReader) LabelValuesFor(postings index.Postings, name string) storage.LabelValues {
+	return r.ir.LabelValuesFor(postings, name)
+}
+
+// LabelValuesExcluding returns LabelValues for the given label name in all other series than those referred to by postings.
+// This is useful for obtaining label values for other postings than the ones you wish to exclude.
+func (r blockIndexReader) LabelValuesExcluding(postings index.Postings, name string) storage.LabelValues {
+	return r.ir.LabelValuesExcluding(postings, name)
 }
 
 func (r blockIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
@@ -564,10 +590,10 @@ func (r blockIndexReader) LabelValueFor(ctx context.Context, id storage.SeriesRe
 	return r.ir.LabelValueFor(ctx, id, label)
 }
 
-// LabelNamesFor returns all the label names for the series referred to by IDs.
+// LabelNamesFor returns all the label names for the series referred to by the postings.
 // The names returned are sorted.
-func (r blockIndexReader) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
-	return r.ir.LabelNamesFor(ctx, ids...)
+func (r blockIndexReader) LabelNamesFor(ctx context.Context, postings index.Postings) ([]string, error) {
+	return r.ir.LabelNamesFor(ctx, postings)
 }
 
 type blockTombstoneReader struct {
@@ -659,10 +685,10 @@ Outer:
 }
 
 // CleanTombstones will remove the tombstones and rewrite the block (only if there are any tombstones).
-// If there was a rewrite, then it returns the ULID of the new block written, else nil.
-// If the resultant block is empty (tombstones covered the whole block), then it deletes the new block and return nil UID.
+// If there was a rewrite, then it returns the ULID of new blocks written, else nil.
+// If a resultant block is empty (tombstones covered the whole block), then it returns an empty slice.
 // It returns a boolean indicating if the parent block can be deleted safely of not.
-func (pb *Block) CleanTombstones(dest string, c Compactor) (*ulid.ULID, bool, error) {
+func (pb *Block) CleanTombstones(dest string, c Compactor) ([]ulid.ULID, bool, error) {
 	numStones := 0
 
 	if err := pb.tombstones.Iter(func(id storage.SeriesRef, ivs tombstones.Intervals) error {
@@ -677,12 +703,12 @@ func (pb *Block) CleanTombstones(dest string, c Compactor) (*ulid.ULID, bool, er
 	}
 
 	meta := pb.Meta()
-	uid, err := c.Write(dest, pb, pb.meta.MinTime, pb.meta.MaxTime, &meta)
+	uids, err := c.Write(dest, pb, pb.meta.MinTime, pb.meta.MaxTime, &meta)
 	if err != nil {
 		return nil, false, err
 	}
 
-	return &uid, true, nil
+	return uids, true, nil
 }
 
 // Snapshot creates snapshot of the block into dir.

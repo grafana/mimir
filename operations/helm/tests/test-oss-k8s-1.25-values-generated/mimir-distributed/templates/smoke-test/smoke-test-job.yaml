@@ -39,15 +39,15 @@ spec:
         - name: smoke-test
           imagePullPolicy: IfNotPresent
           args:
+            - "-target=continuous-test"
+            - "-activity-tracker.filepath="
             - "-tests.smoke-test"
             - "-tests.write-endpoint=http://test-oss-k8s-1.25-values-mimir-nginx.citestns.svc:80"
             - "-tests.read-endpoint=http://test-oss-k8s-1.25-values-mimir-nginx.citestns.svc:80/prometheus"
             - "-tests.tenant-id="
             - "-tests.write-read-series-test.num-series=1000"
             - "-tests.write-read-series-test.max-query-age=48h"
-            - "-server.metrics-port=8080"
+            - "-server.http-listen-port=8080"
           volumeMounts:
-          env:
-          envFrom:
       restartPolicy: OnFailure
       volumes:

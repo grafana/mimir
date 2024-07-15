@@ -1,0 +1,25 @@
+---
+# Source: mimir-distributed/templates/nginx/nginx-svc.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: keda-autoscaling-values-mimir-nginx
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: keda-autoscaling-values
+    app.kubernetes.io/component: nginx
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  ports:
+    - name: http-metric
+      port: 80
+      targetPort: http-metric
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: keda-autoscaling-values
+    app.kubernetes.io/component: nginx

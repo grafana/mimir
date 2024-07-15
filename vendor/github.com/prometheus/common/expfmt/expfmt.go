@@ -15,7 +15,10 @@
 package expfmt
 
 import (
+	"fmt"
 	"strings"
+
+	"github.com/prometheus/common/model"
 )
 
 // Format specifies the HTTP content type of the different wire protocols.
@@ -29,31 +32,24 @@ type Format string
 // it on the wire, new content-type strings will have to be agreed upon and
 // added here.
 const (
-	TextVersion_1_0_0        = "1.0.0"
-	TextVersion_0_0_4        = "0.0.4"
+	TextVersion              = "0.0.4"
 	ProtoType                = `application/vnd.google.protobuf`
 	ProtoProtocol            = `io.prometheus.client.MetricFamily`
-	ProtoFmt                 = ProtoType + "; proto=" + ProtoProtocol + ";"
-	UTF8Valid                = "utf8"
+	protoFmt                 = ProtoType + "; proto=" + ProtoProtocol + ";"
 	OpenMetricsType          = `application/openmetrics-text`
-	OpenMetricsVersion_2_0_0 = "2.0.0"
-	OpenMetricsVersion_1_0_0 = "1.0.0"
 	OpenMetricsVersion_0_0_1 = "0.0.1"
+	OpenMetricsVersion_1_0_0 = "1.0.0"
 
-	// The Content-Type values for the different wire protocols. Do not do direct
-	// to comparisons to these constants, instead use the comparison functions.
-	FmtUnknown           Format = `<unknown>`
-	FmtText_0_0_4        Format = `text/plain; version=` + TextVersion_0_0_4 + `; charset=utf-8`
-	FmtText_1_0_0        Format = `text/plain; version=` + TextVersion_1_0_0 + `; charset=utf-8`
-	FmtProtoDelim        Format = ProtoFmt + ` encoding=delimited`
-	FmtProtoText         Format = ProtoFmt + ` encoding=text`
-	FmtProtoCompact      Format = ProtoFmt + ` encoding=compact-text`
-	FmtOpenMetrics_0_0_1 Format = OpenMetricsType + `; version=` + OpenMetricsVersion_0_0_1 + `; charset=utf-8`
-	FmtOpenMetrics_1_0_0 Format = OpenMetricsType + `; version=` + OpenMetricsVersion_1_0_0 + `; charset=utf-8`
-	FmtOpenMetrics_2_0_0 Format = OpenMetricsType + `; version=` + OpenMetricsVersion_2_0_0 + `; charset=utf-8`
-
-	// UTF8 and Escaping Formats
-	FmtUTF8Param Format = `; validchars=utf8`
+	// The Content-Type values for the different wire protocols. Note that these
+	// values are now unexported. If code was relying on comparisons to these
+	// constants, instead use FormatType().
+	fmtUnknown           Format = `<unknown>`
+	fmtText              Format = `text/plain; version=` + TextVersion + `; charset=utf-8`
+	fmtProtoDelim        Format = protoFmt + ` encoding=delimited`
+	fmtProtoText         Format = protoFmt + ` encoding=text`
+	fmtProtoCompact      Format = protoFmt + ` encoding=compact-text`
+	fmtOpenMetrics_1_0_0 Format = OpenMetricsType + `; version=` + OpenMetricsVersion_1_0_0 + `; charset=utf-8`
+	fmtOpenMetrics_0_0_1 Format = OpenMetricsType + `; version=` + OpenMetricsVersion_0_0_1 + `; charset=utf-8`
 )
 
 const (
@@ -68,7 +64,7 @@ const (
 type FormatType int
 
 const (
-	TypeUnknown = iota
+	TypeUnknown FormatType = iota
 	TypeProtoCompact
 	TypeProtoDelim
 	TypeProtoText
@@ -76,13 +72,42 @@ const (
 	TypeOpenMetrics
 )
 
+// NewFormat generates a new Format from the type provided. Mostly used for
+// tests, most Formats should be generated as part of content negotiation in
+// encode.go. If a type has more than one version, the latest version will be
+// returned.
+func NewFormat(t FormatType) Format {
+	switch t {
+	case TypeProtoCompact:
+		return fmtProtoCompact
+	case TypeProtoDelim:
+		return fmtProtoDelim
+	case TypeProtoText:
+		return fmtProtoText
+	case TypeTextPlain:
+		return fmtText
+	case TypeOpenMetrics:
+		return fmtOpenMetrics_1_0_0
+	default:
+		return fmtUnknown
+	}
+}
+
+// NewOpenMetricsFormat generates a new OpenMetrics format matching the
+// specified version number.
+func NewOpenMetricsFormat(version string) (Format, error) {
+	if version == OpenMetricsVersion_0_0_1 {
+		return fmtOpenMetrics_0_0_1, nil
+	}
+	if version == OpenMetricsVersion_1_0_0 {
+		return fmtOpenMetrics_1_0_0, nil
+	}
+	return fmtUnknown, fmt.Errorf("unknown open metrics version string")
+}
+
 // FormatType deduces an overall FormatType for the given format.
 func (f Format) FormatType() FormatType {
 	toks := strings.Split(string(f), ";")
-	if len(toks) < 2 {
-		return TypeUnknown
-	}
-
 	params := make(map[string]string)
 	for i, t := range toks {
 		if i == 0 {
@@ -120,7 +145,7 @@ func (f Format) FormatType() FormatType {
 		if !ok {
 			return TypeTextPlain
 		}
-		if v == TextVersion_0_0_4 || v == TextVersion_1_0_0 {
+		if v == TextVersion {
 			return TypeTextPlain
 		}
 		return TypeUnknown
@@ -129,17 +154,24 @@ func (f Format) FormatType() FormatType {
 	}
 }
 
-// SupportsUTF8 returns true iff the Format contains a validchars=utf8 term.
-func (format Format) SupportsUTF8() bool {
+// ToEscapingScheme returns an EscapingScheme depending on the Format. Iff the
+// Format contains a escaping=allow-utf-8 term, it will select NoEscaping. If a valid
+// "escaping" term exists, that will be used. Otherwise, the global default will
+// be returned.
+func (format Format) ToEscapingScheme() model.EscapingScheme {
 	for _, p := range strings.Split(string(format), ";") {
 		toks := strings.Split(p, "=")
 		if len(toks) != 2 {
 			continue
 		}
 		key, value := strings.TrimSpace(toks[0]), strings.TrimSpace(toks[1])
-		if key == "validchars" && value == "utf8" {
-			return true
+		if key == model.EscapingKey {
+			scheme, err := model.ToEscapingScheme(value)
+			if err != nil {
+				return model.NameEscapingScheme
+			}
+			return scheme
 		}
 	}
-	return false
+	return model.NameEscapingScheme
 }

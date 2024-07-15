@@ -48,9 +48,16 @@ To use the query-scheduler with DNS-based service discovery, configure the query
 - Query-frontend: `-query-frontend.scheduler-address`
 - Querier: `-querier.scheduler-address`
 
-> **Note**: The configured query-scheduler address should be in the `host:port` format. If multiple query-schedulers are running, the host should be a DNS resolving to all query-scheduler instances.
+{{< admonition type="note" >}}
+The configured query-scheduler address should be in the `host:port` format.
 
-> **Note:** The querier pulls queries only from the query-frontend or the query-scheduler, but not both. `-querier.frontend-address` and `-querier.scheduler-address` options are mutually exclusive, and only one option can be set.
+If multiple query-schedulers are running, the host should be a DNS name resolving to all query-scheduler instances.
+{{< /admonition >}}
+
+{{< admonition type="note" >}}
+The querier pulls queries only from the query-frontend or the query-scheduler, but not both.
+`-querier.frontend-address` and `-querier.scheduler-address` options are mutually exclusive and you can only set one option.
+{{< /admonition >}}
 
 ### Ring-based service discovery
 
@@ -104,7 +111,9 @@ To migrate the query-scheduler from [DNS-based service discovery](#dns-based-ser
    # - Ecd:    -query-scheduler.ring.etcd.*
    ```
 
-> **Note:** If your Mimir cluster is deployed using Jsonnet, see [Migrate query-scheduler from DNS-based to ring-based service discovery]({{< relref "../../../../set-up/jsonnet/migrate-query-scheduler-from-dns-to-ring-based-service-discovery" >}}).
+{{< admonition type="note" >}}
+If you deploy your Mimir cluster with Jsonnet, refer to [Migrate query-scheduler from DNS-based to ring-based service discovery]({{< relref "../../../../set-up/jsonnet/migrate-query-scheduler-from-dns-to-ring-based-service-discovery" >}}).
+{{< /admonition >}}
 
 ## Operational considerations
 

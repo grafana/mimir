@@ -158,16 +158,19 @@ type PromParser struct {
 	start   int
 	// offsets is a list of offsets into series that describe the positions
 	// of the metric name and label names and values for this series.
-	// p.offsets[0] is the start character of the metric name
-	// p.offsets[1] is the end of the metric name
+	// p.offsets[0] is the start character of the metric name.
+	// p.offsets[1] is the end of the metric name.
 	// Subsequently, p.offsets is a pair of pair of offsets for the positions
 	// of the label name and value start and end characters.
 	offsets []int
 }
 
 // NewPromParser returns a new parser of the byte slice.
-func NewPromParser(b []byte) Parser {
-	return &PromParser{l: &promlexer{b: append(b, '\n')}}
+func NewPromParser(b []byte, st *labels.SymbolTable) Parser {
+	return &PromParser{
+		l:       &promlexer{b: append(b, '\n')},
+		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
+	}
 }
 
 // Series returns the bytes of the series, the timestamp if set, and the value
@@ -227,20 +230,17 @@ func (p *PromParser) Metric(l *labels.Labels) string {
 	s := string(p.series)
 
 	p.builder.Reset()
-	p.builder.Add(labels.MetricName, s[p.offsets[0]-p.start:p.offsets[1]-p.start])
+	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
+	p.builder.Add(labels.MetricName, metricName)
 
 	for i := 2; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start
 		b := p.offsets[i+1] - p.start
+		label := unreplace(s[a:b])
 		c := p.offsets[i+2] - p.start
 		d := p.offsets[i+3] - p.start
-
-		value := s[c:d]
-		// Replacer causes allocations. Replace only when necessary.
-		if strings.IndexByte(s[c:d], byte('\\')) >= 0 {
-			value = lvalReplacer.Replace(value)
-		}
-		p.builder.Add(s[a:b], value)
+		value := unreplace(s[c:d])
+		p.builder.Add(label, value)
 	}
 
 	p.builder.Sort()
@@ -280,8 +280,8 @@ func (p *PromParser) parseError(exp string, got token) error {
 	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[p.start:e])
 }
 
-// Next advances the parser to the next sample. It returns false if no
-// more samples were read or an error occurred.
+// Next advances the parser to the next sample.
+// It returns (EntryInvalid, io.EOF) if no samples were read.
 func (p *PromParser) Next() (Entry, error) {
 	var err error
 
@@ -305,9 +305,6 @@ func (p *PromParser) Next() (Entry, error) {
 				mEnd--
 			}
 			p.offsets = append(p.offsets, mStart, mEnd)
-			if err := p.verifyMetricName(); err != nil {
-				return EntryInvalid, err
-			}
 		default:
 			return EntryInvalid, p.parseError("expected metric name after "+t.String(), t2)
 		}
@@ -372,12 +369,9 @@ func (p *PromParser) Next() (Entry, error) {
 		return p.parseMetricSuffix(p.nextToken())
 	case tMName:
 		p.offsets = append(p.offsets, p.start, p.l.i)
-		if err := p.verifyMetricName(); err != nil {
-			return EntryInvalid, err
-		}
 		p.series = p.l.b[p.start:p.l.i]
 		t2 := p.nextToken()
-		// If there's a brace, consume and parse the label values
+		// If there's a brace, consume and parse the label values.
 		if t2 == tBraceOpen {
 			if err := p.parseLVals(); err != nil {
 				return EntryInvalid, err
@@ -417,16 +411,17 @@ func (p *PromParser) parseLVals() error {
 			}
 			p.offsets[0] = curTStart + 1
 			p.offsets[1] = curTI - 1
-			if err := p.verifyMetricName(); err != nil {
-				return err
-			}
 			if t == tBraceClose {
 				return nil
 			}
 			t = p.nextToken()
 			continue
 		}
-		// We have a label name.
+		// We have a label name, and it might be quoted.
+		if p.l.b[curTStart] == '"' {
+			curTStart++
+			curTI--
+		}
 		p.offsets = append(p.offsets, curTStart, curTI)
 		if t != tEqual {
 			return p.parseError("expected equal", t)
@@ -462,7 +457,7 @@ func (p *PromParser) parseMetricSuffix(t token) (Entry, error) {
 	}
 	var err error
 	if p.val, err = parseFloat(yoloString(p.l.buf())); err != nil {
-		return EntryInvalid, fmt.Errorf("%v while parsing: %q", err, p.l.b[p.start:p.l.i])
+		return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
 	}
 	// Ensure canonical NaN value.
 	if math.IsNaN(p.val) {
@@ -475,7 +470,7 @@ func (p *PromParser) parseMetricSuffix(t token) (Entry, error) {
 	case tTimestamp:
 		p.hasTS = true
 		if p.ts, err = strconv.ParseInt(yoloString(p.l.buf()), 10, 64); err != nil {
-			return EntryInvalid, fmt.Errorf("%v while parsing: %q", err, p.l.b[p.start:p.l.i])
+			return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
 		}
 		if t2 := p.nextToken(); t2 != tLinebreak {
 			return EntryInvalid, p.parseError("expected next entry after timestamp", t2)
@@ -498,16 +493,16 @@ var helpReplacer = strings.NewReplacer(
 	`\n`, "\n",
 )
 
-func yoloString(b []byte) string {
-	return *((*string)(unsafe.Pointer(&b)))
+func unreplace(s string) string {
+	// Replacer causes allocations. Replace only when necessary.
+	if strings.IndexByte(s, byte('\\')) >= 0 {
+		return lvalReplacer.Replace(s)
+	}
+	return s
 }
 
-func (p *PromParser) verifyMetricName() error {
-	m := yoloString(p.l.b[p.offsets[0]:p.offsets[1]])
-	if !model.IsValidMetricName(model.LabelValue(m)) {
-		return fmt.Errorf("metric name %q is not valid", m)
-	}
-	return nil
+func yoloString(b []byte) string {
+	return *((*string)(unsafe.Pointer(&b)))
 }
 
 func parseFloat(s string) (float64, error) {

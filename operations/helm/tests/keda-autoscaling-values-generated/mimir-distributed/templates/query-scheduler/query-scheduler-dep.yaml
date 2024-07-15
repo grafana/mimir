@@ -1,0 +1,107 @@
+---
+# Source: mimir-distributed/templates/query-scheduler/query-scheduler-dep.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keda-autoscaling-values-mimir-query-scheduler
+  namespace: "citestns"
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: keda-autoscaling-values
+    app.kubernetes.io/component: query-scheduler
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: keda-autoscaling-values
+      app.kubernetes.io/component: query-scheduler
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: keda-autoscaling-values
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: query-scheduler
+      annotations:
+    spec:
+      serviceAccountName: keda-autoscaling-values-mimir
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: query-scheduler
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=query-scheduler"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+          volumeMounts:
+            - name: runtime-config
+              mountPath: /var/mimir
+            - name: config
+              mountPath: /etc/mimir
+            - name: storage
+              mountPath: /data
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 45
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: keda-autoscaling-values
+            app.kubernetes.io/component: query-scheduler
+      terminationGracePeriodSeconds: 180
+      volumes:
+        - name: config
+          configMap:
+            name: keda-autoscaling-values-mimir-config
+            items:
+              - key: "mimir.yaml"
+                path: "mimir.yaml"
+        - name: runtime-config
+          configMap:
+            name: keda-autoscaling-values-mimir-runtime
+        - name: storage
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}

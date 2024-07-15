@@ -28,7 +28,8 @@ spec:
   endpoints:
     - port: http-metrics
       relabelings:
-        - sourceLabels: [job]
+        - action: replace
+          sourceLabels: [job]
           replacement: "citestns/ruler"
           targetLabel: job
         - replacement: "metamonitoring-values"

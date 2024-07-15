@@ -85,6 +85,12 @@ var (
 	errTSDBNotActive        = newTSDBUnavailableError("TSDB is not active")
 )
 
+type ownedSeriesState struct {
+	ownedSeriesCount int // Number of "owned" series, based on current ring.
+	shardSize        int // Tenant shard size when "owned" series was last updated due to ring or shard size changes. Used to detect shard size changes.
+	localSeriesLimit int // Local series limit when "owned" series was last updated due to ring or shard size changes. Used as a minimum when calculating series limits.
+}
+
 type userTSDB struct {
 	db             *tsdb.DB
 	userID         string
@@ -128,10 +134,9 @@ type userTSDB struct {
 
 	useOwnedSeriesForLimits bool
 
-	// We use mutex, so that we can update count and shard size at the same time (when shard size changes).
-	ownedSeriesMtx       sync.Mutex
-	ownedSeriesCount     int // Number of "owned" series, based on current ring.
-	ownedSeriesShardSize int // Tenant shard size when "owned" series was last updated due to ring or shard size changes. Used when checking series limits.
+	// We use a mutex so that we can update count, shard size, and local limit at the same time (when updating owned series count).
+	ownedStateMtx sync.Mutex
+	ownedState    ownedSeriesState
 
 	// Only accessed by ownedSeries service, no need to synchronization.
 	ownedTokenRanges ring.TokenRanges
@@ -289,8 +294,8 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	}
 
 	// Total series limit.
-	series, shards := u.getSeriesAndShardsForSeriesLimit()
-	if !u.limiter.IsWithinMaxSeriesPerUser(u.userID, series, shards) {
+	series, minLocalLimit := u.getSeriesCountAndMinLocalLimit()
+	if !u.limiter.IsWithinMaxSeriesPerUser(u.userID, series, minLocalLimit) {
 		return globalerror.MaxSeriesPerUser
 	}
 
@@ -306,16 +311,17 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	return nil
 }
 
-// getSeriesAndShardsForSeriesLimit returns current number of series and shard size that should be used for computing
+// getSeriesCountAndMinLocalLimit returns current number of series and minimum local limit that should be used for computing
 // series limit.
-func (u *userTSDB) getSeriesAndShardsForSeriesLimit() (int, int) {
+func (u *userTSDB) getSeriesCountAndMinLocalLimit() (int, int) {
 	if u.useOwnedSeriesForLimits {
-		return u.ownedSeriesAndShards()
+		os := u.ownedSeriesState()
+		return os.ownedSeriesCount, os.localSeriesLimit
 	}
 
 	count := int(u.Head().NumSeries())
-	shards := u.limiter.getShardSize(u.userID)
-	return count, shards
+	minLocalLimit := 0
+	return count, minLocalLimit
 }
 
 func (u *userTSDB) PostCreation(metric labels.Labels) {
@@ -323,9 +329,9 @@ func (u *userTSDB) PostCreation(metric labels.Labels) {
 
 	// If series was just created, it must belong to this ingester. (Unless it was created while replaying WAL,
 	// but we will recompute owned series when ingester joins the ring.)
-	u.ownedSeriesMtx.Lock()
-	u.ownedSeriesCount++
-	u.ownedSeriesMtx.Unlock()
+	u.ownedStateMtx.Lock()
+	u.ownedState.ownedSeriesCount++
+	u.ownedStateMtx.Unlock()
 
 	metricName, err := extract.MetricNameFromLabels(metric)
 	if err != nil {
@@ -505,11 +511,12 @@ func (u *userTSDB) releaseAppendLock(acquireState tsdbState) {
 	}
 }
 
-func (u *userTSDB) ownedSeriesAndShards() (int, int) {
-	u.ownedSeriesMtx.Lock()
-	defer u.ownedSeriesMtx.Unlock()
+// ownedSeriesState returns a copy of the current state
+func (u *userTSDB) ownedSeriesState() ownedSeriesState {
+	u.ownedStateMtx.Lock()
+	defer u.ownedStateMtx.Unlock()
 
-	return u.ownedSeriesCount, u.ownedSeriesShardSize
+	return u.ownedState
 }
 
 func (u *userTSDB) getAndClearReasonForRecomputeOwnedSeries() string {
@@ -539,33 +546,38 @@ const (
 func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason string, logger log.Logger, compute func() int) (success bool, _ int) {
 	start := time.Now()
 
-	var ownedSeriesNew, ownedSeriesBefore, shardSizeBefore int
+	var ownedSeriesNew, ownedSeriesBefore, shardSizeBefore, localLimitBefore, localLimitNew int
 
 	success = false
 	attempts := 0
 	for !success && attempts < recomputeOwnedSeriesMaxAttempts {
 		attempts++
 
-		ownedSeriesBefore, shardSizeBefore = u.ownedSeriesAndShards()
+		os := u.ownedSeriesState()
+		ownedSeriesBefore = os.ownedSeriesCount
+		shardSizeBefore = os.shardSize
+		localLimitBefore = os.localSeriesLimit
 
+		localLimitNew = u.limiter.maxSeriesPerUser(u.userID, 0)
 		ownedSeriesNew = compute()
 
-		u.ownedSeriesMtx.Lock()
+		u.ownedStateMtx.Lock()
 
 		// Check how many new series were added while we were computing owned series.
 		// If too many series were created in the meantime, our new number of owned series may be wrong
 		// (it may or may not include the new series, we don't know).
 		// In that case, just run the computation again -- if there are more attempts left.
-		seriesDiff := u.ownedSeriesCount - ownedSeriesBefore
+		seriesDiff := u.ownedState.ownedSeriesCount - ownedSeriesBefore
 		if seriesDiff >= 0 && seriesDiff <= recomputeOwnedSeriesMaxSeriesDiff {
 			success = true
 		}
 
 		// Even if we run computation again, we can start using our (possibly incorrect) values already.
-		u.ownedSeriesCount = ownedSeriesNew
-		u.ownedSeriesShardSize = shardSize
+		u.ownedState.ownedSeriesCount = ownedSeriesNew
+		u.ownedState.shardSize = shardSize
+		u.ownedState.localSeriesLimit = localLimitNew
 
-		u.ownedSeriesMtx.Unlock()
+		u.ownedStateMtx.Unlock()
 	}
 
 	var l log.Logger
@@ -581,6 +593,8 @@ func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason strin
 		"ownedSeriesNew", ownedSeriesNew,
 		"shardSizeBefore", shardSizeBefore,
 		"shardSizeNew", shardSize,
+		"localLimitBefore", localLimitBefore,
+		"localLimitNew", localLimitNew,
 		"duration", time.Since(start),
 		"attempts", attempts,
 		"success", success)
@@ -600,14 +614,17 @@ func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
 func (u *userTSDB) computeOwnedSeries() int {
 	// This can happen if ingester doesn't own this tenant anymore.
 	if len(u.ownedTokenRanges) == 0 {
+		u.activeSeries.Clear()
 		return 0
 	}
 
 	count := 0
-	u.Head().ForEachSecondaryHash(func(secondaryHashes []uint32) {
-		for _, sh := range secondaryHashes {
+	u.Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
+		for i, sh := range secondaryHashes {
 			if u.ownedTokenRanges.IncludesKey(sh) {
 				count++
+			} else {
+				u.activeSeries.Delete(refs[i])
 			}
 		}
 	})

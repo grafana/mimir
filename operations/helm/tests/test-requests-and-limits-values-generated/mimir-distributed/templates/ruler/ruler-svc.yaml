@@ -1,0 +1,26 @@
+---
+# Source: mimir-distributed/templates/ruler/ruler-svc.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-requests-and-limits-values-mimir-ruler
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-requests-and-limits-values
+    app.kubernetes.io/component: ruler
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+  selector:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-requests-and-limits-values
+    app.kubernetes.io/component: ruler

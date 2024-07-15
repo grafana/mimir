@@ -81,6 +81,12 @@ type OpenMetricsParser struct {
 	ts      int64
 	hasTS   bool
 	start   int
+	// offsets is a list of offsets into series that describe the positions
+	// of the metric name and label names and values for this series.
+	// p.offsets[0] is the start character of the metric name.
+	// p.offsets[1] is the end of the metric name.
+	// Subsequently, p.offsets is a pair of pair of offsets for the positions
+	// of the label name and value start and end characters.
 	offsets []int
 
 	eOffsets      []int
@@ -91,8 +97,11 @@ type OpenMetricsParser struct {
 }
 
 // NewOpenMetricsParser returns a new parser of the byte slice.
-func NewOpenMetricsParser(b []byte) Parser {
-	return &OpenMetricsParser{l: &openMetricsLexer{b: b}}
+func NewOpenMetricsParser(b []byte, st *labels.SymbolTable) Parser {
+	return &OpenMetricsParser{
+		l:       &openMetricsLexer{b: b},
+		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
+	}
 }
 
 // Series returns the bytes of the series, the timestamp if set, and the value
@@ -153,20 +162,18 @@ func (p *OpenMetricsParser) Metric(l *labels.Labels) string {
 	s := string(p.series)
 
 	p.builder.Reset()
-	p.builder.Add(labels.MetricName, s[p.offsets[0]-p.start:p.offsets[1]-p.start])
+	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
+	p.builder.Add(labels.MetricName, metricName)
 
 	for i := 2; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start
 		b := p.offsets[i+1] - p.start
+		label := unreplace(s[a:b])
 		c := p.offsets[i+2] - p.start
 		d := p.offsets[i+3] - p.start
+		value := unreplace(s[c:d])
 
-		value := s[c:d]
-		// Replacer causes allocations. Replace only when necessary.
-		if strings.IndexByte(s[c:d], byte('\\')) >= 0 {
-			value = lvalReplacer.Replace(value)
-		}
-		p.builder.Add(s[a:b], value)
+		p.builder.Add(label, value)
 	}
 
 	p.builder.Sort()
@@ -232,8 +239,8 @@ func (p *OpenMetricsParser) parseError(exp string, got token) error {
 	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[p.start:e])
 }
 
-// Next advances the parser to the next sample. It returns false if no
-// more samples were read or an error occurred.
+// Next advances the parser to the next sample.
+// It returns (EntryInvalid, io.EOF) if no samples were read.
 func (p *OpenMetricsParser) Next() (Entry, error) {
 	var err error
 
@@ -325,7 +332,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		if len(p.offsets) == 0 {
 			p.offsets = []int{-1, -1}
 		}
-		if p.offsets, err = p.parseLVals(p.offsets); err != nil {
+		if p.offsets, err = p.parseLVals(p.offsets, false); err != nil {
 			return EntryInvalid, err
 		}
 
@@ -333,14 +340,11 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		return p.parseMetricSuffix(p.nextToken())
 	case tMName:
 		p.offsets = append(p.offsets, p.start, p.l.i)
-		if err := p.verifyMetricName(p.offsets[0], p.offsets[1]); err != nil {
-			return EntryInvalid, err
-		}
 		p.series = p.l.b[p.start:p.l.i]
 
 		t2 := p.nextToken()
 		if t2 == tBraceOpen {
-			p.offsets, err = p.parseLVals(p.offsets)
+			p.offsets, err = p.parseLVals(p.offsets, false)
 			if err != nil {
 				return EntryInvalid, err
 			}
@@ -358,7 +362,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 func (p *OpenMetricsParser) parseComment() error {
 	var err error
 	// Parse the labels.
-	p.eOffsets, err = p.parseLVals(p.eOffsets)
+	p.eOffsets, err = p.parseLVals(p.eOffsets, true)
 	if err != nil {
 		return err
 	}
@@ -399,7 +403,7 @@ func (p *OpenMetricsParser) parseComment() error {
 	return nil
 }
 
-func (p *OpenMetricsParser) parseLVals(offsets []int) ([]int, error) {
+func (p *OpenMetricsParser) parseLVals(offsets []int, isExemplar bool) ([]int, error) {
 	t := p.nextToken()
 	for {
 		curTStart := p.l.start
@@ -415,23 +419,28 @@ func (p *OpenMetricsParser) parseLVals(offsets []int) ([]int, error) {
 
 		t = p.nextToken()
 		// A quoted string followed by a comma or brace is a metric name. Set the
-		// offsets and continue processing.
+		// offsets and continue processing. If this is an exemplar, this format
+		// is not allowed.
 		if t == tComma || t == tBraceClose {
+			if isExemplar {
+				return nil, p.parseError("expected label name", t)
+			}
 			if offsets[0] != -1 || offsets[1] != -1 {
 				return nil, fmt.Errorf("metric name already set while parsing: %q", p.l.b[p.start:p.l.i])
 			}
 			offsets[0] = curTStart + 1
 			offsets[1] = curTI - 1
-			if err := p.verifyMetricName(offsets[0], offsets[1]); err != nil {
-				return nil, err
-			}
 			if t == tBraceClose {
 				return offsets, nil
 			}
 			t = p.nextToken()
 			continue
 		}
-		// We have a label name.
+		// We have a label name, and it might be quoted.
+		if p.l.b[curTStart] == '"' {
+			curTStart++
+			curTI--
+		}
 		offsets = append(offsets, curTStart, curTI)
 
 		if t != tEqual {
@@ -486,7 +495,7 @@ func (p *OpenMetricsParser) parseMetricSuffix(t token) (Entry, error) {
 		var ts float64
 		// A float is enough to hold what we need for millisecond resolution.
 		if ts, err = parseFloat(yoloString(p.l.buf()[1:])); err != nil {
-			return EntryInvalid, fmt.Errorf("%v while parsing: %q", err, p.l.b[p.start:p.l.i])
+			return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
 		}
 		if math.IsNaN(ts) || math.IsInf(ts, 0) {
 			return EntryInvalid, fmt.Errorf("invalid timestamp %f", ts)
@@ -518,12 +527,4 @@ func (p *OpenMetricsParser) getFloatValue(t token, after string) (float64, error
 		val = math.Float64frombits(value.NormalNaN)
 	}
 	return val, nil
-}
-
-func (p *OpenMetricsParser) verifyMetricName(start, end int) error {
-	m := yoloString(p.l.b[start:end])
-	if !model.IsValidMetricName(model.LabelValue(m)) {
-		return fmt.Errorf("metric name %q is not valid", m)
-	}
-	return nil
 }

@@ -6,11 +6,6 @@ import (
 	"container/list"
 )
 
-type QueuePath []string //nolint:revive // disallows types beginning with package name
-type QueueIndex int     //nolint:revive // disallows types beginning with package name
-
-const localQueueIndex = -1
-
 // TreeQueue is a hierarchical queue implementation with an arbitrary amount of child queues.
 //
 // TreeQueue internally maintains round-robin fair queuing across all of its queue dimensions.
@@ -201,7 +196,7 @@ func (q *TreeQueue) DequeueByPath(childPath QueuePath) any {
 		return nil
 	}
 
-	v := childQueue.Dequeue()
+	_, v := childQueue.Dequeue()
 
 	if childQueue.IsEmpty() {
 		// child node will recursively clean up its own empty children during dequeue,
@@ -221,9 +216,11 @@ func (q *TreeQueue) DequeueByPath(childPath QueuePath) any {
 //
 // Nodes that empty down to the leaf after being dequeued from are deleted as the recursion returns
 // up the stack. This maintains structural guarantees relied on to make IsEmpty() non-recursive.
-func (q *TreeQueue) Dequeue() any {
+func (q *TreeQueue) Dequeue() (QueuePath, any) {
+	var childPath QueuePath
 	var v any
 	initialLen := len(q.childQueueOrder)
+	path := QueuePath{q.name}
 
 	for iters := 0; iters <= initialLen && v == nil; iters++ {
 		if q.currentChildQueueIndex == localQueueIndex {
@@ -242,7 +239,7 @@ func (q *TreeQueue) Dequeue() any {
 			// pick the child node whose turn it is and recur
 			childQueueName := q.childQueueOrder[q.currentChildQueueIndex]
 			childQueue := q.childQueueMap[childQueueName]
-			v = childQueue.Dequeue()
+			childPath, v = childQueue.Dequeue()
 
 			// perform cleanup if child node is empty after dequeuing recursively
 			if childQueue.IsEmpty() {
@@ -253,7 +250,7 @@ func (q *TreeQueue) Dequeue() any {
 			}
 		}
 	}
-	return v
+	return append(path, childPath...), v
 }
 
 // deleteNode removes a child node from the tree and the childQueueOrder and corrects the indices.

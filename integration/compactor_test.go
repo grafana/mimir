@@ -90,13 +90,13 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		for _, chk := range spec.Chunks {
 			it := chk.Chunk.Iterator(nil)
 			for it.Next() != chunkenc.ValNone {
-				ts, h := it.AtHistogram()
+				ts, h := it.AtHistogram(nil)
 				samples = append(samples, sample{t: ts, h: h})
 			}
 		}
 		expectedSeries[i] = series{lbls: spec.Labels, samples: samples}
 
-		meta, err := block.GenerateBlockFromSpec(userID, inDir, []*block.SeriesSpec{&spec})
+		meta, err := block.GenerateBlockFromSpec(inDir, []*block.SeriesSpec{&spec})
 		require.NoError(t, err)
 
 		require.NoError(t, block.Upload(context.Background(), log.NewNopLogger(), bktClient, filepath.Join(inDir, meta.ULID.String()), meta))
@@ -161,7 +161,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 					if valType == chunkenc.ValNone {
 						break
 					} else if valType == chunkenc.ValHistogram {
-						ts, h := it.AtHistogram()
+						ts, h := it.AtHistogram(nil)
 						samples = append(samples, sample{
 							t: ts,
 							h: h,

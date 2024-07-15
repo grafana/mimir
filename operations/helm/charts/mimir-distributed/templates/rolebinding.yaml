@@ -19,4 +19,8 @@ subjects:
 - kind: ServiceAccount
   name: {{ include "rollout-operator.serviceAccountName" . }}
 {{- end }}
+{{- if .Values.ruler.serviceAccount.create }}
+- kind: ServiceAccount
+  name: {{ template "mimir.ruler.serviceAccountName" . }}
+{{- end }}
 {{- end }}

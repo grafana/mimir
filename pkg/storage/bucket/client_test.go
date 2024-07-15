@@ -17,10 +17,10 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	yaml "gopkg.in/yaml.v3"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
-	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 const (
@@ -91,7 +91,7 @@ func TestNewClient(t *testing.T) {
 			require.NoError(t, err)
 
 			// Instance a new bucket client from the config
-			bucketClient, err := NewClient(context.Background(), cfg, "test", util_log.Logger, nil)
+			bucketClient, err := NewClient(context.Background(), cfg, "test", test.NewTestingLogger(t), nil)
 			require.Equal(t, testData.expectedErr, err)
 
 			if testData.expectedErr == nil {
@@ -192,7 +192,7 @@ func TestNewPrefixedBucketClient(t *testing.T) {
 			StoragePrefix: "prefix",
 		}
 
-		client, err := NewClient(ctx, cfg, "test", util_log.Logger, nil)
+		client, err := NewClient(ctx, cfg, "test", test.NewTestingLogger(t), nil)
 		require.NoError(t, err)
 
 		err = client.Upload(ctx, "file", bytes.NewBufferString("content"))
@@ -221,7 +221,7 @@ func TestNewPrefixedBucketClient(t *testing.T) {
 			},
 		}
 
-		client, err := NewClient(ctx, cfg, "test", util_log.Logger, nil)
+		client, err := NewClient(ctx, cfg, "test", test.NewTestingLogger(t), nil)
 		require.NoError(t, err)
 		err = client.Upload(ctx, "file", bytes.NewBufferString("content"))
 		require.NoError(t, err)

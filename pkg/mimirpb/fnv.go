@@ -12,12 +12,12 @@ const (
 	prime32  = 16777619
 )
 
-// HashNew32 initializies a new fnv32 hash value.
+// HashNew32 initializes a new fnv32 hash value.
 func HashNew32() uint32 {
 	return offset32
 }
 
-// HashAdd32 adds a string to a fnv32 hash value, returning the updated hash.
+// HashAdd32 adds a string to an fnv32 hash value, returning the updated hash.
 // Note this is the same algorithm as Go stdlib `sum32.Write()`
 func HashAdd32(h uint32, s string) uint32 {
 	for i := 0; i < len(s); i++ {
@@ -27,7 +27,7 @@ func HashAdd32(h uint32, s string) uint32 {
 	return h
 }
 
-// HashAddByte32 adds a byte to a fnv32 hash value, returning the updated hash.
+// HashAddByte32 adds a byte to an fnv32 hash value, returning the updated hash.
 func HashAddByte32(h uint32, b byte) uint32 {
 	h *= prime32
 	h ^= uint32(b)
@@ -39,7 +39,7 @@ func HashNew32a() uint32 {
 	return offset32
 }
 
-// HashAdd32a adds a string to a fnv32a hash value, returning the updated hash.
+// HashAdd32a adds a string to an fnv32a hash value, returning the updated hash.
 // Note this is the same algorithm as Go stdlib `sum32.Write()`
 func HashAdd32a(h uint32, s string) uint32 {
 	for i := 0; i < len(s); i++ {
@@ -49,7 +49,7 @@ func HashAdd32a(h uint32, s string) uint32 {
 	return h
 }
 
-// HashAddByte32a adds a byte to a fnv32a hash value, returning the updated hash.
+// HashAddByte32a adds a byte to an fnv32a hash value, returning the updated hash.
 func HashAddByte32a(h uint32, b byte) uint32 {
 	h ^= uint32(b)
 	h *= prime32

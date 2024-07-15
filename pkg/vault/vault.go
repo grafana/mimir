@@ -7,11 +7,16 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	hashivault "github.com/hashicorp/vault/api"
 	"github.com/hashicorp/vault/api/auth/approle"
 	"github.com/hashicorp/vault/api/auth/kubernetes"
 	"github.com/hashicorp/vault/api/auth/userpass"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // Config for the Vault used to fetch secrets
@@ -57,13 +62,22 @@ type SecretsEngine interface {
 }
 
 type Vault struct {
-	KVStore SecretsEngine
+	kvStore SecretsEngine
+	auth    AuthConfig
+
+	client *hashivault.Client
+	token  *hashivault.Secret
+	logger log.Logger
+
+	authLeaseRenewalActive       prometheus.Gauge
+	authLeaseRenewalSuccessTotal prometheus.Counter
+	authSuccessTotal             prometheus.Counter
 }
 
-func NewVault(cfg Config) (*Vault, error) {
+func NewVault(cfg Config, l log.Logger, registerer prometheus.Registerer) (*Vault, error) {
 	if cfg.Mock != nil {
 		return &Vault{
-			KVStore: cfg.Mock,
+			kvStore: cfg.Mock,
 		}, nil
 	}
 
@@ -75,26 +89,37 @@ func NewVault(cfg Config) (*Vault, error) {
 		return nil, err
 	}
 
-	authMethod, err := cfg.Auth.authMethod()
+	authToken, err := getAuthToken(context.Background(), &cfg.Auth, client)
 	if err != nil {
-		return nil, err
-	}
-
-	authFac := authFactoryReal{}
-	_, err = authMethod.authenticate(context.Background(), &authFac, client)
-	if err != nil {
-		return nil, fmt.Errorf("error authenticating to vault: %w", err)
+		return nil, fmt.Errorf("failed to get auth token from vault: %v", err)
 	}
 
 	vault := &Vault{
-		KVStore: client.KVv2(cfg.MountPath),
+		kvStore: client.KVv2(cfg.MountPath),
+		auth:    cfg.Auth,
+		token:   authToken,
+		client:  client,
+		logger:  l,
+		authLeaseRenewalActive: promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_vault_token_lease_renewal_active",
+			Help: "Gauge to check whether token renewal is active or not (0 active, 1 inactive).",
+		}),
+		authLeaseRenewalSuccessTotal: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_vault_token_lease_renewal_success_total",
+			Help: "Number of successful token lease renewals. Token is renewed as it approaches the end of its ttl.",
+		}),
+		authSuccessTotal: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_vault_auth_success_total",
+			Help: "Number of successful authentications. Authentication occurs when the token has reached its max_ttl and the lease can no longer be renewed.",
+		}),
 	}
+	vault.authSuccessTotal.Inc()
 
 	return vault, nil
 }
 
 func (v *Vault) ReadSecret(path string) ([]byte, error) {
-	secret, err := v.KVStore.Get(context.Background(), path)
+	secret, err := v.kvStore.Get(context.Background(), path)
 
 	if err != nil {
 		return nil, fmt.Errorf("unable to read secret from vault: %v", err)
@@ -106,13 +131,76 @@ func (v *Vault) ReadSecret(path string) ([]byte, error) {
 
 	data, ok := secret.Data["value"].(string)
 	if !ok {
-		return nil, fmt.Errorf("secret data type is not string, found %T value: %#v", secret.Data["value"], secret.Data["value"])
+		return nil, fmt.Errorf("secret data type is not string, found %T value: %#v at path: %s", secret.Data["value"], secret.Data["value"], path)
 	}
 
 	return []byte(data), nil
 }
 
+func (v *Vault) manageTokenLifecycle(ctx context.Context, authTokenWatcher *hashivault.LifetimeWatcher) {
+	go authTokenWatcher.Start()
+	defer authTokenWatcher.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case <-authTokenWatcher.DoneCh():
+			// Token failed to renew (e.g expired), re-auth required
+			return
+
+		case renewalInfo := <-authTokenWatcher.RenewCh():
+			// Token was successfully renewed
+			if renewalInfo.Secret.Auth != nil {
+				level.Debug(v.logger).Log("msg", "token renewed", "leaseDuration", time.Duration(renewalInfo.Secret.Auth.LeaseDuration)*time.Second)
+				v.authLeaseRenewalSuccessTotal.Inc()
+			}
+		}
+	}
+}
+
+func (v *Vault) KeepRenewingTokenLease(ctx context.Context) error {
+	v.authLeaseRenewalActive.Inc()
+	defer v.authLeaseRenewalActive.Dec()
+
+	for ctx.Err() == nil {
+		authTokenWatcher, err := v.client.NewLifetimeWatcher(&hashivault.LifetimeWatcherInput{
+			Secret: v.token,
+		})
+		if err != nil {
+			return fmt.Errorf("error initializing auth token lifetime watcher: %v", err)
+		}
+
+		v.manageTokenLifecycle(ctx, authTokenWatcher)
+
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		newAuthToken, err := getAuthToken(ctx, &v.auth, v.client)
+		if err != nil {
+			level.Error(v.logger).Log("msg", "error during re-authentication after token expiry", "err", err)
+			return err
+		}
+
+		v.authSuccessTotal.Inc()
+		v.token = newAuthToken
+	}
+
+	return nil
+}
+
 type authFactoryReal struct{}
+
+func getAuthToken(ctx context.Context, authCfg *AuthConfig, client *hashivault.Client) (*hashivault.Secret, error) {
+	am, err := authCfg.authMethod()
+	if err != nil {
+		return nil, err
+	}
+
+	return am.authenticate(ctx, &authFactoryReal{}, client)
+}
 
 func (af *authFactoryReal) NewAppRoleAuth(roleID string, secretID *approle.SecretID, opts ...approle.LoginOption) (*approle.AppRoleAuth, error) {
 	return approle.NewAppRoleAuth(

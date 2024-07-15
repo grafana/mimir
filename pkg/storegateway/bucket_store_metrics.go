@@ -28,7 +28,7 @@ type BucketStoreMetrics struct {
 	seriesDataFetched     *prometheus.SummaryVec
 	seriesDataSizeTouched *prometheus.SummaryVec
 	seriesDataSizeFetched *prometheus.SummaryVec
-	seriesBlocksQueried   prometheus.Summary
+	seriesBlocksQueried   *prometheus.SummaryVec
 	resultSeriesCount     prometheus.Summary
 	chunkSizeBytes        prometheus.Histogram
 	queriesDropped        *prometheus.CounterVec
@@ -92,10 +92,10 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 		Help: "Size of all items of a data type in a block were fetched for a single Series/LabelValues/LabelNames request. This includes chunks from the cache and the object storage.",
 	}, []string{"data_type", "stage"})
 
-	m.seriesBlocksQueried = promauto.With(reg).NewSummary(prometheus.SummaryOpts{
+	m.seriesBlocksQueried = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_blocks_queried",
 		Help: "Number of blocks in a bucket store that were touched to satisfy a query.",
-	})
+	}, []string{"source", "level", "out_of_order"})
 	m.seriesRefetches = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_bucket_store_series_refetches_total",
 		Help: "Total number of cases where the built-in max series size was not enough to fetch series from index, resulting in refetch.",

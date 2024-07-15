@@ -61,7 +61,14 @@ func sendWithContextErrChecking(ctx context.Context, send func() error) error {
 
 // AccumulateChunks builds a slice of chunks, eliminating duplicates.
 // This is O(N^2) but most of the time N is small.
+// AccumulateChunks may return or modify either of the passed in slices.
 func AccumulateChunks(a, b []Chunk) []Chunk {
+	// If a is empty, we can just return b.
+	// The loop below effectively does the same thing for the opposite scenario (if b is empty, we'll just return a unmodified).
+	if len(a) == 0 {
+		return b
+	}
+
 	ret := a
 	for j := range b {
 		if !containsChunk(a, b[j]) {

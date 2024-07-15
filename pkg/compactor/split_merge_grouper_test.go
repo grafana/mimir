@@ -4,6 +4,7 @@ package compactor
 
 import (
 	"testing"
+	"time"
 
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/tsdb"
@@ -26,6 +27,10 @@ func TestPlanCompaction(t *testing.T) {
 	block8 := ulid.MustNew(8, nil)   // Hash: 2771068093
 	block9 := ulid.MustNew(9, nil)   // Hash: 1285776948
 	block10 := ulid.MustNew(10, nil) // Hash: 1446683087
+	nowRounded := time.Now().Truncate(10 * time.Minute)
+	minsAdd := func(t time.Duration) int64 {
+		return nowRounded.Add(t * time.Minute).UnixMilli()
+	}
 
 	tests := map[string]struct {
 		ranges      []int64
@@ -452,21 +457,59 @@ func TestPlanCompaction(t *testing.T) {
 			},
 		},
 		"a range containing the most recent block shouldn't be prematurely compacted if doesn't cover the full range": {
-			ranges:     []int64{10, 20, 40},
+			ranges:     []int64{10 * time.Minute.Milliseconds(), 20 * time.Minute.Milliseconds(), 40 * time.Minute.Milliseconds()},
 			shardCount: 1,
 			blocks: []*block.Meta{
-				{BlockMeta: tsdb.BlockMeta{MinTime: 5, MaxTime: 8}},
-				{BlockMeta: tsdb.BlockMeta{MinTime: 7, MaxTime: 9}},
-				{BlockMeta: tsdb.BlockMeta{MinTime: 10, MaxTime: 12}},
-				{BlockMeta: tsdb.BlockMeta{MinTime: 13, MaxTime: 15}},
+				{BlockMeta: tsdb.BlockMeta{MinTime: minsAdd(5), MaxTime: minsAdd(8)}},
+				{BlockMeta: tsdb.BlockMeta{MinTime: minsAdd(7), MaxTime: minsAdd(9)}},
+				{BlockMeta: tsdb.BlockMeta{MinTime: minsAdd(10), MaxTime: minsAdd(12)}},
+				{BlockMeta: tsdb.BlockMeta{MinTime: minsAdd(13), MaxTime: minsAdd(15)}},
 			},
 			expected: []*job{
 				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
-					rangeStart: 0,
-					rangeEnd:   10,
+					rangeStart: nowRounded.UnixMilli(),
+					rangeEnd:   nowRounded.Add(10 * time.Minute).UnixMilli(),
 					blocks: []*block.Meta{
-						{BlockMeta: tsdb.BlockMeta{MinTime: 5, MaxTime: 8}},
-						{BlockMeta: tsdb.BlockMeta{MinTime: 7, MaxTime: 9}},
+						{BlockMeta: tsdb.BlockMeta{MinTime: minsAdd(5), MaxTime: minsAdd(8)}},
+						{BlockMeta: tsdb.BlockMeta{MinTime: minsAdd(7), MaxTime: minsAdd(9)}},
+					},
+				}},
+			},
+		},
+		"should compact a block that's one job range in the past": {
+			ranges:     []int64{10 * time.Minute.Milliseconds(), 20 * time.Minute.Milliseconds(), 40 * time.Minute.Milliseconds()},
+			shardCount: 1,
+			blocks: []*block.Meta{
+				{BlockMeta: tsdb.BlockMeta{MinTime: minsAdd(-18), MaxTime: minsAdd(-12)}},
+				{BlockMeta: tsdb.BlockMeta{MinTime: minsAdd(-17), MaxTime: minsAdd(-11)}},
+				{BlockMeta: tsdb.BlockMeta{MinTime: minsAdd(-8), MaxTime: minsAdd(-2)}},
+				{BlockMeta: tsdb.BlockMeta{MinTime: minsAdd(-7), MaxTime: minsAdd(-1)}},
+			},
+			expected: []*job{
+				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
+					rangeStart: nowRounded.Add(-20 * time.Minute).UnixMilli(),
+					rangeEnd:   nowRounded.Add(-10 * time.Minute).UnixMilli(),
+					blocks: []*block.Meta{
+						{BlockMeta: tsdb.BlockMeta{MinTime: minsAdd(-18), MaxTime: minsAdd(-12)}},
+						{BlockMeta: tsdb.BlockMeta{MinTime: minsAdd(-17), MaxTime: minsAdd(-11)}},
+					},
+				}},
+			},
+		},
+		"should compact a level 1 block": {
+			ranges:     []int64{10 * time.Minute.Milliseconds(), 20 * time.Minute.Milliseconds(), 40 * time.Minute.Milliseconds()},
+			shardCount: 1,
+			blocks: []*block.Meta{
+				{BlockMeta: tsdb.BlockMeta{MinTime: minsAdd(5), MaxTime: minsAdd(8), Compaction: tsdb.BlockMetaCompaction{Level: 1}}},
+				{BlockMeta: tsdb.BlockMeta{MinTime: minsAdd(7), MaxTime: minsAdd(9), Compaction: tsdb.BlockMetaCompaction{Level: 1}}},
+			},
+			expected: []*job{
+				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
+					rangeStart: nowRounded.UnixMilli(),
+					rangeEnd:   nowRounded.Add(10 * time.Minute).UnixMilli(),
+					blocks: []*block.Meta{
+						{BlockMeta: tsdb.BlockMeta{MinTime: minsAdd(5), MaxTime: minsAdd(8), Compaction: tsdb.BlockMetaCompaction{Level: 1}}},
+						{BlockMeta: tsdb.BlockMeta{MinTime: minsAdd(7), MaxTime: minsAdd(9), Compaction: tsdb.BlockMetaCompaction{Level: 1}}},
 					},
 				}},
 			},

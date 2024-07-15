@@ -38,7 +38,7 @@ type querySharding struct {
 	limit Limits
 
 	engine            *promql.Engine
-	next              Handler
+	next              MetricsQueryHandler
 	logger            log.Logger
 	maxSeriesPerShard uint64
 
@@ -64,7 +64,7 @@ func newQueryShardingMiddleware(
 	limit Limits,
 	maxSeriesPerShard uint64,
 	registerer prometheus.Registerer,
-) Middleware {
+) MetricsQueryMiddleware {
 	metrics := queryShardingMetrics{
 		shardingAttempts: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_frontend_query_sharding_rewrites_attempted_total",
@@ -84,7 +84,7 @@ func newQueryShardingMiddleware(
 			Buckets: prometheus.ExponentialBuckets(2, 2, 10),
 		}),
 	}
-	return MiddlewareFunc(func(next Handler) Handler {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &querySharding{
 			next:                 next,
 			queryShardingMetrics: metrics,
@@ -96,7 +96,7 @@ func newQueryShardingMiddleware(
 	})
 }
 
-func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
+func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 	log := spanlogger.FromContext(ctx, s.logger)
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
@@ -144,7 +144,10 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	queryStats := stats.FromContext(ctx)
 	queryStats.AddShardedQueries(uint32(shardingStats.GetShardedQueries()))
 
-	r = r.WithQuery(shardedQuery)
+	r, err = r.WithQuery(shardedQuery)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
 	shardedQueryable := newShardedQueryable(r, s.next)
 
 	qry, err := newQuery(ctx, r, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
@@ -157,6 +160,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	if err != nil {
 		return nil, mapEngineError(err)
 	}
+	warn, info := res.Warnings.AsStrings("", 0, 0)
 	return &PrometheusResponse{
 		Status: statusSuccess,
 		Data: &PrometheusData{
@@ -167,11 +171,12 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 		// Note that the positions based on the original query may be wrong as the rewritten
 		// query which is actually used is different, but the user does not see the rewritten
 		// query, so we pass in an empty string as the query so the positions will be hidden.
-		Warnings: res.Warnings.AsStrings("", 0),
+		Warnings: warn,
+		Infos:    info,
 	}, nil
 }
 
-func newQuery(ctx context.Context, r Request, engine *promql.Engine, queryable storage.Queryable) (promql.Query, error) {
+func newQuery(ctx context.Context, r MetricsQueryRequest, engine *promql.Engine, queryable storage.Queryable) (promql.Query, error) {
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
 		return engine.NewRangeQuery(
@@ -191,7 +196,21 @@ func newQuery(ctx context.Context, r Request, engine *promql.Engine, queryable s
 			r.GetQuery(),
 			util.TimeFromMillis(r.GetTime()),
 		)
-
+	case *remoteReadQueryRequest:
+		return engine.NewRangeQuery(
+			ctx,
+			queryable,
+			// Lookback period is not applied to remote read queries in the same way
+			// as regular queries. However we cannot set a zero lookback period
+			// because the engine will just use the default 5 minutes instead. So we
+			// set a lookback period of 1ns and add that amount to the start time so
+			// the engine will calculate an effective 0 lookback period.
+			promql.NewPrometheusQueryOpts(false, 1*time.Nanosecond),
+			r.GetQuery(),
+			util.TimeFromMillis(r.GetStart()).Add(1*time.Nanosecond),
+			util.TimeFromMillis(r.GetEnd()),
+			time.Duration(r.GetStep())*time.Millisecond,
+		)
 	default:
 		return nil, fmt.Errorf("unsupported query type %T", r)
 	}
@@ -255,7 +274,7 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 }
 
 // getShardsForQuery calculates and return the number of shards that should be used to run the query.
-func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []string, r Request, queryExpr parser.Expr, spanLog *spanlogger.SpanLogger) int {
+func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []string, r MetricsQueryRequest, queryExpr parser.Expr, spanLog *spanlogger.SpanLogger) int {
 	// Check if sharding is disabled for the given request.
 	if r.GetOptions().ShardingDisabled {
 		return 1
@@ -289,18 +308,23 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 	maxShardedQueries := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingMaxShardedQueries)
 	hints := r.GetHints()
 
-	if v, ok := hints.GetCardinalityEstimate().(*Hints_EstimatedSeriesCount); ok && s.maxSeriesPerShard > 0 {
+	var seriesCount *EstimatedSeriesCount
+	if hints != nil {
+		seriesCount = hints.GetCardinalityEstimate()
+	}
+
+	if seriesCount != nil && s.maxSeriesPerShard > 0 {
 		prevTotalShards := totalShards
 		// If an estimate for query cardinality is available, use it to limit the number
 		// of shards based on linear interpolation.
-		totalShards = util_math.Min(totalShards, int(v.EstimatedSeriesCount/s.maxSeriesPerShard)+1)
+		totalShards = util_math.Min(totalShards, int(seriesCount.EstimatedSeriesCount/s.maxSeriesPerShard)+1)
 
 		if prevTotalShards != totalShards {
 			spanLog.DebugLog(
 				"msg", "number of shards has been adjusted to match the estimated series count",
 				"updated total shards", totalShards,
 				"previous total shards", prevTotalShards,
-				"estimated series count", v.EstimatedSeriesCount,
+				"estimated series count", seriesCount.EstimatedSeriesCount,
 			)
 		}
 	}

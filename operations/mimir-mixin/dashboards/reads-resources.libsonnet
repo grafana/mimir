@@ -3,20 +3,21 @@ local filename = 'mimir-reads-resources.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == 'cc86fd5aa9301c6528986572ad974db9' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Reads resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
     .addRow(
       $.row('Summary')
       .addPanel(
-        $.panel('CPU') +
+        $.timeseriesPanel('CPU') +
         $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.read, $._config.container_names.read), '{{%s}}' % $._config.per_instance_label) +
         $.stack,
       )
       .addPanel(
-        $.panel('Memory (workingset)') +
+        $.timeseriesPanel('Memory (workingset)') +
         $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.read, $._config.container_names.read), '{{%s}}' % $._config.per_instance_label) +
         $.stack +
-        { yaxes: $.yaxes('bytes') },
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } },
       )
       .addPanel(
         $.containerGoHeapInUsePanelByComponent('read') +
@@ -93,7 +94,7 @@ local filename = 'mimir-reads-resources.json';
     .addRow(
       $.row('Ruler')
       .addPanel(
-        $.panel('Rules') +
+        $.timeseriesPanel('Rules') +
         $.queryPanel(
           'sum by(%s) (cortex_prometheus_rule_group_rules{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ruler)],
           '{{%s}}' % $._config.per_instance_label

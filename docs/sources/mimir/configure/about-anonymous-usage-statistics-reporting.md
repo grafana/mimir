@@ -33,7 +33,7 @@ When the usage statistics reporting is enabled, Grafana Mimir collects the follo
   - The operating system, such as `linux`.
   - The architecture, such as `amd64`.
   - The Mimir memory utilization and number of goroutines.
-  - The number of logical CPU cores available to the Mimir process.
+  - The CPU usage of the Mimir process.
 - Information about the Mimir **configuration**:
   - The `-target` parameter value, such as `all` when running Mimir in monolithic mode.
   - The `-blocks-storage.backend` value, such as `s3`.
@@ -43,6 +43,7 @@ When the usage statistics reporting is enabled, Grafana Mimir collects the follo
 - Information about the Mimir **cluster scale**:
   - Ingester:
     - The number of in-memory series.
+    - The number of active series.
     - The number of tenants that have in-memory series.
     - The number of tenants that have out-of-order ingestion enabled.
     - The number of samples and exemplars ingested.
@@ -57,7 +58,9 @@ When the usage statistics reporting is enabled, Grafana Mimir collects the follo
       - Metadata query.
       - Cardinality analysis query.
 
-> **Note**: Mimir maintainers commit to keeping the list of tracked information updated over time, and reporting any change both via the CHANGELOG and the release notes.
+{{< admonition type="note" >}}
+Mimir maintainers commit to keeping the list of tracked information updated over time, and reporting any change both via the CHANGELOG and the release notes.
+{{< /admonition >}}
 
 ## Disable the anonymous usage statistics reporting
 

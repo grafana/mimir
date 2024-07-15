@@ -257,3 +257,23 @@ func TestBlocksGroup_getNonShardedBlocks(t *testing.T) {
 		assert.Equal(t, tc.expected, tc.input.getNonShardedBlocks())
 	}
 }
+
+func TestBlocksGroup_MaxTime(t *testing.T) {
+	bg := blocksGroup{blocks: []*block.Meta{
+		{BlockMeta: tsdb.BlockMeta{MaxTime: 10}},
+		{BlockMeta: tsdb.BlockMeta{MaxTime: 20}},
+		{BlockMeta: tsdb.BlockMeta{MaxTime: 30}},
+	}}
+
+	assert.Equal(t, int64(30), bg.maxTime())
+}
+
+func TestBlocksGroup_MaxCompactionLevel(t *testing.T) {
+	bg := blocksGroup{blocks: []*block.Meta{
+		{BlockMeta: tsdb.BlockMeta{Compaction: tsdb.BlockMetaCompaction{Level: 1}}},
+		{BlockMeta: tsdb.BlockMeta{Compaction: tsdb.BlockMetaCompaction{Level: 3}}},
+		{BlockMeta: tsdb.BlockMeta{Compaction: tsdb.BlockMetaCompaction{Level: 2}}},
+	}}
+
+	assert.Equal(t, 3, bg.maxCompactionLevel())
+}

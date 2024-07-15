@@ -83,3 +83,33 @@ testing:
 
 rollout_operator:
   enabled: false
+
+admin-cache:
+  enabled: true
+  replicas: 1
+  resources:
+    <<: *ci_resources
+
+chunks-cache:
+  enabled: true
+  replicas: 1
+  resources:
+    <<: *ci_resources
+
+index-cache:
+  enabled: true
+  replicas: 1
+  resources:
+    <<: *ci_resources
+
+metadata-cache:
+  enabled: true
+  replicas: 1
+  resources:
+    <<: *ci_resources
+
+results-cache:
+  enabled: true
+  replicas: 1
+  resources:
+    <<: *ci_resources

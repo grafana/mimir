@@ -420,7 +420,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "5000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: mimir-read
         ports:
@@ -482,7 +482,7 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
-        image: grafana/rollout-operator:v0.10.1
+        image: grafana/rollout-operator:v0.17.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -547,8 +547,6 @@ spec:
         - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data/alertmanager
         - -alertmanager.web.external-url=http://test/alertmanager
-        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.s3.bucket-name=blocks-bucket
@@ -607,6 +605,7 @@ spec:
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-idle-timeout=6m
         - -server.http-listen-port=8080
         - -store-gateway.sharding-ring.heartbeat-period=1m
         - -store-gateway.sharding-ring.heartbeat-timeout=4m
@@ -623,7 +622,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -717,8 +716,6 @@ spec:
         - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data/alertmanager
         - -alertmanager.web.external-url=http://test/alertmanager
-        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.s3.bucket-name=blocks-bucket
@@ -777,6 +774,7 @@ spec:
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-idle-timeout=6m
         - -server.http-listen-port=8080
         - -store-gateway.sharding-ring.heartbeat-period=1m
         - -store-gateway.sharding-ring.heartbeat-timeout=4m
@@ -793,7 +791,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -887,8 +885,6 @@ spec:
         - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data/alertmanager
         - -alertmanager.web.external-url=http://test/alertmanager
-        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.s3.bucket-name=blocks-bucket
@@ -947,6 +943,7 @@ spec:
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-idle-timeout=6m
         - -server.http-listen-port=8080
         - -store-gateway.sharding-ring.heartbeat-period=1m
         - -store-gateway.sharding-ring.heartbeat-timeout=4m
@@ -963,7 +960,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1089,18 +1086,19 @@ spec:
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=500
-        - -server.grpc.keepalive.max-connection-age=2m
+        - -server.grpc.keepalive.max-connection-age=60s
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -shutdown-delay=90s
         - -target=write
         - -usage-stats.installation-mode=jsonnet
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1226,18 +1224,19 @@ spec:
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=500
-        - -server.grpc.keepalive.max-connection-age=2m
+        - -server.grpc.keepalive.max-connection-age=60s
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -shutdown-delay=90s
         - -target=write
         - -usage-stats.installation-mode=jsonnet
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1363,18 +1362,19 @@ spec:
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=500
-        - -server.grpc.keepalive.max-connection-age=2m
+        - -server.grpc.keepalive.max-connection-age=60s
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -shutdown-delay=90s
         - -target=write
         - -usage-stats.installation-mode=jsonnet
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:

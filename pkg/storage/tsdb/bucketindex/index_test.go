@@ -149,15 +149,22 @@ func TestBlockFromThanosMeta(t *testing.T) {
 					ULID:    blockID,
 					MinTime: 10,
 					MaxTime: 20,
+					Compaction: tsdb.BlockMetaCompaction{
+						Level: 1,
+					},
 				},
-				Thanos: block.ThanosMeta{},
+				Thanos: block.ThanosMeta{
+					Source: block.SourceType("test"),
+				},
 			},
 			expected: Block{
-				ID:             blockID,
-				MinTime:        10,
-				MaxTime:        20,
-				SegmentsFormat: SegmentsFormatUnknown,
-				SegmentsNum:    0,
+				ID:              blockID,
+				MinTime:         10,
+				MaxTime:         20,
+				SegmentsFormat:  SegmentsFormatUnknown,
+				SegmentsNum:     0,
+				Source:          "test",
+				CompactionLevel: 1,
 			},
 		},
 		"meta.json with SegmentFiles": {
@@ -166,6 +173,10 @@ func TestBlockFromThanosMeta(t *testing.T) {
 					ULID:    blockID,
 					MinTime: 10,
 					MaxTime: 20,
+					Compaction: tsdb.BlockMetaCompaction{
+						Level: 1,
+						Hints: []string{tsdb.CompactionHintFromOutOfOrder},
+					},
 				},
 				Thanos: block.ThanosMeta{
 					SegmentFiles: []string{
@@ -173,14 +184,18 @@ func TestBlockFromThanosMeta(t *testing.T) {
 						"000002",
 						"000003",
 					},
+					Source: block.SourceType("test"),
 				},
 			},
 			expected: Block{
-				ID:             blockID,
-				MinTime:        10,
-				MaxTime:        20,
-				SegmentsFormat: SegmentsFormat1Based6Digits,
-				SegmentsNum:    3,
+				ID:              blockID,
+				MinTime:         10,
+				MaxTime:         20,
+				SegmentsFormat:  SegmentsFormat1Based6Digits,
+				SegmentsNum:     3,
+				Source:          "test",
+				CompactionLevel: 1,
+				OutOfOrder:      true,
 			},
 		},
 		"meta.json with Files": {
@@ -226,6 +241,10 @@ func TestBlockFromThanosMeta(t *testing.T) {
 				ID:      blockID,
 				MinTime: 10,
 				MaxTime: 20,
+				Labels: map[string]string{
+					"a": "b",
+					"c": "d",
+				},
 			},
 		},
 		"meta.json with external labels, with compactor shard ID": {
@@ -248,6 +267,11 @@ func TestBlockFromThanosMeta(t *testing.T) {
 				MinTime:          10,
 				MaxTime:          20,
 				CompactorShardID: "10_of_20",
+				Labels: map[string]string{
+					"a":                                      "b",
+					"c":                                      "d",
+					mimir_tsdb.CompactorShardIDExternalLabel: "10_of_20",
+				},
 			},
 		},
 		"meta.json with external labels, with invalid shard ID": {
@@ -270,6 +294,11 @@ func TestBlockFromThanosMeta(t *testing.T) {
 				MinTime:          10,
 				MaxTime:          20,
 				CompactorShardID: "some weird value",
+				Labels: map[string]string{
+					"a":                                      "b",
+					"c":                                      "d",
+					mimir_tsdb.CompactorShardIDExternalLabel: "some weird value",
+				},
 			},
 		},
 	}
@@ -335,11 +364,14 @@ func TestBlock_ThanosMeta(t *testing.T) {
 	}{
 		"block with segment files format 1 based 6 digits": {
 			block: Block{
-				ID:             blockID,
-				MinTime:        10,
-				MaxTime:        20,
-				SegmentsFormat: SegmentsFormat1Based6Digits,
-				SegmentsNum:    3,
+				ID:              blockID,
+				MinTime:         10,
+				MaxTime:         20,
+				SegmentsFormat:  SegmentsFormat1Based6Digits,
+				SegmentsNum:     3,
+				Source:          "test",
+				CompactionLevel: 1,
+				OutOfOrder:      true,
 			},
 			expected: &block.Meta{
 				BlockMeta: tsdb.BlockMeta{
@@ -347,6 +379,10 @@ func TestBlock_ThanosMeta(t *testing.T) {
 					MinTime: 10,
 					MaxTime: 20,
 					Version: block.TSDBVersion1,
+					Compaction: tsdb.BlockMetaCompaction{
+						Level: 1,
+						Hints: []string{tsdb.CompactionHintFromOutOfOrder},
+					},
 				},
 				Thanos: block.ThanosMeta{
 					Version: block.ThanosVersion1,
@@ -355,6 +391,7 @@ func TestBlock_ThanosMeta(t *testing.T) {
 						"000002",
 						"000003",
 					},
+					Source: block.SourceType("test"),
 				},
 			},
 		},
@@ -375,6 +412,28 @@ func TestBlock_ThanosMeta(t *testing.T) {
 				},
 				Thanos: block.ThanosMeta{
 					Version: block.ThanosVersion1,
+				},
+			},
+		},
+		"block with labels": {
+			block: Block{
+				ID:             blockID,
+				MinTime:        10,
+				MaxTime:        20,
+				SegmentsFormat: SegmentsFormatUnknown,
+				SegmentsNum:    0,
+				Labels:         map[string]string{"my_key": "0x8413"},
+			},
+			expected: &block.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    blockID,
+					MinTime: 10,
+					MaxTime: 20,
+					Version: block.TSDBVersion1,
+				},
+				Thanos: block.ThanosMeta{
+					Version: block.ThanosVersion1,
+					Labels:  map[string]string{"my_key": "0x8413"},
 				},
 			},
 		},

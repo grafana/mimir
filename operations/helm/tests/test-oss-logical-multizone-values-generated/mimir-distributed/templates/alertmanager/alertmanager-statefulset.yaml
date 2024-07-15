@@ -50,12 +50,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -65,9 +59,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-logical-multizone-values
             app.kubernetes.io/component: alertmanager
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:
@@ -133,8 +125,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-          envFrom:
 ---
 # Source: mimir-distributed/templates/alertmanager/alertmanager-statefulset.yaml
 apiVersion: apps/v1
@@ -187,12 +177,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -202,9 +186,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-logical-multizone-values
             app.kubernetes.io/component: alertmanager
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:
@@ -270,8 +252,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-          envFrom:
 ---
 # Source: mimir-distributed/templates/alertmanager/alertmanager-statefulset.yaml
 apiVersion: apps/v1
@@ -324,12 +304,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -339,9 +313,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-logical-multizone-values
             app.kubernetes.io/component: alertmanager
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:
@@ -407,5 +379,3 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-          envFrom:

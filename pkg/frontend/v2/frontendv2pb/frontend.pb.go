@@ -4,6 +4,7 @@
 package frontendv2pb
 
 import (
+	bytes "bytes"
 	context "context"
 	fmt "fmt"
 	_ "github.com/gogo/protobuf/gogoproto"
@@ -90,13 +91,208 @@ func (m *QueryResultRequest) GetStats() *stats.Stats {
 	return nil
 }
 
+type QueryResultStreamRequest struct {
+	QueryID uint64 `protobuf:"varint,1,opt,name=queryID,proto3" json:"queryID,omitempty"`
+	// Types that are valid to be assigned to Data:
+	//	*QueryResultStreamRequest_Metadata
+	//	*QueryResultStreamRequest_Body
+	Data isQueryResultStreamRequest_Data `protobuf_oneof:"data"`
+}
+
+func (m *QueryResultStreamRequest) Reset()      { *m = QueryResultStreamRequest{} }
+func (*QueryResultStreamRequest) ProtoMessage() {}
+func (*QueryResultStreamRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_eca3873955a29cfe, []int{1}
+}
+func (m *QueryResultStreamRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryResultStreamRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryResultStreamRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryResultStreamRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryResultStreamRequest.Merge(m, src)
+}
+func (m *QueryResultStreamRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryResultStreamRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryResultStreamRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryResultStreamRequest proto.InternalMessageInfo
+
+type isQueryResultStreamRequest_Data interface {
+	isQueryResultStreamRequest_Data()
+	Equal(interface{}) bool
+	MarshalTo([]byte) (int, error)
+	Size() int
+}
+
+type QueryResultStreamRequest_Metadata struct {
+	Metadata *QueryResultMetadata `protobuf:"bytes,2,opt,name=metadata,proto3,oneof"`
+}
+type QueryResultStreamRequest_Body struct {
+	Body *QueryResultBody `protobuf:"bytes,3,opt,name=body,proto3,oneof"`
+}
+
+func (*QueryResultStreamRequest_Metadata) isQueryResultStreamRequest_Data() {}
+func (*QueryResultStreamRequest_Body) isQueryResultStreamRequest_Data()     {}
+
+func (m *QueryResultStreamRequest) GetData() isQueryResultStreamRequest_Data {
+	if m != nil {
+		return m.Data
+	}
+	return nil
+}
+
+func (m *QueryResultStreamRequest) GetQueryID() uint64 {
+	if m != nil {
+		return m.QueryID
+	}
+	return 0
+}
+
+func (m *QueryResultStreamRequest) GetMetadata() *QueryResultMetadata {
+	if x, ok := m.GetData().(*QueryResultStreamRequest_Metadata); ok {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (m *QueryResultStreamRequest) GetBody() *QueryResultBody {
+	if x, ok := m.GetData().(*QueryResultStreamRequest_Body); ok {
+		return x.Body
+	}
+	return nil
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*QueryResultStreamRequest) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*QueryResultStreamRequest_Metadata)(nil),
+		(*QueryResultStreamRequest_Body)(nil),
+	}
+}
+
+type QueryResultMetadata struct {
+	Code    int32              `protobuf:"varint,1,opt,name=code,proto3" json:"code,omitempty"`
+	Headers []*httpgrpc.Header `protobuf:"bytes,2,rep,name=headers,proto3" json:"headers,omitempty"`
+	Stats   *stats.Stats       `protobuf:"bytes,3,opt,name=stats,proto3" json:"stats,omitempty"`
+}
+
+func (m *QueryResultMetadata) Reset()      { *m = QueryResultMetadata{} }
+func (*QueryResultMetadata) ProtoMessage() {}
+func (*QueryResultMetadata) Descriptor() ([]byte, []int) {
+	return fileDescriptor_eca3873955a29cfe, []int{2}
+}
+func (m *QueryResultMetadata) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryResultMetadata) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryResultMetadata.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryResultMetadata) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryResultMetadata.Merge(m, src)
+}
+func (m *QueryResultMetadata) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryResultMetadata) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryResultMetadata.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryResultMetadata proto.InternalMessageInfo
+
+func (m *QueryResultMetadata) GetCode() int32 {
+	if m != nil {
+		return m.Code
+	}
+	return 0
+}
+
+func (m *QueryResultMetadata) GetHeaders() []*httpgrpc.Header {
+	if m != nil {
+		return m.Headers
+	}
+	return nil
+}
+
+func (m *QueryResultMetadata) GetStats() *stats.Stats {
+	if m != nil {
+		return m.Stats
+	}
+	return nil
+}
+
+type QueryResultBody struct {
+	Chunk []byte `protobuf:"bytes,1,opt,name=chunk,proto3" json:"chunk,omitempty"`
+}
+
+func (m *QueryResultBody) Reset()      { *m = QueryResultBody{} }
+func (*QueryResultBody) ProtoMessage() {}
+func (*QueryResultBody) Descriptor() ([]byte, []int) {
+	return fileDescriptor_eca3873955a29cfe, []int{3}
+}
+func (m *QueryResultBody) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryResultBody) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryResultBody.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryResultBody) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryResultBody.Merge(m, src)
+}
+func (m *QueryResultBody) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryResultBody) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryResultBody.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryResultBody proto.InternalMessageInfo
+
+func (m *QueryResultBody) GetChunk() []byte {
+	if m != nil {
+		return m.Chunk
+	}
+	return nil
+}
+
 type QueryResultResponse struct {
 }
 
 func (m *QueryResultResponse) Reset()      { *m = QueryResultResponse{} }
 func (*QueryResultResponse) ProtoMessage() {}
 func (*QueryResultResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_eca3873955a29cfe, []int{1}
+	return fileDescriptor_eca3873955a29cfe, []int{4}
 }
 func (m *QueryResultResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -127,34 +323,46 @@ var xxx_messageInfo_QueryResultResponse proto.InternalMessageInfo
 
 func init() {
 	proto.RegisterType((*QueryResultRequest)(nil), "frontendv2pb.QueryResultRequest")
+	proto.RegisterType((*QueryResultStreamRequest)(nil), "frontendv2pb.QueryResultStreamRequest")
+	proto.RegisterType((*QueryResultMetadata)(nil), "frontendv2pb.QueryResultMetadata")
+	proto.RegisterType((*QueryResultBody)(nil), "frontendv2pb.QueryResultBody")
 	proto.RegisterType((*QueryResultResponse)(nil), "frontendv2pb.QueryResultResponse")
 }
 
 func init() { proto.RegisterFile("frontend.proto", fileDescriptor_eca3873955a29cfe) }
 
 var fileDescriptor_eca3873955a29cfe = []byte{
-	// 333 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x7c, 0x91, 0xbf, 0x4e, 0x02, 0x41,
-	0x10, 0xc6, 0x77, 0xfd, 0x9b, 0x2c, 0xc4, 0x62, 0xfd, 0x93, 0x0b, 0xc5, 0x04, 0xaf, 0xa2, 0xba,
-	0x35, 0x98, 0x58, 0x58, 0x12, 0x43, 0xb4, 0x93, 0x93, 0xca, 0xee, 0x80, 0xe5, 0x38, 0x91, 0xdb,
-	0x63, 0x77, 0xcf, 0x84, 0xce, 0x27, 0x30, 0x3e, 0x86, 0x8f, 0x62, 0x49, 0x49, 0x29, 0x4b, 0x63,
-	0xc9, 0x23, 0x98, 0xbb, 0x05, 0xc2, 0x45, 0x63, 0xb3, 0x99, 0xc9, 0x7c, 0xbf, 0xcc, 0x37, 0xdf,
-	0x92, 0xa3, 0xbe, 0x14, 0xb1, 0xe6, 0x71, 0xcf, 0x4b, 0xa4, 0xd0, 0x82, 0x96, 0xd7, 0xfd, 0x4b,
-	0x3d, 0xe9, 0x54, 0x4e, 0x42, 0x11, 0x8a, 0x7c, 0xc0, 0xb2, 0xca, 0x6a, 0x2a, 0x17, 0x61, 0xa4,
-	0x07, 0x69, 0xc7, 0xeb, 0x8a, 0x11, 0x0b, 0x65, 0xd0, 0x0f, 0xe2, 0x80, 0xf5, 0xd4, 0x30, 0xd2,
-	0x6c, 0xa0, 0x75, 0x12, 0xca, 0xa4, 0xbb, 0x29, 0x56, 0xc4, 0xd5, 0x1f, 0xc4, 0x28, 0x1a, 0x45,
-	0x92, 0x25, 0xc3, 0x90, 0x8d, 0x53, 0x2e, 0x23, 0x2e, 0x99, 0xd2, 0x81, 0x56, 0xf6, 0xb5, 0x9c,
-	0xfb, 0x86, 0x09, 0x6d, 0xa5, 0x5c, 0x4e, 0x7c, 0xae, 0xd2, 0x67, 0xed, 0xf3, 0x71, 0xca, 0x95,
-	0xa6, 0x0e, 0x39, 0xcc, 0x98, 0xc9, 0xdd, 0x8d, 0x83, 0xab, 0xb8, 0xb6, 0xe7, 0xaf, 0x5b, 0x7a,
-	0x4d, 0xca, 0xd9, 0x6a, 0x9f, 0xab, 0x44, 0xc4, 0x8a, 0x3b, 0x3b, 0x55, 0x5c, 0x2b, 0xd5, 0xcf,
-	0xbc, 0x8d, 0x9f, 0xdb, 0x76, 0xfb, 0x7e, 0x3d, 0xf5, 0x0b, 0x5a, 0xea, 0x92, 0xfd, 0x7c, 0xb7,
-	0xb3, 0x9b, 0x43, 0x65, 0xcf, 0x3a, 0x79, 0xc8, 0x5e, 0xdf, 0x8e, 0xdc, 0x53, 0x72, 0x5c, 0xf0,
-	0x63, 0xd1, 0xfa, 0x13, 0xa1, 0xcd, 0x55, 0x6e, 0x4d, 0x21, 0x5b, 0xf6, 0x1e, 0xda, 0x26, 0xa5,
-	0x2d, 0x31, 0xad, 0x7a, 0xdb, 0xd9, 0x7a, 0xbf, 0xef, 0xaa, 0x9c, 0xff, 0xa3, 0xb0, 0x9b, 0x5c,
-	0xd4, 0x68, 0x4c, 0xe7, 0x80, 0x66, 0x73, 0x40, 0xcb, 0x39, 0xe0, 0x57, 0x03, 0xf8, 0xc3, 0x00,
-	0xfe, 0x34, 0x80, 0xa7, 0x06, 0xf0, 0x97, 0x01, 0xfc, 0x6d, 0x00, 0x2d, 0x0d, 0xe0, 0xf7, 0x05,
-	0xa0, 0xe9, 0x02, 0xd0, 0x6c, 0x01, 0xe8, 0xb1, 0xf0, 0xaf, 0x9d, 0x83, 0x3c, 0xde, 0xcb, 0x9f,
-	0x00, 0x00, 0x00, 0xff, 0xff, 0xef, 0x5d, 0x91, 0xa7, 0xfe, 0x01, 0x00, 0x00,
+	// 480 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x93, 0xcf, 0x6e, 0xd3, 0x40,
+	0x10, 0xc6, 0xbd, 0x6d, 0xd2, 0xa2, 0x49, 0xc4, 0x9f, 0xa5, 0x20, 0x2b, 0x12, 0xab, 0xd4, 0x07,
+	0x88, 0x38, 0xd8, 0x28, 0x95, 0x38, 0x70, 0x41, 0x8a, 0x50, 0x15, 0x0e, 0x48, 0x74, 0x9b, 0x13,
+	0xb7, 0x75, 0xbc, 0x75, 0xac, 0x60, 0xaf, 0xbb, 0x5e, 0x23, 0xf9, 0xc6, 0x13, 0x20, 0x1e, 0x83,
+	0x33, 0x4f, 0xc1, 0x09, 0xe5, 0xd8, 0x23, 0x71, 0x2e, 0x1c, 0xfb, 0x08, 0xc8, 0x6b, 0x3b, 0x72,
+	0xa0, 0xa1, 0xb9, 0xac, 0x66, 0x34, 0xdf, 0xb7, 0xf3, 0xf3, 0x8c, 0x17, 0xee, 0x5e, 0x48, 0x11,
+	0x29, 0x1e, 0x79, 0x76, 0x2c, 0x85, 0x12, 0xb8, 0x5b, 0xe7, 0x9f, 0x86, 0xb1, 0xdb, 0x3b, 0xf2,
+	0x85, 0x2f, 0x74, 0xc1, 0x29, 0xa2, 0x52, 0xd3, 0x7b, 0xe1, 0x07, 0x6a, 0x96, 0xba, 0xf6, 0x54,
+	0x84, 0x8e, 0x2f, 0xd9, 0x05, 0x8b, 0x98, 0xe3, 0x25, 0xf3, 0x40, 0x39, 0x33, 0xa5, 0x62, 0x5f,
+	0xc6, 0xd3, 0x75, 0x50, 0x39, 0x5e, 0xde, 0xe0, 0x08, 0x83, 0x30, 0x90, 0x4e, 0x3c, 0xf7, 0x9d,
+	0xcb, 0x94, 0xcb, 0x80, 0x4b, 0x27, 0x51, 0x4c, 0x25, 0xe5, 0x59, 0xfa, 0xac, 0x2f, 0x08, 0xf0,
+	0x59, 0xca, 0x65, 0x46, 0x79, 0x92, 0x7e, 0x54, 0x94, 0x5f, 0xa6, 0x3c, 0x51, 0xd8, 0x84, 0xc3,
+	0xc2, 0x93, 0xbd, 0x7d, 0x63, 0xa2, 0x3e, 0x1a, 0xb4, 0x68, 0x9d, 0xe2, 0x57, 0xd0, 0x2d, 0x5a,
+	0x53, 0x9e, 0xc4, 0x22, 0x4a, 0xb8, 0xb9, 0xd7, 0x47, 0x83, 0xce, 0xf0, 0xb1, 0xbd, 0xe6, 0x19,
+	0x4f, 0x26, 0xef, 0xeb, 0x2a, 0xdd, 0xd0, 0x62, 0x0b, 0xda, 0xba, 0xb7, 0xb9, 0xaf, 0x4d, 0x5d,
+	0xbb, 0x24, 0x39, 0x2f, 0x4e, 0x5a, 0x96, 0xac, 0xef, 0x08, 0xcc, 0x06, 0xd0, 0xb9, 0x92, 0x9c,
+	0x85, 0xb7, 0x63, 0xbd, 0x86, 0x3b, 0x21, 0x57, 0xcc, 0x63, 0x8a, 0x55, 0x48, 0xc7, 0x76, 0x73,
+	0xd0, 0x76, 0xe3, 0xce, 0x77, 0x95, 0x70, 0x6c, 0xd0, 0xb5, 0x09, 0x9f, 0x40, 0xcb, 0x15, 0x5e,
+	0x56, 0xa1, 0x3d, 0xd9, 0x6a, 0x1e, 0x09, 0x2f, 0x1b, 0x1b, 0x54, 0x8b, 0x47, 0x07, 0xd0, 0x2a,
+	0xcc, 0x56, 0x06, 0x0f, 0x6f, 0xb8, 0x1f, 0x63, 0x68, 0x4d, 0x85, 0xc7, 0x35, 0x6b, 0x9b, 0xea,
+	0x18, 0x3f, 0x87, 0xc3, 0x19, 0x67, 0x1e, 0x97, 0x89, 0xb9, 0xd7, 0xdf, 0x1f, 0x74, 0x86, 0xf7,
+	0x1b, 0xa3, 0xd3, 0x05, 0x5a, 0x0b, 0x76, 0x9a, 0xd7, 0x33, 0xb8, 0xf7, 0x17, 0x1d, 0x3e, 0x82,
+	0xf6, 0x74, 0x96, 0x46, 0x73, 0xdd, 0xb7, 0x4b, 0xcb, 0xc4, 0x7a, 0xb4, 0xc1, 0x58, 0xef, 0x64,
+	0xf8, 0x13, 0x01, 0x3e, 0xad, 0xbe, 0xf5, 0x54, 0xc8, 0xb3, 0xf2, 0x4f, 0xc1, 0x13, 0xe8, 0x34,
+	0xd4, 0xb8, 0xbf, 0x75, 0x1e, 0xd5, 0x6a, 0x7a, 0xc7, 0xff, 0x51, 0x94, 0xad, 0x2c, 0x03, 0xbb,
+	0xf0, 0xe0, 0x9f, 0xdd, 0xe2, 0xa7, 0x5b, 0x9d, 0x1b, 0xcb, 0xdf, 0xa9, 0xc3, 0x00, 0x8d, 0x46,
+	0x8b, 0x25, 0x31, 0xae, 0x96, 0xc4, 0xb8, 0x5e, 0x12, 0xf4, 0x39, 0x27, 0xe8, 0x5b, 0x4e, 0xd0,
+	0x8f, 0x9c, 0xa0, 0x45, 0x4e, 0xd0, 0xaf, 0x9c, 0xa0, 0xdf, 0x39, 0x31, 0xae, 0x73, 0x82, 0xbe,
+	0xae, 0x88, 0xb1, 0x58, 0x11, 0xe3, 0x6a, 0x45, 0x8c, 0x0f, 0x1b, 0xaf, 0xd2, 0x3d, 0xd0, 0x8f,
+	0xe3, 0xe4, 0x4f, 0x00, 0x00, 0x00, 0xff, 0xff, 0xca, 0x18, 0x1f, 0x97, 0xbc, 0x03, 0x00, 0x00,
 }
 
 func (this *QueryResultRequest) Equal(that interface{}) bool {
@@ -183,6 +391,146 @@ func (this *QueryResultRequest) Equal(that interface{}) bool {
 		return false
 	}
 	if !this.Stats.Equal(that1.Stats) {
+		return false
+	}
+	return true
+}
+func (this *QueryResultStreamRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*QueryResultStreamRequest)
+	if !ok {
+		that2, ok := that.(QueryResultStreamRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.QueryID != that1.QueryID {
+		return false
+	}
+	if that1.Data == nil {
+		if this.Data != nil {
+			return false
+		}
+	} else if this.Data == nil {
+		return false
+	} else if !this.Data.Equal(that1.Data) {
+		return false
+	}
+	return true
+}
+func (this *QueryResultStreamRequest_Metadata) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*QueryResultStreamRequest_Metadata)
+	if !ok {
+		that2, ok := that.(QueryResultStreamRequest_Metadata)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Metadata.Equal(that1.Metadata) {
+		return false
+	}
+	return true
+}
+func (this *QueryResultStreamRequest_Body) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*QueryResultStreamRequest_Body)
+	if !ok {
+		that2, ok := that.(QueryResultStreamRequest_Body)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Body.Equal(that1.Body) {
+		return false
+	}
+	return true
+}
+func (this *QueryResultMetadata) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*QueryResultMetadata)
+	if !ok {
+		that2, ok := that.(QueryResultMetadata)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Code != that1.Code {
+		return false
+	}
+	if len(this.Headers) != len(that1.Headers) {
+		return false
+	}
+	for i := range this.Headers {
+		if !this.Headers[i].Equal(that1.Headers[i]) {
+			return false
+		}
+	}
+	if !this.Stats.Equal(that1.Stats) {
+		return false
+	}
+	return true
+}
+func (this *QueryResultBody) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*QueryResultBody)
+	if !ok {
+		that2, ok := that.(QueryResultBody)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !bytes.Equal(this.Chunk, that1.Chunk) {
 		return false
 	}
 	return true
@@ -224,6 +572,61 @@ func (this *QueryResultRequest) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
+func (this *QueryResultStreamRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&frontendv2pb.QueryResultStreamRequest{")
+	s = append(s, "QueryID: "+fmt.Sprintf("%#v", this.QueryID)+",\n")
+	if this.Data != nil {
+		s = append(s, "Data: "+fmt.Sprintf("%#v", this.Data)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *QueryResultStreamRequest_Metadata) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&frontendv2pb.QueryResultStreamRequest_Metadata{` +
+		`Metadata:` + fmt.Sprintf("%#v", this.Metadata) + `}`}, ", ")
+	return s
+}
+func (this *QueryResultStreamRequest_Body) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&frontendv2pb.QueryResultStreamRequest_Body{` +
+		`Body:` + fmt.Sprintf("%#v", this.Body) + `}`}, ", ")
+	return s
+}
+func (this *QueryResultMetadata) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&frontendv2pb.QueryResultMetadata{")
+	s = append(s, "Code: "+fmt.Sprintf("%#v", this.Code)+",\n")
+	if this.Headers != nil {
+		s = append(s, "Headers: "+fmt.Sprintf("%#v", this.Headers)+",\n")
+	}
+	if this.Stats != nil {
+		s = append(s, "Stats: "+fmt.Sprintf("%#v", this.Stats)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *QueryResultBody) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&frontendv2pb.QueryResultBody{")
+	s = append(s, "Chunk: "+fmt.Sprintf("%#v", this.Chunk)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func (this *QueryResultResponse) GoString() string {
 	if this == nil {
 		return "nil"
@@ -255,6 +658,7 @@ const _ = grpc.SupportPackageIsVersion4
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type FrontendForQuerierClient interface {
 	QueryResult(ctx context.Context, in *QueryResultRequest, opts ...grpc.CallOption) (*QueryResultResponse, error)
+	QueryResultStream(ctx context.Context, opts ...grpc.CallOption) (FrontendForQuerier_QueryResultStreamClient, error)
 }
 
 type frontendForQuerierClient struct {
@@ -274,9 +678,44 @@ func (c *frontendForQuerierClient) QueryResult(ctx context.Context, in *QueryRes
 	return out, nil
 }
 
+func (c *frontendForQuerierClient) QueryResultStream(ctx context.Context, opts ...grpc.CallOption) (FrontendForQuerier_QueryResultStreamClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_FrontendForQuerier_serviceDesc.Streams[0], "/frontendv2pb.FrontendForQuerier/QueryResultStream", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &frontendForQuerierQueryResultStreamClient{stream}
+	return x, nil
+}
+
+type FrontendForQuerier_QueryResultStreamClient interface {
+	Send(*QueryResultStreamRequest) error
+	CloseAndRecv() (*QueryResultResponse, error)
+	grpc.ClientStream
+}
+
+type frontendForQuerierQueryResultStreamClient struct {
+	grpc.ClientStream
+}
+
+func (x *frontendForQuerierQueryResultStreamClient) Send(m *QueryResultStreamRequest) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *frontendForQuerierQueryResultStreamClient) CloseAndRecv() (*QueryResultResponse, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(QueryResultResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // FrontendForQuerierServer is the server API for FrontendForQuerier service.
 type FrontendForQuerierServer interface {
 	QueryResult(context.Context, *QueryResultRequest) (*QueryResultResponse, error)
+	QueryResultStream(FrontendForQuerier_QueryResultStreamServer) error
 }
 
 // UnimplementedFrontendForQuerierServer can be embedded to have forward compatible implementations.
@@ -285,6 +724,9 @@ type UnimplementedFrontendForQuerierServer struct {
 
 func (*UnimplementedFrontendForQuerierServer) QueryResult(ctx context.Context, req *QueryResultRequest) (*QueryResultResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method QueryResult not implemented")
+}
+func (*UnimplementedFrontendForQuerierServer) QueryResultStream(srv FrontendForQuerier_QueryResultStreamServer) error {
+	return status.Errorf(codes.Unimplemented, "method QueryResultStream not implemented")
 }
 
 func RegisterFrontendForQuerierServer(s *grpc.Server, srv FrontendForQuerierServer) {
@@ -309,6 +751,32 @@ func _FrontendForQuerier_QueryResult_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _FrontendForQuerier_QueryResultStream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(FrontendForQuerierServer).QueryResultStream(&frontendForQuerierQueryResultStreamServer{stream})
+}
+
+type FrontendForQuerier_QueryResultStreamServer interface {
+	SendAndClose(*QueryResultResponse) error
+	Recv() (*QueryResultStreamRequest, error)
+	grpc.ServerStream
+}
+
+type frontendForQuerierQueryResultStreamServer struct {
+	grpc.ServerStream
+}
+
+func (x *frontendForQuerierQueryResultStreamServer) SendAndClose(m *QueryResultResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *frontendForQuerierQueryResultStreamServer) Recv() (*QueryResultStreamRequest, error) {
+	m := new(QueryResultStreamRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 var _FrontendForQuerier_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "frontendv2pb.FrontendForQuerier",
 	HandlerType: (*FrontendForQuerierServer)(nil),
@@ -318,7 +786,13 @@ var _FrontendForQuerier_serviceDesc = grpc.ServiceDesc{
 			Handler:    _FrontendForQuerier_QueryResult_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "QueryResultStream",
+			Handler:       _FrontendForQuerier_QueryResultStream_Handler,
+			ClientStreams: true,
+		},
+	},
 	Metadata: "frontend.proto",
 }
 
@@ -370,6 +844,167 @@ func (m *QueryResultRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i = encodeVarintFrontend(dAtA, i, uint64(m.QueryID))
 		i--
 		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QueryResultStreamRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryResultStreamRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryResultStreamRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Data != nil {
+		{
+			size := m.Data.Size()
+			i -= size
+			if _, err := m.Data.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	if m.QueryID != 0 {
+		i = encodeVarintFrontend(dAtA, i, uint64(m.QueryID))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QueryResultStreamRequest_Metadata) MarshalTo(dAtA []byte) (int, error) {
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+}
+
+func (m *QueryResultStreamRequest_Metadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Metadata != nil {
+		{
+			size, err := m.Metadata.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintFrontend(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
+	return len(dAtA) - i, nil
+}
+func (m *QueryResultStreamRequest_Body) MarshalTo(dAtA []byte) (int, error) {
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+}
+
+func (m *QueryResultStreamRequest_Body) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Body != nil {
+		{
+			size, err := m.Body.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintFrontend(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x1a
+	}
+	return len(dAtA) - i, nil
+}
+func (m *QueryResultMetadata) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryResultMetadata) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryResultMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Stats != nil {
+		{
+			size, err := m.Stats.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintFrontend(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.Headers) > 0 {
+		for iNdEx := len(m.Headers) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Headers[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintFrontend(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if m.Code != 0 {
+		i = encodeVarintFrontend(dAtA, i, uint64(m.Code))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QueryResultBody) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryResultBody) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryResultBody) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Chunk) > 0 {
+		i -= len(m.Chunk)
+		copy(dAtA[i:], m.Chunk)
+		i = encodeVarintFrontend(dAtA, i, uint64(len(m.Chunk)))
+		i--
+		dAtA[i] = 0xa
 	}
 	return len(dAtA) - i, nil
 }
@@ -428,6 +1063,80 @@ func (m *QueryResultRequest) Size() (n int) {
 	return n
 }
 
+func (m *QueryResultStreamRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.QueryID != 0 {
+		n += 1 + sovFrontend(uint64(m.QueryID))
+	}
+	if m.Data != nil {
+		n += m.Data.Size()
+	}
+	return n
+}
+
+func (m *QueryResultStreamRequest_Metadata) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Metadata != nil {
+		l = m.Metadata.Size()
+		n += 1 + l + sovFrontend(uint64(l))
+	}
+	return n
+}
+func (m *QueryResultStreamRequest_Body) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Body != nil {
+		l = m.Body.Size()
+		n += 1 + l + sovFrontend(uint64(l))
+	}
+	return n
+}
+func (m *QueryResultMetadata) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Code != 0 {
+		n += 1 + sovFrontend(uint64(m.Code))
+	}
+	if len(m.Headers) > 0 {
+		for _, e := range m.Headers {
+			l = e.Size()
+			n += 1 + l + sovFrontend(uint64(l))
+		}
+	}
+	if m.Stats != nil {
+		l = m.Stats.Size()
+		n += 1 + l + sovFrontend(uint64(l))
+	}
+	return n
+}
+
+func (m *QueryResultBody) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Chunk)
+	if l > 0 {
+		n += 1 + l + sovFrontend(uint64(l))
+	}
+	return n
+}
+
 func (m *QueryResultResponse) Size() (n int) {
 	if m == nil {
 		return 0
@@ -451,6 +1160,64 @@ func (this *QueryResultRequest) String() string {
 		`QueryID:` + fmt.Sprintf("%v", this.QueryID) + `,`,
 		`HttpResponse:` + strings.Replace(fmt.Sprintf("%v", this.HttpResponse), "HTTPResponse", "httpgrpc.HTTPResponse", 1) + `,`,
 		`Stats:` + strings.Replace(fmt.Sprintf("%v", this.Stats), "Stats", "stats.Stats", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *QueryResultStreamRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&QueryResultStreamRequest{`,
+		`QueryID:` + fmt.Sprintf("%v", this.QueryID) + `,`,
+		`Data:` + fmt.Sprintf("%v", this.Data) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *QueryResultStreamRequest_Metadata) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&QueryResultStreamRequest_Metadata{`,
+		`Metadata:` + strings.Replace(fmt.Sprintf("%v", this.Metadata), "QueryResultMetadata", "QueryResultMetadata", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *QueryResultStreamRequest_Body) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&QueryResultStreamRequest_Body{`,
+		`Body:` + strings.Replace(fmt.Sprintf("%v", this.Body), "QueryResultBody", "QueryResultBody", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *QueryResultMetadata) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForHeaders := "[]*Header{"
+	for _, f := range this.Headers {
+		repeatedStringForHeaders += strings.Replace(fmt.Sprintf("%v", f), "Header", "httpgrpc.Header", 1) + ","
+	}
+	repeatedStringForHeaders += "}"
+	s := strings.Join([]string{`&QueryResultMetadata{`,
+		`Code:` + fmt.Sprintf("%v", this.Code) + `,`,
+		`Headers:` + repeatedStringForHeaders + `,`,
+		`Stats:` + strings.Replace(fmt.Sprintf("%v", this.Stats), "Stats", "stats.Stats", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *QueryResultBody) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&QueryResultBody{`,
+		`Chunk:` + fmt.Sprintf("%v", this.Chunk) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -590,6 +1357,377 @@ func (m *QueryResultRequest) Unmarshal(dAtA []byte) error {
 			}
 			if err := m.Stats.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipFrontend(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryResultStreamRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowFrontend
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryResultStreamRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryResultStreamRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field QueryID", wireType)
+			}
+			m.QueryID = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFrontend
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.QueryID |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFrontend
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &QueryResultMetadata{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Data = &QueryResultStreamRequest_Metadata{v}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Body", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFrontend
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &QueryResultBody{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Data = &QueryResultStreamRequest_Body{v}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipFrontend(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryResultMetadata) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowFrontend
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryResultMetadata: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryResultMetadata: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Code", wireType)
+			}
+			m.Code = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFrontend
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Code |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Headers", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFrontend
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Headers = append(m.Headers, &httpgrpc.Header{})
+			if err := m.Headers[len(m.Headers)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Stats", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFrontend
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Stats == nil {
+				m.Stats = &stats.Stats{}
+			}
+			if err := m.Stats.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipFrontend(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryResultBody) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowFrontend
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryResultBody: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryResultBody: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Chunk", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFrontend
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Chunk = append(m.Chunk[:0], dAtA[iNdEx:postIndex]...)
+			if m.Chunk == nil {
+				m.Chunk = []byte{}
 			}
 			iNdEx = postIndex
 		default:

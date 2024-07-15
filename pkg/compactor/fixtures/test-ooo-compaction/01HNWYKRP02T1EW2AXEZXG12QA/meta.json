@@ -1,0 +1,22 @@
+{
+	"ulid": "01HNWYKRP02T1EW2AXEZXG12QA",
+	"minTime": 0,
+	"maxTime": 7200000,
+	"stats": {},
+	"compaction": {
+		"level": 1,
+		"sources": [
+			"01HNWYKRP02T1EW2AXEZXG12QA"
+		]
+	},
+	"version": 1,
+	"out_of_order": false,
+	"thanos": {
+		"version": 1,
+		"labels": null,
+		"downsample": {
+			"resolution": 0
+		},
+		"source": ""
+	}
+}

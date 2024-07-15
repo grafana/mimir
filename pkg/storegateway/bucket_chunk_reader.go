@@ -127,8 +127,8 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 
 	// Since we may load many chunks, to avoid having to lock very frequently we accumulate
 	// all stats in a local instance and then merge it in the defer.
-	localStats := queryStats{}
-	defer stats.merge(&localStats)
+	localStats := newQueryStats()
+	defer stats.merge(localStats)
 
 	localStats.chunksFetched += len(pIdxs)
 	localStats.chunksFetchedSizeSum += int(part.End - part.Start)
@@ -159,7 +159,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 				// Any other errors are definitely unexpected.
 				return fmt.Errorf("underread with %d more remaining chunks in seq %d start %d end %d", chunksLeft, seq, part.Start, part.End)
 			}
-			if err = r.fetchChunkRemainder(ctx, seq, int64(reader.offset), int64(chunkEncDataLen-fullyRead), cb[fullyRead:], &localStats); err != nil {
+			if err = r.fetchChunkRemainder(ctx, seq, int64(reader.offset), int64(chunkEncDataLen-fullyRead), cb[fullyRead:], localStats); err != nil {
 				return errors.Wrapf(err, "refetching chunk seq %d offset %x length %d", seq, pIdx.offset, pIdx.length)
 			}
 		} else if err != nil {

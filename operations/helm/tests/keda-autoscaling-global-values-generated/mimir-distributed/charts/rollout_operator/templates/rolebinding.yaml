@@ -1,0 +1,13 @@
+---
+# Source: mimir-distributed/charts/rollout_operator/templates/rolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: keda-autoscaling-global-values-rollout-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: keda-autoscaling-global-values-rollout-operator
+subjects:
+- kind: ServiceAccount
+  name: keda-autoscaling-global-values-rollout-operator

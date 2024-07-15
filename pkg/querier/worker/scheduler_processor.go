@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/status"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/grpcclient"
@@ -39,18 +38,29 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-const maxNotifyFrontendRetries = 5
+const (
+	// ResponseStreamingEnabledHeader is the header key used by http handlers to
+	// indicate to the scheduler processor that its response should be streamed. This
+	// header is internal to the querier only and removed before the response is sent
+	// over the network.
+	ResponseStreamingEnabledHeader      = "X-Mimir-Stream-Grpc-Response"
+	responseStreamingBodyChunkSizeBytes = 1 * 1024 * 1024
+
+	maxNotifyFrontendRetries = 5
+)
 
 var errQuerierQuerySchedulerProcessingLoopTerminated = cancellation.NewErrorf("querier query-scheduler processing loop terminated")
 var errQueryEvaluationFinished = cancellation.NewErrorf("query evaluation finished")
 
 func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
 	p := &schedulerProcessor{
-		log:            log,
-		handler:        handler,
-		maxMessageSize: cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
-		querierID:      cfg.QuerierID,
-		grpcConfig:     cfg.QueryFrontendGRPCClientConfig,
+		log:              log,
+		handler:          handler,
+		streamResponse:   streamResponse,
+		maxMessageSize:   cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
+		querierID:        cfg.QuerierID,
+		grpcConfig:       cfg.QueryFrontendGRPCClientConfig,
+		streamingEnabled: cfg.ResponseStreamingEnabled,
 
 		schedulerClientFactory: func(conn *grpc.ClientConn) schedulerpb.SchedulerForQuerierClient {
 			return schedulerpb.NewSchedulerForQuerierClient(conn)
@@ -78,13 +88,24 @@ func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, r
 	return p, []services.Service{p.frontendPool}
 }
 
+type frontendResponseStreamer func(
+	ctx context.Context,
+	reqCtx context.Context,
+	c client.PoolClient,
+	queryID uint64,
+	response *httpgrpc.HTTPResponse,
+	stats *querier_stats.Stats,
+	logger log.Logger) error
+
 // Handles incoming queries from query-scheduler.
 type schedulerProcessor struct {
-	log            log.Logger
-	handler        RequestHandler
-	grpcConfig     grpcclient.Config
-	maxMessageSize int
-	querierID      string
+	log              log.Logger
+	handler          RequestHandler
+	streamResponse   frontendResponseStreamer
+	grpcConfig       grpcclient.Config
+	maxMessageSize   int
+	querierID        string
+	streamingEnabled bool
 
 	frontendPool                  *client.Pool
 	frontendClientRequestDuration *prometheus.HistogramVec
@@ -125,13 +146,14 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Con
 		}
 
 		if err := sp.querierLoop(execCtx, c, address, inflightQuery); err != nil {
-			// Do not log an error if the query-scheduler is shutting down.
-			if s, ok := status.FromError(err); !ok || !strings.Contains(s.Message(), schedulerpb.ErrSchedulerIsNotRunning.Error()) {
-				level.Error(sp.log).Log("msg", "error processing requests from scheduler", "err", err, "addr", address)
+			if !isErrCancel(err, log.With(sp.log, "addr", address)) {
+				// Do not log an error if the query-scheduler is shutting down.
+				if s, ok := grpcutil.ErrorToStatus(err); !ok || !strings.Contains(s.Message(), schedulerpb.ErrSchedulerIsNotRunning.Error()) {
+					level.Error(sp.log).Log("msg", "error processing requests from scheduler", "err", err, "addr", address)
+				}
+				backoff.Wait()
+				continue
 			}
-
-			backoff.Wait()
-			continue
 		}
 
 		backoff.Reset()
@@ -158,9 +180,9 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 			return
 		default:
 			// Query is not complete.
-			level.Info(sp.log).Log("msg", "query-scheduler loop in querier received non-cancellation error, waiting for inflight query to complete...", "err", err, "address", address)
+			level.Info(sp.log).Log("msg", "query-scheduler loop in querier received non-cancellation error, waiting for inflight query to complete...", "err", err, "addr", address)
 			<-queryComplete
-			level.Info(sp.log).Log("msg", "query-scheduler loop in querier received non-cancellation error and inflight query is complete, continuing", "err", err, "address", address)
+			level.Info(sp.log).Log("msg", "query-scheduler loop in querier received non-cancellation error and inflight query is complete, continuing", "err", err, "addr", address)
 		}
 	}
 
@@ -279,21 +301,34 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 		MaxRetries: maxNotifyFrontendRetries,
 	})
 
+	var hasStreamHeader bool
+	response.Headers, hasStreamHeader = removeStreamingHeader(response.Headers)
+	shouldStream := hasStreamHeader && sp.streamingEnabled && len(response.Body) > responseStreamingBodyChunkSizeBytes
+
+	// Protect against not-yet-exited querier handler goroutines that could
+	// still be incrementing stats when sent for marshaling below.
+	stats = stats.Copy()
+
 	for bof.Ongoing() {
 		c, err = sp.frontendPool.GetClientFor(frontendAddress)
 		if err != nil {
 			break
 		}
 
-		// Response is empty and uninteresting.
-		_, err = c.(frontendv2pb.FrontendForQuerierClient).QueryResult(frontendCtx, &frontendv2pb.QueryResultRequest{
-			QueryID:      queryID,
-			HttpResponse: response,
-			Stats:        stats,
-		})
+		if shouldStream {
+			err = sp.streamResponse(frontendCtx, ctx, c, queryID, response, stats, sp.log)
+		} else {
+			// Response is empty and uninteresting.
+			_, err = c.(frontendv2pb.FrontendForQuerierClient).QueryResult(frontendCtx, &frontendv2pb.QueryResultRequest{
+				QueryID:      queryID,
+				HttpResponse: response,
+				Stats:        stats,
+			})
+		}
 		if err == nil {
 			break
 		}
+
 		level.Warn(logger).Log("msg", "retrying to notify frontend about finished query", "err", err, "frontend", frontendAddress, "retries", bof.NumRetries(), "query_id", queryID)
 		sp.frontendPool.RemoveClient(c, frontendAddress)
 		bof.Wait()
@@ -302,6 +337,78 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 	if err != nil {
 		level.Error(logger).Log("msg", "error notifying frontend about finished query", "err", err, "frontend", frontendAddress, "query_id", queryID)
 	}
+}
+
+func removeStreamingHeader(headers []*httpgrpc.Header) ([]*httpgrpc.Header, bool) {
+	streamEnabledViaHeader := false
+	for i, header := range headers {
+		if header.Key == ResponseStreamingEnabledHeader {
+			if header.Values[0] == "true" {
+				streamEnabledViaHeader = true
+			}
+			headers = append(headers[:i], headers[i+1:]...)
+			break
+		}
+	}
+	return headers, streamEnabledViaHeader
+}
+
+func streamResponse(
+	ctx context.Context,
+	reqCtx context.Context,
+	c client.PoolClient,
+	queryID uint64,
+	response *httpgrpc.HTTPResponse,
+	stats *querier_stats.Stats,
+	logger log.Logger,
+) error {
+	sc, err := c.(frontendv2pb.FrontendForQuerierClient).QueryResultStream(ctx)
+	if err != nil {
+		return fmt.Errorf("error creating stream to frontend: %w", err)
+	}
+
+	// Send metadata
+	err = sc.Send(&frontendv2pb.QueryResultStreamRequest{
+		QueryID: queryID,
+		Data: &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: &frontendv2pb.QueryResultMetadata{
+			Code:    response.Code,
+			Headers: response.Headers,
+			Stats:   stats,
+		}},
+	})
+	if err != nil {
+		return fmt.Errorf("error sending initial response to frontend: %w", err)
+	}
+
+	// The response metadata has been sent successfully. After this point we can no longer
+	// return an error from this function as that would cause the response metadata to be sent
+	// again. This would be rejected by the frontend and the retry could never succeed.
+sendBody:
+	// Send body chunks.
+	for offset := 0; offset < len(response.Body); {
+		select {
+		case <-reqCtx.Done():
+			level.Warn(logger).Log("msg", "response stream aborted", "cause", context.Cause(reqCtx))
+			break sendBody
+		default:
+			err = sc.Send(&frontendv2pb.QueryResultStreamRequest{
+				QueryID: queryID,
+				Data: &frontendv2pb.QueryResultStreamRequest_Body{Body: &frontendv2pb.QueryResultBody{
+					Chunk: response.Body[offset:min(offset+responseStreamingBodyChunkSizeBytes, len(response.Body))],
+				}},
+			})
+			if err != nil {
+				level.Warn(logger).Log("msg", "error streaming response body to frontend, aborting response stream", "err", err)
+				break sendBody
+			}
+			offset += responseStreamingBodyChunkSizeBytes
+		}
+	}
+
+	// Ignore error here because there's nothing we can do about it.
+	_, _ = sc.CloseAndRecv()
+
+	return nil
 }
 
 func (sp *schedulerProcessor) updateTracingHeaders(request *httpgrpc.HTTPRequest, span opentracing.Span) error {
@@ -333,12 +440,17 @@ func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClie
 		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
 		middleware.ClientUserHeaderInterceptor,
 		middleware.UnaryClientInstrumentInterceptor(sp.frontendClientRequestDuration),
-	}, nil)
+	}, []grpc.StreamClientInterceptor{
+		otgrpc.OpenTracingStreamClientInterceptor(opentracing.GlobalTracer()),
+		middleware.StreamClientUserHeaderInterceptor,
+		middleware.StreamClientInstrumentInterceptor(sp.frontendClientRequestDuration),
+	})
 
 	if err != nil {
 		return nil, err
 	}
 
+	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(addr, opts...)
 	if err != nil {
 		return nil, err

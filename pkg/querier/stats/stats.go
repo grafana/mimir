@@ -204,6 +204,17 @@ func (s *Stats) Merge(other *Stats) {
 	s.AddQueueTime(other.LoadQueueTime())
 }
 
+// Copy returns a copy of the stats. Use this rather than regular struct assignment
+// to make sure atomic modifications are observed.
+func (s *Stats) Copy() *Stats {
+	if s == nil {
+		return nil
+	}
+	c := &Stats{}
+	c.Merge(s)
+	return c
+}
+
 func ShouldTrackHTTPGRPCResponse(r *httpgrpc.HTTPResponse) bool {
 	// Do no track statistics for requests failed because of a server error.
 	return r.Code < 500

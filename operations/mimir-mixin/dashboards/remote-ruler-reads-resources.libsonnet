@@ -3,10 +3,11 @@ local filename = 'mimir-remote-ruler-reads-resources.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == '1940f6ef765a506a171faa2056c956c3' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Remote ruler reads resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
     .addRow(
-      $.row('Query-frontend (dedicated to ruler)')
+      $.row('Ruler-query-frontend')
       .addPanel(
         $.containerCPUUsagePanelByComponent('ruler_query_frontend'),
       )
@@ -18,7 +19,7 @@ local filename = 'mimir-remote-ruler-reads-resources.json';
       )
     )
     .addRow(
-      $.row('Query-scheduler (dedicated to ruler)')
+      $.row('Ruler-query-scheduler')
       .addPanel(
         $.containerCPUUsagePanelByComponent('ruler_query_scheduler'),
       )
@@ -30,7 +31,7 @@ local filename = 'mimir-remote-ruler-reads-resources.json';
       )
     )
     .addRow(
-      $.row('Querier (dedicated to ruler)')
+      $.row('Ruler-querier')
       .addPanel(
         $.containerCPUUsagePanelByComponent('ruler_querier'),
       )

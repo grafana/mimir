@@ -8,6 +8,7 @@ package validation
 import (
 	"bytes"
 	"flag"
+	"maps"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -18,13 +19,16 @@ import (
 func TestNotificationLimitsMap(t *testing.T) {
 	for name, tc := range map[string]struct {
 		args     []string
-		expected NotificationRateLimitMap
+		expected LimitsMap[float64]
 		error    string
 	}{
 		"basic test": {
 			args: []string{"-map-flag", "{\"email\": 100 }"},
-			expected: NotificationRateLimitMap{
-				"email": 100,
+			expected: LimitsMap[float64]{
+				validator: validateIntegrationLimit,
+				data: map[string]float64{
+					"email": 100,
+				},
 			},
 		},
 
@@ -39,7 +43,7 @@ func TestNotificationLimitsMap(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			v := NotificationRateLimitMap{}
+			v := NotificationRateLimitMap()
 
 			fs := flag.NewFlagSet("test", flag.ContinueOnError)
 			fs.SetOutput(&bytes.Buffer{}) // otherwise errors would go to stderr.
@@ -51,20 +55,20 @@ func TestNotificationLimitsMap(t *testing.T) {
 				assert.Equal(t, tc.error, err.Error())
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tc.expected, v)
+				assert.True(t, maps.Equal(tc.expected.data, v.data))
 			}
 		})
 	}
 }
 
 type TestStruct struct {
-	Flag NotificationRateLimitMap `yaml:"flag"`
+	Flag LimitsMap[float64] `yaml:"flag"`
 }
 
 func TestNotificationsLimitMapYaml(t *testing.T) {
 
 	var testStruct TestStruct
-	testStruct.Flag = map[string]float64{}
+	testStruct.Flag = NotificationRateLimitMap()
 
 	require.NoError(t, testStruct.Flag.Set("{\"email\": 500 }"))
 	expected := []byte(`flag:
@@ -76,16 +80,16 @@ func TestNotificationsLimitMapYaml(t *testing.T) {
 	assert.Equal(t, expected, actual)
 
 	var actualStruct TestStruct
-	actualStruct.Flag = NotificationRateLimitMap{} // must be set, otherwise unmarshalling panics.
+	actualStruct.Flag = NotificationRateLimitMap()
 
 	err = yaml.Unmarshal(expected, &actualStruct)
 	require.NoError(t, err)
-	assert.Equal(t, testStruct, actualStruct)
+	assert.Equal(t, testStruct.Flag.data, actualStruct.Flag.data)
 }
 
 func TestUnknownIntegrationWhenLoadingYaml(t *testing.T) {
 	var s TestStruct
-	s.Flag = NotificationRateLimitMap{} // must be set, otherwise unmarshalling panics.
+	s.Flag = NotificationRateLimitMap()
 
 	yamlInput := `flag:
   unknown_integration: 500
@@ -98,7 +102,7 @@ func TestUnknownIntegrationWhenLoadingYaml(t *testing.T) {
 
 func TestWrongYamlStructureWhenLoadingYaml(t *testing.T) {
 	var s TestStruct
-	s.Flag = NotificationRateLimitMap{} // must be set, otherwise unmarshalling panics.
+	s.Flag = NotificationRateLimitMap()
 
 	yamlInput := `flag:
   email:

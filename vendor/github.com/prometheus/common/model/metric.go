@@ -24,6 +24,22 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+var (
+	// NameValidationScheme determines the method of name validation to be used by
+	// all calls to IsValidMetricName() and LabelName IsValid(). Setting UTF-8 mode
+	// in isolation from other components that don't support UTF-8 may result in
+	// bugs or other undefined behavior. This value is intended to be set by
+	// UTF-8-aware binaries as part of their startup. To avoid need for locking,
+	// this value should be set once, ideally in an init(), before multiple
+	// goroutines are started.
+	NameValidationScheme = LegacyValidation
+
+	// NameEscapingScheme defines the default way that names will be
+	// escaped when presented to systems that do not support UTF-8 names. If the
+	// Content-Type "escaping" term is specified, that will override this value.
+	NameEscapingScheme = ValueEncodingEscaping
+)
+
 // ValidationScheme is a Go enum for determining how metric and label names will
 // be validated by this library.
 type ValidationScheme int
@@ -34,62 +50,51 @@ const (
 	// MetricNameRE and LabelNameRE.
 	LegacyValidation ValidationScheme = iota
 
-	// UTF8Validation only requires that metric and label names be valid UTF8
+	// UTF8Validation only requires that metric and label names be valid UTF-8
 	// strings.
 	UTF8Validation
 )
 
-// EscapingScheme is a Go enum for determining how UTF8 metric and label names
-// will be escaped to legacy valid Prometheus names.
 type EscapingScheme int
 
 const (
-	// NoEscaping indicates that a name will not be escaped because the receiver
-	// is UTF8-compatible.
+	// NoEscaping indicates that a name will not be escaped. Unescaped names that
+	// do not conform to the legacy validity check will use a new exposition
+	// format syntax that will be officially standardized in future versions.
 	NoEscaping EscapingScheme = iota
 
-	// ValueEncodingEscaping prepends the name with `U__` and replaces all invalid
-	// characters with the unicode value, surrounded by underscores. Single
-	// underscores are replaced with double underscores. This is the only escaping
-	// format that is fully round-trippable.
-	ValueEncodingEscaping
-
 	// UnderscoreEscaping replaces all legacy-invalid characters with underscores.
-	// This escaping cannot be reversed.
 	UnderscoreEscaping
 
 	// DotsEscaping is similar to UnderscoreEscaping, except that dots are
 	// converted to `_dot_` and pre-existing underscores are converted to `__`.
-	// This escaping is partially reversible.
 	DotsEscaping
+
+	// ValueEncodingEscaping prepends the name with `U__` and replaces all invalid
+	// characters with the unicode value, surrounded by underscores. Single
+	// underscores are replaced with double underscores.
+	ValueEncodingEscaping
 )
 
 const (
-	EscapeNone        = "none"
+	// EscapingKey is the key in an Accept or Content-Type header that defines how
+	// metric and label names that do not conform to the legacy character
+	// requirements should be escaped when being scraped by a legacy prometheus
+	// system. If a system does not explicitly pass an escaping parameter in the
+	// Accept header, the default NameEscapingScheme will be used.
+	EscapingKey = "escaping"
+
+	// Possible values for Escaping Key:
+	AllowUTF8         = "allow-utf-8" // No escaping required.
 	EscapeUnderscores = "underscores"
 	EscapeDots        = "dots"
 	EscapeValues      = "values"
 )
 
-var (
-	// NameValidationScheme determines the method of name validation to be used by
-	// all calls to IsValidMetricName() and LabelName IsValid(). Setting UTF8 mode
-	// in isolation from other components that don't support UTF8 may result in
-	// bugs or other undefined behavior. This value is intended to be set by
-	// UTF8-aware binaries as part of their startup. To avoid need for locking,
-	// this value should be set once, ideally in an init(), before multiple
-	// goroutines are started.
-	NameValidationScheme = LegacyValidation
-
-	// NameEscapingScheme defines the way that names will be
-	// escaped when presented to systems that do not support UTF-8 names.
-	NameEscapingScheme = ValueEncodingEscaping
-
-	// MetricNameRE is a regular expression matching valid metric
-	// names. Note that the IsValidMetricName function performs the same
-	// check but faster than a match with this regular expression.
-	MetricNameRE = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
-)
+// MetricNameRE is a regular expression matching valid metric
+// names. Note that the IsValidMetricName function performs the same
+// check but faster than a match with this regular expression.
+var MetricNameRE = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
 
 // A Metric is similar to a LabelSet, but the key difference is that a Metric is
 // a singleton and refers to one and only one stream of samples.
@@ -199,6 +204,7 @@ func EscapeMetricFamily(v *dto.MetricFamily, scheme EscapingScheme) *dto.MetricF
 	out := &dto.MetricFamily{
 		Help: v.Help,
 		Type: v.Type,
+		Unit: v.Unit,
 	}
 
 	// If the name is nil, copy as-is, don't try to escape.
@@ -326,8 +332,6 @@ func EscapeName(name string, scheme EscapingScheme) string {
 				escaped.WriteRune('_')
 			}
 		}
-		// this is useless because the negotiation happens elsewhere
-		// debug.PrintStack()
 		return escaped.String()
 	default:
 		panic(fmt.Sprintf("invalid escaping scheme %d", scheme))
@@ -379,7 +383,7 @@ func UnescapeName(name string, scheme EscapingScheme) string {
 				unescaped.WriteByte('_')
 				continue
 			}
-			// We think we are in a UTF8 code, process it.
+			// We think we are in a UTF-8 code, process it.
 			var utf8Val uint
 			for j := 0; i < len(escapedName); j++ {
 				// This is too many characters for a utf8 value.
@@ -422,7 +426,7 @@ func isValidLegacyRune(b rune, i int) bool {
 func (e EscapingScheme) String() string {
 	switch e {
 	case NoEscaping:
-		return EscapeNone
+		return AllowUTF8
 	case UnderscoreEscaping:
 		return EscapeUnderscores
 	case DotsEscaping:
@@ -439,7 +443,7 @@ func ToEscapingScheme(s string) (EscapingScheme, error) {
 		return NoEscaping, fmt.Errorf("got empty string instead of escaping scheme")
 	}
 	switch s {
-	case EscapeNone:
+	case AllowUTF8:
 		return NoEscaping, nil
 	case EscapeUnderscores:
 		return UnderscoreEscaping, nil

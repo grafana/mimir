@@ -3,6 +3,7 @@ local filename = 'mimir-alertmanager-resources.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == 'a6883fb22799ac74479c7db872451092' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Alertmanager resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
     .addRowIf(

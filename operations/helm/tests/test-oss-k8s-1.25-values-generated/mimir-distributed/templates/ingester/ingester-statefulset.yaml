@@ -30,7 +30,9 @@ spec:
     type: OnDelete
   serviceName: test-oss-k8s-1.25-values-mimir-ingester-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -60,12 +62,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -75,9 +71,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-k8s-1.25-values
             app.kubernetes.io/component: ingester
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
@@ -137,7 +131,6 @@ spec:
           env:
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "1000"
-          envFrom:
 ---
 # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
 apiVersion: apps/v1
@@ -170,7 +163,9 @@ spec:
     type: OnDelete
   serviceName: test-oss-k8s-1.25-values-mimir-ingester-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -200,12 +195,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -215,9 +204,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-k8s-1.25-values
             app.kubernetes.io/component: ingester
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
@@ -277,7 +264,6 @@ spec:
           env:
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "1000"
-          envFrom:
 ---
 # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
 apiVersion: apps/v1
@@ -310,7 +296,9 @@ spec:
     type: OnDelete
   serviceName: test-oss-k8s-1.25-values-mimir-ingester-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -340,12 +328,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -355,9 +337,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-k8s-1.25-values
             app.kubernetes.io/component: ingester
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
@@ -417,4 +397,3 @@ spec:
           env:
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "1000"
-          envFrom:

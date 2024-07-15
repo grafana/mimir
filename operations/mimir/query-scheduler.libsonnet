@@ -46,7 +46,9 @@
     $.util.antiAffinity +
     // Do not run more query-schedulers than expected.
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(1) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0),
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +
+    // Set a termination grace period greater than query timeout.
+    deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(180),
 
   query_scheduler_deployment: if !$._config.is_microservices_deployment_mode || !$._config.query_scheduler_enabled then {} else
     self.newQuerySchedulerDeployment('query-scheduler', $.query_scheduler_container, $.query_scheduler_node_affinity_matchers),

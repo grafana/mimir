@@ -19,9 +19,13 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
+	gokitlog "github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/config"
+	"github.com/prometheus/alertmanager/featurecontrol"
+	"github.com/prometheus/alertmanager/matchers/compat"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -41,6 +45,7 @@ type AlertmanagerCommand struct {
 	DisableColor           bool
 	ValidateOnly           bool
 	OutputDir              string
+	UTF8StrictMode         bool
 
 	cli *client.MimirClient
 }
@@ -71,6 +76,8 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 	alertCmd.Flag("tls-key-path", "TLS client certificate private key to authenticate with the Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSKeyPath+".").Default("").Envar(envVars.TLSKeyPath).StringVar(&a.ClientConfig.TLS.KeyPath)
 	alertCmd.Flag("tls-insecure-skip-verify", "Skip TLS certificate verification; alternatively, set "+envVars.TLSInsecureSkipVerify+".").Default("false").Envar(envVars.TLSInsecureSkipVerify).BoolVar(&a.ClientConfig.TLS.InsecureSkipVerify)
 	alertCmd.Flag("auth-token", "Authentication token bearer authentication; alternatively, set "+envVars.AuthToken+".").Default("").Envar(envVars.AuthToken).StringVar(&a.ClientConfig.AuthToken)
+	alertCmd.Flag("utf8-strict-mode", "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts.").Default("false").BoolVar(&a.UTF8StrictMode)
+
 	// Get Alertmanager Configs Command
 	getAlertsCmd := alertCmd.Command("get", "Get the Alertmanager configuration that is currently in the Grafana Mimir Alertmanager.").Action(a.getConfig)
 	getAlertsCmd.Flag("disable-color", "disable colored output").BoolVar(&a.DisableColor)
@@ -87,12 +94,45 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 		cmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+". Used for X-Scope-OrgID HTTP header. Also used for basic auth if --user is not provided.").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
 	}
 
+	migrateCmd := alertCmd.Command("migrate-utf8", "Migrate the Alertmanager tenant configuration for UTF-8.").Action(a.migrateConfig)
+	migrateCmd.Arg("config", "Alertmanager configuration file to load").Required().StringVar(&a.AlertmanagerConfigFile)
+	migrateCmd.Arg("template-files", "The template files to load").ExistingFilesVar(&a.TemplateFiles)
+	migrateCmd.Flag("disable-color", "disable colored output").BoolVar(&a.DisableColor)
+	migrateCmd.Flag("output-dir", "The directory where the migrated configuration and templates will be written to and disables printing to console.").ExistingDirVar(&a.OutputDir)
+
 	verifyalertCmd := alertCmd.Command("verify", "Verify Alertmanager tenant configuration and template files.").Action(a.verifyAlertmanagerConfig)
 	verifyalertCmd.Arg("config", "Alertmanager configuration to verify").Required().StringVar(&a.AlertmanagerConfigFile)
 	verifyalertCmd.Arg("template-files", "The template files to verify").ExistingFilesVar(&a.TemplateFiles)
+
+	trCmd := &TemplateRenderCmd{}
+	renderCmd := alertCmd.Command("render", "Render a given definition in a template file to standard output.").Action(trCmd.render)
+	renderCmd.Flag("template.glob", "Glob of paths that will be expanded and used for rendering.").Required().StringsVar(&trCmd.TemplateFilesGlobs)
+	renderCmd.Flag("template.text", "The template that will be rendered.").Required().StringVar(&trCmd.TemplateText)
+	renderCmd.Flag("template.type", "The type of the template. Can be either text (default) or html.").EnumVar(&trCmd.TemplateType, "html", "text")
+	renderCmd.Flag("template.data", "Full path to a file which contains the data of the alert(-s) with which the --template-text will be rendered. Must be in JSON. File must be formatted according to the following layout: https://pkg.go.dev/github.com/prometheus/alertmanager/template#Data. If none has been specified then a predefined, simple alert will be used for rendering.").FileVar(&trCmd.TemplateData)
+	renderCmd.Flag("id", "Basic auth username to use when rendering template used by the function `tenantID`, also set as tenant ID; alternatively, set "+envVars.TenantID+".").
+		Envar(envVars.TenantID).
+		Default("").
+		StringVar(&trCmd.TenantID)
 }
 
 func (a *AlertmanagerCommand) setup(_ *kingpin.ParseContext) error {
+	// The default mode for mimirtool is to first use the new parser for UTF-8 matchers,
+	// and if it fails, fallback to the classic parser. If this happens, it also logs a
+	// warning to stdout. It is possible to disable to fallback, and use just the UTF-8
+	// parser, with the -utf8-strict-mode flag. This will help operators ensure their
+	// configurations are compatible with the new parser going forward.
+	l := level.NewFilter(gokitlog.NewLogfmtLogger(os.Stdout), level.AllowInfo())
+	features := ""
+	if a.UTF8StrictMode {
+		features = featurecontrol.FeatureUTF8StrictMode
+	}
+	flags, err := featurecontrol.NewFlags(l, features)
+	if err != nil {
+		return err
+	}
+	compat.InitFromFlags(l, flags)
+
 	cli, err := client.New(a.ClientConfig)
 	if err != nil {
 		return err
@@ -201,6 +241,22 @@ func (a *AlertmanagerCommand) deleteConfig(_ *kingpin.ParseContext) error {
 		return err
 	}
 	return nil
+}
+
+func (a *AlertmanagerCommand) migrateConfig(_ *kingpin.ParseContext) error {
+	cfg, templates, err := a.readAlertManagerConfig()
+	if err != nil {
+		return err
+	}
+	cfg, err = migrateCfg(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to migrate cfg: %w", err)
+	}
+	if a.OutputDir == "" {
+		p := printer.New(a.DisableColor)
+		return p.PrintAlertmanagerConfig(cfg, templates)
+	}
+	return a.outputAlertManagerConfigTemplates(cfg, templates)
 }
 
 func (a *AlertCommand) Register(app *kingpin.Application, envVars EnvVarNames, reg prometheus.Registerer) {

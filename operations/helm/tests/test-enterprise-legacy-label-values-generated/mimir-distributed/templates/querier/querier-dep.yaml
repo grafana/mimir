@@ -41,8 +41,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
       containers:
         - name: querier
           imagePullPolicy: IfNotPresent
@@ -59,7 +57,6 @@ spec:
               mountPath: /var/enterprise-metrics
             - name: storage
               mountPath: "/data"
-              subPath: 
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -94,11 +91,6 @@ spec:
               value: "5"
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "5000"
-          envFrom:
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -107,8 +99,6 @@ spec:
           matchLabels:
             app: enterprise-metrics-querier
             release: test-enterprise-legacy-label-values
-      tolerations:
-        []
       terminationGracePeriodSeconds: 180
       volumes:
         - name: config

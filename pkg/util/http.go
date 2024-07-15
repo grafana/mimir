@@ -146,14 +146,15 @@ const (
 
 // ParseProtoReader parses a compressed proto from an io.Reader.
 // You can pass in an optional RequestBuffers.
-func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSize int, buffers *RequestBuffers, req proto.Message, compression CompressionType) error {
+// If no error is returned, the returned actualSize is the size of the uncompressed proto.
+func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSize int, buffers *RequestBuffers, req proto.Message, compression CompressionType) (actualSize int, err error) {
 	sp := opentracing.SpanFromContext(ctx)
 	if sp != nil {
 		sp.LogFields(otlog.Event("util.ParseProtoReader[start reading]"))
 	}
 	body, err := decompressRequest(buffers, reader, expectedSize, maxSize, compression, sp)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	if sp != nil {
@@ -173,14 +174,14 @@ func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSi
 			sp.LogFields(otlog.Event("util.ParseProtoReader[unmarshal done]"), otlog.Error(err))
 		}
 
-		return err
+		return 0, err
 	}
 
 	if sp != nil {
 		sp.LogFields(otlog.Event("util.ParseProtoReader[unmarshal done]"))
 	}
 
-	return nil
+	return len(body), nil
 }
 
 type MsgSizeTooLargeErr struct {
@@ -294,6 +295,8 @@ func tryBufferFromReader(reader io.Reader) (*bytes.Buffer, bool) {
 	return nil, false
 }
 
+var snappyEncoding = snappyCheckAndEncode
+
 // SerializeProtoResponse serializes a protobuf response into an HTTP response.
 func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compression CompressionType) error {
 	data, err := proto.Marshal(resp)
@@ -305,7 +308,11 @@ func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compressi
 	switch compression {
 	case NoCompression:
 	case RawSnappy:
-		data = snappy.Encode(nil, data)
+		data, err = snappyEncoding(nil, data)
+		if err != nil {
+			err = errors.Wrap(err, "snappy encoding")
+			break
+		}
 	case Gzip:
 		var buf bytes.Buffer
 		buf.Grow(len(data))
@@ -336,6 +343,7 @@ func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compressi
 
 // ParseRequestFormWithoutConsumingBody parsed and returns the request parameters (query string and/or request body)
 // from the input http.Request. If the request has a Body, the request's Body is replaces so that it can be consumed again.
+// It does not check the req.Body size, so it is the caller's responsibility to ensure that the body is not too large.
 func ParseRequestFormWithoutConsumingBody(r *http.Request) (url.Values, error) {
 	if r.Body == nil {
 		if err := r.ParseForm(); err != nil {
@@ -345,16 +353,10 @@ func ParseRequestFormWithoutConsumingBody(r *http.Request) (url.Values, error) {
 		return r.Form, nil
 	}
 
-	// Close the original body reader. It's going to be replaced later in this function.
-	origBody := r.Body
-	defer func() { _ = origBody.Close() }()
-
-	// Store the body contents, so we can read it multiple times.
-	bodyBytes, err := io.ReadAll(r.Body)
+	bodyBytes, err := ReadRequestBodyWithoutConsuming(r)
 	if err != nil {
 		return nil, err
 	}
-	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
 	// Parse the request data.
 	if err := r.ParseForm(); err != nil {
@@ -369,6 +371,30 @@ func ParseRequestFormWithoutConsumingBody(r *http.Request) (url.Values, error) {
 	r.Form, r.PostForm = nil, nil
 
 	return params, nil
+}
+
+// ReadRequestBodyWithoutConsuming makes a copy of the request body bytes
+// without consuming the body, so it can be read again later.
+// If the request has no body, it returns nil without error.
+// It does not check the req.Body size, so it is the caller's responsibility
+// to ensure that the body is not too large.
+func ReadRequestBodyWithoutConsuming(r *http.Request) ([]byte, error) {
+	if r.Body == nil {
+		return nil, nil
+	}
+
+	// Close the original body reader. It's going to be replaced later in this function.
+	origBody := r.Body
+	defer func() { _ = origBody.Close() }()
+
+	// Store the body contents, so we can read it multiple times.
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+	return bodyBytes, nil
 }
 
 func copyValues(src url.Values) url.Values {
@@ -390,4 +416,11 @@ func IsValidURL(endpoint string) bool {
 	}
 
 	return u.Scheme != "" && u.Host != ""
+}
+
+func snappyCheckAndEncode(dst []byte, data []byte) ([]byte, error) {
+	if encodeLen := snappy.MaxEncodedLen(len(data)); encodeLen == -1 {
+		return nil, fmt.Errorf("data too large to encode")
+	}
+	return snappy.Encode(dst, data), nil
 }

@@ -70,7 +70,7 @@ func TestPostings_Seek(t *testing.T) {
 
 	activeSeriesPostings := NewPostings(activeSeries, storagePostings)
 
-	// See to a series that is not active.
+	// Seek to a series that is not active.
 	require.True(t, activeSeriesPostings.Seek(3))
 	// The next active series is 4.
 	require.Equal(t, storage.SeriesRef(4), activeSeriesPostings.At())
@@ -102,7 +102,7 @@ func TestPostings_SeekToEnd(t *testing.T) {
 
 	activeSeriesPostings := NewPostings(activeSeries, storagePostings)
 
-	// See to a series that is not active.
+	// Seek to a series that is not active.
 	// There are no active series after 3, so Seek should return false.
 	require.False(t, activeSeriesPostings.Seek(3))
 }

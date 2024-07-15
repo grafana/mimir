@@ -506,11 +506,11 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 
 				t.Run(testName, func(t *testing.T) {
 					t.Parallel()
-					reqs := []Request{
+					reqs := []MetricsQueryRequest{
 						&PrometheusInstantQueryRequest{
-							Path:  "/query",
-							Time:  util.TimeToMillis(end),
-							Query: testData.query,
+							path:      "/query",
+							time:      util.TimeToMillis(end),
+							queryExpr: parseQuery(t, testData.query),
 						},
 					}
 
@@ -619,10 +619,10 @@ func TestInstantQuerySplittingHTTPOptions(t *testing.T) {
 
 		t.Run(tt.name, func(t *testing.T) {
 			req := &PrometheusInstantQueryRequest{
-				Path:    "/query",
-				Time:    time.Now().UnixNano(),
-				Query:   "sum_over_time(metric_counter[3h])", // splittable instant query
-				Options: tt.httpOptions,
+				path:      "/query",
+				time:      time.Now().UnixNano(),
+				queryExpr: parseQuery(t, "sum_over_time(metric_counter[3h])"), // splittable instant query
+				options:   tt.httpOptions,
 			}
 
 			// Split by interval middleware with a limit configuration of split instant query interval of 1m

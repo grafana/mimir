@@ -902,6 +902,142 @@ func BenchmarkActiveSeriesHandler_ServeHTTP(b *testing.B) {
 	}
 }
 
+func TestActiveNativeHistogramMetricsCardinalityHandler(t *testing.T) {
+	tests := []struct {
+		name                 string
+		requestParams        map[string][]string
+		expectMatcherSetSize int
+		returnedError        error
+		expectStatusCode     int
+	}{
+		{
+			name:             "should error on missing selector param",
+			expectStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:             "should error on invalid selector",
+			requestParams:    map[string][]string{"selector": {"-not-valid-"}},
+			expectStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:             "should error on multiple selectors",
+			requestParams:    map[string][]string{"selector": {"a", "b"}},
+			expectStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:             "valid selector",
+			requestParams:    map[string][]string{"selector": {`{job="prometheus"}`}},
+			expectStatusCode: http.StatusOK,
+		},
+		{
+			name:             "upstream error: response too large",
+			requestParams:    map[string][]string{"selector": {`{job="prometheus"}`}},
+			returnedError:    pkg_distributor.ErrResponseTooLarge,
+			expectStatusCode: http.StatusRequestEntityTooLarge,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			d := &mockDistributor{}
+
+			dResp := cardinality.ActiveNativeHistogramMetricsResponse{
+				Data: []cardinality.ActiveMetricWithBucketCount{
+					{
+						Metric:         "request_duration_seconds",
+						SeriesCount:    10,
+						BucketCount:    200,
+						AvgBucketCount: 20.0,
+						MinBucketCount: 1,
+						MaxBucketCount: 40,
+					},
+					{
+						Metric:         "store_duration_seconds",
+						SeriesCount:    10,
+						BucketCount:    100,
+						AvgBucketCount: 10.0,
+						MinBucketCount: 10,
+						MaxBucketCount: 10,
+					},
+				},
+			}
+			d.On("ActiveNativeHistogramMetrics", mock.Anything, mock.Anything).Return(&dResp, test.returnedError)
+
+			handler := createEnabledHandler(t, ActiveNativeHistogramMetricsHandler, d)
+			ctx := user.InjectOrgID(context.Background(), "test")
+
+			data := url.Values{}
+			for key, values := range test.requestParams {
+				for _, value := range values {
+					data.Add(key, value)
+				}
+			}
+			request, err := http.NewRequestWithContext(ctx, "POST", "/active_native_histogram_metrics", strings.NewReader(data.Encode()))
+			require.NoError(t, err)
+			request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, request)
+
+			assert.Equal(t, test.expectStatusCode, recorder.Result().StatusCode)
+
+			if test.expectStatusCode != http.StatusOK {
+				return
+			}
+
+			require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
+
+			body := recorder.Result().Body
+			defer func(body io.ReadCloser) {
+				err := body.Close()
+				require.NoError(t, err)
+			}(body)
+			bodyContent, err := io.ReadAll(body)
+			require.NoError(t, err)
+
+			resp := cardinality.ActiveNativeHistogramMetricsResponse{}
+			err = json.Unmarshal(bodyContent, &resp)
+			require.NoError(t, err)
+			assert.Len(t, resp.Data, len(dResp.Data))
+		})
+	}
+}
+
+func BenchmarkActiveNativeHistogramMetricsHandler_ServeHTTP(b *testing.B) {
+	const numResponseMetrics = 1000
+
+	d := &mockDistributor{}
+
+	dResp := cardinality.ActiveNativeHistogramMetricsResponse{}
+	for i := 0; i < numResponseMetrics; i++ {
+		dResp.Data = append(dResp.Data, cardinality.ActiveMetricWithBucketCount{
+			Metric:         "request_duration_" + fmt.Sprint(i) + "_seconds",
+			SeriesCount:    10,
+			BucketCount:    200,
+			AvgBucketCount: 20.0,
+			MinBucketCount: 1,
+			MaxBucketCount: 40,
+		})
+	}
+	d.On("ActiveNativeHistogramMetrics", mock.Anything, mock.Anything).Return(&dResp, nil)
+
+	handler := createEnabledHandler(b, ActiveNativeHistogramMetricsHandler, d)
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	for i := 0; i < b.N; i++ {
+		// Prepare a request.
+		r := httptest.NewRequest("POST", "/active_native_histogram_metrics", strings.NewReader("selector={job=\"prometheus\"}"))
+		r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+		// Run the benchmark.
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, r.WithContext(ctx))
+
+		// Make sure we're not benchmarking error responses.
+		require.Equal(b, http.StatusOK, recorder.Result().StatusCode)
+	}
+}
+
 // createEnabledHandler creates a cardinalityHandler that can be either a LabelNamesCardinalityHandler or a LabelValuesCardinalityHandler
 func createEnabledHandler(t testing.TB, cardinalityHandler func(Distributor, *validation.Overrides) http.Handler, distributor *mockDistributor) http.Handler {
 	limits := validation.Limits{CardinalityAnalysisEnabled: true}

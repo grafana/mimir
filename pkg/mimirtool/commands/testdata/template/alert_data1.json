@@ -1,0 +1,36 @@
+{
+    "receiver": "receiver",
+    "status": "alertstatus",
+    "alerts": [
+        {
+            "status": "alertstatus",
+            "labels": {
+                "customer": "testing_purpose",
+                "environment": "lab",
+                "severity": "warning",
+                "alertname": "AlertNameExample"
+            },
+            "annotations": {
+                "description": "blablablabla"
+            },
+            "startsAt": "2024-02-07T09:00:51.0982886+01:00",
+            "endsAt": "2024-02-07T09:10:51.0982886+01:00",
+            "generatorURL": "https://localhost/graph?g0.expr=up",
+            "fingerprint": "fingerprint2"
+        }
+    ],
+    "groupLabels": {
+        "grouplabelkey1": "grouplabelvalue1",
+        "grouplabelkey2": "grouplabelvalue2"
+    },
+    "commonLabels": {
+        "alertname": "AlertNameExample",
+        "customer": "testing_purpose",
+        "environment": "lab"
+    },
+    "commonAnnotations": {
+        "commonannotationkey1": "commonannotationvalue1",
+        "commonannotationkey2": "commonannotationvalue2"
+    },
+    "externalURL": "https://example.com"
+}

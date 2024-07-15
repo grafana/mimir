@@ -7,7 +7,9 @@ package batch
 
 import (
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/zeropool"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
@@ -18,6 +20,9 @@ type chunkIterator struct {
 	chunk GenericChunk
 	it    chunk.Iterator
 	batch chunk.Batch
+
+	hPool  *zeropool.Pool[*histogram.Histogram]
+	fhPool *zeropool.Pool[*histogram.FloatHistogram]
 }
 
 func (i *chunkIterator) reset(chunk GenericChunk) {
@@ -47,9 +52,8 @@ func (i *chunkIterator) Seek(t int64, size int) chunkenc.ValueType {
 			return i.batch.ValueType
 		}
 	}
-
 	if typ := i.it.FindAtOrAfter(model.Time(t)); typ != chunkenc.ValNone {
-		i.batch = i.it.Batch(size, typ)
+		i.batch = i.it.Batch(size, typ, i.hPool, i.fhPool)
 		if i.batch.Length > 0 {
 			return typ
 		}
@@ -59,7 +63,7 @@ func (i *chunkIterator) Seek(t int64, size int) chunkenc.ValueType {
 
 func (i *chunkIterator) Next(size int) chunkenc.ValueType {
 	if typ := i.it.Scan(); typ != chunkenc.ValNone {
-		i.batch = i.it.Batch(size, typ)
+		i.batch = i.it.Batch(size, typ, i.hPool, i.fhPool)
 		if i.batch.Length > 0 {
 			return typ
 		}

@@ -9,28 +9,54 @@ std.manifestYamlDoc({
     self.grafana +
     self.grafana_agent +
     self.memcached +
-    self.zookeeper +
     self.kafka +
     {},
 
   write:: {
-    'mimir-write-1': mimirService({
-      name: 'mimir-write-1',
+    // Zone-a.
+    'mimir-write-zone-a-1': mimirService({
+      name: 'mimir-write-zone-a-1',
       target: 'write',
       publishedHttpPort: 8001,
-      extraVolumes: ['.data-mimir-write-1:/data:delegated'],
+      extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
+      extraVolumes: ['.data-mimir-write-zone-a-1:/data:delegated'],
     }),
-    'mimir-write-2': mimirService({
-      name: 'mimir-write-2',
+    'mimir-write-zone-a-2': mimirService({
+      name: 'mimir-write-zone-a-2',
       target: 'write',
       publishedHttpPort: 8002,
-      extraVolumes: ['.data-mimir-write-2:/data:delegated'],
+      extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
+      extraVolumes: ['.data-mimir-write-zone-a-2:/data:delegated'],
     }),
-    'mimir-write-3': mimirService({
-      name: 'mimir-write-3',
+    'mimir-write-zone-a-3': mimirService({
+      name: 'mimir-write-zone-a-3',
       target: 'write',
       publishedHttpPort: 8003,
-      extraVolumes: ['.data-mimir-write-3:/data:delegated'],
+      extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
+      extraVolumes: ['.data-mimir-write-zone-a-3:/data:delegated'],
+    }),
+
+    // Zone-b.
+    'mimir-write-zone-b-1': mimirService({
+      name: 'mimir-write-zone-b-1',
+      target: 'write',
+      publishedHttpPort: 8011,
+      extraArguments: ['-ingester.ring.instance-availability-zone=zone-b'],
+      extraVolumes: ['.data-mimir-write-zone-b-1:/data:delegated'],
+    }),
+    'mimir-write-zone-b-2': mimirService({
+      name: 'mimir-write-zone-b-2',
+      target: 'write',
+      publishedHttpPort: 8012,
+      extraArguments: ['-ingester.ring.instance-availability-zone=zone-b'],
+      extraVolumes: ['.data-mimir-write-zone-b-2:/data:delegated'],
+    }),
+    'mimir-write-zone-b-3': mimirService({
+      name: 'mimir-write-zone-b-3',
+      target: 'write',
+      publishedHttpPort: 8013,
+      extraArguments: ['-ingester.ring.instance-availability-zone=zone-b'],
+      extraVolumes: ['.data-mimir-write-zone-b-3:/data:delegated'],
     }),
   },
 
@@ -90,33 +116,27 @@ std.manifestYamlDoc({
     },
   },
 
-  zookeeper:: {
-    zookeeper: {
-      image: 'confluentinc/cp-zookeeper:latest',
-      environment: [
-        'ZOOKEEPER_CLIENT_PORT=2181',
-        'ZOOKEEPER_TICK_TIME=2000',
-        'ZOOKEEPER_AUTOPURGE_SNAPRETAINCOUNT=5',
-        'ZOOKEEPER_AUTOPURGE_PURGEINTERVAL=1',
-      ],
-      ports: [
-        '22181:22181',
-      ],
-    },
-  },
-
   kafka:: {
     kafka: {
       image: 'confluentinc/cp-kafka:latest',
-      depends_on: ['zookeeper'],
       environment: [
+        'CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg',  // Cluster ID is required in KRaft mode; the value is random UUID.
         'KAFKA_BROKER_ID=1',
         'KAFKA_NUM_PARTITIONS=100',  // Default number of partitions for auto-created topics.
-        'KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181',
-        'KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,ORBSTACK://kafka.mimir-read-write-mode.orb.local:9091,PLAINTEXT_HOST://localhost:29092',
-        'KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,ORBSTACK:PLAINTEXT',
+        'KAFKA_PROCESS_ROLES=broker,controller',
+        'KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092',
+        'KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092',
+        'KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT',
         'KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT',
+        'KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER',
+        'KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093',
         'KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1',
+        'KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS=10000',
+
+        // Decomment the following config to keep a short retention of records in Kafka.
+        // This is useful to test the behaviour when Kafka records are deleted.
+        // 'KAFKA_LOG_RETENTION_MINUTES=1',
+        // 'KAFKA_LOG_SEGMENT_BYTES=1000000',
       ],
       ports: [
         '29092:29092',
@@ -139,7 +159,7 @@ std.manifestYamlDoc({
 
   grafana:: {
     grafana: {
-      image: 'grafana/grafana:9.4.3',
+      image: 'grafana/grafana:10.4.3',
       environment: [
         'GF_AUTH_ANONYMOUS_ENABLED=true',
         'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
@@ -157,10 +177,13 @@ std.manifestYamlDoc({
     // Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
     // until metadata remote write is not supported by Prometheus).
     'grafana-agent': {
-      image: 'grafana/agent:v0.37.3',
-      command: ['-config.file=/etc/agent-config/grafana-agent.yaml', '-metrics.wal-directory=/tmp', '-server.http.address=127.0.0.1:9091'],
+      image: 'grafana/agent:v0.40.0',
+      command: ['run', '--storage.path=/tmp', '--server.http.listen-addr=127.0.0.1:9091', '/etc/agent-config/grafana-agent.flow'],
       volumes: ['./config:/etc/agent-config'],
       ports: ['9091:9091'],
+      environment: {
+        AGENT_MODE: 'flow',
+      },
     },
   },
 
@@ -176,6 +199,7 @@ std.manifestYamlDoc({
         kafka: { condition: 'service_healthy' },
       },
       env: {},
+      extraArguments: [],
       extraVolumes: [],
       memberlistBindPort: self.publishedHttpPort + 2000,
     },
@@ -192,7 +216,7 @@ std.manifestYamlDoc({
       '-config.file=./config/mimir.yaml' % options,
       '-target=%(target)s' % options,
       '-activity-tracker.filepath=/activity/%(name)s' % options,
-    ],
+    ] + options.extraArguments,
     environment: [
       '%s=%s' % [key, options.env[key]]
       for key in std.objectFields(options.env)

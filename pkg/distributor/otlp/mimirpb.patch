@@ -1,0 +1,106 @@
+@@
+@@
+-[]prompb.Label
++[]mimirpb.LabelAdapter
+
+@@
+@@
+-prompb.Label
++mimirpb.LabelAdapter
+
+@@
+var x expression
+@@
+-make([]prompb.Label, x)
++make([]mimirpb.LabelAdapter, x)
+
+@@
+@@
+-prompb.MetricMetadata_GAUGE
++mimirpb.GAUGE
+
+@@
+@@
+-prompb.MetricMetadata_COUNTER
++mimirpb.COUNTER
+
+@@
+@@
+-prompb.MetricMetadata_HISTOGRAM
++mimirpb.HISTOGRAM
+
+@@
+@@
+-prompb.MetricMetadata_SUMMARY
++mimirpb.SUMMARY
+
+@@
+@@
+-prompb.MetricMetadata_UNKNOWN
++mimirpb.UNKNOWN
+
+@@
+var x identifier
+@@
+-prompb.x
++mimirpb.x
+
+@@
+var x expression
+@@
+mimirpb.Sample{
+  ...,
+- Timestamp: x,
++	TimestampMs: x,
+  ...,
+}
+
+@@
+var x expression
+@@
+[]mimirpb.Sample{
+  {
+    ...,
+- Timestamp: x,
++	TimestampMs: x,
+    ...,
+  },
+}
+
+@@
+var x expression
+@@
+mimirpb.Exemplar{
+  ...,
+- Timestamp: x,
++	TimestampMs: x,
+  ...,
+}
+
+@@
+@@
+-PrometheusConverter
++MimirConverter
+
+@@
+@@
+-NewPrometheusConverter
++NewMimirConverter
+
+@@
+var x identifier
+@@
+-package prometheusremotewrite
++package otlp
+
+# Due to a limitation of package modification, you need an additional patch directive
+x
+
+@@
+var x identifier
+@@
+-import "github.com/prometheus/prometheus/prompb"
++import "github.com/grafana/mimir/pkg/mimirpb"
+
+# Due to a limitation of imports modification, you need an additional patch directive
+x

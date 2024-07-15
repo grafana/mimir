@@ -4,12 +4,15 @@ package worker
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/grpcutil"
 	"go.uber.org/atomic"
+	"google.golang.org/grpc/codes"
 )
 
 // newExecutionContext returns a new execution context (execCtx) that wraps the input workerCtx and
@@ -56,4 +59,17 @@ func newExecutionContext(workerCtx context.Context, logger log.Logger) (execCtx 
 	}()
 
 	return
+}
+
+func isErrCancel(err error, logger log.Logger) bool {
+	if grpcutil.IsCanceled(err) {
+		return true
+	}
+	if s, ok := grpcutil.ErrorToStatus(err); ok && (s.Code() == codes.Unavailable && strings.Contains(s.Message(), `"max_age"`)) {
+		// On "grpc_server_max_connection_age" the server resets the stream's connection.
+		// Safe to ignore (ref grafana/mimir#7023).
+		level.Debug(logger).Log("msg", "server reset stream due to max age", "err", err)
+		return true
+	}
+	return false
 }

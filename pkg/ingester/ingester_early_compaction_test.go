@@ -104,7 +104,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 50
 
-	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 	t.Cleanup(func() {
@@ -184,7 +184,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 	limitsCfg := defaultLimitsTestConfig()
 	limitsCfg.CreationGracePeriod = model.Duration(24 * time.Hour) // This test writes samples in the future.
 
-	ingester, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limitsCfg, "", nil)
+	ingester, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limitsCfg, nil, "", nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 	t.Cleanup(func() {
@@ -337,7 +337,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonorin
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
-	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 	t.Cleanup(func() {
@@ -408,7 +408,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
-	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 	t.Cleanup(func() {
@@ -484,7 +484,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 			cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 			cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
-			ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+			ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 			t.Cleanup(func() {

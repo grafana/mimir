@@ -1,0 +1,79 @@
+{{- /*gotype: github.com/grafana/mimir/pkg/compactor.plannerJobsContent */ -}}
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/html">
+<head>
+    <meta charset="UTF-8">
+    <title>Compactor: compaction jobs based on bucket-index</title>
+</head>
+<body style="padding: 1em;">
+<h1>Compaction jobs based on bucket-index</h1>
+<p>
+    This page shows compaction jobs computed from the bucket index. This is not an up-to-date view of compaction jobs.
+    Compactors owning the job are computed using the current <a href="/compactor/ring">compactor ring</a>, and ignore <code>-compactor.enabled-tenants</code> and <code>-compactor.disabled-tenants</code> configuration.
+</p>
+<ul>
+    <li>Current time: {{ .Now }}</li>
+    <li>Tenant: <strong>{{ .Tenant }}</strong></li>
+    <li>Bucket index last updated: {{ .BucketIndexUpdated }}</li>
+    <li>Tenant Split groups: {{ .TenantSplitGroups }}</li>
+    <li>Tenant Merge shards: {{ .TenantMergeShards }}</li>
+</ul>
+
+<hr />
+
+<form>
+    <input type="checkbox" id="show-blocks" name="show_blocks" {{ if .ShowBlocks }} checked {{ end }}>&nbsp;<label for="show-blocks">Show Blocks</label>&nbsp;&nbsp;
+    <input type="checkbox" id="show-compactors" name="show_compactors" {{ if .ShowCompactors }} checked {{ end }}>&nbsp;<label for="show-compactors">Show Compactors</label>&nbsp;&nbsp;
+    <label for="split-groups">Split groups:</label>&nbsp;<input id="split-groups" name="split_groups" type="text" value="{{ .SplitGroups }}" style="width: 6em;"/>&nbsp;&nbsp;
+    <label for="merge-shards">Merge shards:</label>&nbsp;<input id="merge-shards" name="merge_shards" type="text" value="{{ .MergeShards }}" style="width: 6em;"/>&nbsp;&nbsp;
+    <button type="submit" style="background-color: lightgrey;">
+        <span style="padding: 0.5em 1em; font-size: 125%;">Reload</span>
+    </button>
+</form>
+
+<hr />
+<p>Total jobs:</p>
+<ul>
+    <li>Split jobs: {{ .SplitJobsCount }}</li>
+    <li>Merge jobs: {{ .MergeJobsCount }}</li>
+</ul>
+
+<table border="1" cellpadding="5" style="border-collapse: collapse;">
+    <thead>
+    <tr>
+        <th>Job Number</th>
+        <th>Start Time</th>
+        <th>End Time</th>
+        <th>Number of Blocks</th>
+        <th>Job Key</th>
+        {{ if .ShowCompactors }}
+        <th title="Compactor that owns this job based on ring">Compactor</th>{{ end }}
+        {{ if .ShowBlocks }}
+        <th>Blocks</th>{{ end }}
+    </tr>
+    </thead>
+    <tbody style="font-family: monospace;">
+    {{ $page := . }}
+    {{ range $index, $job := .PlannedJobs }}
+        <tr>
+            <td>{{ add $index 1}}</td>
+            <td>{{ .MinTime }}</td>
+            <td>{{ .MaxTime }}</td>
+            <td>{{ len .Blocks }}</td>
+            <td>{{ $job.Key }}</td>
+            {{ if $page.ShowCompactors }}
+            <td>{{ .Compactor }}</td>{{ end }}
+            {{ if $page.ShowBlocks }}
+                <td>
+                    {{ range $i, $b := .Blocks }}
+                        {{ if $i }}<br>{{ end }}
+                        {{ $b }}
+                    {{ end }}
+                </td>
+            {{ end }}
+        </tr>
+    {{ end }}
+    </tbody>
+</table>
+</body>
+</html>

@@ -45,8 +45,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
       containers:
         - name: querier
           imagePullPolicy: IfNotPresent
@@ -61,7 +59,6 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
-              subPath: 
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -95,10 +92,6 @@ spec:
           envFrom:
             - secretRef:
                 name: mimir-minio-secret
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -108,8 +101,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-values
             app.kubernetes.io/component: querier
-      tolerations:
-        []
       terminationGracePeriodSeconds: 180
       volumes:
         - name: config

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"go.opencensus.io/trace"
 	"go.opentelemetry.io/otel"
@@ -32,17 +33,40 @@ import (
 )
 
 const (
-	telemetryPlatformTracingOpenCensus    = "opencensus"
-	telemetryPlatformTracingOpenTelemetry = "opentelemetry"
-	telemetryPlatformTracingVar           = "GOOGLE_API_GO_EXPERIMENTAL_TELEMETRY_PLATFORM_TRACING"
+	// TelemetryPlatformTracingOpenCensus is the value to which the environment
+	// variable GOOGLE_API_GO_EXPERIMENTAL_TELEMETRY_PLATFORM_TRACING should be
+	// set to enable OpenCensus tracing.
+	TelemetryPlatformTracingOpenCensus = "opencensus"
+	// TelemetryPlatformTracingOpenCensus is the value to which the environment
+	// variable GOOGLE_API_GO_EXPERIMENTAL_TELEMETRY_PLATFORM_TRACING should be
+	// set to enable OpenTelemetry tracing.
+	TelemetryPlatformTracingOpenTelemetry = "opentelemetry"
+	// TelemetryPlatformTracingOpenCensus is the name of the environment
+	// variable that can be set to change the default tracing from OpenCensus
+	// to OpenTelemetry.
+	TelemetryPlatformTracingVar = "GOOGLE_API_GO_EXPERIMENTAL_TELEMETRY_PLATFORM_TRACING"
+	// OpenTelemetryTracerName is the name given to the OpenTelemetry Tracer
+	// when it is obtained from the OpenTelemetry TracerProvider.
+	OpenTelemetryTracerName = "cloud.google.com/go"
 )
 
 var (
-	// TODO(chrisdsmith): Should the name of the OpenTelemetry tracer be public and mutable?
-	openTelemetryTracerName     string = "cloud.google.com/go"
-	openTelemetryTracingEnabled bool   = strings.EqualFold(strings.TrimSpace(
-		os.Getenv(telemetryPlatformTracingVar)), telemetryPlatformTracingOpenTelemetry)
+	// openTelemetryTracingEnabledMu guards access to openTelemetryTracingEnabled field
+	openTelemetryTracingEnabledMu = sync.RWMutex{}
+	// openTelemetryTracingEnabled is true if the environment variable
+	// GOOGLE_API_GO_EXPERIMENTAL_TELEMETRY_PLATFORM_TRACING is set to the
+	// case-insensitive value "opentelemetry".
+	openTelemetryTracingEnabled bool = strings.EqualFold(strings.TrimSpace(
+		os.Getenv(TelemetryPlatformTracingVar)), TelemetryPlatformTracingOpenTelemetry)
 )
+
+// SetOpenTelemetryTracingEnabledField programmatically sets the value provided by GOOGLE_API_GO_EXPERIMENTAL_TELEMETRY_PLATFORM_TRACING for the purpose of unit testing.
+// Do not invoke it directly. Intended for use only in unit tests. Restore original value after each test.
+func SetOpenTelemetryTracingEnabledField(enabled bool) {
+	openTelemetryTracingEnabledMu.Lock()
+	defer openTelemetryTracingEnabledMu.Unlock()
+	openTelemetryTracingEnabled = enabled
+}
 
 // IsOpenCensusTracingEnabled returns true if the environment variable
 // GOOGLE_API_GO_EXPERIMENTAL_TELEMETRY_PLATFORM_TRACING is NOT set to the
@@ -55,6 +79,8 @@ func IsOpenCensusTracingEnabled() bool {
 // GOOGLE_API_GO_EXPERIMENTAL_TELEMETRY_PLATFORM_TRACING is set to the
 // case-insensitive value "opentelemetry".
 func IsOpenTelemetryTracingEnabled() bool {
+	openTelemetryTracingEnabledMu.RLock()
+	defer openTelemetryTracingEnabledMu.RUnlock()
 	return openTelemetryTracingEnabled
 }
 
@@ -63,12 +89,12 @@ func IsOpenTelemetryTracingEnabled() bool {
 // returns true, the span will be an OpenTelemetry span. Set the environment variable
 // GOOGLE_API_GO_EXPERIMENTAL_TELEMETRY_PLATFORM_TRACING to the case-insensitive
 // value "opentelemetry" before loading the package to use OpenTelemetry tracing.
-// The default will remain OpenCensus until [TBD], at which time the default will
+// The default will remain OpenCensus until May 29, 2024, at which time the default will
 // switch to "opentelemetry" and explicitly setting the environment variable to
 // "opencensus" will be required to continue using OpenCensus tracing.
 func StartSpan(ctx context.Context, name string) context.Context {
 	if IsOpenTelemetryTracingEnabled() {
-		ctx, _ = otel.GetTracerProvider().Tracer(openTelemetryTracerName).Start(ctx, name)
+		ctx, _ = otel.GetTracerProvider().Tracer(OpenTelemetryTracerName).Start(ctx, name)
 	} else {
 		ctx, _ = trace.StartSpan(ctx, name)
 	}
@@ -80,7 +106,7 @@ func StartSpan(ctx context.Context, name string) context.Context {
 // returns true, the span will be an OpenTelemetry span. Set the environment variable
 // GOOGLE_API_GO_EXPERIMENTAL_TELEMETRY_PLATFORM_TRACING to the case-insensitive
 // value "opentelemetry" before loading the package to use OpenTelemetry tracing.
-// The default will remain OpenCensus until [TBD], at which time the default will
+// The default will remain OpenCensus until May 29, 2024, at which time the default will
 // switch to "opentelemetry" and explicitly setting the environment variable to
 // "opencensus" will be required to continue using OpenCensus tracing.
 func EndSpan(ctx context.Context, err error) {
@@ -166,7 +192,7 @@ func httpStatusCodeToOCCode(httpStatusCode int) int32 {
 // span must be an OpenTelemetry span. Set the environment variable
 // GOOGLE_API_GO_EXPERIMENTAL_TELEMETRY_PLATFORM_TRACING to the case-insensitive
 // value "opentelemetry" before loading the package to use OpenTelemetry tracing.
-// The default will remain OpenCensus until [TBD], at which time the default will
+// The default will remain OpenCensus until May 29, 2024, at which time the default will
 // switch to "opentelemetry" and explicitly setting the environment variable to
 // "opencensus" will be required to continue using OpenCensus tracing.
 func TracePrintf(ctx context.Context, attrMap map[string]interface{}, format string, args ...interface{}) {

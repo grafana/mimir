@@ -1,0 +1,82 @@
+---
+# Source: mimir-distributed/charts/minio/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keda-autoscaling-global-values-minio
+  labels:
+    app: minio
+    chart: minio-5.0.14
+    release: keda-autoscaling-global-values
+    heritage: Helm
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 0
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+      release: keda-autoscaling-global-values
+  template:
+    metadata:
+      name: keda-autoscaling-global-values-minio
+      labels:
+        app: minio
+        release: keda-autoscaling-global-values
+      annotations:
+        checksum/secrets: 5ca773d7b510a66ffbd530dbac05437cccfe3ec12f2f2ab6b763527b0d29500c
+        checksum/config: 4edc1371972f640d1f8710c65a61af9fc400bb19d3bdf1260413cafb836a9cb7
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      
+      serviceAccountName: minio-sa
+      containers:
+        - name: minio
+          image: "quay.io/minio/minio:RELEASE.2023-09-30T07-02-29Z"
+          imagePullPolicy: IfNotPresent
+          command:
+            - "/bin/sh"
+            - "-ce"
+            - "/usr/bin/docker-entrypoint.sh minio server /export -S /etc/minio/certs/ --address :9000 --console-address :9001"
+          volumeMounts:
+            - name: minio-user
+              mountPath: "/tmp/credentials"
+              readOnly: true
+            - name: export
+              mountPath: /export            
+          ports:
+            - name: http
+              containerPort: 9000
+            - name: http-console
+              containerPort: 9001
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: keda-autoscaling-global-values-minio
+                  key: rootUser
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keda-autoscaling-global-values-minio
+                  key: rootPassword
+            - name: MINIO_PROMETHEUS_AUTH_TYPE
+              value: "public"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi      
+      volumes:
+        - name: export
+          persistentVolumeClaim:
+            claimName: keda-autoscaling-global-values-minio
+        - name: minio-user
+          secret:
+            secretName: keda-autoscaling-global-values-minio

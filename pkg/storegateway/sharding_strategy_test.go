@@ -363,7 +363,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			// Initialize the ring state.
-			require.NoError(t, store.CAS(ctx, "test", func(in interface{}) (interface{}, bool, error) {
+			require.NoError(t, store.CAS(ctx, "test", func(interface{}) (interface{}, bool, error) {
 				d := ring.NewDesc()
 				testData.setupRing(d)
 				return d, true, nil

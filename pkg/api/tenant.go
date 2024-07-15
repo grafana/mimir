@@ -29,14 +29,14 @@ func newTenantValidationMiddleware(federation bool, maxTenants int) middleware.I
 				return
 			}
 
-			numIds := len(ids)
-			if !federation && numIds > 1 {
-				http.Error(w, fmt.Sprintf(tooManyTenantsTemplate, 1, numIds), http.StatusUnprocessableEntity)
+			numIDs := len(ids)
+			if !federation && numIDs > 1 {
+				http.Error(w, fmt.Sprintf(tooManyTenantsTemplate, 1, numIDs), http.StatusUnprocessableEntity)
 				return
 			}
 
-			if federation && maxTenants > 0 && numIds > maxTenants {
-				http.Error(w, fmt.Sprintf(tooManyTenantsTemplate, maxTenants, numIds), http.StatusUnprocessableEntity)
+			if federation && maxTenants > 0 && numIDs > maxTenants {
+				http.Error(w, fmt.Sprintf(tooManyTenantsTemplate, maxTenants, numIDs), http.StatusUnprocessableEntity)
 				return
 			}
 

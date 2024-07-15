@@ -32,6 +32,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/scheduler/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
@@ -72,6 +73,7 @@ func setupScheduler(t *testing.T, reg prometheus.Registerer) (*Scheduler, schedu
 		_ = l.Close()
 	})
 
+	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	c, err := grpc.Dial(l.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 
@@ -111,6 +113,7 @@ func TestSchedulerBasicEnqueue(t *testing.T) {
 	}
 
 	verifyNoPendingRequestsLeft(t, scheduler)
+	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
 func TestSchedulerEnqueueWithCancel(t *testing.T) {
@@ -133,14 +136,7 @@ func TestSchedulerEnqueueWithCancel(t *testing.T) {
 
 	verifyQuerierDoesntReceiveRequest(t, querierLoop, 500*time.Millisecond)
 	verifyNoPendingRequestsLeft(t, scheduler)
-}
-
-func initQuerierLoop(t *testing.T, querierClient schedulerpb.SchedulerForQuerierClient, querier string) schedulerpb.SchedulerForQuerier_QuerierLoopClient {
-	querierLoop, err := querierClient.QuerierLoop(context.Background())
-	require.NoError(t, err)
-	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: querier}))
-
-	return querierLoop
+	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
 func TestSchedulerEnqueueByMultipleFrontendsWithCancel(t *testing.T) {
@@ -182,6 +178,7 @@ func TestSchedulerEnqueueByMultipleFrontendsWithCancel(t *testing.T) {
 	// But nothing else.
 	verifyQuerierDoesntReceiveRequest(t, querierLoop, 500*time.Millisecond)
 	verifyNoPendingRequestsLeft(t, scheduler)
+	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
 func TestSchedulerEnqueueWithFrontendDisconnect(t *testing.T) {
@@ -212,6 +209,7 @@ func TestSchedulerEnqueueWithFrontendDisconnect(t *testing.T) {
 
 	verifyQuerierDoesntReceiveRequest(t, querierLoop, 500*time.Millisecond)
 	verifyNoPendingRequestsLeft(t, scheduler)
+	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
 func TestCancelRequestInProgress_QuerierFinishesBeforeObservingCancellation(t *testing.T) {
@@ -245,6 +243,7 @@ func TestCancelRequestInProgress_QuerierFinishesBeforeObservingCancellation(t *t
 	require.Error(t, err)
 
 	verifyNoPendingRequestsLeft(t, scheduler)
+	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
 func TestCancelRequestInProgress_QuerierObservesCancellation(t *testing.T) {
@@ -277,6 +276,7 @@ func TestCancelRequestInProgress_QuerierObservesCancellation(t *testing.T) {
 	require.Equal(t, codes.Canceled, status.Code(err))
 
 	verifyNoPendingRequestsLeft(t, scheduler)
+	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
 func TestTracingContext(t *testing.T) {
@@ -301,11 +301,11 @@ func TestTracingContext(t *testing.T) {
 
 	frontendToScheduler(t, frontendLoop, req)
 
-	scheduler.pendingRequestsMu.Lock()
-	defer scheduler.pendingRequestsMu.Unlock()
-	require.Equal(t, 1, len(scheduler.pendingRequests))
+	scheduler.inflightRequestsMu.Lock()
+	defer scheduler.inflightRequestsMu.Unlock()
+	require.Equal(t, 1, len(scheduler.schedulerInflightRequests))
 
-	for _, r := range scheduler.pendingRequests {
+	for _, r := range scheduler.schedulerInflightRequests {
 		require.NotNil(t, r.ParentSpanContext)
 	}
 }
@@ -329,6 +329,7 @@ func TestSchedulerShutdown_FrontendLoop(t *testing.T) {
 	msg, err := frontendLoop.Recv()
 	require.NoError(t, err)
 	require.Equal(t, schedulerpb.SHUTTING_DOWN, msg.Status)
+	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
 func TestSchedulerShutdown_QuerierLoop(t *testing.T) {
@@ -408,7 +409,7 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 }
 
 func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
-	_, frontendClient, querierClient := setupScheduler(t, nil)
+	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
 
 	fm := &frontendMock{resp: map[uint64]*httpgrpc.HTTPResponse{}}
 	frontendAddress := ""
@@ -465,6 +466,7 @@ func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
 		require.Equal(t, int32(http.StatusInternalServerError), resp.Code)
 		return true
 	})
+	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
 func TestSchedulerQueueMetrics(t *testing.T) {
@@ -552,6 +554,13 @@ func initFrontendLoop(t *testing.T, client schedulerpb.SchedulerForFrontendClien
 	return loop
 }
 
+func initQuerierLoop(t *testing.T, querierClient schedulerpb.SchedulerForQuerierClient, querier string) schedulerpb.SchedulerForQuerier_QuerierLoopClient {
+	querierLoop, err := querierClient.QuerierLoop(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: querier}))
+
+	return querierLoop
+}
 func frontendToScheduler(t *testing.T, frontendLoop schedulerpb.SchedulerForFrontend_FrontendLoopClient, req *schedulerpb.FrontendToScheduler) {
 	require.NoError(t, frontendLoop.Send(req))
 	msg, err := frontendLoop.Recv()
@@ -582,10 +591,19 @@ func verifyQuerierDoesntReceiveRequest(t *testing.T, querierLoop schedulerpb.Sch
 
 func verifyNoPendingRequestsLeft(t *testing.T, scheduler *Scheduler) {
 	test.Poll(t, 1*time.Second, 0, func() interface{} {
-		scheduler.pendingRequestsMu.Lock()
-		defer scheduler.pendingRequestsMu.Unlock()
-		return len(scheduler.pendingRequests)
+		scheduler.inflightRequestsMu.Lock()
+		defer scheduler.inflightRequestsMu.Unlock()
+		return len(scheduler.schedulerInflightRequests)
 	})
+}
+
+func verifyQueryComponentUtilizationLeft(t *testing.T, scheduler *Scheduler) {
+	scheduler.StopAsync()
+	test.Poll(t, 2*time.Second, services.Terminated, func() interface{} {
+		return scheduler.State()
+	})
+	require.Zero(t, scheduler.requestQueue.QueryComponentUtilization.GetForComponent(queue.Ingester))
+	require.Zero(t, scheduler.requestQueue.QueryComponentUtilization.GetForComponent(queue.StoreGateway))
 }
 
 type limits struct {
@@ -607,6 +625,11 @@ func (f *frontendMock) QueryResult(_ context.Context, request *frontendv2pb.Quer
 
 	f.resp[request.QueryID] = request.HttpResponse
 	return &frontendv2pb.QueryResultResponse{}, nil
+}
+
+// satisfy frontendv2pb.FrontendForQuerierServer interface
+func (f *frontendMock) QueryResultStream(_ frontendv2pb.FrontendForQuerier_QueryResultStreamServer) error {
+	panic("unexpected call to QueryResultStream")
 }
 
 func (f *frontendMock) getRequest(queryID uint64) *httpgrpc.HTTPResponse {

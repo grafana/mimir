@@ -3,6 +3,7 @@ local filename = 'mimir-scaling.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    assert std.md5(filename) == '64bbad83507b7289b514725658e10352' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Scaling') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(
@@ -49,7 +50,7 @@ local filename = 'mimir-scaling.json';
             )
           ||| % [$._config.alert_aggregation_rule_prefix, $.namespaceMatcher(), $._config.alert_aggregation_rule_prefix, $.namespaceMatcher()],
         ], {
-          __name__: { alias: 'Cluster', type: 'hidden' },
+          __name__: { type: 'hidden' },
           cluster: { alias: 'Cluster' },
           namespace: { alias: 'Namespace' },
           deployment: { alias: 'Service' },

@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -34,7 +35,6 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -501,7 +501,7 @@ type queryFunc func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64)
 
 func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	ctx context.Context, spanLog *spanlogger.SpanLogger, minT, maxT int64, tenantID string, shard *sharding.ShardSelector, queryF queryFunc,
-) error {
+) (returnErr error) {
 	now := time.Now()
 
 	if !ShouldQueryBlockStore(q.queryStoreAfter, now, minT) {
@@ -547,8 +547,18 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		attemptedBlocks = map[ulid.ULID][]string{}
 		touchedStores   = map[string]struct{}{}
 	)
+
 	consistencyTracker := q.consistency.NewTracker(knownBlocks, knownDeletionMarks)
-	defer consistencyTracker.Complete()
+	defer func() {
+		// Do not track consistency check metrics if query failed with an error unrelated to consistency check (e.g. context canceled),
+		// because it means we interrupted the requests, and we don't know whether consistency check would have succeeded
+		// or failed.
+		if returnErr != nil && !errors.Is(returnErr, &storeConsistencyCheckFailedErr{}) {
+			return
+		}
+
+		consistencyTracker.Complete()
+	}()
 
 	for attempt := 1; attempt <= maxFetchSeriesAttempts; attempt++ {
 		// Find the set of store-gateway instances having the blocks. The exclude parameter is the
@@ -602,12 +612,29 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	return err
 }
 
-func newStoreConsistencyCheckFailedError(remainingBlocks []ulid.ULID) error {
+type storeConsistencyCheckFailedErr struct {
+	remainingBlocks []ulid.ULID
+}
+
+func newStoreConsistencyCheckFailedError(remainingBlocks []ulid.ULID) *storeConsistencyCheckFailedErr {
 	// Sort the blocks, so it's easier to test the error strings.
 	sort.Slice(remainingBlocks, func(i, j int) bool {
 		return remainingBlocks[i].Compare(remainingBlocks[j]) < 0
 	})
-	return fmt.Errorf("%v. The failed blocks are: %s", globalerror.StoreConsistencyCheckFailed.Message("failed to fetch some blocks"), strings.Join(convertULIDsToString(remainingBlocks), " "))
+
+	return &storeConsistencyCheckFailedErr{
+		remainingBlocks: remainingBlocks,
+	}
+}
+
+func (e *storeConsistencyCheckFailedErr) Error() string {
+	return fmt.Sprintf("%s. The failed blocks are: %s", globalerror.StoreConsistencyCheckFailed.Message("failed to fetch some blocks"), strings.Join(convertULIDsToString(e.remainingBlocks), " "))
+}
+
+// Is implements support for errors.Is.
+func (e *storeConsistencyCheckFailedErr) Is(err error) bool {
+	var target *storeConsistencyCheckFailedErr
+	return errors.As(err, &target)
 }
 
 // filterBlocksByShard removes blocks that can be safely ignored when using query sharding.
@@ -776,6 +803,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 
 				resp, err := stream.Recv()
 				if errors.Is(err, io.EOF) {
+					util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
 					break
 				}
 				if err != nil {
@@ -840,7 +868,12 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					}
 					myStreamingSeries = append(myStreamingSeries, ss.Series...)
 					if ss.IsEndOfSeriesStream {
-						// We expect "end of stream" to be sent after the hints and the stats have been sent.
+						// If we aren't expecting any series from this stream, close it now.
+						if len(myStreamingSeries) == 0 {
+							util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
+						}
+
+						// We expect "end of stream" to be sent after the hints and the stats have been sent, so we can break out of the loop now.
 						break
 					}
 				}
@@ -871,6 +904,11 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					"instance", c.RemoteAddress(),
 					"fetched series", len(myStreamingSeries),
 					"fetched index bytes", indexBytesFetched,
+					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
+					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
+			} else {
+				level.Debug(log).Log("msg", "received no series from store-gateway",
+					"instance", c.RemoteAddress(),
 					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
 					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
 			}
@@ -927,7 +965,7 @@ func shouldStopQueryFunc(err error) bool {
 		return true
 	}
 
-	if st, ok := status.FromError(errors.Cause(err)); ok {
+	if st, ok := grpcutil.ErrorToStatus(err); ok {
 		if int(st.Code()) == http.StatusUnprocessableEntity {
 			return true
 		}

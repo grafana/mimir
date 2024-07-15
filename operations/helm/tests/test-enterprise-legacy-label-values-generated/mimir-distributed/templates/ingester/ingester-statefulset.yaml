@@ -27,7 +27,9 @@ spec:
     type: OnDelete
   serviceName: test-enterprise-legacy-label-values-enterprise-metrics-ingester
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -56,12 +58,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -70,9 +66,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-ingester
             release: test-enterprise-legacy-label-values
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           secret:
@@ -134,7 +128,6 @@ spec:
           env:
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "1000"
-          envFrom:
 ---
 # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
 apiVersion: apps/v1
@@ -164,7 +157,9 @@ spec:
     type: OnDelete
   serviceName: test-enterprise-legacy-label-values-enterprise-metrics-ingester
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -193,12 +188,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -207,9 +196,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-ingester
             release: test-enterprise-legacy-label-values
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           secret:
@@ -271,7 +258,6 @@ spec:
           env:
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "1000"
-          envFrom:
 ---
 # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
 apiVersion: apps/v1
@@ -301,7 +287,9 @@ spec:
     type: OnDelete
   serviceName: test-enterprise-legacy-label-values-enterprise-metrics-ingester
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -330,12 +318,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -344,9 +326,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-ingester
             release: test-enterprise-legacy-label-values
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           secret:
@@ -408,4 +388,3 @@ spec:
           env:
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "1000"
-          envFrom:

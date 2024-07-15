@@ -19,7 +19,7 @@ func TestTrackRegisteredFlags(t *testing.T) {
 	var previous, registered, nonPrefixed string
 	fs.StringVar(&previous, "previous.flag", "previous", "")
 
-	rf := TrackRegisteredFlags(prefix, fs, func(prefix string, f *flag.FlagSet) {
+	rf := TrackRegisteredFlags(prefix, fs, func(prefix string, _ *flag.FlagSet) {
 		fs.StringVar(&registered, prefix+flagName, "registered", "")
 		fs.StringVar(&nonPrefixed, flagName, "non-prefixed", "")
 	})

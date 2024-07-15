@@ -497,7 +497,8 @@ func TestStoreGatewayStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) 
 	expectedError := "attempted to read series at index 1 from store-gateway chunks stream, but the stream has failed: expected to receive 3 series, but got EOF after receiving 1 series"
 	require.EqualError(t, err, expectedError)
 
-	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after failure")
+	// Poll for the client to be closed, as the closure happens in a separate goroutine (the same one which buffers).
+	require.Eventually(t, mockClient.closed.Load, time.Second, 10*time.Millisecond, "expected gRPC client to be closed after receiving more series than expected")
 
 	// Ensure we continue to return the error, even for subsequent calls to GetChunks.
 	_, err = reader.GetChunks(2)
@@ -545,7 +546,8 @@ func TestStoreGatewayStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
 			expectedError := "attempted to read series at index 0 from store-gateway chunks stream, but the stream has failed: expected to receive only 1 series, but received at least 3 series"
 			require.EqualError(t, err, expectedError)
 
-			require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after receiving more series than expected")
+			// Poll for the client to be closed, as the closure happens in a separate goroutine (the same one which buffers).
+			require.Eventually(t, mockClient.closed.Load, time.Second, 10*time.Millisecond, "expected gRPC client to be closed after receiving more series than expected")
 
 			// Ensure we continue to return the error, even for subsequent calls to GetChunks.
 			_, err = reader.GetChunks(1)

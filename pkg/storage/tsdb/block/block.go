@@ -42,8 +42,8 @@ const (
 	DebugMetas = "debug/metas"
 )
 
-// Download downloads directory that is meant to be block directory. If any of the files
-// have a hash calculated in the meta file and it matches with what is in the destination path then
+// Download downloads a directory meant to be a block directory. If any one of the files
+// has a hash calculated in the meta file and it matches with what is in the destination path then
 // we do not download it. We always re-download the meta file.
 func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id ulid.ULID, dst string, options ...objstore.DownloadOption) error {
 	if err := os.MkdirAll(dst, 0750); err != nil {
@@ -323,6 +323,16 @@ func GatherFileStats(blockDir string) (res []File, _ error) {
 		return strings.Compare(res[i].RelPath, res[j].RelPath) < 0
 	})
 	return res, err
+}
+
+// GetMetaAttributes returns the attributes for the block associated with the meta, using the userBucket to read the attributes.
+func GetMetaAttributes(ctx context.Context, meta *Meta, bucketReader objstore.BucketReader) (objstore.ObjectAttributes, error) {
+	metaPath := path.Join(meta.ULID.String(), MetaFilename)
+	attrs, err := bucketReader.Attributes(ctx, metaPath)
+	if err != nil {
+		return objstore.ObjectAttributes{}, errors.Wrapf(err, "unable to get object attributes for %s", metaPath)
+	}
+	return attrs, nil
 }
 
 // MarkForNoCompact creates a file which marks block to be not compacted.

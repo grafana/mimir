@@ -54,12 +54,16 @@ spec:
             {{- if .Values.tokengenJob.extraVolumeMounts }}
               {{ toYaml .Values.tokengenJob.extraVolumeMounts | nindent 12 }}
             {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+              {{ toYaml .Values.global.extraVolumeMounts | nindent 12 }}
+            {{- end }}
             - name: config
               mountPath: /etc/mimir
             - name: license
               mountPath: /license
             - name: active-queries
               mountPath: /active-query-tracker
+          {{- if or .Values.global.extraEnv .Values.tokengenJob.env }}
           env:
             {{- with .Values.global.extraEnv }}
               {{ toYaml . | nindent 12 }}
@@ -67,6 +71,8 @@ spec:
             {{- with .Values.tokengenJob.env }}
               {{ toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.tokengenJob.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -74,6 +80,7 @@ spec:
             {{- with .Values.tokengenJob.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
           securityContext:
             {{- toYaml .Values.tokengenJob.containerSecurityContext | nindent 12 }}
       restartPolicy: OnFailure
@@ -82,6 +89,9 @@ spec:
           {{- include "mimir.configVolume" . | nindent 10 }}
         {{- if .Values.tokengenJob.extraVolumes }}
         {{ toYaml .Values.tokengenJob.extraVolumes | nindent 8 }}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | nindent 8 }}
         {{- end }}
         - name: license
           secret:

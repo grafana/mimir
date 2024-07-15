@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 	"unsafe"
 
 	"github.com/oklog/ulid"
@@ -20,6 +21,7 @@ import (
 	"golang.org/x/crypto/blake2b"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 const (
@@ -29,6 +31,8 @@ const (
 	cacheTypeSeriesForPostings = "SeriesForPostings"
 	cacheTypeLabelNames        = "LabelNames"
 	cacheTypeLabelValues       = "LabelValues"
+
+	defaultTTL = 7 * 24 * time.Hour
 )
 
 var (
@@ -80,14 +84,14 @@ func (l *MapIterator[T]) Size() int {
 // IndexCache is the interface exported by index cache backends.
 type IndexCache interface {
 	// StorePostings stores postings for a single series.
-	StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte)
+	StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte, ttl time.Duration)
 
 	// FetchMultiPostings fetches multiple postings - each identified by a label.
 	// The returned result should contain one item for each requested key.
 	FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (result BytesResult)
 
 	// StoreSeriesForRef stores a single series.
-	StoreSeriesForRef(userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte)
+	StoreSeriesForRef(userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte, ttl time.Duration)
 
 	// FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
 	// and returns a map containing cache hits, along with a list of missing IDs.
@@ -116,6 +120,28 @@ type IndexCache interface {
 	FetchLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) ([]byte, bool)
 }
 
+// BlockTTL determines an appropriate TTL for cache entries related to a particular block
+// based on metadata about the block. Use a shorter TTL for temporary blocks that will be
+// compacted and deleted soon and a longer TTL for larger blocks that won't be deleted.
+func BlockTTL(meta *block.Meta) time.Duration {
+	duration := time.Duration(meta.MaxTime-meta.MinTime) * time.Millisecond
+	if duration%time.Hour != 0 {
+		duration += time.Hour - duration%time.Hour
+	}
+
+	// Pick the max of one hour or duration adjusted up to the next hour
+	duration = max(time.Hour, duration)
+
+	// Anything less than 24h is a temporary block that will eventually be compacted into
+	// a 24h block. Use a shorter TTL since otherwise these will stay in the cache long
+	// after they're no longer relevant.
+	if duration < 24*time.Hour {
+		return duration
+	}
+
+	return defaultTTL
+}
+
 // PostingsKey represents a canonical key for a []storage.SeriesRef slice
 type PostingsKey string
 
@@ -132,7 +158,11 @@ const bytesPerPosting = int(unsafe.Sizeof(storage.SeriesRef(0)))
 // It casts the memory region of the underlying array to a slice of bytes. The resulting byte slice is only valid as long as the postings slice exists and is unmodified.
 func unsafeCastPostingsToBytes(postings []storage.SeriesRef) []byte {
 	byteSlice := make([]byte, 0)
+	// Ignore deprecation warning for now
+	//nolint:staticcheck
 	slicePtr := (*reflect.SliceHeader)(unsafe.Pointer(&byteSlice))
+	// Ignore deprecation warning for now
+	//nolint:staticcheck
 	slicePtr.Data = (*reflect.SliceHeader)(unsafe.Pointer(&postings)).Data
 	slicePtr.Len = len(postings) * bytesPerPosting
 	slicePtr.Cap = slicePtr.Len

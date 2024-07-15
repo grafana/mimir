@@ -22,7 +22,6 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/util"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -75,10 +74,6 @@ type Limits interface {
 	// OutOfOrderTimeWindow returns the out-of-order time window for the user.
 	OutOfOrderTimeWindow(userID string) time.Duration
 
-	// CreationGracePeriod returns the time interval to control how far into the future
-	// incoming samples are accepted compared to the wall clock.
-	CreationGracePeriod(userID string) time.Duration
-
 	// NativeHistogramsIngestionEnabled returns whether to ingest native histograms in the ingester
 	NativeHistogramsIngestionEnabled(userID string) bool
 
@@ -110,13 +105,13 @@ type Limits interface {
 
 type limitsMiddleware struct {
 	Limits
-	next   Handler
+	next   MetricsQueryHandler
 	logger log.Logger
 }
 
-// newLimitsMiddleware creates a new Middleware that enforces query limits.
-func newLimitsMiddleware(l Limits, logger log.Logger) Middleware {
-	return MiddlewareFunc(func(next Handler) Handler {
+// newLimitsMiddleware creates a new MetricsQueryMiddleware that enforces query limits.
+func newLimitsMiddleware(l Limits, logger log.Logger) MetricsQueryMiddleware {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return limitsMiddleware{
 			next:   next,
 			Limits: l,
@@ -125,7 +120,7 @@ func newLimitsMiddleware(l Limits, logger log.Logger) Middleware {
 	})
 }
 
-func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
+func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 	log, ctx := spanlogger.NewWithLogger(ctx, l.logger, "limits")
 	defer log.Finish()
 
@@ -137,7 +132,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 	// Clamp the time range based on the max query lookback and block retention period.
 	blocksRetentionPeriod := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.CompactorBlocksRetentionPeriod)
 	maxQueryLookback := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxQueryLookback)
-	maxLookback := util_math.Min(blocksRetentionPeriod, maxQueryLookback)
+	maxLookback := smallestPositiveNonZeroDuration(blocksRetentionPeriod, maxQueryLookback)
 	if maxLookback > 0 {
 		minStartTime := util.TimeToMillis(time.Now().Add(-maxLookback))
 
@@ -163,22 +158,11 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 				"maxQueryLookback", maxQueryLookback,
 				"blocksRetentionPeriod", blocksRetentionPeriod)
 
-			r = r.WithStartEnd(minStartTime, r.GetEnd())
+			r, err = r.WithStartEnd(minStartTime, r.GetEnd())
+			if err != nil {
+				return nil, apierror.New(apierror.TypeInternal, err.Error())
+			}
 		}
-	}
-
-	// Enforce the max end time.
-	creationGracePeriod := validation.LargestPositiveNonZeroDurationPerTenant(tenantIDs, l.CreationGracePeriod)
-	maxEndTime := util.TimeToMillis(time.Now().Add(creationGracePeriod))
-	if r.GetEnd() > maxEndTime {
-		// Replace the end time in the request.
-		level.Debug(log).Log(
-			"msg", "the end time of the query has been manipulated because of the 'creation grace period' setting",
-			"original", util.FormatTimeMillis(r.GetEnd()),
-			"updated", util.FormatTimeMillis(maxEndTime),
-			"creationGracePeriod", creationGracePeriod)
-
-		r = r.WithStartEnd(r.GetStart(), maxEndTime)
 	}
 
 	// Enforce max query size, in bytes.
@@ -201,15 +185,15 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 }
 
 type limitedParallelismRoundTripper struct {
-	downstream Handler
+	downstream MetricsQueryHandler
 	limits     Limits
 
 	codec      Codec
-	middleware Middleware
+	middleware MetricsQueryMiddleware
 }
 
 // newLimitedParallelismRoundTripper creates a new roundtripper that enforces MaxQueryParallelism to the `next` roundtripper across `middlewares`.
-func newLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limits Limits, middlewares ...Middleware) http.RoundTripper {
+func newLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limits Limits, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
 	return limitedParallelismRoundTripper{
 		downstream: roundTripperHandler{
 			next:  next,
@@ -217,7 +201,7 @@ func newLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limi
 		},
 		codec:      codec,
 		limits:     limits,
-		middleware: MergeMiddlewares(middlewares...),
+		middleware: MergeMetricsQueryMiddlewares(middlewares...),
 	}
 }
 
@@ -225,7 +209,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	ctx, cancel := context.WithCancelCause(r.Context())
 	defer cancel(errExecutingParallelQueriesFinished)
 
-	request, err := rt.codec.DecodeRequest(ctx, r)
+	request, err := rt.codec.DecodeMetricsQueryRequest(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +230,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	// parallel from upstream handlers and ensure that no more than MaxQueryParallelism
 	// sub-requests run in parallel.
 	response, err := rt.middleware.Wrap(
-		HandlerFunc(func(ctx context.Context, r Request) (Response, error) {
+		HandlerFunc(func(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 			if err := sem.Acquire(ctx, 1); err != nil {
 				return nil, fmt.Errorf("could not acquire work: %w", err)
 			}
@@ -261,17 +245,17 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	return rt.codec.EncodeResponse(ctx, r, response)
 }
 
-// roundTripperHandler is an adapter that implements the Handler interface using a http.RoundTripper to perform
+// roundTripperHandler is an adapter that implements the MetricsQueryHandler interface using a http.RoundTripper to perform
 // the requests and a Codec to translate between http Request/Response model and this package's Request/Response model.
-// It basically encodes a Request from Handler.Do and decodes response from next roundtripper.
+// It basically encodes a MetricsQueryRequest from MetricsQueryHandler.Do and decodes response from next roundtripper.
 type roundTripperHandler struct {
 	logger log.Logger
 	next   http.RoundTripper
 	codec  Codec
 }
 
-func (rth roundTripperHandler) Do(ctx context.Context, r Request) (Response, error) {
-	request, err := rth.codec.EncodeRequest(ctx, r)
+func (rth roundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
+	request, err := rth.codec.EncodeMetricsQueryRequest(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -287,4 +271,20 @@ func (rth roundTripperHandler) Do(ctx context.Context, r Request) (Response, err
 	defer func() { _ = response.Body.Close() }()
 
 	return rth.codec.DecodeResponse(ctx, response, r, rth.logger)
+}
+
+// smallestPositiveNonZeroDuration returns the smallest positive and non-zero value
+// in the input values. If the input values slice is empty or they only contain
+// non-positive numbers, then this function will return 0.
+func smallestPositiveNonZeroDuration(values ...time.Duration) time.Duration {
+	smallest := time.Duration(0)
+
+	for _, value := range values {
+		if value > 0 && (smallest == 0 || smallest > value) {
+			smallest = value
+		}
+	}
+
+	return smallest
+
 }

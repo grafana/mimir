@@ -3,7 +3,7 @@
     "environment":
       - "GF_AUTH_ANONYMOUS_ENABLED=true"
       - "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin"
-    "image": "grafana/grafana:9.4.3"
+    "image": "grafana/grafana:10.4.3"
     "ports":
       - "3000:3000"
     "volumes":
@@ -12,25 +12,31 @@
       - "../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards"
   "grafana-agent":
     "command":
-      - "-config.file=/etc/agent-config/grafana-agent.yaml"
-      - "-metrics.wal-directory=/tmp"
-      - "-server.http.address=127.0.0.1:9091"
-    "image": "grafana/agent:v0.37.3"
+      - "run"
+      - "--storage.path=/tmp"
+      - "--server.http.listen-addr=127.0.0.1:9091"
+      - "/etc/agent-config/grafana-agent.flow"
+    "environment":
+      "AGENT_MODE": "flow"
+    "image": "grafana/agent:v0.40.0"
     "ports":
       - "9091:9091"
     "volumes":
       - "./config:/etc/agent-config"
   "kafka":
-    "depends_on":
-      - "zookeeper"
     "environment":
+      - "CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg"
       - "KAFKA_BROKER_ID=1"
       - "KAFKA_NUM_PARTITIONS=100"
-      - "KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181"
-      - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,ORBSTACK://kafka.mimir-read-write-mode.orb.local:9091,PLAINTEXT_HOST://localhost:29092"
-      - "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,ORBSTACK:PLAINTEXT"
+      - "KAFKA_PROCESS_ROLES=broker,controller"
+      - "KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092"
+      - "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092"
+      - "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
       - "KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT"
+      - "KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER"
+      - "KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093"
       - "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1"
+      - "KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS=10000"
     "healthcheck":
       "interval": "1s"
       "retries": "30"
@@ -130,7 +136,7 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-  "mimir-write-1":
+  "mimir-write-zone-a-1":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
@@ -138,22 +144,23 @@
       - "./mimir"
       - "-config.file=./config/mimir.yaml"
       - "-target=write"
-      - "-activity-tracker.filepath=/activity/mimir-write-1"
+      - "-activity-tracker.filepath=/activity/mimir-write-zone-a-1"
+      - "-ingester.ring.instance-availability-zone=zone-a"
     "depends_on":
       "kafka":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
     "environment": []
-    "hostname": "mimir-write-1"
+    "hostname": "mimir-write-zone-a-1"
     "image": "mimir"
     "ports":
       - "8001:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-      - ".data-mimir-write-1:/data:delegated"
-  "mimir-write-2":
+      - ".data-mimir-write-zone-a-1:/data:delegated"
+  "mimir-write-zone-a-2":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
@@ -161,22 +168,23 @@
       - "./mimir"
       - "-config.file=./config/mimir.yaml"
       - "-target=write"
-      - "-activity-tracker.filepath=/activity/mimir-write-2"
+      - "-activity-tracker.filepath=/activity/mimir-write-zone-a-2"
+      - "-ingester.ring.instance-availability-zone=zone-a"
     "depends_on":
       "kafka":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
     "environment": []
-    "hostname": "mimir-write-2"
+    "hostname": "mimir-write-zone-a-2"
     "image": "mimir"
     "ports":
       - "8002:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-      - ".data-mimir-write-2:/data:delegated"
-  "mimir-write-3":
+      - ".data-mimir-write-zone-a-2:/data:delegated"
+  "mimir-write-zone-a-3":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
@@ -184,21 +192,94 @@
       - "./mimir"
       - "-config.file=./config/mimir.yaml"
       - "-target=write"
-      - "-activity-tracker.filepath=/activity/mimir-write-3"
+      - "-activity-tracker.filepath=/activity/mimir-write-zone-a-3"
+      - "-ingester.ring.instance-availability-zone=zone-a"
     "depends_on":
       "kafka":
         "condition": "service_healthy"
       "minio":
         "condition": "service_started"
     "environment": []
-    "hostname": "mimir-write-3"
+    "hostname": "mimir-write-zone-a-3"
     "image": "mimir"
     "ports":
       - "8003:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-      - ".data-mimir-write-3:/data:delegated"
+      - ".data-mimir-write-zone-a-3:/data:delegated"
+  "mimir-write-zone-b-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "./mimir"
+      - "-config.file=./config/mimir.yaml"
+      - "-target=write"
+      - "-activity-tracker.filepath=/activity/mimir-write-zone-b-1"
+      - "-ingester.ring.instance-availability-zone=zone-b"
+    "depends_on":
+      "kafka":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment": []
+    "hostname": "mimir-write-zone-b-1"
+    "image": "mimir"
+    "ports":
+      - "8011:8080"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+      - ".data-mimir-write-zone-b-1:/data:delegated"
+  "mimir-write-zone-b-2":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "./mimir"
+      - "-config.file=./config/mimir.yaml"
+      - "-target=write"
+      - "-activity-tracker.filepath=/activity/mimir-write-zone-b-2"
+      - "-ingester.ring.instance-availability-zone=zone-b"
+    "depends_on":
+      "kafka":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment": []
+    "hostname": "mimir-write-zone-b-2"
+    "image": "mimir"
+    "ports":
+      - "8012:8080"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+      - ".data-mimir-write-zone-b-2:/data:delegated"
+  "mimir-write-zone-b-3":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "./mimir"
+      - "-config.file=./config/mimir.yaml"
+      - "-target=write"
+      - "-activity-tracker.filepath=/activity/mimir-write-zone-b-3"
+      - "-ingester.ring.instance-availability-zone=zone-b"
+    "depends_on":
+      "kafka":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment": []
+    "hostname": "mimir-write-zone-b-3"
+    "image": "mimir"
+    "ports":
+      - "8013:8080"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+      - ".data-mimir-write-zone-b-3:/data:delegated"
   "minio":
     "command":
       - "server"
@@ -228,13 +309,4 @@
       - "8080:8080"
     "volumes":
       - "../common/config:/etc/nginx/templates"
-  "zookeeper":
-    "environment":
-      - "ZOOKEEPER_CLIENT_PORT=2181"
-      - "ZOOKEEPER_TICK_TIME=2000"
-      - "ZOOKEEPER_AUTOPURGE_SNAPRETAINCOUNT=5"
-      - "ZOOKEEPER_AUTOPURGE_PURGEINTERVAL=1"
-    "image": "confluentinc/cp-zookeeper:latest"
-    "ports":
-      - "22181:22181"
 "version": "3.4"

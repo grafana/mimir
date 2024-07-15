@@ -20,7 +20,9 @@ rolling update results in no downtime to Grafana Mimir.
 When you run Grafana Mimir in monolithic mode, roll out changes to one instance at a time.
 After you apply changes to an instance, and the instance restarts, its `/ready` endpoint returns HTTP status code `200`, which means that you can proceed with rolling out changes to another instance.
 
-> **Note**: When you run Grafana Mimir on Kubernetes, to roll out changes to one instance at a time, configure the `Deployment` or `StatefulSet` update strategy to `RollingUpdate` and `maxUnavailable` to `1`.
+{{< admonition type="note" >}}
+When you run Grafana Mimir on Kubernetes, to roll out changes to one instance at a time, configure the `Deployment` or `StatefulSet` update strategy to `RollingUpdate` and `maxUnavailable` to `1`.
+{{< /admonition >}}
 
 ## Microservices mode
 
@@ -32,7 +34,9 @@ Stateful components have the following restrictions:
 - Ingesters: Roll out changes to one ingester at a time.
 - Store-gateways: Roll out changes to a maximum of two store-gateways at a time.
 
-> **Note**: If you enabled [zone-aware replication]({{< relref "../../configure/configure-zone-aware-replication" >}}) for a component, you can roll out changes to all component instances in the same zone at the same time.
+{{< admonition type="note" >}}
+If you enabled [zone-aware replication]({{< relref "../../configure/configure-zone-aware-replication" >}}) for a component, you can roll out changes to all component instances in the same zone at the same time.
+{{< /admonition >}}
 
 ### Alertmanagers
 
@@ -44,7 +48,9 @@ Alerts notification and visualization succeed when each tenant has at least one 
 
 To ensure no alerts notification, reception, or visualization fail during a rolling update, roll out changes to a maximum of two Alertmanagers at a time.
 
-> **Note**: If you enabled [zone-aware replication]({{< relref "../../configure/configure-zone-aware-replication" >}}) for Alertmanager, you can roll out changes to all Alertmanagers in one zone at the same time.
+{{< admonition type="note" >}}
+If you enabled [zone-aware replication]({{< relref "../../configure/configure-zone-aware-replication" >}}) for Alertmanager, you can roll out changes to all Alertmanagers in one zone at the same time.
+{{< /admonition >}}
 
 ### Ingesters
 
@@ -57,7 +63,9 @@ Because series are sharded across all ingesters, Grafana Mimir tolerates up to o
 
 To ensure no query fails during a rolling update, roll out changes to one ingester at a time.
 
-> **Note**: If you enabled [zone-aware replication]({{< relref "../../configure/configure-zone-aware-replication" >}}) for ingesters, you can roll out changes to all ingesters in one zone at the same time.
+{{< admonition type="note" >}}
+If you enabled [zone-aware replication]({{< relref "../../configure/configure-zone-aware-replication" >}}) for ingesters, you can roll out changes to all ingesters in one zone at the same time.
+{{< /admonition >}}
 
 ### Store-gateways
 
@@ -67,4 +75,6 @@ Queries succeed when each required block is loaded by at least one store-gateway
 
 To ensure no query fails during a rolling update, roll out changes to a maximum of two store-gateways at a time.
 
-> **Note**: If you enabled [zone-aware replication]({{< relref "../../configure/configure-zone-aware-replication" >}}) for store-gateways, you can roll out changes to all store-gateways in one zone at the same time.
+{{< admonition type="note" >}}
+If you enabled [zone-aware replication]({{< relref "../../configure/configure-zone-aware-replication" >}}) for store-gateways, you can roll out changes to all store-gateways in one zone at the same time.
+{{< /admonition >}}

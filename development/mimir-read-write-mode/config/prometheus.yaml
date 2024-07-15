@@ -1,0 +1,9 @@
+# Configure Prometheus to read from Mimir, so that we can test Mimir remote read endpoint
+# sending queries from Prometheus.
+remote_read:
+  - name: Mimir
+    url: http://mimir-read-1:8080/prometheus/api/v1/read
+    remote_timeout: 10s
+    read_recent: true
+    headers:
+      X-Scope-OrgID: anonymous

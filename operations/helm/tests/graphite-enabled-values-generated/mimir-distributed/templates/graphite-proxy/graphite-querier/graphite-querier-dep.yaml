@@ -42,7 +42,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
       containers:
         - name: graphite-querier
           imagePullPolicy: IfNotPresent
@@ -60,7 +59,6 @@ spec:
               mountPath: /license
             - name: storage
               mountPath: "/data"
-              subPath: 
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -90,10 +88,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-          envFrom:
-      nodeSelector:
-        {}
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -106,8 +100,6 @@ spec:
                   - graphite-querier
               topologyKey: kubernetes.io/hostname
             weight: 100
-      tolerations:
-        []
       terminationGracePeriodSeconds: 180
       volumes:
         - name: config

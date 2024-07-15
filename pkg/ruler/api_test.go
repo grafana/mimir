@@ -298,7 +298,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				},
 			},
 			expectedConfigured: 1,
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
 				tenantLimits[userID] = validation.MockDefaultLimits()
 				tenantLimits[userID].RulerRecordingRulesEvaluationEnabled = true
 				tenantLimits[userID].RulerAlertingRulesEvaluationEnabled = false
@@ -330,7 +330,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				},
 			},
 			expectedConfigured: 1,
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
 				tenantLimits[userID] = validation.MockDefaultLimits()
 				tenantLimits[userID].RulerRecordingRulesEvaluationEnabled = false
 				tenantLimits[userID].RulerAlertingRulesEvaluationEnabled = true
@@ -364,7 +364,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				},
 			},
 			expectedConfigured: 0,
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
 				tenantLimits[userID] = validation.MockDefaultLimits()
 				tenantLimits[userID].RulerRecordingRulesEvaluationEnabled = false
 				tenantLimits[userID].RulerAlertingRulesEvaluationEnabled = false
@@ -960,7 +960,6 @@ func TestAPI_CreateRuleGroup(t *testing.T) {
 		name   string
 		cfg    Config
 		input  string
-		output string
 		err    error
 		status int
 	}{
@@ -1034,7 +1033,61 @@ rules:
   labels:
     test: test
 `,
-			output: "name: test\ninterval: 15s\nsource_tenants: [t1, t2]\nrules:\n    - record: up_rule\n      expr: up{}\n    - alert: up_alert\n      expr: sum(up{}) > 1\n      for: 30s\n      labels:\n        test: test\n      annotations:\n        test: test\n",
+		},
+		{
+			name: "with valid rules and evaluation delay",
+			cfg:  defaultCfg,
+			input: `
+name: test
+interval: 15s
+evaluation_delay: 5m
+rules:
+- record: up_rule
+  expr: up{}
+`,
+			status: 202,
+		},
+		{
+			name: "with valid rules and query offset",
+			cfg:  defaultCfg,
+			input: `
+name: test
+interval: 15s
+query_offset: 2m
+rules:
+- record: up_rule
+  expr: up{}
+`,
+			status: 202,
+		},
+		{
+			name: "with valid rules and both evaluation delay and query offset set to the same value",
+			cfg:  defaultCfg,
+			input: `
+name: test
+interval: 15s
+evaluation_delay: 5m
+query_offset: 5m
+rules:
+- record: up_rule
+  expr: up{}
+`,
+			status: 202,
+		},
+		{
+			name: "with valid rules but evaluation delay and query offset set to different values",
+			cfg:  defaultCfg,
+			input: `
+name: test
+interval: 15s
+evaluation_delay: 2m
+query_offset: 5m
+rules:
+- record: up_rule
+  expr: up{}
+`,
+			status: 400,
+			err:    errors.New("invalid rules configuration: rule group 'test' has both query_offset and (deprecated) evaluation_delay set, but to different values; please remove the deprecated evaluation_delay and use query_offset instead"),
 		},
 	}
 
@@ -1052,6 +1105,11 @@ rules:
 			router := mux.NewRouter()
 			router.Path("/prometheus/config/v1/rules/{namespace}").Methods("POST").HandlerFunc(a.CreateRuleGroup)
 			router.Path("/prometheus/config/v1/rules/{namespace}/{groupName}").Methods("GET").HandlerFunc(a.GetRuleGroup)
+
+			// Pre-condition check: the ruler should have run the initial rules sync but not done a sync
+			// based on API mutations.
+			verifySyncRulesMetric(t, reg, 1, 0)
+
 			// POST
 			req := requestFor(t, http.MethodPost, "https://localhost:8080/prometheus/config/v1/rules/namespace", strings.NewReader(tt.input), "user1")
 			w := httptest.NewRecorder()
@@ -1060,16 +1118,13 @@ rules:
 			require.Equal(t, tt.status, w.Code)
 
 			if tt.err == nil {
-				// Pre-condition check: the ruler should have run the initial rules sync.
-				verifySyncRulesMetric(t, reg, 1, 0)
-
 				// GET
 				req = requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/config/v1/rules/namespace/test", nil, "user1")
 				w = httptest.NewRecorder()
 
 				router.ServeHTTP(w, req)
 				require.Equal(t, 200, w.Code)
-				require.YAMLEq(t, tt.output, w.Body.String())
+				require.YAMLEq(t, tt.input, w.Body.String())
 
 				// Ensure it triggered a rules sync notification.
 				verifySyncRulesMetric(t, reg, 1, 1)

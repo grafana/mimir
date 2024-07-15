@@ -57,14 +57,14 @@ data:
             addresses: dns+enterprise-https-values-mimir-chunks-cache.citestns.svc:11211
             max_idle_connections: 150
             max_item_size: 1048576
-            timeout: 450ms
+            timeout: 750ms
         index_cache:
           backend: memcached
           memcached:
             addresses: dns+enterprise-https-values-mimir-index-cache.citestns.svc:11211
             max_idle_connections: 150
             max_item_size: 5242880
-            timeout: 450ms
+            timeout: 750ms
         metadata_cache:
           backend: memcached
           memcached:
@@ -286,9 +286,6 @@ data:
     runtime_config:
       file: /var/mimir/runtime.yaml
     server:
-      grpc_server_max_connection_age: 2m
-      grpc_server_max_connection_age_grace: 5m
-      grpc_server_max_connection_idle: 1m
       grpc_tls_config:
         cert_file: /certs/tls.crt
         client_auth_type: VerifyClientCertIfGiven

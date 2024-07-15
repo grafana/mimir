@@ -14,10 +14,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+// Common functionality shared between the Memcached and Redis Cache implementations
+
 const (
-	opSet                 = "set"
-	opGetMulti            = "getmulti"
-	opDelete              = "delete"
+	opSet            = "set"
+	opGetMulti       = "getmulti"
+	opDelete         = "delete"
+	opDecrement      = "decrement"
+	opIncrement      = "increment"
+	opTouch          = "touch"
+	opFlush          = "flushall"
+	opCompareAndSwap = "compareswap"
+
 	reasonMaxItemSize     = "max-item-size"
 	reasonAsyncBufferFull = "async-buffer-full"
 	reasonMalformedKey    = "malformed-key"
@@ -26,6 +34,14 @@ const (
 	reasonServerError     = "server-error"
 	reasonNetworkError    = "network-error"
 	reasonOther           = "other"
+
+	labelCacheName           = "name"
+	labelCacheBackend        = "backend"
+	backendValueRedis        = "redis"
+	backendValueMemcached    = "memcached"
+	cacheMetricNamePrefix    = "cache_"
+	getMultiMetricNamePrefix = "getmulti_"
+	clientInfoMetricName     = "client_info"
 )
 
 type clientMetrics struct {
@@ -60,12 +76,17 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 	cm.operations.WithLabelValues(opGetMulti)
 	cm.operations.WithLabelValues(opSet)
 	cm.operations.WithLabelValues(opDelete)
+	cm.operations.WithLabelValues(opIncrement)
+	cm.operations.WithLabelValues(opTouch)
+	cm.operations.WithLabelValues(opCompareAndSwap)
+	cm.operations.WithLabelValues(opFlush)
 
 	cm.failures = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "operation_failures_total",
 		Help: "Total number of operations against cache that failed.",
 	}, []string{"operation", "reason"})
-	for _, op := range []string{opGetMulti, opSet, opDelete} {
+	for _, op := range []string{opGetMulti, opSet, opDelete, opIncrement, opFlush, opTouch, opCompareAndSwap} {
+		cm.failures.WithLabelValues(op, reasonConnectTimeout)
 		cm.failures.WithLabelValues(op, reasonTimeout)
 		cm.failures.WithLabelValues(op, reasonMalformedKey)
 		cm.failures.WithLabelValues(op, reasonServerError)
@@ -85,10 +106,18 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 		Name:    "operation_duration_seconds",
 		Help:    "Duration of operations against cache.",
 		Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1, 3, 6, 10},
+		// Use defaults recommended by Prometheus for native histograms.
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: time.Hour,
 	}, []string{"operation"})
 	cm.duration.WithLabelValues(opGetMulti)
 	cm.duration.WithLabelValues(opSet)
 	cm.duration.WithLabelValues(opDelete)
+	cm.duration.WithLabelValues(opIncrement)
+	cm.duration.WithLabelValues(opFlush)
+	cm.duration.WithLabelValues(opTouch)
+	cm.duration.WithLabelValues(opCompareAndSwap)
 
 	cm.dataSize = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name: "operation_data_size_bytes",
@@ -101,6 +130,7 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 	)
 	cm.dataSize.WithLabelValues(opGetMulti)
 	cm.dataSize.WithLabelValues(opSet)
+	cm.dataSize.WithLabelValues(opCompareAndSwap)
 
 	return cm
 }

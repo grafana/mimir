@@ -28,21 +28,28 @@ import (
 )
 
 const (
-	day                               = 24 * time.Hour
-	queryRangePathSuffix              = "/api/v1/query_range"
-	instantQueryPathSuffix            = "/api/v1/query"
-	cardinalityLabelNamesPathSuffix   = "/api/v1/cardinality/label_names"
-	cardinalityLabelValuesPathSuffix  = "/api/v1/cardinality/label_values"
-	cardinalityActiveSeriesPathSuffix = "/api/v1/cardinality/active_series"
-	labelNamesPathSuffix              = "/api/v1/labels"
-
-	// DefaultDeprecatedCacheUnalignedRequests is the default value for the deprecated querier frontend config DeprecatedCacheUnalignedRequests
-	// which has been moved to a per-tenant limit; TODO remove in Mimir 2.12
-	DefaultDeprecatedCacheUnalignedRequests = false
+	day                                               = 24 * time.Hour
+	queryRangePathSuffix                              = "/api/v1/query_range"
+	instantQueryPathSuffix                            = "/api/v1/query"
+	cardinalityLabelNamesPathSuffix                   = "/api/v1/cardinality/label_names"
+	cardinalityLabelValuesPathSuffix                  = "/api/v1/cardinality/label_values"
+	cardinalityActiveSeriesPathSuffix                 = "/api/v1/cardinality/active_series"
+	cardinalityActiveNativeHistogramMetricsPathSuffix = "/api/v1/cardinality/active_native_histogram_metrics"
+	labelNamesPathSuffix                              = "/api/v1/labels"
+	remoteReadPathSuffix                              = "/api/v1/read"
 
 	// DefaultDeprecatedAlignQueriesWithStep is the default value for the deprecated querier frontend config DeprecatedAlignQueriesWithStep
 	// which has been moved to a per-tenant limit; TODO remove in Mimir 2.14
 	DefaultDeprecatedAlignQueriesWithStep = false
+
+	queryTypeInstant                      = "query"
+	queryTypeRange                        = "query_range"
+	queryTypeRemoteRead                   = "remote_read"
+	queryTypeCardinality                  = "cardinality"
+	queryTypeLabels                       = "label_names_and_values"
+	queryTypeActiveSeries                 = "active_series"
+	queryTypeActiveNativeHistogramMetrics = "active_native_histogram_metrics"
+	queryTypeOther                        = "other"
 )
 
 var (
@@ -51,20 +58,28 @@ var (
 
 // Config for query_range middleware chain.
 type Config struct {
-	SplitQueriesByInterval           time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
-	DeprecatedAlignQueriesWithStep   bool          `yaml:"align_queries_with_step" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.12, remove in Mimir 2.14 (https://github.com/grafana/mimir/issues/6712)
-	ResultsCacheConfig               `yaml:"results_cache"`
-	CacheResults                     bool          `yaml:"cache_results"`
-	MaxRetries                       int           `yaml:"max_retries" category:"advanced"`
-	NotRunningTimeout                time.Duration `yaml:"not_running_timeout" category:"advanced"`
-	ShardedQueries                   bool          `yaml:"parallelize_shardable_queries"`
-	DeprecatedCacheUnalignedRequests bool          `yaml:"cache_unaligned_requests" category:"advanced" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.10.0, remove in Mimir 2.12.0 (https://github.com/grafana/mimir/issues/5253)
-	TargetSeriesPerShard             uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
-	ShardActiveSeriesQueries         bool          `yaml:"shard_active_series_queries" category:"experimental"`
+	SplitQueriesByInterval   time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
+	ResultsCacheConfig       `yaml:"results_cache"`
+	CacheResults             bool          `yaml:"cache_results"`
+	MaxRetries               int           `yaml:"max_retries" category:"advanced"`
+	NotRunningTimeout        time.Duration `yaml:"not_running_timeout" category:"advanced"`
+	ShardedQueries           bool          `yaml:"parallelize_shardable_queries"`
+	TargetSeriesPerShard     uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
+	ShardActiveSeriesQueries bool          `yaml:"shard_active_series_queries" category:"experimental"`
+	UseActiveSeriesDecoder   bool          `yaml:"use_active_series_decoder" category:"experimental"`
+	RemoteReadLimitsEnabled  bool          `yaml:"remote_read_limits_enabled" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
 	CacheKeyGenerator CacheKeyGenerator `yaml:"-"`
+
+	// ExtraInstantQueryMiddlewares and ExtraRangeQueryMiddlewares allows to
+	// inject custom middlewares into the middleware chain of instant and
+	// range queries. These middlewares will be placed right after default
+	// middlewares and before the query sharding middleware, in order to avoid
+	// interfering with core functionality.
+	ExtraInstantQueryMiddlewares []MetricsQueryMiddleware `yaml:"-"`
+	ExtraRangeQueryMiddlewares   []MetricsQueryMiddleware `yaml:"-"`
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
 }
@@ -79,19 +94,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
+	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
+	f.BoolVar(&cfg.RemoteReadLimitsEnabled, "query-frontend.remote-read-limits-enabled", false, "True to enable limits enforcement for remote read requests.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
-
-	// The query-frontend.cache-unaligned-requests flag has been moved to the limits.go file
-	// cfg.DeprecatedCacheUnalignedRequests is set to the default here for clarity
-	// and consistency with the process for migrating limits to per-tenant config
-	// TODO: Remove in Mimir 2.12.0
-	cfg.DeprecatedCacheUnalignedRequests = DefaultDeprecatedCacheUnalignedRequests
-
-	// The query-frontend.align-queries-with-step flag has been moved to the limits.go file
-	// cfg.DeprecatedAlignQueriesWithStep is set to the default here for clarity
-	// and consistency with the process for migrating limits to per-tenant config
-	// TODO: Remove in Mimir 2.14
-	cfg.DeprecatedAlignQueriesWithStep = DefaultDeprecatedAlignQueriesWithStep
 }
 
 // Validate validates the config.
@@ -119,36 +124,36 @@ func (cfg *Config) cardinalityBasedShardingEnabled() bool {
 	return cfg.TargetSeriesPerShard > 0
 }
 
-// HandlerFunc is like http.HandlerFunc, but for Handler.
-type HandlerFunc func(context.Context, Request) (Response, error)
+// HandlerFunc is like http.HandlerFunc, but for MetricsQueryHandler.
+type HandlerFunc func(context.Context, MetricsQueryRequest) (Response, error)
 
-// Do implements Handler.
-func (q HandlerFunc) Do(ctx context.Context, req Request) (Response, error) {
+// Do implements MetricsQueryHandler.
+func (q HandlerFunc) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	return q(ctx, req)
 }
 
-// Handler is like http.Handle, but specifically for Prometheus query_range calls.
-type Handler interface {
-	Do(context.Context, Request) (Response, error)
+// MetricsQueryHandler is like http.Handle, but specifically for Prometheus query and query_range calls.
+type MetricsQueryHandler interface {
+	Do(context.Context, MetricsQueryRequest) (Response, error)
 }
 
-// MiddlewareFunc is like http.HandlerFunc, but for Middleware.
-type MiddlewareFunc func(Handler) Handler
+// MetricsQueryMiddlewareFunc is like http.HandlerFunc, but for MetricsQueryMiddleware.
+type MetricsQueryMiddlewareFunc func(MetricsQueryHandler) MetricsQueryHandler
 
-// Wrap implements Middleware.
-func (q MiddlewareFunc) Wrap(h Handler) Handler {
+// Wrap implements MetricsQueryMiddleware.
+func (q MetricsQueryMiddlewareFunc) Wrap(h MetricsQueryHandler) MetricsQueryHandler {
 	return q(h)
 }
 
-// Middleware is a higher order Handler.
-type Middleware interface {
-	Wrap(Handler) Handler
+// MetricsQueryMiddleware is a higher order MetricsQueryHandler.
+type MetricsQueryMiddleware interface {
+	Wrap(MetricsQueryHandler) MetricsQueryHandler
 }
 
-// MergeMiddlewares produces a middleware that applies multiple middleware in turn;
+// MergeMetricsQueryMiddlewares produces a middleware that applies multiple middleware in turn;
 // ie Merge(f,g,h).Wrap(handler) == f.Wrap(g.Wrap(h.Wrap(handler)))
-func MergeMiddlewares(middleware ...Middleware) Middleware {
-	return MiddlewareFunc(func(next Handler) Handler {
+func MergeMetricsQueryMiddlewares(middleware ...MetricsQueryMiddleware) MetricsQueryMiddleware {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		for i := len(middleware) - 1; i >= 0; i-- {
 			next = middleware[i].Wrap(next)
 		}
@@ -194,7 +199,7 @@ func NewTripperware(
 		return nil, err
 	}
 	return MergeTripperwares(
-		newActiveUsersTripperware(registerer),
+		newQueryCountTripperware(registerer),
 		queryRangeTripperware,
 	), err
 }
@@ -216,20 +221,6 @@ func newQueryTripperware(
 	// Experimental functions can only be enabled globally, and not on a per-engine basis.
 	parser.EnableExperimentalFunctions = engineExperimentalFunctionsEnabled
 
-	// Metric used to keep track of each middleware execution duration.
-	metrics := newInstrumentMiddlewareMetrics(registerer)
-	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
-	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
-
-	queryRangeMiddleware := []Middleware{
-		// Track query range statistics. Added first before any subsequent middleware modifies the request.
-		queryStatsMiddleware,
-		newLimitsMiddleware(limits, log),
-		queryBlockerMiddleware,
-		newInstrumentMiddleware("step_align", metrics),
-		newStepAlignMiddleware(limits, log, registerer),
-	}
-
 	var c cache.Cache
 	if cfg.CacheResults || cfg.cardinalityBasedShardingEnabled() {
 		var err error
@@ -243,36 +234,124 @@ func newQueryTripperware(
 
 	cacheKeyGenerator := cfg.CacheKeyGenerator
 	if cacheKeyGenerator == nil {
-		cacheKeyGenerator = DefaultCacheKeyGenerator{Interval: cfg.SplitQueriesByInterval}
+		cacheKeyGenerator = NewDefaultCacheKeyGenerator(codec, cfg.SplitQueriesByInterval)
 	}
+
+	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(cfg, log, limits, codec, c, cacheKeyGenerator, cacheExtractor, engine, registerer)
+
+	return func(next http.RoundTripper) http.RoundTripper {
+		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
+		instant := newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...)
+		remoteRead := newRemoteReadRoundTripper(next, remoteReadMiddleware...)
+
+		// Wrap next for cardinality, labels queries and all other queries.
+		// That attempts to parse "start" and "end" from the HTTP request and set them in the request's QueryDetails.
+		// range and instant queries have more accurate logic for query details.
+		next = newQueryDetailsStartEndRoundTripper(next)
+		cardinality := next
+		activeSeries := next
+		activeNativeHistogramMetrics := next
+		labels := next
+
+		// Inject the cardinality and labels query cache roundtripper only if the query results cache is enabled.
+		if cfg.CacheResults {
+			cardinality = newCardinalityQueryCacheRoundTripper(c, cacheKeyGenerator, limits, cardinality, log, registerer)
+			labels = newLabelsQueryCacheRoundTripper(c, cacheKeyGenerator, limits, labels, log, registerer)
+		}
+
+		if cfg.ShardActiveSeriesQueries {
+			activeSeries = newShardActiveSeriesMiddleware(activeSeries, cfg.UseActiveSeriesDecoder, limits, log)
+			activeNativeHistogramMetrics = newShardActiveNativeHistogramMetricsMiddleware(activeNativeHistogramMetrics, limits, log)
+		}
+
+		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			switch {
+			case IsRangeQuery(r.URL.Path):
+				return queryrange.RoundTrip(r)
+			case IsInstantQuery(r.URL.Path):
+				return instant.RoundTrip(r)
+			case IsCardinalityQuery(r.URL.Path):
+				return cardinality.RoundTrip(r)
+			case IsActiveSeriesQuery(r.URL.Path):
+				return activeSeries.RoundTrip(r)
+			case IsActiveNativeHistogramMetricsQuery(r.URL.Path):
+				return activeNativeHistogramMetrics.RoundTrip(r)
+			case IsLabelsQuery(r.URL.Path):
+				return labels.RoundTrip(r)
+			case IsRemoteReadQuery(r.URL.Path) && cfg.RemoteReadLimitsEnabled:
+				return remoteRead.RoundTrip(r)
+			default:
+				return next.RoundTrip(r)
+			}
+		})
+	}, nil
+}
+
+// newQueryMiddlewares creates and returns the middlewares that should injected for each type of request
+// handled by the query-frontend.
+func newQueryMiddlewares(
+	cfg Config,
+	log log.Logger,
+	limits Limits,
+	codec Codec,
+	cacheClient cache.Cache,
+	cacheKeyGenerator CacheKeyGenerator,
+	cacheExtractor Extractor,
+	engine *promql.Engine,
+	registerer prometheus.Registerer,
+) (queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware []MetricsQueryMiddleware) {
+	// Metric used to keep track of each middleware execution duration.
+	metrics := newInstrumentMiddlewareMetrics(registerer)
+	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
+	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
+
+	remoteReadMiddleware = append(remoteReadMiddleware,
+		// Track query range statistics. Added first before any subsequent middleware modifies the request.
+		queryStatsMiddleware,
+		newLimitsMiddleware(limits, log),
+		queryBlockerMiddleware)
+
+	queryRangeMiddleware = append(queryRangeMiddleware,
+		// Track query range statistics. Added first before any subsequent middleware modifies the request.
+		queryStatsMiddleware,
+		newLimitsMiddleware(limits, log),
+		queryBlockerMiddleware,
+		newInstrumentMiddleware("step_align", metrics),
+		newStepAlignMiddleware(limits, log, registerer),
+	)
 
 	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
 	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
-		shouldCache := func(r Request) bool {
-			return !r.GetOptions().CacheDisabled
-		}
-
 		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics), newSplitAndCacheMiddleware(
 			cfg.SplitQueriesByInterval > 0,
 			cfg.CacheResults,
 			cfg.SplitQueriesByInterval,
 			limits,
 			codec,
-			c,
+			cacheClient,
 			cacheKeyGenerator,
 			cacheExtractor,
-			shouldCache,
+			resultsCacheEnabledByOption,
 			log,
 			registerer,
 		))
 	}
 
-	queryInstantMiddleware := []Middleware{
+	queryInstantMiddleware = append(queryInstantMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
 		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
 		queryBlockerMiddleware,
+	)
+
+	// Inject the extra middlewares provided by the user before the query sharding middleware.
+	if len(cfg.ExtraInstantQueryMiddlewares) > 0 {
+		queryInstantMiddleware = append(queryInstantMiddleware, cfg.ExtraInstantQueryMiddlewares...)
+	}
+	// Inject the extra middlewares provided by the user before the query sharding middleware.
+	if len(cfg.ExtraRangeQueryMiddlewares) > 0 {
+		queryRangeMiddleware = append(queryRangeMiddleware, cfg.ExtraRangeQueryMiddlewares...)
 	}
 
 	if cfg.ShardedQueries {
@@ -280,7 +359,7 @@ func newQueryTripperware(
 		// before query-sharding so that it can operate on the partial queries that are
 		// considered for sharding.
 		if cfg.cardinalityBasedShardingEnabled() {
-			cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(c, log, registerer)
+			cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(cacheClient, log, registerer)
 			queryRangeMiddleware = append(
 				queryRangeMiddleware,
 				newInstrumentMiddleware("cardinality_estimation", metrics),
@@ -319,45 +398,7 @@ func newQueryTripperware(
 		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
 	}
 
-	return func(next http.RoundTripper) http.RoundTripper {
-		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
-		instant := newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...)
-
-		// Wrap next for cardinality, labels queries and all other queries.
-		// That attempts to parse "start" and "end" from the HTTP request and set them in the request's QueryDetails.
-		// range and instant queries have more accurate logic for query details.
-		next = newQueryDetailsStartEndRoundTripper(next)
-		cardinality := next
-		activeSeries := next
-		labels := next
-
-		// Inject the cardinality and labels query cache roundtripper only if the query results cache is enabled.
-		if cfg.CacheResults {
-			cardinality = newCardinalityQueryCacheRoundTripper(c, cacheKeyGenerator, limits, cardinality, log, registerer)
-			labels = newLabelsQueryCacheRoundTripper(c, cacheKeyGenerator, limits, labels, log, registerer)
-		}
-
-		if cfg.ShardActiveSeriesQueries {
-			activeSeries = newShardActiveSeriesMiddleware(activeSeries, limits, log)
-		}
-
-		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			switch {
-			case IsRangeQuery(r.URL.Path):
-				return queryrange.RoundTrip(r)
-			case IsInstantQuery(r.URL.Path):
-				return instant.RoundTrip(r)
-			case IsCardinalityQuery(r.URL.Path):
-				return cardinality.RoundTrip(r)
-			case IsActiveSeriesQuery(r.URL.Path):
-				return activeSeries.RoundTrip(r)
-			case IsLabelsQuery(r.URL.Path):
-				return labels.RoundTrip(r)
-			default:
-				return next.RoundTrip(r)
-			}
-		})
-	}, nil
+	return
 }
 
 // newQueryDetailsStartEndRoundTripper parses "start" and "end" parameters from the query and sets same fields in the QueryDetails in the context.
@@ -379,7 +420,7 @@ func newQueryDetailsStartEndRoundTripper(next http.RoundTripper) http.RoundTripp
 	})
 }
 
-func newActiveUsersTripperware(registerer prometheus.Registerer) Tripperware {
+func newQueryCountTripperware(registerer prometheus.Registerer) Tripperware {
 	// Per tenant query metrics.
 	queriesPerTenant := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_query_frontend_queries_total",
@@ -394,9 +435,22 @@ func newActiveUsersTripperware(registerer prometheus.Registerer) Tripperware {
 	_ = activeUsers.StartAsync(context.Background())
 	return func(next http.RoundTripper) http.RoundTripper {
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			op := "query"
-			if IsRangeQuery(r.URL.Path) {
-				op = "query_range"
+			op := queryTypeOther
+			switch {
+			case IsRangeQuery(r.URL.Path):
+				op = queryTypeRange
+			case IsInstantQuery(r.URL.Path):
+				op = queryTypeInstant
+			case IsRemoteReadQuery(r.URL.Path):
+				op = queryTypeRemoteRead
+			case IsCardinalityQuery(r.URL.Path):
+				op = queryTypeCardinality
+			case IsActiveSeriesQuery(r.URL.Path):
+				op = queryTypeActiveSeries
+			case IsActiveNativeHistogramMetricsQuery(r.URL.Path):
+				op = queryTypeActiveNativeHistogramMetrics
+			case IsLabelsQuery(r.URL.Path):
+				op = queryTypeLabels
 			}
 
 			tenantIDs, err := tenant.TenantIDs(r.Context())
@@ -426,10 +480,26 @@ func IsCardinalityQuery(path string) bool {
 		strings.HasSuffix(path, cardinalityLabelValuesPathSuffix)
 }
 
+func IsLabelNamesQuery(path string) bool {
+	return strings.HasSuffix(path, labelNamesPathSuffix)
+}
+
+func IsLabelValuesQuery(path string) bool {
+	return labelValuesPathSuffix.MatchString(path)
+}
+
 func IsLabelsQuery(path string) bool {
-	return strings.HasSuffix(path, labelNamesPathSuffix) || labelValuesPathSuffix.MatchString(path)
+	return IsLabelNamesQuery(path) || IsLabelValuesQuery(path)
 }
 
 func IsActiveSeriesQuery(path string) bool {
 	return strings.HasSuffix(path, cardinalityActiveSeriesPathSuffix)
+}
+
+func IsActiveNativeHistogramMetricsQuery(path string) bool {
+	return strings.HasSuffix(path, cardinalityActiveNativeHistogramMetricsPathSuffix)
+}
+
+func IsRemoteReadQuery(path string) bool {
+	return strings.HasSuffix(path, remoteReadPathSuffix)
 }

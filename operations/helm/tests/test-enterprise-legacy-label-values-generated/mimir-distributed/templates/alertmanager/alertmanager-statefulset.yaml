@@ -48,12 +48,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -62,9 +56,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-alertmanager
             release: test-enterprise-legacy-label-values
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           secret:
@@ -89,6 +81,10 @@ spec:
             - "-target=alertmanager"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            # Prometheus HTTP client used to send alerts has a hard-coded idle
+            # timeout of 5 minutes, therefore the server timeout for Alertmanager
+            # needs to be higher to avoid connections being closed abruptly.
+            - "-server.http-idle-timeout=6m"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -131,5 +127,3 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-          envFrom:

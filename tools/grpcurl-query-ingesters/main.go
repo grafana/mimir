@@ -5,12 +5,15 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
@@ -22,36 +25,51 @@ func main() {
 	}
 
 	for _, arg := range args {
-		res, err := parseFile(arg)
+		resps, err := parseFile(arg)
 		if err != nil {
 			fmt.Println("Failed to parse file:", err.Error())
 			os.Exit(1)
 		}
 
-		dumpResponse(res)
+		for _, res := range resps {
+			dumpResponse(res)
+		}
 	}
 }
 
-func parseFile(file string) (QueryStreamResponse, error) {
-	res := QueryStreamResponse{}
+func parseFile(file string) ([]QueryStreamResponse, error) {
+	resps := []QueryStreamResponse{}
 
 	fileData, err := os.ReadFile(file)
 	if err != nil {
-		return res, err
+		return nil, err
 	}
 
 	// Decode file.
 	decoder := json.NewDecoder(bytes.NewReader(fileData))
-	if err := decoder.Decode(&res); err != nil {
-		return res, err
+	for {
+		res := QueryStreamResponse{}
+		if err := decoder.Decode(&res); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, err
+		}
+
+		resps = append(resps, res)
 	}
 
-	return res, nil
+	return resps, nil
 }
 
 func dumpResponse(res QueryStreamResponse) {
 	for _, series := range res.Chunkseries {
 		fmt.Println(series.LabelSet().String())
+		var (
+			h  *histogram.Histogram
+			fh *histogram.FloatHistogram
+			ts int64
+		)
 
 		for _, chunk := range series.Chunks {
 			fmt.Printf(
@@ -70,11 +88,11 @@ func dumpResponse(res QueryStreamResponse) {
 				case chunkenc.ValFloat:
 					fmt.Println("  - Sample:", sampleType.String(), "ts:", chunkIterator.Timestamp(), "value:", chunkIterator.Value().Value)
 				case chunkenc.ValHistogram:
-					ts, value := chunkIterator.AtHistogram()
-					fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "value:", value)
+					ts, h = chunkIterator.AtHistogram(h)
+					fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "value:", h)
 				case chunkenc.ValFloatHistogram:
-					ts, value := chunkIterator.AtFloatHistogram()
-					fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "value:", value)
+					ts, fh := chunkIterator.AtFloatHistogram(fh)
+					fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "value:", fh)
 				default:
 					panic(fmt.Errorf("unknown sample type %s", sampleType.String()))
 				}

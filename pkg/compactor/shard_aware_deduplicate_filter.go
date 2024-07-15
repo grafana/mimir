@@ -25,7 +25,7 @@ type ShardAwareDeduplicateFilter struct {
 	duplicateIDs []ulid.ULID
 }
 
-// NewShardAwareDeduplicateFilter creates ShardAwareDeduplicateFilter.
+// NewShardAwareDeduplicateFilter creates a ShardAwareDeduplicateFilter.
 func NewShardAwareDeduplicateFilter() *ShardAwareDeduplicateFilter {
 	return &ShardAwareDeduplicateFilter{}
 }

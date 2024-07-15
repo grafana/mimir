@@ -4,6 +4,7 @@ package test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 )
@@ -19,6 +20,8 @@ func NewTestingLogger(t testing.TB) log.Logger {
 }
 
 func (l *testingLogger) Log(keyvals ...interface{}) error {
+	// Prepend log with timestamp.
+	keyvals = append([]interface{}{time.Now().String()}, keyvals...)
 	l.t.Log(keyvals...)
 	return nil
 }

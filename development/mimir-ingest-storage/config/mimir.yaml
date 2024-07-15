@@ -16,7 +16,13 @@ ingest_storage:
     topic:   mimir-ingest
 
 ingester:
-  return_only_grpc_errors: true
+  return_only_grpc_errors:     true
+  track_ingester_owned_series: true
+
+  partition_ring:
+    min_partition_owners_count:       2
+    min_partition_owners_duration:    10s
+    delete_inactive_partition_after:  1m
 
 blocks_storage:
   s3:
@@ -43,12 +49,23 @@ blocks_storage:
 
 memberlist:
   # Use write replicas as seed nodes.
-  join_members: [ mimir-write-1, mimir-write-2, mimir-write-3 ]
+  join_members:
+    - mimir-write-zone-a-1
+    - mimir-write-zone-b-1
+    - mimir-write-zone-a-2
+    - mimir-write-zone-b-2
+    - mimir-write-zone-a-3
+    - mimir-write-zone-b-3
 
 ruler:
   rule_path: /data/ruler
   # Each ruler is configured to route alerts to the Alertmanager running within the same component.
   alertmanager_url: http://localhost:8080/alertmanager
+  # Force the ruler to restore the state of any alert with a "for" period longer than 1s.
+  for_grace_period: 1s
+  # Evaluate rules via query-frontend (remote rule evaluation).
+  query_frontend:
+    address: dns:///mimir-read-1:9095
 
 ruler_storage:
   s3:
@@ -77,6 +94,7 @@ overrides_exporter:
 
 limits:
   native_histograms_ingestion_enabled: true
+  ingestion_rate: 100000
 
 runtime_config:
   file: ./config/runtime.yaml

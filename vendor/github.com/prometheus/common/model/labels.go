@@ -172,7 +172,7 @@ func (l LabelNames) String() string {
 // A LabelValue is an associated value for a LabelName.
 type LabelValue string
 
-// IsValid returns true iff the string is a valid UTF8.
+// IsValid returns true iff the string is a valid UTF-8.
 func (lv LabelValue) IsValid() bool {
 	return utf8.ValidString(string(lv))
 }

@@ -6,12 +6,11 @@
 package compactor
 
 import (
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // Copied from Thanos, pkg/compact/compact.go.
@@ -63,20 +62,20 @@ func newAggregatedSyncerMetrics(reg prometheus.Registerer) *aggregatedSyncerMetr
 	return &m
 }
 
-func (m *aggregatedSyncerMetrics) gatherThanosSyncerMetrics(reg *prometheus.Registry) {
+func (m *aggregatedSyncerMetrics) gatherThanosSyncerMetrics(reg *prometheus.Registry, logger log.Logger) {
 	if m == nil {
 		return
 	}
 
 	mf, err := reg.Gather()
 	if err != nil {
-		level.Warn(util_log.Logger).Log("msg", "failed to gather metrics from syncer registry after compaction", "err", err)
+		level.Warn(logger).Log("msg", "failed to gather metrics from syncer registry after compaction", "err", err)
 		return
 	}
 
 	mfm, err := dskit_metrics.NewMetricFamilyMap(mf)
 	if err != nil {
-		level.Warn(util_log.Logger).Log("msg", "failed to gather metrics from syncer registry after compaction", "err", err)
+		level.Warn(logger).Log("msg", "failed to gather metrics from syncer registry after compaction", "err", err)
 		return
 	}
 

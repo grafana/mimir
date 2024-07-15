@@ -29,34 +29,36 @@ import (
 )
 
 const (
-	MaxSeriesPerMetricFlag                   = "ingester.max-global-series-per-metric"
-	MaxMetadataPerMetricFlag                 = "ingester.max-global-metadata-per-metric"
-	MaxSeriesPerUserFlag                     = "ingester.max-global-series-per-user"
-	MaxMetadataPerUserFlag                   = "ingester.max-global-metadata-per-user"
-	MaxChunksPerQueryFlag                    = "querier.max-fetched-chunks-per-query"
-	MaxChunkBytesPerQueryFlag                = "querier.max-fetched-chunk-bytes-per-query"
-	MaxSeriesPerQueryFlag                    = "querier.max-fetched-series-per-query"
-	MaxEstimatedChunksPerQueryMultiplierFlag = "querier.max-estimated-fetched-chunks-per-query-multiplier"
-	MaxLabelNamesPerSeriesFlag               = "validation.max-label-names-per-series"
-	MaxLabelNameLengthFlag                   = "validation.max-length-label-name"
-	MaxLabelValueLengthFlag                  = "validation.max-length-label-value"
-	MaxMetadataLengthFlag                    = "validation.max-metadata-length"
-	maxNativeHistogramBucketsFlag            = "validation.max-native-histogram-buckets"
-	ReduceNativeHistogramOverMaxBucketsFlag  = "validation.reduce-native-histogram-over-max-buckets"
-	CreationGracePeriodFlag                  = "validation.create-grace-period"
-	MaxPartialQueryLengthFlag                = "querier.max-partial-query-length"
-	MaxTotalQueryLengthFlag                  = "query-frontend.max-total-query-length"
-	MaxQueryExpressionSizeBytesFlag          = "query-frontend.max-query-expression-size-bytes"
-	RequestRateFlag                          = "distributor.request-rate-limit"
-	RequestBurstSizeFlag                     = "distributor.request-burst-size"
-	IngestionRateFlag                        = "distributor.ingestion-rate-limit"
-	IngestionBurstSizeFlag                   = "distributor.ingestion-burst-size"
-	IngestionBurstFactorFlag                 = "distributor.ingestion-burst-factor"
-	HATrackerMaxClustersFlag                 = "distributor.ha-tracker.max-clusters"
-	resultsCacheTTLFlag                      = "query-frontend.results-cache-ttl"
-	resultsCacheTTLForOutOfOrderWindowFlag   = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
-	alignQueriesWithStepFlag                 = "query-frontend.align-queries-with-step"
-	QueryIngestersWithinFlag                 = "querier.query-ingesters-within"
+	MaxSeriesPerMetricFlag                    = "ingester.max-global-series-per-metric"
+	MaxMetadataPerMetricFlag                  = "ingester.max-global-metadata-per-metric"
+	MaxSeriesPerUserFlag                      = "ingester.max-global-series-per-user"
+	MaxMetadataPerUserFlag                    = "ingester.max-global-metadata-per-user"
+	MaxChunksPerQueryFlag                     = "querier.max-fetched-chunks-per-query"
+	MaxChunkBytesPerQueryFlag                 = "querier.max-fetched-chunk-bytes-per-query"
+	MaxSeriesPerQueryFlag                     = "querier.max-fetched-series-per-query"
+	MaxEstimatedChunksPerQueryMultiplierFlag  = "querier.max-estimated-fetched-chunks-per-query-multiplier"
+	MaxEstimatedMemoryConsumptionPerQueryFlag = "querier.max-estimated-memory-consumption-per-query"
+	MaxLabelNamesPerSeriesFlag                = "validation.max-label-names-per-series"
+	MaxLabelNameLengthFlag                    = "validation.max-length-label-name"
+	MaxLabelValueLengthFlag                   = "validation.max-length-label-value"
+	MaxMetadataLengthFlag                     = "validation.max-metadata-length"
+	maxNativeHistogramBucketsFlag             = "validation.max-native-histogram-buckets"
+	ReduceNativeHistogramOverMaxBucketsFlag   = "validation.reduce-native-histogram-over-max-buckets"
+	CreationGracePeriodFlag                   = "validation.create-grace-period"
+	PastGracePeriodFlag                       = "validation.past-grace-period"
+	MaxPartialQueryLengthFlag                 = "querier.max-partial-query-length"
+	MaxTotalQueryLengthFlag                   = "query-frontend.max-total-query-length"
+	MaxQueryExpressionSizeBytesFlag           = "query-frontend.max-query-expression-size-bytes"
+	RequestRateFlag                           = "distributor.request-rate-limit"
+	RequestBurstSizeFlag                      = "distributor.request-burst-size"
+	IngestionRateFlag                         = "distributor.ingestion-rate-limit"
+	IngestionBurstSizeFlag                    = "distributor.ingestion-burst-size"
+	IngestionBurstFactorFlag                  = "distributor.ingestion-burst-factor"
+	HATrackerMaxClustersFlag                  = "distributor.ha-tracker.max-clusters"
+	resultsCacheTTLFlag                       = "query-frontend.results-cache-ttl"
+	resultsCacheTTLForOutOfOrderWindowFlag    = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
+	alignQueriesWithStepFlag                  = "query-frontend.align-queries-with-step"
+	QueryIngestersWithinFlag                  = "querier.query-ingesters-within"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -111,8 +113,10 @@ type Limits struct {
 	MaxLabelNamesPerSeries                      int                 `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
 	MaxMetadataLength                           int                 `yaml:"max_metadata_length" json:"max_metadata_length"`
 	MaxNativeHistogramBuckets                   int                 `yaml:"max_native_histogram_buckets" json:"max_native_histogram_buckets"`
+	MaxExemplarsPerSeriesPerRequest             int                 `yaml:"max_exemplars_per_series_per_request" json:"max_exemplars_per_series_per_request" category:"experimental"`
 	ReduceNativeHistogramOverMaxBuckets         bool                `yaml:"reduce_native_histogram_over_max_buckets" json:"reduce_native_histogram_over_max_buckets"`
 	CreationGracePeriod                         model.Duration      `yaml:"creation_grace_period" json:"creation_grace_period" category:"advanced"`
+	PastGracePeriod                             model.Duration      `yaml:"past_grace_period" json:"past_grace_period" category:"advanced"`
 	EnforceMetadataMetricName                   bool                `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name" category:"advanced"`
 	IngestionTenantShardSize                    int                 `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
 	MetricRelabelConfigs                        []*relabel.Config   `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
@@ -139,21 +143,22 @@ type Limits struct {
 	SeparateMetricsGroupLabel string `yaml:"separate_metrics_group_label" json:"separate_metrics_group_label" category:"experimental"`
 
 	// Querier enforced limits.
-	MaxChunksPerQuery                    int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
-	MaxEstimatedChunksPerQueryMultiplier float64        `yaml:"max_estimated_fetched_chunks_per_query_multiplier" json:"max_estimated_fetched_chunks_per_query_multiplier" category:"experimental"`
-	MaxFetchedSeriesPerQuery             int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
-	MaxFetchedChunkBytesPerQuery         int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
-	MaxQueryLookback                     model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
-	MaxPartialQueryLength                model.Duration `yaml:"max_partial_query_length" json:"max_partial_query_length"`
-	MaxQueryParallelism                  int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
-	MaxLabelsQueryLength                 model.Duration `yaml:"max_labels_query_length" json:"max_labels_query_length"`
-	MaxCacheFreshness                    model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness" category:"advanced"`
-	MaxQueriersPerTenant                 int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
-	QueryShardingTotalShards             int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
-	QueryShardingMaxShardedQueries       int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
-	QueryShardingMaxRegexpSizeBytes      int            `yaml:"query_sharding_max_regexp_size_bytes" json:"query_sharding_max_regexp_size_bytes"`
-	SplitInstantQueriesByInterval        model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
-	QueryIngestersWithin                 model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
+	MaxChunksPerQuery                     int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
+	MaxEstimatedChunksPerQueryMultiplier  float64        `yaml:"max_estimated_fetched_chunks_per_query_multiplier" json:"max_estimated_fetched_chunks_per_query_multiplier" category:"experimental"`
+	MaxFetchedSeriesPerQuery              int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
+	MaxFetchedChunkBytesPerQuery          int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
+	MaxEstimatedMemoryConsumptionPerQuery uint64         `yaml:"max_estimated_memory_consumption_per_query" json:"max_estimated_memory_consumption_per_query" category:"experimental"`
+	MaxQueryLookback                      model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
+	MaxPartialQueryLength                 model.Duration `yaml:"max_partial_query_length" json:"max_partial_query_length"`
+	MaxQueryParallelism                   int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
+	MaxLabelsQueryLength                  model.Duration `yaml:"max_labels_query_length" json:"max_labels_query_length"`
+	MaxCacheFreshness                     model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness" category:"advanced"`
+	MaxQueriersPerTenant                  int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
+	QueryShardingTotalShards              int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
+	QueryShardingMaxShardedQueries        int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
+	QueryShardingMaxRegexpSizeBytes       int            `yaml:"query_sharding_max_regexp_size_bytes" json:"query_sharding_max_regexp_size_bytes"`
+	SplitInstantQueriesByInterval         model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
+	QueryIngestersWithin                  model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
 
 	// Query-frontend limits.
 	MaxTotalQueryLength                    model.Duration  `yaml:"max_total_query_length" json:"max_total_query_length"`
@@ -173,13 +178,16 @@ type Limits struct {
 	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"experimental"`
 
 	// Ruler defaults and limits.
-	RulerEvaluationDelay                 model.Duration `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
-	RulerTenantShardSize                 int            `yaml:"ruler_tenant_shard_size" json:"ruler_tenant_shard_size"`
-	RulerMaxRulesPerRuleGroup            int            `yaml:"ruler_max_rules_per_rule_group" json:"ruler_max_rules_per_rule_group"`
-	RulerMaxRuleGroupsPerTenant          int            `yaml:"ruler_max_rule_groups_per_tenant" json:"ruler_max_rule_groups_per_tenant"`
-	RulerRecordingRulesEvaluationEnabled bool           `yaml:"ruler_recording_rules_evaluation_enabled" json:"ruler_recording_rules_evaluation_enabled" category:"experimental"`
-	RulerAlertingRulesEvaluationEnabled  bool           `yaml:"ruler_alerting_rules_evaluation_enabled" json:"ruler_alerting_rules_evaluation_enabled" category:"experimental"`
-	RulerSyncRulesOnChangesEnabled       bool           `yaml:"ruler_sync_rules_on_changes_enabled" json:"ruler_sync_rules_on_changes_enabled" category:"advanced"`
+	RulerEvaluationDelay                   model.Duration         `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
+	RulerTenantShardSize                   int                    `yaml:"ruler_tenant_shard_size" json:"ruler_tenant_shard_size"`
+	RulerMaxRulesPerRuleGroup              int                    `yaml:"ruler_max_rules_per_rule_group" json:"ruler_max_rules_per_rule_group"`
+	RulerMaxRuleGroupsPerTenant            int                    `yaml:"ruler_max_rule_groups_per_tenant" json:"ruler_max_rule_groups_per_tenant"`
+	RulerRecordingRulesEvaluationEnabled   bool                   `yaml:"ruler_recording_rules_evaluation_enabled" json:"ruler_recording_rules_evaluation_enabled"`
+	RulerAlertingRulesEvaluationEnabled    bool                   `yaml:"ruler_alerting_rules_evaluation_enabled" json:"ruler_alerting_rules_evaluation_enabled"`
+	RulerSyncRulesOnChangesEnabled         bool                   `yaml:"ruler_sync_rules_on_changes_enabled" json:"ruler_sync_rules_on_changes_enabled" category:"advanced"`
+	RulerMaxRulesPerRuleGroupByNamespace   LimitsMap[int]         `yaml:"ruler_max_rules_per_rule_group_by_namespace" json:"ruler_max_rules_per_rule_group_by_namespace" category:"experimental"`
+	RulerMaxRuleGroupsPerTenantByNamespace LimitsMap[int]         `yaml:"ruler_max_rule_groups_per_tenant_by_namespace" json:"ruler_max_rule_groups_per_tenant_by_namespace" category:"experimental"`
+	RulerProtectedNamespaces               flagext.StringSliceCSV `yaml:"ruler_protected_namespaces" json:"ruler_protected_namespaces" category:"experimental"`
 
 	// Store-gateway.
 	StoreGatewayTenantShardSize int `yaml:"store_gateway_tenant_shard_size" json:"store_gateway_tenant_shard_size"`
@@ -194,6 +202,7 @@ type Limits struct {
 	CompactorBlockUploadValidationEnabled bool           `yaml:"compactor_block_upload_validation_enabled" json:"compactor_block_upload_validation_enabled"`
 	CompactorBlockUploadVerifyChunks      bool           `yaml:"compactor_block_upload_verify_chunks" json:"compactor_block_upload_verify_chunks"`
 	CompactorBlockUploadMaxBlockSizeBytes int64          `yaml:"compactor_block_upload_max_block_size_bytes" json:"compactor_block_upload_max_block_size_bytes" category:"advanced"`
+	CompactorInMemoryTenantMetaCacheSize  int            `yaml:"compactor_in_memory_tenant_meta_cache_size" json:"compactor_in_memory_tenant_meta_cache_size" category:"experimental" doc:"hidden"`
 
 	// This config doesn't have a CLI flag registered here because they're registered in
 	// their own original config struct.
@@ -205,10 +214,12 @@ type Limits struct {
 	AlertmanagerReceiversBlockCIDRNetworks     flagext.CIDRSliceCSV `yaml:"alertmanager_receivers_firewall_block_cidr_networks" json:"alertmanager_receivers_firewall_block_cidr_networks"`
 	AlertmanagerReceiversBlockPrivateAddresses bool                 `yaml:"alertmanager_receivers_firewall_block_private_addresses" json:"alertmanager_receivers_firewall_block_private_addresses"`
 
-	NotificationRateLimit               float64                  `yaml:"alertmanager_notification_rate_limit" json:"alertmanager_notification_rate_limit"`
-	NotificationRateLimitPerIntegration NotificationRateLimitMap `yaml:"alertmanager_notification_rate_limit_per_integration" json:"alertmanager_notification_rate_limit_per_integration"`
+	NotificationRateLimit               float64            `yaml:"alertmanager_notification_rate_limit" json:"alertmanager_notification_rate_limit"`
+	NotificationRateLimitPerIntegration LimitsMap[float64] `yaml:"alertmanager_notification_rate_limit_per_integration" json:"alertmanager_notification_rate_limit_per_integration"`
 
 	AlertmanagerMaxConfigSizeBytes             int `yaml:"alertmanager_max_config_size_bytes" json:"alertmanager_max_config_size_bytes"`
+	AlertmanagerMaxSilencesCount               int `yaml:"alertmanager_max_silences_count" json:"alertmanager_max_silences_count"`
+	AlertmanagerMaxSilenceSizeBytes            int `yaml:"alertmanager_max_silence_size_bytes" json:"alertmanager_max_silence_size_bytes"`
 	AlertmanagerMaxTemplatesCount              int `yaml:"alertmanager_max_templates_count" json:"alertmanager_max_templates_count"`
 	AlertmanagerMaxTemplateSizeBytes           int `yaml:"alertmanager_max_template_size_bytes" json:"alertmanager_max_template_size_bytes"`
 	AlertmanagerMaxDispatcherAggregationGroups int `yaml:"alertmanager_max_dispatcher_aggregation_groups" json:"alertmanager_max_dispatcher_aggregation_groups"`
@@ -219,7 +230,8 @@ type Limits struct {
 	OTelMetricSuffixesEnabled bool `yaml:"otel_metric_suffixes_enabled" json:"otel_metric_suffixes_enabled" category:"advanced"`
 
 	// Ingest storage.
-	IngestStorageReadConsistency string `yaml:"ingest_storage_read_consistency" json:"ingest_storage_read_consistency" category:"experimental" doc:"hidden"`
+	IngestStorageReadConsistency       string `yaml:"ingest_storage_read_consistency" json:"ingest_storage_read_consistency" category:"experimental"`
+	IngestionPartitionsTenantShardSize int    `yaml:"ingestion_partitions_tenant_shard_size" json:"ingestion_partitions_tenant_shard_size" category:"experimental"`
 
 	extensions map[string]interface{}
 }
@@ -242,9 +254,11 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxLabelNamesPerSeries, MaxLabelNamesPerSeriesFlag, 30, "Maximum number of label names per series.")
 	f.IntVar(&l.MaxMetadataLength, MaxMetadataLengthFlag, 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.")
 	f.IntVar(&l.MaxNativeHistogramBuckets, maxNativeHistogramBucketsFlag, 0, "Maximum number of buckets per native histogram sample. 0 to disable the limit.")
+	f.IntVar(&l.MaxExemplarsPerSeriesPerRequest, "distributor.max-exemplars-per-series-per-request", 0, "Maximum number of exemplars per series per request. 0 to disable limit in request. The exceeding exemplars are dropped.")
 	f.BoolVar(&l.ReduceNativeHistogramOverMaxBuckets, ReduceNativeHistogramOverMaxBucketsFlag, true, "Whether to reduce or reject native histogram samples with more buckets than the configured limit.")
 	_ = l.CreationGracePeriod.Set("10m")
-	f.Var(&l.CreationGracePeriod, CreationGracePeriodFlag, "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor, ingester and query-frontend (to avoid querying too far into the future).")
+	f.Var(&l.CreationGracePeriod, CreationGracePeriodFlag, "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester.")
+	f.Var(&l.PastGracePeriod, PastGracePeriodFlag, "Controls how far into the past incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is lower than '(now - OOO window - past_grace_period)'. This configuration is enforced in the distributor and ingester. 0 to disable.")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
 	f.BoolVar(&l.MetricRelabelingEnabled, "distributor.metric-relabeling-enabled", true, "Enable metric relabeling for the tenant. This configuration option can be used to forcefully disable metric relabeling on a per-tenant basis.")
 	f.BoolVar(&l.ServiceOverloadStatusCodeOnRateLimitEnabled, "distributor.service-overload-status-code-on-rate-limit-enabled", false, "If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling -distributor.retry-after-header.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.")
@@ -263,16 +277,17 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 
-	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
-	f.Float64Var(&l.MaxEstimatedChunksPerQueryMultiplier, MaxEstimatedChunksPerQueryMultiplierFlag, 0, "Maximum number of chunks estimated to be fetched in a single query from ingesters and long-term storage, as a multiple of -"+MaxChunksPerQueryFlag+". This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.")
-	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable")
-	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, MaxChunkBytesPerQueryFlag, 0, "The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler. 0 to disable.")
+	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
+	f.Float64Var(&l.MaxEstimatedChunksPerQueryMultiplier, MaxEstimatedChunksPerQueryMultiplierFlag, 0, "Maximum number of chunks estimated to be fetched in a single query from ingesters and store-gateways, as a multiple of -"+MaxChunksPerQueryFlag+". This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.")
+	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable")
+	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, MaxChunkBytesPerQueryFlag, 0, "The maximum size of all chunks in bytes that a query can fetch from ingesters and store-gateways. This limit is enforced in the querier and ruler. 0 to disable.")
+	f.Uint64Var(&l.MaxEstimatedMemoryConsumptionPerQuery, MaxEstimatedMemoryConsumptionPerQueryFlag, 0, "The maximum estimated memory a single query can consume at once, in bytes. This limit is only enforced when Mimir's query engine is in use. This limit is enforced in the querier. 0 to disable.")
 	f.Var(&l.MaxPartialQueryLength, MaxPartialQueryLengthFlag, "Limit the time range for partial queries at the querier level.")
-	f.Var(&l.MaxQueryLookback, "querier.max-query-lookback", "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
+	f.Var(&l.MaxQueryLookback, "querier.max-query-lookback", "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler for instant, range and remote read queries. For metadata queries like series, label names, label values queries the limit is enforced in the querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.MaxQueryParallelism, "querier.max-query-parallelism", 14, "Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers.")
 	f.Var(&l.MaxLabelsQueryLength, "store.max-labels-query-length", "Limit the time range (end - start time) of series, label names and values queries. This limit is enforced in the querier. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.LabelNamesAndValuesResultsMaxSizeBytes, "querier.label-names-and-values-results-max-size-bytes", 400*1024*1024, "Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned.")
-	f.IntVar(&l.ActiveSeriesResultsMaxSizeBytes, "querier.active-series-results-max-size-bytes", 400*1024*1024, "Maximum size of an active series request result shard in bytes. 0 to disable.")
+	f.IntVar(&l.ActiveSeriesResultsMaxSizeBytes, "querier.active-series-results-max-size-bytes", 400*1024*1024, "Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable.")
 	f.BoolVar(&l.CardinalityAnalysisEnabled, "querier.cardinality-analysis-enabled", false, "Enables endpoints used for cardinality analysis.")
 	f.IntVar(&l.LabelValuesMaxCardinalityLabelNamesPerRequest, "querier.label-values-max-cardinality-label-names-per-request", 100, "Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call.")
 	_ = l.MaxCacheFreshness.Set("10m")
@@ -294,8 +309,19 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.RulerRecordingRulesEvaluationEnabled, "ruler.recording-rules-evaluation-enabled", true, "Controls whether recording rules evaluation is enabled. This configuration option can be used to forcefully disable recording rules evaluation on a per-tenant basis.")
 	f.BoolVar(&l.RulerAlertingRulesEvaluationEnabled, "ruler.alerting-rules-evaluation-enabled", true, "Controls whether alerting rules evaluation is enabled. This configuration option can be used to forcefully disable alerting rules evaluation on a per-tenant basis.")
 	f.BoolVar(&l.RulerSyncRulesOnChangesEnabled, "ruler.sync-rules-on-changes-enabled", true, "True to enable a re-sync of the configured rule groups as soon as they're changed via ruler's config API. This re-sync is in addition of the periodic syncing. When enabled, it may take up to few tens of seconds before a configuration change triggers the re-sync.")
+	// Needs to be initialised to a value so that the documentation can pick up the default value of `{}` because this is set as JSON from the command-line.
+	if !l.RulerMaxRulesPerRuleGroupByNamespace.IsInitialized() {
+		l.RulerMaxRulesPerRuleGroupByNamespace = NewLimitsMap[int](nil)
+	}
+	f.Var(&l.RulerMaxRulesPerRuleGroupByNamespace, "ruler.max-rules-per-rule-group-by-namespace", "Maximum number of rules per rule group by namespace. Value is a map, where each key is the namespace and value is the number of rules allowed in the namespace (int). On the command line, this map is given in a JSON format. The number of rules specified has the same meaning as -ruler.max-rules-per-rule-group, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rules-per-rule-group.")
 
-	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period. 0 to disable.")
+	if !l.RulerMaxRuleGroupsPerTenantByNamespace.IsInitialized() {
+		l.RulerMaxRuleGroupsPerTenantByNamespace = NewLimitsMap[int](nil)
+	}
+	f.Var(&l.RulerMaxRuleGroupsPerTenantByNamespace, "ruler.max-rule-groups-per-tenant-by-namespace", "Maximum number of rule groups per tenant by namespace. Value is a map, where each key is the namespace and value is the number of rule groups allowed in the namespace (int). On the command line, this map is given in a JSON format. The number of rule groups specified has the same meaning as -ruler.max-rule-groups-per-tenant, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rule-groups-per-tenant.")
+	f.Var(&l.RulerProtectedNamespaces, "ruler.protected-namespaces", "List of namespaces that are protected from modification unless a special HTTP header is used. If a namespace is protected, it can only be read, not modified via the ruler's configuration API. The value is a list of strings, where each string is a namespace name. On the command line, this list is given as a comma-separated list.")
+
+	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period by instant, range or remote read queries. 0 to disable.")
 	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")
 	f.IntVar(&l.CompactorSplitGroups, "compactor.split-groups", 1, "Number of groups that blocks for splitting should be grouped into. Each group of blocks is then split separately. Number of output split shards is controlled by -compactor.split-and-merge-shards.")
 	f.IntVar(&l.CompactorTenantShardSize, "compactor.compactor-tenant-shard-size", 0, "Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.")
@@ -305,9 +331,10 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.CompactorBlockUploadValidationEnabled, "compactor.block-upload-validation-enabled", true, "Enable block upload validation for the tenant.")
 	f.BoolVar(&l.CompactorBlockUploadVerifyChunks, "compactor.block-upload-verify-chunks", true, "Verify chunks when uploading blocks via the upload API for the tenant.")
 	f.Int64Var(&l.CompactorBlockUploadMaxBlockSizeBytes, "compactor.block-upload-max-block-size-bytes", 0, "Maximum size in bytes of a block that is allowed to be uploaded or validated. 0 = no limit.")
+	f.IntVar(&l.CompactorInMemoryTenantMetaCacheSize, "compactor.in-memory-tenant-meta-cache-size", 0, "Size of per-tenant in-memory cache for parsed meta.json files. This is useful when meta.json files are big and parsing is expensive. Small meta.json files are not cached. 0 means this cache is disabled.")
 
 	// Query-frontend.
-	f.Var(&l.MaxTotalQueryLength, MaxTotalQueryLengthFlag, "Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query.")
+	f.Var(&l.MaxTotalQueryLength, MaxTotalQueryLengthFlag, "Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received instant, range or remote read query.")
 	_ = l.ResultsCacheTTL.Set("7d")
 	f.Var(&l.ResultsCacheTTL, resultsCacheTTLFlag, fmt.Sprintf("Time to live duration for cached query results. If query falls into out-of-order time window, -%s is used instead.", resultsCacheTTLForOutOfOrderWindowFlag))
 	_ = l.ResultsCacheTTLForOutOfOrderTimeWindow.Set("10m")
@@ -315,7 +342,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.ResultsCacheTTLForCardinalityQuery, "query-frontend.results-cache-ttl-for-cardinality-query", "Time to live duration for cached cardinality query results. The value 0 disables the cache.")
 	f.Var(&l.ResultsCacheTTLForLabelsQuery, "query-frontend.results-cache-ttl-for-labels-query", "Time to live duration for cached label names and label values query results. The value 0 disables the cache.")
 	f.BoolVar(&l.ResultsCacheForUnalignedQueryEnabled, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
-	f.IntVar(&l.MaxQueryExpressionSizeBytes, MaxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.")
+	f.IntVar(&l.MaxQueryExpressionSizeBytes, MaxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. This limit is enforced by the query-frontend for instant, range and remote read queries. 0 to not apply a limit to the size of the query.")
 	f.BoolVar(&l.AlignQueriesWithStep, alignQueriesWithStepFlag, false, "Mutate incoming queries to align their start and end with their step to improve result caching.")
 
 	// Store-gateway.
@@ -327,11 +354,14 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.Float64Var(&l.NotificationRateLimit, "alertmanager.notification-rate-limit", 0, "Per-tenant rate limit for sending notifications from Alertmanager in notifications/sec. 0 = rate limit disabled. Negative value = no notifications are allowed.")
 
-	if l.NotificationRateLimitPerIntegration == nil {
-		l.NotificationRateLimitPerIntegration = NotificationRateLimitMap{}
+	// Needs to be initialised to a value so that the documentation can pick up the default value of `{}` because this is set as JSON from the command-line.
+	if !l.NotificationRateLimitPerIntegration.IsInitialized() {
+		l.NotificationRateLimitPerIntegration = NotificationRateLimitMap()
 	}
 	f.Var(&l.NotificationRateLimitPerIntegration, "alertmanager.notification-rate-limit-per-integration", "Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: "+strings.Join(allowedIntegrationNames, ", ")+".")
 	f.IntVar(&l.AlertmanagerMaxConfigSizeBytes, "alertmanager.max-config-size-bytes", 0, "Maximum size of configuration file for Alertmanager that tenant can upload via Alertmanager API. 0 = no limit.")
+	f.IntVar(&l.AlertmanagerMaxSilencesCount, "alertmanager.max-silences-count", 0, "Maximum number of silences, including expired silences, that a tenant can have at once. 0 = no limit.")
+	f.IntVar(&l.AlertmanagerMaxSilenceSizeBytes, "alertmanager.max-silence-size-bytes", 0, "Maximum silence size in bytes. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxTemplatesCount, "alertmanager.max-templates-count", 0, "Maximum number of templates in tenant's Alertmanager configuration uploaded via Alertmanager API. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxTemplateSizeBytes, "alertmanager.max-template-size-bytes", 0, "Maximum size of single template in tenant's Alertmanager configuration uploaded via Alertmanager API. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxDispatcherAggregationGroups, "alertmanager.max-dispatcher-aggregation-groups", 0, "Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.")
@@ -339,7 +369,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.AlertmanagerMaxAlertsSizeBytes, "alertmanager.max-alerts-size-bytes", 0, "Maximum total size of alerts that a single tenant can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
 
 	// Ingest storage.
-	f.StringVar(&l.IngestStorageReadConsistency, "ingest-storage.read-consistency", api.ReadConsistencyEventual, fmt.Sprintf("The default consistency level to enforce to queries when using the ingest storage. Supports values: %s.", strings.Join(api.ReadConsistencies, ", ")))
+	f.StringVar(&l.IngestStorageReadConsistency, "ingest-storage.read-consistency", api.ReadConsistencyEventual, fmt.Sprintf("The default consistency level to enforce for queries when using the ingest storage. Supports values: %s.", strings.Join(api.ReadConsistencies, ", ")))
+	f.IntVar(&l.IngestionPartitionsTenantShardSize, "ingest-storage.ingestion-partition-tenant-shard-size", 0, "The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.")
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -364,8 +395,11 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 	// We want to set l to the defaults and then overwrite it with the input.
 	if defaultLimits != nil {
 		*l = *defaultLimits
+
 		// Make copy of default limits, otherwise unmarshalling would modify map in default limits.
-		l.copyNotificationIntegrationLimits(defaultLimits.NotificationRateLimitPerIntegration)
+		l.NotificationRateLimitPerIntegration = defaultLimits.NotificationRateLimitPerIntegration.Clone()
+		l.RulerMaxRulesPerRuleGroupByNamespace = defaultLimits.RulerMaxRulesPerRuleGroupByNamespace.Clone()
+		l.RulerMaxRuleGroupsPerTenantByNamespace = defaultLimits.RulerMaxRuleGroupsPerTenantByNamespace.Clone()
 	}
 
 	// Decode into a reflection-crafted struct that has fields for the extensions.
@@ -412,13 +446,6 @@ func (l *Limits) validate() error {
 	}
 
 	return nil
-}
-
-func (l *Limits) copyNotificationIntegrationLimits(defaults NotificationRateLimitMap) {
-	l.NotificationRateLimitPerIntegration = make(map[string]float64, len(defaults))
-	for k, v := range defaults {
-		l.NotificationRateLimitPerIntegration[k] = v
-	}
 }
 
 // When we load YAML from disk, we want the various per-customer limits
@@ -569,6 +596,12 @@ func (o *Overrides) CreationGracePeriod(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).CreationGracePeriod)
 }
 
+// PastGracePeriod is similar to CreationGracePeriod but looking into the past.
+// Zero means disabled.
+func (o *Overrides) PastGracePeriod(userID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(userID).PastGracePeriod)
+}
+
 // MaxGlobalSeriesPerUser returns the maximum number of series a user is allowed to store across the cluster.
 func (o *Overrides) MaxGlobalSeriesPerUser(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalSeriesPerUser
@@ -598,6 +631,12 @@ func (o *Overrides) MaxFetchedSeriesPerQuery(userID string) int {
 // chunks from ingesters and blocks storage.
 func (o *Overrides) MaxFetchedChunkBytesPerQuery(userID string) int {
 	return o.getOverridesForUser(userID).MaxFetchedChunkBytesPerQuery
+}
+
+// MaxEstimatedMemoryConsumptionPerQuery returns the maximum allowed estimated memory consumption of a single query.
+// This is only effective when using Mimir's query engine (not Prometheus' engine).
+func (o *Overrides) MaxEstimatedMemoryConsumptionPerQuery(userID string) uint64 {
+	return o.getOverridesForUser(userID).MaxEstimatedMemoryConsumptionPerQuery
 }
 
 // MaxQueryLookback returns the max lookback period of queries.
@@ -727,6 +766,10 @@ func (o *Overrides) CompactorTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).CompactorTenantShardSize
 }
 
+func (o *Overrides) CompactorInMemoryTenantMetaCacheSize(userID string) int {
+	return o.getOverridesForUser(userID).CompactorInMemoryTenantMetaCacheSize
+}
+
 // EvaluationDelay returns the rules evaluation delay for a given user.
 func (o *Overrides) EvaluationDelay(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).RulerEvaluationDelay)
@@ -795,19 +838,50 @@ func (o *Overrides) NativeHistogramsIngestionEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).NativeHistogramsIngestionEnabled
 }
 
+func (o *Overrides) MaxExemplarsPerSeriesPerRequest(userID string) int {
+	return o.getOverridesForUser(userID).MaxExemplarsPerSeriesPerRequest
+}
+
 // RulerTenantShardSize returns shard size (number of rulers) used by this tenant when using shuffle-sharding strategy.
 func (o *Overrides) RulerTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).RulerTenantShardSize
 }
 
 // RulerMaxRulesPerRuleGroup returns the maximum number of rules per rule group for a given user.
-func (o *Overrides) RulerMaxRulesPerRuleGroup(userID string) int {
-	return o.getOverridesForUser(userID).RulerMaxRulesPerRuleGroup
+// This limit is special. Limits are returned in the following order:
+// 1. Per tenant limit for the given namespace.
+// 2. Default limit for the given namespace.
+// 3. Per tenant limit set by RulerMaxRulesPerRuleGroup
+// 4. Default limit set by RulerMaxRulesPerRuleGroup
+func (o *Overrides) RulerMaxRulesPerRuleGroup(userID, namespace string) int {
+	u := o.getOverridesForUser(userID)
+
+	if namespaceLimit, ok := u.RulerMaxRulesPerRuleGroupByNamespace.data[namespace]; ok {
+		return namespaceLimit
+	}
+
+	return u.RulerMaxRulesPerRuleGroup
 }
 
 // RulerMaxRuleGroupsPerTenant returns the maximum number of rule groups for a given user.
-func (o *Overrides) RulerMaxRuleGroupsPerTenant(userID string) int {
-	return o.getOverridesForUser(userID).RulerMaxRuleGroupsPerTenant
+// This limit is special. Limits are returned in the following order:
+// 1. Per tenant limit for the given namespace.
+// 2. Default limit for the given namespace.
+// 3. Per tenant limit set by RulerMaxRuleGroupsPerTenant
+// 4. Default limit set by RulerMaxRuleGroupsPerTenant
+func (o *Overrides) RulerMaxRuleGroupsPerTenant(userID, namespace string) int {
+	u := o.getOverridesForUser(userID)
+
+	if namespaceLimit, ok := u.RulerMaxRuleGroupsPerTenantByNamespace.data[namespace]; ok {
+		return namespaceLimit
+	}
+
+	return u.RulerMaxRuleGroupsPerTenant
+}
+
+// RulerProtectedNamespaces returns the list of namespaces that are protected from modification.
+func (o *Overrides) RulerProtectedNamespaces(userID string) []string {
+	return o.getOverridesForUser(userID).RulerProtectedNamespaces
 }
 
 // RulerRecordingRulesEvaluationEnabled returns whether the recording rules evaluation is enabled for a given user.
@@ -869,7 +943,7 @@ func (o *Overrides) AlertmanagerReceiversBlockPrivateAddresses(user string) bool
 // 4. default limits
 func (o *Overrides) getNotificationLimitForUser(user, integration string) float64 {
 	u := o.getOverridesForUser(user)
-	if n, ok := u.NotificationRateLimitPerIntegration[integration]; ok {
+	if n, ok := u.NotificationRateLimitPerIntegration.data[integration]; ok {
 		return n
 	}
 
@@ -912,6 +986,14 @@ func (o *Overrides) NotificationBurstSize(user string, integration string) int {
 
 func (o *Overrides) AlertmanagerMaxConfigSize(userID string) int {
 	return o.getOverridesForUser(userID).AlertmanagerMaxConfigSizeBytes
+}
+
+func (o *Overrides) AlertmanagerMaxSilencesCount(userID string) int {
+	return o.getOverridesForUser(userID).AlertmanagerMaxSilencesCount
+}
+
+func (o *Overrides) AlertmanagerMaxSilenceSizeBytes(userID string) int {
+	return o.getOverridesForUser(userID).AlertmanagerMaxSilenceSizeBytes
 }
 
 func (o *Overrides) AlertmanagerMaxTemplatesCount(userID string) int {
@@ -964,6 +1046,10 @@ func (o *Overrides) AlignQueriesWithStep(userID string) bool {
 
 func (o *Overrides) IngestStorageReadConsistency(userID string) string {
 	return o.getOverridesForUser(userID).IngestStorageReadConsistency
+}
+
+func (o *Overrides) IngestionPartitionsTenantShardSize(userID string) int {
+	return o.getOverridesForUser(userID).IngestionPartitionsTenantShardSize
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {
@@ -1029,24 +1115,6 @@ func SmallestPositiveNonZeroDurationPerTenant(tenantIDs []string, f func(string)
 	for _, tenantID := range tenantIDs {
 		v := f(tenantID)
 		if v > 0 && (result == nil || v < *result) {
-			result = &v
-		}
-	}
-	if result == nil {
-		return 0
-	}
-	return *result
-}
-
-// LargestPositiveNonZeroDurationPerTenant is returning the maximum positive
-// and non-zero value of the supplied limit function for all given tenants. In
-// many limits a value of 0 means unlimited so the method will return 0 only if
-// all inputs have a limit of 0 or an empty tenant list is given.
-func LargestPositiveNonZeroDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time.Duration {
-	var result *time.Duration
-	for _, tenantID := range tenantIDs {
-		v := f(tenantID)
-		if v > 0 && (result == nil || v > *result) {
 			result = &v
 		}
 	}

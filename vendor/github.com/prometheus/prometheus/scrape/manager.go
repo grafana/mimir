@@ -73,15 +73,19 @@ type Options struct {
 	// Option used by downstream scraper users like OpenTelemetry Collector
 	// to help lookup metric metadata. Should be false for Prometheus.
 	PassMetadataInContext bool
-	// Option to enable the experimental in-memory metadata storage and append
-	// metadata to the WAL.
-	EnableMetadataStorage bool
+	// Option to enable appending of scraped Metadata to the TSDB/other appenders. Individual appenders
+	// can decide what to do with metadata, but for practical purposes this flag exists so that metadata
+	// can be written to the WAL and thus read for remote write.
+	// TODO: implement some form of metadata storage
+	AppendMetadata bool
 	// Option to increase the interval used by scrape manager to throttle target groups updates.
 	DiscoveryReloadInterval model.Duration
 	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
 	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
 	EnableCreatedTimestampZeroIngestion bool
-	// if UTF8 is not allowed, use this method 
+    // Option to enable the ingestion of native histograms.
+	EnableNativeHistogramsIngestion bool
+	// if UTF8 is not allowed, use this method
 	NameEscapingScheme string
 
 	// Optional HTTP client options to use when scraping.
@@ -133,6 +137,11 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 	}
 }
 
+// UnregisterMetrics unregisters manager metrics.
+func (m *Manager) UnregisterMetrics() {
+	m.metrics.Unregister()
+}
+
 func (m *Manager) reloader() {
 	reloadIntervalDuration := m.opts.DiscoveryReloadInterval
 	if reloadIntervalDuration < model.Duration(5*time.Second) {
@@ -160,26 +169,6 @@ func (m *Manager) reloader() {
 
 func (m *Manager) reload() {
 	m.mtxScrape.Lock()
-	defer m.mtxScrape.Unlock()
-	// var err error
-	// if m.opts.UTF8Names {
-	// 	model.NameValidationScheme = model.UTF8Validation
-	// } else {
-	// 	model.NameValidationScheme = model.LegacyValidation
-	// }
-	// level.Info(m.logger).Log("msg", "validation scheme", "scheme", model.NameValidationScheme, "arg", m.opts.UTF8Names)
-	// XXXXX the problem with this is that agent does not really use scrape.Options.  Also too, this is like per-scrape not per-instance, so it's not really the right place for this at all.
-	// if m.opts.NameEscapingScheme != "" {
-	// 	model.NameEscapingScheme, err = model.ToEscapingScheme(m.opts.NameEscapingScheme)
-	// 	if err != nil {
-	// 		level.Error(m.logger).Log("msg", "error setting escaping scheme", "err", err)
-	// 		return
-	// 	}
-	// } else {
-	// 	model.NameEscapingScheme = DefaultNameEscapingScheme
-	// }
-	level.Info(m.logger).Log("msg", "ESCAPING SCHEME", "scheme", model.NameEscapingScheme.String())
-
 	var wg sync.WaitGroup
 	for setName, groups := range m.targetSets {
 		if _, ok := m.scrapePools[setName]; !ok {
@@ -204,8 +193,8 @@ func (m *Manager) reload() {
 			sp.Sync(groups)
 			wg.Done()
 		}(m.scrapePools[setName], groups)
-
 	}
+	m.mtxScrape.Unlock()
 	wg.Wait()
 }
 

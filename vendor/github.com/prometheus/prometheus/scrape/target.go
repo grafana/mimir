@@ -169,8 +169,8 @@ func (t *Target) offset(interval time.Duration, offsetSeed uint64) time.Duration
 }
 
 // Labels returns a copy of the set of all public labels of the target.
-func (t *Target) Labels() labels.Labels {
-	b := labels.NewScratchBuilder(t.labels.Len())
+func (t *Target) Labels(b *labels.ScratchBuilder) labels.Labels {
+	b.Reset()
 	t.labels.Range(func(l labels.Label) {
 		if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
 			b.Add(l.Name, l.Value)
@@ -365,19 +365,53 @@ type bucketLimitAppender struct {
 
 func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if h != nil {
+		// Return with an early error if the histogram has too many buckets and the
+		// schema is not exponential, in which case we can't reduce the resolution.
+		if len(h.PositiveBuckets)+len(h.NegativeBuckets) > app.limit && !histogram.IsExponentialSchema(h.Schema) {
+			return 0, errBucketLimit
+		}
 		for len(h.PositiveBuckets)+len(h.NegativeBuckets) > app.limit {
-			if h.Schema == -4 {
+			if h.Schema <= histogram.ExponentialSchemaMin {
 				return 0, errBucketLimit
 			}
 			h = h.ReduceResolution(h.Schema - 1)
 		}
 	}
 	if fh != nil {
+		// Return with an early error if the histogram has too many buckets and the
+		// schema is not exponential, in which case we can't reduce the resolution.
+		if len(fh.PositiveBuckets)+len(fh.NegativeBuckets) > app.limit && !histogram.IsExponentialSchema(fh.Schema) {
+			return 0, errBucketLimit
+		}
 		for len(fh.PositiveBuckets)+len(fh.NegativeBuckets) > app.limit {
-			if fh.Schema == -4 {
+			if fh.Schema <= histogram.ExponentialSchemaMin {
 				return 0, errBucketLimit
 			}
 			fh = fh.ReduceResolution(fh.Schema - 1)
+		}
+	}
+	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh)
+	if err != nil {
+		return 0, err
+	}
+	return ref, nil
+}
+
+type maxSchemaAppender struct {
+	storage.Appender
+
+	maxSchema int32
+}
+
+func (app *maxSchemaAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	if h != nil {
+		if histogram.IsExponentialSchema(h.Schema) && h.Schema > app.maxSchema {
+			h = h.ReduceResolution(app.maxSchema)
+		}
+	}
+	if fh != nil {
+		if histogram.IsExponentialSchema(fh.Schema) && fh.Schema > app.maxSchema {
+			fh = fh.ReduceResolution(app.maxSchema)
 		}
 	}
 	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh)

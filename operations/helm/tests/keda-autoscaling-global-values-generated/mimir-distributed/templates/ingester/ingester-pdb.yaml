@@ -1,0 +1,19 @@
+---
+# Source: mimir-distributed/templates/ingester/ingester-pdb.yaml
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: keda-autoscaling-global-values-mimir-ingester
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: keda-autoscaling-global-values
+    app.kubernetes.io/component: ingester
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: keda-autoscaling-global-values
+      app.kubernetes.io/component: ingester
+  maxUnavailable: 1

@@ -3,15 +3,20 @@
 package util
 
 import (
+	"context"
 	"errors"
 	"io"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestCloseAndExhaust(t *testing.T) {
+	test.VerifyNoLeak(t)
+
 	t.Run("CloseSend returns an error", func(t *testing.T) {
 		expectedErr := errors.New("something went wrong")
 		stream := &mockStream{closeSendError: expectedErr}
@@ -33,7 +38,10 @@ func TestCloseAndExhaust(t *testing.T) {
 	})
 
 	t.Run("Recv blocks forever", func(t *testing.T) {
-		stream := &mockStream{}
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		stream := &mockStream{recvCtx: ctx}
 		returned := make(chan error)
 
 		go func() {
@@ -51,6 +59,7 @@ func TestCloseAndExhaust(t *testing.T) {
 
 type mockStream struct {
 	closeSendError error
+	recvCtx        context.Context
 	recvErrors     []error
 }
 
@@ -60,7 +69,12 @@ func (m *mockStream) CloseSend() error {
 
 func (m *mockStream) Recv() (string, error) {
 	if len(m.recvErrors) == 0 {
-		// Block forever.
+		// Block forever, unless the context is canceled (if provided).
+		if m.recvCtx != nil {
+			<-m.recvCtx.Done()
+			return "", m.recvCtx.Err()
+		}
+
 		<-make(chan struct{})
 	}
 

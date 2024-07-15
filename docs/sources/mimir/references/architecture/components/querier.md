@@ -82,11 +82,17 @@ Using the metadata cache reduces the number of API calls to long-term storage an
 
 To enable the metadata cache, set `-blocks-storage.bucket-store.metadata-cache.backend`.
 
-> **Note**: Currently, only the `memcached` backend is supported. The Memcached client includes additional configuration available via flags that begin with the prefix `-blocks-storage.bucket-store.metadata-cache.memcached.*`.
+{{< admonition type="note" >}}
+Currently, Mimir supports caching with the `memcached` backend.
+
+The Memcached client includes additional configuration available via flags that begin with the prefix `-blocks-storage.bucket-store.metadata-cache.memcached.*`.
+{{< /admonition >}}
 
 Additional flags for configuring the metadata cache begin with the prefix `-blocks-storage.bucket-store.metadata-cache.*`. By configuring the TTL to zero or a negative value, caching of given item type is disabled.
 
-> **Note:** The same Memcached backend cluster should be shared between store-gateways and queriers.
+{{< admonition type="note" >}}
+You should use the same Memcached backend cluster for both the store-gateways and queriers.
+{{< /admonition >}}
 
 ## Querier configuration
 

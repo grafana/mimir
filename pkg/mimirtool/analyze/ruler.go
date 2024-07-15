@@ -48,18 +48,13 @@ func ParseMetricsInRuleGroup(mir *MetricsInRuler, group rwrulefmt.RuleGroup, ns 
 			continue
 		}
 
-		parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+		parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 			if n, ok := node.(*parser.VectorSelector); ok {
 				refMetrics[n.Name] = struct{}{}
 			}
 
 			return nil
 		})
-	}
-
-	// remove defined recording rule metrics in same RG
-	for ruleMetric := range ruleMetrics {
-		delete(refMetrics, ruleMetric)
 	}
 
 	var metricsInGroup []string

@@ -26,7 +26,7 @@ import (
 
 // NewRuleStore returns a rule store backend client based on the provided cfg.
 func NewRuleStore(ctx context.Context, cfg rulestore.Config, cfgProvider bucket.TenantConfigProvider, loader promRules.GroupLoader, cacheTTL time.Duration, logger log.Logger, reg prometheus.Registerer) (directStore, cachedStore rulestore.RuleStore, _ error) {
-	if cfg.Backend == local.Name {
+	if cfg.Backend == rulestore.BackendLocal {
 		store, err := local.NewLocalRulesClient(cfg.Local, loader)
 		if err != nil {
 			return nil, nil, err

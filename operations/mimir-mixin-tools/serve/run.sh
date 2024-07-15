@@ -4,6 +4,8 @@
 set -e
 
 SCRIPT_DIR=$(cd `dirname $0` && pwd)
+# Ensure we run recent Grafana.
+GRAFANA_VERSION=11.0.0
 DOCKER_CONTAINER_NAME="mixin-serve-grafana"
 DOCKER_OPTS=""
 
@@ -38,6 +40,9 @@ if [ ! -e "${SCRIPT_DIR}/.config" ]; then
   echo "DATASOURCE_URL=\"<grafana-cloud-url ending with /prometheus>\""
   echo "DATASOURCE_USERNAME=\"<grafana-cloud-instance-id>\""
   echo "DATASOURCE_PASSWORD=\"<grafana-cloud-api-key>\""
+  echo "LOKI_DATASOURCE_URL=\"<grafana-cloud-url ending with (optional)>\""
+  echo "LOKI_DATASOURCE_USERNAME=\"<grafana-cloud-instance-id (optional)>\""
+  echo "LOKI_DATASOURCE_PASSWORD=\"<grafana-cloud-api-key (optional)>\""
   echo "GRAFANA_PUBLISHED_PORT=\"<grafana-port-on-the-host>\""
   echo ""
   exit 1
@@ -56,8 +61,7 @@ function cleanup() {
 cleanup
 trap cleanup EXIT
 
-# Ensure we run on Grafana latest.
-docker pull grafana/grafana:latest
+docker pull grafana/grafana:${GRAFANA_VERSION}
 
 # Run Grafana.
 echo "Starting Grafana container with name ${DOCKER_CONTAINER_NAME} listening on host port ${GRAFANA_PUBLISHED_PORT}"
@@ -72,10 +76,12 @@ docker run \
   --env "DATASOURCE_URL=${DATASOURCE_URL}" \
   --env "DATASOURCE_USERNAME=${DATASOURCE_USERNAME}" \
   --env "DATASOURCE_PASSWORD=${DATASOURCE_PASSWORD}" \
+  --env "LOKI_DATASOURCE_URL=${LOKI_DATASOURCE_URL}" \
+  --env "LOKI_DATASOURCE_USERNAME=${LOKI_DATASOURCE_USERNAME}" \
+  --env "LOKI_DATASOURCE_PASSWORD=${LOKI_DATASOURCE_PASSWORD}" \
   -v "${SCRIPT_DIR}/../../mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards" \
   -v "${SCRIPT_DIR}/provisioning-dashboards.yaml:/etc/grafana/provisioning/dashboards/provisioning-dashboards.yaml" \
   -v "${SCRIPT_DIR}/provisioning-datasources.yaml:/etc/grafana/provisioning/datasources/provisioning-datasources.yaml" \
-  --network=host \
   --expose 3000 \
   --publish "${GRAFANA_PUBLISHED_PORT}:3000" \
-  grafana/grafana:latest
+  grafana/grafana:${GRAFANA_VERSION}

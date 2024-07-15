@@ -21,7 +21,7 @@ import (
 )
 
 func TestJob_MinCompactionLevel(t *testing.T) {
-	job := NewJob("user-1", "group-1", labels.EmptyLabels(), 0, true, 2, "shard-1")
+	job := newJob("user-1", "group-1", labels.EmptyLabels(), 0, true, 2, "shard-1")
 	require.NoError(t, job.AppendMeta(&block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(1, nil), Compaction: tsdb.BlockMetaCompaction{Level: 2}}}))
 	assert.Equal(t, 2, job.MinCompactionLevel())
 
@@ -46,6 +46,12 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 	// Blocks with compaction level 2.
 	meta3 := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(3, nil), Compaction: tsdb.BlockMetaCompaction{Level: 2}}}
 	meta4 := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(4, nil), Compaction: tsdb.BlockMetaCompaction{Level: 2}}}
+
+	// OOO blocks
+	meta5 := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(5, nil), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}
+	meta6 := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(6, nil), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}
+	meta5.Compaction.SetOutOfOrder()
+	meta6.Compaction.SetOutOfOrder()
 
 	tests := map[string]struct {
 		waitPeriod      time.Duration
@@ -90,6 +96,15 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 			expectedElapsed: true,
 			expectedMeta:    nil,
 		},
+		"out of order block": {
+			waitPeriod: 10 * time.Minute,
+			jobBlocks: []jobBlock{
+				{meta: meta5, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
+				{meta: meta6, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
+			},
+			expectedElapsed: true,
+			expectedMeta:    nil,
+		},
 		"an error occurred while checking the blocks upload timestamp": {
 			waitPeriod: 10 * time.Minute,
 			jobBlocks: []jobBlock{
@@ -106,7 +121,7 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			job := NewJob("user-1", "group-1", labels.EmptyLabels(), 0, true, 2, "shard-1")
+			job := newJob("user-1", "group-1", labels.EmptyLabels(), 0, true, 2, "shard-1")
 			for _, b := range testData.jobBlocks {
 				require.NoError(t, job.AppendMeta(b.meta))
 			}

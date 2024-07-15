@@ -16,7 +16,7 @@ import (
 	"github.com/pkg/errors"
 
 	alertstorelocal "github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
-	rulestorelocal "github.com/grafana/mimir/pkg/ruler/rulestore/local"
+	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/util/fs"
 )
@@ -137,7 +137,7 @@ func checkObjectStoresConfig(ctx context.Context, cfg Config, logger log.Logger)
 	}
 
 	// Check ruler storage config.
-	if cfg.isAnyModuleEnabled(All, Ruler, Backend) && cfg.RulerStorage.Backend != rulestorelocal.Name {
+	if cfg.isAnyModuleEnabled(All, Ruler, Backend) && cfg.RulerStorage.Backend != rulestore.BackendLocal {
 		errs.Add(errors.Wrap(checkObjectStoreConfig(ctx, cfg.RulerStorage.Config, logger), "ruler storage"))
 	}
 

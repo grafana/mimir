@@ -44,12 +44,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -59,9 +53,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-enterprise-configmap-values
             app.kubernetes.io/component: compactor
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:
@@ -122,7 +114,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
           envFrom:
             - secretRef:
                 name: mimir-minio-secret

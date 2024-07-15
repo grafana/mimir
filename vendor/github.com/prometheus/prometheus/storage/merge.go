@@ -19,9 +19,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"sync"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -46,6 +45,15 @@ type mergeGenericQuerier struct {
 //
 // In case of overlaps between the data given by primaries' and secondaries' Selects, merge function will be used.
 func NewMergeQuerier(primaries, secondaries []Querier, mergeFn VerticalSeriesMergeFunc) Querier {
+	switch {
+	case len(primaries)+len(secondaries) == 0:
+		return noopQuerier{}
+	case len(primaries) == 1 && len(secondaries) == 0:
+		return primaries[0]
+	case len(primaries) == 0 && len(secondaries) == 1:
+		return secondaries[0]
+	}
+
 	queriers := make([]genericQuerier, 0, len(primaries)+len(secondaries))
 	for _, q := range primaries {
 		if _, ok := q.(noopQuerier); !ok && q != nil {
@@ -75,6 +83,15 @@ func NewMergeQuerier(primaries, secondaries []Querier, mergeFn VerticalSeriesMer
 // In case of overlaps between the data given by primaries' and secondaries' Selects, merge function will be used.
 // TODO(bwplotka): Currently merge will compact overlapping chunks with bigger chunk, without limit. Split it: https://github.com/prometheus/tsdb/issues/670
 func NewMergeChunkQuerier(primaries, secondaries []ChunkQuerier, mergeFn VerticalChunkSeriesMergeFunc) ChunkQuerier {
+	switch {
+	case len(primaries) == 0 && len(secondaries) == 0:
+		return noopChunkQuerier{}
+	case len(primaries) == 1 && len(secondaries) == 0:
+		return primaries[0]
+	case len(primaries) == 0 && len(secondaries) == 1:
+		return secondaries[0]
+	}
+
 	queriers := make([]genericQuerier, 0, len(primaries)+len(secondaries))
 	for _, q := range primaries {
 		if _, ok := q.(noopChunkQuerier); !ok && q != nil {
@@ -100,13 +117,6 @@ func NewMergeChunkQuerier(primaries, secondaries []ChunkQuerier, mergeFn Vertica
 
 // Select returns a set of series that matches the given label matchers.
 func (q *mergeGenericQuerier) Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) genericSeriesSet {
-	if len(q.queriers) == 0 {
-		return noopGenericSeriesSet{}
-	}
-	if len(q.queriers) == 1 {
-		return q.queriers[0].Select(ctx, sortSeries, hints, matchers...)
-	}
-
 	seriesSets := make([]genericSeriesSet, 0, len(q.queriers))
 	if !q.concurrentSelect {
 		for _, querier := range q.queriers {
@@ -522,11 +532,11 @@ func (c *chainSampleIterator) At() (t int64, v float64) {
 	return c.curr.At()
 }
 
-func (c *chainSampleIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (c *chainSampleIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
 	if c.curr == nil {
 		panic("chainSampleIterator.AtHistogram called before first .Next or after .Next returned false.")
 	}
-	t, h := c.curr.AtHistogram()
+	t, h := c.curr.AtHistogram(h)
 	// If the current sample is not consecutive with the previous one, we
 	// cannot be sure anymore about counter resets for counter histograms.
 	// TODO(beorn7): If a `NotCounterReset` sample is followed by a
@@ -539,11 +549,11 @@ func (c *chainSampleIterator) AtHistogram() (int64, *histogram.Histogram) {
 	return t, h
 }
 
-func (c *chainSampleIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (c *chainSampleIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	if c.curr == nil {
 		panic("chainSampleIterator.AtFloatHistogram called before first .Next or after .Next returned false.")
 	}
-	t, fh := c.curr.AtFloatHistogram()
+	t, fh := c.curr.AtFloatHistogram(fh)
 	// If the current sample is not consecutive with the previous one, we
 	// cannot be sure anymore about counter resets for counter histograms.
 	// TODO(beorn7): If a `NotCounterReset` sample is followed by a

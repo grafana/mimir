@@ -88,13 +88,13 @@ func (cmd *PrometheusAnalyzeCommand) parseUsedMetrics() (model.LabelValues, erro
 
 func (cmd *PrometheusAnalyzeCommand) newAPI() (v1.API, error) {
 	rt := api.DefaultRoundTripper
-	rt = config.NewUserAgentRoundTripper(client.UserAgent, rt)
+	rt = config.NewUserAgentRoundTripper(client.UserAgent(), rt)
 	if cmd.username != "" {
 		rt = &setTenantIDTransport{
 			RoundTripper: rt,
 			tenantID:     cmd.username,
 		}
-		rt = config.NewBasicAuthRoundTripper(cmd.username, config.Secret(cmd.password), "", "", rt)
+		rt = config.NewBasicAuthRoundTripper(config.NewInlineSecret(cmd.username), config.NewInlineSecret(cmd.password), rt)
 	}
 
 	address, err := url.JoinPath(cmd.address, cmd.prometheusHTTPPrefix)

@@ -29,13 +29,14 @@ const (
 	SamenessGroup      string = "sameness-group"
 	RateLimitIPConfig  string = "control-plane-request-limit"
 
-	ProxyConfigGlobal string = "global"
-	MeshConfigMesh    string = "mesh"
-	APIGateway        string = "api-gateway"
-	TCPRoute          string = "tcp-route"
-	InlineCertificate string = "inline-certificate"
-	HTTPRoute         string = "http-route"
-	JWTProvider       string = "jwt-provider"
+	ProxyConfigGlobal     string = "global"
+	MeshConfigMesh        string = "mesh"
+	APIGateway            string = "api-gateway"
+	TCPRoute              string = "tcp-route"
+	FileSystemCertificate string = "file-system-certificate"
+	InlineCertificate     string = "inline-certificate"
+	HTTPRoute             string = "http-route"
+	JWTProvider           string = "jwt-provider"
 )
 
 const (
@@ -341,6 +342,7 @@ type InstanceLevelRateLimits struct {
 	RequestsMaxBurst int `alias:"requests_max_burst"`
 
 	// Routes is a list of rate limits applied to specific routes.
+	// For a given request, the first matching route will be applied, if any
 	// Overrides any top-level configuration.
 	Routes []InstanceLevelRouteRateLimits
 }
@@ -446,6 +448,8 @@ func makeConfigEntry(kind, name string) (ConfigEntry, error) {
 		return &APIGatewayConfigEntry{Kind: kind, Name: name}, nil
 	case TCPRoute:
 		return &TCPRouteConfigEntry{Kind: kind, Name: name}, nil
+	case FileSystemCertificate:
+		return &FileSystemCertificateConfigEntry{Kind: kind, Name: name}, nil
 	case InlineCertificate:
 		return &InlineCertificateConfigEntry{Kind: kind, Name: name}, nil
 	case HTTPRoute:

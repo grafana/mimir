@@ -4,13 +4,16 @@ package querymiddleware
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -28,6 +31,14 @@ import (
 )
 
 func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
+	for _, useZeroAllocationDecoder := range []bool{false, true} {
+		t.Run(fmt.Sprintf("useZeroAllocationDecoder=%t", useZeroAllocationDecoder), func(t *testing.T) {
+			runTestShardActiveSeriesMiddlewareRoundTrip(t, useZeroAllocationDecoder)
+		})
+	}
+}
+
+func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocationDecoder bool) {
 	const tenantShardCount = 4
 	const tenantMaxShardCount = 128
 
@@ -266,16 +277,9 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
 			// Stub upstream with valid or invalid responses.
 			var requestCount atomic.Int32
 			upstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-				defer func(body io.ReadCloser) {
-					if body != nil {
-						_ = body.Close()
-					}
-				}(r.Body)
-
 				_, _, err := user.ExtractOrgIDFromHTTPRequest(r)
 				require.NoError(t, err)
 				_, err = user.ExtractOrgID(r.Context())
@@ -315,6 +319,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			// Run the request through the middleware.
 			s := newShardActiveSeriesMiddleware(
 				upstream,
+				useZeroAllocationDecoder,
 				mockLimits{maxShardedQueries: tenantMaxShardCount, totalShards: tenantShardCount},
 				log.NewNopLogger(),
 			)
@@ -358,87 +363,200 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 	}
 }
 
-func Test_shardActiveSeriesMiddleware_RoundTrip_ResponseBodyStreamed(t *testing.T) {
-	// This value needs to be set at least as large as the buffer size used by the
-	// implementation for this test to make sense.
-	const bufferSize = 512
-	const shardCount = 2
+func Test_shardActiveSeriesMiddleware_RoundTrip_concurrent(t *testing.T) {
+	for _, useZeroAllocationDecoder := range []bool{false, true} {
+		t.Run(fmt.Sprintf("useZeroAllocationDecoder=%t", useZeroAllocationDecoder), func(t *testing.T) {
+			runTestShardActiveSeriesMiddlewareRoundTripConcurrent(t, useZeroAllocationDecoder)
+		})
+	}
+}
 
-	// Stub upstream with two responses that are larger than the buffer size and
-	// retain a reference to the response bodies. The responses use a custom body
-	// type that counts the number of bytes read, so we can assert on that later in
-	// the test.
-	var upstreamResponseBodies [shardCount]*bodyReadBytesCounter
-	var responseSize [shardCount]int
+func runTestShardActiveSeriesMiddlewareRoundTripConcurrent(t *testing.T, useZeroAllocationDecoder bool) {
+	const shardCount = 4
+
 	upstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-		// Extract requested shard index
 		require.NoError(t, r.ParseForm())
 		req, err := cardinality.DecodeActiveSeriesRequestFromValues(r.Form)
 		require.NoError(t, err)
 		shard, _, err := sharding.ShardFromMatchers(req.Matchers)
 		require.NoError(t, err)
-		require.NotNil(t, shard, "this test requires a shard to be requested")
+		require.NotNil(t, shard)
 
-		// Make sure the response body is big enough to not be buffered entirely.
-		response := fmt.Sprintf(fmt.Sprintf(`{"data": [{"__name__": "metric-%%0%dd"}]}`, bufferSize), shard.ShardIndex)
-		body := &bodyReadBytesCounter{body: io.NopCloser(strings.NewReader(response))}
-		upstreamResponseBodies[shard.ShardIndex] = body
-		responseSize[shard.ShardIndex] = len(response)
+		resp := fmt.Sprintf(`{"data": [{"__name__": "metric-%d"}]}`, shard.ShardIndex)
 
-		return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(resp))}, nil
 	})
 
 	s := newShardActiveSeriesMiddleware(
 		upstream,
+		useZeroAllocationDecoder,
 		mockLimits{maxShardedQueries: shardCount, totalShards: shardCount},
 		log.NewNopLogger(),
 	)
 
-	r := httptest.NewRequest("POST", "/active_series", strings.NewReader(`selector={__name__=~"metric-.*"}`))
-	r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	assertRoundTrip := func(t *testing.T, trip http.RoundTripper, req *http.Request) {
+		resp, err := trip.RoundTrip(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
 
-	resp, err := s.RoundTrip(r.WithContext(user.InjectOrgID(r.Context(), "test")))
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var body io.Reader = resp.Body
+		if resp.Header.Get("Content-Encoding") == encodingTypeSnappyFramed {
+			body = s2.NewReader(resp.Body)
+		}
+
+		// For this test, if we can decode the response, it is enough to guaranty it worked. We proof actual validity
+		// of all kinds of responses in the tests above.
+		var res result
+		err = json.NewDecoder(body).Decode(&res)
+		require.NoError(t, err)
+		require.Len(t, res.Data, shardCount)
+	}
+
+	const reqCount = 20
+
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
+	wg.Add(reqCount)
+
+	for n := reqCount; n > 0; n-- {
+		go func(n int) {
+			defer wg.Done()
+
+			req := httptest.NewRequest("POST", "/active_series", strings.NewReader(`selector={__name__=~"metric-.*"}`))
+			req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+			// Send every other request as snappy to proof the middleware doesn't mess up body encoders
+			if n%2 == 0 {
+				req.Header.Add("Accept-Encoding", encodingTypeSnappyFramed)
+			}
+
+			req = req.WithContext(user.InjectOrgID(req.Context(), "test"))
+
+			assertRoundTrip(t, s, req)
+		}(n)
+	}
+}
+
+func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testing.T) {
+	for _, useZeroAllocationDecoder := range []bool{false, true} {
+		t.Run(fmt.Sprintf("useZeroAllocationDecoder=%t", useZeroAllocationDecoder), func(t *testing.T) {
+			runTestShardActiveSeriesMiddlewareMergeResponseContextCancellation(t, useZeroAllocationDecoder)
+		})
+	}
+}
+
+func runTestShardActiveSeriesMiddlewareMergeResponseContextCancellation(t *testing.T, useZeroAllocationDecoder bool) {
+	s := newShardActiveSeriesMiddleware(nil, true, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(fmt.Errorf("test ran to completion"))
+
+	body, err := json.Marshal(&activeSeriesResponse{Data: []labels.Labels{
+		// Make this large enough to ensure the whole response isn't buffered.
+		labels.FromStrings("lbl1", strings.Repeat("a", os.Getpagesize())),
+		labels.FromStrings("lbl2", "val2"),
+		labels.FromStrings("lbl3", "val3"),
+	}})
 	require.NoError(t, err)
-	defer func(body io.ReadCloser) {
-		_, _ = io.ReadAll(body)
-		_ = body.Close()
-	}(resp.Body)
 
-	// Check that upstream responses have been read only up to a max of the buffer size.
-	for _, body := range upstreamResponseBodies {
-		bytesRead := int(body.BytesRead())
-		require.GreaterOrEqual(t, bufferSize, bytesRead)
+	responses := []*http.Response{
+		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
+		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
+	}
+	var resp *http.Response
+
+	if useZeroAllocationDecoder {
+		resp = s.mergeResponsesWithZeroAllocationDecoder(ctx, responses, "")
+	} else {
+		defer func() {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+		}()
+
+		resp = s.mergeResponses(ctx, responses, "")
 	}
 
-	// Read and close the response body.
-	_, _ = io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
+	var buf bytes.Buffer
+	_, err = io.CopyN(&buf, resp.Body, int64(os.Getpagesize()))
+	require.NoError(t, err)
 
-	// Check that upstream responses have been fully read now.
-	for i, body := range upstreamResponseBodies {
-		bytesRead := int(body.BytesRead())
-		assert.Equal(t, responseSize[i], bytesRead)
+	cancelCause := "request canceled while streaming response"
+	cancel(fmt.Errorf(cancelCause))
+
+	_, err = io.Copy(&buf, resp.Body)
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), cancelCause)
+}
+
+func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
+	b.Run("encoding=none", func(b *testing.B) {
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 1)
+	})
+
+	b.Run("encoding=snappy", func(b *testing.B) {
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, encodingTypeSnappyFramed, 1)
+	})
+
+	b.Run("seriesCount=1_000", func(b *testing.B) {
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 1_000)
+	})
+
+	b.Run("seriesCount=10_000", func(b *testing.B) {
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, "", 10_000)
+	})
+}
+
+type activeSeriesResponse struct {
+	Data []labels.Labels `json:"data"`
+}
+
+func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string, numSeries int) {
+
+	bcs := []int{4, 16, 64, 128}
+
+	for _, numResponses := range bcs {
+		b.Run(fmt.Sprintf("num-responses-%d", numResponses), func(b *testing.B) {
+			benchResponses := make([][]*http.Response, b.N)
+
+			for i := 0; i < b.N; i++ {
+				var responses []*http.Response
+				for i := 0; i < numResponses; i++ {
+
+					var apiResp activeSeriesResponse
+					for k := 0; k < numSeries; k++ {
+						apiResp.Data = append(apiResp.Data, labels.FromStrings(
+							"__name__", "m_"+fmt.Sprint(i),
+							"job", "prometheus"+fmt.Sprint(i),
+							"instance", "instance"+fmt.Sprint(i),
+							"series", fmt.Sprintf("series_%d", k),
+						))
+					}
+					body, _ := json.Marshal(&apiResp)
+
+					responses = append(responses, &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     http.Header{},
+						Body:       io.NopCloser(bytes.NewReader(body)),
+					})
+				}
+				benchResponses[i] = responses
+			}
+
+			s := newShardActiveSeriesMiddleware(nil, true, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
+
+			b.ResetTimer()
+			b.ReportAllocs()
+
+			for i := 0; i < b.N; i++ {
+				resp := s.mergeResponsesWithZeroAllocationDecoder(context.Background(), benchResponses[i], encoding)
+
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
+			}
+		})
 	}
-}
-
-// bodyReadBytesCounter is a wrapper around a response body that counts the number of bytes read from it.
-type bodyReadBytesCounter struct {
-	body      io.ReadCloser
-	bytesRead atomic.Uint64
-}
-
-func (b *bodyReadBytesCounter) Read(p []byte) (n int, err error) {
-	read, err := b.body.Read(p)
-	b.bytesRead.Add(uint64(read))
-	return read, err
-}
-
-func (b *bodyReadBytesCounter) Close() error {
-	return b.body.Close()
-}
-
-func (b *bodyReadBytesCounter) BytesRead() uint64 {
-	return b.bytesRead.Load()
 }
 
 type result struct {

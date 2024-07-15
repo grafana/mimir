@@ -1,0 +1,19 @@
+---
+# Source: mimir-distributed/templates/admin-cache/admin-cache-pdb.yaml
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: test-enterprise-configmap-values-mimir-admin-cache
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-enterprise-configmap-values
+    app.kubernetes.io/component: admin-cache
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-enterprise-configmap-values
+      app.kubernetes.io/component: admin-cache
+  maxUnavailable: 1

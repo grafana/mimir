@@ -103,7 +103,9 @@ Estimated required CPU and memory:
 - CPU: 1 core for every 10 queries per second
 - Memory: 1GB for every 10 queries per second
 
-> **Note:** The estimate is 1 CPU core and 1GB per query, with an average query latency of 100ms.
+{{< admonition type="note" >}}
+The estimate is 1 CPU core and 1GB per query, with an average query latency of 100ms.
+{{< /admonition >}}
 
 ### Store-gateway
 
@@ -115,9 +117,13 @@ Estimated required CPU, memory, and disk space:
 - Memory: 1GB every 10 queries per second
 - Disk: 13GB every 1 million active series
 
-> **Note:** The CPU and memory requirements are computed by estimating 1 CPU core and 1GB per query, an average query latency of 1s when reaching the store-gateway, and only 10% of queries reaching the store-gateway.
+{{< admonition type="note" >}}
+The CPU and memory requirements are computed by estimating 1 CPU core and 1GB per query, an average query latency of 1s when reaching the store-gateway, and only 10% of queries reaching the store-gateway.
+{{< /admonition >}}
 
-> **Note**: The disk requirement has been estimated assuming 2 bytes per sample for compacted blocks (both index and chunks), the index-header being 0.10% of a block size, a scrape interval of 15 seconds, a retention of 1 year and store-gateways replication factor configured to 3. The resulting estimated store-gateway disk space for one series is 13KB.
+{{< admonition type="note" >}}
+The disk requirement has been estimated assuming 2 bytes per sample for compacted blocks (both index and chunks), the index-header being 0.10% of a block size, a scrape interval of 15 seconds, a retention of 1 year and store-gateways replication factor configured to 3. The resulting estimated store-gateway disk space for one series is 13KB.
+{{< /admonition >}}
 
 **How to estimate the number of active series before ingesters replication:**
 

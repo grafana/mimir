@@ -4,6 +4,7 @@ package ingest
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"strconv"
 	"sync"
@@ -14,10 +15,13 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/plugin/kprom"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
 const (
@@ -26,6 +30,25 @@ const (
 	// before being sent on the wire and the actual time it takes to send it over the network and
 	// start being processed by Kafka.
 	writerRequestTimeoutOverhead = 2 * time.Second
+
+	// producerBatchMaxBytes is the max allowed size of a batch of Kafka records.
+	producerBatchMaxBytes = 16_000_000
+
+	// maxProducerRecordDataBytesLimit is the max allowed size of a single record data. Given we have a limit
+	// on the max batch size (producerBatchMaxBytes), a Kafka record data can't be bigger than the batch size
+	// minus some overhead required to serialise the batch and the record itself. We use 16KB as such overhead
+	// in the worst case scenario, which is expected to be way above the actual one.
+	maxProducerRecordDataBytesLimit = producerBatchMaxBytes - 16384
+	minProducerRecordDataBytesLimit = 1024 * 1024
+)
+
+var (
+	// ErrWriteRequestDataItemTooLarge is the error returned when a split WriteRequest failed to be written to
+	// a partition because it's larger than the max allowed record size. The size reported here is always
+	// maxProducerRecordDataBytesLimit, regardless of the configured max record data size, because the ingestion
+	// fails only if bigger than the upper limit.
+	ErrWriteRequestDataItemTooLarge = errors.New(globalerror.DistributorMaxWriteRequestDataItemSize.Message(
+		fmt.Sprintf("the write request contains a timeseries or metadata item which is larger that the maximum allowed size of %d bytes", maxProducerRecordDataBytesLimit)))
 )
 
 // Writer is responsible to write incoming data to the ingest storage.
@@ -36,13 +59,17 @@ type Writer struct {
 	logger     log.Logger
 	registerer prometheus.Registerer
 
-	// We create 1 writer per partition to better parallelize the workload.
+	// We support multiple Kafka clients to better parallelize the workload. The number of
+	// clients is fixed during the Writer lifecycle, but they're initialised lazily.
 	writersMx sync.RWMutex
-	writers   map[int32]*kgo.Client
+	writers   []*kgo.Client
 
 	// Metrics.
-	writeLatency    prometheus.Summary
-	writeBytesTotal prometheus.Counter
+	writeRequestsTotal prometheus.Counter
+	writeFailuresTotal *prometheus.CounterVec
+	writeLatency       prometheus.Histogram
+	writeBytesTotal    prometheus.Counter
+	recordsPerRequest  prometheus.Histogram
 
 	// The following settings can only be overridden in tests.
 	maxInflightProduceRequests int
@@ -53,35 +80,60 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		kafkaCfg:                   kafkaCfg,
 		logger:                     logger,
 		registerer:                 reg,
-		writers:                    map[int32]*kgo.Client{},
+		writers:                    make([]*kgo.Client, kafkaCfg.WriteClients),
 		maxInflightProduceRequests: 20,
 
 		// Metrics.
-		writeLatency: promauto.With(reg).NewSummary(prometheus.SummaryOpts{
-			Name:       "cortex_ingest_storage_writer_latency_seconds",
-			Help:       "Latency to write an incoming request to the ingest storage.",
-			Objectives: latencySummaryObjectives,
-			MaxAge:     time.Minute,
-			AgeBuckets: 10,
+		writeRequestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_writer_produce_requests_total",
+			Help: "Total number of produce requests issued to Kafka.",
+		}),
+		writeFailuresTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_writer_produce_failures_total",
+			Help: "Total number of failed produce requests issued to Kafka.",
+		}, []string{"reason"}),
+		writeLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "cortex_ingest_storage_writer_latency_seconds",
+			Help:                            "Latency to write an incoming request to the ingest storage.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+			Buckets:                         prometheus.DefBuckets,
 		}),
 		writeBytesTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_writer_sent_bytes_total",
 			Help: "Total number of bytes sent to the ingest storage.",
 		}),
+		recordsPerRequest: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_ingest_storage_writer_records_per_write_request",
+			Help:    "The number of records a single per-partition write request has been split into.",
+			Buckets: prometheus.ExponentialBuckets(1, 2, 8),
+		}),
 	}
 
-	w.Service = services.NewIdleService(nil, w.stopping)
+	w.Service = services.NewIdleService(w.starting, w.stopping)
 
 	return w
+}
+
+func (w *Writer) starting(_ context.Context) error {
+	if w.kafkaCfg.AutoCreateTopicEnabled {
+		setDefaultNumberOfPartitionsForAutocreatedTopics(w.kafkaCfg, w.logger)
+	}
+	return nil
 }
 
 func (w *Writer) stopping(_ error) error {
 	w.writersMx.Lock()
 	defer w.writersMx.Unlock()
 
-	for partitionID, client := range w.writers {
+	for idx, client := range w.writers {
+		if client == nil {
+			continue
+		}
+
 		client.Close()
-		delete(w.writers, partitionID)
+		w.writers[idx] = nil
 	}
 
 	return nil
@@ -93,19 +145,14 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 	startTime := time.Now()
 
 	// Nothing to do if the input data is empty.
-	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
+	if req.IsEmpty() {
 		return nil
 	}
 
-	data, err := req.Marshal()
+	// Create records out of the write request.
+	records, err := marshalWriteRequestToRecords(partitionID, userID, req, w.kafkaCfg.ProducerMaxRecordSizeBytes)
 	if err != nil {
-		return errors.Wrap(err, "failed to serialise data")
-	}
-
-	// Prepare the record to write.
-	record := &kgo.Record{
-		Key:   []byte(userID), // We don't partition based on the key, so the value here doesn't make any difference.
-		Value: data,
+		return err
 	}
 
 	// Write to backend.
@@ -114,42 +161,83 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 		return err
 	}
 
-	err = w.produceSync(ctx, writer, record)
-	if err != nil {
-		return err
+	// Track the number of records the given WriteRequest has been split into.
+	// Track this before sending records to Kafka so that we track it also for failures (e.g. we want to have
+	// visibility over this metric if records are rejected by Kafka because of MESSAGE_TOO_LARGE).
+	w.recordsPerRequest.Observe(float64(len(records)))
+
+	res := w.produceSync(ctx, writer, records)
+
+	// Track latency only for successfully written records.
+	if count, sizeBytes := successfulProduceRecordsStats(res); count > 0 {
+		w.writeLatency.Observe(time.Since(startTime).Seconds())
+		w.writeBytesTotal.Add(float64(sizeBytes))
 	}
 
-	// Track latency and payload size only for successful requests.
-	w.writeLatency.Observe(time.Since(startTime).Seconds())
-	w.writeBytesTotal.Add(float64(len(data)))
+	if err := res.FirstErr(); err != nil {
+		if errors.Is(err, kerr.MessageTooLarge) {
+			return ErrWriteRequestDataItemTooLarge
+		}
+
+		return err
+	}
 
 	return nil
 }
 
-func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, record *kgo.Record) error {
-	errCh := make(chan error, 1)
+// produceSync produces records to Kafka and returns once all records have been successfully committed,
+// or an error occurred.
+func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, records []*kgo.Record) kgo.ProduceResults {
+	var (
+		remaining = atomic.NewInt64(int64(len(records)))
+		done      = make(chan struct{})
+		resMx     sync.Mutex
+		res       kgo.ProduceResults
+	)
 
-	// We use a new context to avoid that other Produce() may be cancelled when this call's context is
-	// canceled. It's important to note that cancelling the context passed to Produce() doesn't actually
-	// prevent the data to be sent over the wire (because it's never removed from the buffer) but in some
-	// cases may cause all requests to fail with context cancelled.
-	client.Produce(context.Background(), record, func(_ *kgo.Record, err error) {
-		errCh <- err
-	})
+	w.writeRequestsTotal.Add(float64(len(records)))
+
+	for _, record := range records {
+		// We use a new context to avoid that other TryProduce() may be cancelled when this call's context is
+		// canceled. It's important to note that cancelling the context passed to TryProduce() doesn't actually
+		// prevent the data to be sent over the wire (because it's never removed from the buffer) but in some
+		// cases may cause all requests to fail with context cancelled.
+		//
+		// We use TryProduce() instead of Produce() so that it will fast fail if the produce buffer is full.
+		// If we would use Produce(), the Produce() function call will block until the buffer can accept the record.
+		client.TryProduce(context.WithoutCancel(ctx), record, func(r *kgo.Record, err error) {
+			resMx.Lock()
+			res = append(res, kgo.ProduceResult{Record: r, Err: err})
+			resMx.Unlock()
+
+			if err != nil {
+				w.writeFailuresTotal.WithLabelValues(produceErrReason(err)).Inc()
+			}
+
+			// In case of error we'll wait for all responses anyway before returning from produceSync().
+			// It allows us to keep code easier, given we don't expect this function to be frequently
+			// called with multiple records.
+			if remaining.Dec() == 0 {
+				close(done)
+			}
+		})
+	}
 
 	// Wait for a response or until the context has done.
 	select {
 	case <-ctx.Done():
-		return context.Cause(ctx)
-	case err := <-errCh:
-		return err
+		return kgo.ProduceResults{{Err: context.Cause(ctx)}}
+	case <-done:
+		// Once we're done, it's guaranteed that no more results will be appended, so we can safely return it.
+		return res
 	}
 }
 
 func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*kgo.Client, error) {
 	// Check if the writer has already been created.
 	w.writersMx.RLock()
-	writer := w.writers[partitionID]
+	clientID := int(partitionID) % len(w.writers)
+	writer := w.writers[clientID]
 	w.writersMx.RUnlock()
 
 	if writer != nil {
@@ -160,25 +248,25 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*kgo.Client, err
 	defer w.writersMx.Unlock()
 
 	// Ensure a new writer wasn't created in the meanwhile. If so, use it.
-	writer = w.writers[partitionID]
+	writer = w.writers[clientID]
 	if writer != nil {
 		return writer, nil
 	}
-	newWriter, err := w.newKafkaWriter(partitionID)
+	newWriter, err := w.newKafkaWriter(clientID)
 	if err != nil {
 		return nil, err
 	}
-	w.writers[partitionID] = newWriter
+	w.writers[clientID] = newWriter
 	return newWriter, nil
 }
 
-// newKafkaWriter creates a new Kafka client used to write to a specific partition.
-func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
-	logger := log.With(w.logger, "partition", partitionID)
+// newKafkaWriter creates a new Kafka client.
+func (w *Writer) newKafkaWriter(clientID int) (*kgo.Client, error) {
+	logger := log.With(w.logger, "client_id", clientID)
 
 	// Do not export the client ID, because we use it to specify options to the backend.
 	metrics := kprom.NewMetrics("cortex_ingest_storage_writer",
-		kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"partition": strconv.Itoa(int(partitionID))}, w.registerer)),
+		kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"client_id": strconv.Itoa(clientID)}, w.registerer)),
 		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
 
 	opts := append(
@@ -186,11 +274,11 @@ func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 		kgo.DefaultProduceTopic(w.kafkaCfg.Topic),
 
-		// Use a static partitioner because we want to be in control of the partition.
-		kgo.RecordPartitioner(newKafkaStaticPartitioner(int(partitionID))),
+		// We set the partition field in each record.
+		kgo.RecordPartitioner(kgo.ManualPartitioner()),
 
 		// Set the upper bounds the size of a record batch.
-		kgo.ProducerBatchMaxBytes(16_000_000),
+		kgo.ProducerBatchMaxBytes(producerBatchMaxBytes),
 
 		// By default, the Kafka client allows 1 Produce in-flight request per broker. Disabling write idempotency
 		// (which we don't need), we can increase the max number of in-flight Produce requests per broker. A higher
@@ -222,33 +310,94 @@ func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
 		kgo.RecordDeliveryTimeout(w.kafkaCfg.WriteTimeout),
 		kgo.ProduceRequestTimeout(w.kafkaCfg.WriteTimeout),
 		kgo.RequestTimeoutOverhead(writerRequestTimeoutOverhead),
+
+		// Unlimited number of buffered records because we limit on bytes (easier to reason about).
+		kgo.MaxBufferedRecords(math.MaxInt),
+		kgo.MaxBufferedBytes(w.kafkaCfg.ProducerMaxBufferedBytes),
 	)
 	return kgo.NewClient(opts...)
 }
 
-type kafkaStaticPartitioner struct {
-	partitionID int
-}
+// marshalWriteRequestToRecords marshals a mimirpb.WriteRequest to one or more Kafka records.
+// The request may be split to multiple records to get that each single Kafka record
+// data size is not bigger than maxSize.
+//
+// This function is a best-effort. The returned Kafka records are not strictly guaranteed to
+// have their data size limited to maxSize. The reason is that the WriteRequest is split
+// by each individual Timeseries and Metadata: if a single Timeseries or Metadata is bigger than
+// maxSize, than the resulting record will be bigger than the limit as well.
+func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
+	reqSize := req.Size()
 
-func newKafkaStaticPartitioner(partitionID int) *kafkaStaticPartitioner {
-	return &kafkaStaticPartitioner{
-		partitionID: partitionID,
+	if reqSize <= maxSize {
+		// No need to split the request. We can take a fast path.
+		rec, err := marshalWriteRequestToRecord(partitionID, tenantID, req, reqSize)
+		if err != nil {
+			return nil, err
+		}
+
+		return []*kgo.Record{rec}, nil
 	}
+
+	return marshalWriteRequestsToRecords(partitionID, tenantID, mimirpb.SplitWriteRequestByMaxMarshalSize(req, reqSize, maxSize))
 }
 
-// ForTopic implements kgo.Partitioner.
-func (p *kafkaStaticPartitioner) ForTopic(string) kgo.TopicPartitioner {
-	return p
+func marshalWriteRequestsToRecords(partitionID int32, tenantID string, reqs []*mimirpb.WriteRequest) ([]*kgo.Record, error) {
+	records := make([]*kgo.Record, 0, len(reqs))
+
+	for _, req := range reqs {
+		rec, err := marshalWriteRequestToRecord(partitionID, tenantID, req, req.Size())
+		if err != nil {
+			return nil, err
+		}
+
+		records = append(records, rec)
+	}
+
+	return records, nil
 }
 
-// RequiresConsistency implements kgo.TopicPartitioner.
-func (p *kafkaStaticPartitioner) RequiresConsistency(_ *kgo.Record) bool {
-	// Never let Kafka client to write the record to another partition
-	// if the partition is down.
-	return true
+func marshalWriteRequestToRecord(partitionID int32, tenantID string, req *mimirpb.WriteRequest, reqSize int) (*kgo.Record, error) {
+	// Marshal the request.
+	data := make([]byte, reqSize)
+	n, err := req.MarshalToSizedBuffer(data[:reqSize])
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to serialise write request")
+	}
+	data = data[:n]
+
+	return &kgo.Record{
+		Key:       []byte(tenantID), // We don't partition based on the key, so the value here doesn't make any difference.
+		Value:     data,
+		Partition: partitionID,
+	}, nil
 }
 
-// Partition implements kgo.TopicPartitioner.
-func (p *kafkaStaticPartitioner) Partition(_ *kgo.Record, _ int) int {
-	return p.partitionID
+func successfulProduceRecordsStats(results kgo.ProduceResults) (count, sizeBytes int) {
+	for _, res := range results {
+		if res.Err == nil && res.Record != nil {
+			count++
+			sizeBytes += len(res.Record.Value)
+		}
+	}
+
+	return
+}
+
+func produceErrReason(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, kgo.ErrRecordTimeout) {
+		return "timeout"
+	}
+	if errors.Is(err, kgo.ErrMaxBuffered) {
+		return "buffer-full"
+	}
+	if errors.Is(err, kerr.MessageTooLarge) {
+		return "record-too-large"
+	}
+	if errors.Is(err, context.Canceled) {
+		// This should never happen because we don't cancel produce requests, however we
+		// check this error anyway to detect if something unexpected happened.
+		return "canceled"
+	}
+	return "other"
 }

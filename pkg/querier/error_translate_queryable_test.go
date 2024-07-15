@@ -168,6 +168,7 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 		nil,
 		nil,
 		false,
+		nil,
 		false,
 	)
 

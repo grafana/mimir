@@ -1,17 +1,28 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'grafana-builder/grafana.libsonnet') {
-  local resourceRequestStyle = { alias: 'request', color: '#FFC000', fill: 0, dashes: true, dashLength: 5 },
-  local resourceLimitStyle = { alias: 'limit', color: '#E02F44', fill: 0, dashes: true, dashLength: 5 },
-
-  local resourceRequestColor = '#FFC000',
-  local resourceLimitColor = '#E02F44',
-  local successColor = '#7EB26D',
-  local warningColor = '#EAB839',
-  local errorColor = '#E24D42',
+  _colors:: {
+    resourceRequest: '#FFC000',
+    resourceLimit: '#E02F44',
+    success: '#7EB26D',
+    clientError: '#EF843C',
+    warning: '#EAB839',
+    failed: '#E24D42',  // "error" is reserved word in Jsonnet.
+  },
 
   // Colors palette picked from Grafana UI, excluding red-ish colors which we want to keep reserved for errors / failures.
-  local nonErrorColorsPalette = ['#429D48', '#F1C731', '#2A66CF', '#9E44C1', '#FFAB57', '#C79424', '#84D586', '#A1C4FC', '#C788DE'],
+  local nonErrorColorsPalette = ['#429D48', '#F1C731', '#2A66CF', '#9E44C1', '#FFAB57', '#C79424', '#84D586', '#A1C4FC', '#C788DE', '#3F6833', '#447EBC', '#967302', '#5794F2'],
+
+  local resourceRequestStyle = $.overrideFieldByName('request', [
+    $.overrideProperty('color', { mode: 'fixed', fixedColor: $._colors.resourceRequest }),
+    $.overrideProperty('custom.fillOpacity', 0),
+    $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+  ]),
+  local resourceLimitStyle = $.overrideFieldByName('limit', [
+    $.overrideProperty('color', { mode: 'fixed', fixedColor: $._colors.resourceLimit }),
+    $.overrideProperty('custom.fillOpacity', 0),
+    $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+  ]),
 
   local sortAscending = 1,
 
@@ -175,30 +186,59 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  timeseriesPanel(title)::
+    super.timeseriesPanel(title) + {
+      fieldConfig+: {
+        defaults+: {
+          unit: 'short',
+          min: 0,
+        },
+      },
+    },
+
   qpsPanel(selector, statusLabelName='status_code')::
     super.qpsPanel(selector, statusLabelName) +
-    { yaxes: $.yaxes('reqps') },
+    $.aliasColors({
+      '1xx': $._colors.warning,
+      '2xx': $._colors.success,
+      '3xx': '#6ED0E0',
+      '4xx': '#EF843C',
+      '5xx': $._colors.failed,
+      OK: $._colors.success,
+      success: $._colors.success,
+      'error': $._colors.failed,
+      cancel: '#A9A9A9',
+    }) + {
+      fieldConfig+: {
+        defaults+: { unit: 'reqps' },
+      },
+    },
+
+  latencyPanel(metricName, selector, multiplier='1e3')::
+    super.latencyPanel(metricName, selector, multiplier) + {
+      fieldConfig+: {
+        defaults+: { unit: 'ms' },
+      },
+    },
 
   // hiddenLegendQueryPanel adds on to 'timeseriesPanel', not the deprecated 'panel'.
   // It is a standard query panel designed to handle a large number of series.  it hides the legend, doesn't fill the series and
   // shows all values on tooltip, descending. Also turns on exemplars, unless 4th parameter is false.
   hiddenLegendQueryPanel(queries, legends, legendLink=null, exemplars=true)::
     $.queryPanel(queries, legends, legendLink) +
+    $.showAllTooltip +
     {
-      options: {
+      options+: {
         legend+: {
           showLegend: false,
           // Work round Grafana turning showLegend back on when we have
           // schemaVersion<37. https://github.com/grafana/grafana/issues/54472
           displayMode: 'hidden',
         },
-        tooltip+: {
-          mode: 'multi',
-          sort: 'desc',
-        },
       },
       fieldConfig+: {
         defaults+: {
+          unit: 's',
           custom+: {
             fillOpacity: 0,
           },
@@ -216,44 +256,41 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // Creates a panel like queryPanel() but if the legend contains only 1 entry,
   // than it configures the series alias color to the one used to display failures.
   failurePanel(queries, legends, legendLink=null)::
-    $.queryPanel(queries, legends, legendLink) + {
-      // Set the failure color only if there's just 1 legend and it doesn't contain any placeholder.
-      aliasColors: if (std.type(legends) == 'string' && std.length(std.findSubstr('{', legends[0])) == 0) then {
-        [legends]: errorColor,
-      } else {},
-    },
+    $.queryPanel(queries, legends, legendLink) +
+    // Set the failure color only if there's just 1 legend and it doesn't contain any placeholder.
+    $.aliasColors(
+      if (std.type(legends) == 'string' && std.length(std.findSubstr('{', legends[0])) == 0) then {
+        [legends]: $._colors.failed,
+      } else {}
+    ),
 
   successFailurePanel(successMetric, failureMetric)::
     $.queryPanel([successMetric, failureMetric], ['successful', 'failed']) +
-    {
-      aliasColors: {
-        successful: successColor,
-        failed: errorColor,
-      },
-    },
+    $.aliasColors({
+      successful: $._colors.success,
+      failed: $._colors.failed,
+    }),
 
   // successFailureCustomPanel is like successFailurePanel() but allows to customize the legends
   // and have additional queries. The success and failure queries MUST be the first and second
   // queries respectively.
   successFailureCustomPanel(queries, legends)::
-    $.queryPanel(queries, legends) + {
-      aliasColors: {
-        [legends[0]]: successColor,
-        [legends[1]]: errorColor,
-      },
-    },
+    $.queryPanel(queries, legends) +
+    $.aliasColors({
+      [legends[0]]: $._colors.success,
+      [legends[1]]: $._colors.failed,
+    }),
 
   // Displays started, completed and failed rate.
   startedCompletedFailedPanel(title, startedMetric, completedMetric, failedMetric)::
-    $.panel(title) +
+    $.timeseriesPanel(title) +
     $.queryPanel([startedMetric, completedMetric, failedMetric], ['started', 'completed', 'failed']) +
-    $.stack + {
-      aliasColors: {
-        started: '#34CCEB',
-        completed: successColor,
-        failed: errorColor,
-      },
-    },
+    $.stack +
+    $.aliasColors({
+      started: '#34CCEB',
+      completed: $._colors.success,
+      failed: $._colors.failed,
+    }),
 
   resourceUtilizationAndLimitLegend(resourceName)::
     if $._config.deployment_type == 'kubernetes'
@@ -293,15 +330,22 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
   containerCPUUsagePanel(instanceName, containerName)::
-    $.panel('CPU') +
+    $.timeseriesPanel('CPU') +
     $.queryPanel($.resourceUtilizationAndLimitQueries('cpu', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.showAllTooltip +
     {
-      seriesOverrides: [
-        resourceRequestStyle,
-        resourceLimitStyle,
-      ],
-      tooltip: { sort: 2 },  // Sort descending.
-      fill: 0,
+      fieldConfig+: {
+        overrides+: [
+          resourceRequestStyle,
+          resourceLimitStyle,
+        ],
+        defaults+: {
+          unit: 'short',
+          custom+: {
+            fillOpacity: 0,
+          },
+        },
+      },
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -311,16 +355,22 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
   containerMemoryWorkingSetPanel(instanceName, containerName)::
-    $.panel('Memory (workingset)') +
+    $.timeseriesPanel('Memory (workingset)') +
     $.queryPanel($.resourceUtilizationAndLimitQueries('memory_working', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.showAllTooltip +
     {
-      seriesOverrides: [
-        resourceRequestStyle,
-        resourceLimitStyle,
-      ],
-      yaxes: $.yaxes('bytes'),
-      tooltip: { sort: 2 },  // Sort descending.
-      fill: 0,
+      fieldConfig+: {
+        overrides+: [
+          resourceRequestStyle,
+          resourceLimitStyle,
+        ],
+        defaults+: {
+          unit: 'bytes',
+          custom+: {
+            fillOpacity: 0,
+          },
+        },
+      },
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -330,16 +380,22 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
   containerMemoryRSSPanel(instanceName, containerName)::
-    $.panel('Memory (RSS)') +
+    $.timeseriesPanel('Memory (RSS)') +
     $.queryPanel($.resourceUtilizationAndLimitQueries('memory_rss', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.showAllTooltip +
     {
-      seriesOverrides: [
-        resourceRequestStyle,
-        resourceLimitStyle,
-      ],
-      yaxes: $.yaxes('bytes'),
-      tooltip: { sort: 2 },  // Sort descending.
-      fill: 0,
+      fieldConfig+: {
+        overrides+: [
+          resourceRequestStyle,
+          resourceLimitStyle,
+        ],
+        defaults+: {
+          unit: 'bytes',
+          custom+: {
+            fillOpacity: 0,
+          },
+        },
+      },
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -349,12 +405,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
   containerGoHeapInUsePanel(instanceName, containerName)::
-    $.panel('Memory (go heap inuse)') +
+    $.timeseriesPanel('Memory (go heap inuse)') +
     $.queryPanel($.resourceUtilizationQuery('memory_go_heap', instanceName, containerName), '{{%s}}' % $._config.per_instance_label) +
+    $.showAllTooltip +
     {
-      yaxes: $.yaxes('bytes'),
-      tooltip: { sort: 2 },  // Sort descending.
-      fill: 0,
+      fieldConfig+: {
+        defaults+: {
+          unit: 'bytes',
+          custom+: {
+            fillOpacity: 0,
+          },
+        },
+      },
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -362,7 +424,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.containerGoHeapInUsePanel($._config.instance_names[componentName], $._config.container_names[componentName]),
 
   containerNetworkBytesPanel(title, metric, instanceName)::
-    $.panel(title) +
+    $.timeseriesPanel(title) +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type][metric] % {
         namespaceMatcher: $.namespaceMatcher(),
@@ -371,7 +433,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       }, '{{%s}}' % $._config.per_instance_label
     ) +
     $.stack +
-    { yaxes: $.yaxes('Bps') },
+    { fieldConfig+: { defaults+: { unit: 'Bps' } } },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
   containerNetworkReceiveBytesPanelByComponent(componentName)::
@@ -384,7 +446,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
   containerDiskWritesPanel(instanceName, containerName)::
-    $.panel('Disk writes') +
+    $.timeseriesPanel('Disk writes') +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_writes % {
         namespace: $.namespaceMatcher(),
@@ -396,7 +458,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       '{{%s}} - {{device}}' % $._config.per_instance_label
     ) +
     $.stack +
-    { yaxes: $.yaxes('Bps') },
+    { fieldConfig+: { defaults+: { unit: 'Bps' } } },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
   containerDiskWritesPanelByComponent(componentName)::
@@ -405,7 +467,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
   containerDiskReadsPanel(instanceName, containerName)::
-    $.panel('Disk reads') +
+    $.timeseriesPanel('Disk reads') +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_reads % {
         namespace: $.namespaceMatcher(),
@@ -417,7 +479,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       '{{%s}} - {{device}}' % $._config.per_instance_label
     ) +
     $.stack +
-    { yaxes: $.yaxes('Bps') },
+    { fieldConfig+: { defaults+: { unit: 'Bps' } } },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
   containerDiskReadsPanelByComponent(componentName)::
@@ -427,20 +489,23 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // the provided containerName should be a regexp from $._config.container_names.
   containerDiskSpaceUtilizationPanel(instanceName, containerName)::
     local label = if $._config.deployment_type == 'kubernetes' then '{{persistentvolumeclaim}}' else '{{instance}}';
-
-    $.panel('Disk space utilization') +
+    $.timeseriesPanel('Disk space utilization') +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_utilization % {
         namespaceMatcher: $.namespaceMatcher(),
-        containerMatcher: $.containerLabelNameMatcher(containerName),
+        persistentVolumeClaimMatcher: $.containerPersistentVolumeClaimMatcher(containerName),
         instanceLabel: $._config.per_instance_label,
         instanceName: instanceName,
         instanceDataDir: $._config.instance_data_mountpoint,
       }, label
     ) +
     {
-      yaxes: $.yaxes('percentunit'),
-      fill: 0,
+      fieldConfig+: {
+        defaults+: { unit: 'percentunit' },
+        custom+: {
+          fillOpacity: 0,
+        },
+      },
     },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -448,9 +513,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.containerDiskSpaceUtilizationPanel($._config.instance_names[componentName], $._config.container_names[componentName]),
 
   // The provided containerName should be a regexp from $._config.container_names.
-  containerLabelNameMatcher(containerName)::
-    // Check only the prefix so that a multi-zone deployment matches too.
-    'label_name=~"(%s).*"' % containerName,
+  containerPersistentVolumeClaimMatcher(containerName)::
+    'persistentvolumeclaim=~".*(%s).*"' % containerName,
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
   containerNetworkingRowByComponent(title, componentName)::
@@ -466,208 +530,251 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addPanel($.containerNetworkReceiveBytesPanelByComponent(componentName))
     .addPanel($.containerNetworkTransmitBytesPanelByComponent(componentName))
     .addPanel(
-      $.panel('Inflight requests (per pod)') +
+      $.timeseriesPanel('Inflight requests (per pod)') +
       $.queryPanel([
         'avg(cortex_inflight_requests{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"})' % vars,
         'max(cortex_inflight_requests{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"})' % vars,
       ], ['avg', 'highest']) +
-      { fill: 0 }
+      {
+        fieldConfig+: {
+          defaults+: { unit: 'short' },
+          custom+: {
+            fillOpacity: 0,
+          },
+        },
+      },
     )
     .addPanel(
-      $.panel('TCP connections (per pod)') +
+      local title = 'Ingress TCP connections (per pod)';
+
+      $.timeseriesPanel(title) +
+      $.panelDescription(
+        title,
+        'The number of ingress TCP connections (HTTP and gRPC protocol).'
+      ) +
       $.queryPanel([
         'avg(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}))' % vars,
         'max(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}))' % vars,
         'min(cortex_tcp_connections_limit{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"})' % vars,
       ], ['avg', 'highest', 'limit']) +
-      { fill: 0 }
+      {
+        fieldConfig+: {
+          defaults+: { unit: 'short' },
+          custom+: {
+            fillOpacity: 0,
+          },
+        },
+      },
     ),
 
   kvStoreRow(title, jobName, kvName)::
     super.row(title)
     .addPanel(
-      $.panel('Requests / sec') +
+      $.timeseriesPanel('Requests / sec') +
       $.qpsPanel('cortex_kv_request_duration_seconds_count{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
     )
     .addPanel(
-      $.panel('Latency') +
+      $.timeseriesPanel('Latency') +
       $.latencyPanel('cortex_kv_request_duration_seconds', '{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
     ),
 
-  cpuAndMemoryBasedAutoScalingRow(componentTitle)::
-    local component = std.asciiLower(componentTitle);
-    local field = std.strReplace(component, '-', '_');
-    super.row('%s - autoscaling' % [componentTitle])
-    .addPanel(
-      local title = 'Replicas';
-      $.panel(title) +
-      $.queryPanel(
-        [
-          |||
-            max by (scaletargetref_name) (
-              kube_horizontalpodautoscaler_spec_max_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-              # Add the scaletargetref_name label for readability
-              + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-                0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-            )
-          ||| % {
-            namespace_matcher: $.namespaceMatcher(),
-            hpa_name: $._config.autoscaling[field].hpa_name,
-            cluster_labels: std.join(', ', $._config.cluster_labels),
-          },
-          |||
-            max by (scaletargetref_name) (
-              kube_horizontalpodautoscaler_status_current_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-              # HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active
-              * on (%(cluster_labels)s, horizontalpodautoscaler)
-                kube_horizontalpodautoscaler_status_condition{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s", condition="ScalingActive", status="true"}
-              # Add the scaletargetref_name label for readability
-              + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-                0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-            )
-          ||| % {
-            namespace_matcher: $.namespaceMatcher(),
-            hpa_name: $._config.autoscaling[field].hpa_name,
-            cluster_labels: std.join(', ', $._config.cluster_labels),
-          },
-          |||
-            max by (scaletargetref_name) (
-              kube_horizontalpodautoscaler_spec_min_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-              # Add the scaletargetref_name label for readability
-              + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-                0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-            )
-          ||| % {
-            namespace_matcher: $.namespaceMatcher(),
-            hpa_name: $._config.autoscaling[field].hpa_name,
-            cluster_labels: std.join(', ', $._config.cluster_labels),
-          },
-        ],
-        [
-          'Max {{ scaletargetref_name }}',
-          'Current {{ scaletargetref_name }}',
-          'Min {{ scaletargetref_name }}',
-        ],
-      ) +
-      $.panelDescription(
-        title,
+  // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
+  autoScalingActualReplicas(componentName)::
+    local title = 'Replicas';
+    local componentTitle = std.strReplace(componentName, '_', '-');
+
+    $.timeseriesPanel(title) +
+    $.queryPanel(
+      [
         |||
-          The maximum and current number of %s replicas.
-          Note: The current number of replicas can still show 1 replica even when scaled to 0.
-          Because HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.
-        ||| % [component]
-      ) +
-      {
-        seriesOverrides+: [
-          {
-            alias: '/Max .+/',
-            dashes: true,
-            fill: 0,
-          },
-          {
-            alias: '/Current .+/',
-            fill: 0,
-          },
-          {
-            alias: '/Min .+/',
-            dashes: true,
-            fill: 0,
-          },
+          max by (scaletargetref_name) (
+            kube_horizontalpodautoscaler_spec_max_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+            # Add the scaletargetref_name label for readability
+            + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+              0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+          )
+        ||| % {
+          namespace_matcher: $.namespaceMatcher(),
+          hpa_name: $._config.autoscaling[componentName].hpa_name,
+          cluster_labels: std.join(', ', $._config.cluster_labels),
+        },
+        |||
+          max by (scaletargetref_name) (
+            kube_horizontalpodautoscaler_status_current_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+            # Add the scaletargetref_name label for readability
+            + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+              0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+          )
+        ||| % {
+          namespace_matcher: $.namespaceMatcher(),
+          hpa_name: $._config.autoscaling[componentName].hpa_name,
+          cluster_labels: std.join(', ', $._config.cluster_labels),
+        },
+        |||
+          max by (scaletargetref_name) (
+            kube_horizontalpodautoscaler_spec_min_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+            # Add the scaletargetref_name label for readability
+            + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+              0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+          )
+        ||| % {
+          namespace_matcher: $.namespaceMatcher(),
+          hpa_name: $._config.autoscaling[componentName].hpa_name,
+          cluster_labels: std.join(', ', $._config.cluster_labels),
+        },
+      ],
+      [
+        'Max {{ scaletargetref_name }}',
+        'Current {{ scaletargetref_name }}',
+        'Min {{ scaletargetref_name }}',
+      ],
+    ) +
+    $.panelDescription(
+      title,
+      |||
+        The minimum, maximum, and current number of %s replicas.
+      ||| % [componentTitle]
+    ) +
+    {
+      fieldConfig+: {
+        overrides: [
+          $.overrideField('byRegexp', '/Max .+/', [
+            $.overrideProperty('custom.fillOpacity', 0),
+            $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+          ]),
+          $.overrideField('byRegexp', '/Current .+/', [
+            $.overrideProperty('custom.fillOpacity', 0),
+          ]),
+          $.overrideField('byRegexp', '/Min .+/', [
+            $.overrideProperty('custom.fillOpacity', 0),
+            $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+          ]),
         ],
       },
-    )
-    .addPanel(
-      local title = 'Scaling metric (CPU): Desired replicas';
-      $.panel(title) +
-      $.queryPanel(
-        [
-          |||
-            sum by (scaler) (
-              label_replace(
-                keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace", scaler=~".*cpu.*"},
-                "namespace", "$1", "exported_namespace", "(.*)"
-              )
-              /
-              on(%(aggregation_labels)s, scaledObject, metric) group_left label_replace(
-                label_replace(
-                  kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
-                  "metric", "$1", "metric_name", "(.+)"
-                ),
-                "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)"
-              )
+    },
+
+  // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
+  autoScalingDesiredReplicasByAverageValueScalingMetricPanel(componentName, scalingMetricName, scalingMetricID)::
+    local title = if scalingMetricName != '' then 'Scaling metric (%s): Desired replicas' % scalingMetricName else 'Desired replicas';
+    local scalerSelector = if scalingMetricID != '' then ('.*%s.*' % scalingMetricID) else '.+';
+
+    $.timeseriesPanel(title) +
+    $.queryPanel(
+      [
+        |||
+          sum by (scaler) (
+            label_replace(
+              keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace", scaler=~"%(scaler_selector)s"},
+              "namespace", "$1", "exported_namespace", "(.*)"
             )
-          ||| % {
-            aggregation_labels: $._config.alert_aggregation_labels,
-            cluster_label: $._config.per_cluster_label,
-            hpa_prefix: $._config.autoscaling_hpa_prefix,
-            hpa_name: $._config.autoscaling[field].hpa_name,
-            namespace: $.namespaceMatcher(),
-          },
-        ], [
-          '{{ scaler }}',
-        ]
-      ) +
-      $.panelDescription(
-        title,
-        |||
-          This panel shows the scaling metric exposed by KEDA divided by the target/threshold used.
-          It should represent the desired number of replicas, ignoring the min/max constraints applied later.
-        |||
-      ),
-    )
-    .addPanel(
-      local title = 'Scaling metric (memory): Desired replicas';
-      $.panel(title) +
-      $.queryPanel(
-        [
-          |||
-            sum by (scaler) (
+            /
+            on(%(aggregation_labels)s, scaledObject, metric) group_left label_replace(
               label_replace(
-                keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace", scaler=~".*memory.*"},
-                "namespace", "$1", "exported_namespace", "(.*)"
-              )
-              /
-              on(%(aggregation_labels)s, scaledObject, metric) group_left label_replace(
-                label_replace(
-                  kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
-                  "metric", "$1", "metric_name", "(.+)"
-                ),
-                "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)"
-              )
+                kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
+                "metric", "$1", "metric_name", "(.+)"
+              ),
+              "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)"
             )
-          ||| % {
-            aggregation_labels: $._config.alert_aggregation_labels,
-            cluster_label: $._config.per_cluster_label,
-            hpa_prefix: $._config.autoscaling_hpa_prefix,
-            hpa_name: $._config.autoscaling[field].hpa_name,
-            namespace: $.namespaceMatcher(),
-          },
-        ], [
-          '{{ scaler }}',
-        ]
-      ) +
-      $.panelDescription(
-        title,
+          )
+        ||| % {
+          aggregation_labels: $._config.alert_aggregation_labels,
+          cluster_label: $._config.per_cluster_label,
+          hpa_prefix: $._config.autoscaling_hpa_prefix,
+          hpa_name: $._config.autoscaling[componentName].hpa_name,
+          namespace: $.namespaceMatcher(),
+          scaler_selector: scalerSelector,
+        },
+      ], [
+        '{{ scaler }}',
+      ]
+    ) +
+    $.panelDescription(
+      title,
+      |||
+        This panel shows the scaling metric exposed by KEDA divided by the target/threshold used.
+        It should represent the desired number of replicas, ignoring the min/max constraints applied later.
+      |||
+    ),
+
+  // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
+  autoScalingDesiredReplicasByValueScalingMetricPanel(componentName, scalingMetricName, scalingMetricID)::
+    local title = if scalingMetricName != '' then 'Scaling metric (%s): Desired replicas' % scalingMetricName else 'Desired replicas';
+    local scalerSelector = if scalingMetricID != '' then ('.*%s.*' % scalingMetricID) else '.+';
+
+    $.timeseriesPanel(title) +
+    $.queryPanel(
+      [
         |||
-          This panel shows the scaling metric exposed by KEDA divided by the target/threshold used.
-          It should represent the desired number of replicas, ignoring the min/max constraints applied later.
-        |||
-      ),
+          sum by (scaler) (
+            label_replace(
+              keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace", scaler=~"%(scaler_selector)s"},
+              "namespace", "$1", "exported_namespace", "(.*)"
+            )
+            /
+            on(%(aggregation_labels)s, scaledObject, metric) group_left label_replace(
+              label_replace(
+                kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
+                "metric", "$1", "metric_name", "(.+)"
+              ),
+              "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)"
+            )
+            *
+            on(%(aggregation_labels)s, scaledObject) group_left label_replace(
+              kube_horizontalpodautoscaler_status_current_replicas{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
+              "scaledObject", "$1", "horizontalpodautoscaler", "keda-hpa-(.*)"
+            )
+          )
+        ||| % {
+          aggregation_labels: $._config.alert_aggregation_labels,
+          cluster_label: $._config.per_cluster_label,
+          hpa_prefix: $._config.autoscaling_hpa_prefix,
+          hpa_name: $._config.autoscaling[componentName].hpa_name,
+          namespace: $.namespaceMatcher(),
+          scaler_selector: scalerSelector,
+        },
+      ], [
+        '{{ scaler }}',
+      ]
+    ) +
+    $.panelDescription(
+      title,
+      |||
+        This panel shows the scaling metric exposed by KEDA divided by the target/threshold and multiplied by the current number of replicas.
+        It should represent the desired number of replicas, ignoring the min/max constraints applied later.
+      |||
+    ),
+
+  // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
+  autoScalingFailuresPanel(componentName)::
+    local title = 'Autoscaler failures rate';
+
+    $.timeseriesPanel(title) +
+    $.queryPanel(
+      $.filterKedaScalerErrorsByHPA($._config.autoscaling[componentName].hpa_name),
+      '{{scaler}} failures'
+    ) +
+    $.panelDescription(
+      title,
+      |||
+        The rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom
+        metrics server is unable to query the scaling metric from Prometheus so the autoscaler woudln't work properly.
+      |||
+    ),
+
+  cpuAndMemoryBasedAutoScalingRow(componentTitle)::
+    local componentName = std.strReplace(std.asciiLower(componentTitle), '-', '_');
+    super.row('%s – autoscaling' % [componentTitle])
+    .addPanel(
+      $.autoScalingActualReplicas(componentName)
     )
     .addPanel(
-      local title = 'Autoscaler failures rate';
-      $.panel(title) +
-      $.queryPanel(
-        $.filterKedaScalerErrorsByHPA($._config.autoscaling[field].hpa_name),
-        '{{scaler}} failures'
-      ) +
-      $.panelDescription(
-        title,
-        |||
-          The rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom
-          metrics server is unable to query the scaling metric from Prometheus so the autoscaler woudln't work properly.
-        |||
-      ),
+      $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel(componentName, 'CPU', 'cpu')
+    )
+    .addPanel(
+      $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel(componentName, 'memory', 'memory')
+    )
+    .addPanel(
+      $.autoScalingFailuresPanel(componentName)
     ),
 
   newStatPanel(queries, legends='', unit='percentunit', decimals=1, thresholds=[], instant=false, novalue='')::
@@ -804,10 +911,70 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  tablePanel(queries, labelStyles)::
+    super.tablePanel(queries, labelStyles={}) + {
+      // Hides styles field, as it makes Grafana 11 use the deprecate "Table (old)" plugin.
+      styles:: super.styles,
+      local stylesToProps(s) =
+        if std.type(s) == 'string' then [
+          $.overrideProperty('displayName', s),
+          $.overrideProperty('decimals', 0),
+          $.overrideProperty('unit', 'short'),
+        ] else [
+          if std.objectHas(s, 'alias') then $.overrideProperty('displayName', s.alias),
+          if std.objectHas(s, 'type') && s.type == 'hidden' then $.overrideProperty('custom.hidden', true),
+          $.overrideProperty('decimals', if std.objectHas(s, 'decimals') then s.decimals else 2),
+          $.overrideProperty('unit', if std.objectHas(s, 'unit') then s.unit else 'short'),
+        ],
+      fieldConfig+: {
+        overrides+: [
+          // Hide time column by default, like jsonnet-lib/grafana-builder does.
+          $.overrideFieldByName('Time', [
+            $.overrideProperty('displayName', 'Time'),
+            $.overrideProperty('custom.hidden', true),
+          ]),
+        ] + [
+          $.overrideFieldByName(label, std.prune(stylesToProps(labelStyles[label])))
+          for label in std.objectFields(labelStyles)
+        ],
+      },
+    },
+
+  // Enables stacking of timeseries on top of each.
+  // It overrites the "stack" mixin from jsonnet-lib/grafana-builder, to make it compatible with timeseriesPanel.
+  stack:: {
+    fieldConfig+: {
+      defaults+: {
+        custom+: {
+          lineWidth: 0,
+          fillOpacity: 100,
+          stacking+: {
+            mode: 'normal',
+          },
+        },
+      },
+    },
+  },
+
+  // Shows all series' values in the tooltip and sorts them in descending order.
+  showAllTooltip:: {
+    options+: {
+      tooltip+: {
+        mode: 'multi',
+        sort: 'desc',
+      },
+    },
+  },
+
   // Switches a panel from lines (default) to bars.
   bars:: {
-    bars: true,
-    lines: false,
+    fieldConfig+: {
+      defaults+: {
+        custom+: {
+          drawStyle: 'bars',
+        },
+      },
+    },
   },
 
   textPanel(title, content, options={}):: {
@@ -874,9 +1041,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         thresholds: {
           mode: 'absolute',
           steps: [
-            { color: successColor, value: null },
-            { color: warningColor, value: 0.01 },  // 1%
-            { color: errorColor, value: 0.05 },  // 5%
+            { color: $._colors.success, value: null },
+            { color: $._colors.warning, value: 0.01 },  // 1%
+            { color: $._colors.failed, value: 0.05 },  // 5%
           ],
         },
       },
@@ -886,10 +1053,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
   getObjectStoreRows(title, component):: [
     super.row(title)
     .addPanel(
-      $.panel('Operations / sec') +
+      $.timeseriesPanel('Operations / sec') +
       $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__rate_interval]))' % [$.namespaceMatcher(), component], '{{operation}}') +
       $.stack +
-      { yaxes: $.yaxes('reqps') },
+      { fieldConfig+: { defaults+: { unit: 'reqps' } } }
     )
     .addPanel(
       $.timeseriesPanel('Error rate') +
@@ -897,28 +1064,28 @@ local utils = import 'mixin-utils/utils.libsonnet';
       { fieldConfig: { defaults: { noValue: '0', unit: 'percentunit', min: 0, max: 1 } } }
     )
     .addPanel(
-      $.panel('Latency of op: Attributes') +
+      $.timeseriesPanel('Latency of op: Attributes') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="attributes"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.panel('Latency of op: Exists') +
+      $.timeseriesPanel('Latency of op: Exists') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="exists"}' % [$.namespaceMatcher(), component]),
     ),
     $.row('')
     .addPanel(
-      $.panel('Latency of op: Get') +
+      $.timeseriesPanel('Latency of op: Get') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.panel('Latency of op: GetRange') +
+      $.timeseriesPanel('Latency of op: GetRange') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get_range"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.panel('Latency of op: Upload') +
+      $.timeseriesPanel('Latency of op: Upload') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="upload"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.panel('Latency of op: Delete') +
+      $.timeseriesPanel('Latency of op: Delete') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="delete"}' % [$.namespaceMatcher(), component]),
     ),
   ],
@@ -931,7 +1098,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     };
     super.row(title)
     .addPanel(
-      $.panel('Requests / sec') +
+      $.timeseriesPanel('Requests / sec') +
       $.queryPanel(
         |||
           sum by(operation) (
@@ -952,10 +1119,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
         '{{operation}}'
       ) +
       $.stack +
-      { yaxes: $.yaxes('ops') }
+      { fieldConfig+: { defaults+: { unit: 'ops' } } }
     )
     .addPanel(
-      $.panel('Latency (getmulti)') +
+      $.timeseriesPanel('Latency (getmulti)') +
       $.backwardsCompatibleLatencyPanel(
         'thanos_memcached_operation_duration_seconds',
         'thanos_cache_operation_duration_seconds',
@@ -970,7 +1137,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addPanel(
-      $.panel('Hit ratio') +
+      $.timeseriesPanel('Hit ratio') +
       $.queryPanel(
         |||
           sum(
@@ -1005,7 +1172,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ||| % config,
         'items'
       ) +
-      { yaxes: $.yaxes('percentunit') }
+      { fieldConfig+: { defaults+: { unit: 'percentunit' } } }
     ),
 
   latencyPanelLabelBreakout(
@@ -1049,16 +1216,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
     local targets = if includeAverage then percentileTargets + averageTargets else percentileTargets;
 
     {
-      nullPointMode: 'null as zero',
       targets: targets,
-      yaxes: $.yaxes('ms'),
+      fieldConfig+: {
+        defaults+: { unit: 'ms', noValue: 0 },
+      },
     },
 
   // Copy/paste of latencyPanel from grafana-builder so that we can migrate between two different
   // names for the same metric. When enough time has passed and we no longer care about the old
   // metric name, this method can be removed and replaced with $.latencyPanel
   backwardsCompatibleLatencyPanel(oldMetricName, newMetricName, selector, multiplier='1e3'):: {
-    nullPointMode: 'null as zero',
     targets: [
       {
         expr: |||
@@ -1120,8 +1287,34 @@ local utils = import 'mixin-utils/utils.libsonnet';
         refId: 'C',
       },
     ],
-    yaxes: $.yaxes('ms'),
+    fieldConfig+: {
+      defaults+: { unit: 'ms', noValue: 0 },
+    },
   },
+
+  latencyRecordingRulePanel(metric, selectors, extra_selectors=[], multiplier='1e3', sum_by=[])::
+    utils.latencyRecordingRulePanel(metric, selectors, extra_selectors, multiplier, sum_by) + {
+      // Hide yaxes from JSON Model; it's not supported by timeseriesPanel.
+      yaxes:: super.yaxes,
+      fieldConfig+: {
+        defaults+: {
+          unit: 'ms',
+          min: 0,
+        },
+      },
+    },
+
+  latencyRecordingRulePanelNativeHistogram(metric, selectors, extra_selectors=[], multiplier='1e3', sum_by=[])::
+    utils.latencyRecordingRulePanelNativeHistogram(metric, selectors, extra_selectors, multiplier, sum_by) + {
+      // Hide yaxes from JSON Model; it's not supported by timeseriesPanel.
+      yaxes:: super.yaxes,
+      fieldConfig+: {
+        defaults+: {
+          unit: 'ms',
+          min: 0,
+        },
+      },
+    },
 
   filterNodeDiskContainer(containerName)::
     |||
@@ -1210,14 +1403,35 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ), legends)),
   },
 
+  overridesNonErrorColorsPalette(overrides):: std.mapWithIndex(function(idx, override) (
+    // Do not define an override if we exausted the colors in the palette.
+    // Grafana will automatically choose another color.
+    if idx >= std.length(nonErrorColorsPalette) then override else
+      {
+        matcher: override.matcher,
+        properties: override.properties + [
+          {
+            id: 'color',
+            value: {
+              fixedColor: nonErrorColorsPalette[idx],
+              mode: 'fixed',
+            },
+          },
+        ],
+      }
+  ), overrides),
+
   // Panel query override functions
-  overrideFieldByName(fieldName, overrideProperties):: {
+  overrideField(matcherId, options, overrideProperties):: {
     matcher: {
-      id: 'byName',
-      options: fieldName,
+      id: matcherId,
+      options: options,
     },
     properties: overrideProperties,
   },
+
+  overrideFieldByName(fieldName, overrideProperties)::
+    $.overrideField('byName', fieldName, overrideProperties),
 
   overrideProperty(id, value):: { id: id, value: value },
 
@@ -1271,6 +1485,249 @@ local utils = import 'mixin-utils/utils.libsonnet';
     super.queryPanel(queries, legends) +
     {
       datasource: '${loki_datasource}',
-      yaxes: $.yaxes(unit),
+      fieldConfig+: { defaults+: { unit: unit } },
+    },
+
+  // Backwards compatible helper functions
+
+  aliasColors(colors):: {
+    // aliasColors was the configuration in (deprecated) graph panel; we hide it from JSON model.
+    aliasColors:: super.aliasColors,
+    fieldConfig+: {
+      overrides+: [
+        $.overrideFieldByName(name, [
+          $.overrideProperty('color', { mode: 'fixed', fixedColor: colors[name] }),
+        ])
+        for name in std.objectFields(colors)
+      ],
+    },
+  },
+
+  capitalize(str):: std.asciiUpper(str[0]) + str[1:],
+
+  commonReadsDashboardsRows(
+    queryFrontendJobName,
+    querySchedulerJobName,
+    querierJobName,
+    queryRoutesRegex,
+    rowTitlePrefix='',
+    showQueryCacheRow=false,
+  )::
+    [
+      $.row($.capitalize(rowTitlePrefix + 'query-frontend'))
+      .addPanel(
+        $.timeseriesPanel('Requests / sec') +
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher(queryFrontendJobName), queryRoutesRegex])
+      )
+      .addPanel(
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector(queryFrontendJobName) + [utils.selector.re('route', queryRoutesRegex)])
+      )
+      .addPanel(
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.hiddenLegendQueryPanel(
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher(queryFrontendJobName), queryRoutesRegex], ''
+        )
+      ),
+      local description = |||
+        <p>
+          The query scheduler is an optional service that moves
+          the internal queue from the query-frontend into a
+          separate component.
+          If this service is not deployed,
+          these panels will show "No data."
+        </p>
+      |||;
+      $.row($.capitalize(rowTitlePrefix + 'query-scheduler'))
+      .addPanel(
+        local title = 'Requests / sec';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher(querySchedulerJobName))
+      )
+      .addPanel(
+        local title = 'Latency (Time in Queue)';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher(querySchedulerJobName))
+      )
+      .addPanel(
+        local title = 'Queue length';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.hiddenLegendQueryPanel(
+          'sum(min_over_time(cortex_query_scheduler_queue_length{%s}[$__interval]))' % [$.jobMatcher(querySchedulerJobName)],
+          'Queue length'
+        ) +
+        {
+          fieldConfig+: {
+            defaults+: {
+              unit: 'queries',
+            },
+          },
+        },
+      ),
+      local description = |||
+        <p>
+          The query scheduler can optionally create subqueues
+          in order to enforce round-robin query queuing fairness
+          across additional queue dimensions beyond the default.
+
+          By default, query queuing fairness is only applied by tenant ID.
+          Queries without additional queue dimensions are labeled 'none'.
+        </p>
+      |||;
+      local metricName = 'cortex_query_scheduler_queue_duration_seconds';
+      local selector = '{%s}' % $.jobMatcher(querySchedulerJobName);
+      local labels = ['additional_queue_dimensions'];
+      local labelReplaceArgSets = [
+        {
+          dstLabel: 'additional_queue_dimensions',
+          replacement: 'none',
+          srcLabel:
+            'additional_queue_dimensions',
+          regex: '^$',
+        },
+      ];
+      $.row($.capitalize(rowTitlePrefix + 'query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions'))
+      .addPanel(
+        local title = '99th Percentile Latency by Queue Dimension';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.latencyPanelLabelBreakout(
+          metricName=metricName,
+          selector=selector,
+          percentiles=['0.99'],
+          includeAverage=false,
+          labels=labels,
+          labelReplaceArgSets=labelReplaceArgSets,
+        )
+      )
+      .addPanel(
+        local title = '50th Percentile Latency by Queue Dimension';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.latencyPanelLabelBreakout(
+          metricName=metricName,
+          selector=selector,
+          percentiles=['0.50'],
+          includeAverage=false,
+          labels=labels,
+          labelReplaceArgSets=labelReplaceArgSets,
+        )
+      )
+      .addPanel(
+        local title = 'Average Latency by Queue Dimension';
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.latencyPanelLabelBreakout(
+          metricName=metricName,
+          selector=selector,
+          percentiles=[],
+          includeAverage=true,
+          labels=labels,
+          labelReplaceArgSets=labelReplaceArgSets,
+        )
+      ),
+    ] +
+    (
+      if (!showQueryCacheRow) then [] else [
+        $.row('Cache – query results')
+        .addPanel(
+          $.timeseriesPanel('Requests / sec') +
+          $.queryPanel(
+            |||
+              sum (
+                rate(thanos_memcached_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
+                or ignoring(backend)
+                rate(thanos_cache_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
+              )
+            ||| % {
+              frontend: $.jobMatcher(queryFrontendJobName),
+            },
+            'Requests/s'
+          ) +
+          { fieldConfig+: { defaults+: { unit: 'ops' } } },
+        )
+        .addPanel(
+          $.timeseriesPanel('Latency') +
+          $.backwardsCompatibleLatencyPanel(
+            'thanos_memcached_operation_duration_seconds',
+            'thanos_cache_operation_duration_seconds',
+            '{%s, name="frontend-cache"}' % $.jobMatcher(queryFrontendJobName)
+          )
+        ),
+      ]
+    ) + [
+      $.row($.capitalize(rowTitlePrefix + 'querier'))
+      .addPanel(
+        $.timeseriesPanel('Requests / sec') +
+        $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher(querierJobName), $.queries.read_http_routes_regex])
+      )
+      .addPanel(
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector(querierJobName) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
+      )
+      .addPanel(
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.hiddenLegendQueryPanel(
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_querier_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher(querierJobName), $.queries.read_http_routes_regex], ''
+        )
+      ),
+    ],
+
+  ingestStorageIngesterEndToEndLatencyWhenStartingPanel()::
+    $.timeseriesPanel('Kafka record end-to-end latency when starting') +
+    $.panelDescription(
+      'Kafka record end-to-end latency when starting',
+      |||
+        Time between writing request by distributor to Kafka and reading the record by ingester during catch-up phase, when ingesters are starting.
+        If ingesters are not starting and catching up in the selected time range, this panel will be empty.
+      |||
+    ) +
+    $.queryPanel(
+      [
+        'histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+      ],
+      [
+        'avg',
+        '99th percentile',
+        '99.9th percentile',
+        '100th percentile',
+      ],
+    ) + {
+      fieldConfig+: {
+        defaults+: { unit: 's' },
+      },
+    },
+
+  ingestStorageIngesterEndToEndLatencyWhenRunningPanel()::
+    $.timeseriesPanel('Kafka record end-to-end latency when ingesters are running') +
+    $.panelDescription(
+      'Kafka record end-to-end latency when ingesters are running',
+      |||
+        Time between writing request by distributor to Kafka and reading the record by ingester, when ingesters are running.
+      |||
+    ) +
+    $.queryPanel(
+      [
+        'histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+      ],
+      [
+        'avg',
+        '99th percentile',
+        '99.9th percentile',
+        '100th percentile',
+      ],
+    ) + {
+      fieldConfig+: {
+        defaults+: { unit: 's' },
+      },
     },
 }

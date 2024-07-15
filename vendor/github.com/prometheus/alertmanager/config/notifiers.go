@@ -21,7 +21,6 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/pkg/errors"
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/prometheus/common/sigv4"
 )
@@ -169,8 +168,9 @@ var (
 		NotifierConfig: NotifierConfig{
 			VSendResolved: true,
 		},
-		Title: `{{ template "msteams.default.title" . }}`,
-		Text:  `{{ template "msteams.default.text" . }}`,
+		Title:   `{{ template "msteams.default.title" . }}`,
+		Summary: `{{ template "msteams.default.summary" . }}`,
+		Text:    `{{ template "msteams.default.text" . }}`,
 	}
 )
 
@@ -216,8 +216,9 @@ func (c *WebexConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type DiscordConfig struct {
 	NotifierConfig `yaml:",inline" json:",inline"`
 
-	HTTPConfig *commoncfg.HTTPClientConfig `yaml:"http_config,omitempty" json:"http_config,omitempty"`
-	WebhookURL *SecretURL                  `yaml:"webhook_url,omitempty" json:"webhook_url,omitempty"`
+	HTTPConfig     *commoncfg.HTTPClientConfig `yaml:"http_config,omitempty" json:"http_config,omitempty"`
+	WebhookURL     *SecretURL                  `yaml:"webhook_url,omitempty" json:"webhook_url,omitempty"`
+	WebhookURLFile string                      `yaml:"webhook_url_file,omitempty" json:"webhook_url_file,omitempty"`
 
 	Title   string `yaml:"title,omitempty" json:"title,omitempty"`
 	Message string `yaml:"message,omitempty" json:"message,omitempty"`
@@ -227,7 +228,19 @@ type DiscordConfig struct {
 func (c *DiscordConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultDiscordConfig
 	type plain DiscordConfig
-	return unmarshal((*plain)(c))
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+
+	if c.WebhookURL == nil && c.WebhookURLFile == "" {
+		return fmt.Errorf("one of webhook_url or webhook_url_file must be configured")
+	}
+
+	if c.WebhookURL != nil && len(c.WebhookURLFile) > 0 {
+		return fmt.Errorf("at most one of webhook_url & webhook_url_file must be configured")
+	}
+
+	return nil
 }
 
 // EmailConfig configures notifications via mail.
@@ -299,13 +312,13 @@ type PagerdutyConfig struct {
 	Group          string            `yaml:"group,omitempty" json:"group,omitempty"`
 }
 
-// PagerdutyLink is a link
+// PagerdutyLink is a link.
 type PagerdutyLink struct {
 	Href string `yaml:"href,omitempty" json:"href,omitempty"`
 	Text string `yaml:"text,omitempty" json:"text,omitempty"`
 }
 
-// PagerdutyImage is an image
+// PagerdutyImage is an image.
 type PagerdutyImage struct {
 	Src  string `yaml:"src,omitempty" json:"src,omitempty"`
 	Alt  string `yaml:"alt,omitempty" json:"alt,omitempty"`
@@ -540,7 +553,7 @@ func (c *WechatConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	if !wechatTypeMatcher.MatchString(c.MessageType) {
-		return errors.Errorf("weChat message type %q does not match valid options %s", c.MessageType, wechatValidTypesRe)
+		return fmt.Errorf("weChat message type %q does not match valid options %s", c.MessageType, wechatValidTypesRe)
 	}
 
 	return nil
@@ -586,18 +599,18 @@ func (c *OpsGenieConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 
 	for _, r := range c.Responders {
 		if r.ID == "" && r.Username == "" && r.Name == "" {
-			return errors.Errorf("opsGenieConfig responder %v has to have at least one of id, username or name specified", r)
+			return fmt.Errorf("opsGenieConfig responder %v has to have at least one of id, username or name specified", r)
 		}
 
 		if strings.Contains(r.Type, "{{") {
 			_, err := template.New("").Parse(r.Type)
 			if err != nil {
-				return errors.Errorf("opsGenieConfig responder %v type is not a valid template: %v", r, err)
+				return fmt.Errorf("opsGenieConfig responder %v type is not a valid template: %w", r, err)
 			}
 		} else {
 			r.Type = strings.ToLower(r.Type)
 			if !opsgenieTypeMatcher.MatchString(r.Type) {
-				return errors.Errorf("opsGenieConfig responder %v type does not match valid options %s", r, opsgenieValidTypesRe)
+				return fmt.Errorf("opsGenieConfig responder %v type does not match valid options %s", r, opsgenieValidTypesRe)
 			}
 		}
 	}
@@ -787,13 +800,27 @@ type MSTeamsConfig struct {
 	NotifierConfig `yaml:",inline" json:",inline"`
 	HTTPConfig     *commoncfg.HTTPClientConfig `yaml:"http_config,omitempty" json:"http_config,omitempty"`
 	WebhookURL     *SecretURL                  `yaml:"webhook_url,omitempty" json:"webhook_url,omitempty"`
+	WebhookURLFile string                      `yaml:"webhook_url_file,omitempty" json:"webhook_url_file,omitempty"`
 
-	Title string `yaml:"title,omitempty" json:"title,omitempty"`
-	Text  string `yaml:"text,omitempty" json:"text,omitempty"`
+	Title   string `yaml:"title,omitempty" json:"title,omitempty"`
+	Summary string `yaml:"summary,omitempty" json:"summary,omitempty"`
+	Text    string `yaml:"text,omitempty" json:"text,omitempty"`
 }
 
 func (c *MSTeamsConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultMSTeamsConfig
 	type plain MSTeamsConfig
-	return unmarshal((*plain)(c))
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+
+	if c.WebhookURL == nil && c.WebhookURLFile == "" {
+		return fmt.Errorf("one of webhook_url or webhook_url_file must be configured")
+	}
+
+	if c.WebhookURL != nil && len(c.WebhookURLFile) > 0 {
+		return fmt.Errorf("at most one of webhook_url & webhook_url_file must be configured")
+	}
+
+	return nil
 }

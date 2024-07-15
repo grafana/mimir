@@ -10,11 +10,11 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
-	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -43,7 +43,7 @@ func TestLimiter(t *testing.T) {
 }
 
 func checkErrorStatusCode(t *testing.T, err error) {
-	st, ok := status.FromError(err)
+	st, ok := grpcutil.ErrorToStatus(err)
 	assert.True(t, ok)
 	assert.Equal(t, uint32(http.StatusUnprocessableEntity), uint32(st.Code()))
 }

@@ -113,6 +113,8 @@ func (c BlocksConsistencyTracker) Check(queriedBlocks []ulid.ULID) (missingBlock
 	return missingBlocks
 }
 
+// Complete should be called once the request tracked by this BlocksConsistencyTracker has been completed.
+// This function should NOT be called if the request is canceled or interrupted due to any error.
 func (c BlocksConsistencyTracker) Complete() {
 	c.checksTotal.Inc()
 

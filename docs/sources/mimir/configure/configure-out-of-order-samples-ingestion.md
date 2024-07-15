@@ -69,5 +69,8 @@ The moment that a new series sample arrives, Mimir needs to determine if the ser
 
 The experimental out-of-order ingestion helps fix both the issues.
 
-> **Note:** If you're writing metrics using Prometheus remote write or the Grafana Agent, then out-of-order samples are unexpected.
-> Prometheus and Grafana Agent guarantee that samples are written in-order for the same series.
+{{< admonition type="note" >}}
+If you're writing metrics using Prometheus remote write or Grafana Agent, then you shouldn't expect out-of-order samples.
+
+Prometheus and Grafana Agent guarantee that samples are written in-order for the same series.
+{{< /admonition >}}

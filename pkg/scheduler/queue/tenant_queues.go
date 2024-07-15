@@ -6,11 +6,8 @@
 package queue
 
 import (
-	"math/rand"
-	"sort"
+	"fmt"
 	"time"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 type TenantID string
@@ -18,114 +15,72 @@ type TenantID string
 const emptyTenantID = TenantID("")
 
 type QuerierID string
-type querierIDSlice []QuerierID
-
-// Len implements sort.Interface for querierIDSlice
-func (s querierIDSlice) Len() int { return len(s) }
-
-// Swap implements sort.Interface for querierIDSlice
-func (s querierIDSlice) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
-
-// Less implements sort.Interface for querierIDSlice
-func (s querierIDSlice) Less(i, j int) bool { return s[i] < s[j] }
-
-// Search method covers for sort.Search's functionality,
-// as sort.Search does not allow anything interface-based or generic yet.
-func (s querierIDSlice) Search(x QuerierID) int {
-	return sort.Search(len(s), func(i int) bool { return s[i] >= x })
-}
 
 type tenantRequest struct {
 	tenantID TenantID
 	req      Request
 }
 
-type querierConn struct {
-	// Number of active connections.
-	connections int
-
-	// True if the querier notified it's gracefully shutting down.
-	shuttingDown bool
-
-	// When the last connection has been unregistered.
-	disconnectedAt time.Time
-}
-
-type tenantQuerierAssignments struct {
-	// a tenant has many queriers
-	// a tenant has *all* queriers if:
-	//  - sharding is disabled (max-queriers-per-tenant=0)
-	//  - or if max-queriers-per-tenant >= the number of queriers
-	//
-	// Tenant -> Queriers is the core relationship randomized from the shuffle shard seed.
-	// The shuffle shard seed is itself consistently hashed from the tenant ID.
-	// However, the most common operation is the querier asking for its next request,
-	// which requires a relatively efficient lookup or check of Querier -> Tenant.
-	//
-	// Reshuffling is done when:
-	//  - a querier connection is added or removed
-	//  - it is detected during request enqueueing that a tenant's queriers
-	//    were calculated from an outdated max-queriers-per-tenant value
-
-	queriersByID map[QuerierID]*querierConn
-	// Sorted list of querier ids, used when shuffle sharding queriers for tenant
-	querierIDsSorted querierIDSlice
-
-	// How long to wait before removing a querier which has got disconnected
-	// but hasn't notified about a graceful shutdown.
-	querierForgetDelay time.Duration
-
-	// List of all tenants with queues, used for iteration when searching for next queue to handle.
-	tenantIDOrder []TenantID
-	tenantsByID   map[TenantID]*queueTenant
-
-	// Tenant assigned querier ID set as determined by shuffle sharding.
-	// If tenant querier ID set is not nil, only those queriers can handle the tenant's requests,
-	// Tenant querier ID is set to nil if sharding is off or available queriers <= tenant's maxQueriers.
-	tenantQuerierIDs map[TenantID]map[QuerierID]struct{}
-}
-
-type queueTenant struct {
-	tenantID    TenantID
-	maxQueriers int
-
-	// seed for shuffle sharding of queriers; computed from tenantID only,
-	// and is therefore consistent between different frontends.
-	shuffleShardSeed int64
-
-	// points up to tenant order to enable efficient removal
-	orderIndex int
-}
-
 // queueBroker encapsulates access to tenant queues for pending requests
 // and maintains consistency with the tenant-querier assignments
 type queueBroker struct {
-	tenantQueuesTree *TreeQueue
+	tree Tree
 
-	tenantQuerierAssignments tenantQuerierAssignments
+	tenantQuerierAssignments *tenantQuerierAssignments
 
 	maxTenantQueueSize               int
 	additionalQueueDimensionsEnabled bool
+	prioritizeQueryComponents        bool
 }
 
-func newQueueBroker(maxTenantQueueSize int, additionalQueueDimensionsEnabled bool, forgetDelay time.Duration) *queueBroker {
-	return &queueBroker{
-		tenantQueuesTree: NewTreeQueue("root"),
-		tenantQuerierAssignments: tenantQuerierAssignments{
-			queriersByID:       map[QuerierID]*querierConn{},
-			querierIDsSorted:   nil,
-			querierForgetDelay: forgetDelay,
-			tenantIDOrder:      nil,
-			tenantsByID:        map[TenantID]*queueTenant{},
-			tenantQuerierIDs:   map[TenantID]map[QuerierID]struct{}{},
-		},
+func newQueueBroker(
+	maxTenantQueueSize int,
+	additionalQueueDimensionsEnabled bool,
+	useMultiAlgoTreeQueue bool,
+	forgetDelay time.Duration,
+) *queueBroker {
+	currentQuerier := QuerierID("")
+	tqas := &tenantQuerierAssignments{
+		queriersByID:       map[QuerierID]*querierConn{},
+		querierIDsSorted:   nil,
+		querierForgetDelay: forgetDelay,
+		tenantIDOrder:      nil,
+		tenantsByID:        map[TenantID]*queueTenant{},
+		tenantQuerierIDs:   map[TenantID]map[QuerierID]struct{}{},
+		tenantNodes:        map[string][]*Node{},
+		currentQuerier:     currentQuerier,
+		tenantOrderIndex:   localQueueIndex,
+	}
+
+	var tree Tree
+	var err error
+	if useMultiAlgoTreeQueue {
+		tree, err = NewTree(
+			tqas,               // root; QueuingAlgorithm selects tenants
+			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
+			&roundRobinState{}, // query components; QueuingAlgorithm selects query from local queue
+		)
+	} else {
+		// by default, use the legacy tree queue
+		tree = NewTreeQueue("root")
+	}
+
+	// An error building the tree is fatal; we must panic
+	if err != nil {
+		panic(fmt.Sprintf("error creating the tree queue: %v", err))
+	}
+	qb := &queueBroker{
+		tree:                             tree,
+		tenantQuerierAssignments:         tqas,
 		maxTenantQueueSize:               maxTenantQueueSize,
 		additionalQueueDimensionsEnabled: additionalQueueDimensionsEnabled,
 	}
+
+	return qb
 }
 
 func (qb *queueBroker) isEmpty() bool {
-	return qb.tenantQueuesTree.IsEmpty()
+	return qb.tree.IsEmpty()
 }
 
 // enqueueRequestBack is the standard interface to enqueue requests for dispatch to queriers.
@@ -141,13 +96,27 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 	if err != nil {
 		return err
 	}
-	if tenantQueueNode := qb.tenantQueuesTree.getNode(queuePath[:1]); tenantQueueNode != nil {
-		if tenantQueueNode.ItemCount()+1 > qb.maxTenantQueueSize {
+
+	// TODO (casie): When deprecating TreeQueue, clean this up.
+	// Technically, the MultiQueuingAlgorithmTreeQueue approach is adequate for both tree types, but we are temporarily
+	// maintaining the legacy tree behavior as much as possible for stability reasons.
+	if tq, ok := qb.tree.(*TreeQueue); ok {
+		if tenantQueueNode := tq.getNode(queuePath[:1]); tenantQueueNode != nil {
+			if tenantQueueNode.ItemCount()+1 > qb.maxTenantQueueSize {
+				return ErrTooManyRequests
+			}
+		}
+	} else if _, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+		itemCount := 0
+		for _, tenantNode := range qb.tenantQuerierAssignments.tenantNodes[string(request.tenantID)] {
+			itemCount += tenantNode.ItemCount()
+		}
+		if itemCount+1 > qb.maxTenantQueueSize {
 			return ErrTooManyRequests
 		}
 	}
 
-	err = qb.tenantQueuesTree.EnqueueBackByPath(queuePath, request)
+	err = qb.tree.EnqueueBackByPath(queuePath, request)
 	return err
 }
 
@@ -166,12 +135,15 @@ func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQuer
 	if err != nil {
 		return err
 	}
-	return qb.tenantQueuesTree.EnqueueFrontByPath(queuePath, request)
+	return qb.tree.EnqueueFrontByPath(queuePath, request)
 }
 
 func (qb *queueBroker) makeQueuePath(request *tenantRequest) (QueuePath, error) {
 	if qb.additionalQueueDimensionsEnabled {
 		if schedulerRequest, ok := request.req.(*SchedulerRequest); ok {
+			if qb.prioritizeQueryComponents {
+				return append(schedulerRequest.AdditionalQueueDimensions, string(request.tenantID)), nil
+			}
 			return append(QueuePath{string(request.tenantID)}, schedulerRequest.AdditionalQueueDimensions...), nil
 		}
 	}
@@ -180,306 +152,85 @@ func (qb *queueBroker) makeQueuePath(request *tenantRequest) (QueuePath, error) 
 	return QueuePath{string(request.tenantID)}, nil
 }
 
-func (qb *queueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID QuerierID) (*tenantRequest, *queueTenant, int, error) {
-	tenant, tenantIndex, err := qb.tenantQuerierAssignments.getNextTenantForQuerier(lastTenantIndex, querierID)
-	if tenant == nil || err != nil {
-		return nil, tenant, tenantIndex, err
+func (qb *queueBroker) dequeueRequestForQuerier(
+	lastTenantIndex int,
+	querierID QuerierID,
+) (
+	*tenantRequest,
+	*queueTenant,
+	int,
+	error,
+) {
+	// check if querier is registered and is not shutting down
+	if q := qb.tenantQuerierAssignments.queriersByID[querierID]; q == nil || q.shuttingDown {
+		return nil, nil, qb.tenantQuerierAssignments.tenantOrderIndex, ErrQuerierShuttingDown
 	}
 
-	queuePath := QueuePath{string(tenant.tenantID)}
-	queueElement := qb.tenantQueuesTree.DequeueByPath(queuePath)
+	var queuePath QueuePath
+	var queueElement any
+	if tq, ok := qb.tree.(*TreeQueue); ok {
+		tenant, tenantIndex, err := qb.tenantQuerierAssignments.getNextTenantForQuerier(lastTenantIndex, querierID)
+		if tenant == nil || err != nil {
+			return nil, tenant, tenantIndex, err
+		}
+		qb.tenantQuerierAssignments.tenantOrderIndex = tenantIndex
+		// We can manually build queuePath here because TreeQueue only supports one tree structure ordering:
+		// root --> tenant --> (optional: query dimensions)
+		queuePath = QueuePath{string(tenant.tenantID)}
+		queueElement = tq.DequeueByPath(queuePath)
+	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+		qb.tenantQuerierAssignments.updateQueuingAlgorithmState(querierID, lastTenantIndex)
+		queuePath, queueElement = itq.Dequeue()
+	}
 
-	queueNodeAfterDequeue := qb.tenantQueuesTree.getNode(queuePath)
-	if queueNodeAfterDequeue == nil {
-		// queue node was deleted due to being empty after dequeue
-		qb.tenantQuerierAssignments.removeTenant(tenant.tenantID)
+	if queueElement == nil {
+		return nil, nil, qb.tenantQuerierAssignments.tenantOrderIndex, nil
 	}
 
 	var request *tenantRequest
-	if queueElement != nil {
-		// re-casting to same type it was enqueued as; panic would indicate a bug
-		request = queueElement.(*tenantRequest)
+	var tenantID TenantID
+
+	// re-casting to same type it was enqueued as; panic would indicate a bug
+	request = queueElement.(*tenantRequest)
+	tenantID = request.tenantID
+
+	var tenant *queueTenant
+	if tenantID != "" {
+		tenant = qb.tenantQuerierAssignments.tenantsByID[tenantID]
 	}
 
-	return request, tenant, tenantIndex, nil
+	// TODO (casie): When deprecating TreeQueue, clean this up.
+	// This cannot be handled by the Tree interface without defining some other, more expansive interfaces
+	// between the legacy and integrated tree queues, which would be more overhead than it's worth, given
+	// that we will eventually retire the legacy tree queue.
+	if tq, ok := qb.tree.(*TreeQueue); ok {
+		queueNodeAfterDequeue := tq.getNode(queuePath)
+		if queueNodeAfterDequeue == nil {
+			// queue node was deleted due to being empty after dequeue
+			qb.tenantQuerierAssignments.removeTenant(tenant.tenantID)
+		}
+	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+		queueNodeAfterDequeue := itq.GetNode(queuePath)
+		if queueNodeAfterDequeue == nil && len(qb.tenantQuerierAssignments.tenantNodes[string(tenantID)]) == 0 {
+			// queue node was deleted due to being empty after dequeue
+			qb.tenantQuerierAssignments.removeTenant(tenantID)
+		}
+	}
+	return request, tenant, qb.tenantQuerierAssignments.tenantOrderIndex, nil
 }
 
-func (qb *queueBroker) addQuerierConnection(querierID QuerierID) {
-	qb.tenantQuerierAssignments.addQuerierConnection(querierID)
+func (qb *queueBroker) addQuerierConnection(querierID QuerierID) (resharded bool) {
+	return qb.tenantQuerierAssignments.addQuerierConnection(querierID)
 }
 
-func (qb *queueBroker) removeQuerierConnection(querierID QuerierID, now time.Time) {
-	qb.tenantQuerierAssignments.removeQuerierConnection(querierID, now)
+func (qb *queueBroker) removeQuerierConnection(querierID QuerierID, now time.Time) (resharded bool) {
+	return qb.tenantQuerierAssignments.removeQuerierConnection(querierID, now)
 }
 
-func (qb *queueBroker) notifyQuerierShutdown(querierID QuerierID) {
-	qb.tenantQuerierAssignments.notifyQuerierShutdown(querierID)
+func (qb *queueBroker) notifyQuerierShutdown(querierID QuerierID) (resharded bool) {
+	return qb.tenantQuerierAssignments.notifyQuerierShutdown(querierID)
 }
 
-func (qb *queueBroker) forgetDisconnectedQueriers(now time.Time) int {
+func (qb *queueBroker) forgetDisconnectedQueriers(now time.Time) (resharded bool) {
 	return qb.tenantQuerierAssignments.forgetDisconnectedQueriers(now)
-}
-
-// getNextTenantForQuerier gets the next tenant in the tenant order assigned to a given querier.
-//
-// The next tenant for the querier is obtained by rotating through the global tenant order
-// starting just after the last tenant the querier received a request for, until a tenant
-// is found that is assigned to the given querier according to the querier shuffle sharding.
-// A newly connected querier provides lastTenantIndex of -1 in order to start at the beginning.
-func (tqa *tenantQuerierAssignments) getNextTenantForQuerier(lastTenantIndex int, querierID QuerierID) (*queueTenant, int, error) {
-	// check if querier is registered and is not shutting down
-	if q := tqa.queriersByID[querierID]; q == nil || q.shuttingDown {
-		return nil, lastTenantIndex, ErrQuerierShuttingDown
-	}
-	tenantOrderIndex := lastTenantIndex
-	for iters := 0; iters < len(tqa.tenantIDOrder); iters++ {
-		tenantOrderIndex++
-		if tenantOrderIndex >= len(tqa.tenantIDOrder) {
-			// Do not use modulo (e.g. i = (i + 1) % len(slice)) to wrap this index.
-			// Tenant list can change size between calls and the querier provides its external view
-			// of the lastTenantIndex it received, which is not updated when this list changes.
-			// If the tenant list shrinks and the querier-provided lastTenantIndex exceeds the
-			// length of the tenant list, wrapping via modulo would skip the beginning of the list.
-			tenantOrderIndex = 0
-		}
-
-		tenantID := tqa.tenantIDOrder[tenantOrderIndex]
-		if tenantID == emptyTenantID {
-			continue
-		}
-		tenant := tqa.tenantsByID[tenantID]
-
-		tenantQuerierSet := tqa.tenantQuerierIDs[tenantID]
-		if tenantQuerierSet == nil {
-			// tenant can use all queriers
-			return tenant, tenantOrderIndex, nil
-		} else if _, ok := tenantQuerierSet[querierID]; ok {
-			// tenant is assigned this querier
-			return tenant, tenantOrderIndex, nil
-		}
-	}
-
-	return nil, lastTenantIndex, nil
-}
-
-func (tqa *tenantQuerierAssignments) getTenant(tenantID TenantID) (*queueTenant, error) {
-	if tenantID == emptyTenantID {
-		return nil, ErrInvalidTenantID
-	}
-	tenant := tqa.tenantsByID[tenantID]
-	return tenant, nil
-}
-
-// createOrUpdateTenant creates or updates a tenant into the tenant-querier assignment state.
-//
-// New tenants are added to the tenant order list and tenant-querier shards are shuffled if needed.
-// Existing tenants have the tenant-querier shards shuffled only if their maxQueriers has changed.
-func (tqa *tenantQuerierAssignments) createOrUpdateTenant(tenantID TenantID, maxQueriers int) error {
-	if tenantID == emptyTenantID {
-		// empty tenantID is not allowed; "" is used for free spot
-		return ErrInvalidTenantID
-	}
-
-	if maxQueriers < 0 {
-		maxQueriers = 0
-	}
-
-	tenant := tqa.tenantsByID[tenantID]
-
-	if tenant == nil {
-		tenant = &queueTenant{
-			tenantID: tenantID,
-			// maxQueriers 0 enables a later check to trigger tenant-querier assignment
-			// for new queue tenants with shuffle sharding enabled
-			maxQueriers:      0,
-			shuffleShardSeed: util.ShuffleShardSeed(string(tenantID), ""),
-			// orderIndex set to sentinel value to indicate it is not inserted yet
-			orderIndex: -1,
-		}
-		for i, id := range tqa.tenantIDOrder {
-			if id == emptyTenantID {
-				// previously removed tenant not yet cleaned up; take its place
-				tenant.orderIndex = i
-				tqa.tenantIDOrder[i] = tenantID
-				tqa.tenantsByID[tenantID] = tenant
-				break
-			}
-		}
-
-		if tenant.orderIndex < 0 {
-			// there were no empty spaces in tenant order; append
-			tenant.orderIndex = len(tqa.tenantIDOrder)
-			tqa.tenantIDOrder = append(tqa.tenantIDOrder, tenantID)
-			tqa.tenantsByID[tenantID] = tenant
-		}
-	}
-
-	// tenant now either retrieved or created
-	if tenant.maxQueriers != maxQueriers {
-		// tenant queriers need to be computed/recomputed;
-		// either this is a new tenant with sharding enabled,
-		// or the tenant already existed but its maxQueriers has changed
-		tenant.maxQueriers = maxQueriers
-		tqa.shuffleTenantQueriers(tenantID, nil)
-	}
-	return nil
-}
-
-func (tqa *tenantQuerierAssignments) addQuerierConnection(querierID QuerierID) {
-	querier := tqa.queriersByID[querierID]
-	if querier != nil {
-		querier.connections++
-
-		// Reset in case the querier re-connected while it was in the forget waiting period.
-		querier.shuttingDown = false
-		querier.disconnectedAt = time.Time{}
-
-		return
-	}
-
-	// First connection from this querier.
-	tqa.queriersByID[querierID] = &querierConn{connections: 1}
-	tqa.querierIDsSorted = append(tqa.querierIDsSorted, querierID)
-	sort.Sort(tqa.querierIDsSorted)
-
-	tqa.recomputeTenantQueriers()
-}
-
-func (tqa *tenantQuerierAssignments) removeTenant(tenantID TenantID) {
-	tenant := tqa.tenantsByID[tenantID]
-	if tenant == nil {
-		return
-	}
-	delete(tqa.tenantsByID, tenantID)
-	tqa.tenantIDOrder[tenant.orderIndex] = emptyTenantID
-
-	// Shrink tenant list if possible by removing empty tenant IDs.
-	// We remove only from the end; removing from the middle would re-index all tenant IDs
-	// and skip tenants when starting iteration from a querier-provided lastTenantIndex.
-	// Empty tenant IDs stuck in the middle of the slice are handled
-	// by replacing them when a new tenant ID arrives in the queue.
-	for i := len(tqa.tenantIDOrder) - 1; i >= 0 && tqa.tenantIDOrder[i] == emptyTenantID; i-- {
-		tqa.tenantIDOrder = tqa.tenantIDOrder[:i]
-	}
-}
-
-func (tqa *tenantQuerierAssignments) removeQuerierConnection(querierID QuerierID, now time.Time) {
-	querier := tqa.queriersByID[querierID]
-	if querier == nil || querier.connections <= 0 {
-		panic("unexpected number of connections for querier")
-	}
-
-	// Decrease the number of active connections.
-	querier.connections--
-	if querier.connections > 0 {
-		return
-	}
-
-	// There no more active connections. If the forget delay is configured then
-	// we can remove it only if querier has announced a graceful shutdown.
-	if querier.shuttingDown || tqa.querierForgetDelay == 0 {
-		tqa.removeQuerier(querierID)
-		return
-	}
-
-	// No graceful shutdown has been notified yet, so we should track the current time
-	// so that we'll remove the querier as soon as we receive the graceful shutdown
-	// notification (if any) or once the threshold expires.
-	querier.disconnectedAt = now
-}
-
-func (tqa *tenantQuerierAssignments) removeQuerier(querierID QuerierID) {
-	delete(tqa.queriersByID, querierID)
-
-	ix := tqa.querierIDsSorted.Search(querierID)
-	if ix >= len(tqa.querierIDsSorted) || tqa.querierIDsSorted[ix] != querierID {
-		panic("incorrect state of sorted queriers")
-	}
-
-	tqa.querierIDsSorted = append(tqa.querierIDsSorted[:ix], tqa.querierIDsSorted[ix+1:]...)
-
-	tqa.recomputeTenantQueriers()
-}
-
-// notifyQuerierShutdown records that a querier has sent notification about a graceful shutdown.
-func (tqa *tenantQuerierAssignments) notifyQuerierShutdown(querierID QuerierID) {
-	querier := tqa.queriersByID[querierID]
-	if querier == nil {
-		// The querier may have already been removed, so we just ignore it.
-		return
-	}
-
-	// If there are no more connections, we should remove the querier.
-	if querier.connections == 0 {
-		tqa.removeQuerier(querierID)
-		return
-	}
-
-	// Otherwise we should annotate we received a graceful shutdown notification
-	// and the querier will be removed once all connections are unregistered.
-	querier.shuttingDown = true
-}
-
-// forgetDisconnectedQueriers removes all disconnected queriers that have gone since at least
-// the forget delay. Returns the number of forgotten queriers.
-func (tqa *tenantQuerierAssignments) forgetDisconnectedQueriers(now time.Time) int {
-	// Nothing to do if the forget delay is disabled.
-	if tqa.querierForgetDelay == 0 {
-		return 0
-	}
-
-	// Remove all queriers with no connections that have gone since at least the forget delay.
-	threshold := now.Add(-tqa.querierForgetDelay)
-	forgotten := 0
-
-	for querierID := range tqa.queriersByID {
-		if querier := tqa.queriersByID[querierID]; querier.connections == 0 && querier.disconnectedAt.Before(threshold) {
-			tqa.removeQuerier(querierID)
-			forgotten++
-		}
-	}
-
-	return forgotten
-}
-
-func (tqa *tenantQuerierAssignments) recomputeTenantQueriers() {
-	var scratchpad querierIDSlice
-	for tenantID, tenant := range tqa.tenantsByID {
-		if tenant.maxQueriers > 0 && tenant.maxQueriers < len(tqa.querierIDsSorted) && scratchpad == nil {
-			// shuffle sharding is enabled and the number of queriers exceeds tenant maxQueriers,
-			// meaning tenant querier assignments need computed via shuffle sharding;
-			// allocate the scratchpad the first time this case is hit and it will be reused after
-			scratchpad = make(querierIDSlice, 0, len(tqa.querierIDsSorted))
-		}
-
-		tqa.shuffleTenantQueriers(tenantID, scratchpad)
-	}
-}
-
-func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID TenantID, scratchpad querierIDSlice) {
-	tenant := tqa.tenantsByID[tenantID]
-	if tenant == nil {
-		return
-	}
-
-	if tenant.maxQueriers == 0 || len(tqa.querierIDsSorted) <= tenant.maxQueriers {
-		// shuffle shard is either disabled or calculation is unnecessary
-		tqa.tenantQuerierIDs[tenantID] = nil
-		return
-	}
-
-	querierIDSet := make(map[QuerierID]struct{}, tenant.maxQueriers)
-	rnd := rand.New(rand.NewSource(tenant.shuffleShardSeed))
-
-	scratchpad = append(scratchpad[:0], tqa.querierIDsSorted...)
-
-	last := len(scratchpad) - 1
-	for i := 0; i < tenant.maxQueriers; i++ {
-		r := rnd.Intn(last + 1)
-		querierIDSet[scratchpad[r]] = struct{}{}
-		// move selected item to the end, it won't be selected anymore.
-		scratchpad[r], scratchpad[last] = scratchpad[last], scratchpad[r]
-		last--
-	}
-	tqa.tenantQuerierIDs[tenantID] = querierIDSet
 }

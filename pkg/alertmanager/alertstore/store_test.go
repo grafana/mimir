@@ -21,34 +21,89 @@ import (
 )
 
 func TestAlertStore_ListAllUsers(t *testing.T) {
-	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
-
 	ctx := context.Background()
 	user1Cfg := alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
 	user2Cfg := alertspb.AlertConfigDesc{User: "user-2", RawConfig: "content-2"}
+	user2GrafanaCfg := alertspb.GrafanaAlertConfigDesc{User: "user-2", RawConfig: "content-grafana-2"}
+	user3GrafanaCfg := alertspb.GrafanaAlertConfigDesc{User: "user-3", RawConfig: "content-grafana-3"}
 
-	// The storage is empty.
-	{
-		users, err := store.ListAllUsers(ctx)
-		require.NoError(t, err)
-		assert.Empty(t, users)
-	}
+	t.Run("fetching grafana configs disabled", func(t *testing.T) {
+		bucket := objstore.NewInMemBucket()
+		store := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, bucket, nil, log.NewNopLogger())
 
-	// The storage contains users.
-	{
-		require.NoError(t, store.SetAlertConfig(ctx, user1Cfg))
-		require.NoError(t, store.SetAlertConfig(ctx, user2Cfg))
+		// The storage is empty.
+		{
+			users, err := store.ListAllUsers(ctx)
+			require.NoError(t, err)
+			assert.Empty(t, users)
+		}
 
-		users, err := store.ListAllUsers(ctx)
-		require.NoError(t, err)
-		assert.ElementsMatch(t, []string{"user-1", "user-2"}, users)
-	}
+		// The storage contains users.
+		{
+			require.NoError(t, store.SetAlertConfig(ctx, user1Cfg))
+			require.NoError(t, store.SetAlertConfig(ctx, user2Cfg))
+
+			users, err := store.ListAllUsers(ctx)
+			require.NoError(t, err)
+			assert.ElementsMatch(t, []string{"user-1", "user-2"}, users)
+		}
+
+		// The storage contains Grafana configurations but fetching is disabled.
+		{
+			require.NoError(t, store.SetGrafanaAlertConfig(ctx, user3GrafanaCfg))
+
+			users, err := store.ListAllUsers(ctx)
+			require.NoError(t, err)
+			assert.ElementsMatch(t, []string{"user-1", "user-2"}, users)
+		}
+	})
+
+	t.Run("fetching grafana configs enabled", func(t *testing.T) {
+		bucket := objstore.NewInMemBucket()
+		cfg := bucketclient.BucketAlertStoreConfig{FetchGrafanaConfig: true}
+		store := bucketclient.NewBucketAlertStore(cfg, bucket, nil, log.NewNopLogger())
+
+		// The storage is empty.
+		{
+			users, err := store.ListAllUsers(ctx)
+			require.NoError(t, err)
+			assert.Empty(t, users)
+		}
+
+		// The storage contains user with only Mimir config.
+		{
+			require.NoError(t, store.SetAlertConfig(ctx, user1Cfg))
+
+			users, err := store.ListAllUsers(ctx)
+			require.NoError(t, err)
+			assert.ElementsMatch(t, []string{"user-1"}, users)
+		}
+
+		// The storage contains user with only Grafana config.
+		{
+			require.NoError(t, store.SetGrafanaAlertConfig(ctx, user3GrafanaCfg))
+
+			users, err := store.ListAllUsers(ctx)
+			require.NoError(t, err)
+			assert.ElementsMatch(t, []string{"user-1", "user-3"}, users)
+		}
+
+		// The storage contains a user with both configs.
+		{
+			require.NoError(t, store.SetAlertConfig(ctx, user2Cfg))
+			require.NoError(t, store.SetGrafanaAlertConfig(ctx, user2GrafanaCfg))
+
+			users, err := store.ListAllUsers(ctx)
+			require.NoError(t, err)
+			assert.ElementsMatch(t, []string{"user-1", "user-2", "user-3"}, users)
+		}
+	})
 }
 
 func TestAlertStore_SetAndGetAlertConfig(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
+	cfg := bucketclient.BucketAlertStoreConfig{FetchGrafanaConfig: true}
+	store := bucketclient.NewBucketAlertStore(cfg, bucket, nil, log.NewNopLogger())
 
 	ctx := context.Background()
 	user1Cfg := alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
@@ -87,11 +142,13 @@ func TestAlertStore_SetAndGetAlertConfig(t *testing.T) {
 
 func TestStore_GetAlertConfigs(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
+	cfg := bucketclient.BucketAlertStoreConfig{FetchGrafanaConfig: true}
+	store := bucketclient.NewBucketAlertStore(cfg, bucket, nil, log.NewNopLogger())
 
 	ctx := context.Background()
 	user1Cfg := alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
 	user2Cfg := alertspb.AlertConfigDesc{User: "user-2", RawConfig: "content-2"}
+	user2GrafanaCfg := alertspb.GrafanaAlertConfigDesc{User: "user-2", RawConfig: "content-2"}
 
 	// The storage is empty.
 	{
@@ -108,23 +165,27 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, configs, "user-1")
 		assert.NotContains(t, configs, "user-2")
-		assert.Equal(t, user1Cfg, configs["user-1"])
+		assert.Equal(t, user1Cfg, configs["user-1"].Mimir)
 
 		// Add another user config.
 		require.NoError(t, store.SetAlertConfig(ctx, user2Cfg))
+		require.NoError(t, store.SetGrafanaAlertConfig(ctx, user2GrafanaCfg))
 
+		// Should return both Mimir and Grafana Alertmanager configurations.
 		configs, err = store.GetAlertConfigs(ctx, []string{"user-1", "user-2"})
 		require.NoError(t, err)
 		assert.Contains(t, configs, "user-1")
 		assert.Contains(t, configs, "user-2")
-		assert.Equal(t, user1Cfg, configs["user-1"])
-		assert.Equal(t, user2Cfg, configs["user-2"])
+		assert.Equal(t, user1Cfg, configs["user-1"].Mimir)
+		assert.Equal(t, alertspb.GrafanaAlertConfigDesc{}, configs["user-1"].Grafana)
+		assert.Equal(t, user2Cfg, configs["user-2"].Mimir)
+		assert.Equal(t, user2GrafanaCfg, configs["user-2"].Grafana)
 	}
 }
 
 func TestAlertStore_DeleteAlertConfig(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
+	store := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, bucket, nil, log.NewNopLogger())
 
 	ctx := context.Background()
 	user1Cfg := alertspb.AlertConfigDesc{User: "user-1", RawConfig: "content-1"}
@@ -171,13 +232,12 @@ func makeTestFullState(content string) alertspb.FullStateDesc {
 	}
 }
 
-func makeTestGrafanaAlertConfig(t *testing.T, user, cfg, hash string, id, createdAtTimestamp int64, isDefault bool) alertspb.GrafanaAlertConfigDesc {
+func makeTestGrafanaAlertConfig(t *testing.T, user, cfg, hash string, createdAtTimestamp int64, isDefault bool) alertspb.GrafanaAlertConfigDesc {
 	t.Helper()
 
 	return alertspb.GrafanaAlertConfigDesc{
 		User:               user,
 		RawConfig:          cfg,
-		Id:                 id,
 		Hash:               hash,
 		CreatedAtTimestamp: createdAtTimestamp,
 		Default:            isDefault,
@@ -186,7 +246,7 @@ func makeTestGrafanaAlertConfig(t *testing.T, user, cfg, hash string, id, create
 
 func TestBucketAlertStore_GetSetDeleteFullState(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
+	store := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, bucket, nil, log.NewNopLogger())
 
 	ctx := context.Background()
 	state1 := makeTestFullState("one")
@@ -256,7 +316,7 @@ func TestBucketAlertStore_GetSetDeleteFullState(t *testing.T) {
 
 func TestBucketAlertStore_GetSetDeleteGrafanaState(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
+	store := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, bucket, nil, log.NewNopLogger())
 
 	ctx := context.Background()
 	state1 := makeTestFullState("one")
@@ -314,12 +374,12 @@ func TestBucketAlertStore_GetSetDeleteGrafanaState(t *testing.T) {
 
 func TestBucketAlertStore_GetSetDeleteGrafanaAlertConfig(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
-	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
+	store := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, bucket, nil, log.NewNopLogger())
 
 	ctx := context.Background()
 	now := time.Now().UnixMilli()
-	cfg1 := makeTestGrafanaAlertConfig(t, "user-1", "config one", "3edf15da6a1e11c454e7285d9443071a", 1, now, false)
-	cfg2 := makeTestGrafanaAlertConfig(t, "user-2", "config two", "b7aed2b102aa09fe21f324392ace74eb", 2, now, false)
+	cfg1 := makeTestGrafanaAlertConfig(t, "user-1", "config one", "3edf15da6a1e11c454e7285d9443071a", now, false)
+	cfg2 := makeTestGrafanaAlertConfig(t, "user-2", "config two", "b7aed2b102aa09fe21f324392ace74eb", now, false)
 
 	// The storage is empty.
 	{

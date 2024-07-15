@@ -42,8 +42,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
       containers:
         - name: gateway
           imagePullPolicy: IfNotPresent
@@ -80,12 +78,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-          envFrom:
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -95,6 +87,11 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
             app.kubernetes.io/component: gateway
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       terminationGracePeriodSeconds: 30
       volumes:
         - name: config

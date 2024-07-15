@@ -34,8 +34,9 @@ data:
             '"$http_user_agent" "$http_x_forwarded_for"';
       access_log   /dev/stderr  main;
     
-      sendfile     on;
-      tcp_nopush   on;
+      sendfile           on;
+      tcp_nopush         on;
+      proxy_http_version 1.1;
       resolver kube-dns.kube-system.svc.cluster.local.;
     
       # Ensure that X-Scope-OrgID is always present, default to the no_auth_tenant for backwards compatibility when multi-tenancy was turned off.
@@ -44,10 +45,19 @@ data:
         "" "anonymous";
       }
     
+      map $http_x_scope_orgid $has_multiple_orgid_headers {
+        default 0;
+        "~^.+,.+$" 1;
+      }
+    
       proxy_read_timeout 300;
       server {
         listen 8080;
         listen [::]:8080;
+    
+        if ($has_multiple_orgid_headers = 1) {
+            return 400 'Sending multiple X-Scope-OrgID headers is not allowed. Use a single header with | as separator instead.';
+        }
     
         location = / {
           return 200 'OK';
@@ -76,6 +86,10 @@ data:
           proxy_pass      http://$alertmanager:8080$request_uri;
         }
         location = /multitenant_alertmanager/status {
+          set $alertmanager test-vault-agent-values-mimir-alertmanager-headless.citestns.svc.cluster.local.;
+          proxy_pass      http://$alertmanager:8080$request_uri;
+        }
+        location = /multitenant_alertmanager/configs {
           set $alertmanager test-vault-agent-values-mimir-alertmanager-headless.citestns.svc.cluster.local.;
           proxy_pass      http://$alertmanager:8080$request_uri;
         }

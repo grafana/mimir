@@ -27,7 +27,13 @@ func NewMockCache() *MockCache {
 	return c
 }
 
-func (m *MockCache) StoreAsync(data map[string][]byte, ttl time.Duration) {
+func (m *MockCache) SetAsync(key string, value []byte, ttl time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cache[key] = Item{Data: value, ExpiresAt: time.Now().Add(ttl)}
+}
+
+func (m *MockCache) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -37,7 +43,7 @@ func (m *MockCache) StoreAsync(data map[string][]byte, ttl time.Duration) {
 	}
 }
 
-func (m *MockCache) Fetch(_ context.Context, keys []string, _ ...Option) map[string][]byte {
+func (m *MockCache) GetMulti(_ context.Context, keys []string, _ ...Option) map[string][]byte {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -68,6 +74,10 @@ func (m *MockCache) GetItems() map[string]Item {
 
 func (m *MockCache) Name() string {
 	return "mock"
+}
+
+func (m *MockCache) Stop() {
+	// no-op
 }
 
 func (m *MockCache) Delete(_ context.Context, key string) error {
@@ -101,18 +111,27 @@ func NewInstrumentedMockCache() *InstrumentedMockCache {
 	}
 }
 
-func (m *InstrumentedMockCache) StoreAsync(data map[string][]byte, ttl time.Duration) {
+func (m *InstrumentedMockCache) SetAsync(key string, value []byte, ttl time.Duration) {
 	m.storeCount.Inc()
-	m.cache.StoreAsync(data, ttl)
+	m.cache.SetAsync(key, value, ttl)
 }
 
-func (m *InstrumentedMockCache) Fetch(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
+func (m *InstrumentedMockCache) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
+	m.storeCount.Inc()
+	m.cache.SetMultiAsync(data, ttl)
+}
+
+func (m *InstrumentedMockCache) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
 	m.fetchCount.Inc()
-	return m.cache.Fetch(ctx, keys, opts...)
+	return m.cache.GetMulti(ctx, keys, opts...)
 }
 
 func (m *InstrumentedMockCache) Name() string {
 	return m.cache.Name()
+}
+
+func (m *InstrumentedMockCache) Stop() {
+	m.cache.Stop()
 }
 
 func (m *InstrumentedMockCache) Delete(ctx context.Context, key string) error {

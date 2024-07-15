@@ -26,7 +26,9 @@ We recommend that you run at least two query-frontend replicas for high-availabi
 
 The following steps describe how a query moves through the query-frontend.
 
-> **Note:** In this scenario, a query-scheduler is not deployed.
+{{< admonition type="note" >}}
+This scenario doesn't deploy a query-scheduler.
+{{< /admonition >}}
 
 1. A query-frontend receives a query.
 1. If the query is a range query, the query-frontend [splits it by time]({{< relref "#splitting" >}}) into multiple smaller queries that can be parallelized.

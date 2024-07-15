@@ -38,6 +38,35 @@ func (m *WriteRequest) MinTimestamp() int64 {
 	return min
 }
 
+// IsEmpty returns whether the WriteRequest has no data to ingest.
+func (m *WriteRequest) IsEmpty() bool {
+	return len(m.Timeseries) == 0 && len(m.Metadata) == 0
+}
+
+// MetadataSize is like Size() but returns only the marshalled size of Metadata field.
+func (m *WriteRequest) MetadataSize() int {
+	var l, n int
+
+	for _, e := range m.Metadata {
+		l = e.Size()
+		n += 1 + l + sovMimir(uint64(l))
+	}
+
+	return n
+}
+
+// TimeseriesSize is like Size() but returns only the marshalled size of Timeseries field.
+func (m *WriteRequest) TimeseriesSize() int {
+	var l, n int
+
+	for _, e := range m.Timeseries {
+		l = e.Size()
+		n += 1 + l + sovMimir(uint64(l))
+	}
+
+	return n
+}
+
 func (h Histogram) IsFloatHistogram() bool {
 	_, ok := h.GetCount().(*Histogram_CountFloat)
 	return ok
@@ -58,12 +87,20 @@ func (h *Histogram) ReduceResolution() (int, error) {
 	return h.reduceIntResolution()
 }
 
-// The minimum schema for a histogram is -4. Currently this is hardcoded and
-// not exported from Prometheus or client_golang, so we define it here.
-const minimumHistogramSchema = -4
+const (
+	// MinimumHistogramSchema is the minimum schema for a histogram.
+	// Currently, it is -4, hardcoded and not exported from either
+	// Prometheus or client_golang, so we define it here.
+	MinimumHistogramSchema = -4
+
+	// MaximumHistogramSchema is the minimum schema for a histogram.
+	// Currently, it is 8, hardcoded and not exported from either
+	// Prometheus or client_golang, so we define it here.
+	MaximumHistogramSchema = 8
+)
 
 func (h *Histogram) reduceFloatResolution() (int, error) {
-	if h.Schema == minimumHistogramSchema {
+	if h.Schema == MinimumHistogramSchema {
 		return 0, fmt.Errorf("cannot reduce resolution of histogram with schema %d", h.Schema)
 	}
 	h.PositiveSpans, h.PositiveCounts = reduceResolution(h.PositiveSpans, h.PositiveCounts, h.Schema, h.Schema-1, false)
@@ -73,7 +110,7 @@ func (h *Histogram) reduceFloatResolution() (int, error) {
 }
 
 func (h *Histogram) reduceIntResolution() (int, error) {
-	if h.Schema == minimumHistogramSchema {
+	if h.Schema == MinimumHistogramSchema {
 		return 0, fmt.Errorf("cannot reduce resolution of histogram with schema %d", h.Schema)
 	}
 	h.PositiveSpans, h.PositiveDeltas = reduceResolution(h.PositiveSpans, h.PositiveDeltas, h.Schema, h.Schema-1, true)

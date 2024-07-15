@@ -84,6 +84,7 @@ BUCKETS_DESC
 NEGATIVE_BUCKETS_DESC
 ZERO_BUCKET_DESC
 ZERO_BUCKET_WIDTH_DESC
+CUSTOM_VALUES_DESC
 %token histogramDescEnd
 
 // Operators.
@@ -125,6 +126,8 @@ STDDEV
 STDVAR
 SUM
 TOPK
+LIMITK
+LIMIT_RATIO
 %token	aggregatorsEnd
 
 // Keywords.
@@ -587,6 +590,8 @@ label_matcher   : IDENTIFIER match_op STRING
                         { $$ = yylex.(*parser).newLabelMatcher($1, $2, $3); }
                 | string_identifier
                         { $$ = yylex.(*parser).newMetricNameMatcher($1); }
+                | string_identifier match_op error
+                        { yylex.(*parser).unexpected("label matching", "string"); $$ = nil}
                 | IDENTIFIER match_op error
                         { yylex.(*parser).unexpected("label matching", "string"); $$ = nil}
                 | IDENTIFIER error
@@ -606,7 +611,7 @@ metric          : metric_identifier label_set
                 ;
 
 
-metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT | START | END;
+metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT | START | END | LIMITK | LIMIT_RATIO;
 
 label_set       : LEFT_BRACE label_set_list RIGHT_BRACE
                         { $$ = labels.New($2...) }
@@ -795,6 +800,11 @@ histogram_desc_item
                    $$ = yylex.(*parser).newMap()
                    $$["z_bucket_w"] = $3
                 }
+                | CUSTOM_VALUES_DESC COLON bucket_set
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["custom_values"] = $3
+                }
                 | BUCKETS_DESC COLON bucket_set
                 {
                    $$ = yylex.(*parser).newMap()
@@ -843,10 +853,10 @@ bucket_set_list : bucket_set_list SPACE number
  * Keyword lists.
  */
 
-aggregate_op    : AVG | BOTTOMK | COUNT | COUNT_VALUES | GROUP | MAX | MIN | QUANTILE | STDDEV | STDVAR | SUM | TOPK ;
+aggregate_op    : AVG | BOTTOMK | COUNT | COUNT_VALUES | GROUP | MAX | MIN | QUANTILE | STDDEV | STDVAR | SUM | TOPK | LIMITK | LIMIT_RATIO;
 
 // Inside of grouping options label names can be recognized as keywords by the lexer. This is a list of keywords that could also be a label name.
-maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GROUP_LEFT | GROUP_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK | START | END | ATAN2;
+maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GROUP_LEFT | GROUP_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK | START | END | ATAN2 | LIMITK | LIMIT_RATIO;
 
 unary_op        : ADD | SUB;
 

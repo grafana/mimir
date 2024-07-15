@@ -67,7 +67,7 @@ func (s SeriesSpecs) MaxTime() int64 {
 
 // GenerateBlockFromSpec generates a TSDB block with series and chunks provided by the input specs.
 // This utility is intended just to be used for testing. Do not use it for any production code.
-func GenerateBlockFromSpec(_ string, storageDir string, specs SeriesSpecs) (_ *Meta, returnErr error) {
+func GenerateBlockFromSpec(storageDir string, specs SeriesSpecs) (_ *Meta, returnErr error) {
 	blockID := ulid.MustNew(ulid.Now(), crypto_rand.Reader)
 	blockDir := filepath.Join(storageDir, blockID.String())
 
@@ -123,7 +123,7 @@ func GenerateBlockFromSpec(_ string, storageDir string, specs SeriesSpecs) (_ *M
 
 	chunkwClosed = true
 	if err := chunkw.Close(); err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	// Write index.
@@ -271,14 +271,19 @@ func CreateBlock(
 		return id, errors.Wrap(err, "create compactor")
 	}
 
-	id, err = c.Write(dir, h, mint, maxt, nil)
+	blocks, err := c.Write(dir, h, mint, maxt, nil)
 	if err != nil {
 		return id, errors.Wrap(err, "write block")
 	}
 
-	if id.Compare(ulid.ULID{}) == 0 {
+	if len(blocks) == 0 || (blocks[0] == ulid.ULID{}) {
 		return id, errors.Errorf("nothing to write, asked for %d samples", numSamples)
 	}
+	if len(blocks) > 1 {
+		return id, errors.Errorf("expected one block, got %d, asked for %d samples", len(blocks), numSamples)
+	}
+
+	id = blocks[0]
 
 	blockDir := filepath.Join(dir, id.String())
 

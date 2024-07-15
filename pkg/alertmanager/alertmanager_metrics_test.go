@@ -15,6 +15,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 var integrations = []string{
@@ -33,7 +35,7 @@ var integrations = []string{
 func TestAlertmanagerMetricsStore(t *testing.T) {
 	mainReg := prometheus.NewPedanticRegistry()
 
-	alertmanangerMetrics := newAlertmanagerMetrics()
+	alertmanangerMetrics := newAlertmanagerMetrics(test.NewTestingLogger(t))
 	mainReg.MustRegister(alertmanangerMetrics)
 	alertmanangerMetrics.addUserRegistry("user1", populateAlertmanager(1))
 	alertmanangerMetrics.addUserRegistry("user2", populateAlertmanager(10))
@@ -145,6 +147,17 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 		cortex_alertmanager_notifications_failed_total{integration="telegram",reason="clientError",user="user1"} 9
 		cortex_alertmanager_notifications_failed_total{integration="telegram",reason="clientError",user="user2"} 90
 		cortex_alertmanager_notifications_failed_total{integration="telegram",reason="clientError",user="user3"} 900
+		# HELP cortex_alertmanager_notifications_suppressed_total The total number of notifications suppressed for being silenced, inhibited, outside of active time intervals or within muted time intervals.
+		# TYPE cortex_alertmanager_notifications_suppressed_total counter
+		cortex_alertmanager_notifications_suppressed_total{reason="active_time_interval",user="user1"} 3
+		cortex_alertmanager_notifications_suppressed_total{reason="active_time_interval",user="user2"} 30
+		cortex_alertmanager_notifications_suppressed_total{reason="active_time_interval",user="user3"} 300
+		cortex_alertmanager_notifications_suppressed_total{reason="inhibition",user="user1"} 1
+		cortex_alertmanager_notifications_suppressed_total{reason="inhibition",user="user2"} 10
+		cortex_alertmanager_notifications_suppressed_total{reason="inhibition",user="user3"} 100
+		cortex_alertmanager_notifications_suppressed_total{reason="mute_time_interval",user="user1"} 2
+		cortex_alertmanager_notifications_suppressed_total{reason="mute_time_interval",user="user2"} 20
+		cortex_alertmanager_notifications_suppressed_total{reason="mute_time_interval",user="user3"} 200
 		# HELP cortex_alertmanager_notification_requests_total The total number of attempted notification requests.
 		# TYPE cortex_alertmanager_notification_requests_total counter
 		cortex_alertmanager_notification_requests_total{integration="opsgenie",user="user1"} 5
@@ -342,7 +355,7 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 func TestAlertmanagerMetricsRemoval(t *testing.T) {
 	mainReg := prometheus.NewPedanticRegistry()
 
-	alertmanagerMetrics := newAlertmanagerMetrics()
+	alertmanagerMetrics := newAlertmanagerMetrics(test.NewTestingLogger(t))
 	mainReg.MustRegister(alertmanagerMetrics)
 	alertmanagerMetrics.addUserRegistry("user1", populateAlertmanager(1))
 	alertmanagerMetrics.addUserRegistry("user2", populateAlertmanager(10))
@@ -530,6 +543,18 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 						cortex_alertmanager_notifications_failed_total{integration="telegram",reason="clientError",user="user1"} 9
         	            cortex_alertmanager_notifications_failed_total{integration="telegram",reason="clientError",user="user2"} 90
         	            cortex_alertmanager_notifications_failed_total{integration="telegram",reason="clientError",user="user3"} 900
+
+        	            # HELP cortex_alertmanager_notifications_suppressed_total The total number of notifications suppressed for being silenced, inhibited, outside of active time intervals or within muted time intervals.
+        	            # TYPE cortex_alertmanager_notifications_suppressed_total counter
+        	            cortex_alertmanager_notifications_suppressed_total{reason="active_time_interval",user="user1"} 3
+        	            cortex_alertmanager_notifications_suppressed_total{reason="active_time_interval",user="user2"} 30
+        	            cortex_alertmanager_notifications_suppressed_total{reason="active_time_interval",user="user3"} 300
+        	            cortex_alertmanager_notifications_suppressed_total{reason="inhibition",user="user1"} 1
+        	            cortex_alertmanager_notifications_suppressed_total{reason="inhibition",user="user2"} 10
+        	            cortex_alertmanager_notifications_suppressed_total{reason="inhibition",user="user3"} 100
+        	            cortex_alertmanager_notifications_suppressed_total{reason="mute_time_interval",user="user1"} 2
+        	            cortex_alertmanager_notifications_suppressed_total{reason="mute_time_interval",user="user2"} 20
+        	            cortex_alertmanager_notifications_suppressed_total{reason="mute_time_interval",user="user3"} 200
 
         	            # HELP cortex_alertmanager_notifications_total The total number of attempted notifications.
         	            # TYPE cortex_alertmanager_notifications_total counter
@@ -822,6 +847,15 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 			cortex_alertmanager_notifications_failed_total{integration="telegram",reason="clientError",user="user1"} 9
     		cortex_alertmanager_notifications_failed_total{integration="telegram",reason="clientError",user="user2"} 90
 
+    		# HELP cortex_alertmanager_notifications_suppressed_total The total number of notifications suppressed for being silenced, inhibited, outside of active time intervals or within muted time intervals.
+    		# TYPE cortex_alertmanager_notifications_suppressed_total counter
+    		cortex_alertmanager_notifications_suppressed_total{reason="active_time_interval",user="user1"} 3
+    		cortex_alertmanager_notifications_suppressed_total{reason="active_time_interval",user="user2"} 30
+    		cortex_alertmanager_notifications_suppressed_total{reason="inhibition",user="user1"} 1
+    		cortex_alertmanager_notifications_suppressed_total{reason="inhibition",user="user2"} 10
+    		cortex_alertmanager_notifications_suppressed_total{reason="mute_time_interval",user="user1"} 2
+    		cortex_alertmanager_notifications_suppressed_total{reason="mute_time_interval",user="user2"} 20
+
     		# HELP cortex_alertmanager_notifications_total The total number of attempted notifications.
     		# TYPE cortex_alertmanager_notifications_total counter
     		cortex_alertmanager_notifications_total{integration="opsgenie",user="user1"} 5
@@ -988,6 +1022,9 @@ func populateAlertmanager(base float64) *prometheus.Registry {
 		nm.numNotificationRequestsTotal.WithLabelValues(integration).Add(base * float64(i))
 		nm.numNotificationRequestsFailedTotal.WithLabelValues(integration).Add(base * float64(i))
 		nm.notificationLatencySeconds.WithLabelValues(integration).Observe(base * float64(i) * 0.025)
+	}
+	for i, reason := range possibleSuppressedReason {
+		nm.numNotificationSuppressedTotal.WithLabelValues(reason).Add(base * float64(i))
 	}
 
 	m := newMarkerMetrics(reg)
@@ -1157,6 +1194,7 @@ type notifyMetrics struct {
 	numTotalFailedNotifications        *prometheus.CounterVec
 	numNotificationRequestsTotal       *prometheus.CounterVec
 	numNotificationRequestsFailedTotal *prometheus.CounterVec
+	numNotificationSuppressedTotal     *prometheus.CounterVec
 	notificationLatencySeconds         *prometheus.HistogramVec
 }
 
@@ -1182,6 +1220,11 @@ func newNotifyMetrics(r prometheus.Registerer) *notifyMetrics {
 			Name:      "notification_requests_failed_total",
 			Help:      "The total number of failed notification requests.",
 		}, []string{"integration"}),
+		numNotificationSuppressedTotal: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Namespace: "alertmanager",
+			Name:      "notifications_suppressed_total",
+			Help:      "The total number of notifications suppressed for being silenced, inhibited, outside of active time intervals or within muted time intervals.",
+		}, []string{"reason"}),
 		notificationLatencySeconds: promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "alertmanager",
 			Name:      "notification_latency_seconds",
@@ -1210,12 +1253,19 @@ func newNotifyMetrics(r prometheus.Registerer) *notifyMetrics {
 			m.numTotalFailedNotifications.WithLabelValues(integration, reason)
 		}
 	}
+	for _, reason := range possibleSuppressedReason {
+		m.numNotificationSuppressedTotal.WithLabelValues(reason)
+	}
 	return m
 }
 
 // Copied from github.com/alertmanager/notify/util.go
 // possibleFailureReasonCategory is a list of possible failure reason.
 var possibleFailureReasonCategory = []string{notify.DefaultReason.String(), notify.ClientErrorReason.String(), notify.ServerErrorReason.String()}
+
+// Copied from https://github.com/prometheus/alertmanager/blob/release-0.27/notify/notify.go
+// Should use consts from notify package when they are public again.
+var possibleSuppressedReason = []string{"silence", "inhibition", "mute_time_interval", "active_time_interval"} // notify.SuppressedReasonSilence, notify.SuppressedReasonInhibition, notify.SuppressedReasonMuteTimeInterval, notify.SuppressedReasonActiveTimeInterval
 
 type markerMetrics struct {
 	alerts *prometheus.GaugeVec

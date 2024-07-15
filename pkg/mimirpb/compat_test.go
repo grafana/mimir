@@ -8,7 +8,6 @@ package mimirpb
 import (
 	stdlibjson "encoding/json"
 	"math"
-	"reflect"
 	"strconv"
 	"testing"
 	"unsafe"
@@ -19,7 +18,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -197,9 +195,7 @@ func TestFromLabelAdaptersToLabelsWithCopy(t *testing.T) {
 
 	// All strings must be copied.
 	actualValue := actual.Get("hello")
-	hInputValue := (*reflect.StringHeader)(unsafe.Pointer(&input[0].Value))
-	hActualValue := (*reflect.StringHeader)(unsafe.Pointer(&actualValue))
-	assert.NotEqual(t, hInputValue.Data, hActualValue.Data)
+	assert.NotSame(t, unsafe.StringData(input[0].Value), unsafe.StringData(actualValue))
 }
 
 func BenchmarkFromLabelAdaptersToLabelsWithCopy(b *testing.B) {
@@ -223,7 +219,7 @@ func TestFromFPointsToSamples(t *testing.T) {
 // Check that Prometheus FPoint and Mimir Sample types converted
 // into each other with unsafe.Pointer are compatible
 func TestPrometheusFPointInSyncWithMimirPbSample(t *testing.T) {
-	test.RequireSameShape(t, promql.FPoint{}, Sample{}, true)
+	test.RequireSameShape(t, promql.FPoint{}, Sample{}, true, false)
 }
 
 func BenchmarkFromFPointsToSamples(b *testing.B) {
@@ -251,7 +247,7 @@ func TestFromHPointsToHistograms(t *testing.T) {
 // Check that Prometheus HPoint and Mimir FloatHistogramPair types converted
 // into each other with unsafe.Pointer are compatible
 func TestPrometheusHPointInSyncWithMimirPbFloatHistogramPair(t *testing.T) {
-	test.RequireSameShape(t, promql.HPoint{}, FloatHistogramPair{}, true)
+	test.RequireSameShape(t, promql.HPoint{}, FloatHistogramPair{}, true, false)
 }
 
 func BenchmarkFromHPointsToHistograms(b *testing.B) {
@@ -362,7 +358,7 @@ func TestRemoteWriteContainsHistogram(t *testing.T) {
 		Timeseries: []prompb.TimeSeries{
 			{
 				Histograms: []prompb.Histogram{
-					remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(0)),
+					prompb.FromIntHistogram(1337, test.GenerateTestHistogram(0)),
 				},
 			},
 		},
@@ -396,7 +392,7 @@ func TestFromPromRemoteWriteHistogramToMimir(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			// Prometheus
-			remoteWriteHistogram := remote.HistogramToHistogramProto(1337, test.tsdbHistogram)
+			remoteWriteHistogram := prompb.FromIntHistogram(1337, test.tsdbHistogram)
 			data, err := remoteWriteHistogram.Marshal()
 			assert.NoError(t, err, "marshal to protbuf")
 
@@ -431,7 +427,7 @@ func TestFromPromRemoteWriteFloatHistogramToMimir(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			// Prometheus
-			remoteWriteHistogram := remote.FloatHistogramToHistogramProto(1337, test.tsdbHistogram)
+			remoteWriteHistogram := prompb.FromFloatHistogram(1337, test.tsdbHistogram)
 			data, err := remoteWriteHistogram.Marshal()
 			assert.NoError(t, err, "marshal to protbuf")
 
@@ -479,7 +475,7 @@ func TestFromHistogramToHistogramProto(t *testing.T) {
 	assert.Equal(t, h, h2)
 
 	// Also check via JSON encode/decode
-	promP := remote.HistogramToHistogramProto(ts, h)
+	promP := prompb.FromIntHistogram(ts, h)
 	d, err := promP.Marshal()
 	assert.NoError(t, err)
 	p2 := Histogram{}
@@ -527,7 +523,7 @@ func TestFromFloatHistogramToHistogramProto(t *testing.T) {
 	assert.Equal(t, h, h2)
 
 	// Also check via JSON encode/decode
-	promP := remote.FloatHistogramToHistogramProto(ts, h)
+	promP := prompb.FromFloatHistogram(ts, h)
 	d, err := promP.Marshal()
 	assert.NoError(t, err)
 	p2 := Histogram{}
@@ -628,7 +624,7 @@ func TestFromFloatHistogramToPromHistogram(t *testing.T) {
 // Check that Prometheus and Mimir SampleHistogram types converted
 // into each other with unsafe.Pointer are compatible
 func TestPrometheusSampleHistogramInSyncWithMimirPbSampleHistogram(t *testing.T) {
-	test.RequireSameShape(t, model.SampleHistogram{}, SampleHistogram{}, false)
+	test.RequireSameShape(t, model.SampleHistogram{}, SampleHistogram{}, false, false)
 }
 
 // Check that Prometheus Label and MimirPb LabelAdapter types
@@ -741,4 +737,58 @@ func TestCompareLabelAdapters(t *testing.T) {
 		got = CompareLabelAdapters(test.compared, labels)
 		require.Equal(t, -sign(test.expected), sign(got), "unexpected comparison result for reverse test case %d", i)
 	}
+}
+
+func TestRemoteWriteV1HistogramEquivalence(t *testing.T) {
+	test.RequireSameShape(t, prompb.Histogram{}, Histogram{}, false, true)
+}
+
+// The main usecase for `LabelsToKeyString` is to generate hashKeys
+// for maps. We are benchmarking that here.
+func BenchmarkSeriesMap(b *testing.B) {
+	benchmarkSeriesMap(100000, b)
+}
+
+func benchmarkSeriesMap(numSeries int, b *testing.B) {
+	series := makeSeries(numSeries)
+	sm := make(map[string]int, numSeries)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		for i, s := range series {
+			sm[FromLabelAdaptersToKeyString(s)] = i
+		}
+
+		for _, s := range series {
+			_, ok := sm[FromLabelAdaptersToKeyString(s)]
+			if !ok {
+				b.Fatal("element missing")
+			}
+		}
+
+		if len(sm) != numSeries {
+			b.Fatal("the number of series expected:", numSeries, "got:", len(sm))
+		}
+	}
+}
+
+func makeSeries(n int) [][]LabelAdapter {
+	series := make([][]LabelAdapter, 0, n)
+	for i := 0; i < n; i++ {
+		series = append(series, []LabelAdapter{
+			{Name: "label0", Value: "value0"},
+			{Name: "label1", Value: "value1"},
+			{Name: "label2", Value: "value2"},
+			{Name: "label3", Value: "value3"},
+			{Name: "label4", Value: "value4"},
+			{Name: "label5", Value: "value5"},
+			{Name: "label6", Value: "value6"},
+			{Name: "label7", Value: "value7"},
+			{Name: "label8", Value: "value8"},
+			{Name: "label9", Value: strconv.Itoa(i)},
+		})
+	}
+
+	return series
 }

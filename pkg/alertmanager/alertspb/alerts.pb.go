@@ -7,6 +7,7 @@ import (
 	fmt "fmt"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
+	github_com_gogo_protobuf_sortkeys "github.com/gogo/protobuf/sortkeys"
 	clusterpb "github.com/prometheus/alertmanager/cluster/clusterpb"
 	io "io"
 	math "math"
@@ -180,12 +181,14 @@ func (m *FullStateDesc) GetState() *clusterpb.FullState {
 }
 
 type GrafanaAlertConfigDesc struct {
-	User               string `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
-	RawConfig          string `protobuf:"bytes,2,opt,name=raw_config,json=rawConfig,proto3" json:"raw_config,omitempty"`
-	Id                 int64  `protobuf:"varint,3,opt,name=id,proto3" json:"id,omitempty"`
-	Hash               string `protobuf:"bytes,4,opt,name=hash,proto3" json:"hash,omitempty"`
-	CreatedAtTimestamp int64  `protobuf:"varint,5,opt,name=created_at_timestamp,json=createdAtTimestamp,proto3" json:"created_at_timestamp,omitempty"`
-	Default            bool   `protobuf:"varint,7,opt,name=default,proto3" json:"default,omitempty"`
+	User               string            `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
+	RawConfig          string            `protobuf:"bytes,2,opt,name=raw_config,json=rawConfig,proto3" json:"raw_config,omitempty"`
+	Hash               string            `protobuf:"bytes,4,opt,name=hash,proto3" json:"hash,omitempty"`
+	CreatedAtTimestamp int64             `protobuf:"varint,5,opt,name=created_at_timestamp,json=createdAtTimestamp,proto3" json:"created_at_timestamp,omitempty"`
+	Default            bool              `protobuf:"varint,7,opt,name=default,proto3" json:"default,omitempty"`
+	Promoted           bool              `protobuf:"varint,8,opt,name=promoted,proto3" json:"promoted,omitempty"`
+	ExternalUrl        string            `protobuf:"bytes,9,opt,name=external_url,json=externalUrl,proto3" json:"external_url,omitempty"`
+	StaticHeaders      map[string]string `protobuf:"bytes,10,rep,name=static_headers,json=staticHeaders,proto3" json:"static_headers,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
 }
 
 func (m *GrafanaAlertConfigDesc) Reset()      { *m = GrafanaAlertConfigDesc{} }
@@ -234,13 +237,6 @@ func (m *GrafanaAlertConfigDesc) GetRawConfig() string {
 	return ""
 }
 
-func (m *GrafanaAlertConfigDesc) GetId() int64 {
-	if m != nil {
-		return m.Id
-	}
-	return 0
-}
-
 func (m *GrafanaAlertConfigDesc) GetHash() string {
 	if m != nil {
 		return m.Hash
@@ -262,43 +258,71 @@ func (m *GrafanaAlertConfigDesc) GetDefault() bool {
 	return false
 }
 
+func (m *GrafanaAlertConfigDesc) GetPromoted() bool {
+	if m != nil {
+		return m.Promoted
+	}
+	return false
+}
+
+func (m *GrafanaAlertConfigDesc) GetExternalUrl() string {
+	if m != nil {
+		return m.ExternalUrl
+	}
+	return ""
+}
+
+func (m *GrafanaAlertConfigDesc) GetStaticHeaders() map[string]string {
+	if m != nil {
+		return m.StaticHeaders
+	}
+	return nil
+}
+
 func init() {
 	proto.RegisterType((*AlertConfigDesc)(nil), "alerts.AlertConfigDesc")
 	proto.RegisterType((*TemplateDesc)(nil), "alerts.TemplateDesc")
 	proto.RegisterType((*FullStateDesc)(nil), "alerts.FullStateDesc")
 	proto.RegisterType((*GrafanaAlertConfigDesc)(nil), "alerts.GrafanaAlertConfigDesc")
+	proto.RegisterMapType((map[string]string)(nil), "alerts.GrafanaAlertConfigDesc.StaticHeadersEntry")
 }
 
 func init() { proto.RegisterFile("alerts.proto", fileDescriptor_20493709c38b81dc) }
 
 var fileDescriptor_20493709c38b81dc = []byte{
-	// 407 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x52, 0xbf, 0x6e, 0xd4, 0x30,
-	0x1c, 0x8e, 0x2f, 0xd7, 0xf6, 0xce, 0x14, 0x90, 0xac, 0x13, 0xb2, 0x4e, 0xc2, 0x44, 0x99, 0x22,
-	0x86, 0x04, 0x95, 0x8d, 0xa1, 0xd2, 0x15, 0x04, 0x7b, 0xe8, 0xc4, 0x72, 0x72, 0x12, 0xe7, 0x8f,
-	0x94, 0xc4, 0x91, 0xed, 0xa8, 0xb0, 0xf1, 0x08, 0x3c, 0x02, 0x23, 0xaf, 0xc1, 0xc6, 0x78, 0x63,
-	0x47, 0x2e, 0xb7, 0x74, 0xec, 0x23, 0x20, 0xdb, 0xc9, 0x95, 0x07, 0xe8, 0x94, 0xef, 0xcb, 0xf7,
-	0xc7, 0xbf, 0x5f, 0x62, 0x78, 0x4e, 0x6b, 0x26, 0x94, 0x0c, 0x3b, 0xc1, 0x15, 0x47, 0xa7, 0x96,
-	0xad, 0x57, 0x05, 0x2f, 0xb8, 0x79, 0x15, 0x69, 0x64, 0xd5, 0xf5, 0x55, 0x51, 0xa9, 0xb2, 0x4f,
-	0xc2, 0x94, 0x37, 0x51, 0x27, 0x78, 0xc3, 0x54, 0xc9, 0x7a, 0x19, 0x99, 0x4c, 0x43, 0x5b, 0x5a,
-	0x30, 0x11, 0xa5, 0x75, 0x2f, 0xd5, 0xc3, 0xb3, 0x4b, 0x26, 0x64, 0x3b, 0xfc, 0xaf, 0xf0, 0xf9,
-	0x46, 0xfb, 0xdf, 0xf3, 0x36, 0xaf, 0x8a, 0x0f, 0x4c, 0xa6, 0x08, 0xc1, 0x79, 0x2f, 0x99, 0xc0,
-	0xc0, 0x03, 0xc1, 0x32, 0x36, 0x18, 0xbd, 0x84, 0x50, 0xd0, 0x9b, 0x6d, 0x6a, 0x5c, 0x78, 0x66,
-	0x94, 0xa5, 0xa0, 0x37, 0x36, 0x86, 0x2e, 0xe0, 0x52, 0xb1, 0xa6, 0xab, 0xa9, 0x62, 0x12, 0xbb,
-	0x9e, 0x1b, 0x3c, 0xb9, 0x58, 0x85, 0xe3, 0x26, 0xd7, 0xa3, 0xa0, 0xbb, 0xe3, 0x07, 0x9b, 0x7f,
-	0x09, 0xcf, 0xff, 0x97, 0xd0, 0x1a, 0x2e, 0xf2, 0xaa, 0x66, 0x2d, 0x6d, 0xd8, 0x78, 0xf4, 0x91,
-	0xeb, 0x91, 0x12, 0x9e, 0x7d, 0x1b, 0x0f, 0x36, 0xd8, 0xdf, 0xc0, 0xa7, 0x1f, 0xfb, 0xba, 0xfe,
-	0xac, 0xa6, 0x82, 0xd7, 0xf0, 0x44, 0x6a, 0x62, 0xd2, 0x7a, 0x80, 0xe3, 0xce, 0xe1, 0xd1, 0x18,
-	0x5b, 0xcb, 0xbb, 0xf9, 0xdd, 0xcf, 0x57, 0x8e, 0xff, 0x1b, 0xc0, 0x17, 0x9f, 0x04, 0xcd, 0x69,
-	0x4b, 0x1f, 0xe1, 0x23, 0x3c, 0x83, 0xb3, 0x2a, 0xc3, 0xae, 0x07, 0x02, 0x37, 0x9e, 0x55, 0x99,
-	0xae, 0x28, 0xa9, 0x2c, 0xf1, 0xdc, 0x56, 0x68, 0x8c, 0xde, 0xc0, 0x55, 0x2a, 0x18, 0x55, 0x2c,
-	0xdb, 0x52, 0xb5, 0x55, 0x55, 0xc3, 0xa4, 0xa2, 0x4d, 0x87, 0x4f, 0x4c, 0x0a, 0x8d, 0xda, 0x46,
-	0x5d, 0x4f, 0x0a, 0xc2, 0xf0, 0x2c, 0x63, 0x39, 0xed, 0x6b, 0x85, 0xcf, 0x3c, 0x10, 0x2c, 0xe2,
-	0x89, 0xda, 0x1d, 0xae, 0x2e, 0x77, 0x7b, 0xe2, 0xdc, 0xee, 0x89, 0x73, 0xbf, 0x27, 0xe0, 0xfb,
-	0x40, 0xc0, 0xaf, 0x81, 0x80, 0x3f, 0x03, 0x01, 0xbb, 0x81, 0x80, 0xbf, 0x03, 0x01, 0x77, 0x03,
-	0x71, 0xee, 0x07, 0x02, 0x7e, 0x1c, 0x88, 0xb3, 0x3b, 0x10, 0xe7, 0xf6, 0x40, 0x9c, 0x2f, 0x0b,
-	0xfb, 0x73, 0xba, 0x24, 0x39, 0x35, 0xf7, 0xe0, 0xed, 0xbf, 0x00, 0x00, 0x00, 0xff, 0xff, 0x74,
-	0x60, 0x1d, 0xd3, 0x79, 0x02, 0x00, 0x00,
+	// 506 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x52, 0xbb, 0x6e, 0x13, 0x4d,
+	0x18, 0xdd, 0xc9, 0xae, 0x13, 0xfb, 0x8b, 0xf3, 0xff, 0xd1, 0xc8, 0x42, 0x2b, 0x4b, 0x0c, 0xc6,
+	0x95, 0x45, 0x61, 0x43, 0x68, 0x50, 0x8a, 0x08, 0x87, 0xab, 0x28, 0x37, 0x41, 0x42, 0x34, 0xd6,
+	0x78, 0xfd, 0xf9, 0x22, 0x66, 0x2f, 0x9a, 0x99, 0x25, 0x71, 0xc7, 0x23, 0x20, 0x9e, 0x80, 0x92,
+	0x47, 0xa1, 0x74, 0x99, 0x12, 0xaf, 0x9b, 0x94, 0x79, 0x04, 0x34, 0xb3, 0xbb, 0x4e, 0x24, 0x28,
+	0xa9, 0xf6, 0x9c, 0x39, 0xe7, 0xcc, 0x7c, 0x97, 0x85, 0x26, 0x17, 0x28, 0xb5, 0xea, 0xa7, 0x32,
+	0xd1, 0x09, 0xdd, 0x2d, 0x58, 0xbb, 0x35, 0x4b, 0x66, 0x89, 0x3d, 0x1a, 0x18, 0x54, 0xa8, 0xed,
+	0xd3, 0xd9, 0x42, 0xcf, 0xb3, 0x71, 0x3f, 0x4c, 0xa2, 0x41, 0x2a, 0x93, 0x08, 0xf5, 0x1c, 0x33,
+	0x35, 0xb0, 0x99, 0x88, 0xc7, 0x7c, 0x86, 0x72, 0x10, 0x8a, 0x4c, 0xe9, 0xdb, 0x6f, 0x3a, 0xae,
+	0x50, 0x71, 0x47, 0xf7, 0x12, 0xfe, 0x1f, 0x1a, 0xff, 0x8b, 0x24, 0x9e, 0x2e, 0x66, 0x2f, 0x51,
+	0x85, 0x94, 0x82, 0x97, 0x29, 0x94, 0x3e, 0xe9, 0x90, 0x5e, 0x23, 0xb0, 0x98, 0xde, 0x07, 0x90,
+	0xfc, 0x62, 0x14, 0x5a, 0x97, 0xbf, 0x63, 0x95, 0x86, 0xe4, 0x17, 0x45, 0x8c, 0x1e, 0x41, 0x43,
+	0x63, 0x94, 0x0a, 0xae, 0x51, 0xf9, 0x6e, 0xc7, 0xed, 0xed, 0x1f, 0xb5, 0xfa, 0x65, 0x27, 0xe7,
+	0xa5, 0x60, 0xee, 0x0e, 0x6e, 0x6d, 0xdd, 0x13, 0x68, 0xde, 0x95, 0x68, 0x1b, 0xea, 0xd3, 0x85,
+	0xc0, 0x98, 0x47, 0x58, 0x3e, 0xbd, 0xe5, 0xa6, 0xa4, 0x71, 0x32, 0x59, 0x96, 0x0f, 0x5b, 0xdc,
+	0x1d, 0xc2, 0xc1, 0xeb, 0x4c, 0x88, 0x33, 0x5d, 0x5d, 0xf0, 0x08, 0x6a, 0xca, 0x10, 0x9b, 0x36,
+	0x05, 0x6c, 0x7b, 0xee, 0x6f, 0x8d, 0x41, 0x61, 0x39, 0xf6, 0xae, 0xbf, 0x3f, 0x70, 0xba, 0xdf,
+	0x5c, 0xb8, 0xf7, 0x46, 0xf2, 0x29, 0x8f, 0xf9, 0x3f, 0x18, 0x02, 0x05, 0x6f, 0xce, 0xd5, 0xdc,
+	0xf7, 0x8a, 0x88, 0xc1, 0xf4, 0x31, 0xb4, 0x42, 0x89, 0x5c, 0xe3, 0x64, 0xc4, 0xf5, 0x48, 0x2f,
+	0x22, 0x54, 0x9a, 0x47, 0xa9, 0x5f, 0xeb, 0x90, 0x9e, 0x1b, 0xd0, 0x52, 0x1b, 0xea, 0xf3, 0x4a,
+	0xa1, 0x3e, 0xec, 0x4d, 0x70, 0xca, 0x33, 0xa1, 0xfd, 0xbd, 0x0e, 0xe9, 0xd5, 0x83, 0x8a, 0x9a,
+	0x01, 0x99, 0x2d, 0x27, 0x1a, 0x27, 0x7e, 0xdd, 0x4a, 0x5b, 0x4e, 0x1f, 0x42, 0x13, 0x2f, 0x35,
+	0xca, 0x98, 0x8b, 0x51, 0x26, 0x85, 0xdf, 0xb0, 0x35, 0xec, 0x57, 0x67, 0xef, 0xa5, 0xa0, 0x1f,
+	0xe0, 0x3f, 0xd3, 0xfb, 0x22, 0x1c, 0xcd, 0x91, 0x4f, 0x50, 0x2a, 0x1f, 0xec, 0xa2, 0x9e, 0x54,
+	0x8b, 0xfa, 0xfb, 0x24, 0xfa, 0x67, 0x36, 0xf4, 0xb6, 0xc8, 0xbc, 0x8a, 0xb5, 0x5c, 0x06, 0x07,
+	0xea, 0xee, 0x59, 0xfb, 0x39, 0xd0, 0x3f, 0x4d, 0xf4, 0x10, 0xdc, 0x4f, 0xb8, 0x2c, 0x07, 0x68,
+	0x20, 0x6d, 0x41, 0xed, 0x33, 0x17, 0x19, 0x96, 0xa3, 0x2b, 0xc8, 0xf1, 0xce, 0x33, 0x52, 0xac,
+	0xe3, 0x9d, 0x57, 0x77, 0x0f, 0xbd, 0xd3, 0x93, 0xd5, 0x9a, 0x39, 0x57, 0x6b, 0xe6, 0xdc, 0xac,
+	0x19, 0xf9, 0x92, 0x33, 0xf2, 0x23, 0x67, 0xe4, 0x67, 0xce, 0xc8, 0x2a, 0x67, 0xe4, 0x57, 0xce,
+	0xc8, 0x75, 0xce, 0x9c, 0x9b, 0x9c, 0x91, 0xaf, 0x1b, 0xe6, 0xac, 0x36, 0xcc, 0xb9, 0xda, 0x30,
+	0xe7, 0x63, 0xbd, 0x68, 0x22, 0x1d, 0x8f, 0x77, 0xed, 0x8f, 0xfd, 0xf4, 0x77, 0x00, 0x00, 0x00,
+	0xff, 0xff, 0x87, 0x3a, 0xd2, 0x37, 0x4a, 0x03, 0x00, 0x00,
 }
 
 func (this *AlertConfigDesc) Equal(that interface{}) bool {
@@ -404,14 +428,28 @@ func (this *GrafanaAlertConfigDesc) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 10)
+	s := make([]string, 0, 12)
 	s = append(s, "&alertspb.GrafanaAlertConfigDesc{")
 	s = append(s, "User: "+fmt.Sprintf("%#v", this.User)+",\n")
 	s = append(s, "RawConfig: "+fmt.Sprintf("%#v", this.RawConfig)+",\n")
-	s = append(s, "Id: "+fmt.Sprintf("%#v", this.Id)+",\n")
 	s = append(s, "Hash: "+fmt.Sprintf("%#v", this.Hash)+",\n")
 	s = append(s, "CreatedAtTimestamp: "+fmt.Sprintf("%#v", this.CreatedAtTimestamp)+",\n")
 	s = append(s, "Default: "+fmt.Sprintf("%#v", this.Default)+",\n")
+	s = append(s, "Promoted: "+fmt.Sprintf("%#v", this.Promoted)+",\n")
+	s = append(s, "ExternalUrl: "+fmt.Sprintf("%#v", this.ExternalUrl)+",\n")
+	keysForStaticHeaders := make([]string, 0, len(this.StaticHeaders))
+	for k, _ := range this.StaticHeaders {
+		keysForStaticHeaders = append(keysForStaticHeaders, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Strings(keysForStaticHeaders)
+	mapStringForStaticHeaders := "map[string]string{"
+	for _, k := range keysForStaticHeaders {
+		mapStringForStaticHeaders += fmt.Sprintf("%#v: %#v,", k, this.StaticHeaders[k])
+	}
+	mapStringForStaticHeaders += "}"
+	if this.StaticHeaders != nil {
+		s = append(s, "StaticHeaders: "+mapStringForStaticHeaders+",\n")
+	}
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -566,6 +604,42 @@ func (m *GrafanaAlertConfigDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) 
 	_ = i
 	var l int
 	_ = l
+	if len(m.StaticHeaders) > 0 {
+		for k := range m.StaticHeaders {
+			v := m.StaticHeaders[k]
+			baseI := i
+			i -= len(v)
+			copy(dAtA[i:], v)
+			i = encodeVarintAlerts(dAtA, i, uint64(len(v)))
+			i--
+			dAtA[i] = 0x12
+			i -= len(k)
+			copy(dAtA[i:], k)
+			i = encodeVarintAlerts(dAtA, i, uint64(len(k)))
+			i--
+			dAtA[i] = 0xa
+			i = encodeVarintAlerts(dAtA, i, uint64(baseI-i))
+			i--
+			dAtA[i] = 0x52
+		}
+	}
+	if len(m.ExternalUrl) > 0 {
+		i -= len(m.ExternalUrl)
+		copy(dAtA[i:], m.ExternalUrl)
+		i = encodeVarintAlerts(dAtA, i, uint64(len(m.ExternalUrl)))
+		i--
+		dAtA[i] = 0x4a
+	}
+	if m.Promoted {
+		i--
+		if m.Promoted {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x40
+	}
 	if m.Default {
 		i--
 		if m.Default {
@@ -587,11 +661,6 @@ func (m *GrafanaAlertConfigDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) 
 		i = encodeVarintAlerts(dAtA, i, uint64(len(m.Hash)))
 		i--
 		dAtA[i] = 0x22
-	}
-	if m.Id != 0 {
-		i = encodeVarintAlerts(dAtA, i, uint64(m.Id))
-		i--
-		dAtA[i] = 0x18
 	}
 	if len(m.RawConfig) > 0 {
 		i -= len(m.RawConfig)
@@ -688,9 +757,6 @@ func (m *GrafanaAlertConfigDesc) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovAlerts(uint64(l))
 	}
-	if m.Id != 0 {
-		n += 1 + sovAlerts(uint64(m.Id))
-	}
 	l = len(m.Hash)
 	if l > 0 {
 		n += 1 + l + sovAlerts(uint64(l))
@@ -700,6 +766,21 @@ func (m *GrafanaAlertConfigDesc) Size() (n int) {
 	}
 	if m.Default {
 		n += 2
+	}
+	if m.Promoted {
+		n += 2
+	}
+	l = len(m.ExternalUrl)
+	if l > 0 {
+		n += 1 + l + sovAlerts(uint64(l))
+	}
+	if len(m.StaticHeaders) > 0 {
+		for k, v := range m.StaticHeaders {
+			_ = k
+			_ = v
+			mapEntrySize := 1 + len(k) + sovAlerts(uint64(len(k))) + 1 + len(v) + sovAlerts(uint64(len(v)))
+			n += mapEntrySize + 1 + sovAlerts(uint64(mapEntrySize))
+		}
 	}
 	return n
 }
@@ -752,13 +833,25 @@ func (this *GrafanaAlertConfigDesc) String() string {
 	if this == nil {
 		return "nil"
 	}
+	keysForStaticHeaders := make([]string, 0, len(this.StaticHeaders))
+	for k, _ := range this.StaticHeaders {
+		keysForStaticHeaders = append(keysForStaticHeaders, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Strings(keysForStaticHeaders)
+	mapStringForStaticHeaders := "map[string]string{"
+	for _, k := range keysForStaticHeaders {
+		mapStringForStaticHeaders += fmt.Sprintf("%v: %v,", k, this.StaticHeaders[k])
+	}
+	mapStringForStaticHeaders += "}"
 	s := strings.Join([]string{`&GrafanaAlertConfigDesc{`,
 		`User:` + fmt.Sprintf("%v", this.User) + `,`,
 		`RawConfig:` + fmt.Sprintf("%v", this.RawConfig) + `,`,
-		`Id:` + fmt.Sprintf("%v", this.Id) + `,`,
 		`Hash:` + fmt.Sprintf("%v", this.Hash) + `,`,
 		`CreatedAtTimestamp:` + fmt.Sprintf("%v", this.CreatedAtTimestamp) + `,`,
 		`Default:` + fmt.Sprintf("%v", this.Default) + `,`,
+		`Promoted:` + fmt.Sprintf("%v", this.Promoted) + `,`,
+		`ExternalUrl:` + fmt.Sprintf("%v", this.ExternalUrl) + `,`,
+		`StaticHeaders:` + mapStringForStaticHeaders + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1221,25 +1314,6 @@ func (m *GrafanaAlertConfigDesc) Unmarshal(dAtA []byte) error {
 			}
 			m.RawConfig = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
-		case 3:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Id", wireType)
-			}
-			m.Id = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowAlerts
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.Id |= int64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
 		case 4:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Hash", wireType)
@@ -1311,6 +1385,185 @@ func (m *GrafanaAlertConfigDesc) Unmarshal(dAtA []byte) error {
 				}
 			}
 			m.Default = bool(v != 0)
+		case 8:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Promoted", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowAlerts
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Promoted = bool(v != 0)
+		case 9:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ExternalUrl", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowAlerts
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ExternalUrl = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 10:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field StaticHeaders", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowAlerts
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.StaticHeaders == nil {
+				m.StaticHeaders = make(map[string]string)
+			}
+			var mapkey string
+			var mapvalue string
+			for iNdEx < postIndex {
+				entryPreIndex := iNdEx
+				var wire uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowAlerts
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					wire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				fieldNum := int32(wire >> 3)
+				if fieldNum == 1 {
+					var stringLenmapkey uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowAlerts
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						stringLenmapkey |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					intStringLenmapkey := int(stringLenmapkey)
+					if intStringLenmapkey < 0 {
+						return ErrInvalidLengthAlerts
+					}
+					postStringIndexmapkey := iNdEx + intStringLenmapkey
+					if postStringIndexmapkey < 0 {
+						return ErrInvalidLengthAlerts
+					}
+					if postStringIndexmapkey > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapkey = string(dAtA[iNdEx:postStringIndexmapkey])
+					iNdEx = postStringIndexmapkey
+				} else if fieldNum == 2 {
+					var stringLenmapvalue uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowAlerts
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						stringLenmapvalue |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					intStringLenmapvalue := int(stringLenmapvalue)
+					if intStringLenmapvalue < 0 {
+						return ErrInvalidLengthAlerts
+					}
+					postStringIndexmapvalue := iNdEx + intStringLenmapvalue
+					if postStringIndexmapvalue < 0 {
+						return ErrInvalidLengthAlerts
+					}
+					if postStringIndexmapvalue > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapvalue = string(dAtA[iNdEx:postStringIndexmapvalue])
+					iNdEx = postStringIndexmapvalue
+				} else {
+					iNdEx = entryPreIndex
+					skippy, err := skipAlerts(dAtA[iNdEx:])
+					if err != nil {
+						return err
+					}
+					if skippy < 0 {
+						return ErrInvalidLengthAlerts
+					}
+					if (iNdEx + skippy) > postIndex {
+						return io.ErrUnexpectedEOF
+					}
+					iNdEx += skippy
+				}
+			}
+			m.StaticHeaders[mapkey] = mapvalue
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipAlerts(dAtA[iNdEx:])
