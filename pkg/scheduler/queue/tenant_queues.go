@@ -38,15 +38,17 @@ type queueBroker struct {
 type QueueAlgo string
 
 const (
-	Baseline     QueueAlgo = "baseline"
-	MultiAlgo    QueueAlgo = "multi_algo"
-	QuerierGroup QueueAlgo = "querier_group"
+	Baseline         QueueAlgo = "baseline"
+	MultiAlgo        QueueAlgo = "multi_algo"
+	QuerierGroup     QueueAlgo = "querier_group"
+	SkipOverUtilized QueueAlgo = "skip_over_utilized"
 )
 
 func newQueueBroker(
 	maxTenantQueueSize int,
 	additionalQueueDimensionsEnabled bool,
 	whichAlgo QueueAlgo,
+	queryComponentUtilization *QueryComponentUtilization,
 	forgetDelay time.Duration,
 ) *queueBroker {
 	currentQuerier := QuerierID("")
@@ -62,6 +64,14 @@ func newQueueBroker(
 		tenantOrderIndex:   localQueueIndex,
 	}
 
+	utilizationCheckThresholdImpl, _ := NewQueryComponentUtilizationLimitByConnections(DefaultReservedQueryComponentCapacity)
+
+	queryComponentUtilizationQueueAlgo := queryComponentQueueAlgoSkipOverUtilized{
+		utilization:           queryComponentUtilization,
+		limit:                 utilizationCheckThresholdImpl,
+		currentNodeOrderIndex: 0,
+	}
+
 	var tree Tree
 	var err error
 	switch whichAlgo {
@@ -75,8 +85,14 @@ func newQueueBroker(
 		)
 	case QuerierGroup:
 		tree, err = NewTree(
-			tqas,
 			&querierWorkerPrioritizationQueueAlgo{},
+			tqas,
+			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
+		)
+	case SkipOverUtilized:
+		tree, err = NewTree(
+			&queryComponentUtilizationQueueAlgo,
+			tqas,
 			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
 		)
 	default:
@@ -93,6 +109,7 @@ func newQueueBroker(
 		maxTenantQueueSize:               maxTenantQueueSize,
 		additionalQueueDimensionsEnabled: additionalQueueDimensionsEnabled,
 		whichAlgo:                        whichAlgo,
+		prioritizeQueryComponents:        whichAlgo == QuerierGroup || whichAlgo == SkipOverUtilized,
 	}
 
 	return qb
@@ -172,6 +189,10 @@ func (qb *queueBroker) makeQueuePath(request *tenantRequest) (QueuePath, error) 
 			}
 		}
 	case QuerierGroup:
+		if schedulerRequest, ok := request.req.(*SchedulerRequest); ok {
+			return append(schedulerRequest.AdditionalQueueDimensions, string(request.tenantID)), nil
+		}
+	case SkipOverUtilized:
 		if schedulerRequest, ok := request.req.(*SchedulerRequest); ok {
 			return append(schedulerRequest.AdditionalQueueDimensions, string(request.tenantID)), nil
 		}

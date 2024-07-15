@@ -211,7 +211,7 @@ func NewRequestQueue(
 		waitingQuerierConnsToDispatch: list.New(),
 
 		QueryComponentUtilization: queryComponentCapacity,
-		queueBroker:               newQueueBroker(maxOutstandingPerTenant, additionalQueueDimensionsEnabled, algorithm, forgetDelay),
+		queueBroker:               newQueueBroker(maxOutstandingPerTenant, additionalQueueDimensionsEnabled, algorithm, queryComponentCapacity, forgetDelay),
 	}
 
 	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")
