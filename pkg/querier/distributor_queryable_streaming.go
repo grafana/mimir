@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 )
 
 type streamingChunkSeriesContext struct {
@@ -29,6 +30,10 @@ type streamingChunkSeries struct {
 	context *streamingChunkSeriesContext
 
 	alreadyCreated bool
+
+	// Debug logging for continuous test queries.
+	lastOne   bool
+	chunkInfo *chunkinfologger.ChunkInfoLogger
 }
 
 func (s *streamingChunkSeries) Labels() labels.Labels {
@@ -45,11 +50,18 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 	var uniqueChunks []client.Chunk
 	totalChunks := 0
 
+	if s.chunkInfo != nil {
+		s.chunkInfo.StartSeries(s.labels.Get("series_id"))
+	}
 	for _, source := range s.sources {
 		c, err := source.StreamReader.GetChunks(source.SeriesIndex)
 
 		if err != nil {
 			return series.NewErrIterator(err)
+		}
+
+		if s.chunkInfo != nil {
+			s.chunkInfo.FormatIngesterChunkInfo(source.StreamReader.GetName(), c)
 		}
 
 		totalChunks += len(c)
@@ -65,6 +77,10 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 
 	for _, c := range uniqueChunks {
 		chunkBytes += c.Size()
+	}
+
+	if s.chunkInfo != nil {
+		s.chunkInfo.EndSeries(s.lastOne)
 	}
 
 	s.context.queryStats.AddFetchedChunkBytes(uint64(chunkBytes))

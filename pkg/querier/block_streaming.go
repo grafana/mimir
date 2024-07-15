@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -37,6 +38,10 @@ type blockStreamingQuerierSeriesSet struct {
 	nextSeriesIndex int
 
 	currSeries storage.Series
+
+	// Debug logging for continuous test queries.
+	chunkInfo     *chunkinfologger.ChunkInfoLogger
+	remoteAddress string
 }
 
 type chunkStreamReader interface {
@@ -61,7 +66,7 @@ func (bqss *blockStreamingQuerierSeriesSet) Next() bool {
 		bqss.nextSeriesIndex++
 	}
 
-	bqss.currSeries = newBlockStreamingQuerierSeries(mimirpb.FromLabelAdaptersToLabels(currLabels), seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader)
+	bqss.currSeries = newBlockStreamingQuerierSeries(mimirpb.FromLabelAdaptersToLabels(currLabels), seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader, bqss.chunkInfo, bqss.nextSeriesIndex >= len(bqss.series), bqss.remoteAddress)
 	return true
 }
 
@@ -78,12 +83,15 @@ func (bqss *blockStreamingQuerierSeriesSet) Warnings() annotations.Annotations {
 }
 
 // newBlockStreamingQuerierSeries makes a new blockQuerierSeries. Input labels must be already sorted by name.
-func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamReader) *blockStreamingQuerierSeries {
+func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamReader, chunkInfo *chunkinfologger.ChunkInfoLogger, lastOne bool, remoteAddress string) *blockStreamingQuerierSeries {
 	return &blockStreamingQuerierSeries{
 		labels:         lbls,
 		seriesIdxStart: seriesIdxStart,
 		seriesIdxEnd:   seriesIdxEnd,
 		streamReader:   streamReader,
+		chunkInfo:      chunkInfo,
+		lastOne:        lastOne,
+		remoteAddress:  remoteAddress,
 	}
 }
 
@@ -91,6 +99,11 @@ type blockStreamingQuerierSeries struct {
 	labels                       labels.Labels
 	seriesIdxStart, seriesIdxEnd int
 	streamReader                 chunkStreamReader
+
+	// Debug logging for continuous test queries.
+	chunkInfo     *chunkinfologger.ChunkInfoLogger
+	lastOne       bool
+	remoteAddress string
 }
 
 func (bqs *blockStreamingQuerierSeries) Labels() labels.Labels {
@@ -107,6 +120,13 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 		}
 		allChunks = append(allChunks, chks...)
 	}
+
+	if bqs.chunkInfo != nil {
+		bqs.chunkInfo.StartSeries(bqs.labels.Get("series_id"))
+		bqs.chunkInfo.FormatStoreGatewayChunkInfo(bqs.remoteAddress, allChunks)
+		bqs.chunkInfo.EndSeries(bqs.lastOne)
+	}
+
 	if len(allChunks) == 0 {
 		// should not happen in practice, but we have a unit test for it
 		return series.NewErrIterator(errors.New("no chunks"))
