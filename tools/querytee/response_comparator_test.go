@@ -8,6 +8,8 @@ package querytee
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -1268,6 +1270,177 @@ func TestCompareSamplesResponse(t *testing.T) {
 			require.Error(t, err)
 			require.Equal(t, tc.err.Error(), err.Error())
 			require.Equal(t, result, ComparisonFailed)
+		})
+	}
+}
+
+func TestCompareSampleHistogramPair(t *testing.T) {
+	bucketsErrorMessageGenerator := func(expected, actual *model.SampleHistogramPair) string {
+		return fmt.Sprintf("expected buckets %s for timestamp %v but got %s", expected.Histogram.Buckets, expected.Timestamp, actual.Histogram.Buckets)
+	}
+
+	fields := map[string]struct {
+		mutator                       func(*model.SampleHistogram, model.FloatString)
+		expectedErrorMessageGenerator func(expected, actual *model.SampleHistogramPair) string
+	}{
+		"sum": {
+			mutator: func(h *model.SampleHistogram, v model.FloatString) {
+				h.Sum = v
+			},
+			expectedErrorMessageGenerator: func(expected, actual *model.SampleHistogramPair) string {
+				return fmt.Sprintf("expected sum %s for timestamp %v but got %s", expected.Histogram.Sum, expected.Timestamp, actual.Histogram.Sum)
+			},
+		},
+		"count": {
+			mutator: func(h *model.SampleHistogram, v model.FloatString) {
+				h.Count = v
+			},
+			expectedErrorMessageGenerator: func(expected, actual *model.SampleHistogramPair) string {
+				return fmt.Sprintf("expected count %s for timestamp %v but got %s", expected.Histogram.Count, expected.Timestamp, actual.Histogram.Count)
+			},
+		},
+		"bucket lower boundary": {
+			mutator: func(h *model.SampleHistogram, v model.FloatString) {
+				h.Buckets[0].Lower = v
+			},
+			expectedErrorMessageGenerator: bucketsErrorMessageGenerator,
+		},
+		"bucket upper boundary": {
+			mutator: func(h *model.SampleHistogram, v model.FloatString) {
+				h.Buckets[0].Upper = v
+			},
+			expectedErrorMessageGenerator: bucketsErrorMessageGenerator,
+		},
+		"bucket count": {
+			mutator: func(h *model.SampleHistogram, v model.FloatString) {
+				h.Buckets[0].Count = v
+			},
+			expectedErrorMessageGenerator: bucketsErrorMessageGenerator,
+		},
+	}
+
+	testCases := map[string]struct {
+		tolerance        float64
+		useRelativeError bool
+		expected         float64
+		actual           float64
+		shouldFail       bool
+	}{
+		"no tolerance, values equal": {
+			expected:   123.4,
+			actual:     123.4,
+			shouldFail: false,
+		},
+		"no tolerance, values not equal": {
+			expected:   123.4,
+			actual:     123.5,
+			shouldFail: true,
+		},
+		"no tolerance, values are both NaN": {
+			expected:   math.NaN(),
+			actual:     math.NaN(),
+			shouldFail: false,
+		},
+		"no tolerance, values are both +Inf": {
+			expected:   math.Inf(1),
+			actual:     math.Inf(1),
+			shouldFail: false,
+		},
+		"no tolerance, values are both -Inf": {
+			expected:   math.Inf(-1),
+			actual:     math.Inf(-1),
+			shouldFail: false,
+		},
+		"non-zero tolerance, values differ by less than tolerance": {
+			tolerance:  0.1,
+			expected:   1.2,
+			actual:     1.2999999,
+			shouldFail: false,
+		},
+		"non-zero tolerance, values differ by more than tolerance": {
+			tolerance:  0.1,
+			expected:   1.2,
+			actual:     1.3000001,
+			shouldFail: true,
+		},
+		"non-zero tolerance, values are both NaN": {
+			tolerance:  0.1,
+			expected:   math.NaN(),
+			actual:     math.NaN(),
+			shouldFail: false,
+		},
+		"non-zero tolerance, values are both +Inf": {
+			tolerance:  0.1,
+			expected:   math.Inf(1),
+			actual:     math.Inf(1),
+			shouldFail: false,
+		},
+		"non-zero tolerance, values are both -Inf": {
+			tolerance:  0.1,
+			expected:   math.Inf(-1),
+			actual:     math.Inf(-1),
+			shouldFail: false,
+		},
+		"non-zero relative tolerance, values differ by less than tolerance": {
+			tolerance:        0.1,
+			useRelativeError: true,
+			expected:         1.31,
+			actual:           1.2,
+			shouldFail:       false,
+		},
+		"non-zero relative tolerance, values differ by more than tolerance": {
+			tolerance:        0.1,
+			useRelativeError: true,
+			expected:         0.551,
+			actual:           0.5,
+			shouldFail:       true,
+		},
+	}
+
+	newHistogramPair := func() model.SampleHistogramPair {
+		return model.SampleHistogramPair{
+			Timestamp: 2,
+			Histogram: &model.SampleHistogram{
+				Count: 3,
+				Sum:   4,
+				Buckets: model.HistogramBuckets{
+					{
+						Boundaries: 1,
+						Lower:      5,
+						Upper:      6,
+						Count:      7,
+					},
+				},
+			},
+		}
+
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			opts := SampleComparisonOptions{
+				Tolerance:        testCase.tolerance,
+				UseRelativeError: testCase.useRelativeError,
+			}
+
+			for fieldName, field := range fields {
+				t.Run(fieldName, func(t *testing.T) {
+					expected := newHistogramPair()
+					actual := newHistogramPair()
+
+					field.mutator(expected.Histogram, model.FloatString(testCase.expected))
+					field.mutator(actual.Histogram, model.FloatString(testCase.actual))
+
+					err := compareSampleHistogramPair(expected, actual, opts)
+
+					if testCase.shouldFail {
+						expectedError := field.expectedErrorMessageGenerator(&expected, &actual)
+						require.EqualError(t, err, expectedError)
+					} else {
+						require.NoError(t, err)
+					}
+				})
+			}
 		})
 	}
 }
