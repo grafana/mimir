@@ -1443,7 +1443,7 @@ google.golang.org/genproto/googleapis/type/expr
 ## explicit; go 1.20
 google.golang.org/genproto/googleapis/api
 google.golang.org/genproto/googleapis/api/annotations
-# google.golang.org/genproto/googleapis/rpc v0.0.0-20240708141625-4ad9e859172b
+# google.golang.org/genproto/googleapis/rpc v0.0.0-20240711142825-46eb208f015d
 ## explicit; go 1.20
 google.golang.org/genproto/googleapis/rpc/code
 google.golang.org/genproto/googleapis/rpc/errdetails
