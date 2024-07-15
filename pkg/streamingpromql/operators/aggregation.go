@@ -166,7 +166,7 @@ func (a *Aggregation) seriesToGroupLabelsStringFunc() func(labels.Labels) []byte
 		return func(l labels.Labels) []byte {
 			buf.Reset()
 			nextGroupingIndex := 0
-			outputLabelCount := 0
+			haveWrittenAnyLabels := false
 
 			l.Range(func(l labels.Label) {
 				if l.Name == labels.MetricName {
@@ -178,7 +178,7 @@ func (a *Aggregation) seriesToGroupLabelsStringFunc() func(labels.Labels) []byte
 				}
 
 				if nextGroupingIndex == len(a.Grouping) || l.Name != a.Grouping[nextGroupingIndex] {
-					if outputLabelCount > 0 {
+					if haveWrittenAnyLabels {
 						buf.WriteByte(',')
 						buf.WriteByte(' ')
 					}
@@ -187,7 +187,7 @@ func (a *Aggregation) seriesToGroupLabelsStringFunc() func(labels.Labels) []byte
 					buf.WriteByte('=')
 					buf.Write(strconv.AppendQuote(buf.AvailableBuffer(), l.Value))
 
-					outputLabelCount++
+					haveWrittenAnyLabels = true
 				}
 			})
 
@@ -208,7 +208,7 @@ func (a *Aggregation) seriesToGroupLabelsStringFunc() func(labels.Labels) []byte
 	buf := bytes.NewBuffer(b)
 	return func(l labels.Labels) []byte {
 		buf.Reset()
-		outputLabelCount := 0
+		haveWrittenAnyLabels := false
 
 		for _, labelName := range a.Grouping {
 			labelValue := l.Get(labelName)
@@ -216,7 +216,7 @@ func (a *Aggregation) seriesToGroupLabelsStringFunc() func(labels.Labels) []byte
 				continue
 			}
 
-			if outputLabelCount > 0 {
+			if haveWrittenAnyLabels {
 				buf.WriteByte(',')
 				buf.WriteByte(' ')
 			}
@@ -224,7 +224,7 @@ func (a *Aggregation) seriesToGroupLabelsStringFunc() func(labels.Labels) []byte
 			buf.WriteString(labelName)
 			buf.WriteByte('=')
 			buf.Write(strconv.AppendQuote(buf.AvailableBuffer(), labelValue))
-			outputLabelCount++
+			haveWrittenAnyLabels = true
 		}
 
 		return buf.Bytes()
