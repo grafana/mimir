@@ -160,14 +160,14 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 			actualSamplePair := actualMetric.Values[i]
 			err := compareSamplePair(expectedSamplePair, actualSamplePair, opts)
 			if err != nil {
-				return errors.Wrapf(err, "float sample pair not matching for metric %s", expectedMetric.Metric)
+				return errors.Wrapf(err, "float sample pair does not match for metric %s", expectedMetric.Metric)
 			}
 		}
 
 		for i, expectedHistogramPair := range expectedMetric.Histograms {
 			actualHistogramPair := actualMetric.Histograms[i]
 			if err := compareSampleHistogramPair(expectedHistogramPair, actualHistogramPair, opts); err != nil {
-				return errors.Wrapf(err, "histogram sample pair not matching for metric %s", expectedMetric.Metric)
+				return errors.Wrapf(err, "histogram sample pair does not match for metric %s", expectedMetric.Metric)
 			}
 		}
 	}
@@ -215,12 +215,12 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 				Value:     actualMetric.Value,
 			}, opts)
 			if err != nil {
-				return errors.Wrapf(err, "float sample pair not matching for metric %s", expectedMetric.Metric)
+				return errors.Wrapf(err, "float sample pair does not match for metric %s", expectedMetric.Metric)
 			}
 		} else if expectedMetric.Histogram != nil && actualMetric.Histogram == nil {
-			return fmt.Errorf("sample pair not matching for metric %s: expected histogram but got float value", expectedMetric.Metric)
+			return fmt.Errorf("sample pair does not match for metric %s: expected histogram but got float value", expectedMetric.Metric)
 		} else if expectedMetric.Histogram == nil && actualMetric.Histogram != nil {
-			return fmt.Errorf("sample pair not matching for metric %s: expected float value but got histogram", expectedMetric.Metric)
+			return fmt.Errorf("sample pair does not match for metric %s: expected float value but got histogram", expectedMetric.Metric)
 		} else { // Expected value is a histogram and the actual value is a histogram.
 			err := compareSampleHistogramPair(model.SampleHistogramPair{
 				Timestamp: expectedMetric.Timestamp,
@@ -230,7 +230,7 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 				Histogram: actualMetric.Histogram,
 			}, opts)
 			if err != nil {
-				return errors.Wrapf(err, "histogram sample pair not matching for metric %s", expectedMetric.Metric)
+				return errors.Wrapf(err, "histogram sample pair does not match for metric %s", expectedMetric.Metric)
 			}
 		}
 	}

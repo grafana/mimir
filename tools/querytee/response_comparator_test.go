@@ -75,7 +75,7 @@ func TestCompareMatrix(t *testing.T) {
 							{"metric":{"foo":"bar"},"values":[[1,"1"],[3,"2"]]}
 						]`),
 			// timestamps are parsed from seconds to ms which are then added to errors as is so adding 3 0s to expected error.
-			err: errors.New(`float sample pair not matching for metric {foo="bar"}: expected timestamp 2 but got 3`),
+			err: errors.New(`float sample pair does not match for metric {foo="bar"}: expected timestamp 2 but got 3`),
 		},
 		{
 			name: "difference in float sample value",
@@ -85,7 +85,7 @@ func TestCompareMatrix(t *testing.T) {
 			actual: json.RawMessage(`[
 							{"metric":{"foo":"bar"},"values":[[1,"1"],[2,"3"]]}
 						]`),
-			err: errors.New(`float sample pair not matching for metric {foo="bar"}: expected value 2 for timestamp 2 but got 3`),
+			err: errors.New(`float sample pair does not match for metric {foo="bar"}: expected value 2 for timestamp 2 but got 3`),
 		},
 		{
 			name: "actual float samples match expected",
@@ -174,7 +174,7 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`histogram sample pair not matching for metric {foo="bar"}: expected timestamp 1 but got 2`),
+			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected timestamp 1 but got 2`),
 		},
 		{
 			name: "difference in histogram sample count",
@@ -206,7 +206,7 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`histogram sample pair not matching for metric {foo="bar"}: expected count 2 for timestamp 1 but got 5`),
+			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected count 2 for timestamp 1 but got 5`),
 		},
 		{
 			name: "difference in histogram sample sum",
@@ -238,7 +238,7 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`histogram sample pair not matching for metric {foo="bar"}: expected sum 3 for timestamp 1 but got 5`),
+			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected sum 3 for timestamp 1 but got 5`),
 		},
 		{
 			name: "difference in histogram sample buckets length",
@@ -271,7 +271,7 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`histogram sample pair not matching for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,2):2 [2,4):2]`),
+			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,2):2 [2,4):2]`),
 		},
 		{
 			name: "difference in histogram sample buckets boundaries",
@@ -303,7 +303,7 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`histogram sample pair not matching for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [(0,2):2]`),
+			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [(0,2):2]`),
 		},
 		{
 			name: "difference in histogram sample buckets lower boundary",
@@ -335,7 +335,7 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`histogram sample pair not matching for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[1,2):2]`),
+			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[1,2):2]`),
 		},
 		{
 			name: "difference in histogram sample buckets upper boundary",
@@ -367,7 +367,7 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`histogram sample pair not matching for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,3):2]`),
+			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,3):2]`),
 		},
 		{
 			name: "difference in histogram sample buckets count",
@@ -399,7 +399,7 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`histogram sample pair not matching for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,2):3]`),
+			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,2):3]`),
 		},
 		{
 			name: "single actual histogram value matches expected",
@@ -521,7 +521,7 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: errors.New(`histogram sample pair not matching for metric {foo="bar"}: expected sum 5 for timestamp 2 but got 6`),
+			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected sum 5 for timestamp 2 but got 6`),
 		},
 		{
 			name: "actual result has different number of histogram samples to expected result",
@@ -624,7 +624,7 @@ func TestCompareVector(t *testing.T) {
 			actual: json.RawMessage(`[
 							{"metric":{"foo":"bar"},"value":[2,"1"]}
 						]`),
-			err: errors.New(`float sample pair not matching for metric {foo="bar"}: expected timestamp 1 but got 2`),
+			err: errors.New(`float sample pair does not match for metric {foo="bar"}: expected timestamp 1 but got 2`),
 		},
 		{
 			name: "difference in float sample value",
@@ -634,7 +634,7 @@ func TestCompareVector(t *testing.T) {
 			actual: json.RawMessage(`[
 							{"metric":{"foo":"bar"},"value":[1,"2"]}
 						]`),
-			err: errors.New(`float sample pair not matching for metric {foo="bar"}: expected value 1 for timestamp 1 but got 2`),
+			err: errors.New(`float sample pair does not match for metric {foo="bar"}: expected value 1 for timestamp 1 but got 2`),
 		},
 		{
 			name: "correct float samples",
@@ -665,7 +665,7 @@ func TestCompareVector(t *testing.T) {
 								"value":[1,"1"]
 							}
 						]`),
-			err: errors.New(`sample pair not matching for metric {foo="bar"}: expected histogram but got float value`),
+			err: errors.New(`sample pair does not match for metric {foo="bar"}: expected histogram but got float value`),
 		},
 		{
 			name: "expected sample has float value but actual sample has histogram",
@@ -687,7 +687,7 @@ func TestCompareVector(t *testing.T) {
 								}]
 							}
 						]`),
-			err: errors.New(`sample pair not matching for metric {foo="bar"}: expected float value but got histogram`),
+			err: errors.New(`sample pair does not match for metric {foo="bar"}: expected float value but got histogram`),
 		},
 		{
 			name: "difference in histogram sample timestamp",
@@ -715,7 +715,7 @@ func TestCompareVector(t *testing.T) {
 								}]
 							}
 						]`),
-			err: errors.New(`histogram sample pair not matching for metric {foo="bar"}: expected timestamp 1 but got 2`),
+			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected timestamp 1 but got 2`),
 		},
 		{
 			name: "difference in histogram sample count",
@@ -743,7 +743,7 @@ func TestCompareVector(t *testing.T) {
 								}]
 							}
 						]`),
-			err: errors.New(`histogram sample pair not matching for metric {foo="bar"}: expected count 2 for timestamp 1 but got 5`),
+			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected count 2 for timestamp 1 but got 5`),
 		},
 		{
 			name: "difference in histogram sample sum",
@@ -771,7 +771,7 @@ func TestCompareVector(t *testing.T) {
 								}]
 							}
 						]`),
-			err: errors.New(`histogram sample pair not matching for metric {foo="bar"}: expected sum 3 for timestamp 1 but got 5`),
+			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected sum 3 for timestamp 1 but got 5`),
 		},
 		{
 			name: "difference in histogram sample buckets length",
@@ -800,7 +800,7 @@ func TestCompareVector(t *testing.T) {
 								}]
 							}
 						]`),
-			err: errors.New(`histogram sample pair not matching for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,2):2 [2,4):2]`),
+			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,2):2 [2,4):2]`),
 		},
 		{
 			name: "difference in histogram sample buckets boundaries",
@@ -828,7 +828,7 @@ func TestCompareVector(t *testing.T) {
 								}]
 							}
 						]`),
-			err: errors.New(`histogram sample pair not matching for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [(0,2):2]`),
+			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [(0,2):2]`),
 		},
 		{
 			name: "difference in histogram sample buckets lower boundary",
@@ -856,7 +856,7 @@ func TestCompareVector(t *testing.T) {
 								}]
 							}
 						]`),
-			err: errors.New(`histogram sample pair not matching for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[1,2):2]`),
+			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[1,2):2]`),
 		},
 		{
 			name: "difference in histogram sample buckets upper boundary",
@@ -884,7 +884,7 @@ func TestCompareVector(t *testing.T) {
 								}]
 							}
 						]`),
-			err: errors.New(`histogram sample pair not matching for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,3):2]`),
+			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,3):2]`),
 		},
 		{
 			name: "difference in histogram sample buckets count",
@@ -912,7 +912,7 @@ func TestCompareVector(t *testing.T) {
 								}]
 							}
 						]`),
-			err: errors.New(`histogram sample pair not matching for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,2):3]`),
+			err: errors.New(`histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,2):3]`),
 		},
 		{
 			name: "actual histogram value matches expected",
@@ -1166,7 +1166,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 							"status": "success",
 							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[1,"773054.789"]}]}
 						}`),
-			err: errors.New(`float sample pair not matching for metric {foo="bar"}: expected value 773054.5916666666 for timestamp 1 but got 773054.789`),
+			err: errors.New(`float sample pair does not match for metric {foo="bar"}: expected value 773054.5916666666 for timestamp 1 but got 773054.789`),
 		},
 		{
 			name:      "should fail if large values are significantly different, over the tolerance without using relative error",
@@ -1179,7 +1179,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 							"status": "success",
 							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[1,"4.923488536785281e+41"]}]}
 						}`),
-			err: errors.New(`float sample pair not matching for metric {foo="bar"}: expected value 492348853678528200000000000000000000000000 for timestamp 1 but got 492348853678528100000000000000000000000000`),
+			err: errors.New(`float sample pair does not match for metric {foo="bar"}: expected value 492348853678528200000000000000000000000000 for timestamp 1 but got 492348853678528100000000000000000000000000`),
 		},
 		{
 			name:      "should not fail if large values are significantly different, over the tolerance using relative error",
