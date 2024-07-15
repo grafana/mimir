@@ -2995,6 +2995,8 @@ Usage of ./cmd/mimir/mimir:
     	The base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/query_range for range query API, so the configured URL must not include it.
   -tests.read-timeout duration
     	The timeout for a single read request. (default 1m0s)
+  -tests.request-debug
+    	Request debugging on the server side via header.
   -tests.run-interval duration
     	How frequently tests should run. (default 5m0s)
   -tests.smoke-test
