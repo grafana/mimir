@@ -132,16 +132,15 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 		}
 
 		actualMetric := actual[actualMetricIndex]
-		expectedMetricLen := len(expectedMetric.Values)
-		actualMetricLen := len(actualMetric.Values)
+		expectedFloatMetricLen := len(expectedMetric.Values)
+		actualFloatMetricLen := len(actualMetric.Values)
 
-		if expectedMetricLen != actualMetricLen {
-			err := fmt.Errorf("expected %d samples for metric %s but got %d", expectedMetricLen,
-				expectedMetric.Metric, actualMetricLen)
-			if expectedMetricLen > 0 && actualMetricLen > 0 {
+		if expectedFloatMetricLen != actualFloatMetricLen {
+			err := fmt.Errorf("expected %d float samples for metric %s but got %d", expectedFloatMetricLen, expectedMetric.Metric, actualFloatMetricLen)
+			if expectedFloatMetricLen > 0 && actualFloatMetricLen > 0 {
 				level.Error(util_log.Logger).Log("msg", err.Error(), "oldest-expected-ts", expectedMetric.Values[0].Timestamp,
-					"newest-expected-ts", expectedMetric.Values[expectedMetricLen-1].Timestamp,
-					"oldest-actual-ts", actualMetric.Values[0].Timestamp, "newest-actual-ts", actualMetric.Values[actualMetricLen-1].Timestamp)
+					"newest-expected-ts", expectedMetric.Values[expectedFloatMetricLen-1].Timestamp,
+					"oldest-actual-ts", actualMetric.Values[0].Timestamp, "newest-actual-ts", actualMetric.Values[actualFloatMetricLen-1].Timestamp)
 			}
 			return err
 		}

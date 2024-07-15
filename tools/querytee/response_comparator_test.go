@@ -64,7 +64,7 @@ func TestCompareMatrix(t *testing.T) {
 			actual: json.RawMessage(`[
 							{"metric":{"foo":"bar"},"values":[[1,"1"]]}
 						]`),
-			err: errors.New("expected 2 samples for metric {foo=\"bar\"} but got 1"),
+			err: errors.New("expected 2 float samples for metric {foo=\"bar\"} but got 1"),
 		},
 		{
 			name: "difference in sample timestamp",
