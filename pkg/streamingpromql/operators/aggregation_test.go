@@ -176,11 +176,17 @@ func TestAggregation_GroupLabelling(t *testing.T) {
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
 			expectedOutputSeries: labels.FromStrings("a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
 		},
-		"grouping with 'without', multiple grouping labels, input has all grouping labels": {
+		"grouping with 'without', multiple grouping labels, input has superset of grouping labels": {
 			grouping:             []string{"cluster", "env"},
 			without:              true,
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "cluster", "cluster-1", "a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
 			expectedOutputSeries: labels.FromStrings("a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
+		},
+		"grouping with 'without', multiple grouping labels, input has all grouping labels and no others": {
+			grouping:             []string{"cluster", "env"},
+			without:              true,
+			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "cluster", "cluster-1"),
+			expectedOutputSeries: labels.EmptyLabels(),
 		},
 	}
 
