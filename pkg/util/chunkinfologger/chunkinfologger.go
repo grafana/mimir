@@ -64,7 +64,7 @@ func (c *ChunkInfoLogger) EndSeries(lastOne bool) {
 	c.chunkInfo.WriteRune('}') // close ingester map
 	if lastOne || c.chunkInfo.Len() > maxSize {
 		c.chunkInfo.WriteRune('}') // close series map
-		c.logger.Log("msg", c.msg, "traceId", c.traceID, "info", c.chunkInfo.String())
+		c.logger.Log("chunkinfo", "true", "msg", c.msg, "traceId", c.traceID, "info", c.chunkInfo.String())
 		c.chunkInfo.Reset()
 	}
 }
