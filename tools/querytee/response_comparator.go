@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -64,12 +63,12 @@ func (s *SamplesComparator) Compare(expectedResponse, actualResponse []byte) (Co
 
 	err := json.Unmarshal(expectedResponse, &expected)
 	if err != nil {
-		return ComparisonFailed, errors.Wrap(err, "unable to unmarshal expected response")
+		return ComparisonFailed, fmt.Errorf("unable to unmarshal expected response: %w", err)
 	}
 
 	err = json.Unmarshal(actualResponse, &actual)
 	if err != nil {
-		return ComparisonFailed, errors.Wrap(err, "unable to unmarshal actual response")
+		return ComparisonFailed, fmt.Errorf("unable to unmarshal actual response: %w", err)
 	}
 
 	if expected.Status != actual.Status {
@@ -160,14 +159,14 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 			actualSamplePair := actualMetric.Values[i]
 			err := compareSamplePair(expectedSamplePair, actualSamplePair, opts)
 			if err != nil {
-				return errors.Wrapf(err, "float sample pair does not match for metric %s", expectedMetric.Metric)
+				return fmt.Errorf("float sample pair does not match for metric %s: %w", expectedMetric.Metric, err)
 			}
 		}
 
 		for i, expectedHistogramPair := range expectedMetric.Histograms {
 			actualHistogramPair := actualMetric.Histograms[i]
 			if err := compareSampleHistogramPair(expectedHistogramPair, actualHistogramPair, opts); err != nil {
-				return errors.Wrapf(err, "histogram sample pair does not match for metric %s", expectedMetric.Metric)
+				return fmt.Errorf("histogram sample pair does not match for metric %s: %w", expectedMetric.Metric, err)
 			}
 		}
 	}
@@ -215,7 +214,7 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 				Value:     actualMetric.Value,
 			}, opts)
 			if err != nil {
-				return errors.Wrapf(err, "float sample pair does not match for metric %s", expectedMetric.Metric)
+				return fmt.Errorf("float sample pair does not match for metric %s: %w", expectedMetric.Metric, err)
 			}
 		} else if expectedMetric.Histogram != nil && actualMetric.Histogram == nil {
 			return fmt.Errorf("sample pair does not match for metric %s: expected histogram but got float value", expectedMetric.Metric)
@@ -230,7 +229,7 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 				Histogram: actualMetric.Histogram,
 			}, opts)
 			if err != nil {
-				return errors.Wrapf(err, "histogram sample pair does not match for metric %s", expectedMetric.Metric)
+				return fmt.Errorf("histogram sample pair does not match for metric %s: %w", expectedMetric.Metric, err)
 			}
 		}
 	}
