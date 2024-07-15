@@ -103,7 +103,9 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		return nil, nil
 	}
 
-	// Determine the groups we'll return
+	// Determine the groups we'll return.
+	// Note that we use a string here to uniquely identify the groups, while Prometheus' engine uses a hash without any handling of hash collisions.
+	// While rare, this may cause differences in the results returned by this engine and Prometheus' engine.
 	groups := map[string]groupWithLabels{}
 	groupLabelsStringFunc := a.seriesToGroupLabelsStringFunc()
 	groupLabelsFunc := a.seriesToGroupLabelsFunc()
