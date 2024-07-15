@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
@@ -25,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -120,6 +122,7 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 
 func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
 	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), matchers...)
+
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -129,14 +132,27 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		sets = append(sets, newTimeSeriesSeriesSet(results.Timeseries))
 	}
 
+	traceID, _ := tracing.ExtractTraceID(ctx)
+	var chunkInfo *chunkinfologger.ChunkInfoLogger
+	if chunkinfologger.EnableChunkInfoLoggingFromContext(ctx) {
+		chunkInfo = chunkinfologger.NewChunkInfoLogger("CT: ingester chunk series", traceID, q.logger)
+		q.logger.Log("msg", "CT: ingester streamSelect: start", "traceid", traceID, "mint", minT, "maxt", maxT)
+	}
+
 	serieses := make([]storage.Series, 0, len(results.Chunkseries))
-	for _, result := range results.Chunkseries {
+	for i, result := range results.Chunkseries {
+		ls := mimirpb.FromLabelAdaptersToLabels(result.Labels)
+
+		if chunkInfo != nil {
+			chunkInfo.StartSeries(ls.Get("series_id"))
+			chunkInfo.FormatIngesterChunkInfo(result.FromIngesterId, result.Chunks)
+			chunkInfo.EndSeries(i == len(results.Chunkseries)-1)
+		}
+
 		// Sometimes the ingester can send series that have no data.
 		if len(result.Chunks) == 0 {
 			continue
 		}
-
-		ls := mimirpb.FromLabelAdaptersToLabels(result.Labels)
 
 		chunks, err := client.FromChunks(ls, result.Chunks)
 		if err != nil {
@@ -160,11 +176,17 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 			queryStats:   stats.FromContext(ctx),
 		}
 
-		for _, s := range results.StreamingSeries {
+		if chunkInfo != nil {
+			chunkInfo.SetMsg("CT: ingester streaming chunk series")
+		}
+
+		for i, s := range results.StreamingSeries {
 			streamingSeries = append(streamingSeries, &streamingChunkSeries{
-				labels:  s.Labels,
-				sources: s.Sources,
-				context: streamingChunkSeriesConfig,
+				labels:    s.Labels,
+				sources:   s.Sources,
+				context:   streamingChunkSeriesConfig,
+				lastOne:   i == len(results.StreamingSeries)-1,
+				chunkInfo: chunkInfo,
 			})
 		}
 

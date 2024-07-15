@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/instrumentation"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 )
@@ -52,6 +53,8 @@ type ClientConfig struct {
 
 	ReadBaseEndpoint flagext.URLValue
 	ReadTimeout      time.Duration
+
+	RequestDebug bool
 }
 
 func (cfg *ClientConfig) RegisterFlags(f *flag.FlagSet) {
@@ -67,7 +70,7 @@ func (cfg *ClientConfig) RegisterFlags(f *flag.FlagSet) {
 
 	f.Var(&cfg.ReadBaseEndpoint, "tests.read-endpoint", "The base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/query_range for range query API, so the configured URL must not include it.")
 	f.DurationVar(&cfg.ReadTimeout, "tests.read-timeout", 60*time.Second, "The timeout for a single read request.")
-
+	f.BoolVar(&cfg.RequestDebug, "tests.request-debug", false, "Request debugging on the server side via header.")
 }
 
 type Client struct {
@@ -88,6 +91,7 @@ func NewClient(cfg ClientConfig, logger log.Logger) (*Client, error) {
 		basicAuthPassword: cfg.BasicAuthPassword,
 		bearerToken:       cfg.BearerToken,
 		rt:                instrumentation.TracerTransport{},
+		requestDebug:      cfg.RequestDebug,
 	}
 
 	// Ensure the required config has been set.
@@ -255,6 +259,7 @@ type clientRoundTripper struct {
 	basicAuthPassword string
 	bearerToken       string
 	rt                http.RoundTripper
+	requestDebug      bool
 }
 
 // RoundTrip add the tenant ID header required by Mimir.
@@ -277,6 +282,10 @@ func (rt *clientRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 
 	if lvl, ok := querierapi.ReadConsistencyFromContext(req.Context()); ok {
 		req.Header.Add(querierapi.ReadConsistencyHeader, lvl)
+	}
+
+	if rt.requestDebug {
+		req.Header.Add(chunkinfologger.ChunkInfoLoggingHeader, chunkinfologger.ChunkInfoLoggingEnabled)
 	}
 
 	return rt.rt.RoundTrip(req)
