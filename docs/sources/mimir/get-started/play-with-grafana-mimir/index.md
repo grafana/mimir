@@ -144,7 +144,7 @@ alerts to Grafana Mimir Alertmanager. In this section you're going to configure 
 tooling offered by Grafana.
 
 1. Open [Grafana Alerting](http://localhost:9000/alerting/list).
-2. Click to **New alert rule**.
+2. Click **New alert rule**.
 3. Configure the alert rule:
    1. Select **Mimir or Loki alert** in the top selector.
    2. Choose **Mimir** in the **Select data source** field.
