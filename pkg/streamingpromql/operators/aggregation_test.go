@@ -187,9 +187,7 @@ func TestAggregation_GroupLabelling(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			aggregator := NewAggregation(nil, time.Time{}, time.Time{}, time.Minute, testCase.grouping, testCase.without, nil)
-
-			labelsFunc := aggregator.seriesToGroupLabelsFunc()
-			bytesFunc := aggregator.seriesToGroupLabelsBytesFunc()
+			bytesFunc, labelsFunc := aggregator.seriesToGroupFuncs()
 
 			actualLabels := labelsFunc(testCase.inputSeries)
 			require.Equal(t, testCase.expectedOutputSeries, actualLabels)

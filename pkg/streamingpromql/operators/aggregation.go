@@ -113,8 +113,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	// Note that we use a string here to uniquely identify the groups, while Prometheus' engine uses a hash without any handling of hash collisions.
 	// While rare, this may cause differences in the results returned by this engine and Prometheus' engine.
 	groups := map[string]groupWithLabels{}
-	groupLabelsBytesFunc := a.seriesToGroupLabelsBytesFunc()
-	groupLabelsFunc := a.seriesToGroupLabelsFunc()
+	groupLabelsBytesFunc, groupLabelsFunc := a.seriesToGroupFuncs()
 	a.remainingInnerSeriesToGroup = make([]*group, 0, len(innerSeries))
 
 	for seriesIdx, series := range innerSeries {
@@ -148,74 +147,79 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	return seriesMetadata, nil
 }
 
-// seriesToGroupLabelsBytesFunc returns a function that computes a string-like representation of the output group labels for the given input series.
+// seriesToGroupLabelsBytesFunc is a function that computes a string-like representation of the output group labels for the given input series.
 //
-// The returned function returns a byte slice rather than a string to make it possible to avoid unnecessarily allocating a string.
+// It returns a byte slice rather than a string to make it possible to avoid unnecessarily allocating a string.
 //
-// The byte slice returned by the returned function may contain non-printable characters.
-func (a *Aggregation) seriesToGroupLabelsBytesFunc() func(labels.Labels) []byte {
-	// Why not just use the labels.Labels computed by seriesToGroupLabelsFunc() and call String() on it?
-	//
-	// Most of the time, we don't need the labels.Labels instance, as we expect there are far fewer output groups than input series,
-	// and we only need the labels.Labels instance once per output group.
-	// However, we always need to compute the string-like representation for each input series, so we can look up its corresponding
-	// output group. And we can do this without allocating a string by returning just the bytes that make up the string.
-	// There's not much point in using the hash of the group labels as we always need the string (or the labels.Labels) to ensure
-	// there are no hash collisions - so we might as well just go straight to the string-like representation.
-	//
-	// Furthermore, labels.Labels.String() doesn't allow us to reuse the buffer used when producing the string or to return a byte slice,
-	// whereas this method does.
-	// This saves us allocating a new buffer and string for every single input series, which has a noticeable performance impact.
+// The byte slice returned may contain non-printable characters.
+//
+// Why not just use the labels.Labels computed by the seriesToGroupLabelsFunc and call String() on it?
+//
+// Most of the time, we don't need the labels.Labels instance, as we expect there are far fewer output groups than input series,
+// and we only need the labels.Labels instance once per output group.
+// However, we always need to compute the string-like representation for each input series, so we can look up its corresponding
+// output group. And we can do this without allocating a string by returning just the bytes that make up the string.
+// There's not much point in using the hash of the group labels as we always need the string (or the labels.Labels) to ensure
+// there are no hash collisions - so we might as well just go straight to the string-like representation.
+//
+// Furthermore, labels.Labels.String() doesn't allow us to reuse the buffer used when producing the string or to return a byte slice,
+// whereas this method does.
+// This saves us allocating a new buffer and string for every single input series, which has a noticeable performance impact.
+type seriesToGroupLabelsBytesFunc func(labels.Labels) []byte
 
-	if a.Without {
-		// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
-		b := make([]byte, 0, 1024)
+// seriesToGroupLabelsFunc is a function that returns the output group labels for the given input series.
+type seriesToGroupLabelsFunc func(labels.Labels) labels.Labels
 
-		return func(l labels.Labels) []byte {
-			return l.BytesWithoutLabels(b, a.Grouping...) // NewAggregation will add __name__ to Grouping for 'without' aggregations, so no need to add it here.
-		}
-	}
-
-	if len(a.Grouping) == 0 {
-		// We're grouping all input series into a single group with no labels.
-		return func(_ labels.Labels) []byte {
-			return nil
-		}
-	}
-
-	// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
-	b := make([]byte, 0, 1024)
-
-	return func(l labels.Labels) []byte {
-		return l.BytesWithLabels(b, a.Grouping...)
+func (a *Aggregation) seriesToGroupFuncs() (seriesToGroupLabelsBytesFunc, seriesToGroupLabelsFunc) {
+	switch {
+	case a.Without:
+		return a.groupingWithWithoutSeriesToGroupFuncs()
+	case len(a.Grouping) == 0:
+		return groupToSingleSeriesLabelsBytesFunc, groupToSingleSeriesLabelsFunc
+	default:
+		return a.groupingWithBySeriesToGroupFuncs()
 	}
 }
 
-// seriesToGroupLabelsFunc returns a function that computes the output group labels for the given input series.
-func (a *Aggregation) seriesToGroupLabelsFunc() func(labels.Labels) labels.Labels {
-	if a.Without {
-		lb := labels.NewBuilder(labels.EmptyLabels())
-		return func(m labels.Labels) labels.Labels {
-			lb.Reset(m)
-			lb.Del(a.Grouping...) // NewAggregation will add __name__ to Grouping for 'without' aggregations, so no need to add it here.
-			l := lb.Labels()
-			return l
-		}
-	}
+var groupToSingleSeriesLabelsBytesFunc = func(_ labels.Labels) []byte { return nil }
+var groupToSingleSeriesLabelsFunc = func(_ labels.Labels) labels.Labels { return labels.EmptyLabels() }
 
-	if len(a.Grouping) == 0 {
-		return func(_ labels.Labels) labels.Labels {
-			return labels.EmptyLabels()
-		}
+// groupingWithWithoutSeriesToGroupFuncs returns grouping functions for aggregations that use 'without'.
+func (a *Aggregation) groupingWithWithoutSeriesToGroupFuncs() (seriesToGroupLabelsBytesFunc, seriesToGroupLabelsFunc) {
+	// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
+	b := make([]byte, 0, 1024)
+	bytesFunc := func(l labels.Labels) []byte {
+		return l.BytesWithoutLabels(b, a.Grouping...) // NewAggregation will add __name__ to Grouping for 'without' aggregations, so no need to add it here.
 	}
 
 	lb := labels.NewBuilder(labels.EmptyLabels())
-	return func(m labels.Labels) labels.Labels {
+	labelsFunc := func(m labels.Labels) labels.Labels {
+		lb.Reset(m)
+		lb.Del(a.Grouping...) // NewAggregation will add __name__ to Grouping for 'without' aggregations, so no need to add it here.
+		l := lb.Labels()
+		return l
+	}
+
+	return bytesFunc, labelsFunc
+}
+
+// groupingWithWithoutSeriesToGroupFuncs returns grouping functions for aggregations that use 'by'.
+func (a *Aggregation) groupingWithBySeriesToGroupFuncs() (seriesToGroupLabelsBytesFunc, seriesToGroupLabelsFunc) {
+	// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
+	b := make([]byte, 0, 1024)
+	bytesFunc := func(l labels.Labels) []byte {
+		return l.BytesWithLabels(b, a.Grouping...)
+	}
+
+	lb := labels.NewBuilder(labels.EmptyLabels())
+	labelsFunc := func(m labels.Labels) labels.Labels {
 		lb.Reset(m)
 		lb.Keep(a.Grouping...)
 		l := lb.Labels()
 		return l
 	}
+
+	return bytesFunc, labelsFunc
 }
 
 func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
