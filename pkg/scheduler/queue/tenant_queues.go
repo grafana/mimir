@@ -75,8 +75,8 @@ func newQueueBroker(
 		)
 	case QuerierGroup:
 		tree, err = NewTree(
-			&querierWorkerPrioritizationQueueAlgo{},
 			tqas,
+			&querierWorkerPrioritizationQueueAlgo{},
 			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
 		)
 	default:
