@@ -586,6 +586,8 @@ func (b *BlockBuilder) consumePartition(
 				loopDone = true
 			}
 		})
+
+		b.kafkaClient.AllowRebalance()
 	}
 
 	close(recsC)
