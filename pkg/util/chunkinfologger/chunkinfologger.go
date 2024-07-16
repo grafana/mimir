@@ -5,6 +5,7 @@ package chunkinfologger
 import (
 	"fmt"
 	"hash/crc32"
+	"strconv"
 	"strings"
 
 	"github.com/go-kit/log"
@@ -42,6 +43,14 @@ func (c *ChunkInfoLogger) SetMsg(msg string) {
 	c.msg = msg
 }
 
+func (c *ChunkInfoLogger) LogSelect(msg string, minT, maxT int64) {
+	c.log("msg", msg, "minT", strconv.FormatInt(minT, 10), "maxT", strconv.FormatInt(maxT, 10))
+}
+
+func (c *ChunkInfoLogger) log(keyvalues ...interface{}) {
+	c.logger.Log(append(keyvalues, "chunkinfo", "true", "traceId", c.traceID)...)
+}
+
 func (c *ChunkInfoLogger) StartSeries(ls labels.Labels) {
 	c.firstSource = true
 	if c.chunkInfo.Len() > 0 {
@@ -64,7 +73,7 @@ func (c *ChunkInfoLogger) EndSeries(lastOne bool) {
 	c.chunkInfo.WriteRune('}') // close ingester map
 	if lastOne || c.chunkInfo.Len() > maxSize {
 		c.chunkInfo.WriteRune('}') // close series map
-		c.logger.Log("chunkinfo", "true", "msg", c.msg, "traceId", c.traceID, "info", c.chunkInfo.String())
+		c.log("msg", c.msg, "info", c.chunkInfo.String())
 		c.chunkInfo.Reset()
 	}
 }

@@ -157,6 +157,19 @@ func TestChunkFormatter_MaxSize(t *testing.T) {
 	}
 }
 
+func TestChunkFormatter_LogSelect(t *testing.T) {
+	logger := &testLogger{}
+	formatter := NewChunkInfoLogger("test", "123", logger, []string{"series_id"})
+	formatter.LogSelect("test", 1000, 2000)
+	require.Len(t, logger.logs, 1)
+	require.Contains(t, logger.logs[0], "msg")
+	require.Equal(t, "test", logger.logs[0]["msg"])
+	require.Contains(t, logger.logs[0], "minT")
+	require.Equal(t, "1000", logger.logs[0]["minT"])
+	require.Contains(t, logger.logs[0], "maxT")
+	require.Equal(t, "2000", logger.logs[0]["maxT"])
+}
+
 type testLogger struct {
 	logs []map[string]string
 }
