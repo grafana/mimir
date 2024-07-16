@@ -2866,36 +2866,13 @@ func Test_configChanged(t *testing.T) {
 }
 
 func TestPromoteAndDeleteState(t *testing.T) {
-	store := prepareInMemoryAlertStore()
-	am := setupSingleMultitenantAlertmanager(t,
-		mockAlertmanagerConfig(t),
-		store,
-		nil,
-		featurecontrol.NoopFlags{},
-		log.NewNopLogger(),
-		prometheus.NewPedanticRegistry(),
-	)
-	user := "test"
+	user := "test-user"
 	externalURL, err := url.Parse("http://test.com")
 	require.NoError(t, err)
-	cfg := amConfig{
-		AlertConfigDesc: alertspb.AlertConfigDesc{
-			User:      user,
-			RawConfig: "invalid",
-		},
-		tmplExternalURL: externalURL,
-	}
-	ctx := context.Background()
-
-	t.Run("having no grafana state should be a no-op", func(t *testing.T) {
-		require.NoError(t, am.promoteAndDeleteState(ctx, cfg))
-		// No AM should be created.
-		require.Nil(t, am.alertmanagers[user])
-	})
 
 	// Create test Grafana state.
-	var nBuf bytes.Buffer
-	_, err = pbutil.WriteDelimited(&nBuf, &pb.MeshEntry{
+	var buf bytes.Buffer
+	_, err = pbutil.WriteDelimited(&buf, &pb.MeshEntry{
 		Entry: &pb.Entry{
 			Receiver:     &pb.Receiver{GroupName: `Grafana`, Integration: "grafanaIntegration", Idx: 0},
 			GroupKey:     []byte(`{}/{grafana="true"}/{receiver="grafana webhook"}:{alertname="grafana test"}`),
@@ -2905,142 +2882,210 @@ func TestPromoteAndDeleteState(t *testing.T) {
 		ExpiresAt: time.Now().Add(time.Hour),
 	})
 	require.NoError(t, err)
-	grafanaNflog := nBuf.Bytes()
+	grafanaNflog := make([]byte, buf.Len())
+	copy(grafanaNflog, buf.Bytes())
+	buf.Reset()
 
-	var silBuf bytes.Buffer
-	_, err = pbutil.WriteDelimited(&silBuf, &silencepb.MeshSilence{
+	_, err = pbutil.WriteDelimited(&buf, &silencepb.MeshSilence{
 		Silence: &silencepb.Silence{
-			Id:       "grafana-id",
-			Matchers: []*silencepb.Matcher{{}},
+			Id: "grafana silence",
 		},
+		ExpiresAt: time.Now().Add(time.Hour),
 	})
 	require.NoError(t, err)
-	grafanaSilences := silBuf.Bytes()
+	grafanaSilences := make([]byte, buf.Len())
+	copy(grafanaSilences, buf.Bytes())
+	buf.Reset()
 
-	t.Run("invalid am configuration should cause an error", func(t *testing.T) {
-		testGrafanaState := alertspb.FullStateDesc{
-			State: &clusterpb.FullState{
-				Parts: []clusterpb.Part{
-					{
-						Key:  "notifications",
-						Data: grafanaNflog,
-					},
-					{
-						Key:  "silences",
-						Data: grafanaSilences,
-					},
+	// Create test Mimir state.
+	_, err = pbutil.WriteDelimited(&buf, &pb.MeshEntry{
+		Entry: &pb.Entry{
+			Receiver:     &pb.Receiver{GroupName: `Mimir`, Integration: "mimirIntegration", Idx: 0},
+			GroupKey:     []byte(`{}/{mimir="true"}/{receiver="mimir webhook"}:{alertname="mimir test"}`),
+			Timestamp:    time.Now(),
+			FiringAlerts: []uint64{14588439739663070854},
+		},
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	require.NoError(t, err)
+	mimirNflog := make([]byte, buf.Len())
+	copy(mimirNflog, buf.Bytes())
+	buf.Reset()
+
+	_, err = pbutil.WriteDelimited(&buf, &silencepb.MeshSilence{
+		Silence: &silencepb.Silence{
+			Id: "mimir silence",
+		},
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	require.NoError(t, err)
+	mimirSilences := make([]byte, buf.Len())
+	copy(mimirSilences, buf.Bytes())
+	buf.Reset()
+
+	testMimirState := alertspb.FullStateDesc{
+		State: &clusterpb.FullState{
+			Parts: []clusterpb.Part{
+				{
+					Key:  "nfl:" + user,
+					Data: mimirNflog,
+				},
+				{
+					Key:  "sil:" + user,
+					Data: mimirSilences,
 				},
 			},
-		}
+		},
+	}
 
-		require.NoError(t, store.SetFullGrafanaState(ctx, user, testGrafanaState))
-		require.Error(t, am.promoteAndDeleteState(ctx, cfg))
-
-		// No Alertmanager should be created.
-		require.Nil(t, am.alertmanagers[user])
-	})
-
-	t.Run("valid alertmanager configuration causes Alertmanager creation and state promotion", func(t *testing.T) {
-		cfg.RawConfig = simpleConfigOne
-		require.Nil(t, am.alertmanagers[user])
-		require.NoError(t, am.promoteAndDeleteState(ctx, cfg))
-		require.NotNil(t, am.alertmanagers[user])
-
-		// Grafana state should be deleted after promotion.
-		_, err = store.GetFullGrafanaState(ctx, user)
-		require.Error(t, err)
-		require.Equal(t, "alertmanager storage object not found", err.Error())
-
-		// States should be merged.
-		s, err := am.alertmanagers[user].getFullState()
-		require.NoError(t, err)
-
-		// One part for notification log, another one for silences.
-		require.Len(t, s.Parts, 2)
-		require.True(t, s.Parts[0].Key == "nfl:"+user || s.Parts[1].Key == "nfl:"+user)
-		require.True(t, s.Parts[0].Key == "sil:"+user || s.Parts[1].Key == "sil:"+user)
-		require.True(t, strings.Contains(s.Parts[0].String(), "grafana webhook") || strings.Contains(s.Parts[1].String(), "grafana webhook"))
-	})
-
-	t.Run("starting with an existing alertmanager with mimir state", func(t *testing.T) {
-		// Start with an existing Alertmanager with Mimir state, promote Grafana state.
-		e2 := &pb.MeshEntry{
-			Entry: &pb.Entry{
-				Receiver:     &pb.Receiver{GroupName: `Mimir`, Integration: "mimirIntegration", Idx: 0},
-				GroupKey:     []byte(`{}/{mimir="true"}/{receiver="mimir webhook"}:{alertname="mimir test"}`),
-				Timestamp:    time.Now(),
-				FiringAlerts: []uint64{14588439739663070854},
-			},
-			ExpiresAt: time.Now().Add(time.Hour),
-		}
-		buf := bytes.Buffer{}
-		_, err = pbutil.WriteDelimited(&buf, e2)
-		require.NoError(t, err)
-
-		silBuf := bytes.Buffer{}
-		sil := &silencepb.MeshSilence{
-			Silence: &silencepb.Silence{
-				Id:       "mimir silence",
-				Matchers: []*silencepb.Matcher{{}},
-			},
-		}
-		_, err = pbutil.WriteDelimited(&silBuf, sil)
-		require.NoError(t, err)
-
-		testMimirState := alertspb.FullStateDesc{
-			State: &clusterpb.FullState{
-				Parts: []clusterpb.Part{
-					{
-						Key:  "nfl:user-2",
-						Data: grafanaNflog,
-					},
-					{
-						Key:  "sil:user-2",
-						Data: grafanaSilences,
-					},
+	ctx := context.Background()
+	tests := []struct {
+		name            string
+		cfg             amConfig
+		mimirState      *alertspb.FullStateDesc
+		grafanaNflog    []byte
+		grafanaSilences []byte
+		expAMCreated    bool
+		expErr          bool
+	}{
+		{
+			name: "no grafana state should be a no-op",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User: user,
 				},
 			},
-		}
-		store.SetFullState(ctx, "user-2", testMimirState)
-		cfg.User = "user-2"
-		require.NoError(t, am.setConfig(cfg))
-		require.NotNil(t, am.alertmanagers["user-2"])
-
-		require.NoError(t, am.alertmanagers["user-2"].WaitInitialStateSync(ctx))
-
-		testGrafanaState := alertspb.FullStateDesc{
-			State: &clusterpb.FullState{
-				Parts: []clusterpb.Part{
-					{
-						Key:  "notifications",
-						Data: buf.Bytes(),
-					},
-					{
-						Key:  "silences",
-						Data: silBuf.Bytes(),
-					},
+		},
+		{
+			name: "invalid alertmanager configuration should cause an error",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: "invalid",
 				},
+				tmplExternalURL: externalURL,
 			},
-		}
-		store.SetFullGrafanaState(ctx, "user-2", testGrafanaState)
-		require.NoError(t, am.promoteAndDeleteState(ctx, cfg))
+			grafanaNflog: grafanaNflog,
+			expErr:       true,
+		},
+		{
+			name: "valid alertmanager configuration should cause alertmanager creation and state promotion",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL: externalURL,
+			},
+			grafanaNflog: grafanaNflog,
+			expAMCreated: true,
+		},
+		{
+			name: "starting with existing mimir state should merge states",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL: externalURL,
+			},
+			mimirState:      &testMimirState,
+			grafanaNflog:    grafanaNflog,
+			grafanaSilences: grafanaSilences,
+			expAMCreated:    true,
+		},
+	}
 
-		// Grafana state should be deleted after promotion.
-		_, err = store.GetFullGrafanaState(ctx, "user-2")
-		require.Error(t, err)
-		require.Equal(t, "alertmanager storage object not found", err.Error())
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := prepareInMemoryAlertStore()
+			am := setupSingleMultitenantAlertmanager(t,
+				mockAlertmanagerConfig(t),
+				store,
+				nil,
+				featurecontrol.NoopFlags{},
+				log.NewNopLogger(),
+				prometheus.NewPedanticRegistry(),
+			)
 
-		// States should be merged.
-		s, err := am.alertmanagers["user-2"].getFullState()
-		require.NoError(t, err)
+			if test.mimirState != nil {
+				require.NoError(t, store.SetFullState(ctx, user, *test.mimirState))
+				require.NoError(t, am.setConfig(test.cfg))
+				require.NotNil(t, am.alertmanagers[user])
+				require.NoError(t, am.alertmanagers[user].WaitInitialStateSync(ctx))
+				// Make broadcast a no-op for tests, otherwise it will block indefinitely.
+				am.alertmanagers[user].silences.SetBroadcast(func(_ []byte) {})
+			}
+			if test.grafanaNflog != nil || test.grafanaSilences != nil {
+				require.NoError(t, store.SetFullGrafanaState(ctx, user, alertspb.FullStateDesc{
+					State: &clusterpb.FullState{
+						Parts: []clusterpb.Part{
+							{
+								Key:  "notifications",
+								Data: test.grafanaNflog,
+							},
+							{
+								Key:  "silences",
+								Data: test.grafanaSilences,
+							},
+						},
+					},
+				}))
+			}
 
-		// One part for notification log, another one for silences.
-		require.Len(t, s.Parts, 2)
-		require.True(t, s.Parts[0].Key == "nfl:user-2" || s.Parts[1].Key == "nfl:user-2")
-		require.True(t, s.Parts[0].Key == "sil:user-2" || s.Parts[1].Key == "sil:user-2")
-		require.True(t, strings.Contains(s.Parts[0].String(), "grafana webhook") || strings.Contains(s.Parts[1].String(), "grafana webhook"))
-		require.True(t, strings.Contains(s.Parts[0].String(), "mimir webhook") || strings.Contains(s.Parts[1].String(), "mimir webhook"))
-	})
+			if test.expErr {
+				require.Error(t, am.promoteAndDeleteState(ctx, test.cfg))
+				require.Nil(t, am.alertmanagers[user])
+				return
+			}
+
+			// Make broadcast a no-op for tests.
+			if am, ok := am.alertmanagers[user]; ok {
+				am.silences.SetBroadcast(func(_ []byte) {})
+			}
+			require.NoError(t, am.promoteAndDeleteState(ctx, test.cfg))
+			if !test.expAMCreated {
+				require.Nil(t, am.alertmanagers[user])
+				return
+			}
+
+			// Grafana state should be deleted after merging.
+			_, err = store.GetFullGrafanaState(ctx, user)
+			require.Error(t, err)
+			require.Equal(t, "alertmanager storage object not found", err.Error())
+
+			// States should be merged.
+			s, err := am.alertmanagers[user].getFullState()
+			require.NoError(t, err)
+
+			// One part for notification log, another one for silences.
+			require.Len(t, s.Parts, 2)
+			require.True(t, s.Parts[0].Key == "nfl:"+user || s.Parts[1].Key == "nfl:"+user)
+			require.True(t, s.Parts[0].Key == "sil:"+user || s.Parts[1].Key == "sil:"+user)
+
+			var silencesPart, nflogPart string
+			for _, p := range s.Parts {
+				require.True(t, p.Key == "sil:"+user || p.Key == "nfl:"+user)
+				if p.Key == "sil:"+user {
+					silencesPart = p.String()
+				} else {
+					nflogPart = p.String()
+				}
+			}
+
+			// We don't need to check the exact content of the state, the merging logic is tested in the state replication tests.
+			if test.grafanaNflog != nil {
+				require.True(t, strings.Contains(nflogPart, "grafana webhook"))
+			}
+			if test.grafanaSilences != nil {
+				require.True(t, strings.Contains(silencesPart, "grafana silence"))
+			}
+			if test.mimirState != nil {
+				require.True(t, strings.Contains(nflogPart, "mimir webhook"))
+				require.True(t, strings.Contains(silencesPart, "mimir silence"))
+			}
+		})
+	}
 }
 
 type passthroughAlertmanagerClient struct {

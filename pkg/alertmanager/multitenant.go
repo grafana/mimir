@@ -721,6 +721,8 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	}
 }
 
+// TODO: Use taking https://github.com/grafana/mimir/pull/8637 as a reference.
+//
 //nolint:unused
 func (am *MultitenantAlertmanager) promoteAndDeleteState(ctx context.Context, cfg amConfig) error {
 	s, err := am.store.GetFullGrafanaState(ctx, cfg.User)
