@@ -8,33 +8,43 @@ package alertmanager
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 
 	"github.com/grafana/alerting/definition"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
 
-// createUsableGrafanaConfig creates an AlertConfigDesc from a GrafanaAlertConfigDesc.
+// createUsableGrafanaConfig creates an amConfig from a GrafanaAlertConfigDesc.
 // If provided, it assigns the global section from the Mimir config to the Grafana config.
 // The SMTP and HTTP settings in this section can be used to configure Grafana receivers.
-func createUsableGrafanaConfig(gCfg alertspb.GrafanaAlertConfigDesc, mCfg *alertspb.AlertConfigDesc) (alertspb.AlertConfigDesc, error) {
+func createUsableGrafanaConfig(gCfg alertspb.GrafanaAlertConfigDesc, mCfg *alertspb.AlertConfigDesc) (amConfig, error) {
+	externalURL, err := url.Parse(gCfg.ExternalUrl)
+	if err != nil {
+		return amConfig{}, err
+	}
+
 	var amCfg GrafanaAlertmanagerConfig
 	if err := json.Unmarshal([]byte(gCfg.RawConfig), &amCfg); err != nil {
-		return alertspb.AlertConfigDesc{}, fmt.Errorf("failed to unmarshal Grafana Alertmanager configuration %w", err)
+		return amConfig{}, fmt.Errorf("failed to unmarshal Grafana Alertmanager configuration %w", err)
 	}
 
 	if mCfg != nil {
 		cfg, err := definition.LoadCompat([]byte(mCfg.RawConfig))
 		if err != nil {
-			return alertspb.AlertConfigDesc{}, fmt.Errorf("failed to unmarshal Mimir Alertmanager configuration: %w", err)
+			return amConfig{}, fmt.Errorf("failed to unmarshal Mimir Alertmanager configuration: %w", err)
 		}
 		amCfg.AlertmanagerConfig.Config.Global = cfg.Config.Global
 	}
 
 	rawCfg, err := json.Marshal(amCfg.AlertmanagerConfig)
 	if err != nil {
-		return alertspb.AlertConfigDesc{}, fmt.Errorf("failed to marshal Grafana Alertmanager configuration %w", err)
+		return amConfig{}, fmt.Errorf("failed to marshal Grafana Alertmanager configuration %w", err)
 	}
 
-	return alertspb.ToProto(string(rawCfg), amCfg.Templates, gCfg.User), nil
+	return amConfig{
+		AlertConfigDesc: alertspb.ToProto(string(rawCfg), amCfg.Templates, gCfg.User),
+		tmplExternalURL: externalURL,
+		staticHeaders:   gCfg.StaticHeaders,
+	}, nil
 }

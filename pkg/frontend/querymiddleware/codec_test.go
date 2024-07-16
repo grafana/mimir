@@ -34,6 +34,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
+	testutil "github.com/grafana/mimir/pkg/util/test"
 )
 
 var (
@@ -808,60 +809,89 @@ type prometheusResponseData struct {
 	Result model.Value     `json:"result"`
 }
 
-func TestDecodeFailedResponse(t *testing.T) {
-	codec := newTestPrometheusCodec()
+func stringErrorResponse(statusCode int, message string) *http.Response {
+	return &http.Response{
+		StatusCode: statusCode,
+		Body:       io.NopCloser(strings.NewReader(message)),
+	}
+}
 
-	t.Run("internal error", func(t *testing.T) {
-		_, err := codec.DecodeResponse(context.Background(), &http.Response{
-			StatusCode: http.StatusInternalServerError,
-			Body:       io.NopCloser(strings.NewReader("something failed")),
-		}, nil, log.NewNopLogger())
-		require.Error(t, err)
+func jsonErrorResponse(t *testing.T, errType apierror.Type, message string) *http.Response {
+	apiErr := apierror.New(errType, message)
+	b, err := apiErr.EncodeJSON()
+	if err != nil {
+		t.Fatalf("unexpected serialization error: %s", err)
+	}
 
-		require.True(t, apierror.IsAPIError(err))
-		resp, ok := apierror.HTTPResponseFromError(err)
-		require.True(t, ok, "Error should have an HTTPResponse encoded")
-		require.Equal(t, int32(http.StatusInternalServerError), resp.Code)
-	})
+	return &http.Response{
+		StatusCode: apiErr.StatusCode(),
+		Header: http.Header{
+			http.CanonicalHeaderKey("Content-Type"): []string{jsonMimeType},
+		},
+		Body: io.NopCloser(bytes.NewReader(b)),
+	}
+}
 
-	t.Run("too many requests", func(t *testing.T) {
-		_, err := codec.DecodeResponse(context.Background(), &http.Response{
-			StatusCode: http.StatusTooManyRequests,
-			Body:       io.NopCloser(strings.NewReader("something failed")),
-		}, nil, log.NewNopLogger())
-		require.Error(t, err)
+func TestPrometheusCodec_DecodeResponse_Errors(t *testing.T) {
+	scenarios := map[string]struct {
+		response                    *http.Response
+		expectedResponseContentType string
+		expectedResponseStatusCode  int
+	}{
+		"internal error - no content type": {
+			response:                    stringErrorResponse(http.StatusInternalServerError, "something failed"),
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseStatusCode:  http.StatusInternalServerError,
+		},
+		"too many requests - no content type": {
+			response:                    stringErrorResponse(http.StatusTooManyRequests, "something failed"),
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseStatusCode:  http.StatusTooManyRequests,
+		},
+		"too larger entity - no content type": {
+			response:                    stringErrorResponse(http.StatusRequestEntityTooLarge, "something failed"),
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseStatusCode:  http.StatusRequestEntityTooLarge,
+		},
+		"service unavailable - no content type": {
+			response:                    stringErrorResponse(http.StatusServiceUnavailable, "something failed"),
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseStatusCode:  http.StatusServiceUnavailable,
+		},
+		"internal error - JSON content type": {
+			response:                    jsonErrorResponse(t, apierror.TypeInternal, "something failed"),
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseStatusCode:  http.StatusInternalServerError,
+		},
+		"too many requests - JSON content type": {
+			response:                    jsonErrorResponse(t, apierror.TypeTooManyRequests, "something failed"),
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseStatusCode:  http.StatusTooManyRequests,
+		},
+		"too larger entity - JSON content type": {
+			response:                    jsonErrorResponse(t, apierror.TypeTooLargeEntry, "something failed"),
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseStatusCode:  http.StatusRequestEntityTooLarge,
+		},
+		"service unavailable - JSON content type": {
+			response:                    jsonErrorResponse(t, apierror.TypeUnavailable, "something failed"),
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseStatusCode:  http.StatusServiceUnavailable,
+		},
+	}
 
-		require.True(t, apierror.IsAPIError(err))
-		resp, ok := apierror.HTTPResponseFromError(err)
-		require.True(t, ok, "Error should have an HTTPResponse encoded")
-		require.Equal(t, int32(http.StatusTooManyRequests), resp.Code)
-	})
+	for name, testCase := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			codec := newTestPrometheusCodec()
 
-	t.Run("too large entry", func(t *testing.T) {
-		_, err := codec.DecodeResponse(context.Background(), &http.Response{
-			StatusCode: http.StatusRequestEntityTooLarge,
-			Body:       io.NopCloser(strings.NewReader("something failed")),
-		}, nil, log.NewNopLogger())
-		require.Error(t, err)
-
-		require.True(t, apierror.IsAPIError(err))
-		resp, ok := apierror.HTTPResponseFromError(err)
-		require.True(t, ok, "Error should have an HTTPResponse encoded")
-		require.Equal(t, int32(http.StatusRequestEntityTooLarge), resp.Code)
-	})
-
-	t.Run("service unavailable", func(t *testing.T) {
-		_, err := codec.DecodeResponse(context.Background(), &http.Response{
-			StatusCode: http.StatusServiceUnavailable,
-			Body:       io.NopCloser(strings.NewReader("something failed")),
-		}, nil, log.NewNopLogger())
-		require.Error(t, err)
-
-		require.True(t, apierror.IsAPIError(err))
-		resp, ok := apierror.HTTPResponseFromError(err)
-		require.True(t, ok, "Error should have an HTTPResponse encoded")
-		require.Equal(t, int32(http.StatusServiceUnavailable), resp.Code)
-	})
+			_, err := codec.DecodeResponse(context.Background(), testCase.response, nil, testutil.NewTestingLogger(t))
+			require.Error(t, err)
+			require.True(t, apierror.IsAPIError(err))
+			resp, ok := apierror.HTTPResponseFromError(err)
+			require.True(t, ok, "Error should be able to represent HTTPResponse")
+			require.Equal(t, int32(testCase.expectedResponseStatusCode), resp.Code)
+		})
+	}
 }
 
 func TestPrometheusCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
@@ -1240,6 +1270,63 @@ func TestMergeAPIResponses(t *testing.T) {
 						},
 					},
 				},
+			},
+		},
+
+		{
+			name: "Merging annotations",
+			input: []Response{
+				&PrometheusResponse{
+					Status: statusSuccess,
+					Data: &PrometheusData{
+						ResultType: matrix,
+						Result: []SampleStream{
+							{
+								Labels: []mimirpb.LabelAdapter{},
+								Samples: []mimirpb.Sample{
+									{Value: 0, TimestampMs: 0},
+									{Value: 1, TimestampMs: 1},
+								},
+							},
+						},
+					},
+					Warnings: []string{"dummy warning"},
+				},
+				&PrometheusResponse{
+					Status: statusSuccess,
+					Data: &PrometheusData{
+						ResultType: matrix,
+						Result: []SampleStream{
+							{
+								Labels: []mimirpb.LabelAdapter{},
+								Samples: []mimirpb.Sample{
+									{Value: 2, TimestampMs: 2},
+									{Value: 3, TimestampMs: 3},
+								},
+							},
+						},
+					},
+					Infos: []string{"dummy info"},
+				},
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: matrix,
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{},
+							Samples: []mimirpb.Sample{
+								{Value: 0, TimestampMs: 0},
+								{Value: 1, TimestampMs: 1},
+								{Value: 2, TimestampMs: 2},
+								{Value: 3, TimestampMs: 3},
+							},
+						},
+					},
+				},
+				Warnings: []string{"dummy warning"},
+				Infos:    []string{"dummy info"},
 			},
 		},
 	} {

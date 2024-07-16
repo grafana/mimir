@@ -121,3 +121,14 @@ func (e *ShardErrors) Error() string {
 	}
 	return fmt.Sprintf("request %s has %d separate shard errors, first: %s", e.Name, len(e.Errs), e.Errs[0].Err)
 }
+
+// Unwrap returns the underlying errors.
+func (e *ShardErrors) Unwrap() []error {
+	unwrapped := make([]error, 0, len(e.Errs))
+
+	for _, shardErr := range e.Errs {
+		unwrapped = append(unwrapped, shardErr.Err)
+	}
+
+	return unwrapped
+}

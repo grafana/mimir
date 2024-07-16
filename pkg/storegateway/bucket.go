@@ -93,8 +93,7 @@ type BucketStore struct {
 	indexReaderPool *indexheader.ReaderPool
 	seriesHashCache *hashcache.SeriesHashCache
 
-	snapshotter          *indexheader.Snapshotter
-	snapshotterStartOnce sync.Once
+	snapshotter services.Service
 
 	// Set of blocks that have the same labels
 	blockSet *bucketBlockSet
@@ -240,17 +239,18 @@ func NewBucketStore(
 		option(s)
 	}
 
-	snapConfig := indexheader.SnapshotterConfig{
-		Path:   dir,
-		UserID: userID,
-	}
-	s.snapshotter = indexheader.NewSnapshotter(s.logger, snapConfig)
+	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics)
 
-	var lazyLoadedBlocks map[ulid.ULID]int64
 	if bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled {
-		lazyLoadedBlocks = s.snapshotter.RestoreLoadedBlocks()
+		snapConfig := indexheader.SnapshotterConfig{
+			Path:            dir,
+			UserID:          userID,
+			PersistInterval: bucketStoreConfig.IndexHeader.EagerLoadingPersistInterval,
+		}
+		s.snapshotter = indexheader.NewSnapshotter(s.logger, snapConfig, s.indexReaderPool)
+	} else {
+		s.snapshotter = services.NewIdleService(nil, nil)
 	}
-	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics, lazyLoadedBlocks)
 
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create dir")
@@ -260,23 +260,41 @@ func NewBucketStore(
 	return s, nil
 }
 
+func (s *BucketStore) subservices() []services.Service {
+	return []services.Service{s.snapshotter}
+}
+
 func (s *BucketStore) start(context.Context) error {
 	return nil
 }
 
-func (s *BucketStore) stop(error) error {
-	return nil
+func (s *BucketStore) stop(err error) error {
+	subservices := s.subservices()
+
+	errs := multierror.New(err)
+	for _, svc := range subservices {
+		if err := services.StopAndAwaitTerminated(context.Background(), svc); err != nil {
+			errs.Add(fmt.Errorf("stop %T: %w", svc, err))
+		}
+	}
+
+	s.indexReaderPool.Close()
+	return errs.Err()
 }
 
 // RemoveBlocksAndClose remove all blocks from local disk and releases all resources associated with the BucketStore.
 func (s *BucketStore) RemoveBlocksAndClose() error {
-	removeBlocksErr := s.removeAllBlocks()
+	errs := multierror.New()
+	if err := services.StopAndAwaitTerminated(context.Background(), s); err != nil {
+		errs.Add(fmt.Errorf("stopping subservices: %w", err))
+	}
+	// Remove the blocks even if the service didn't gracefully stop.
+	// We want to free up disk resources given these blocks will likely not be queried again.
+	if err := s.removeAllBlocks(); err != nil {
+		errs.Add(fmt.Errorf("remove all blocks: %w", err))
+	}
 
-	// Release other resources even if it failed to close some blocks.
-	s.snapshotter.Stop()
-	s.indexReaderPool.Close()
-
-	return multierror.New(removeBlocksErr, services.StopAndAwaitTerminated(context.Background(), s)).Err()
+	return errs.Err()
 }
 
 // Stats returns statistics about the BucketStore instance.
@@ -289,10 +307,10 @@ func (s *BucketStore) Stats() BucketStoreStats {
 // SyncBlocks synchronizes the stores state with the Bucket bucket.
 // It will reuse disk space as persistent cache based on s.dir param.
 func (s *BucketStore) SyncBlocks(ctx context.Context) error {
-	return s.syncBlocks(ctx, false)
+	return s.syncBlocks(ctx)
 }
 
-func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
+func (s *BucketStore) syncBlocks(ctx context.Context) error {
 	metas, _, metaFetchErr := s.fetcher.Fetch(ctx)
 	// For partial view allow adding new blocks at least.
 	if metaFetchErr != nil && metas == nil {
@@ -306,7 +324,7 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 		wg.Add(1)
 		go func() {
 			for meta := range blockc {
-				if err := s.addBlock(ctx, meta, initialSync); err != nil {
+				if err := s.addBlock(ctx, meta); err != nil {
 					continue
 				}
 			}
@@ -331,10 +349,7 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 		return metaFetchErr
 	}
 
-	blockIDs := make([]ulid.ULID, 0)
-	s.blockSet.forEach(func(b *bucketBlock) {
-		blockIDs = append(blockIDs, b.meta.ULID)
-	})
+	blockIDs := s.blockSet.blockULIDs()
 	for _, id := range blockIDs {
 		if _, ok := metas[id]; ok {
 			continue
@@ -347,9 +362,9 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 
 	// Start snapshotter in the end of the sync, but do that only once per BucketStore's lifetime.
 	// We do that here, so the snapshotter watched after blocks from both initial sync and those discovered later.
-	s.snapshotterStartOnce.Do(func() {
-		s.snapshotter.Start(ctx, s.indexReaderPool)
-	})
+	// If it's already started this will return an error. We ignore that because syncBlocks can run multiple times
+	// We pass context.Background() because we want to stop it ourselves as opposed to stopping it as soon as the runtime context is cancelled..
+	_ = s.snapshotter.StartAsync(context.Background())
 
 	return nil
 }
@@ -357,10 +372,52 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 // InitialSync perform blocking sync with extra step at the end to delete locally saved blocks that are no longer
 // present in the bucket. The mismatch of these can only happen between restarts, so we can do that only once per startup.
 func (s *BucketStore) InitialSync(ctx context.Context) error {
-	if err := s.syncBlocks(ctx, true); err != nil {
+	// Read the snapshot before running the sync. After we run a sync we'll start persisting the snapshots again,
+	// so we need to read the pre-shutdown snapshot before the sync.
+	previouslyLoadedBlocks := s.tryRestoreLoadedBlocksSet()
+
+	if err := s.syncBlocks(ctx); err != nil {
 		return errors.Wrap(err, "sync block")
 	}
+	if s.indexHeaderCfg.EagerLoadingStartupEnabled {
+		s.loadBlocks(ctx, previouslyLoadedBlocks)
+	}
 
+	err := s.cleanUpUnownedBlocks()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *BucketStore) tryRestoreLoadedBlocksSet() map[ulid.ULID]int64 {
+	previouslyLoadedBlocks, err := indexheader.RestoreLoadedBlocks(s.dir)
+	if err != nil {
+		level.Warn(s.logger).Log(
+			"msg", "loading the list of index-headers from snapshot file failed; not eagerly loading index-headers for tenant",
+			"dir", s.dir,
+			"err", err,
+		)
+		// Don't fail initialization. If eager loading doesn't happen, then we will load index-headers lazily.
+		// Lazy loading which is slower, but not worth failing startup for.
+	}
+	return previouslyLoadedBlocks
+}
+
+func (s *BucketStore) loadBlocks(ctx context.Context, blocks map[ulid.ULID]int64) {
+	// This is not happening during a request so we can ignore the stats.
+	ignoredStats := newSafeQueryStats()
+	// We ignore the time the block was used because it can only be in the map if it was still loaded before the shutdown
+	s.blockSet.forEach(func(b *bucketBlock) {
+		if _, ok := blocks[b.meta.ULID]; !ok {
+			return
+		}
+		b.ensureIndexHeaderLoaded(ctx, ignoredStats)
+	})
+}
+
+func (s *BucketStore) cleanUpUnownedBlocks() error {
 	fis, err := os.ReadDir(s.dir)
 	if err != nil {
 		return errors.Wrap(err, "read dir")
@@ -387,7 +444,7 @@ func (s *BucketStore) InitialSync(ctx context.Context) error {
 	return nil
 }
 
-func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta, initialSync bool) (err error) {
+func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error) {
 	dir := filepath.Join(s.dir, meta.ULID.String())
 	start := time.Now()
 
@@ -413,7 +470,6 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta, initialSyn
 		meta.ULID,
 		s.postingOffsetsInMemSampling,
 		s.indexHeaderCfg,
-		initialSync,
 	)
 	if err != nil {
 		return errors.Wrap(err, "create index header reader")
@@ -479,10 +535,7 @@ func (s *BucketStore) removeBlock(id ulid.ULID) (returnErr error) {
 }
 
 func (s *BucketStore) removeAllBlocks() error {
-	blockIDs := make([]ulid.ULID, 0)
-	s.blockSet.forEach(func(b *bucketBlock) {
-		blockIDs = append(blockIDs, b.meta.ULID)
-	})
+	blockIDs := s.blockSet.blockULIDs()
 
 	errs := multierror.New()
 	for _, id := range blockIDs {
@@ -1848,6 +1901,14 @@ func (s *bucketBlockSet) forEach(fn func(b *bucketBlock)) {
 		}
 		return true
 	})
+}
+
+func (s *bucketBlockSet) blockULIDs() []ulid.ULID {
+	ulids := make([]ulid.ULID, 0, s.len())
+	s.forEach(func(b *bucketBlock) {
+		ulids = append(ulids, b.meta.ULID)
+	})
+	return ulids
 }
 
 // timerange returns the minimum and maximum timestamp available in the set.

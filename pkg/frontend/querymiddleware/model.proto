@@ -29,6 +29,7 @@ message PrometheusResponse {
   string Error = 4 [(gogoproto.jsontag) = "error,omitempty"];
   repeated PrometheusHeader Headers = 5 [(gogoproto.jsontag) = "-"];
   repeated string Warnings = 6 [(gogoproto.jsontag) = "warnings,omitempty"];
+  repeated string Infos = 7 [(gogoproto.jsontag) = "infos,omitempty"];
 }
 
 message PrometheusData {

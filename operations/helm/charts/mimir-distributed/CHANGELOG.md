@@ -33,8 +33,10 @@ Entries should include a reference to the Pull Request that introduced the chang
   * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric.
 * [ENHANCEMENT] Memcached: Update to Memcached 1.6.28 and memcached-exporter 0.14.4. #8557
 * [ENHANCEMENT] Add missing fields in multiple topology spread constraints. #8533
+* [ENHANCEMENT] Add support for setting the image pull secrets, node selectors, tolerations and topology spread constraints for the Grafana Agent pods used for metamonitoring. #8670
+* [BUGFIX] Add missing container security context to run `continuous-test` under the restricted security policy. #8653
 
-## 5.4.0-rc.0
+## 5.4.0
 
 * [FEATURE] Add support for a dedicated query path for the ruler. This allows for the isolation of ruler and user query paths. Enable it via `ruler.remoteEvaluationDedicatedQueryPath: true`. #7964
 * [CHANGE] Fine-tuned `terminationGracePeriodSeconds` for the following components: #7361 #7364

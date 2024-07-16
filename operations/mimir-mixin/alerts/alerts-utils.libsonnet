@@ -12,6 +12,9 @@
   jobMatcher(job)::
     'job=~".*/%s"' % formatJobForQuery(job),
 
+  jobNotMatcher(job)::
+    'job!~".*/%s"' % formatJobForQuery(job),
+
   local formatJobForQuery(job) =
     if std.isArray(job) then '(%s)' % std.join('|', job)
     else if std.isString(job) then job

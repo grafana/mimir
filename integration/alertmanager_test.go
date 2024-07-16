@@ -16,10 +16,13 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-openapi/strfmt"
 	alertingmodels "github.com/grafana/alerting/models"
+	alertingNotify "github.com/grafana/alerting/notify"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
+	v2_models "github.com/prometheus/alertmanager/api/v2/models"
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
@@ -1160,4 +1163,60 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 		}
 
 	}
+}
+
+func TestAlertmanagerTestTemplates(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, alertsBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	flags := mergeFlags(AlertmanagerFlags(),
+		AlertmanagerS3Flags(),
+		AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
+		AlertmanagerGrafanaCompatibilityFlags())
+
+	am := e2emimir.NewAlertmanager(
+		"alertmanager",
+		flags,
+	)
+	require.NoError(t, s.StartAndWaitReady(am))
+
+	c, err := e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-1")
+	require.NoError(t, err)
+
+	startTime, err := time.Parse(time.RFC3339, "2024-01-01T00:00:00Z")
+	require.NoError(t, err)
+	endTime, err := time.Parse(time.RFC3339, "2024-01-01T02:00:00Z")
+	require.NoError(t, err)
+
+	// Endpoint: POST /api/v1/grafana/templates/test
+	ttConfig := alertingNotify.TestTemplatesConfigBodyParams{
+		Alerts: []*alertingNotify.PostableAlert{
+			{
+				StartsAt:    strfmt.DateTime(startTime),
+				EndsAt:      strfmt.DateTime(endTime),
+				Annotations: v2_models.LabelSet{"annotation": "test annotation"},
+				Alert: v2_models.Alert{
+					GeneratorURL: strfmt.URI("http://www.grafana.com"),
+					Labels:       v2_models.LabelSet{"label": "test label"},
+				},
+			},
+		},
+		Template: `{{ define "Testing123" }}\n  This is a test template\n{{ end }}`,
+		Name:     "Testing123",
+	}
+
+	res, err := c.TestTemplatesExperimental(context.Background(), ttConfig)
+	require.NoError(t, err)
+
+	require.Len(t, res.Results, 1)
+	require.Len(t, res.Errors, 0)
+
+	tmplResult := res.Results[0]
+	require.Equal(t, tmplResult.Name, "Testing123")
+	require.Equal(t, tmplResult.Text, `\n  This is a test template\n`)
 }

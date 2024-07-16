@@ -1230,14 +1230,15 @@ func TestAnnotations(t *testing.T) {
 	`
 
 	testCases := map[string]struct {
-		data                string
-		expr                string
-		expectedAnnotations []string
+		data                       string
+		expr                       string
+		expectedWarningAnnotations []string
+		expectedInfoAnnotations    []string
 	}{
 		"sum() with float and native histogram at same step": {
-			data:                mixedFloatHistogramData,
-			expr:                "sum by (series) (metric)",
-			expectedAnnotations: []string{"PromQL warning: encountered a mix of histograms and floats for aggregation (1:18)"},
+			data:                       mixedFloatHistogramData,
+			expr:                       "sum by (series) (metric)",
+			expectedWarningAnnotations: []string{"PromQL warning: encountered a mix of histograms and floats for aggregation (1:18)"},
 		},
 		"sum() with floats and native histograms for different output series at the same step": {
 			data: mixedFloatHistogramData,
@@ -1257,8 +1258,8 @@ func TestAnnotations(t *testing.T) {
 				some_metric{env="test"} 0+1x3
 				some_metric{env="prod"} 1+1x3
 			`,
-			expr:                `rate(some_metric[1m])`,
-			expectedAnnotations: []string{`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "some_metric" (1:6)`},
+			expr:                    `rate(some_metric[1m])`,
+			expectedInfoAnnotations: []string{`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "some_metric" (1:6)`},
 		},
 		"rate() over metric ending in _total": {
 			data: `some_metric_total 0+1x3`,
@@ -1287,7 +1288,7 @@ func TestAnnotations(t *testing.T) {
 				also_not_a_counter{env="test", series="7"} 6+1x3
 			`,
 			expr: `rate({__name__!=""}[1m])`,
-			expectedAnnotations: []string{
+			expectedInfoAnnotations: []string{
 				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "not_a_counter" (1:6)`,
 				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "also_not_a_counter" (1:6)`,
 			},
@@ -1331,8 +1332,9 @@ func TestAnnotations(t *testing.T) {
 							res := query.Exec(context.Background())
 							require.NoError(t, res.Err)
 
-							warnings := res.Warnings.AsStrings(testCase.expr, 0)
-							require.ElementsMatch(t, testCase.expectedAnnotations, warnings)
+							warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
+							require.ElementsMatch(t, testCase.expectedWarningAnnotations, warnings)
+							require.ElementsMatch(t, testCase.expectedInfoAnnotations, infos)
 						})
 					}
 				})

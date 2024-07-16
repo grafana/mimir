@@ -1947,6 +1947,11 @@ alertmanager_client:
   # CLI flag: -ruler.alertmanager-client.basic-auth-password
   [basic_auth_password: <string> | default = ""]
 
+# (experimental) Drain all outstanding alert notifications when shutting down.
+# If false, any outstanding alert notifications are dropped when shutting down.
+# CLI flag: -ruler.drain-notification-queue-on-shutdown
+[drain_notification_queue_on_shutdown: <boolean> | default = false]
+
 # (advanced) Max time to tolerate outage for restoring "for" state of alert.
 # CLI flag: -ruler.for-outage-tolerance
 [for_outage_tolerance: <duration> | default = 1h]
@@ -3812,6 +3817,12 @@ kafka:
   # CLI flag: -ingest-storage.kafka.producer-max-record-size-bytes
   [producer_max_record_size_bytes: <int> | default = 15983616]
 
+  # The maximum size of (uncompressed) buffered and unacknowledged produced
+  # records sent to Kafka. The produce request fails once this limit is reached.
+  # This limit is applied per Kafka client. 0 to disable the limit.
+  # CLI flag: -ingest-storage.kafka.producer-max-buffered-bytes
+  [producer_max_buffered_bytes: <int> | default = 1073741824]
+
   # The maximum allowed for a read requests processed by an ingester to wait
   # until strong read consistency is enforced. 0 to disable the timeout.
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
@@ -4114,11 +4125,11 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header.lazy-loading-concurrency
     [lazy_loading_concurrency: <int> | default = 4]
 
-    # (experimental) Timeout for the queue of index header loads. If the queue
-    # is full and the timeout is reached, the load will return an error. 0 means
-    # no timeout and the load will wait indefinitely.
+    # (advanced) Timeout for the queue of index header loads. If the queue is
+    # full and the timeout is reached, the load will return an error. 0 means no
+    # timeout and the load will wait indefinitely.
     # CLI flag: -blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout
-    [lazy_loading_concurrency_queue_timeout: <duration> | default = 0s]
+    [lazy_loading_concurrency_queue_timeout: <duration> | default = 5s]
 
     # (advanced) If true, verify the checksum of index headers upon loading them
     # (either on startup or lazily when lazy loading is enabled). Setting to

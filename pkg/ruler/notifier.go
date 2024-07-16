@@ -7,6 +7,7 @@ package ruler
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"net/url"
 	"strings"
@@ -69,10 +70,15 @@ func newRulerNotifier(o *notifier.Options, l gklog.Logger) (*rulerNotifier, erro
 func (rn *rulerNotifier) run() {
 	rn.wg.Add(2)
 	go func() {
-		if err := rn.sdManager.Run(); err != nil {
-			level.Error(rn.logger).Log("msg", "error starting notifier discovery manager", "err", err)
+		defer rn.wg.Done()
+
+		// Ignore context cancelled errors: cancelling the context is how we stop the manager when shutting down normally.
+		if err := rn.sdManager.Run(); err != nil && !errors.Is(err, context.Canceled) {
+			level.Error(rn.logger).Log("msg", "error running notifier discovery manager", "err", err)
+			return
 		}
-		rn.wg.Done()
+
+		level.Info(rn.logger).Log("msg", "notifier discovery manager stopped")
 	}()
 	go func() {
 		rn.notifier.Run(rn.sdManager.SyncCh())
@@ -92,6 +98,9 @@ func (rn *rulerNotifier) applyConfig(cfg *config.Config) error {
 	return rn.sdManager.ApplyConfig(sdCfgs)
 }
 
+// stop stops the notifier and waits for it to terminate.
+//
+// Note that this can take quite some time if draining the notification queue is enabled.
 func (rn *rulerNotifier) stop() {
 	rn.sdCancel(errRulerNotifierStopped)
 	rn.notifier.Stop()
