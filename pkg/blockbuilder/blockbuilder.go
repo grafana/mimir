@@ -484,10 +484,63 @@ func (b *BlockBuilder) consumePartition(
 		"last_seen_till", time.UnixMilli(seenTillTs))
 
 	var (
-		done                         bool
+		loopDone                     bool
 		commitRec, firstRec, lastRec *kgo.Record
+		recsC                        = make(chan []*kgo.Record, 1000)
+		doneC                        = make(chan struct{})
 	)
-	for !done {
+
+	go func() {
+		defer close(doneC)
+
+		for recs := range recsC {
+			for _, rec := range recs {
+				if firstRec == nil {
+					firstRec = rec
+				}
+
+				level.Debug(b.logger).Log("msg", "process record", "offset", rec.Offset, "rec", rec.Timestamp, "last_bmax", lastBlockEnd, "bmax", blockEnd)
+
+				// Stop consuming after we reached the cycleEnd marker.
+				// NOTE: the timestamp of the record is when the record was produced relative to distributor's time.
+				if rec.Timestamp.After(cycleEnd) {
+					break
+				}
+
+				lag--
+
+				recProcessedBefore := rec.Timestamp.UnixMilli() <= seenTillTs
+				allSamplesProcessed, err := builder.process(ctx, rec, lastBlockEnd, blockEnd, recProcessedBefore)
+				if err != nil {
+					// TODO(codesome): do we just ignore this? What if it was Mimir's issue and this leading to data loss?
+					level.Error(b.logger).Log("msg", "failed to process record", "part", part, "key", string(rec.Key), "err", err)
+					continue
+				}
+				if !allSamplesProcessed && commitRec == nil {
+					// If block builder restarts, it will start consuming from the record after this from kafka (from the commit record).
+					// So the commit record should be the last record that was fully processed and not the
+					// first record that was not fully processed.
+					commitRec = lastRec
+
+					// The first record itself was not fully processed, meaning the record before
+					// this is the commit point.
+					if commitRec == nil {
+						commitRec = &kgo.Record{
+							Timestamp:   time.UnixMilli(pl.CommitRecTs),
+							Topic:       lastCommit.Topic,
+							Partition:   lastCommit.Partition,
+							LeaderEpoch: lastCommit.LeaderEpoch,
+							Offset:      lastCommit.At - 1, // TODO(v): lastCommit.At can be zero if there wasn't any commit yet
+						}
+					}
+				}
+				lastRec = rec
+			}
+		}
+
+	}()
+
+	for !loopDone {
 		if err := context.Cause(ctx); err != nil {
 			return pl, err
 		}
@@ -518,55 +571,22 @@ func (b *BlockBuilder) consumePartition(
 
 		b.metrics.fetchRecordsTotal.Add(float64(numRecs))
 
-		recIter := fetches.RecordIter()
-		for !recIter.Done() {
-			rec := recIter.Next()
-
-			if firstRec == nil {
-				firstRec = rec
+		fetches.EachPartition(func(tp kgo.FetchTopicPartition) {
+			if loopDone {
+				return
 			}
-
-			level.Debug(b.logger).Log("msg", "process record", "offset", rec.Offset, "rec", rec.Timestamp, "last_bmax", lastBlockEnd, "bmax", blockEnd)
-
-			// Stop consuming after we reached the cycleEnd marker.
-			// NOTE: the timestamp of the record is when the record was produced relative to distributor's time.
-			if rec.Timestamp.After(cycleEnd) {
-				done = true
-				break
-			}
-
-			lag--
-
-			recProcessedBefore := rec.Timestamp.UnixMilli() <= seenTillTs
-			allSamplesProcessed, err := builder.process(ctx, rec, lastBlockEnd, blockEnd, recProcessedBefore)
-			if err != nil {
-				// TODO(codesome): do we just ignore this? What if it was Mimir's issue and this leading to data loss?
-				level.Error(b.logger).Log("msg", "failed to process record", "part", part, "key", string(rec.Key), "err", err)
-				continue
-			}
-			if !allSamplesProcessed && commitRec == nil {
-				// If block builder restarts, it will start consuming from the record after this from kafka (from the commit record).
-				// So the commit record should be the last record that was fully processed and not the
-				// first record that was not fully processed.
-				commitRec = lastRec
-
-				// The first record itself was not fully processed, meaning the record before
-				// this is the commit point.
-				if commitRec == nil {
-					commitRec = &kgo.Record{
-						Timestamp:   time.UnixMilli(pl.CommitRecTs),
-						Topic:       lastCommit.Topic,
-						Partition:   lastCommit.Partition,
-						LeaderEpoch: lastCommit.LeaderEpoch,
-						Offset:      lastCommit.At - 1, // TODO(v): lastCommit.At can be zero if there wasn't any commit yet
-					}
+			l := len(tp.Records)
+			if l > 0 {
+				recsC <- tp.Records
+				if tp.Records[l-1].Timestamp.After(cycleEnd) {
+					loopDone = true
 				}
 			}
-			lastRec = rec
-		}
-
-		b.kafkaClient.AllowRebalance()
+		})
 	}
+
+	close(recsC)
+	<-doneC
 
 	compactStart := time.Now()
 	var err error
