@@ -6,10 +6,9 @@ package indexcache
 
 import (
 	"context"
-	"reflect"
+	"strings"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -275,22 +274,9 @@ func (c *InMemoryIndexCache) reset() {
 	c.curSize = 0
 }
 
-func copyString(s string) string {
-	var b []byte
-	// Ignore deprecation warning for now
-	//nolint:staticcheck
-	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
-	// Ignore deprecation warning for now
-	//nolint:staticcheck
-	h.Data = (*reflect.StringHeader)(unsafe.Pointer(&s)).Data
-	h.Len = len(s)
-	h.Cap = len(s)
-	return string(b)
-}
-
 // copyLabel is required as underlying strings might be mmaped.
 func copyLabel(l labels.Label) labels.Label {
-	return labels.Label{Value: copyString(l.Value), Name: copyString(l.Name)}
+	return labels.Label{Value: strings.Clone(l.Value), Name: strings.Clone(l.Name)}
 }
 
 // StorePostings sets the postings identified by the ulid and label to the value v,

@@ -1272,6 +1272,63 @@ func TestMergeAPIResponses(t *testing.T) {
 				},
 			},
 		},
+
+		{
+			name: "Merging annotations",
+			input: []Response{
+				&PrometheusResponse{
+					Status: statusSuccess,
+					Data: &PrometheusData{
+						ResultType: matrix,
+						Result: []SampleStream{
+							{
+								Labels: []mimirpb.LabelAdapter{},
+								Samples: []mimirpb.Sample{
+									{Value: 0, TimestampMs: 0},
+									{Value: 1, TimestampMs: 1},
+								},
+							},
+						},
+					},
+					Warnings: []string{"dummy warning"},
+				},
+				&PrometheusResponse{
+					Status: statusSuccess,
+					Data: &PrometheusData{
+						ResultType: matrix,
+						Result: []SampleStream{
+							{
+								Labels: []mimirpb.LabelAdapter{},
+								Samples: []mimirpb.Sample{
+									{Value: 2, TimestampMs: 2},
+									{Value: 3, TimestampMs: 3},
+								},
+							},
+						},
+					},
+					Infos: []string{"dummy info"},
+				},
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: matrix,
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{},
+							Samples: []mimirpb.Sample{
+								{Value: 0, TimestampMs: 0},
+								{Value: 1, TimestampMs: 1},
+								{Value: 2, TimestampMs: 2},
+								{Value: 3, TimestampMs: 3},
+							},
+						},
+					},
+				},
+				Warnings: []string{"dummy warning"},
+				Infos:    []string{"dummy info"},
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			output, err := codec.MergeResponse(tc.input...)

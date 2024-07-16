@@ -16,7 +16,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
@@ -144,7 +143,7 @@ func runTestPushSeriesForQuerierRemoteRead(t *testing.T, c *e2emimir.Client, que
 				require.Equal(t, float64(testData.expectedVector[0].Value), resp.Timeseries[0].Samples[0].Value)
 			} else if isSeriesHistogram {
 				require.Len(t, resp.Timeseries[0].Histograms, 1)
-				require.Equal(t, testData.expectedVector[0].Histogram, mimirpb.FromHistogramToPromHistogram(remote.HistogramProtoToHistogram(resp.Timeseries[0].Histograms[0])))
+				require.Equal(t, testData.expectedVector[0].Histogram, mimirpb.FromHistogramToPromHistogram(resp.Timeseries[0].Histograms[0].ToIntHistogram()))
 			}
 		})
 	}
@@ -280,8 +279,8 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 
 	for ts := pushedStartMs; ts < pushedEndMs; ts += pushedStepMs {
 		floats = append(floats, prompb.Sample{Value: float64(ts), Timestamp: ts})
-		histograms = append(histograms, remote.HistogramToHistogramProto(ts, test.GenerateTestHistogram(int(ts))))
-		floatHistograms = append(floatHistograms, remote.FloatHistogramToHistogramProto(ts, test.GenerateTestFloatHistogram(int(ts))))
+		histograms = append(histograms, prompb.FromIntHistogram(ts, test.GenerateTestHistogram(int(ts))))
+		floatHistograms = append(floatHistograms, prompb.FromFloatHistogram(ts, test.GenerateTestFloatHistogram(int(ts))))
 	}
 
 	// Generate the series.
@@ -348,13 +347,13 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 							ts, h := chkItr.AtHistogram(nil)
 							require.Equalf(t, expectedHistograms[sampleIdx].Timestamp, ts, "index: %d", sampleIdx)
 
-							expected := remote.HistogramProtoToHistogram(expectedHistograms[sampleIdx])
+							expected := expectedHistograms[sampleIdx].ToIntHistogram()
 							test.RequireHistogramEqual(t, expected, h)
 						case chunkenc.ValFloatHistogram:
 							ts, fh := chkItr.AtFloatHistogram(nil)
 							require.Equalf(t, expectedFloatHistograms[sampleIdx].Timestamp, ts, "index: %d", sampleIdx)
 
-							expected := remote.FloatHistogramProtoToFloatHistogram(expectedFloatHistograms[sampleIdx])
+							expected := expectedFloatHistograms[sampleIdx].ToFloatHistogram()
 							test.RequireFloatHistogramEqual(t, expected, fh)
 						default:
 							require.Fail(t, "unrecognized value type")
