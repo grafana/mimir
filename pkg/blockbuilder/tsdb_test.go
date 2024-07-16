@@ -4,6 +4,7 @@ package blockbuilder
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"math/rand"
 	"os"
@@ -28,7 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func createWriteRequest(t *testing.T, samples []mimirpb.Sample, histograms []mimirpb.Histogram) []byte {
+func createWriteRequest(t testing.TB, numSeries int, samples []mimirpb.Sample, histograms []mimirpb.Histogram) []byte {
 	req := mimirpb.WriteRequest{}
 
 	var seriesValue string
@@ -37,15 +38,17 @@ func createWriteRequest(t *testing.T, samples []mimirpb.Sample, histograms []mim
 	} else {
 		seriesValue = "float"
 	}
-	req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{
-		TimeSeries: &mimirpb.TimeSeries{
-			Labels: []mimirpb.LabelAdapter{
-				{Name: "foo", Value: seriesValue},
+	for i := 0; i < numSeries; i++ {
+		req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{
+			TimeSeries: &mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{
+					{Name: "foo", Value: fmt.Sprintf("%s%d", seriesValue, i)},
+				},
+				Samples:    samples,
+				Histograms: histograms,
 			},
-			Samples:    samples,
-			Histograms: histograms,
-		},
-	})
+		})
+	}
 
 	data, err := req.Marshal()
 	require.NoError(t, err)
@@ -94,7 +97,7 @@ func TestTSDBBuilder(t *testing.T) {
 
 		var rec kgo.Record
 		rec.Key = []byte(userID)
-		rec.Value = createWriteRequest(t, samples, histograms)
+		rec.Value = createWriteRequest(t, 1, samples, histograms)
 		return &rec
 	}
 	addFloatSample := func(builder *tsdbBuilder, ts int64, lastEnd, currEnd int64, recordProcessedBefore, accepted bool) {
@@ -261,8 +264,8 @@ func compareQuery(t *testing.T, db *tsdb.DB, expSamples []mimirpb.Sample, expHis
 	for ss.Next() {
 		series := ss.At()
 
-		require.True(t, labels.Compare(labels.FromStrings("foo", "float"), series.Labels()) == 0 ||
-			labels.Compare(labels.FromStrings("foo", "histogram"), series.Labels()) == 0)
+		require.True(t, labels.Compare(labels.FromStrings("foo", "float0"), series.Labels()) == 0 ||
+			labels.Compare(labels.FromStrings("foo", "histogram0"), series.Labels()) == 0)
 
 		it := series.Iterator(nil)
 		for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {

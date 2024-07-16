@@ -33,7 +33,7 @@ const (
 	testGroup = "testgroup"
 )
 
-func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Overrides) {
+func blockBuilderConfig(t testing.TB, addr string) (Config, *validation.Overrides) {
 	cfg := Config{
 		ConsumeInterval:       time.Hour,
 		ConsumeIntervalBuffer: 15 * time.Minute,
@@ -103,11 +103,11 @@ func TestBlockBuilder(t *testing.T) {
 	// Helper functions.
 	createAndProduceSample := func(t *testing.T, sampleTs, kafkaRecTs time.Time) {
 		samples := floatSample(sampleTs.UnixMilli())
-		val := createWriteRequest(t, samples, nil)
+		val := createWriteRequest(t, 1, samples, nil)
 		produceRecords(ctx, t, writeClient, kafkaRecTs, userID, testTopic, 0, val)
 
 		hSamples := histogramSample(sampleTs.UnixMilli())
-		val = createWriteRequest(t, nil, hSamples)
+		val = createWriteRequest(t, 1, nil, hSamples)
 		produceRecords(ctx, t, writeClient, kafkaRecTs, userID, testTopic, 1, val)
 
 		kafkaSamples = append(kafkaSamples, samples...)
@@ -402,7 +402,7 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 		kafkaTime = kafkaTime.Add(cfg.ConsumeInterval / 2)
 		sampleTs := kafkaTime.Add(-time.Minute)
 		samples := floatSample(sampleTs.UnixMilli())
-		val := createWriteRequest(t, samples, nil)
+		val := createWriteRequest(t, 1, samples, nil)
 		produceRecords(ctx, t, writeClient, kafkaTime, "1", testTopic, 0, val)
 		expSamples = append(expSamples, samples...)
 	}
@@ -473,9 +473,48 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 	)
 }
 
+func BenchmarkBlockBuilder(b *testing.B) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	b.Cleanup(func() { cancel(errors.New("test done")) })
+
+	_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(b, 1, testTopic)
+	writeClient := newKafkaProduceClient(b, addr)
+
+	cfg, overrides := blockBuilderConfig(b, addr)
+
+	// Producing some records
+	cycleEnd := cycleEndAtStartup(cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+	kafkaTime := cycleEnd.Truncate(cfg.ConsumeInterval).Add(-1 * time.Hour)
+	for i := int64(0); i < int64(time.Hour/(1*time.Second)); i++ {
+		kafkaTime = kafkaTime.Add(1 * time.Second)
+		sampleTs := kafkaTime
+		samples := floatSample(sampleTs.UnixMilli())
+		val := createWriteRequest(b, 1000, samples, nil)
+		produceRecords(ctx, b, writeClient, kafkaTime, "1", testTopic, 0, val)
+	}
+
+	bb, err := New(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry(), overrides)
+	require.NoError(b, err)
+	compactCalled := make(chan struct{}, 10)
+	bb.tsdbBuilder = func() builder {
+		testBuilder := newTestTSDBBuilder(cfg, overrides)
+		testBuilder.compactFunc = func() {
+			compactCalled <- struct{}{}
+		}
+		return testBuilder
+	}
+
+	require.NoError(b, bb.starting(ctx))
+	b.ResetTimer()
+	require.NoError(b, bb.NextConsumeCycle(ctx, cycleEnd))
+	<-compactCalled
+	b.ReportMetric(float64(b.Elapsed().Nanoseconds()), "ns/op")
+	require.NoError(b, bb.stopping(nil))
+}
+
 func produceRecords(
 	ctx context.Context,
-	t *testing.T,
+	t testing.TB,
 	writeClient *kgo.Client,
 	ts time.Time,
 	userID string,
@@ -495,7 +534,7 @@ func produceRecords(
 	return produceResult
 }
 
-func newKafkaProduceClient(t *testing.T, addrs ...string) *kgo.Client {
+func newKafkaProduceClient(t testing.TB, addrs ...string) *kgo.Client {
 	writeClient, err := kgo.NewClient(
 		kgo.SeedBrokers(addrs...),
 		// We will choose the partition of each record.
