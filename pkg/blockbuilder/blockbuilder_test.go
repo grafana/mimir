@@ -5,7 +5,6 @@ package blockbuilder
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path"
 	"testing"
@@ -474,7 +473,6 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 	)
 }
 
-// Testing block builder starting up with an existing kafka commit.
 func BenchmarkBlockBuilder(b *testing.B) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	b.Cleanup(func() { cancel(errors.New("test done")) })
@@ -506,14 +504,11 @@ func BenchmarkBlockBuilder(b *testing.B) {
 		return testBuilder
 	}
 
-	// It was difficult to reliably get the time taken to consume the records and produce a block
-	// by using b.ResetTimer. So for now, printing the required time to analyse.
-	// TODO(codesome): figure out how we can get the required numbers without prints.
 	require.NoError(b, bb.starting(ctx))
-	start := time.Now()
+	b.ResetTimer()
 	require.NoError(b, bb.NextConsumeCycle(ctx, cycleEnd))
 	<-compactCalled
-	fmt.Println("Time taken to consume samples:", time.Since(start))
+	b.ReportMetric(float64(b.Elapsed().Nanoseconds()), "ns/op")
 	require.NoError(b, bb.stopping(nil))
 }
 
