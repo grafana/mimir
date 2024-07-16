@@ -18,7 +18,7 @@ refs:
 
 You can monitor Grafana Mimir or Grafana Enterprise Metrics by collecting metrics and logs from a Mimir or GEM instance that's running on a Kubernetes cluster. This process is called _metamonitoring_.
 
-As part of *metamonitoring*, you can create dashboards and receive alerts about the metrics and logs collected from Mimir. To set up these dashboards and alerts,
+As part of _metamonitoring_, you can create dashboards and receive alerts about the metrics and logs collected from Mimir. To set up these dashboards and alerts,
 refer to [Installing Grafana Mimir dashboards and alerts](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/installing-dashboards-and-alerts/).
 
 ## Configure the Grafana Agent operator via the Helm chart
@@ -83,7 +83,6 @@ However, if you prefer not to use it or you already have an existing Grafana Age
        enabled: true
        installOperator: true
 
-
        logs:
          remote:
            url: "https://example.com/loki/api/v1/push"
@@ -92,7 +91,6 @@ However, if you prefer not to use it or you already have an existing Grafana Age
              passwordSecretName: "metamonitoring-credentials"
              passwordSecretKey: "loki-api-key"
 
-
        metrics:
          remote:
            url: "https://example.com/api/v1/push"
@@ -100,7 +98,6 @@ However, if you prefer not to use it or you already have an existing Grafana Age
              username: "54321"
              passwordSecretName: "metamonitoring-credentials"
              passwordSecretKey: "prometheus-api-key"
-
 
          scrapeK8s:
            enabled: true
@@ -140,7 +137,6 @@ metaMonitoring:
   grafanaAgent:
     enabled: true
     installOperator: true
-
 
     metrics:
       remote:

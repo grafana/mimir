@@ -156,8 +156,9 @@ Use the latest version of [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_
    ```
     scrape_protocols = ["PrometheusProto", "OpenMetricsText1.0.0", "OpenMetricsText0.0.1", "PrometheusText0.0.4"]
    ```
+
    For more information, refer to [prometheus.scrape](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.scrape/) in the Grafana Alloy documentation.
-  
+
 1. To send native histograms to a Prometheus remote write compatible receiver, such as Grafana Cloud Metrics or Mimir, set the `send_native_histograms` argument to `true` in the `prometheus.remote_write` component. For example:
 
    ```
@@ -179,9 +180,9 @@ To ease the migration process, you can keep the custom bucket definition for cla
 1. Start modifying the recording rules, alerts, and dashboards to use native histograms.
 1. After configuring native histogram collection, choose one of the following ways to stop collecting classic histograms.
 
-    - Remove the custom bucket definition, `Buckets`/`classicUpperBounds`, from the instrumentation.
-    - Drop the classic histogram series with [Prometheus relabeling](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) or [Grafana Alloy prometheus.relabel](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.relabel) at the time of scraping. 
-    - Stop scraping the classic histogram version of metrics. This option applies to all metrics of a scrape target.
+   - Remove the custom bucket definition, `Buckets`/`classicUpperBounds`, from the instrumentation.
+   - Drop the classic histogram series with [Prometheus relabeling](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) or [Grafana Alloy prometheus.relabel](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.relabel) at the time of scraping.
+   - Stop scraping the classic histogram version of metrics. This option applies to all metrics of a scrape target.
 
 Code examples with both classic and native histogram defined for the same metric:
 
