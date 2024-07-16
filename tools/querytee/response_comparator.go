@@ -28,6 +28,7 @@ type SamplesResponse struct {
 	ErrorType string
 	Error     string
 	Warnings  []string
+	Infos     []string
 	Data      struct {
 		ResultType string
 		Result     json.RawMessage
@@ -103,9 +104,13 @@ func (s *SamplesComparator) Compare(expectedResponse, actualResponse []byte) (Co
 		return ComparisonFailed, err
 	}
 
-	// Check warnings last: they're less important compared to the other possible differences above.
+	// Check annotations last: they're less important compared to the other possible differences above.
 	if !slicesEqualIgnoringOrder(expected.Warnings, actual.Warnings) {
-		return ComparisonFailed, fmt.Errorf("expected warnings %s but got %s", formatWarningsForErrorMessage(expected.Warnings), formatWarningsForErrorMessage(actual.Warnings))
+		return ComparisonFailed, fmt.Errorf("expected warning annotations %s but got %s", formatAnnotationsForErrorMessage(expected.Warnings), formatAnnotationsForErrorMessage(actual.Warnings))
+	}
+
+	if !slicesEqualIgnoringOrder(expected.Infos, actual.Infos) {
+		return ComparisonFailed, fmt.Errorf("expected info annotations %s but got %s", formatAnnotationsForErrorMessage(expected.Infos), formatAnnotationsForErrorMessage(actual.Infos))
 	}
 
 	return ComparisonSuccess, nil
@@ -130,7 +135,7 @@ func slicesEqualIgnoringOrder(a, b []string) bool {
 	return slices.Equal(a, b)
 }
 
-func formatWarningsForErrorMessage(warnings []string) string {
+func formatAnnotationsForErrorMessage(warnings []string) string {
 	formatted := make([]string, 0, len(warnings))
 
 	for _, warning := range warnings {

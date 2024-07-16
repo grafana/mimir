@@ -1259,7 +1259,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 							"data": {"resultType":"scalar","result":[1,"1"]},
 							"warnings": ["warning #1", "warning #2"]
 						}`),
-			err: errors.New(`expected warnings ["warning #1"] but got ["warning #1", "warning #2"]`),
+			err: errors.New(`expected warning annotations ["warning #1"] but got ["warning #1", "warning #2"]`),
 		},
 		{
 			name: "should fail if both results have the same warnings but one is duplicated",
@@ -1273,7 +1273,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 							"data": {"resultType":"scalar","result":[1,"1"]},
 							"warnings": ["warning #1", "warning #1"]
 						}`),
-			err: errors.New(`expected warnings ["warning #1"] but got ["warning #1", "warning #1"]`),
+			err: errors.New(`expected warning annotations ["warning #1"] but got ["warning #1", "warning #1"]`),
 		},
 		{
 			name: "should fail with a correctly escaped message if warnings differ and contain double quotes",
@@ -1287,7 +1287,88 @@ func TestCompareSamplesResponse(t *testing.T) {
 							"data": {"resultType":"scalar","result":[1,"1"]},
 							"warnings": ["\"warning\" #2"]
 						}`),
-			err: errors.New(`expected warnings ["\"warning\" #1"] but got ["\"warning\" #2"]`),
+			err: errors.New(`expected warning annotations ["\"warning\" #1"] but got ["\"warning\" #2"]`),
+		},
+		{
+			name: "should not fail if both results have an empty set of info annotations",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": []
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": []
+						}`),
+		},
+		{
+			name: "should not fail if both results have the same info annotations in the same order",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1", "info #2"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1", "info #2"]
+						}`),
+		},
+		{
+			name: "should not fail if both results have the same info annotations in a different order",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1", "info #2"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #2", "info #1"]
+						}`),
+		},
+		{
+			name: "should fail if both results do not have the same info annotations",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1", "info #2"]
+						}`),
+			err: errors.New(`expected info annotations ["info #1"] but got ["info #1", "info #2"]`),
+		},
+		{
+			name: "should fail if both results have the same info annotations but one is duplicated",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1", "info #1"]
+						}`),
+			err: errors.New(`expected info annotations ["info #1"] but got ["info #1", "info #1"]`),
+		},
+		{
+			name: "should fail with a correctly escaped message if info annotations differ and contain double quotes",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["\"info\" #1"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["\"info\" #2"]
+						}`),
+			err: errors.New(`expected info annotations ["\"info\" #1"] but got ["\"info\" #2"]`),
 		},
 		{
 			name: "should not fail when the histogram sample is recent and configured to skip",
