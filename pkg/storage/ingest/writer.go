@@ -48,6 +48,77 @@ var (
 		fmt.Sprintf("the write request contains a timeseries or metadata item which is larger that the maximum allowed size of %d bytes", maxProducerRecordDataBytesLimit)))
 )
 
+// KafkaProducer is responsible for encapsulating all the logic of record production.
+type KafkaProducer struct {
+	maxBufferedBytes int
+
+	// Keep track of Kafka records size (bytes) currently in-flight in the Kafka client.
+	// This counter is used to implement a limit on the max buffered bytes.
+	writersBufferedBytes *atomic.Int64
+}
+
+// NewKafkaProducer creates a new KafkaProducer with a maximum buffered bytes limit.
+// Upon reaching the limit while producing records, the producer will return an error.
+// If set to 0, the limit is disabled.
+func NewKafkaProducer(maxBufferedBytes int) *KafkaProducer {
+	return &KafkaProducer{
+		maxBufferedBytes:     maxBufferedBytes,
+		writersBufferedBytes: atomic.NewInt64(0),
+	}
+}
+
+// ProduceSync produces records to Kafka and returns once all records have been successfully committed,
+// or an error occurred.
+func (p *KafkaProducer) ProduceSync(ctx context.Context, client *kafkaWriterClient, records []*kgo.Record, promise func(r *kgo.Record, err error)) error {
+	var (
+		remaining        = atomic.NewInt64(int64(len(records)))
+		done             = make(chan struct{})
+		maxBufferedBytes = int64(p.maxBufferedBytes)
+	)
+
+	onProduceDone := func(r *kgo.Record, err error) {
+		if maxBufferedBytes > 0 {
+			p.writersBufferedBytes.Add(-int64(len(r.Value)))
+		}
+
+		promise(r, err)
+
+		// In case of error we'll wait for all responses anyway before returning from produceSync().
+		// It allows us to keep code easier, given we don't expect this function to be frequently
+		// called with multiple records.
+		if remaining.Dec() == 0 {
+			close(done)
+		}
+	}
+
+	for _, record := range records {
+		// Fast fail if the Kafka client buffer is full. Buffered bytes counter is decreased onProducerDone().
+		if maxBufferedBytes > 0 && p.writersBufferedBytes.Add(int64(len(record.Value))) > maxBufferedBytes {
+			onProduceDone(record, kgo.ErrMaxBuffered)
+			continue
+		}
+
+		// We use a new context to avoid that other Produce() may be cancelled when this call's context is
+		// canceled. It's important to note that cancelling the context passed to Produce() doesn't actually
+		// prevent the data to be sent over the wire (because it's never removed from the buffer) but in some
+		// cases may cause all requests to fail with context cancelled.
+		//
+		// Produce() may theoretically block if the buffer is full, but we configure the Kafka client with
+		// unlimited buffer because we implement the buffer limit ourselves (see maxBufferedBytes). This means
+		// Produce() should never block for us in practice.
+		client.Produce(context.WithoutCancel(ctx), record, onProduceDone)
+	}
+
+	// Wait for a response or until the context has done.
+	select {
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	case <-done:
+		// Once we're done, it's guaranteed that no more results will be appended, so we can safely return.
+		return nil
+	}
+}
+
 // Writer is responsible to write incoming data to the ingest storage.
 type Writer struct {
 	services.Service
@@ -55,6 +126,8 @@ type Writer struct {
 	kafkaCfg   KafkaConfig
 	logger     log.Logger
 	registerer prometheus.Registerer
+
+	producer *KafkaProducer
 
 	// We support multiple Kafka clients to better parallelize the workload. The number of
 	// clients is fixed during the Writer lifecycle, but they're initialised lazily.
@@ -84,6 +157,7 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		writers:                    make([]*kafkaWriterClient, kafkaCfg.WriteClients),
 		maxInflightProduceRequests: 20,
 		writersBufferedBytes:       atomic.NewInt64(0),
+		producer:                   NewKafkaProducer(kafkaCfg.ProducerMaxBufferedBytes),
 
 		// Metrics.
 		writeRequestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
@@ -168,7 +242,25 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 	// visibility over this metric if records are rejected by Kafka because of MESSAGE_TOO_LARGE).
 	w.recordsPerRequest.Observe(float64(len(records)))
 
-	res := w.produceSync(ctx, writer, records)
+	w.writeRequestsTotal.Add(float64(len(records)))
+
+	var (
+		resMx sync.Mutex
+		res   = make(kgo.ProduceResults, 0, len(records))
+	)
+	onProduceDone := func(r *kgo.Record, err error) {
+		resMx.Lock()
+		res = append(res, kgo.ProduceResult{Record: r, Err: err})
+		resMx.Unlock()
+
+		if err != nil {
+			w.writeFailuresTotal.WithLabelValues(produceErrReason(err)).Inc()
+		}
+	}
+
+	if err := w.producer.ProduceSync(ctx, writer, records, onProduceDone); err != nil {
+		res = kgo.ProduceResults{{Err: err}}
+	}
 
 	// Track latency only for successfully written records.
 	if count, sizeBytes := successfulProduceRecordsStats(res); count > 0 {
@@ -185,68 +277,6 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 	}
 
 	return nil
-}
-
-// produceSync produces records to Kafka and returns once all records have been successfully committed,
-// or an error occurred.
-func (w *Writer) produceSync(ctx context.Context, client *kafkaWriterClient, records []*kgo.Record) kgo.ProduceResults {
-	var (
-		remaining        = atomic.NewInt64(int64(len(records)))
-		done             = make(chan struct{})
-		resMx            sync.Mutex
-		res              = make(kgo.ProduceResults, 0, len(records))
-		maxBufferedBytes = int64(w.kafkaCfg.ProducerMaxBufferedBytes)
-	)
-
-	w.writeRequestsTotal.Add(float64(len(records)))
-
-	onProduceDone := func(r *kgo.Record, err error) {
-		if maxBufferedBytes > 0 {
-			w.writersBufferedBytes.Add(-int64(len(r.Value)))
-		}
-
-		resMx.Lock()
-		res = append(res, kgo.ProduceResult{Record: r, Err: err})
-		resMx.Unlock()
-
-		if err != nil {
-			w.writeFailuresTotal.WithLabelValues(produceErrReason(err)).Inc()
-		}
-
-		// In case of error we'll wait for all responses anyway before returning from produceSync().
-		// It allows us to keep code easier, given we don't expect this function to be frequently
-		// called with multiple records.
-		if remaining.Dec() == 0 {
-			close(done)
-		}
-	}
-
-	for _, record := range records {
-		// Fast fail if the Kafka client buffer is full. Buffered bytes counter is decreased onProducerDone().
-		if maxBufferedBytes > 0 && w.writersBufferedBytes.Add(int64(len(record.Value))) > maxBufferedBytes {
-			onProduceDone(record, kgo.ErrMaxBuffered)
-			continue
-		}
-
-		// We use a new context to avoid that other Produce() may be cancelled when this call's context is
-		// canceled. It's important to note that cancelling the context passed to Produce() doesn't actually
-		// prevent the data to be sent over the wire (because it's never removed from the buffer) but in some
-		// cases may cause all requests to fail with context cancelled.
-		//
-		// Produce() may theoretically block if the buffer is full, but we configure the Kafka client with
-		// unlimited buffer because we implement the buffer limit ourselves (see maxBufferedBytes). This means
-		// Produce() should never block for us in practice.
-		client.Produce(context.WithoutCancel(ctx), record, onProduceDone)
-	}
-
-	// Wait for a response or until the context has done.
-	select {
-	case <-ctx.Done():
-		return kgo.ProduceResults{{Err: context.Cause(ctx)}}
-	case <-done:
-		// Once we're done, it's guaranteed that no more results will be appended, so we can safely return it.
-		return res
-	}
 }
 
 func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*kafkaWriterClient, error) {
