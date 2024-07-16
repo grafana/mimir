@@ -28,10 +28,10 @@ local filename = 'mimir-ruler.json';
         $.statPanel('sum(cortex_prometheus_rule_group_rules{%s})' % $.jobMatcher($._config.job_names.ruler), format='short')
       )
       .addPanel(
-        $.panel('Read from ingesters - QPS') +
+        $.panel('Reads from ingesters - RPS') +
         $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ruler + $._config.job_names.ruler_querier), format='reqps') +
         $.panelDescription(
-          'Read from ingesters - QPS',
+          'Reads from ingesters - RPS',
           |||
             Note: Even while operating in Remote ruler mode you will still see values for this panel.
 
@@ -42,8 +42,29 @@ local filename = 'mimir-ruler.json';
         ),
       )
       .addPanel(
-        $.panel('Write to ingesters - QPS') +
-        $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/Push"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ruler), format='reqps')
+        $.panel(
+          if $._config.show_ingest_storage_panels then
+            'Writes to ingesters / ingest storage - RPS'
+          else
+            'Writes to ingesters - RPS'
+        ) +
+        $.statPanel(
+          local query =
+            if $._config.show_ingest_storage_panels then
+              |||
+                # Classic architecture.
+                (sum(rate(cortex_ingester_client_request_duration_seconds_count{%(job_matcher)s, operation="/cortex.Ingester/Push"}[$__rate_interval])) or vector(0))
+                +
+                # Ingest storage architecture.
+                (sum(rate(cortex_ingest_storage_writer_produce_requests_total{%(job_matcher)s}[$__rate_interval])) or vector(0))
+              ||| % { job_matcher: $.jobMatcher($._config.job_names.ruler) }
+            else
+              |||
+                sum(rate(cortex_ingester_client_request_duration_seconds_count{%(job_matcher)s, operation="/cortex.Ingester/Push"}[$__rate_interval]))
+              ||| % { job_matcher: $.jobMatcher($._config.job_names.ruler) };
+
+          query, format='reqps'
+        )
       )
     )
     .addRow(
@@ -93,12 +114,65 @@ local filename = 'mimir-ruler.json';
     .addRow(
       $.row('Writes (ingesters)')
       .addPanel(
-        $.timeseriesPanel('QPS') +
+        $.timeseriesPanel('Requests / sec') +
         $.qpsPanel('cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ruler))
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
         $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ruler))
+      )
+    )
+    .addRowIf(
+      $._config.show_ingest_storage_panels,
+      $.row('Writes (ingest storage)')
+      .addPanel(
+        $.timeseriesPanel('Requests / sec') +
+        $.panelDescription(
+          'Requests / sec',
+          'Rate of synchronous write operation from ruler to Kafka backend.',
+        ) +
+        $.queryPanel([
+          |||
+            sum(rate(cortex_ingest_storage_writer_produce_requests_total{%(job_matcher)s}[$__rate_interval]))
+            -
+            (sum(rate(cortex_ingest_storage_writer_produce_failures_total{%(job_matcher)s}[$__rate_interval])) or vector(0))
+          ||| % { job_matcher: $.jobMatcher($._config.job_names.ruler) },
+          |||
+            sum by(reason) (rate(cortex_ingest_storage_writer_produce_failures_total{%(job_matcher)s}[$__rate_interval]))
+          ||| % { job_matcher: $.jobMatcher($._config.job_names.ruler) },
+        ], [
+          'success',
+          'failed - {{ reason }}',
+        ]) +
+        $.stack +
+        $.aliasColors({
+          success: $._colors.success,
+        })
+      )
+      .addPanel(
+        $.timeseriesPanel('Latency') +
+        $.panelDescription(
+          'Latency',
+          'Latency of synchronous write operation from ruler to Kafka backend.',
+        ) +
+        $.queryPanel(
+          [
+            'histogram_avg(sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ruler)],
+            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ruler)],
+            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ruler)],
+            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ruler)],
+          ],
+          [
+            'avg',
+            '99th percentile',
+            '99.9th percentile',
+            '100th percentile',
+          ],
+        ) + {
+          fieldConfig+: {
+            defaults+: { unit: 's' },
+          },
+        },
       )
     )
     .addRow(
