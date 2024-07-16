@@ -83,7 +83,7 @@ func newS3Config(cfg Config) (s3.Config, error) {
 			},
 		},
 		TraceConfig: s3.TraceConfig{
-			Enable: cfg.TraceConfig.Enable,
+			Enable: cfg.TraceConfig.Enabled,
 		},
 		// Enforce signature version 2 if CLI flag is set
 		SignatureV2: cfg.SignatureVersion == SignatureVersionV2,

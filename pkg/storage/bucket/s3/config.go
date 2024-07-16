@@ -272,11 +272,11 @@ func parseKMSEncryptionContext(data string) (map[string]string, error) {
 }
 
 type TraceConfig struct {
-	Enable bool `yaml:"enable" category:"advanced"`
+	Enabled bool `yaml:"enable" category:"advanced"`
 }
 
 func (cfg *TraceConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enable, prefix+"enable", false, "If enabled, low-level S3 HTTP operation information is logged at the debug level.")
+	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "If enabled, low-level S3 HTTP operation information is logged at the debug level.")
 }
 
 // bucketLookupTypeValue is an adapter between s3.BucketLookupType and flag.Value.

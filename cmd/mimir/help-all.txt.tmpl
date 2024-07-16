@@ -87,7 +87,7 @@ Usage of ./cmd/mimir/mimir:
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -alertmanager-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
-  -alertmanager-storage.s3.trace.enable
+  -alertmanager-storage.s3.trace.enabled
     	If enabled, low-level S3 HTTP operation information is logged at the debug level.
   -alertmanager-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
@@ -749,7 +749,7 @@ Usage of ./cmd/mimir/mimir:
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -blocks-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
-  -blocks-storage.s3.trace.enable
+  -blocks-storage.s3.trace.enabled
     	If enabled, low-level S3 HTTP operation information is logged at the debug level.
   -blocks-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
@@ -931,7 +931,7 @@ Usage of ./cmd/mimir/mimir:
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -common.storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
-  -common.storage.s3.trace.enable
+  -common.storage.s3.trace.enabled
     	If enabled, low-level S3 HTTP operation information is logged at the debug level.
   -common.storage.swift.auth-url string
     	OpenStack Swift authentication URL
@@ -2511,7 +2511,7 @@ Usage of ./cmd/mimir/mimir:
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -ruler-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
-  -ruler-storage.s3.trace.enable
+  -ruler-storage.s3.trace.enabled
     	If enabled, low-level S3 HTTP operation information is logged at the debug level.
   -ruler-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.

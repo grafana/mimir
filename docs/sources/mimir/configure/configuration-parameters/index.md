@@ -5145,7 +5145,7 @@ http:
 trace:
   # (advanced) If enabled, low-level S3 HTTP operation information is logged at
   # the debug level.
-  # CLI flag: -<prefix>.s3.trace.enable
+  # CLI flag: -<prefix>.s3.trace.enabled
   [enable: <boolean> | default = false]
 ```
 
