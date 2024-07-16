@@ -26,6 +26,9 @@
     // block other operations that would block the service creation.
     ignore_rollout_operator_no_downscale_webhook_failures: false,
     ignore_rollout_operator_prepare_downscale_webhook_failures: false,
+
+    // Ignore these labels used for controlling webhook behavior when creating services.
+    service_ignored_labels+:: ['grafana.com/no-downscale', 'grafana.com/prepare-downscale'],
   },
 
   local rollout_operator_enabled =
