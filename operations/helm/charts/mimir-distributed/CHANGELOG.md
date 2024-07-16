@@ -47,8 +47,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Add missing container security context to run `continuous-test` under the restricted security policy. #8653
 * [BUGFIX] Add `global.extraVolumeMounts` to the exporter container on memcached statefulsets #8787
 * [BUGFIX] Fix helm releases failing when `querier.kedaAutoscaling.predictiveScalingEnabled=true`. #8731
+* [ENHANCEMENT] Helm : allow setting a read and write urls to continous-test. #7674
 
-## 5.4.0
+
+## 5.4.0-rc.0
 
 * [FEATURE] Add support for a dedicated query path for the ruler. This allows for the isolation of ruler and user query paths. Enable it via `ruler.remoteEvaluationDedicatedQueryPath: true`. #7964
 * [CHANGE] Fine-tuned `terminationGracePeriodSeconds` for the following components: #7361 #7364
