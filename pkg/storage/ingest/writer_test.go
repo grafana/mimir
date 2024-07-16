@@ -765,91 +765,94 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 		topicName     = "test"
 		numPartitions = 1
 		partitionID   = 0
-		numWorkers    = 10
+		numWorkers    = 50
 		tenantID      = "user-1"
 		testDuration  = 3 * time.Second
 	)
 
-	for _, estimatedMaxBufferedRecords := range []int{numWorkers / 2, numWorkers - 1} {
-		t.Run(fmt.Sprintf("estimated max buffered records: %d", estimatedMaxBufferedRecords), func(t *testing.T) {
-			var (
-				done    = make(chan struct{})
-				workers = sync.WaitGroup{}
+	var (
+		done    = make(chan struct{})
+		workers = sync.WaitGroup{}
 
-				writeSuccessCount = atomic.NewInt64(0)
-				writeFailureCount = atomic.NewInt64(0)
-			)
+		writeSuccessCount = atomic.NewInt64(0)
+		writeFailureCount = atomic.NewInt64(0)
+	)
 
-			createRandomWriteRequest := func() *mimirpb.WriteRequest {
-				// It's important that each request has a different size to reproduce the deadlock.
-				metricName := strings.Repeat("x", rand.IntN(1000))
+	createRandomWriteRequest := func() *mimirpb.WriteRequest {
+		// It's important that each request has a different size to reproduce the deadlock.
+		metricName := strings.Repeat("x", rand.IntN(1000))
 
-				series := []mimirpb.PreallocTimeseries{mockPreallocTimeseries(metricName)}
-				return &mimirpb.WriteRequest{Timeseries: series, Metadata: nil, Source: mimirpb.API}
-			}
+		series := []mimirpb.PreallocTimeseries{mockPreallocTimeseries(metricName)}
+		return &mimirpb.WriteRequest{Timeseries: series, Metadata: nil, Source: mimirpb.API}
+	}
 
-			// If the test is successful (no WriteSync() request is in a deadlock state) then we expect the test
-			// to complete shortly after the estimated test duration.
-			ctx, cancel := context.WithTimeoutCause(context.Background(), 2*testDuration, errors.New("test did not compete within the expected time"))
-			t.Cleanup(cancel)
+	// If the test is successful (no WriteSync() request is in a deadlock state) then we expect the test
+	// to complete shortly after the estimated test duration.
+	ctx, cancel := context.WithTimeoutCause(context.Background(), 2*testDuration, errors.New("test did not compete within the expected time"))
+	t.Cleanup(cancel)
 
-			// Estimate the size of each record written in this test.
-			writeReqRecords, err := marshalWriteRequestToRecords(partitionID, tenantID, createRandomWriteRequest(), maxProducerRecordDataBytesLimit)
-			require.NoError(t, err)
-			require.Len(t, writeReqRecords, 1)
-			estimatedRecordSize := len(writeReqRecords[0].Value)
-			t.Logf("estimated record size: %d bytes", estimatedRecordSize)
+	// Estimate the size of each record written in this test.
+	writeReqRecords, err := marshalWriteRequestToRecords(partitionID, tenantID, createRandomWriteRequest(), maxProducerRecordDataBytesLimit)
+	require.NoError(t, err)
+	require.Len(t, writeReqRecords, 1)
+	estimatedRecordSize := len(writeReqRecords[0].Value)
+	t.Logf("estimated record size: %d bytes", estimatedRecordSize)
 
-			cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-			cfg := createTestKafkaConfig(clusterAddr, topicName)
-			cfg.ProducerMaxBufferedBytes = (estimatedRecordSize * estimatedMaxBufferedRecords) - 1 // Configure the buffer to hold the estimated number of records.
-			cfg.WriteTimeout = testDuration * 10                                                   // We want the Kafka client to block in case of any issue.
+	cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+	cfg := createTestKafkaConfig(clusterAddr, topicName)
+	cfg.ProducerMaxBufferedBytes = 10000
+	cfg.WriteTimeout = testDuration * 10 // We want the Kafka client to block in case of any issue.
 
-			// Throttle a very short (random) time to increase chances of hitting race conditions.
-			cluster.ControlKey(int16(kmsg.Produce), func(_ kmsg.Request) (kmsg.Response, error, bool) {
-				time.Sleep(time.Duration(rand.Int64N(int64(time.Millisecond))))
+	// Throttle a very short (random) time to increase chances of hitting race conditions.
+	cluster.ControlKey(int16(kmsg.Produce), func(_ kmsg.Request) (kmsg.Response, error, bool) {
+		time.Sleep(time.Duration(rand.Int64N(int64(time.Millisecond))))
 
-				return nil, nil, false
-			})
+		return nil, nil, false
+	})
 
-			writer, _ := createTestWriter(t, cfg)
+	writer, _ := createTestWriter(t, cfg)
 
-			// Start N workers that will concurrently write to the same partition.
-			for i := 0; i < numWorkers; i++ {
-				runAsync(&workers, func() {
-					for {
-						select {
-						case <-done:
+	// Start N workers that will concurrently write to the same partition.
+	for i := 0; i < numWorkers; i++ {
+		runAsync(&workers, func() {
+			for {
+				select {
+				case <-done:
+					return
+
+				default:
+					if err := writer.WriteSync(ctx, partitionID, tenantID, createRandomWriteRequest()); err == nil {
+						writeSuccessCount.Inc()
+					} else {
+						assert.ErrorIs(t, err, kgo.ErrMaxBuffered)
+						writeFailureCount.Inc()
+
+						// Stop a worker as soon as a non-expected error occurred.
+						if !errors.Is(err, kgo.ErrMaxBuffered) {
 							return
-
-						default:
-							if err := writer.WriteSync(ctx, partitionID, tenantID, createRandomWriteRequest()); err == nil {
-								writeSuccessCount.Inc()
-							} else {
-								assert.ErrorIs(t, err, kgo.ErrMaxBuffered)
-								writeFailureCount.Inc()
-
-								// Stop a worker as soon as a non-expected error occurred.
-								if !errors.Is(err, kgo.ErrMaxBuffered) {
-									return
-								}
-							}
 						}
 					}
-				})
+				}
 			}
-
-			// Keep it running for some time.
-			time.Sleep(testDuration)
-
-			// Signal workers to stop and wait until they've done.
-			close(done)
-			workers.Wait()
-
-			t.Logf("writes succeeded: %d", writeSuccessCount.Load())
-			t.Logf("writes failed:    %d", writeFailureCount.Load())
 		})
 	}
+
+	// Keep it running for some time.
+	time.Sleep(testDuration)
+
+	// Signal workers to stop and wait until they've done.
+	close(done)
+	workers.Wait()
+
+	t.Logf("writes succeeded: %d", writeSuccessCount.Load())
+	t.Logf("writes failed:    %d", writeFailureCount.Load())
+
+	// We expect some requests to have failed.
+	require.NotZero(t, writeSuccessCount.Load())
+	require.NotZero(t, writeFailureCount.Load())
+
+	// We expect the buffered bytes to get down to 0 once all write requests completed.
+	require.Zero(t, writer.writersBufferedBytes.Load())
 }
 
 func TestMarshalWriteRequestToRecords(t *testing.T) {

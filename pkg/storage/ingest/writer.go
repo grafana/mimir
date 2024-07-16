@@ -64,6 +64,10 @@ type Writer struct {
 	writersMx sync.RWMutex
 	writers   []*kgo.Client
 
+	// Keep track of Kafka records size (bytes) currently in-flight in the Kafka client.
+	// This counter is used to implement a limit on the max buffered bytes.
+	writersBufferedBytes *atomic.Int64
+
 	// Metrics.
 	writeRequestsTotal prometheus.Counter
 	writeFailuresTotal *prometheus.CounterVec
@@ -82,6 +86,7 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		registerer:                 reg,
 		writers:                    make([]*kgo.Client, kafkaCfg.WriteClients),
 		maxInflightProduceRequests: 20,
+		writersBufferedBytes:       atomic.NewInt64(0),
 
 		// Metrics.
 		writeRequestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
@@ -189,23 +194,21 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 // or an error occurred.
 func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, records []*kgo.Record) kgo.ProduceResults {
 	var (
-		remaining = atomic.NewInt64(int64(len(records)))
-		done      = make(chan struct{})
-		resMx     sync.Mutex
-		res       kgo.ProduceResults
+		remaining        = atomic.NewInt64(int64(len(records)))
+		done             = make(chan struct{})
+		resMx            sync.Mutex
+		res              kgo.ProduceResults
+		maxBufferedBytes = int64(w.kafkaCfg.ProducerMaxBufferedBytes)
 	)
 
 	w.writeRequestsTotal.Add(float64(len(records)))
 
 	for _, record := range records {
-		// We use a new context to avoid that other TryProduce() may be cancelled when this call's context is
-		// canceled. It's important to note that cancelling the context passed to TryProduce() doesn't actually
-		// prevent the data to be sent over the wire (because it's never removed from the buffer) but in some
-		// cases may cause all requests to fail with context cancelled.
-		//
-		// We use TryProduce() instead of Produce() so that it will fast fail if the produce buffer is full.
-		// If we would use Produce(), the Produce() function call will block until the buffer can accept the record.
-		client.TryProduce(context.WithoutCancel(ctx), record, func(r *kgo.Record, err error) {
+		promise := func(r *kgo.Record, err error) {
+			if maxBufferedBytes > 0 {
+				w.writersBufferedBytes.Add(-int64(len(r.Value)))
+			}
+
 			resMx.Lock()
 			res = append(res, kgo.ProduceResult{Record: r, Err: err})
 			resMx.Unlock()
@@ -220,7 +223,23 @@ func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, records []
 			if remaining.Dec() == 0 {
 				close(done)
 			}
-		})
+		}
+
+		// Fast fail if the Kafka client buffer is full.
+		if maxBufferedBytes > 0 && w.writersBufferedBytes.Add(int64(len(record.Value))) > maxBufferedBytes {
+			promise(record, kgo.ErrMaxBuffered)
+			continue
+		}
+
+		// We use a new context to avoid that other Produce() may be cancelled when this call's context is
+		// canceled. It's important to note that cancelling the context passed to Produce() doesn't actually
+		// prevent the data to be sent over the wire (because it's never removed from the buffer) but in some
+		// cases may cause all requests to fail with context cancelled.
+		//
+		// Produce() may theoretically block if the buffer is full, but we configure the Kafka client with
+		// unlimited buffer because we implement the buffer limit ourselves (see maxBufferedBytes). This means
+		// Produce() should never block for us in practice.
+		client.Produce(context.WithoutCancel(ctx), record, promise)
 	}
 
 	// Wait for a response or until the context has done.
@@ -311,9 +330,11 @@ func (w *Writer) newKafkaWriter(clientID int) (*kgo.Client, error) {
 		kgo.ProduceRequestTimeout(w.kafkaCfg.WriteTimeout),
 		kgo.RequestTimeoutOverhead(writerRequestTimeoutOverhead),
 
-		// Unlimited number of buffered records because we limit on bytes (easier to reason about).
-		kgo.MaxBufferedRecords(math.MaxInt),
-		kgo.MaxBufferedBytes(w.kafkaCfg.ProducerMaxBufferedBytes),
+		// Unlimited number of buffered records because we limit on bytes in Writer. The reason why we don't use
+		// kgo.MaxBufferedBytes() is because it suffers a deadlock issue.
+		// TODO create an issue and link it
+		kgo.MaxBufferedRecords(math.MaxInt), // Use a high value to set it as unlimited, because the client doesn't support "0 as unlimited".
+		kgo.MaxBufferedBytes(0),
 	)
 	return kgo.NewClient(opts...)
 }
