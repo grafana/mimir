@@ -197,7 +197,7 @@ func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, records []
 		remaining        = atomic.NewInt64(int64(len(records)))
 		done             = make(chan struct{})
 		resMx            sync.Mutex
-		res              kgo.ProduceResults
+		res              = make(kgo.ProduceResults, 0, len(records))
 		maxBufferedBytes = int64(w.kafkaCfg.ProducerMaxBufferedBytes)
 	)
 
@@ -225,7 +225,7 @@ func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, records []
 	}
 
 	for _, record := range records {
-		// Fast fail if the Kafka client buffer is full.
+		// Fast fail if the Kafka client buffer is full. Buffered bytes counter is decreased onProducerDone().
 		if maxBufferedBytes > 0 && w.writersBufferedBytes.Add(int64(len(record.Value))) > maxBufferedBytes {
 			onProduceDone(record, kgo.ErrMaxBuffered)
 			continue

@@ -652,7 +652,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			})
 		}
 
-		// Ensure produce requests are released in case of prematurely test termination.
+		// Ensure produce requests are released in case of premature test termination.
 		t.Cleanup(doUnblockProduceRequests)
 
 		// Configure Kafka to block Produce requests until the test unblocks it.
@@ -728,7 +728,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			"cortex_ingest_storage_writer_produce_requests_total",
 			"cortex_ingest_storage_writer_produce_failures_total"))
 
-		// Unblock produce requests and wait until all goroutines have done.
+		// Unblock produce requests and wait until all goroutines are done.
 		doUnblockProduceRequests()
 		goroutines.Wait()
 
@@ -788,7 +788,7 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 
 	// If the test is successful (no WriteSync() request is in a deadlock state) then we expect the test
 	// to complete shortly after the estimated test duration.
-	ctx, cancel := context.WithTimeoutCause(context.Background(), 2*testDuration, errors.New("test did not compete within the expected time"))
+	ctx, cancel := context.WithTimeoutCause(context.Background(), 2*testDuration, errors.New("test did not complete within the expected time"))
 	t.Cleanup(cancel)
 
 	// Estimate the size of each record written in this test.
@@ -840,7 +840,7 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 	// Keep it running for some time.
 	time.Sleep(testDuration)
 
-	// Signal workers to stop and wait until they've done.
+	// Signal workers to stop and wait until they're done.
 	close(done)
 	workers.Wait()
 
