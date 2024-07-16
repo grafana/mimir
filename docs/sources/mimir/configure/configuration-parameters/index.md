@@ -5143,8 +5143,8 @@ http:
   [tls_server_name: <string> | default = ""]
 
 trace:
-  # (advanced) If enabled, low-level S3 HTTP operation info will be logged at
-  # debug level.
+  # (advanced) If enabled, low-level S3 HTTP operation information is logged at
+  # the debug level.
   # CLI flag: -<prefix>.s3.trace.enable
   [enable: <boolean> | default = false]
 ```

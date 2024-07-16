@@ -276,7 +276,7 @@ type TraceConfig struct {
 }
 
 func (cfg *TraceConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enable, prefix+"enable", false, "If enabled, low-level S3 HTTP operation info will be logged at debug level.")
+	f.BoolVar(&cfg.Enable, prefix+"enable", false, "If enabled, low-level S3 HTTP operation information is logged at the debug level.")
 }
 
 // bucketLookupTypeValue is an adapter between s3.BucketLookupType and flag.Value.
