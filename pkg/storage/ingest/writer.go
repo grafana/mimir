@@ -69,7 +69,7 @@ func NewKafkaProducer(maxBufferedBytes int) *KafkaProducer {
 
 // ProduceSync produces records to Kafka and returns once all records have been successfully committed,
 // or an error occurred.
-func (p *KafkaProducer) ProduceSync(ctx context.Context, client *kafkaWriterClient, records []*kgo.Record, promise func(r *kgo.Record, err error)) error {
+func (p *KafkaProducer) ProduceSync(ctx context.Context, client *kgo.Client, records []*kgo.Record, promise func(r *kgo.Record, err error)) error {
 	var (
 		remaining        = atomic.NewInt64(int64(len(records)))
 		done             = make(chan struct{})
@@ -258,7 +258,7 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 		}
 	}
 
-	if err := w.producer.ProduceSync(ctx, writer, records, onProduceDone); err != nil {
+	if err := w.producer.ProduceSync(ctx, writer.Client, records, onProduceDone); err != nil {
 		res = kgo.ProduceResults{{Err: err}}
 	}
 
