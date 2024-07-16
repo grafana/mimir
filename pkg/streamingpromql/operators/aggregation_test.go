@@ -133,10 +133,25 @@ func TestAggregation_GroupLabelling(t *testing.T) {
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "foo", "bar"),
 			expectedOutputSeries: labels.FromStrings("env", "prod"),
 		},
-		"grouping with 'by', multiple grouping labels, input has all grouping labels": {
+		"grouping with 'by', multiple grouping labels, input has superset of grouping labels": {
 			grouping:             []string{"cluster", "env"},
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "cluster", "cluster-1", "foo", "bar"),
 			expectedOutputSeries: labels.FromStrings("env", "prod", "cluster", "cluster-1"),
+		},
+		"grouping with 'by', multiple grouping labels, input has all grouping labels and no others": {
+			grouping:             []string{"cluster", "env"},
+			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "cluster", "cluster-1"),
+			expectedOutputSeries: labels.FromStrings("env", "prod", "cluster", "cluster-1"),
+		},
+		"grouping with 'by', unsorted grouping labels": {
+			grouping:             []string{"env", "cluster"},
+			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "cluster", "cluster-1", "foo", "bar"),
+			expectedOutputSeries: labels.FromStrings("env", "prod", "cluster", "cluster-1"),
+		},
+		"grouping with 'by', grouping labels include __name__": {
+			grouping:             []string{"cluster", "env", "__name__"},
+			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "cluster", "cluster-1", "foo", "bar"),
+			expectedOutputSeries: labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "cluster", "cluster-1"),
 		},
 
 		// Grouping with 'without'
@@ -187,6 +202,30 @@ func TestAggregation_GroupLabelling(t *testing.T) {
 			without:              true,
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "cluster", "cluster-1"),
 			expectedOutputSeries: labels.EmptyLabels(),
+		},
+		"grouping with 'without', unsorted grouping labels": {
+			grouping:             []string{"env", "cluster"},
+			without:              true,
+			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "cluster", "cluster-1", "a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
+			expectedOutputSeries: labels.FromStrings("a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
+		},
+		"grouping with 'without', grouping labels include __name__": {
+			grouping:             []string{"cluster", "env", "__name__"},
+			without:              true,
+			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
+			expectedOutputSeries: labels.FromStrings("a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
+		},
+		"grouping with 'without', grouping labels include duplicates": {
+			grouping:             []string{"cluster", "env", "cluster"},
+			without:              true,
+			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
+			expectedOutputSeries: labels.FromStrings("a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
+		},
+		"grouping with 'without', grouping labels include label that sorts before __name__": {
+			grouping:             []string{"cluster", "env", "__aaa__"},
+			without:              true,
+			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "__aaa__", "foo", "a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
+			expectedOutputSeries: labels.FromStrings("a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
 		},
 	}
 
