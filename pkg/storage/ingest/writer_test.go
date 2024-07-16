@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"testing"
@@ -625,9 +626,10 @@ func TestWriter_WriteSync(t *testing.T) {
 		t.Logf("estimated record size: %d bytes", estimatedRecordSize)
 
 		var (
-			unblockProduceRequests = make(chan struct{})
-			recordsReceived        = atomic.NewInt64(0)
-			goroutines             = sync.WaitGroup{}
+			unblockProduceRequestsOnce = sync.Once{}
+			unblockProduceRequests     = make(chan struct{})
+			recordsReceived            = atomic.NewInt64(0)
+			goroutines                 = sync.WaitGroup{}
 
 			writeErrsMx sync.Mutex
 			writeErrs   []error
@@ -643,10 +645,15 @@ func TestWriter_WriteSync(t *testing.T) {
 		assert.GreaterOrEqual(t, numPartitions, 10)
 		assert.Equal(t, 1, cfg.WriteClients)
 
-		t.Cleanup(func() {
-			t.Log("releasing produce requests")
-			close(unblockProduceRequests)
-		})
+		doUnblockProduceRequests := func() {
+			unblockProduceRequestsOnce.Do(func() {
+				t.Log("releasing produce requests")
+				close(unblockProduceRequests)
+			})
+		}
+
+		// Ensure produce requests are released in case of prematurely test termination.
+		t.Cleanup(doUnblockProduceRequests)
 
 		// Configure Kafka to block Produce requests until the test unblocks it.
 		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
@@ -720,7 +727,129 @@ func TestWriter_WriteSync(t *testing.T) {
 		`),
 			"cortex_ingest_storage_writer_produce_requests_total",
 			"cortex_ingest_storage_writer_produce_failures_total"))
+
+		// Unblock produce requests and wait until all goroutines have done.
+		doUnblockProduceRequests()
+		goroutines.Wait()
+
+		// Now that produce requests have been unblocked, try to produce again. We expect all
+		// produce to succeed.
+		for i := int32(0); i < 3; i++ {
+			partition := i
+
+			runAsync(&goroutines, func() {
+				require.NoError(t, writer.WriteSync(ctx, partition, tenantID, createWriteRequest()))
+			})
+		}
+
+		goroutines.Wait()
+
+		// Check metrics.
+		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingest_storage_writer_produce_requests_total Total number of produce requests issued to Kafka.
+			# TYPE cortex_ingest_storage_writer_produce_requests_total counter
+			cortex_ingest_storage_writer_produce_requests_total 13
+
+			# HELP cortex_ingest_storage_writer_produce_failures_total Total number of failed produce requests issued to Kafka.
+			# TYPE cortex_ingest_storage_writer_produce_failures_total counter
+			cortex_ingest_storage_writer_produce_failures_total{reason="buffer-full"} 7
+			cortex_ingest_storage_writer_produce_failures_total{reason="timeout"} 3
+		`),
+			"cortex_ingest_storage_writer_produce_requests_total",
+			"cortex_ingest_storage_writer_produce_failures_total"))
 	})
+}
+
+func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
+	const (
+		topicName     = "test"
+		numPartitions = 1
+		partitionID   = 0
+		numWorkers    = 10
+		tenantID      = "user-1"
+		testDuration  = 3 * time.Second
+	)
+
+	for _, estimatedMaxBufferedRecords := range []int{numWorkers / 2, numWorkers - 1} {
+		t.Run(fmt.Sprintf("estimated max buffered records: %d", estimatedMaxBufferedRecords), func(t *testing.T) {
+			var (
+				series1 = []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}
+
+				done    = make(chan struct{})
+				workers = sync.WaitGroup{}
+
+				writeSuccessCount = atomic.NewInt64(0)
+				writeFailureCount = atomic.NewInt64(0)
+			)
+
+			createWriteRequest := func() *mimirpb.WriteRequest {
+				return &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}
+			}
+
+			// If the test is successful (no WriteSync() request is in a deadlock state) then we expect the test
+			// to complete shortly after the estimated test duration.
+			ctx, cancel := context.WithTimeoutCause(context.Background(), 2*testDuration, errors.New("test did not compete within the expected time"))
+			t.Cleanup(cancel)
+
+			// Estimate the size of each record written in this test.
+			writeReqRecords, err := marshalWriteRequestToRecords(partitionID, tenantID, createWriteRequest(), maxProducerRecordDataBytesLimit)
+			require.NoError(t, err)
+			require.Len(t, writeReqRecords, 1)
+			estimatedRecordSize := len(writeReqRecords[0].Value)
+			t.Logf("estimated record size: %d bytes", estimatedRecordSize)
+
+			cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+			cfg := createTestKafkaConfig(clusterAddr, topicName)
+			cfg.ProducerMaxBufferedBytes = (estimatedRecordSize * estimatedMaxBufferedRecords) - 1 // Configure the buffer to hold the estimated number of records.
+			cfg.WriteTimeout = testDuration * 10                                                   // We want the Kafka client to block in case of any issue.
+
+			// Throttle a very short (random) time to increase chances of hitting race conditions.
+			cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
+				time.Sleep(time.Duration(rand.Int64N(int64(time.Millisecond))))
+
+				return nil, nil, false
+			})
+
+			writer, _ := createTestWriter(t, cfg)
+
+			// Start N workers that will concurrently write to the same partition.
+			for i := 0; i < numWorkers; i++ {
+				runAsync(&workers, func() {
+					for {
+						select {
+						case <-done:
+							return
+
+						default:
+							if err := writer.WriteSync(ctx, partitionID, tenantID, createWriteRequest()); err == nil {
+								writeSuccessCount.Inc()
+							} else {
+								assert.ErrorIs(t, err, kgo.ErrMaxBuffered)
+								writeFailureCount.Inc()
+
+								// Stop a worker as soon as a non-expected error occurred.
+								if !errors.Is(err, kgo.ErrMaxBuffered) {
+									return
+								}
+							}
+						}
+					}
+				})
+			}
+
+			// Keep it running for some time.
+			time.Sleep(testDuration)
+
+			// Signal workers to stop and wait until they've done.
+			close(done)
+			workers.Wait()
+
+			t.Logf("writes succeeded: %d", writeSuccessCount.Load())
+			t.Logf("writes failed:    %d", writeFailureCount.Load())
+
+			// TODO explain why no assertions (we just want to make sure it doesn't block, actually we could set a timeout on context)
+		})
+	}
 }
 
 func TestMarshalWriteRequestToRecords(t *testing.T) {
