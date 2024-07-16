@@ -540,6 +540,7 @@ func (b *BlockBuilder) consumePartition(
 
 	}()
 
+	fetchLag := pl.Lag
 	for !loopDone {
 		if err := context.Cause(ctx); err != nil {
 			return pl, err
@@ -564,7 +565,7 @@ func (b *BlockBuilder) consumePartition(
 		})
 
 		numRecs := fetches.NumRecords()
-		if numRecs == 0 && lag <= 0 {
+		if numRecs == 0 && fetchLag <= 0 {
 			level.Warn(b.logger).Log("msg", "got empty fetches from broker", "part", part)
 			break
 		}
@@ -576,11 +577,13 @@ func (b *BlockBuilder) consumePartition(
 				return
 			}
 			l := len(tp.Records)
-			if l > 0 {
-				recsC <- tp.Records
-				if tp.Records[l-1].Timestamp.After(cycleEnd) {
-					loopDone = true
-				}
+			if l == 0 {
+				return
+			}
+			fetchLag -= int64(l)
+			recsC <- tp.Records
+			if tp.Records[l-1].Timestamp.After(cycleEnd) {
+				loopDone = true
 			}
 		})
 	}
