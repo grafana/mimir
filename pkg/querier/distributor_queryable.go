@@ -132,9 +132,9 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		sets = append(sets, newTimeSeriesSeriesSet(results.Timeseries))
 	}
 
-	traceID, _ := tracing.ExtractTraceID(ctx)
 	var chunkInfo *chunkinfologger.ChunkInfoLogger
 	if chunkinfologger.IsChunkInfoLoggingEnabled(ctx) {
+		traceID, _ := tracing.ExtractTraceID(ctx)
 		chunkInfo = chunkinfologger.NewChunkInfoLogger("ingester message", traceID, q.logger, chunkinfologger.ChunkInfoLoggingFromContext(ctx))
 		q.logger.Log("msg", "ingester streamSelect: start", "traceid", traceID, "mint", minT, "maxt", maxT)
 	}

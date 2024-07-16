@@ -39,7 +39,7 @@ type blockStreamingQuerierSeriesSet struct {
 
 	currSeries storage.Series
 
-	// Debug logging for continuous test queries.
+	// For debug logging.
 	chunkInfo     *chunkinfologger.ChunkInfoLogger
 	remoteAddress string
 }
@@ -100,7 +100,7 @@ type blockStreamingQuerierSeries struct {
 	seriesIdxStart, seriesIdxEnd int
 	streamReader                 chunkStreamReader
 
-	// Debug logging for continuous test queries.
+	// For debug logging.
 	chunkInfo     *chunkinfologger.ChunkInfoLogger
 	lastOne       bool
 	remoteAddress string

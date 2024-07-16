@@ -31,7 +31,7 @@ type streamingChunkSeries struct {
 
 	alreadyCreated bool
 
-	// Debug logging for continuous test queries.
+	// For debug logging.
 	lastOne   bool
 	chunkInfo *chunkinfologger.ChunkInfoLogger
 }

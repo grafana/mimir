@@ -14,42 +14,42 @@ import (
 
 func TestChunkInfoLoggerMiddleware(t *testing.T) {
 	testCases := map[string]struct {
-		headers       http.Header
-		expectedOk    bool
-		expectedValue []string
+		headers         http.Header
+		expectedEnabled bool
+		expectedLabels  []string
 	}{
 		"no headers": {
-			headers:       http.Header{},
-			expectedOk:    false,
-			expectedValue: nil,
+			headers:         http.Header{},
+			expectedEnabled: false,
+			expectedLabels:  nil,
 		},
 		"single value": {
 			headers: http.Header{
 				"X-Mimir-Chunk-Info-Logger": []string{"foo"},
 			},
-			expectedOk:    true,
-			expectedValue: []string{"foo"},
+			expectedEnabled: true,
+			expectedLabels:  []string{"foo"},
 		},
 		"multiple values": {
 			headers: http.Header{
 				"X-Mimir-Chunk-Info-Logger": []string{"foo,bar"},
 			},
-			expectedOk:    true,
-			expectedValue: []string{"foo", "bar"},
+			expectedEnabled: true,
+			expectedLabels:  []string{"foo", "bar"},
 		},
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			mw := Middleware()
 			var (
-				recordedOk    bool
-				recordedValue []string
+				actualEnabled bool
+				actualLabels  []string
 			)
 			recorderHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				ctx := r.Context()
-				recordedOk = IsChunkInfoLoggingEnabled(ctx)
-				if recordedOk {
-					recordedValue = ChunkInfoLoggingFromContext(ctx)
+				actualEnabled = IsChunkInfoLoggingEnabled(ctx)
+				if actualEnabled {
+					actualLabels = ChunkInfoLoggingFromContext(ctx)
 				}
 				w.WriteHeader(http.StatusOK)
 			})
@@ -64,8 +64,8 @@ func TestChunkInfoLoggerMiddleware(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, resp.Code)
-			require.Equal(t, tc.expectedOk, recordedOk)
-			require.Equal(t, tc.expectedValue, recordedValue)
+			require.Equal(t, tc.expectedEnabled, actualEnabled)
+			require.Equal(t, tc.expectedLabels, actualLabels)
 		})
 	}
 }

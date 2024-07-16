@@ -24,8 +24,8 @@ type ChunkInfoLogger struct {
 	logger    log.Logger
 	labels    []string
 
-	// sourceCount is the number of sources in the current series to track if we need to add a comma.
-	sourceCount int
+	// firstSource is to know when we need to add a comma before the source info.
+	firstSource bool
 }
 
 func NewChunkInfoLogger(msg, traceID string, logger log.Logger, labels []string) *ChunkInfoLogger {
@@ -43,7 +43,7 @@ func (c *ChunkInfoLogger) SetMsg(msg string) {
 }
 
 func (c *ChunkInfoLogger) StartSeries(ls labels.Labels) {
-	c.sourceCount = 0
+	c.firstSource = true
 	if c.chunkInfo.Len() > 0 {
 		c.chunkInfo.WriteString(`,"`) // next series
 	} else {
@@ -56,7 +56,7 @@ func (c *ChunkInfoLogger) StartSeries(ls labels.Labels) {
 		// Yes we write empty string if the label is not present in the labels.
 		c.chunkInfo.WriteString(ls.Get(l))
 	}
-	c.chunkInfo.WriteString(`":{`) // ingesters map
+	c.chunkInfo.WriteString(`":{`) // Source (ingester/store-gateway) map.
 }
 
 // Close a series in the chunk info and dump into log if it exceeds the max size.
@@ -105,10 +105,11 @@ func (c *ChunkInfoLogger) formatChunkInfo(sourceID string, length int, ith func(
 }
 
 func (c *ChunkInfoLogger) startSourceInfo(sourceID string) {
-	if c.sourceCount > 0 {
+	if c.firstSource {
+		c.firstSource = false
+	} else {
 		c.chunkInfo.WriteRune(',')
 	}
-	c.sourceCount++
 	c.chunkInfo.WriteRune('"')
 	c.chunkInfo.WriteString(sourceID)
 	c.chunkInfo.WriteString(`":[`) // list of chunks start
