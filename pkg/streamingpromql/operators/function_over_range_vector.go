@@ -105,10 +105,6 @@ func (m *FunctionOverRangeVector) computeNextStep(data *types.InstantVectorSerie
 
 		accumulate := func(points []promql.FPoint) {
 			for _, p := range points {
-				if p.T > step.RangeEnd { // The buffer is already guaranteed to only contain points >= rangeStart.
-					return
-				}
-
 				if p.F < previousValue {
 					// Counter reset.
 					delta += previousValue
@@ -152,10 +148,6 @@ func (m *FunctionOverRangeVector) computeNextStep(data *types.InstantVectorSerie
 
 		accumulate := func(points []promql.HPoint) error {
 			for _, p := range points {
-				if p.T > step.RangeEnd { // The buffer is already guaranteed to only contain points >= rangeStart.
-					return nil
-				}
-
 				if p.H.DetectReset(previousValue) {
 					// Counter reset.
 					_, err = delta.Add(previousValue)
@@ -191,8 +183,8 @@ func (m *FunctionOverRangeVector) computeNextStep(data *types.InstantVectorSerie
 				return err
 			}
 		}
-		val.CounterResetHint = histogram.GaugeType
-		data.Histograms = append(data.Histograms, promql.HPoint{T: step.StepT, H: val.Compact(0)})
+
+		data.Histograms = append(data.Histograms, promql.HPoint{T: step.StepT, H: val})
 	}
 	return nil
 }
@@ -223,6 +215,8 @@ func (m *FunctionOverRangeVector) calculateHistogramRate(rangeStart, rangeEnd in
 
 	factor := extrapolateToInterval / sampledInterval
 	factor /= m.rangeSeconds
+	delta.CounterResetHint = histogram.GaugeType
+	delta.Compact(0)
 	return delta.Mul(factor)
 }
 
