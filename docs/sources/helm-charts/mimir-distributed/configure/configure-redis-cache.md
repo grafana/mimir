@@ -2,10 +2,6 @@
 title: "Configure Redis cache"
 menuTitle: "Redis cache"
 description: "Learn how to configure Grafana Mimir to use external Redis as cache"
-refs:
-  the-configuration-parameters-reference:
-    - pattern: /
-      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configuration-parameters/#redis
 ---
 
 # Configure Redis cache
@@ -25,7 +21,7 @@ results-cache:
   enabled: false
 ```
 
-Next, configure Mimir to connect to Redis using `structuredConfig`. Refer to [the configuration parameters reference] for Redis connection configuration options. For example:
+Next, configure Mimir to connect to Redis using `structuredConfig`. Refer to [the configuration parameters reference](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/#redis) for Redis connection configuration options. For example:
 
 ```yaml
 mimir:
