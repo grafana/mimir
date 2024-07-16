@@ -791,13 +791,6 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 	ctx, cancel := context.WithTimeoutCause(context.Background(), 2*testDuration, errors.New("test did not complete within the expected time"))
 	t.Cleanup(cancel)
 
-	// Estimate the size of each record written in this test.
-	writeReqRecords, err := marshalWriteRequestToRecords(partitionID, tenantID, createRandomWriteRequest(), maxProducerRecordDataBytesLimit)
-	require.NoError(t, err)
-	require.Len(t, writeReqRecords, 1)
-	estimatedRecordSize := len(writeReqRecords[0].Value)
-	t.Logf("estimated record size: %d bytes", estimatedRecordSize)
-
 	cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 	cfg := createTestKafkaConfig(clusterAddr, topicName)
 	cfg.ProducerMaxBufferedBytes = 10000
