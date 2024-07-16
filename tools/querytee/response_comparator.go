@@ -334,18 +334,19 @@ func compareSampleHistogramPair(expected, actual model.SampleHistogramPair, opts
 }
 
 func compareSampleHistogramBuckets(opts SampleComparisonOptions) func(expected, actual *model.HistogramBucket) bool {
-	return func(expected, actual *model.HistogramBucket) bool {
-		if !compareSampleValue(float64(expected.Lower), float64(actual.Lower), opts) {
+	return func(first, second *model.HistogramBucket) bool {
+		if !compareSampleValue(float64(first.Lower), float64(second.Lower), opts) {
 			return false
 		}
 
-		if !compareSampleValue(float64(expected.Upper), float64(actual.Upper), opts) {
+		if !compareSampleValue(float64(first.Upper), float64(second.Upper), opts) {
 			return false
 		}
 
-		if !compareSampleValue(float64(expected.Count), float64(actual.Count), opts) {
+		if !compareSampleValue(float64(first.Count), float64(second.Count), opts) {
 			return false
 		}
-		return expected.Boundaries == actual.Boundaries
+
+		return first.Boundaries == second.Boundaries
 	}
 }
