@@ -804,7 +804,7 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 			cfg.WriteTimeout = testDuration * 10                                                   // We want the Kafka client to block in case of any issue.
 
 			// Throttle a very short (random) time to increase chances of hitting race conditions.
-			cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.ControlKey(int16(kmsg.Produce), func(_ kmsg.Request) (kmsg.Response, error, bool) {
 				time.Sleep(time.Duration(rand.Int64N(int64(time.Millisecond))))
 
 				return nil, nil, false
