@@ -4,7 +4,7 @@ keywords:
   - send metrics
   - native histogram
   - prometheus
-  - grafana agent
+  - grafana alloy
   - instrumentation
 menuTitle: Native histograms
 title: Send native histograms to Mimir
@@ -17,17 +17,17 @@ Prometheus native histograms is a data type in the Prometheus ecosystem that mak
 
 Native histograms are different from classic Prometheus histograms in a number of ways:
 
-- Native histogram bucket boundaries are calculated by a formula that depends on the scale (resolution) of the native histogram, and are not user defined. The calculation produces exponentially increasing bucket boundaries. For details, see [Bucket boundary calculation](#bucket-boundary-calculation).
-- Native histogram bucket boundaries might change (widen) dynamically if the observations result in too many buckets. For details, see [Limiting the number of buckets](#limiting-the-number-of-buckets).
+- Native histogram bucket boundaries are calculated by a formula that depends on the scale (resolution) of the native histogram, and are not user defined. The calculation produces exponentially increasing bucket boundaries. For details, refer to [Bucket boundary calculation](#bucket-boundary-calculation).
+- Native histogram bucket boundaries might change (widen) dynamically if the observations result in too many buckets. For details, refer to [Limit the number of buckets](#limit-the-number-of-buckets).
 - Native histogram bucket counters only count observations inside the bucket boundaries, whereas the classic histogram buckets only have an upper bound called `le` and count all observations in the bucket and all lower buckets (cumulative).
 - An instance of a native histogram metric only requires a single time series, because the buckets, sum of observations, and the count of observations are stored in a single data type called `native histogram` rather than in separate time series using the `float` data type. Thus, there are no `<metric>_bucket`, `<metric>_sum`, and `<metric>_count` series. There is only `<metric>` time series.
-- Querying native histograms via the Prometheus query language (PromQL) uses a different syntax. For details, see [functions](https://prometheus.io/docs/prometheus/latest/querying/functions/).
+- Querying native histograms via the Prometheus query language (PromQL) uses a different syntax. For details, refer to [functions](https://prometheus.io/docs/prometheus/latest/querying/functions/).
 
 For an introduction to native histograms, watch the [Native Histograms in Prometheus](https://www.youtube.com/watch?v=AcmABV6NCYk) presentation.
 
 ## Advantages and disadvantages
 
-There are advantages and disadvantages of using native histograms compared to the classic Prometheus histograms. For more information and a real example, see the [Prometheus Native Histograms in Production](https://www.youtube.com/watch?v=TgINvIK9SYc&t=127s) video.
+There are advantages and disadvantages of using native histograms compared to the classic Prometheus histograms. For more information and a real example, refer to the [Prometheus Native Histograms in Production](https://www.youtube.com/watch?v=TgINvIK9SYc&t=127s) video.
 
 ### Advantages
 
@@ -51,7 +51,7 @@ The preceding problems are mitigated by high resolution, which native histograms
 The following examples have some reasonable defaults to define a new native histogram metric. The examples use the [Go client library](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus#Histogram) version 1.16 and the [Java client library](https://prometheus.github.io/client_java/api/io/prometheus/metrics/core/metrics/Histogram.Builder.html) 1.0.
 
 {{% admonition type="note" %}}
-Native histogram options can be added to existing classic histograms to get both the classic and native histogram at the same time. See [Migrate from classic histograms](#migrate-from-classic-histograms).
+Native histogram options can be added to existing classic histograms to get both the classic and native histogram at the same time. Refer to [Migrate from classic histograms](#migrate-from-classic-histograms).
 {{% /admonition %}}
 
 {{< code >}}
@@ -80,7 +80,7 @@ static final Histogram requestLatency = Histogram.build()
 
 {{< /code >}}
 
-In Go, the `NativeHistogramBucketFactor` option sets an upper limit of the relative growth from one bucket to the next. The value 1.1 means that a bucket is at most 10% wider than the next smaller bucket. The currently supported values range from `1.0027` or 0.27% up to 65536 or 655%. For more detailed explanation see [Bucket boundary calculation](#bucket-boundary-calculation).
+In Go, the `NativeHistogramBucketFactor` option sets an upper limit of the relative growth from one bucket to the next. The value 1.1 means that a bucket is at most 10% wider than the next smaller bucket. The currently supported values range from `1.0027` or 0.27% up to 65536 or 655%. For more detailed explanation, refer to [Bucket boundary calculation](#bucket-boundary-calculation).
 
 Some of the resulting buckets for factor `1.1` rounded to two decimal places are:
 
@@ -92,9 +92,9 @@ Some of the resulting buckets for factor `1.1` rounded to two decimal places are
 
 In Java `.nativeInitialSchema` using schema value `3` results in the same bucket boundaries. For more information about the schema supported in Java, consult the documentation for [nativeInitialSchema](<https://prometheus.github.io/client_java/api/io/prometheus/metrics/core/metrics/Histogram.Builder.html#nativeInitialSchema(int)>).
 
-The value of `NativeHistogramMaxBucketNumber`/`nativeMaxNumberOfBuckets` limits the number of buckets produced by the observations. This can be especially useful if the receiver side is limiting the number of buckets that can be sent. For more information about the bucket limit see [Limiting the number of buckets](#limiting-the-number-of-buckets).
+The value of `NativeHistogramMaxBucketNumber`/`nativeMaxNumberOfBuckets` limits the number of buckets produced by the observations. This can be especially useful if the receiver side is limiting the number of buckets that can be sent. For more information about the bucket limit refer to [Limit the number of buckets](#limit-the-number-of-buckets).
 
-The duration in `NativeHistogramMinResetDuration`/`nativeResetDuration` will prohibit automatic counter resets inside that period. Counter resets are related to the bucket limit, for more information see [Limiting the number of buckets](#limiting-the-number-of-buckets).
+The duration in `NativeHistogramMinResetDuration`/`nativeResetDuration` will prohibit automatic counter resets inside that period. Counter resets are related to the bucket limit, for more information refer to [Limit the number of buckets](#limit-the-number-of-buckets).
 
 ## Scrape and send native histograms with Prometheus
 
@@ -147,51 +147,19 @@ Use the latest version of Prometheus or at least version 2.47.
        send_native_histograms: true
    ```
 
-## Scrape and send native histograms with Grafana Agent
+## Scrape and send native histograms with Grafana Alloy
 
-Use the latest version of the Grafana Agent in [Flow mode](/docs/agent/latest/flow/) (static mode support is coming soon).
+Use the latest version of [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_VERSION>).
 
-1. To enable scraping native histograms you need to enable the argument `enable_protobuf_negotiation` in the `prometheus.scrape` component:
-
-   ```
-   prometheus.scrape "myapp" {
-     enable_protobuf_negotiation = true
-   }
-   ```
-
-1. The above flag will make Prometheus detect and scrape native histograms, but ignores classic histogram version of those metrics that have native histogram defined as well. Classic histograms without native histogram definitions are not effected. To keep scraping the classic histogram version of native histogram metrics you need to set `scrape_classic_histograms` to `true` in your scrape jobs, for example:
+1. To scrape native histograms, you need to set the `scrape_protocols` argument in the `prometheus.scrape` component to specify `PrometheusProto` as the first protocol to negotiate:
 
    ```
-   prometheus.scrape "myapp" {
-     enable_protobuf_negotiation = true
-     scrape_classic_histograms = true
-   }
+    scrape_protocols = ["PrometheusProto", "OpenMetricsText1.0.0", "OpenMetricsText0.0.1", "PrometheusText0.0.4"]
    ```
 
-   {{% admonition type="note" %}}
-   <!-- Issue: https://github.com/prometheus/prometheus/issues/11265 -->
+   For more information, refer to [prometheus.scrape](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.scrape/) in the Grafana Alloy documentation.
 
-   Native histograms don't have a textual presentation at the moment on the application's `/metrics` endpoint, thus Grafana Agent negotiates a Protobuf protocol transfer in this case.
-   {{% /admonition %}}
-
-   {{% admonition type="note" %}}
-   <!-- Add link to Prometheus 2.48 documentation about labels when released.
-        Issue: https://github.com/prometheus/prometheus/issues/12984 -->
-
-   In certain situations, the protobuf parsing changes the number formatting of
-   the `le` labels of conventional histograms and the `quantile` labels of
-   summaries. Typically, this happens if the scraped target is instrumented with
-   [client_golang](https://github.com/prometheus/client_golang) provided that
-   [promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
-   is set to `false`. In such a case, integer label values are represented in the
-   text format as such, e.g. `quantile="1"` or `le="2"`. However, the protobuf parsing
-   changes the representation to float-like (following the OpenMetrics
-   specification), so the examples above become `quantile="1.0"` and `le="2.0"` after
-   ingestion into Prometheus, which changes the identity of the metric compared to
-   what was ingested before via the text format.
-   {{% /admonition %}}
-
-1. To be able to send native histograms to a Prometheus remote write compatible receiver, for example Grafana Cloud Metrics, Mimir, etc, set `send_native_histograms` argument to `true` in the `prometheus.remote_write` component, for example:
+1. To send native histograms to a Prometheus remote write compatible receiver, such as Grafana Cloud Metrics or Mimir, set the `send_native_histograms` argument to `true` in the `prometheus.remote_write` component. For example:
 
    ```
    prometheus.remote_write "mimir" {
@@ -204,13 +172,17 @@ Use the latest version of the Grafana Agent in [Flow mode](/docs/agent/latest/fl
 
 ## Migrate from classic histograms
 
-It is perfectly possible to keep the custom bucket definition of a classic histogram and add native histogram buckets at the same time. This can ease the migration process, which can look like this in general:
+To ease the migration process, you can keep the custom bucket definition for classic histograms while you migrate to native histograms.
 
-1. Add native histogram definition to an existing histogram in the instrumentation.
-1. Let Prometheus or Grafana Agent scrape both classic and native histograms for metrics that have both defined.
-1. Send native histograms to remote write - if classic histogram is scraped, it is sent by default.
-1. Start modifying the recording rules, alerts, dashboards to use the new native histograms.
-1. Once everything works, remove the custom bucket definition (`Buckets`/`classicUpperBounds`) from the instrumentation. Or drop the classic histogram series with [Prometheus relabeling](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) or [Grafana Agent prometheus.relabel](/docs/agent/latest/flow/reference/components/prometheus.relabel/) at the time of scraping. Or stop scraping classic histogram version of metrics, however note that that will apply to all metrics of a scrape target.
+1. Add the native histogram definition to an existing histogram in the instrumentation.
+1. Let Prometheus or Grafana Alloy scrape both classic and native histograms for metrics that have both defined.
+1. Send native histograms to remote write. Native histograms are sent to remote write by default if classic histograms are scraped.
+1. Start modifying the recording rules, alerts, and dashboards to use native histograms.
+1. After configuring native histogram collection, choose one of the following ways to stop collecting classic histograms.
+
+   - Remove the custom bucket definition, `Buckets`/`classicUpperBounds`, from the instrumentation.
+   - Drop the classic histogram series with [Prometheus relabeling](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) or [Grafana Alloy prometheus.relabel](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.relabel) at the time of scraping.
+   - Stop scraping the classic histogram version of metrics. This option applies to all metrics of a scrape target.
 
 Code examples with both classic and native histogram defined for the same metric:
 
@@ -290,18 +262,18 @@ Native histogram samples have three different kind of buckets, for any observed 
 
   where the `schema` is chosen as above.
 
-## Limiting the number of buckets
+## Limit the number of buckets
 
 The server scraping or receiving native histograms over remote write may limit the number of native histogram buckets it accepts. The server may reject or downscale (reduce resolution and merge adjacent buckets). Even if that wasn't the case, storing and emitting potentially unlimited number of buckets isn't practical.
 
 The instrumentation libraries of Prometheus have automation to keep the number of buckets down, provided that the maximum bucket number option is used, such as `NativeHistogramMaxBucketNumber` in Go.
 
-Once the set maximum is exceeded, the following strategy is enacted:
+After the set maximum is exceeded, the following strategy is enacted:
 
 1. First, if the last reset (or the creation) of the histogram is at least the minimum reset duration ago, then the whole histogram is reset to its initial state (including classic buckets). This only works if the minimum reset duration was set (`NativeHistogramMinResetDuration` in Go).
 
 1. If less time has passed, or if the minimum reset duration is zero, no reset is performed. Instead, the zero threshold is increased sufficiently to reduce the number of buckets to or below the maximum bucket number, but not to more than the maximum zero threshold (`NativeHistogramMaxZeroThreshold` in Go). Thus, if the threshold is at or above the maximum threshold already nothing happens at this step.
 
-1. After that, if the number of buckets still exceeds maximum bucket number, the resolution of the histogram is reduced by doubling the width of all the buckets (up to a growth factor between one bucket to the next of 2^(2^4) = 65536, see above in [Bucket boundary calculation](#bucket-boundary-calculation)).
+1. After that, if the number of buckets still exceeds maximum bucket number, the resolution of the histogram is reduced by doubling the width of all the buckets (up to a growth factor between one bucket to the next of 2^(2^4) = 65536, refer to [Bucket boundary calculation](#bucket-boundary-calculation)).
 
 1. Any increased zero threshold or reduced resolution is reset back to their original values once the minimum reset duration has passed (since the last reset or the creation of the histogram).
