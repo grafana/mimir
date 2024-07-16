@@ -7058,9 +7058,9 @@
               "blockEntries": [
                 {
                   "kind": "field",
-                  "name": "enable",
+                  "name": "enabled",
                   "required": false,
-                  "desc": "If enabled, low-level S3 HTTP operation information is logged at the debug level.",
+                  "desc": "When enabled, low-level S3 HTTP operation information is logged at the debug level.",
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "blocks-storage.s3.trace.enabled",
@@ -13051,9 +13051,9 @@
               "blockEntries": [
                 {
                   "kind": "field",
-                  "name": "enable",
+                  "name": "enabled",
                   "required": false,
-                  "desc": "If enabled, low-level S3 HTTP operation information is logged at the debug level.",
+                  "desc": "When enabled, low-level S3 HTTP operation information is logged at the debug level.",
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "ruler-storage.s3.trace.enabled",
@@ -15212,9 +15212,9 @@
               "blockEntries": [
                 {
                   "kind": "field",
-                  "name": "enable",
+                  "name": "enabled",
                   "required": false,
-                  "desc": "If enabled, low-level S3 HTTP operation information is logged at the debug level.",
+                  "desc": "When enabled, low-level S3 HTTP operation information is logged at the debug level.",
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "alertmanager-storage.s3.trace.enabled",
@@ -17617,9 +17617,9 @@
                   "blockEntries": [
                     {
                       "kind": "field",
-                      "name": "enable",
+                      "name": "enabled",
                       "required": false,
-                      "desc": "If enabled, low-level S3 HTTP operation information is logged at the debug level.",
+                      "desc": "When enabled, low-level S3 HTTP operation information is logged at the debug level.",
                       "fieldValue": null,
                       "fieldDefaultValue": false,
                       "fieldFlag": "common.storage.s3.trace.enabled",
