@@ -173,19 +173,19 @@ type seriesToGroupLabelsFunc func(labels.Labels) labels.Labels
 func (a *Aggregation) seriesToGroupFuncs() (seriesToGroupLabelsBytesFunc, seriesToGroupLabelsFunc) {
 	switch {
 	case a.Without:
-		return a.groupingWithWithoutSeriesToGroupFuncs()
+		return a.groupingWithoutLabelsSeriesToGroupFuncs()
 	case len(a.Grouping) == 0:
 		return groupToSingleSeriesLabelsBytesFunc, groupToSingleSeriesLabelsFunc
 	default:
-		return a.groupingWithBySeriesToGroupFuncs()
+		return a.groupingByLabelsSeriesToGroupFuncs()
 	}
 }
 
 var groupToSingleSeriesLabelsBytesFunc = func(_ labels.Labels) []byte { return nil }
 var groupToSingleSeriesLabelsFunc = func(_ labels.Labels) labels.Labels { return labels.EmptyLabels() }
 
-// groupingWithWithoutSeriesToGroupFuncs returns grouping functions for aggregations that use 'without'.
-func (a *Aggregation) groupingWithWithoutSeriesToGroupFuncs() (seriesToGroupLabelsBytesFunc, seriesToGroupLabelsFunc) {
+// groupingWithoutLabelsSeriesToGroupFuncs returns grouping functions for aggregations that use 'without'.
+func (a *Aggregation) groupingWithoutLabelsSeriesToGroupFuncs() (seriesToGroupLabelsBytesFunc, seriesToGroupLabelsFunc) {
 	// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
 	b := make([]byte, 0, 1024)
 	bytesFunc := func(l labels.Labels) []byte {
@@ -203,8 +203,8 @@ func (a *Aggregation) groupingWithWithoutSeriesToGroupFuncs() (seriesToGroupLabe
 	return bytesFunc, labelsFunc
 }
 
-// groupingWithWithoutSeriesToGroupFuncs returns grouping functions for aggregations that use 'by'.
-func (a *Aggregation) groupingWithBySeriesToGroupFuncs() (seriesToGroupLabelsBytesFunc, seriesToGroupLabelsFunc) {
+// groupingByLabelsSeriesToGroupFuncs returns grouping functions for aggregations that use 'by'.
+func (a *Aggregation) groupingByLabelsSeriesToGroupFuncs() (seriesToGroupLabelsBytesFunc, seriesToGroupLabelsFunc) {
 	// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
 	b := make([]byte, 0, 1024)
 	bytesFunc := func(l labels.Labels) []byte {
