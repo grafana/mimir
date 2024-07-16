@@ -279,6 +279,7 @@ func NewQuerierHandler(
 		reg,
 		nil,
 		remoteWriteEnabled,
+		nil,
 		oltpEnabled,
 	)
 

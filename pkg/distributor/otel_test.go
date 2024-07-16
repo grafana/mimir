@@ -23,7 +23,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -55,7 +54,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 			},
 			Samples: samples,
 			Histograms: []prompb.Histogram{
-				remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(1)),
+				prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1)),
 			},
 		},
 	}
@@ -349,7 +348,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 						{Name: "__name__", Value: "foo"},
 					},
 					Histograms: []prompb.Histogram{
-						remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(1)),
+						prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1)),
 					},
 				},
 			},

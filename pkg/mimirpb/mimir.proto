@@ -253,6 +253,7 @@ message QueryResponse {
   }
 
   repeated string warnings = 8;
+  repeated string infos = 9;
 }
 
 message StringData {

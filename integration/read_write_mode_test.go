@@ -15,7 +15,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage/remote"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -215,7 +214,7 @@ func runRecordingRuleQuery(t *testing.T, client *e2emimir.Client, testRuleName s
 		expectedVector = model.Vector{
 			&model.Sample{
 				Metric:    metric,
-				Histogram: mimirpb.FromHistogramToPromHistogram(remote.HistogramProtoToHistogram(series[0].Histograms[0])),
+				Histogram: mimirpb.FromHistogramToPromHistogram(series[0].Histograms[0].ToIntHistogram()),
 				Timestamp: model.Time(e2e.TimeToMilliseconds(queryTime)),
 			},
 		}

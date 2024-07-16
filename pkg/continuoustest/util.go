@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage/remote"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -47,7 +46,7 @@ var (
 			typeLabel:  "histogram_int_counter",
 			generateHistogram: func(t time.Time) prompb.Histogram {
 				ts := t.UnixMilli()
-				return remote.HistogramToHistogramProto(ts, generateIntHistogram(generateHistogramIntValue(t, false), 1, false))
+				return prompb.FromIntHistogram(ts, generateIntHistogram(generateHistogramIntValue(t, false), 1, false))
 			},
 			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
 				return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, false), numSeries, false).ToFloat(nil))
@@ -58,7 +57,7 @@ var (
 			typeLabel:  "histogram_float_counter",
 			generateHistogram: func(t time.Time) prompb.Histogram {
 				ts := t.UnixMilli()
-				return remote.FloatHistogramToHistogramProto(ts, generateFloatHistogram(generateHistogramFloatValue(t, false), 1, false))
+				return prompb.FromFloatHistogram(ts, generateFloatHistogram(generateHistogramFloatValue(t, false), 1, false))
 			},
 			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
 				return mimirpb.FromFloatHistogramToPromHistogram(generateFloatHistogram(generateHistogramFloatValue(t, false), numSeries, false))
@@ -69,7 +68,7 @@ var (
 			typeLabel:  "histogram_int_gauge",
 			generateHistogram: func(t time.Time) prompb.Histogram {
 				ts := t.UnixMilli()
-				return remote.HistogramToHistogramProto(ts, generateIntHistogram(generateHistogramIntValue(t, true), 1, true))
+				return prompb.FromIntHistogram(ts, generateIntHistogram(generateHistogramIntValue(t, true), 1, true))
 			},
 			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
 				return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, true), numSeries, true).ToFloat(nil))
@@ -80,7 +79,7 @@ var (
 			typeLabel:  "histogram_float_gauge",
 			generateHistogram: func(t time.Time) prompb.Histogram {
 				ts := t.UnixMilli()
-				return remote.FloatHistogramToHistogramProto(ts, generateFloatHistogram(generateHistogramFloatValue(t, true), 1, true))
+				return prompb.FromFloatHistogram(ts, generateFloatHistogram(generateHistogramFloatValue(t, true), 1, true))
 			},
 			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
 				return mimirpb.FromFloatHistogramToPromHistogram(generateFloatHistogram(generateHistogramFloatValue(t, true), numSeries, true))
