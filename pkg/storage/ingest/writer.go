@@ -203,31 +203,31 @@ func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, records []
 
 	w.writeRequestsTotal.Add(float64(len(records)))
 
-	for _, record := range records {
-		promise := func(r *kgo.Record, err error) {
-			if maxBufferedBytes > 0 {
-				w.writersBufferedBytes.Add(-int64(len(r.Value)))
-			}
-
-			resMx.Lock()
-			res = append(res, kgo.ProduceResult{Record: r, Err: err})
-			resMx.Unlock()
-
-			if err != nil {
-				w.writeFailuresTotal.WithLabelValues(produceErrReason(err)).Inc()
-			}
-
-			// In case of error we'll wait for all responses anyway before returning from produceSync().
-			// It allows us to keep code easier, given we don't expect this function to be frequently
-			// called with multiple records.
-			if remaining.Dec() == 0 {
-				close(done)
-			}
+	onProduceDone := func(r *kgo.Record, err error) {
+		if maxBufferedBytes > 0 {
+			w.writersBufferedBytes.Add(-int64(len(r.Value)))
 		}
 
+		resMx.Lock()
+		res = append(res, kgo.ProduceResult{Record: r, Err: err})
+		resMx.Unlock()
+
+		if err != nil {
+			w.writeFailuresTotal.WithLabelValues(produceErrReason(err)).Inc()
+		}
+
+		// In case of error we'll wait for all responses anyway before returning from produceSync().
+		// It allows us to keep code easier, given we don't expect this function to be frequently
+		// called with multiple records.
+		if remaining.Dec() == 0 {
+			close(done)
+		}
+	}
+
+	for _, record := range records {
 		// Fast fail if the Kafka client buffer is full.
 		if maxBufferedBytes > 0 && w.writersBufferedBytes.Add(int64(len(record.Value))) > maxBufferedBytes {
-			promise(record, kgo.ErrMaxBuffered)
+			onProduceDone(record, kgo.ErrMaxBuffered)
 			continue
 		}
 
@@ -239,7 +239,7 @@ func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, records []
 		// Produce() may theoretically block if the buffer is full, but we configure the Kafka client with
 		// unlimited buffer because we implement the buffer limit ourselves (see maxBufferedBytes). This means
 		// Produce() should never block for us in practice.
-		client.Produce(context.WithoutCancel(ctx), record, promise)
+		client.Produce(context.WithoutCancel(ctx), record, onProduceDone)
 	}
 
 	// Wait for a response or until the context has done.
