@@ -5141,6 +5141,12 @@ http:
   # (advanced) Override the expected name on the server certificate.
   # CLI flag: -<prefix>.s3.http.tls-server-name
   [tls_server_name: <string> | default = ""]
+
+trace:
+  # (advanced) When enabled, low-level S3 HTTP operation information is logged
+  # at the debug level.
+  # CLI flag: -<prefix>.s3.trace.enabled
+  [enabled: <boolean> | default = false]
 ```
 
 ### gcs_storage_backend
