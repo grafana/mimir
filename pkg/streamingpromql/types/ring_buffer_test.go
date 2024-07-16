@@ -168,44 +168,87 @@ func TestRemoveLastPoint(t *testing.T) {
 		{T: 2, H: &histogram.FloatHistogram{Count: 200}},
 		{T: 3, H: &histogram.FloatHistogram{Count: 300}},
 		{T: 4, H: &histogram.FloatHistogram{Count: 400}},
+		{T: 5, H: &histogram.FloatHistogram{Count: 500}},
+		{T: 6, H: &histogram.FloatHistogram{Count: 600}},
 	}
 
 	buf := &hPointRingBufferWrapper{&HPointRingBuffer{pool: &hPointPoolForRingBufferTesting{}}}
 
-	buf.Reset()
-	for _, p := range points[:2] {
-		require.NoError(t, buf.Append(p))
-	}
+	t.Run("test removing points until none exist", func(t *testing.T) {
+		buf.Reset()
+		for _, p := range points[:2] {
+			require.NoError(t, buf.Append(p))
+		}
 
-	shouldHavePoints(t, buf, points[:2]...)
-	require.Equal(t, 2, len(buf.GetPoints()))
-	require.Equal(t, 2, buf.size)
+		shouldHavePoints(t, buf, points[:2]...)
+		require.Equal(t, 2, len(buf.GetPoints()))
+		require.Equal(t, 2, buf.size)
 
-	nextPoint, err := buf.NextPoint()
-	require.NoError(t, err)
-	require.Equal(t, 4, len(buf.GetPoints()))
-	require.Equal(t, 3, buf.size)
+		nextPoint, err := buf.NextPoint()
+		require.NoError(t, err)
+		require.Equal(t, 4, len(buf.GetPoints()), "underlying slice has expanded by a power of 2")
+		require.Equal(t, 3, buf.size, "The size has increase to accommodate the next point")
 
-	*nextPoint = points[2]
-	shouldHavePoints(t, buf, points[:3]...)
+		*nextPoint = points[2]
+		// We assign "NextPoint" points[2], and then check it is in the ring
+		shouldHavePoints(t, buf, points[:3]...)
 
-	buf.RemoveLastPoint()
-	shouldHavePoints(t, buf, points[:2]...)
-	require.Equal(t, 4, len(buf.GetPoints()))
-	require.Equal(t, 2, buf.size)
+		// However, now we decide that we don't actually want that point
+		buf.RemoveLastPoint()
+		shouldHavePoints(t, buf, points[:2]...)
+		require.Equal(t, 4, len(buf.GetPoints()), "underlying slice is still 4 since it was allocated")
+		require.Equal(t, 2, buf.size, "the size of the ring is reduced back down since we didn't use the 'NextPoint'")
 
-	buf.RemoveLastPoint()
-	shouldHavePoints(t, buf, points[:1]...)
-	require.Equal(t, 4, len(buf.GetPoints()))
-	require.Equal(t, 1, buf.size)
+		buf.RemoveLastPoint()
+		shouldHavePoints(t, buf, points[:1]...)
+		require.Equal(t, 4, len(buf.GetPoints()), "underlying slice remains the same")
+		require.Equal(t, 1, buf.size, "size is reduced")
 
-	buf.RemoveLastPoint()
-	shouldHaveNoPoints(t, buf)
-	require.Equal(t, 4, len(buf.GetPoints()))
-	require.Equal(t, 0, buf.GetFirstIndex())
-	require.Equal(t, 0, buf.size)
+		buf.RemoveLastPoint()
+		shouldHaveNoPoints(t, buf)
+		require.Equal(t, 4, len(buf.GetPoints()), "underlying slice remains the same")
+		require.Equal(t, 0, buf.size, "size is reduced")
+		require.Equal(t, 0, buf.GetFirstIndex(), "the firstIndex is reset to 0 when the size reaches 0")
 
-	require.Panics(t, func() { buf.RemoveLastPoint() }, "expected panic when removing point from empty buffer")
+		require.Panics(t, func() { buf.RemoveLastPoint() }, "expected panic when removing point from empty buffer")
+	})
+
+	t.Run("test removing points at wrap around", func(t *testing.T) {
+		buf.Reset()
+
+		// Set up the buffer so that the first point is part-way through the underlying slice.
+		// We resize in powers of two, and the underlying slice comes from a pool that uses a factor of 2 as well.
+
+		for _, p := range points[:4] {
+			require.NoError(t, buf.Append(p))
+		}
+
+		require.Len(t, buf.GetPoints(), 4, "expected underlying slice to have length 4, if this assertion fails, the test setup is not as expected")
+		require.Equal(t, 4, cap(buf.GetPoints()), "expected underlying slice to have capacity 4, if this assertion fails, the test setup is not as expected")
+		require.Equal(t, 4, buf.size, "The size includes all points")
+		buf.DiscardPointsBefore(3)
+		require.Equal(t, 2, buf.size, "The size is reduced by the removed points")
+		require.Equal(t, 2, buf.GetFirstIndex(), "the firstIndex is half way through the ring")
+
+		// Check we only have the expected points
+		shouldHavePoints(t, buf, points[2:4]...)
+
+		nextPoint, err := buf.NextPoint()
+		require.NoError(t, err)
+		require.Equal(t, 4, len(buf.GetPoints()), "underlying slice remains the same")
+		require.Equal(t, 3, buf.size, "The size has increased")
+
+		*nextPoint = points[4]
+		// We assign "NextPoint" points[4], and then check it is in the ring
+		// This should be at the wrapped around point
+		shouldHavePoints(t, buf, points[2:5]...)
+
+		// Remove the point at the wrap around
+		buf.RemoveLastPoint()
+		shouldHavePoints(t, buf, points[2:4]...)
+		require.Equal(t, 4, len(buf.GetPoints()), "underlying slice is still 4")
+		require.Equal(t, 2, buf.size, "the size of the ring is reduced back down since we didn't use the 'NextPoint'")
+	})
 }
 
 func shouldHaveNoPoints[T any](t *testing.T, buf ringBuffer[T]) {
