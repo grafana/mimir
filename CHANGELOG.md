@@ -73,6 +73,7 @@
   * `ingest_storage_migration_partition_ingester_zone_c_replicas`
 * [ENHANCEMENT] Distributor: increase `-distributor.remote-timeout` when the experimental ingest storage is enabled. #8518
 * [ENHANCEMENT] Memcached: Update to Memcached 1.6.28 and memcached-exporter 0.14.4. #8557
+* [ENHANCEMENT] Rollout-operator: Allow the rollout-operator to be used as Kubernetes statefulset webhook to enable `no-downscale` and `prepare-downscale` annotations to be used on ingesters or store-gateways. #8743
 
 ### Mimirtool
 
@@ -82,8 +83,8 @@
 
 * [CHANGE] Use test metrics that do not pass through 0 to make identifying incorrect results easier. #8630
 * [ENHANCEMENT] Include human-friendly timestamps in diffs logged when a test fails. #8630
-* [BUGFIX] Initialize test result metrics to 0 at startup so that alerts can correctly identify the first failure after startup. #8630
 * [ENHANCEMENT] Add histograms to measure latency of read and write requests. #8583
+* [BUGFIX] Initialize test result metrics to 0 at startup so that alerts can correctly identify the first failure after startup. #8630
 
 ### Query-tee
 
