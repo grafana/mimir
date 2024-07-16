@@ -773,8 +773,6 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 	for _, estimatedMaxBufferedRecords := range []int{numWorkers / 2, numWorkers - 1} {
 		t.Run(fmt.Sprintf("estimated max buffered records: %d", estimatedMaxBufferedRecords), func(t *testing.T) {
 			var (
-				series1 = []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}
-
 				done    = make(chan struct{})
 				workers = sync.WaitGroup{}
 
@@ -782,8 +780,12 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 				writeFailureCount = atomic.NewInt64(0)
 			)
 
-			createWriteRequest := func() *mimirpb.WriteRequest {
-				return &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}
+			createRandomWriteRequest := func() *mimirpb.WriteRequest {
+				// It's important that each request has a different size to reproduce the deadlock.
+				metricName := strings.Repeat("x", rand.IntN(1000))
+
+				series := []mimirpb.PreallocTimeseries{mockPreallocTimeseries(metricName)}
+				return &mimirpb.WriteRequest{Timeseries: series, Metadata: nil, Source: mimirpb.API}
 			}
 
 			// If the test is successful (no WriteSync() request is in a deadlock state) then we expect the test
@@ -792,7 +794,7 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 			t.Cleanup(cancel)
 
 			// Estimate the size of each record written in this test.
-			writeReqRecords, err := marshalWriteRequestToRecords(partitionID, tenantID, createWriteRequest(), maxProducerRecordDataBytesLimit)
+			writeReqRecords, err := marshalWriteRequestToRecords(partitionID, tenantID, createRandomWriteRequest(), maxProducerRecordDataBytesLimit)
 			require.NoError(t, err)
 			require.Len(t, writeReqRecords, 1)
 			estimatedRecordSize := len(writeReqRecords[0].Value)
@@ -821,7 +823,7 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 							return
 
 						default:
-							if err := writer.WriteSync(ctx, partitionID, tenantID, createWriteRequest()); err == nil {
+							if err := writer.WriteSync(ctx, partitionID, tenantID, createRandomWriteRequest()); err == nil {
 								writeSuccessCount.Inc()
 							} else {
 								assert.ErrorIs(t, err, kgo.ErrMaxBuffered)
@@ -846,8 +848,6 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 
 			t.Logf("writes succeeded: %d", writeSuccessCount.Load())
 			t.Logf("writes failed:    %d", writeFailureCount.Load())
-
-			// TODO explain why no assertions (we just want to make sure it doesn't block, actually we could set a timeout on context)
 		})
 	}
 }
