@@ -129,7 +129,7 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 						{Value: 3, Timestamp: 3},
 					},
 					Histograms: []prompb.Histogram{
-						prom_remote.HistogramToHistogramProto(4, test.GenerateTestHistogram(4)),
+						prompb.FromIntHistogram(4, test.GenerateTestHistogram(4)),
 					},
 				},
 			},
