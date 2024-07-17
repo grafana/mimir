@@ -263,19 +263,51 @@ Make a choice based on whether or not you already have a Prometheus server set u
 
 You can either configure Grafana Alloy to write to Grafana Mimir or [configure Prometheus to write to Mimir](#configure-prometheus-to-write-to-grafana-mimir). Although you can configure both, you don't need to.
 
-To configure Grafana Alloy to write to Mimir, use the `prometheus.remote_write` component. For example:
+Make a choice based on whether or not you already have Alloy set up:
 
-```
-prometheus.remote_write "LABEL" {
-  endpoint {
-    url = http://<ingress-host>/api/v1/push
+- For an existing Alloy:
 
-    ...
-  }
+  1. Add the following configuration snippet for the `prometheus.remote_write` component to your Alloy configuration file:
 
-  ...
-}
-```
+     ```
+     prometheus.remote_write "LABEL" {
+       endpoint {
+         url = http://<ingress-host>/api/v1/push
+       }
+     }
+     ```
+
+  1. Add `forward_to = [prometheus.remote_write.LABEL.receiver]` to an existing pipeline.
+
+  1. Restart Alloy.
+
+- For an Alloy that does not exist yet:
+
+  1. Write the following configuration to a `config.alloy` file:
+
+     ```
+     prometheus.exporter.self "self_metrics" {
+     }
+
+     prometheus.scrape "self_scrape" {
+       targets    = prometheus.exporter.self.self_metrics.targets
+       forward_to = [prometheus.remote_write.mimir.receiver]
+     }
+
+     prometheus.remote_write "mimir" {
+       endpoint {
+         url = "http://<ingress-host>/api/v1/push"
+       }
+     }
+     ```
+
+  1. Start Alloy by using Docker:
+
+     ```bash
+     docker run -v <absolute-path-to>/config.alloy:/etc/alloy/config.alloy -p 12345:12345 grafana/alloy:latest run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+     ```
+
+     > **Note:** On Linux systems, if \<ingress-host\> cannot be resolved by Alloy, use the additional command-line flag `--add-host=<ingress-host>:<kubernetes-cluster-external-address>` to set it up.
 
 For more information about the `prometheus.remote_write` component, refer to [prometheus.remote_write](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.remote_write) in the Grafana Alloy documentation.
 
