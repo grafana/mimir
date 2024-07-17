@@ -364,7 +364,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -412,7 +412,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -472,7 +472,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -520,7 +520,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -583,7 +583,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -1168,7 +1168,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -1217,7 +1217,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -1320,7 +1320,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -1386,7 +1386,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -1477,7 +1477,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -1531,7 +1531,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -1586,7 +1586,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -1676,7 +1676,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -1709,7 +1709,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -1758,7 +1758,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -1837,7 +1837,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -1928,7 +1928,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -2007,7 +2007,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -2086,7 +2086,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -2165,7 +2165,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -2255,7 +2255,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -2303,7 +2303,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -2351,7 +2351,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -2442,7 +2442,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -2496,7 +2496,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -2544,7 +2544,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -2604,7 +2604,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -2654,7 +2654,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -2766,7 +2766,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -2865,7 +2865,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -2950,7 +2950,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -3035,7 +3035,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -3660,7 +3660,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -3708,7 +3708,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -3768,7 +3768,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -3816,7 +3816,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -3867,7 +3867,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -4128,7 +4128,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -4173,7 +4173,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -4509,7 +4509,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -4631,7 +4631,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -4680,7 +4680,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -4730,7 +4730,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -4820,7 +4820,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -4869,7 +4869,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -4929,7 +4929,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -5008,7 +5008,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -5105,7 +5105,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -5160,7 +5160,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -5250,7 +5250,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -5283,7 +5283,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -5332,7 +5332,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -5411,7 +5411,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -5502,7 +5502,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -5581,7 +5581,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -5660,7 +5660,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -5739,7 +5739,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -5965,7 +5965,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -6014,7 +6014,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -6258,7 +6258,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -6318,7 +6318,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -6532,7 +6532,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -6565,7 +6565,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -6625,7 +6625,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -6658,7 +6658,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -6719,7 +6719,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -6798,7 +6798,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -6877,7 +6877,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -6968,7 +6968,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -7047,7 +7047,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -7126,7 +7126,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -7652,7 +7652,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -7700,7 +7700,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -7751,7 +7751,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -7809,7 +7809,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -7881,7 +7881,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -7929,7 +7929,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -7980,7 +7980,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -8038,7 +8038,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -8110,7 +8110,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -8158,7 +8158,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -8209,7 +8209,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -8267,7 +8267,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -8491,7 +8491,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -8539,7 +8539,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -8647,7 +8647,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -8695,7 +8695,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -8746,7 +8746,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -8806,7 +8806,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -8854,7 +8854,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -8962,7 +8962,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -9010,7 +9010,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -9118,7 +9118,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -9166,7 +9166,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -9217,7 +9217,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -9724,7 +9724,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -9779,7 +9779,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -9857,7 +9857,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -10070,7 +10070,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -10125,7 +10125,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -10413,7 +10413,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -10531,7 +10531,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -10591,7 +10591,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -10670,7 +10670,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -10778,7 +10778,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -10832,7 +10832,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -10910,7 +10910,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -11154,7 +11154,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -11233,7 +11233,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -11311,7 +11311,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -11360,7 +11360,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -11421,7 +11421,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -11499,7 +11499,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -11548,7 +11548,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -11609,7 +11609,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -11658,7 +11658,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -11708,7 +11708,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -11770,7 +11770,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -11820,7 +11820,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -11911,7 +11911,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -11972,7 +11972,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -12033,7 +12033,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -12106,7 +12106,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -12185,7 +12185,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -12281,7 +12281,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -12331,7 +12331,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -12391,7 +12391,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -12482,7 +12482,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -12537,7 +12537,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -12627,7 +12627,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -12675,7 +12675,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -12723,7 +12723,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -12881,7 +12881,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -12942,7 +12942,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -13021,7 +13021,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -13106,7 +13106,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -13172,7 +13172,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -13221,7 +13221,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -13301,7 +13301,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -13392,7 +13392,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -13441,7 +13441,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -13490,7 +13490,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -13704,7 +13704,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -13752,7 +13752,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -13803,7 +13803,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -13861,7 +13861,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -13933,7 +13933,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -13981,7 +13981,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -14032,7 +14032,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -14090,7 +14090,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -14162,7 +14162,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -14210,7 +14210,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -14261,7 +14261,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -14319,7 +14319,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -14391,7 +14391,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -14439,7 +14439,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -14490,7 +14490,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -14548,7 +14548,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -14620,7 +14620,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -14668,7 +14668,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -14719,7 +14719,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -14777,7 +14777,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -14849,7 +14849,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -14897,7 +14897,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -14948,7 +14948,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -15006,7 +15006,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -15230,7 +15230,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -15278,7 +15278,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -16637,7 +16637,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -17384,7 +17384,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -17432,7 +17432,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -17483,7 +17483,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -18246,7 +18246,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -18295,7 +18295,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -18554,7 +18554,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -18604,7 +18604,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -18747,7 +18747,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -18797,7 +18797,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -18847,7 +18847,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -18907,7 +18907,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -18956,7 +18956,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -19167,7 +19167,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -19216,7 +19216,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -19474,7 +19474,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -19523,7 +19523,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -19781,7 +19781,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -19830,7 +19830,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -20002,7 +20002,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -20063,7 +20063,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -20112,7 +20112,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -20308,7 +20308,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -20357,7 +20357,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -20447,7 +20447,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -20496,7 +20496,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -20560,7 +20560,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -20620,7 +20620,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -20669,7 +20669,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -20732,7 +20732,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -20792,7 +20792,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -20841,7 +20841,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -20904,7 +20904,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -20964,7 +20964,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -21013,7 +21013,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -21076,7 +21076,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -21136,7 +21136,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -21169,7 +21169,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -21218,7 +21218,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -21297,7 +21297,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -21388,7 +21388,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -21467,7 +21467,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -21546,7 +21546,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -21625,7 +21625,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -21715,7 +21715,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -21748,7 +21748,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -21797,7 +21797,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -21876,7 +21876,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -21967,7 +21967,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -22046,7 +22046,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -22125,7 +22125,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -22204,7 +22204,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -22448,7 +22448,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -22496,7 +22496,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -22547,7 +22547,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -22605,7 +22605,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -22677,7 +22677,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -22725,7 +22725,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -22776,7 +22776,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -22834,7 +22834,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -22906,7 +22906,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -22954,7 +22954,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -23005,7 +23005,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -23063,7 +23063,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -23135,7 +23135,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -23183,7 +23183,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -23234,7 +23234,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -23292,7 +23292,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -24761,7 +24761,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -24810,7 +24810,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -25069,7 +25069,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -25119,7 +25119,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -25262,7 +25262,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -25312,7 +25312,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -25362,7 +25362,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -25558,7 +25558,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -25607,7 +25607,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -25779,7 +25779,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -25840,7 +25840,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -25901,7 +25901,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -25950,7 +25950,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -25999,7 +25999,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -27422,7 +27422,7 @@ data:
                       "showLegend": true
                    },
                    "tooltip": {
-                      "mode": "single",
+                      "mode": "multi",
                       "sort": "none"
                    }
                 },
@@ -27977,7 +27977,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -28037,7 +28037,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -28233,7 +28233,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -28282,7 +28282,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -28508,7 +28508,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -28557,7 +28557,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -28783,7 +28783,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -28832,7 +28832,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -28923,7 +28923,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -29002,7 +29002,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -29098,7 +29098,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -29159,7 +29159,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -29208,7 +29208,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -29257,7 +29257,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -29317,7 +29317,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -29365,7 +29365,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -29413,7 +29413,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -29473,7 +29473,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -29533,7 +29533,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -29566,7 +29566,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -29615,7 +29615,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -29694,7 +29694,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -29785,7 +29785,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -29864,7 +29864,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -29943,7 +29943,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -30022,7 +30022,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -30674,7 +30674,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -30728,7 +30728,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -30782,7 +30782,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -30836,7 +30836,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -30890,7 +30890,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -30945,7 +30945,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -31011,7 +31011,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -31059,7 +31059,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -31107,7 +31107,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -31155,7 +31155,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -31203,7 +31203,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -31252,7 +31252,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -31312,7 +31312,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -31360,7 +31360,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -31408,7 +31408,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -31456,7 +31456,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -31504,7 +31504,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -31553,7 +31553,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -32220,7 +32220,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -32459,7 +32459,7 @@ data:
                             "showLegend": false
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -32508,7 +32508,7 @@ data:
                             "showLegend": false
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -32576,7 +32576,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -32650,7 +32650,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -32717,7 +32717,7 @@ data:
                             "showLegend": false
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -32785,7 +32785,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -32840,7 +32840,7 @@ data:
                             "showLegend": false
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -32889,7 +32889,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -32950,7 +32950,7 @@ data:
                             "showLegend": false
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -33018,7 +33018,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -33073,7 +33073,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -33128,7 +33128,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -33195,7 +33195,7 @@ data:
                             "showLegend": false
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -33244,7 +33244,7 @@ data:
                             "showLegend": false
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -33293,7 +33293,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -33342,7 +33342,7 @@ data:
                             "showLegend": false
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -33403,7 +33403,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -33452,7 +33452,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -33532,7 +33532,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -33587,7 +33587,7 @@ data:
                             "showLegend": false
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -33635,7 +33635,7 @@ data:
                             "showLegend": false
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -33683,7 +33683,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -33995,7 +33995,7 @@ data:
                             "showLegend": false
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -34059,7 +34059,7 @@ data:
                             "showLegend": false
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -34119,7 +34119,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -34204,7 +34204,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -34258,7 +34258,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -34324,7 +34324,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -34372,7 +34372,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -34432,7 +34432,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -34480,7 +34480,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -34590,7 +34590,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -35193,7 +35193,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -35405,7 +35405,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -35617,7 +35617,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -36620,7 +36620,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -36668,7 +36668,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -36719,7 +36719,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -36777,7 +36777,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -36849,7 +36849,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -36897,7 +36897,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -36948,7 +36948,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -37006,7 +37006,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -37078,7 +37078,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -37126,7 +37126,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -37177,7 +37177,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -37235,7 +37235,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -37459,7 +37459,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -37507,7 +37507,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -38350,7 +38350,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -38398,7 +38398,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -38449,7 +38449,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -39211,7 +39211,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -39260,7 +39260,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -39519,7 +39519,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -39568,7 +39568,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -39740,7 +39740,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -39801,7 +39801,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -39850,7 +39850,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -39899,7 +39899,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -40095,7 +40095,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -40144,7 +40144,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -40370,7 +40370,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -40419,7 +40419,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -40645,7 +40645,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -40694,7 +40694,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -40816,7 +40816,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -40872,7 +40872,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -40994,7 +40994,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -41050,7 +41050,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -41172,7 +41172,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -41258,7 +41258,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -41314,7 +41314,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -41394,7 +41394,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -41461,7 +41461,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -41510,7 +41510,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -41559,7 +41559,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -41608,7 +41608,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -41668,7 +41668,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },
@@ -41716,7 +41716,7 @@ data:
                             "showLegend": true
                          },
                          "tooltip": {
-                            "mode": "single",
+                            "mode": "multi",
                             "sort": "none"
                          }
                       },

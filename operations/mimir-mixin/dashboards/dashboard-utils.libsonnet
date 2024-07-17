@@ -194,6 +194,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
           min: 0,
         },
       },
+      options+: {
+        tooltip+: {
+          mode: 'multi',
+        },
+      },
     },
 
   qpsPanel(selector, statusLabelName='status_code')::
