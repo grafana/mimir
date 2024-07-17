@@ -384,7 +384,10 @@ func (am *Alertmanager) TestReceiversHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	am.templatesMtx.RLock()
-	tmpls := am.templates
+	tmpls := make([]string, len(am.templates))
+	for _, tmpl := range am.templates {
+		tmpls = append(tmpls, tmpl.Template)
+	}
 	am.templatesMtx.RUnlock()
 
 	response, err := alertingNotify.TestReceivers(r.Context(), c, tmpls, am.buildGrafanaReceiverIntegrations, am.cfg.ExternalURL.String())
