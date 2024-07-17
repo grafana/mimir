@@ -258,6 +258,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ],
     },
 
+  perInstanceLatencyPanelNativeHistogram(quantile, metric, selector, instanceLabel=$._config.per_instance_label)::
+    $.hiddenLegendQueryPanel(
+      [
+        utils.showClassicHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel])),
+        utils.showNativeHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel])),
+      ],
+      ['', '']
+    ),
+
   // Creates a panel like queryPanel() but if the legend contains only 1 entry,
   // than it configures the series alias color to the one used to display failures.
   failurePanel(queries, legends, legendLink=null)::
