@@ -16,14 +16,14 @@ refs:
 
 # Monitor the health of your system
 
-You can monitor Grafana Mimir or Grafana Enterprise Metrics itself, by collecting metrics and logs from Mimir or GEM that is running on a Kubernetes cluster. This is called _metamonitoring_.
+You can monitor Grafana Mimir or Grafana Enterprise Metrics by collecting metrics and logs from a Mimir or GEM instance that's running on a Kubernetes cluster. This process is called _metamonitoring_.
 
-> **Note:** In Grafana, you can create dashboards and receive alerts about those metrics and logs. To set up dashboards and alerts,
-> see [Installing Grafana Mimir dashboards and alerts] or [Grafana Cloud: Self-hosted Grafana Mimir integration](/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-mimir/).
-
-Alternatively, to monitor the health of your system without using the Helm chart, see [Collect metrics and logs without the Helm chart].
+As part of _metamonitoring_, you can create dashboards and receive alerts about the metrics and logs collected from Mimir. To set up these dashboards and alerts,
+refer to [Installing Grafana Mimir dashboards and alerts](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/installing-dashboards-and-alerts/).
 
 ## Configure the Grafana Agent operator via the Helm chart
+
+{{< docs/shared source="alloy" lookup="agent-deprecation.md" version="next" >}}
 
 In the Helm chart, you can configure where to send metrics and logs.
 You can send metrics to a Prometheus-compatible server
@@ -145,3 +145,9 @@ metaMonitoring:
           passwordSecretName: gem-tokens
           passwordSecretKey: metamonitoring
 ```
+
+## Monitor without the Helm chart
+
+To monitor the health of your system without using the Helm chart, see [Collect metrics and logs without the Helm chart](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/collecting-metrics-and-logs/#collect-metrics-and-logs-without-the-helm-chart).
+
+You can also use the self-hosted Grafana Cloud integration to monitor your Mimir system. Refer to [Grafana Cloud: Self-hosted Grafana Mimir integration](/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-mimir/) for more information.

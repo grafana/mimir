@@ -3819,7 +3819,7 @@ kafka:
 
   # The maximum size of (uncompressed) buffered and unacknowledged produced
   # records sent to Kafka. The produce request fails once this limit is reached.
-  # This limit is applied per Kafka client. 0 to disable the limit.
+  # 0 to disable the limit.
   # CLI flag: -ingest-storage.kafka.producer-max-buffered-bytes
   [producer_max_buffered_bytes: <int> | default = 1073741824]
 
@@ -5141,6 +5141,12 @@ http:
   # (advanced) Override the expected name on the server certificate.
   # CLI flag: -<prefix>.s3.http.tls-server-name
   [tls_server_name: <string> | default = ""]
+
+trace:
+  # (advanced) When enabled, low-level S3 HTTP operation information is logged
+  # at the debug level.
+  # CLI flag: -<prefix>.s3.trace.enabled
+  [enabled: <boolean> | default = false]
 ```
 
 ### gcs_storage_backend
