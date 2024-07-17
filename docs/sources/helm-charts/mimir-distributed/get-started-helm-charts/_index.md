@@ -263,7 +263,7 @@ Make a choice based on whether or not you already have a Prometheus server set u
 
 You can either configure Grafana Alloy to write to Grafana Mimir or [configure Prometheus to write to Mimir](#configure-prometheus-to-write-to-grafana-mimir). Although you can configure both, you don't need to.
 
-Make a choice based on whether or not you already have Alloy set up:
+Make a choice based on whether you already have Alloy set up:
 
 - For an existing Alloy:
 
@@ -281,7 +281,7 @@ Make a choice based on whether or not you already have Alloy set up:
 
   1. Restart Alloy.
 
-- For an Alloy that does not exist yet:
+- For a new Alloy:
 
   1. Write the following configuration to a `config.alloy` file:
 
