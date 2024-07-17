@@ -68,22 +68,7 @@ func (a *File) Close() error {
 	}
 
 	cleanup = false
-	// After writing the file and calling fsync on it, fsync the containing directory
-	// to ensure the directory entry is persisted to disk.
-	//
-	// From https://man7.org/linux/man-pages/man2/fsync.2.html
-	// > Calling fsync() does not necessarily ensure that the entry in the
-	// > directory containing the file has also reached disk.  For that an
-	// > explicit fsync() on a file descriptor for the directory is also
-	// > needed.
-	dir, err := os.Open(filepath.Dir(a.finalPath))
-	if err != nil {
-		return err
-	}
-
-	merr.Add(dir.Sync())
-	merr.Add(dir.Close())
-	return merr.Err()
+	return syncDir(filepath.Dir(a.finalPath))
 }
 
 // CreateFile safely writes the contents of data to filePath, ensuring that all data
@@ -97,5 +82,38 @@ func CreateFile(filePath string, data io.Reader) error {
 	_, err = io.Copy(f, data)
 	merr := multierror.New(err)
 	merr.Add(f.Close())
+	return merr.Err()
+}
+
+// RemoveFile removes file if it exists (and syncs dir). It does nothing if file doesn't exist.
+func RemoveFile(file string) error {
+	err := os.Remove(file)
+	if err != nil {
+		if os.IsNotExist(err) {
+			err = nil
+		}
+		return err
+	}
+
+	return syncDir(filepath.Dir(file))
+}
+
+func syncDir(dir string) error {
+	// After writing the file and calling fsync on it, fsync the containing directory
+	// to ensure the directory entry is persisted to disk.
+	//
+	// From https://man7.org/linux/man-pages/man2/fsync.2.html
+	// > Calling fsync() does not necessarily ensure that the entry in the
+	// > directory containing the file has also reached disk.  For that an
+	// > explicit fsync() on a file descriptor for the directory is also
+	// > needed.
+	fd, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+
+	merr := multierror.New()
+	merr.Add(fd.Sync())
+	merr.Add(fd.Close())
 	return merr.Err()
 }

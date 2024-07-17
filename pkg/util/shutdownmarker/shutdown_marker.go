@@ -4,11 +4,9 @@ package shutdownmarker
 
 import (
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/grafana/dskit/multierror"
 
 	"github.com/grafana/mimir/pkg/util/atomicfs"
 )
@@ -24,20 +22,7 @@ func Create(p string) error {
 
 // Remove removes the shutdown marker file on the given path if it exists.
 func Remove(p string) error {
-	err := os.Remove(p)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-
-	dir, err := os.OpenFile(path.Dir(p), os.O_RDONLY, 0777)
-	if err != nil {
-		return err
-	}
-
-	merr := multierror.New()
-	merr.Add(dir.Sync())
-	merr.Add(dir.Close())
-	return merr.Err()
+	return atomicfs.RemoveFile(p)
 }
 
 // Exists returns true if the shutdown marker file exists on the given path, false otherwise
@@ -56,5 +41,5 @@ func Exists(p string) (bool, error) {
 
 // GetPath returns the absolute path of the shutdown marker file
 func GetPath(dirPath string) string {
-	return path.Join(dirPath, shutdownMarkerFilename)
+	return filepath.Join(dirPath, shutdownMarkerFilename)
 }
