@@ -2940,13 +2940,12 @@ func TestPromoteAndDeleteState(t *testing.T) {
 
 	ctx := context.Background()
 	tests := []struct {
-		name            string
-		cfg             amConfig
-		mimirState      *alertspb.FullStateDesc
-		grafanaNflog    []byte
-		grafanaSilences []byte
-		expAMCreated    bool
-		expErr          bool
+		name              string
+		cfg               amConfig
+		mimirState        *alertspb.FullStateDesc
+		parts             map[string][]byte
+		expNoAlertmanager bool
+		expErr            string
 	}{
 		{
 			name: "no grafana state should be a no-op",
@@ -2955,6 +2954,7 @@ func TestPromoteAndDeleteState(t *testing.T) {
 					User: user,
 				},
 			},
+			expNoAlertmanager: true,
 		},
 		{
 			name: "invalid alertmanager configuration should cause an error",
@@ -2965,8 +2965,20 @@ func TestPromoteAndDeleteState(t *testing.T) {
 				},
 				tmplExternalURL: externalURL,
 			},
-			grafanaNflog: grafanaNflog,
-			expErr:       true,
+			parts:  map[string][]byte{"notifications": grafanaNflog},
+			expErr: fmt.Sprintf("error creating new Alertmanager for user %[1]s: no usable Alertmanager configuration for %[1]s", user),
+		},
+		{
+			name: "invalid part key",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL: externalURL,
+			},
+			parts:  map[string][]byte{"invalid": []byte("invalid")},
+			expErr: "unknown part key \"invalid\"",
 		},
 		{
 			name: "valid alertmanager configuration should cause alertmanager creation and state promotion",
@@ -2977,8 +2989,7 @@ func TestPromoteAndDeleteState(t *testing.T) {
 				},
 				tmplExternalURL: externalURL,
 			},
-			grafanaNflog: grafanaNflog,
-			expAMCreated: true,
+			parts: map[string][]byte{"notifications": grafanaNflog},
 		},
 		{
 			name: "starting with existing mimir state should merge states",
@@ -2989,10 +3000,8 @@ func TestPromoteAndDeleteState(t *testing.T) {
 				},
 				tmplExternalURL: externalURL,
 			},
-			mimirState:      &testMimirState,
-			grafanaNflog:    grafanaNflog,
-			grafanaSilences: grafanaSilences,
-			expAMCreated:    true,
+			mimirState: &testMimirState,
+			parts:      map[string][]byte{"notifications": grafanaNflog, "silences": grafanaSilences},
 		},
 	}
 
@@ -3016,25 +3025,21 @@ func TestPromoteAndDeleteState(t *testing.T) {
 				// Make broadcast a no-op for tests, otherwise it will block indefinitely.
 				am.alertmanagers[user].silences.SetBroadcast(func(_ []byte) {})
 			}
-			if test.grafanaNflog != nil || test.grafanaSilences != nil {
-				require.NoError(t, store.SetFullGrafanaState(ctx, user, alertspb.FullStateDesc{
-					State: &clusterpb.FullState{
-						Parts: []clusterpb.Part{
-							{
-								Key:  "notifications",
-								Data: test.grafanaNflog,
-							},
-							{
-								Key:  "silences",
-								Data: test.grafanaSilences,
-							},
-						},
-					},
-				}))
+			if test.parts != nil {
+				var s clusterpb.FullState
+				for k, v := range test.parts {
+					s.Parts = append(s.Parts, clusterpb.Part{
+						Key:  k,
+						Data: v,
+					})
+				}
+				require.NoError(t, store.SetFullGrafanaState(ctx, user, alertspb.FullStateDesc{State: &s}))
 			}
 
-			if test.expErr {
-				require.Error(t, am.promoteAndDeleteState(ctx, test.cfg))
+			if test.expErr != "" {
+				err := am.promoteAndDeleteState(ctx, test.cfg)
+				require.Error(t, err)
+				require.Equal(t, test.expErr, err.Error())
 				require.Nil(t, am.alertmanagers[user])
 				return
 			}
@@ -3044,7 +3049,7 @@ func TestPromoteAndDeleteState(t *testing.T) {
 				am.silences.SetBroadcast(func(_ []byte) {})
 			}
 			require.NoError(t, am.promoteAndDeleteState(ctx, test.cfg))
-			if !test.expAMCreated {
+			if test.expNoAlertmanager {
 				require.Nil(t, am.alertmanagers[user])
 				return
 			}
@@ -3074,10 +3079,10 @@ func TestPromoteAndDeleteState(t *testing.T) {
 			}
 
 			// We don't need to check the exact content of the state, the merging logic is tested in the state replication tests.
-			if test.grafanaNflog != nil {
+			if _, ok := test.parts["notifications"]; ok {
 				require.True(t, strings.Contains(nflogPart, "grafana webhook"))
 			}
-			if test.grafanaSilences != nil {
+			if _, ok := test.parts["silences"]; ok {
 				require.True(t, strings.Contains(silencesPart, "grafana silence"))
 			}
 			if test.mimirState != nil {

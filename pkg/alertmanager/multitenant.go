@@ -735,6 +735,18 @@ func (am *MultitenantAlertmanager) promoteAndDeleteState(ctx context.Context, cf
 		return err
 	}
 
+	// Translate Grafana state keys to Mimir state keys.
+	for i, p := range s.State.Parts {
+		switch p.Key {
+		case "silences":
+			s.State.Parts[i].Key = "sil:" + cfg.User
+		case "notifications":
+			s.State.Parts[i].Key = "nfl:" + cfg.User
+		default:
+			return fmt.Errorf("unknown part key %q", p.Key)
+		}
+	}
+
 	am.alertmanagersMtx.Lock()
 	existing, ok := am.alertmanagers[cfg.User]
 	am.alertmanagersMtx.Unlock()
@@ -746,18 +758,6 @@ func (am *MultitenantAlertmanager) promoteAndDeleteState(ctx context.Context, cf
 		am.alertmanagersMtx.Lock()
 		existing = am.alertmanagers[cfg.User]
 		am.alertmanagersMtx.Unlock()
-	}
-
-	// Translate Grafana state keys to Mimir state keys.
-	for i, p := range s.State.Parts {
-		switch p.Key {
-		case "silences":
-			s.State.Parts[i].Key = "sil:" + cfg.User
-		case "notifications":
-			s.State.Parts[i].Key = "nfl:" + cfg.User
-		default:
-			return fmt.Errorf("unknown part key %s", p.Key)
-		}
 	}
 
 	if err := existing.mergeFullExternalState(s.State); err != nil {
