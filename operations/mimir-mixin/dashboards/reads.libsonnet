@@ -6,6 +6,7 @@ local filename = 'mimir-reads.json';
     assert std.md5(filename) == 'e327503188913dc38ad571c647eef643' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Reads') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
+    .addShowNativeLatencyVariable()
     .addRowIf(
       $._config.show_dashboard_descriptions.reads,
       ($.row('Reads dashboard description') { height: '175px', showTitle: false })
@@ -38,26 +39,13 @@ local filename = 'mimir-reads.json';
          showTitle: false,
        })
       .addPanel(
+        local addRuleEvalRate(q) = {
+          local ruleEvalRate = ' + sum(rate(cortex_prometheus_rule_evaluations_total{' + $.jobMatcher($._config.job_names.ruler) + '}[$__rate_interval]))',
+          classic: q.classic + ruleEvalRate,
+          native: q.native + ruleEvalRate,
+        };
         $.panel('Instant queries / sec') +
-        $.statPanel(|||
-          sum(
-            rate(
-              cortex_request_duration_seconds_count{
-                %(queryFrontend)s,
-                route=~"(prometheus|api_prom)_api_v1_query"
-              }[$__rate_interval]
-            )
-            or
-            rate(
-              cortex_prometheus_rule_evaluations_total{
-                %(ruler)s
-              }[$__rate_interval]
-            )
-          )
-        ||| % {
-          queryFrontend: $.jobMatcher($._config.job_names.query_frontend),
-          ruler: $.jobMatcher($._config.job_names.ruler),
-        }, format='reqps') +
+        $.statPanel(addRuleEvalRate($.queries.query_frontend.ncInstantQueriesPerSecond), format='reqps') +
         $.panelDescription(
           'Instant queries per second',
           |||
@@ -69,7 +57,7 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         $.panel('Range queries / sec') +
-        $.statPanel($.queries.query_frontend.rangeQueriesPerSecond, format='reqps') +
+        $.statPanel($.queries.query_frontend.ncRangeQueriesPerSecond, format='reqps') +
         $.panelDescription(
           'Range queries per second',
           |||
@@ -80,7 +68,7 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         $.panel('Label names queries / sec') +
-        $.statPanel($.queries.query_frontend.labelNamesQueriesPerSecond, format='reqps') +
+        $.statPanel($.queries.query_frontend.ncLabelNamesQueriesPerSecond, format='reqps') +
         $.panelDescription(
           '"Label names" queries per second',
           |||
@@ -91,7 +79,7 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         $.panel('Label values queries / sec') +
-        $.statPanel($.queries.query_frontend.labelValuesQueriesPerSecond, format='reqps') +
+        $.statPanel($.queries.query_frontend.ncLabelValuesQueriesPerSecond, format='reqps') +
         $.panelDescription(
           '"Label values" queries per second',
           |||
@@ -102,7 +90,7 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         $.panel('Series queries / sec') +
-        $.statPanel($.queries.query_frontend.seriesQueriesPerSecond, format='reqps') +
+        $.statPanel($.queries.query_frontend.ncSeriesQueriesPerSecond, format='reqps') +
         $.panelDescription(
           'Series queries per second',
           |||

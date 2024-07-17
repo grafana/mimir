@@ -127,11 +127,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
       local queryPerSecond(name) = 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)%(route)s"}[$__rate_interval]))' %
                                    (variables { route: std.filter(function(r) r.name == name, overviewRoutes)[0].routeLabel }),
-      instantQueriesPerSecond: queryPerSecond('instantQuery'),
-      rangeQueriesPerSecond: queryPerSecond('rangeQuery'),
-      labelNamesQueriesPerSecond: queryPerSecond('labelNames'),
-      labelValuesQueriesPerSecond: queryPerSecond('labelValues'),
-      seriesQueriesPerSecond: queryPerSecond('series'),
+      local ncQueryPerSecond(name) = utils.ncHistogramSumBy(utils.ncHistogramCountRate(p.requestsPerSecondMetric, '%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)%(route)s"' %
+                                                                                                                  (variables { route: std.filter(function(r) r.name == name, overviewRoutes)[0].routeLabel }))),
+      ncInstantQueriesPerSecond: ncQueryPerSecond('instantQuery'),
+      ncRangeQueriesPerSecond: ncQueryPerSecond('rangeQuery'),
+      ncLabelNamesQueriesPerSecond: ncQueryPerSecond('labelNames'),
+      ncLabelValuesQueriesPerSecond: ncQueryPerSecond('labelValues'),
+      ncSeriesQueriesPerSecond: ncQueryPerSecond('series'),
       remoteReadQueriesPerSecond: queryPerSecond('remoteRead'),
       metadataQueriesPerSecond: queryPerSecond('metadata'),
       exemplarsQueriesPerSecond: queryPerSecond('exemplars'),

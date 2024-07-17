@@ -91,7 +91,13 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(\n  rate(\n    cortex_request_duration_seconds_count{\n      cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",\n      route=~\"(prometheus|api_prom)_api_v1_query\"\n    }[$__rate_interval]\n  )\n  or\n  rate(\n    cortex_prometheus_rule_evaluations_total{\n      cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"\n    }[$__rate_interval]\n  )\n)\n",
+                        "expr": "sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_query\"}[$__rate_interval])) + sum(rate(cortex_prometheus_rule_evaluations_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) < ($latency_metrics * +Inf)",
+                        "format": "time_series",
+                        "instant": true,
+                        "refId": "A_classic"
+                     },
+                     {
+                        "expr": "sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_query\"}[$__rate_interval]))) + sum(rate(cortex_prometheus_rule_evaluations_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) < ($latency_metrics * -Inf)",
                         "format": "time_series",
                         "instant": true,
                         "refId": "A"
@@ -167,7 +173,13 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_query_range\"}[$__rate_interval]))",
+                        "expr": "sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_query_range\"}[$__rate_interval])) < ($latency_metrics * +Inf)",
+                        "format": "time_series",
+                        "instant": true,
+                        "refId": "A_classic"
+                     },
+                     {
+                        "expr": "sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_query_range\"}[$__rate_interval]))) < ($latency_metrics * -Inf)",
                         "format": "time_series",
                         "instant": true,
                         "refId": "A"
@@ -243,7 +255,13 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_labels\"}[$__rate_interval]))",
+                        "expr": "sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_labels\"}[$__rate_interval])) < ($latency_metrics * +Inf)",
+                        "format": "time_series",
+                        "instant": true,
+                        "refId": "A_classic"
+                     },
+                     {
+                        "expr": "sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_labels\"}[$__rate_interval]))) < ($latency_metrics * -Inf)",
                         "format": "time_series",
                         "instant": true,
                         "refId": "A"
@@ -319,7 +337,13 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_label_name_values\"}[$__rate_interval]))",
+                        "expr": "sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_label_name_values\"}[$__rate_interval])) < ($latency_metrics * +Inf)",
+                        "format": "time_series",
+                        "instant": true,
+                        "refId": "A_classic"
+                     },
+                     {
+                        "expr": "sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_label_name_values\"}[$__rate_interval]))) < ($latency_metrics * -Inf)",
                         "format": "time_series",
                         "instant": true,
                         "refId": "A"
@@ -395,7 +419,13 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_series\"}[$__rate_interval]))",
+                        "expr": "sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_series\"}[$__rate_interval])) < ($latency_metrics * +Inf)",
+                        "format": "time_series",
+                        "instant": true,
+                        "refId": "A_classic"
+                     },
+                     {
+                        "expr": "sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_series\"}[$__rate_interval]))) < ($latency_metrics * -Inf)",
                         "format": "time_series",
                         "instant": true,
                         "refId": "A"
@@ -4697,6 +4727,35 @@
                "tags": [ ],
                "tagsQuery": "",
                "type": "query",
+               "useTags": false
+            },
+            {
+               "current": {
+                  "selected": true,
+                  "text": "classic",
+                  "value": "1"
+               },
+               "description": "Choose between showing latencies based on low precision classic or high precision native histogram metrics.",
+               "hide": 0,
+               "includeAll": false,
+               "label": "Latency metrics",
+               "multi": false,
+               "name": "latency_metrics",
+               "options": [
+                  {
+                     "selected": false,
+                     "text": "native",
+                     "value": "-1"
+                  },
+                  {
+                     "selected": true,
+                     "text": "classic",
+                     "value": "1"
+                  }
+               ],
+               "query": "native : -1,classic : 1",
+               "skipUrlSync": false,
+               "type": "custom",
                "useTags": false
             }
          ]
