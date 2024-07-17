@@ -6643,7 +6643,7 @@
               "kind": "field",
               "name": "producer_max_buffered_bytes",
               "required": false,
-              "desc": "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is applied per Kafka client. 0 to disable the limit.",
+              "desc": "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. 0 to disable the limit.",
               "fieldValue": null,
               "fieldDefaultValue": 1073741824,
               "fieldFlag": "ingest-storage.kafka.producer-max-buffered-bytes",
@@ -7044,6 +7044,27 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "blocks-storage.s3.http.tls-server-name",
                   "fieldType": "string",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "trace",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "enabled",
+                  "required": false,
+                  "desc": "When enabled, low-level S3 HTTP operation information is logged at the debug level.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.s3.trace.enabled",
+                  "fieldType": "boolean",
                   "fieldCategory": "advanced"
                 }
               ],
@@ -13021,6 +13042,27 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "trace",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "enabled",
+                  "required": false,
+                  "desc": "When enabled, low-level S3 HTTP operation information is logged at the debug level.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.s3.trace.enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -15156,6 +15198,27 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "alertmanager-storage.s3.http.tls-server-name",
                   "fieldType": "string",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "trace",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "enabled",
+                  "required": false,
+                  "desc": "When enabled, low-level S3 HTTP operation information is logged at the debug level.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "alertmanager-storage.s3.trace.enabled",
+                  "fieldType": "boolean",
                   "fieldCategory": "advanced"
                 }
               ],
@@ -17540,6 +17603,27 @@
                       "fieldDefaultValue": "",
                       "fieldFlag": "common.storage.s3.http.tls-server-name",
                       "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "block",
+                  "name": "trace",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "enabled",
+                      "required": false,
+                      "desc": "When enabled, low-level S3 HTTP operation information is logged at the debug level.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "common.storage.s3.trace.enabled",
+                      "fieldType": "boolean",
                       "fieldCategory": "advanced"
                     }
                   ],
