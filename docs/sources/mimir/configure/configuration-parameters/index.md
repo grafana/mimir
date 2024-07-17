@@ -3819,7 +3819,7 @@ kafka:
 
   # The maximum size of (uncompressed) buffered and unacknowledged produced
   # records sent to Kafka. The produce request fails once this limit is reached.
-  # 0 to disable the limit.
+  # This limit is per Kafka client. 0 to disable the limit.
   # CLI flag: -ingest-storage.kafka.producer-max-buffered-bytes
   [producer_max_buffered_bytes: <int> | default = 1073741824]
 
