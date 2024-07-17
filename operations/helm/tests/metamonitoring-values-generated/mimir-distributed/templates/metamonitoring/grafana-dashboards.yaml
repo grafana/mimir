@@ -44,7 +44,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -757,7 +757,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -3217,7 +3217,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -4043,7 +4043,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -6220,7 +6220,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -6494,7 +6494,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -7614,7 +7614,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -8453,7 +8453,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -9391,7 +9391,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -11115,7 +11115,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -13666,7 +13666,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -15192,7 +15192,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -17657,7 +17657,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -22410,7 +22410,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -23478,7 +23478,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -24476,7 +24476,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -27444,7 +27444,7 @@ data:
                 "type": "timeseries"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": null,
           "schemaVersion": 27,
           "style": "dark",
@@ -27595,7 +27595,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -30228,7 +30228,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -32139,7 +32139,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -34828,7 +34828,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -36582,7 +36582,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -37421,7 +37421,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
@@ -38623,7 +38623,7 @@ data:
                 "type": "dashboards"
              }
           ],
-          "refresh": "10s",
+          "refresh": "5m",
           "rows": [
              {
                 "collapse": false,
