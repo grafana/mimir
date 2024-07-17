@@ -1531,17 +1531,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row($.capitalize(rowTitlePrefix + 'query-frontend'))
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher(queryFrontendJobName), queryRoutesRegex])
+        $.qpsPanelNativeHistogram('cortex_request_duration_seconds', utils.toPrometheusSelectorNaked($.jobSelector(queryFrontendJobName) + [utils.selector.re('route', queryRoutesRegex)]))
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector(queryFrontendJobName) + [utils.selector.re('route', queryRoutesRegex)])
+        $.latencyRecordingRulePanelNativeHistogram('cortex_request_duration_seconds', $.jobSelector(queryFrontendJobName) + [utils.selector.re('route', queryRoutesRegex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher(queryFrontendJobName), queryRoutesRegex], ''
-        )
+        $.perInstanceLatencyPanelNativeHistogram('0.99', 'cortex_request_duration_seconds', $.jobSelector(queryFrontendJobName) + [utils.selector.re('route', queryRoutesRegex)])
       ),
       local description = |||
         <p>
