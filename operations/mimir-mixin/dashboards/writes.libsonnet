@@ -116,11 +116,11 @@ local filename = 'mimir-writes.json';
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           //'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval]))) < ($latency_metrics * +Inf)' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.gateway), $.queries.write_http_routes_regex], ''
-          utils.showClassicHistogramQuery(utils.ncHistogramQuantile('0.99', 'cortex_request_duration_seconds', utils.toPrometheusSelectorNaked($.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)]), ['pod'])), ''
+          utils.showClassicHistogramQuery(utils.ncHistogramQuantile('0.99', 'cortex_request_duration_seconds', utils.toPrometheusSelectorNaked($.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)]), [$._config.per_instance_label])), ''
         ) +
         $.hiddenLegendQueryPanel(
           //'histogram_quantile(0.99, sum by(%s) (rate(cortex_request_duration_seconds{%s, route=~"%s"}[$__rate_interval]))) < ($latency_metrics * -Inf)' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.gateway), $.queries.write_http_routes_regex], ''
-          utils.showNativeHistogramQuery(utils.ncHistogramQuantile('0.99', 'cortex_request_duration_seconds', utils.toPrometheusSelectorNaked($.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)]), ['pod'])), ''
+          utils.showNativeHistogramQuery(utils.ncHistogramQuantile('0.99', 'cortex_request_duration_seconds', utils.toPrometheusSelectorNaked($.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)]), [$._config.per_instance_label])), ''
         )
       )
     )
