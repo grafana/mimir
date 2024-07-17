@@ -5,8 +5,10 @@ package functions
 import (
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/prometheus/prometheus/promql"
 )
 
+// SeriesMetadataFunction is a function to operate on the metadata of a single series.
 type SeriesMetadataFunction func(seriesMetadata []types.SeriesMetadata, pool *pooling.LimitingPool) ([]types.SeriesMetadata, error)
 
 func DropSeriesName(seriesMetadata []types.SeriesMetadata, _ *pooling.LimitingPool) ([]types.SeriesMetadata, error) {
@@ -17,6 +19,7 @@ func DropSeriesName(seriesMetadata []types.SeriesMetadata, _ *pooling.LimitingPo
 	return seriesMetadata, nil
 }
 
+// InstantVectorFunction is a function to operate on an instant vector series.
 type InstantVectorFunction func(seriesData types.InstantVectorSeriesData, pool *pooling.LimitingPool) (types.InstantVectorSeriesData, error)
 
 // floatTransformationFunc is not needed elsewhere, so it is not exported yet
@@ -43,3 +46,7 @@ func FloatTransformationDropHistogramsFunc(transform func(f float64) float64) In
 func Passthrough(seriesData types.InstantVectorSeriesData, _ *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
 	return seriesData, nil
 }
+
+// RangeVectorStepFunction is a function to operate on a range vector step.
+// floatBuffer and histogramBuffer will contain the values for the step range.
+type RangeVectorStepFunction func(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer) (*promql.FPoint, *promql.HPoint, error)
