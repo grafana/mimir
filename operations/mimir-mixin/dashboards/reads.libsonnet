@@ -105,16 +105,20 @@ local filename = 'mimir-reads.json';
       $.row('Gateway')
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
-        $.qpsPanel($.queries.gateway.readRequestsPerSecond)
+        $.qpsPanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.queries.gateway.readRequestsPerSecondSelector)
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
+        $.latencyRecordingRulePanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.gateway), $.queries.read_http_routes_regex], ''
+          [
+            utils.showClassicHistogramQuery(utils.ncHistogramQuantile('0.99', $.queries.gateway.requestsPerSecondMetric, '%s, route=~"%s"' % [$.jobMatcher($._config.job_names.gateway), $.queries.read_http_routes_regex], [$._config.per_instance_label])),
+            utils.showNativeHistogramQuery(utils.ncHistogramQuantile('0.99', $.queries.gateway.requestsPerSecondMetric, '%s, route=~"%s"' % [$.jobMatcher($._config.job_names.gateway), $.queries.read_http_routes_regex], [$._config.per_instance_label])),
+          ],
+          ['', '']
         )
       )
     )
