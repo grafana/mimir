@@ -56,6 +56,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
       ],
 
+      refresh: '5m',
+
       addRowIf(condition, row)::
         if condition
         then self.addRow(row)

@@ -1297,7 +1297,7 @@
             "type": "timeseries"
          }
       ],
-      "refresh": "10s",
+      "refresh": "5m",
       "rows": null,
       "schemaVersion": 27,
       "style": "dark",
