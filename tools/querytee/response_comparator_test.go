@@ -995,6 +995,8 @@ func TestCompareScalar(t *testing.T) {
 
 func TestCompareSamplesResponse(t *testing.T) {
 	now := model.Now().String()
+	overAnHourAgo := model.Now().Add(-61 * time.Minute).String()
+
 	for _, tc := range []struct {
 		name              string
 		tolerance         float64
@@ -1197,7 +1199,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 			useRelativeError: true,
 		},
 		{
-			name: "should not fail when the float sample is recent and configured to skip",
+			name: "should not fail when the float sample in a vector is recent and configured to skip recent samples",
 			expected: json.RawMessage(`{
 							"status": "success",
 							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[` + now + `,"10"]}]}
@@ -1209,7 +1211,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 			skipRecentSamples: time.Hour,
 		},
 		{
-			name: "should not fail when the histogram sample is recent and configured to skip",
+			name: "should not fail when the histogram sample in a vector is recent and configured to skip recent samples",
 			expected: json.RawMessage(`{
 							"status": "success",
 							"data": {
@@ -1253,6 +1255,154 @@ func TestCompareSamplesResponse(t *testing.T) {
 							}
 						}`),
 			skipRecentSamples: time.Hour,
+		},
+		{
+			name: "should not fail when all float samples in a vector are recent, there are a different number of series in one result and configured to skip recent samples",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[` + now + `,"10"]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[` + now + `,"10"]}, {"metric":{"foo":"baz"},"value":[` + now + `,"10"]}]}
+						}`),
+			skipRecentSamples: time.Hour,
+		},
+		{
+			name: "should not fail when all histogram samples in a vector are recent, there are a different number of series in one result and configured to skip recent samples",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "vector",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histogram": [
+											` + now + `, 
+											{
+												"count": "2", 
+												"sum": "3", 
+												"buckets": [
+													[1,"0","2","2"]
+												]
+											}
+										]
+									}
+								]
+							}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "vector",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histogram": [
+											` + now + `, 
+											{
+												"count": "5", 
+												"sum": "3", 
+												"buckets": [
+													[1,"0","2","5"]
+												]
+											}
+										]
+									},
+									{
+										"metric": {"foo":"baz"},
+										"histogram": [
+											` + now + `, 
+											{
+												"count": "5", 
+												"sum": "20", 
+												"buckets": [
+													[1,"0","2","5"]
+												]
+											}
+										]
+									}
+								]
+							}
+						}`),
+			skipRecentSamples: time.Hour,
+		},
+		{
+			name: "should fail when some float samples in a vector are recent, there are a different number of series in one result and configured to skip recent samples",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[` + now + `,"10"]}]}
+						}`),
+
+			// It's not expected that a vector will have samples with different timestamps, but if it happens, we should still behave in a predictable way.
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[` + now + `,"10"]}, {"metric":{"foo":"baz"},"value":[` + overAnHourAgo + `,"10"]}]}
+						}`),
+			skipRecentSamples: time.Hour,
+			err:               errors.New("expected 1 metrics but got 2"),
+		},
+		{
+			name: "should fail when some histogram samples in a vector are recent, there are a different number of series in one result and configured to skip recent samples",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "vector",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histogram": [
+											` + now + `, 
+											{
+												"count": "2", 
+												"sum": "3", 
+												"buckets": [
+													[1,"0","2","2"]
+												]
+											}
+										]
+									}
+								]
+							}
+						}`),
+
+			// It's not expected that a vector will have samples with different timestamps, but if it happens, we should still behave in a predictable way.
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "vector",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histogram": [
+											` + now + `, 
+											{
+												"count": "5", 
+												"sum": "3", 
+												"buckets": [
+													[1,"0","2","5"]
+												]
+											}
+										]
+									},
+									{
+										"metric": {"foo":"baz"},
+										"histogram": [
+											` + overAnHourAgo + `, 
+											{
+												"count": "5", 
+												"sum": "20", 
+												"buckets": [
+													[1,"0","2","5"]
+												]
+											}
+										]
+									}
+								]
+							}
+						}`),
+			skipRecentSamples: time.Hour,
+			err:               errors.New("expected 1 metrics but got 2"),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

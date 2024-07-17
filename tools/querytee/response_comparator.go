@@ -211,8 +211,11 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 	}
 
 	if len(expected) != len(actual) {
-		return fmt.Errorf("expected %d metrics but got %d", len(expected),
-			len(actual))
+		if allSamplesWithinRecentSampleWindow(expected, opts) && allSamplesWithinRecentSampleWindow(actual, opts) {
+			return nil
+		}
+
+		return fmt.Errorf("expected %d metrics but got %d", len(expected), len(actual))
 	}
 
 	metricFingerprintToIndexMap := make(map[model.Fingerprint]int, len(expected))
@@ -258,6 +261,20 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 	}
 
 	return nil
+}
+
+func allSamplesWithinRecentSampleWindow(v model.Vector, opts SampleComparisonOptions) bool {
+	if opts.SkipRecentSamples == 0 {
+		return false
+	}
+
+	for _, sample := range v {
+		if time.Since(sample.Timestamp.Time()) > opts.SkipRecentSamples {
+			return false
+		}
+	}
+
+	return true
 }
 
 func compareScalar(expectedRaw, actualRaw json.RawMessage, opts SampleComparisonOptions) error {
