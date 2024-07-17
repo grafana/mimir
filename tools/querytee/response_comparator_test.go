@@ -1404,6 +1404,222 @@ func TestCompareSamplesResponse(t *testing.T) {
 			skipRecentSamples: time.Hour,
 			err:               errors.New("expected 1 metrics but got 2"),
 		},
+		{
+			name: "should not fail when the float sample in a matrix is recent and configured to skip recent samples",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[` + now + `,"10"]]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[` + now + `,"5"]]}]}
+						}`),
+			skipRecentSamples: time.Hour,
+		},
+		{
+			name: "should not fail when the histogram sample in a matrix is recent and configured to skip recent samples",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "matrix",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histograms": [
+											[
+												` + now + `, 
+												{
+													"count": "2", 
+													"sum": "3", 
+													"buckets": [
+														[1,"0","2","2"]
+													]
+												}
+											]
+										]
+									}
+								]
+							}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "matrix",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histograms": [
+											[
+												` + now + `, 
+												{
+													"count": "5", 
+													"sum": "3", 
+													"buckets": [
+														[1,"0","2","5"]
+													]
+												}
+											]
+										]
+									}
+								]
+							}
+						}`),
+			skipRecentSamples: time.Hour,
+		},
+		{
+			name: "should not fail when all float samples in a matrix are recent, there are a different number of series in one result and configured to skip recent samples",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[` + now + `,"10"]]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[` + now + `,"10"]]}, {"metric":{"foo":"baz"},"values":[[` + now + `,"10"]]}]}
+						}`),
+			skipRecentSamples: time.Hour,
+		},
+		{
+			name: "should not fail when all histogram samples in a matrix are recent, there are a different number of series in one result and configured to skip recent samples",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "matrix",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histograms": [[
+											` + now + `, 
+											{
+												"count": "2", 
+												"sum": "3", 
+												"buckets": [
+													[1,"0","2","2"]
+												]
+											}
+										]]
+									}
+								]
+							}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "matrix",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histogram": [
+											` + now + `, 
+											{
+												"count": "5", 
+												"sum": "3", 
+												"buckets": [
+													[1,"0","2","5"]
+												]
+											}
+										]
+									},
+									{
+										"metric": {"foo":"baz"},
+										"histogram": [
+											` + now + `, 
+											{
+												"count": "5", 
+												"sum": "20", 
+												"buckets": [
+													[1,"0","2","5"]
+												]
+											}
+										]
+									}
+								]
+							}
+						}`),
+			skipRecentSamples: time.Hour,
+		},
+		{
+			name: "should fail when some float samples in a matrix are recent, there are a different number of series in one result and configured to skip recent samples",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[` + now + `,"10"]]}]}
+						}`),
+
+			// It's not expected that a matrix will have samples with different timestamps, but if it happens, we should still behave in a predictable way.
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[` + now + `,"10"]]}, {"metric":{"foo":"baz"},"values":[[` + overAnHourAgo + `,"10"]]}]}
+						}`),
+			skipRecentSamples: time.Hour,
+			err:               errors.New("expected 1 metrics but got 2"),
+		},
+		{
+			name: "should fail when some histogram samples in a matrix are recent, there are a different number of series in one result and configured to skip recent samples",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "matrix",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histograms": [
+											[
+												` + now + `, 
+												{
+													"count": "2", 
+													"sum": "3", 
+													"buckets": [
+														[1,"0","2","2"]
+													]
+												}
+											]
+										]
+									}
+								]
+							}
+						}`),
+
+			// It's not expected that a matrix will have samples with different timestamps, but if it happens, we should still behave in a predictable way.
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "matrix",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histograms": [
+											[
+												` + now + `, 
+												{
+													"count": "5", 
+													"sum": "3", 
+													"buckets": [
+														[1,"0","2","5"]
+													]
+												}
+											]
+										]
+									},
+									{
+										"metric": {"foo":"baz"},
+										"histograms": [
+											[
+												` + overAnHourAgo + `, 
+												{
+													"count": "5", 
+													"sum": "20", 
+													"buckets": [
+														[1,"0","2","5"]
+													]
+												}
+											]
+										]
+									}
+								]
+							}
+						}`),
+			skipRecentSamples: time.Hour,
+			err:               errors.New("expected 1 metrics but got 2"),
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			samplesComparator := NewSamplesComparator(SampleComparisonOptions{

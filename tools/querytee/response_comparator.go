@@ -117,8 +117,11 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 	}
 
 	if len(expected) != len(actual) {
-		return fmt.Errorf("expected %d metrics but got %d", len(expected),
-			len(actual))
+		if allMatrixSamplesWithinRecentSampleWindow(expected, opts) && allMatrixSamplesWithinRecentSampleWindow(actual, opts) {
+			return nil
+		}
+
+		return fmt.Errorf("expected %d metrics but got %d", len(expected), len(actual))
 	}
 
 	metricFingerprintToIndexMap := make(map[model.Fingerprint]int, len(expected))
@@ -197,6 +200,28 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 	return nil
 }
 
+func allMatrixSamplesWithinRecentSampleWindow(m model.Matrix, opts SampleComparisonOptions) bool {
+	if opts.SkipRecentSamples == 0 {
+		return false
+	}
+
+	for _, series := range m {
+		for _, sample := range series.Values {
+			if time.Since(sample.Timestamp.Time()) > opts.SkipRecentSamples {
+				return false
+			}
+		}
+
+		for _, sample := range series.Histograms {
+			if time.Since(sample.Timestamp.Time()) > opts.SkipRecentSamples {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
 func compareVector(expectedRaw, actualRaw json.RawMessage, opts SampleComparisonOptions) error {
 	var expected, actual model.Vector
 
@@ -211,7 +236,7 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 	}
 
 	if len(expected) != len(actual) {
-		if allSamplesWithinRecentSampleWindow(expected, opts) && allSamplesWithinRecentSampleWindow(actual, opts) {
+		if allVectorSamplesWithinRecentSampleWindow(expected, opts) && allVectorSamplesWithinRecentSampleWindow(actual, opts) {
 			return nil
 		}
 
@@ -263,7 +288,7 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 	return nil
 }
 
-func allSamplesWithinRecentSampleWindow(v model.Vector, opts SampleComparisonOptions) bool {
+func allVectorSamplesWithinRecentSampleWindow(v model.Vector, opts SampleComparisonOptions) bool {
 	if opts.SkipRecentSamples == 0 {
 		return false
 	}
