@@ -113,12 +113,9 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          [
-            utils.showClassicHistogramQuery(utils.ncHistogramQuantile('0.99', $.queries.gateway.requestsPerSecondMetric, '%s, route=~"%s"' % [$.jobMatcher($._config.job_names.gateway), $.queries.read_http_routes_regex], [$._config.per_instance_label])),
-            utils.showNativeHistogramQuery(utils.ncHistogramQuantile('0.99', $.queries.gateway.requestsPerSecondMetric, '%s, route=~"%s"' % [$.jobMatcher($._config.job_names.gateway), $.queries.read_http_routes_regex], [$._config.per_instance_label])),
-          ],
-          ['', '']
+        $.perInstanceLatencyPanelNativeHistogram(
+          $.queries.gateway.requestsPerSecondMetric,
+          $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.read_http_routes_regex)],
         )
       )
     )
