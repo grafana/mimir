@@ -239,57 +239,6 @@ metadata:
   name: overrides
   namespace: default
 ---
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: replicatemplates.rollout-operator.grafana.com
-spec:
-  group: rollout-operator.grafana.com
-  names:
-    categories:
-    - all
-    kind: ReplicaTemplate
-    plural: replicatemplates
-    singular: replicatemplate
-  scope: Namespaced
-  versions:
-  - additionalPrinterColumns:
-    - description: Status replicas
-      jsonPath: .status.replicas
-      name: StatusReplicas
-      type: string
-    - description: Spec replicas
-      jsonPath: .spec.replicas
-      name: SpecReplicas
-      type: string
-    name: v1
-    schema:
-      openAPIV3Schema:
-        properties:
-          spec:
-            properties:
-              labelSelector:
-                type: string
-              replicas:
-                default: 1
-                minimum: 0
-                type: integer
-            type: object
-          status:
-            properties:
-              replicas:
-                type: integer
-            type: object
-        type: object
-    served: true
-    storage: true
-    subresources:
-      scale:
-        labelSelectorPath: .spec.labelSelector
-        specReplicasPath: .spec.replicas
-        statusReplicasPath: .status.replicas
-      status: {}
----
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -320,14 +269,6 @@ rules:
   - statefulsets/status
   verbs:
   - update
-- apiGroups:
-  - rollout-operator.grafana.com
-  resources:
-  - replicatemplates/scale
-  - replicatemplates/status
-  verbs:
-  - get
-  - patch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -1819,7 +1760,7 @@ metadata:
     grafana.com/prepare-downscale-http-port: "80"
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 12h
+    grafana.com/min-time-between-zones-downscale: 0s
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
   name: ingester-zone-a
@@ -1964,7 +1905,7 @@ metadata:
     grafana.com/rollout-downscale-leader: ingester-zone-a
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 12h
+    grafana.com/min-time-between-zones-downscale: 0s
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
   name: ingester-zone-b
@@ -2102,7 +2043,7 @@ metadata:
     grafana.com/rollout-downscale-leader: ingester-zone-b
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 12h
+    grafana.com/min-time-between-zones-downscale: 0s
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
   name: ingester-zone-c
@@ -2916,68 +2857,3 @@ spec:
         memory: 512Mi
   size: 3
   version: 3.3.13
----
-apiVersion: rollout-operator.grafana.com/v1
-kind: ReplicaTemplate
-metadata:
-  name: ingester-zone-a
-  namespace: default
-spec:
-  labelSelector: name=unused
----
-apiVersion: keda.sh/v1alpha1
-kind: ScaledObject
-metadata:
-  name: ingester-zone-a
-  namespace: default
-spec:
-  advanced:
-    horizontalPodAutoscalerConfig:
-      behavior:
-        scaleDown:
-          policies:
-          - periodSeconds: 1800
-            type: Percent
-            value: 10
-          selectPolicy: Max
-          stabilizationWindowSeconds: 3600
-        scaleUp:
-          policies:
-          - periodSeconds: 600
-            type: Percent
-            value: 100
-          selectPolicy: Min
-          stabilizationWindowSeconds: 1800
-  maxReplicaCount: 10
-  minReplicaCount: 1
-  pollingInterval: 10
-  scaleTargetRef:
-    apiVersion: rollout-operator.grafana.com/v1
-    kind: ReplicaTemplate
-    name: ingester-zone-a
-  triggers:
-  - metadata:
-      ignoreNullValues: "false"
-      metricName: cortex_ingester_zone_a_replicas_hpa_default
-      query: |-
-        (sum(
-            sum by (pod) (cortex_ingester_owned_series{cluster="test-cluster", job="default/ingester-zone-a", container="ingester"})
-            and
-            sum by (pod) (kube_pod_status_ready{cluster="test-cluster",namespace="default", pod=~"ingester-zone-a.*", condition="true"}) > 0
-        )
-         / (
-            sum(kube_pod_status_ready{cluster="test-cluster", namespace="default", pod=~"ingester-zone-a.*", condition="true"})
-            /
-            scalar(kube_statefulset_status_replicas{cluster="test-cluster", namespace="default", statefulset="ingester-zone-a"})
-        )
-        )  and ((
-            sum(kube_pod_status_ready{cluster="test-cluster", namespace="default", pod=~"ingester-zone-a.*", condition="true"})
-            /
-            scalar(kube_statefulset_status_replicas{cluster="test-cluster", namespace="default", statefulset="ingester-zone-a"})
-        )
-         > 0.7)
-      serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "1500000"
-    metricType: AverageValue
-    name: cortex_ingester_zone_a_replicas_hpa_default
-    type: prometheus

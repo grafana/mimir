@@ -1766,7 +1766,7 @@ metadata:
   namespace: default
 spec:
   podManagementPolicy: Parallel
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       name: ingester-zone-a-partition
@@ -1910,7 +1910,7 @@ metadata:
   namespace: default
 spec:
   podManagementPolicy: Parallel
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       name: ingester-zone-b-partition
@@ -2048,7 +2048,7 @@ metadata:
   namespace: default
 spec:
   podManagementPolicy: Parallel
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       name: ingester-zone-c-partition

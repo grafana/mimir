@@ -239,6 +239,57 @@ metadata:
   name: overrides
   namespace: default
 ---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: replicatemplates.rollout-operator.grafana.com
+spec:
+  group: rollout-operator.grafana.com
+  names:
+    categories:
+    - all
+    kind: ReplicaTemplate
+    plural: replicatemplates
+    singular: replicatemplate
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Status replicas
+      jsonPath: .status.replicas
+      name: StatusReplicas
+      type: string
+    - description: Spec replicas
+      jsonPath: .spec.replicas
+      name: SpecReplicas
+      type: string
+    name: v1
+    schema:
+      openAPIV3Schema:
+        properties:
+          spec:
+            properties:
+              labelSelector:
+                type: string
+              replicas:
+                default: 1
+                minimum: 0
+                type: integer
+            type: object
+          status:
+            properties:
+              replicas:
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      scale:
+        labelSelectorPath: .spec.labelSelector
+        specReplicasPath: .spec.replicas
+        statusReplicasPath: .status.replicas
+      status: {}
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -269,6 +320,14 @@ rules:
   - statefulsets/status
   verbs:
   - update
+- apiGroups:
+  - rollout-operator.grafana.com
+  resources:
+  - replicatemplates/scale
+  - replicatemplates/status
+  verbs:
+  - get
+  - patch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -370,8 +429,8 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: ingester-zone-a-partition
-  name: ingester-zone-a-partition
+    name: ingester-zone-a
+  name: ingester-zone-a
   namespace: default
 spec:
   clusterIP: None
@@ -386,15 +445,15 @@ spec:
     port: 7946
     targetPort: 7946
   selector:
-    name: ingester-zone-a-partition
+    name: ingester-zone-a
     rollout-group: ingester
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: ingester-zone-b-partition
-  name: ingester-zone-b-partition
+    name: ingester-zone-b
+  name: ingester-zone-b
   namespace: default
 spec:
   clusterIP: None
@@ -409,15 +468,15 @@ spec:
     port: 7946
     targetPort: 7946
   selector:
-    name: ingester-zone-b-partition
+    name: ingester-zone-b
     rollout-group: ingester
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: ingester-zone-c-partition
-  name: ingester-zone-c-partition
+    name: ingester-zone-c
+  name: ingester-zone-c
   namespace: default
 spec:
   clusterIP: None
@@ -432,7 +491,7 @@ spec:
     port: 7946
     targetPort: 7946
   selector:
-    name: ingester-zone-c-partition
+    name: ingester-zone-c
     rollout-group: ingester
 ---
 apiVersion: v1
@@ -814,7 +873,7 @@ spec:
         - -ingest-storage.kafka.topic=ingest
         - -ingester.partition-ring.prefix=
         - -ingester.ring.heartbeat-timeout=10m
-        - -ingester.ring.prefix=
+        - -ingester.ring.prefix=partition-ingesters/
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
@@ -1004,6 +1063,10 @@ spec:
     spec:
       containers:
       - args:
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-queriers-per-tenant=10
@@ -1091,6 +1154,10 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest
         - -query-frontend.max-queriers-per-tenant=10
         - -query-scheduler.max-outstanding-requests-per-tenant=100
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -1213,7 +1280,7 @@ spec:
         - -ingest-storage.kafka.topic=ingest
         - -ingester.partition-ring.prefix=
         - -ingester.ring.heartbeat-timeout=10m
-        - -ingester.ring.prefix=
+        - -ingester.ring.prefix=partition-ingesters/
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
@@ -1413,6 +1480,10 @@ spec:
     spec:
       containers:
       - args:
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest
         - -query-frontend.cache-results=false
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-queriers-per-tenant=10
@@ -1503,6 +1574,10 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest
         - -query-frontend.max-queriers-per-tenant=10
         - -query-scheduler.max-outstanding-requests-per-tenant=100
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -1566,6 +1641,10 @@ spec:
         - -alertmanager.storage.path=/data
         - -alertmanager.web.external-url=http://test/alertmanager
         - -common.storage.backend=gcs
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1671,6 +1750,10 @@ spec:
         - -compactor.split-and-merge-shards=0
         - -compactor.split-groups=1
         - -compactor.symbols-flushers-concurrency=4
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1734,25 +1817,30 @@ metadata:
   annotations:
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
+    grafana.com/rollout-delayed-downscale: 13h
+    grafana.com/rollout-mirror-replicas-from-resource-api-version: rollout-operator.grafana.com/v1
+    grafana.com/rollout-mirror-replicas-from-resource-kind: ReplicaTemplate
+    grafana.com/rollout-mirror-replicas-from-resource-name: ingester-zone-a
+    grafana.com/rollout-prepare-delayed-downscale-url: http://pod/ingester/prepare-partition-downscale
     rollout-max-unavailable: "50"
   labels:
+    grafana.com/min-time-between-zones-downscale: 0s
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
-  name: ingester-zone-a-partition
+  name: ingester-zone-a
   namespace: default
 spec:
   podManagementPolicy: Parallel
-  replicas: 1
   selector:
     matchLabels:
-      name: ingester-zone-a-partition
+      name: ingester-zone-a
       rollout-group: ingester
-  serviceName: ingester-zone-a-partition
+  serviceName: ingester-zone-a
   template:
     metadata:
       labels:
         gossip_ring_member: "true"
-        name: ingester-zone-a-partition
+        name: ingester-zone-a
         rollout-group: ingester
     spec:
       affinity:
@@ -1767,7 +1855,7 @@ spec:
               - key: name
                 operator: NotIn
                 values:
-                - ingester-zone-a-partition
+                - ingester-zone-a
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
@@ -1784,7 +1872,6 @@ spec:
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.consumer-group=ingester-zone-a-<partition>
         - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
@@ -1878,25 +1965,26 @@ metadata:
   annotations:
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
+    grafana.com/rollout-downscale-leader: ingester-zone-a
     rollout-max-unavailable: "50"
   labels:
+    grafana.com/min-time-between-zones-downscale: 0s
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
-  name: ingester-zone-b-partition
+  name: ingester-zone-b
   namespace: default
 spec:
   podManagementPolicy: Parallel
-  replicas: 1
   selector:
     matchLabels:
-      name: ingester-zone-b-partition
+      name: ingester-zone-b
       rollout-group: ingester
-  serviceName: ingester-zone-b-partition
+  serviceName: ingester-zone-b
   template:
     metadata:
       labels:
         gossip_ring_member: "true"
-        name: ingester-zone-b-partition
+        name: ingester-zone-b
         rollout-group: ingester
     spec:
       affinity:
@@ -1911,7 +1999,7 @@ spec:
               - key: name
                 operator: NotIn
                 values:
-                - ingester-zone-b-partition
+                - ingester-zone-b
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
@@ -1928,7 +2016,6 @@ spec:
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.consumer-group=ingester-zone-b-<partition>
         - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
@@ -2016,25 +2103,26 @@ metadata:
   annotations:
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
+    grafana.com/rollout-downscale-leader: ingester-zone-a
     rollout-max-unavailable: "50"
   labels:
+    grafana.com/min-time-between-zones-downscale: 0s
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
-  name: ingester-zone-c-partition
+  name: ingester-zone-c
   namespace: default
 spec:
   podManagementPolicy: Parallel
-  replicas: 1
   selector:
     matchLabels:
-      name: ingester-zone-c-partition
+      name: ingester-zone-c
       rollout-group: ingester
-  serviceName: ingester-zone-c-partition
+  serviceName: ingester-zone-c
   template:
     metadata:
       labels:
         gossip_ring_member: "true"
-        name: ingester-zone-c-partition
+        name: ingester-zone-c
         rollout-group: ingester
     spec:
       affinity:
@@ -2049,7 +2137,7 @@ spec:
               - key: name
                 operator: NotIn
                 values:
-                - ingester-zone-c-partition
+                - ingester-zone-c
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
@@ -2066,7 +2154,6 @@ spec:
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.consumer-group=ingester-zone-c-<partition>
         - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
@@ -2428,6 +2515,10 @@ spec:
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -2569,6 +2660,10 @@ spec:
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -2712,6 +2807,10 @@ spec:
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
+        - -ingest-storage.enabled=true
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.topic=ingest
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -2821,3 +2920,68 @@ spec:
         memory: 512Mi
   size: 3
   version: 3.3.13
+---
+apiVersion: rollout-operator.grafana.com/v1
+kind: ReplicaTemplate
+metadata:
+  name: ingester-zone-a
+  namespace: default
+spec:
+  labelSelector: name=unused
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: ingester-zone-a
+  namespace: default
+spec:
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          policies:
+          - periodSeconds: 1800
+            type: Percent
+            value: 10
+          selectPolicy: Max
+          stabilizationWindowSeconds: 3600
+        scaleUp:
+          policies:
+          - periodSeconds: 600
+            type: Percent
+            value: 100
+          selectPolicy: Min
+          stabilizationWindowSeconds: 1800
+  maxReplicaCount: 10
+  minReplicaCount: 1
+  pollingInterval: 10
+  scaleTargetRef:
+    apiVersion: rollout-operator.grafana.com/v1
+    kind: ReplicaTemplate
+    name: ingester-zone-a
+  triggers:
+  - metadata:
+      ignoreNullValues: "false"
+      metricName: cortex_ingester_zone_a_replicas_hpa_default
+      query: |-
+        (sum(
+            sum by (pod) (cortex_ingester_owned_series{cluster="test-cluster", job="default/ingester-zone-a", container="ingester"})
+            and
+            sum by (pod) (kube_pod_status_ready{cluster="test-cluster",namespace="default", pod=~"ingester-zone-a.*", condition="true"}) > 0
+        )
+         / (
+            sum(kube_pod_status_ready{cluster="test-cluster", namespace="default", pod=~"ingester-zone-a.*", condition="true"})
+            /
+            scalar(kube_statefulset_status_replicas{cluster="test-cluster", namespace="default", statefulset="ingester-zone-a"})
+        )
+        )  and ((
+            sum(kube_pod_status_ready{cluster="test-cluster", namespace="default", pod=~"ingester-zone-a.*", condition="true"})
+            /
+            scalar(kube_statefulset_status_replicas{cluster="test-cluster", namespace="default", statefulset="ingester-zone-a"})
+        )
+         > 0.7)
+      serverAddress: http://prometheus.default:9090/prometheus
+      threshold: "1500000"
+    metricType: AverageValue
+    name: cortex_ingester_zone_a_replicas_hpa_default
+    type: prometheus

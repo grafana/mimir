@@ -1,13 +1,21 @@
 // Migration step 10:
-// - Deploy ingesters autoscaling HPA and ReplicaTemplates.
+// - Decommission ingester-zone-[abc]-partition StatefulSet.
+// - Deploy ingester-zone-[abc] StatefulSet.
 (import 'test-ingest-storage-migration-step-9.jsonnet') {
   _config+:: {
     // This builds on previous step.
-    ingest_storage_ingester_autoscaling_enabled: true,
-    ingest_storage_ingester_autoscaling_min_replicas: 3,
-    ingest_storage_ingester_autoscaling_max_replicas: 30,
+    ingest_storage_ingester_instance_ring_dedicated_prefix_enabled: true,
 
-    // Do not configure ingesters to scale based on HPA yet.
-    ingest_storage_ingester_autoscaling_ingester_annotations_enabled: false,
+    ingest_storage_migration_partition_ingester_zone_a_scale_down: false,
+    ingest_storage_migration_partition_ingester_zone_b_scale_down: false,
+    ingest_storage_migration_partition_ingester_zone_c_scale_down: false,
+
+    ingest_storage_migration_partition_ingester_zone_a_enabled: false,
+    ingest_storage_migration_partition_ingester_zone_b_enabled: false,
+    ingest_storage_migration_partition_ingester_zone_c_enabled: false,
+
+    ingest_storage_migration_classic_ingesters_zone_a_decommission: false,
+    ingest_storage_migration_classic_ingesters_zone_b_decommission: false,
+    ingest_storage_migration_classic_ingesters_zone_c_decommission: false,
   },
 }

@@ -1,10 +1,13 @@
 // Migration step 11:
-// - Enable ingesters autoscaling.
+// - Deploy ingesters autoscaling HPA and ReplicaTemplates.
 (import 'test-ingest-storage-migration-step-10.jsonnet') {
   _config+:: {
     // This builds on previous step.
-    ingest_storage_ingester_autoscaling_ingester_annotations_enabled: true,
-    multi_zone_ingester_replicas: 0,
-    ingester_automated_downscale_enabled: false,
+    ingest_storage_ingester_autoscaling_enabled: true,
+    ingest_storage_ingester_autoscaling_min_replicas: 3,
+    ingest_storage_ingester_autoscaling_max_replicas: 30,
+
+    // Do not configure ingesters to scale based on HPA yet.
+    ingest_storage_ingester_autoscaling_ingester_annotations_enabled: false,
   },
 }

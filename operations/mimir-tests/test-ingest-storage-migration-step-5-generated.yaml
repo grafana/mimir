@@ -1812,7 +1812,7 @@ metadata:
   namespace: default
 spec:
   podManagementPolicy: Parallel
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       name: ingester-zone-a

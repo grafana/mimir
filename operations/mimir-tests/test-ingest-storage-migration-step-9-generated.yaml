@@ -370,8 +370,8 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: ingester-zone-a
-  name: ingester-zone-a
+    name: ingester-zone-a-partition
+  name: ingester-zone-a-partition
   namespace: default
 spec:
   clusterIP: None
@@ -386,15 +386,15 @@ spec:
     port: 7946
     targetPort: 7946
   selector:
-    name: ingester-zone-a
+    name: ingester-zone-a-partition
     rollout-group: ingester
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: ingester-zone-b
-  name: ingester-zone-b
+    name: ingester-zone-b-partition
+  name: ingester-zone-b-partition
   namespace: default
 spec:
   clusterIP: None
@@ -409,15 +409,15 @@ spec:
     port: 7946
     targetPort: 7946
   selector:
-    name: ingester-zone-b
+    name: ingester-zone-b-partition
     rollout-group: ingester
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: ingester-zone-c
-  name: ingester-zone-c
+    name: ingester-zone-c-partition
+  name: ingester-zone-c-partition
   namespace: default
 spec:
   clusterIP: None
@@ -432,7 +432,7 @@ spec:
     port: 7946
     targetPort: 7946
   selector:
-    name: ingester-zone-c
+    name: ingester-zone-c-partition
     rollout-group: ingester
 ---
 apiVersion: v1
@@ -1760,24 +1760,23 @@ metadata:
     grafana.com/prepare-downscale-http-port: "80"
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 12h
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
-  name: ingester-zone-a
+  name: ingester-zone-a-partition
   namespace: default
 spec:
   podManagementPolicy: Parallel
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
-      name: ingester-zone-a
+      name: ingester-zone-a-partition
       rollout-group: ingester
-  serviceName: ingester-zone-a
+  serviceName: ingester-zone-a-partition
   template:
     metadata:
       labels:
         gossip_ring_member: "true"
-        name: ingester-zone-a
+        name: ingester-zone-a-partition
         rollout-group: ingester
     spec:
       affinity:
@@ -1792,7 +1791,7 @@ spec:
               - key: name
                 operator: NotIn
                 values:
-                - ingester-zone-a
+                - ingester-zone-a-partition
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
@@ -1809,6 +1808,7 @@ spec:
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.consumer-group=ingester-zone-a-<partition>
         - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
@@ -1902,26 +1902,25 @@ metadata:
   annotations:
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
-    grafana.com/rollout-downscale-leader: ingester-zone-a
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 12h
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
-  name: ingester-zone-b
+  name: ingester-zone-b-partition
   namespace: default
 spec:
   podManagementPolicy: Parallel
+  replicas: 0
   selector:
     matchLabels:
-      name: ingester-zone-b
+      name: ingester-zone-b-partition
       rollout-group: ingester
-  serviceName: ingester-zone-b
+  serviceName: ingester-zone-b-partition
   template:
     metadata:
       labels:
         gossip_ring_member: "true"
-        name: ingester-zone-b
+        name: ingester-zone-b-partition
         rollout-group: ingester
     spec:
       affinity:
@@ -1936,7 +1935,7 @@ spec:
               - key: name
                 operator: NotIn
                 values:
-                - ingester-zone-b
+                - ingester-zone-b-partition
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
@@ -1953,6 +1952,7 @@ spec:
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.consumer-group=ingester-zone-b-<partition>
         - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
@@ -2040,26 +2040,25 @@ metadata:
   annotations:
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
-    grafana.com/rollout-downscale-leader: ingester-zone-b
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 12h
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
-  name: ingester-zone-c
+  name: ingester-zone-c-partition
   namespace: default
 spec:
   podManagementPolicy: Parallel
+  replicas: 0
   selector:
     matchLabels:
-      name: ingester-zone-c
+      name: ingester-zone-c-partition
       rollout-group: ingester
-  serviceName: ingester-zone-c
+  serviceName: ingester-zone-c-partition
   template:
     metadata:
       labels:
         gossip_ring_member: "true"
-        name: ingester-zone-c
+        name: ingester-zone-c-partition
         rollout-group: ingester
     spec:
       affinity:
@@ -2074,7 +2073,7 @@ spec:
               - key: name
                 operator: NotIn
                 values:
-                - ingester-zone-c
+                - ingester-zone-c-partition
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
@@ -2091,6 +2090,7 @@ spec:
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.consumer-group=ingester-zone-c-<partition>
         - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
