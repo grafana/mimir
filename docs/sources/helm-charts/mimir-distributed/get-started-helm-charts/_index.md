@@ -138,6 +138,8 @@ Using a custom namespace solves problems later on because you do not have to ove
 
 ## Generate some test metrics
 
+{{< docs/shared source="alloy" lookup="agent-deprecation.md" version="next" >}}
+
 The Grafana Mimir Helm chart can collect metrics, logs, or both, about Grafana Mimir itself. This is called _metamonitoring_.
 In the example that follows, metamonitoring scrapes metrics about Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir instance.
 
@@ -169,19 +171,18 @@ In the example that follows, metamonitoring scrapes metrics about Grafana Mimir 
          additionalRemoteWriteConfigs:
            - url: "http://mimir-nginx.mimir-test.svc:80/api/v1/push"
    ```
-  {{< admonition type="note" >}}
-  In a production environment the `url` above would point to an external system, independent of your Grafana Mimir instance, such as an instance of Grafana Cloud Metrics.
-  {{< /admonition >}}
 
-  1. Upgrade Grafana Mimir by using the `helm` command:
+   {{< admonition type="note" >}}
+   In a production environment the `url` above would point to an external system, independent of your Grafana Mimir instance, such as an instance of Grafana Cloud Metrics.
+   {{< /admonition >}}
 
-   ```bash
-   helm -n mimir-test upgrade mimir grafana/mimir-distributed -f custom.yaml
+1. Upgrade Grafana Mimir by using the `helm` command:
+
+    ```bash
+    helm -n mimir-test upgrade mimir grafana/mimir-distributed -f custom.yaml
    ```
 
 ## Start Grafana in Kubernetes and query metrics
-
-{{< docs/shared source="alloy" lookup="agent-deprecation.md" version="next" >}}
 
 1. Install Grafana in the same Kubernetes cluster.
 
