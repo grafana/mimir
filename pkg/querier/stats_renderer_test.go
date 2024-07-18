@@ -41,7 +41,7 @@ func TestStatsRenderer(t *testing.T) {
 	q := &mockSampleAndChunkQueryable{
 		queryableFn: func(_, _ int64) (storage.Querier, error) {
 			return &mockQuerier{
-				selectFn: func(_ context.Context, _ bool, hints *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+				selectFn: func(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
 					return series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
 						series.NewConcreteSeries(
 							labels.FromStrings("__name__", "test", "serial", "1"),
