@@ -33,6 +33,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     local variables = {
       gatewayMatcher: $.jobMatcher($._config.job_names.gateway),
       distributorMatcher: $.jobMatcher($._config.job_names.distributor),
+      ingesterMatcher: $.jobMatcher($._config.job_names.ingester),
       queryFrontendMatcher: $.jobMatcher($._config.job_names.query_frontend),
       rulerMatcher: $.jobMatcher($._config.job_names.ruler),
       alertmanagerMatcher: $.jobMatcher($._config.job_names.alertmanager),
@@ -40,6 +41,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       writeHTTPRoutesRegex: $.queries.write_http_routes_regex,
       writeGRPCRoutesRegex: $.queries.write_grpc_routes_regex,
       readHTTPRoutesRegex: $.queries.read_http_routes_regex,
+      readGRPCIngesterRoute:  $.queries.read_grpc_ingester_route,
       perClusterLabel: $._config.per_cluster_label,
       recordingRulePrefix: $.recordingRulePrefix($.jobSelector('any')),  // The job name does not matter here.
       groupPrefixJobs: $._config.group_prefix_jobs,
@@ -48,6 +50,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
     write_http_routes_regex: 'api_(v1|prom)_push|otlp_v1_metrics',
     write_grpc_routes_regex: '/distributor.Distributor/Push|/httpgrpc.*',
+    read_grpc_ingester_route: '/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)',
     read_http_routes_regex: '(prometheus|api_prom)_api_v1_.+',
     query_http_routes_regex: '(prometheus|api_prom)_api_v1_query(_range)?',
 
@@ -240,6 +243,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
     ingester: {
       requestsPerSecondMetric: 'cortex_request_duration_seconds',
+      readRequestsPerSecondSelector: '%(ingesterMatcher)s,route=~"%(readGRPCIngesterRoute)s"' % variables,
 
       ingestOrClassicDeduplicatedQuery(perIngesterQuery, groupByLabels=''):: |||
         ( # Classic storage

@@ -130,7 +130,7 @@ local filename = 'mimir-reads.json';
       $.row('Ingester')
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
-        $.qpsPanelNativeHistogram($.queries.ingester.requestsPerSecondMetric, '%s,route=~"%s"' % [$.jobMatcher($._config.job_names.ingester), $._config.ingester_read_path_routes_regex])
+        $.qpsPanelNativeHistogram($.queries.ingester.requestsPerSecondMetric, $.queries.ingester.readRequestsPerSecondSelector)
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
