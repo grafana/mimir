@@ -619,3 +619,109 @@ func TestBlockBuilderMultiTenancy(t *testing.T) {
 		)
 	}
 }
+
+func TestBlockBuilderNonMonotonicRecordTimestamps(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, testTopic)
+	writeClient := newKafkaProduceClient(t, addr)
+
+	var (
+		cfg, overrides                     = blockBuilderConfig(t, addr)
+		cycleEnd                           = cycleEndAtStartup(cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+		expSamplesPhase1, expSamplesPhase2 []mimirpb.Sample
+		userID                             = "1"
+	)
+
+	produce := func(kafkaTime time.Time, sampleTs ...time.Time) {
+		samples := floatSample(sampleTs[0].UnixMilli())
+		for _, ts := range sampleTs[1:] {
+			samples = append(samples, floatSample(ts.UnixMilli())...)
+		}
+		val := createWriteRequest(t, userID, samples, nil)
+		produceRecords(ctx, t, writeClient, kafkaTime, userID, testTopic, 0, val)
+	}
+
+	{ // Simple first record with all samples in the block.
+		kafkaTime := cycleEnd.Truncate(cfg.ConsumeInterval).Add(-2 * cfg.ConsumeIntervalBuffer)
+		produce(kafkaTime, kafkaTime)
+		expSamplesPhase1 = append(expSamplesPhase1, floatSample(kafkaTime.UnixMilli())...)
+	}
+
+	var lastSeenRecTime time.Time
+	{ // Record in the buffer zone with a sample in the block and a sample outside the block.
+		// This is the last record in this cycle. So this will be the "last seen" record for the next cycle.
+		kafkaTime := cycleEnd.Truncate(cfg.ConsumeInterval).Add(cfg.ConsumeIntervalBuffer / 2)
+		inBlockTs := cycleEnd.Truncate(cfg.ConsumeInterval).Add(-cfg.ConsumeIntervalBuffer)
+		lastSeenRecTime = kafkaTime
+		produce(kafkaTime, inBlockTs, kafkaTime)
+		expSamplesPhase1 = append(expSamplesPhase1, floatSample(inBlockTs.UnixMilli())...)
+		expSamplesPhase2 = append(expSamplesPhase2, floatSample(kafkaTime.UnixMilli())...)
+	}
+
+	{
+		// Record outside this cycle but with sample valid for this block.
+		// This sample will be consumed in the next cycle because of the record timestamp.
+		// The block builder will treat this as the stopping point for the cycle since the record
+		// timestamp is outside the cycle.
+		kafkaTime := cycleEnd.Add(cfg.ConsumeInterval - time.Minute)
+		inBlockTs := cycleEnd.Truncate(cfg.ConsumeInterval).Add(-cfg.ConsumeIntervalBuffer + time.Minute)
+		produce(kafkaTime, inBlockTs)
+		expSamplesPhase2 = append(expSamplesPhase2, floatSample(inBlockTs.UnixMilli())...)
+	}
+
+	{
+		// Record inside this cycle with sample in this block, but it is not consumed in this cycle
+		// because block builder stops at the previous record.
+		// This sample will be consumed in the next cycle.
+		// To test correct working of non-monotonic timestamps, we should have this record's timestamp to be
+		// before the last seen timestamp of the cycle.
+		// If we were working with record timestamp, this sample will go missing. If we use offset of record
+		// instead, then this sample will not go missing.
+		kafkaTime := lastSeenRecTime.Add(-2 * time.Minute)
+		inBlockTs := cycleEnd.Truncate(cfg.ConsumeInterval).Add(-cfg.ConsumeIntervalBuffer + 2*time.Minute)
+		produce(kafkaTime, inBlockTs)
+		expSamplesPhase2 = append(expSamplesPhase2, floatSample(inBlockTs.UnixMilli())...)
+	}
+
+	bb, err := New(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry(), overrides)
+	require.NoError(t, err)
+	compactCalled := make(chan struct{}, 2)
+	bb.tsdbBuilder = func() builder {
+		testBuilder := newTestTSDBBuilder(cfg, overrides)
+		testBuilder.compactFunc = func() {
+			compactCalled <- struct{}{}
+		}
+		return testBuilder
+	}
+
+	require.NoError(t, bb.starting(ctx))
+	t.Cleanup(func() {
+		require.NoError(t, bb.stopping(nil))
+	})
+
+	run := func(name string, end time.Time, compactions int, expSamples []mimirpb.Sample) {
+		t.Run(name, func(t *testing.T) {
+			require.NoError(t, bb.NextConsumeCycle(ctx, end))
+			for i := 0; i < compactions; i++ {
+				<-compactCalled
+			}
+
+			bucketDir := path.Join(cfg.BlocksStorageConfig.Bucket.Filesystem.Directory, userID)
+			db, err := tsdb.Open(bucketDir, log.NewNopLogger(), nil, nil, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+			compareQuery(t,
+				db,
+				expSamples,
+				nil,
+				labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+			)
+		})
+	}
+
+	run("phase 1", cycleEnd, 1, expSamplesPhase1)
+	run("phase 2", cycleEnd.Add(cfg.ConsumeInterval), 2, append(expSamplesPhase1, expSamplesPhase2...))
+}
