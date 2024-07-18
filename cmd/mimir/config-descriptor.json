@@ -4267,6 +4267,17 @@
         },
         {
           "kind": "field",
+          "name": "results_cache_ttl_for_errors",
+          "required": false,
+          "desc": "Time to live duration for cached non-transient errors",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "query-frontend.results-cache-ttl-for-errors",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "cache_unaligned_requests",
           "required": false,
           "desc": "Cache requests that are not step-aligned.",
@@ -6334,6 +6345,17 @@
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.cache-results",
           "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "cache_errors",
+          "required": false,
+          "desc": "Cache non-transient errors from queries.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.cache-errors",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
