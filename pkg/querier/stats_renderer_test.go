@@ -81,6 +81,7 @@ func TestStatsRenderer(t *testing.T) {
 		nil,
 		StatsRenderer,
 		false,
+		nil,
 		false,
 	)
 

@@ -241,6 +241,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"end_1":      []string{"20"},
 				"hints_1":    []string{"{\"step_ms\":1000}"},
 			},
+			expectedExtraStatsHeader: "total_samples=0",
 		},
 		{
 			name: "downstream returns an apierror with 4xx status code",
