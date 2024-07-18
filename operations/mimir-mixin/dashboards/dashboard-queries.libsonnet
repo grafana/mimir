@@ -87,9 +87,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
     query_frontend: {
-      // deprecated, will be removed
-      readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
-
       local p = self,
       requestsPerSecondMetric: 'cortex_request_duration_seconds',
       readRequestsPerSecondSelector: '%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"' % variables,

@@ -114,6 +114,7 @@ local filename = 'mimir-reads.json';
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.perInstanceLatencyPanelNativeHistogram(
+          '0.99',
           $.queries.gateway.requestsPerSecondMetric,
           $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.read_http_routes_regex)],
         )
