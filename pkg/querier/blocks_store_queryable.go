@@ -887,8 +887,8 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			// debug
 			var chunkInfo *chunkinfologger.ChunkInfoLogger
 			if debugQuery {
-				traceID, _ := tracing.ExtractTraceID(ctx)
-				chunkInfo = chunkinfologger.NewChunkInfoLogger("store-gateway message", traceID, q.logger, chunkinfologger.ChunkInfoLoggingFromContext(ctx))
+				traceID, spanID, _ := tracing.ExtractTraceSpanID(ctx)
+				chunkInfo = chunkinfologger.NewChunkInfoLogger("store-gateway message", traceID, spanID, q.logger, chunkinfologger.ChunkInfoLoggingFromContext(ctx))
 				chunkInfo.LogSelect("store-gateway", minT, maxT)
 			}
 

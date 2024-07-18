@@ -22,6 +22,7 @@ type ChunkInfoLogger struct {
 	chunkInfo strings.Builder
 	msg       string
 	traceID   string
+	spanID    string
 	logger    log.Logger
 	labels    []string
 
@@ -29,11 +30,12 @@ type ChunkInfoLogger struct {
 	firstSource bool
 }
 
-func NewChunkInfoLogger(msg, traceID string, logger log.Logger, labels []string) *ChunkInfoLogger {
+func NewChunkInfoLogger(msg, traceID, spanID string, logger log.Logger, labels []string) *ChunkInfoLogger {
 	return &ChunkInfoLogger{
 		chunkInfo: strings.Builder{},
 		msg:       msg,
 		traceID:   traceID,
+		spanID:    spanID,
 		logger:    logger,
 		labels:    labels,
 	}
@@ -48,7 +50,7 @@ func (c *ChunkInfoLogger) LogSelect(msg string, minT, maxT int64) {
 }
 
 func (c *ChunkInfoLogger) log(keyvalues ...interface{}) {
-	c.logger.Log(append(keyvalues, "chunkinfo", "true", "traceId", c.traceID)...)
+	c.logger.Log(append(keyvalues, "chunkinfo", "true", "traceId", c.traceID, "spanId", c.spanID)...)
 }
 
 func (c *ChunkInfoLogger) StartSeries(ls labels.Labels) {

@@ -21,7 +21,7 @@ var (
 
 func TestChunkFormatter_IngesterChunk(t *testing.T) {
 	logger := &testLogger{}
-	formatter := NewChunkInfoLogger("test", "123", logger, []string{"series_id"})
+	formatter := NewChunkInfoLogger("test", "123", "456", logger, []string{"series_id"})
 	formatter.StartSeries(series1Labels)
 	formatter.FormatIngesterChunkInfo("source1", []client.Chunk{
 		{
@@ -58,13 +58,15 @@ func TestChunkFormatter_IngesterChunk(t *testing.T) {
 	require.Equal(t, "test", logger.logs[0]["msg"])
 	require.Contains(t, logger.logs[0], "traceId")
 	require.Equal(t, "123", logger.logs[0]["traceId"])
+	require.Contains(t, logger.logs[0], "spandId")
+	require.Equal(t, "456", logger.logs[0]["spandId"])
 	require.Contains(t, logger.logs[0], "info")
 	require.JSONEq(t, expected, logger.logs[0]["info"])
 }
 
 func TestChunkFormatter_StoreGatewayChunk(t *testing.T) {
 	logger := &testLogger{}
-	formatter := NewChunkInfoLogger("test", "123", logger, []string{"series_id"})
+	formatter := NewChunkInfoLogger("test", "123", "456", logger, []string{"series_id"})
 	formatter.StartSeries(series1Labels)
 	formatter.FormatStoreGatewayChunkInfo("source1", []storepb.AggrChunk{
 		{
@@ -104,7 +106,7 @@ func TestChunkFormatter_StoreGatewayChunk(t *testing.T) {
 // Test nil chunks array.
 func TestChunkFormatter_NilChunks(t *testing.T) {
 	logger := &testLogger{}
-	formatter := NewChunkInfoLogger("test", "123", logger, []string{"series_id"})
+	formatter := NewChunkInfoLogger("test", "123", "456", logger, []string{"series_id"})
 	formatter.StartSeries(series1Labels)
 	formatter.FormatIngesterChunkInfo("source1", nil)
 	formatter.EndSeries(true)
@@ -116,7 +118,7 @@ func TestChunkFormatter_NilChunks(t *testing.T) {
 // Test multiple labels.
 func TestChunkFormatter_MultipleLabels(t *testing.T) {
 	logger := &testLogger{}
-	formatter := NewChunkInfoLogger("test", "123", logger, []string{"__name__", "series_id"})
+	formatter := NewChunkInfoLogger("test", "123", "456", logger, []string{"__name__", "series_id"})
 	formatter.StartSeries(series1Labels)
 	formatter.FormatIngesterChunkInfo("source1", []client.Chunk{
 		{
@@ -134,7 +136,7 @@ func TestChunkFormatter_MultipleLabels(t *testing.T) {
 // Find at least 2 split points and check that the output is valid JSON.
 func TestChunkFormatter_MaxSize(t *testing.T) {
 	logger := &testLogger{}
-	formatter := NewChunkInfoLogger("test", "123", logger, []string{"series_id"})
+	formatter := NewChunkInfoLogger("test", "123", "456", logger, []string{"series_id"})
 	for i := int64(0); i < maxSize; i++ {
 		lbls := labels.FromStrings("series_id", fmt.Sprintf("series%d", i))
 		formatter.StartSeries(lbls)
@@ -159,11 +161,15 @@ func TestChunkFormatter_MaxSize(t *testing.T) {
 
 func TestChunkFormatter_LogSelect(t *testing.T) {
 	logger := &testLogger{}
-	formatter := NewChunkInfoLogger("test", "123", logger, []string{"series_id"})
+	formatter := NewChunkInfoLogger("test", "123", "456", logger, []string{"series_id"})
 	formatter.LogSelect("test", 1000, 2000)
 	require.Len(t, logger.logs, 1)
 	require.Contains(t, logger.logs[0], "msg")
 	require.Equal(t, "test", logger.logs[0]["msg"])
+	require.Contains(t, logger.logs[0], "traceId")
+	require.Equal(t, "123", logger.logs[0]["traceId"])
+	require.Contains(t, logger.logs[0], "spandId")
+	require.Equal(t, "456", logger.logs[0]["spandId"])
 	require.Contains(t, logger.logs[0], "minT")
 	require.Equal(t, "1000", logger.logs[0]["minT"])
 	require.Contains(t, logger.logs[0], "maxT")
