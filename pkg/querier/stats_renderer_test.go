@@ -39,7 +39,7 @@ func TestStatsRenderer(t *testing.T) {
 	now := model.Time(time.Now().UnixMilli())
 
 	q := &mockSampleAndChunkQueryable{
-		queryableFn: func(_ , _ int64) (storage.Querier, error) {
+		queryableFn: func(_, _ int64) (storage.Querier, error) {
 			return &mockQuerier{
 				selectFn: func(_ context.Context, _ bool, hints *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
 					return series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
@@ -83,6 +83,7 @@ func TestStatsRenderer(t *testing.T) {
 		nil,
 		StatsRenderer,
 		false,
+		nil,
 		false,
 	)
 

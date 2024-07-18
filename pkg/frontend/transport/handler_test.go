@@ -84,16 +84,16 @@ func TestHandler_ServeHTTP(t *testing.T) {
 	}
 
 	for _, tt := range []struct {
-		name                    string
-		cfg                     HandlerConfig
-		request                 func() *http.Request
-		downstreamResponse      *http.Response
-		downstreamErr           error
-		expectedStatusCode      int
-		expectedParams          url.Values
-		expectedMetrics         int
-		expectedActivity        string
-		expectedReadConsistency string
+		name                     string
+		cfg                      HandlerConfig
+		request                  func() *http.Request
+		downstreamResponse       *http.Response
+		downstreamErr            error
+		expectedStatusCode       int
+		expectedParams           url.Values
+		expectedMetrics          int
+		expectedActivity         string
+		expectedReadConsistency  string
 		expectedExtraStatsHeader string
 	}{
 		{
@@ -166,12 +166,12 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				r.Header.Add("User-Agent", "test-user-agent")
 				return r
 			},
-			downstreamResponse:      makeSuccessfulDownstreamResponse(),
-			expectedStatusCode:      200,
-			expectedParams:          url.Values{},
-			expectedMetrics:         5,
-			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query (no params)",
-			expectedReadConsistency: "",
+			downstreamResponse:       makeSuccessfulDownstreamResponse(),
+			expectedStatusCode:       200,
+			expectedParams:           url.Values{},
+			expectedMetrics:          5,
+			expectedActivity:         "user:12345 UA:test-user-agent req:GET /api/v1/query (no params)",
+			expectedReadConsistency:  "",
 			expectedExtraStatsHeader: "total_samples=0",
 		},
 		{
@@ -240,6 +240,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"end_1":      []string{"20"},
 				"hints_1":    []string{"{\"step_ms\":1000}"},
 			},
+			expectedExtraStatsHeader: "total_samples=0",
 		},
 		{
 			name: "downstream returns an apierror with 4xx status code",
