@@ -15,10 +15,12 @@ package parser
 
 import (
 	"fmt"
+	"runtime/debug"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
@@ -488,7 +490,7 @@ func lexStatements(l *Lexer) stateFn {
 	case r == '@':
 		l.emit(AT)
 	default:
-		return l.errorf("unexpected character: %q", r)
+		return l.errorf("unexpected character: %q (%v), %s\n%s", r, model.NameValidationScheme, l.input, string(debug.Stack()))
 	}
 	return lexStatements
 }
@@ -1053,17 +1055,4 @@ func isDigit(r rune) bool {
 // isAlpha reports whether r is an alphabetic or underscore.
 func isAlpha(r rune) bool {
 	return r == '_' || ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z')
-}
-
-// isLabel reports whether the string can be used as label.
-func isLabel(s string) bool {
-	if len(s) == 0 || !isAlpha(rune(s[0])) {
-		return false
-	}
-	for _, c := range s[1:] {
-		if !isAlphaNumeric(c) {
-			return false
-		}
-	}
-	return true
 }

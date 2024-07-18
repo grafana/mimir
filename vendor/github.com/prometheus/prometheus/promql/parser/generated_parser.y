@@ -16,13 +16,17 @@ package parser
 
 import (
         "math"
+        "runtime/debug"
         "strconv"
         "time"
+        "fmt"
 
         "github.com/prometheus/prometheus/model/labels"
         "github.com/prometheus/prometheus/model/value"
         "github.com/prometheus/prometheus/model/histogram"
         "github.com/prometheus/prometheus/promql/parser/posrange"
+
+        "github.com/prometheus/common/model"
 )
 
 %}
@@ -353,10 +357,18 @@ grouping_label_list:
 
 grouping_label  : maybe_label
                         {
-                        if !isLabel($1.Val) {
-                                yylex.(*parser).unexpected("grouping opts", "label")
+                        if !model.LabelName($1.Val).IsValid() {
+                                yylex.(*parser).unexpected(fmt.Sprintf("grouping opts (%s)\n%s", yylex.(*parser).lex.input, string(debug.Stack())), "label")
                         }
                         $$ = $1
+                        }
+                | STRING {
+                        if !model.LabelName(yylex.(*parser).unquoteString($1.Val)).IsValid() {
+                                yylex.(*parser).unexpected(fmt.Sprintf("grouping opts (%s)\n%s", yylex.(*parser).lex.input, string(debug.Stack())), "label")
+                        }
+                        $$ = $1
+                        $$.Pos++
+                        $$.Val = yylex.(*parser).unquoteString($$.Val)
                         }
                 | error
                         { yylex.(*parser).unexpected("grouping opts", "label"); $$ = Item{} }

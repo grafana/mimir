@@ -311,7 +311,6 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.OverridesExporter.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter config")
 	}
-	
 	// validate the default limits
 	if err := c.ValidateLimits(c.LimitsConfig); err != nil {
 		return err
