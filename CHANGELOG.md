@@ -57,6 +57,7 @@
 
 ### Mixin
 
+* [CHANGE] Dashboards: set default auto-refresh rate to 5m. #8758
 * [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards.
   * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric. #7674 #8502
   * Writes dashboard: `cortex_request_duration_seconds` metric. #8757
