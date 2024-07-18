@@ -76,6 +76,7 @@ func TestBlockBuilder(t *testing.T) {
 
 	type kafkaRecInfo struct {
 		sampleTs, recTs time.Time
+		offset          int64
 	}
 	var (
 		kafkaSamples   []mimirpb.Sample
@@ -101,6 +102,7 @@ func TestBlockBuilder(t *testing.T) {
 	}
 
 	// Helper functions.
+	kafkaOffset := int64(-1)
 	createAndProduceSample := func(t *testing.T, sampleTs, kafkaRecTs time.Time) {
 		samples := floatSample(sampleTs.UnixMilli())
 		val := createWriteRequest(t, "", samples, nil)
@@ -110,9 +112,10 @@ func TestBlockBuilder(t *testing.T) {
 		val = createWriteRequest(t, "", nil, hSamples)
 		produceRecords(ctx, t, writeClient, kafkaRecTs, userID, testTopic, 1, val)
 
+		kafkaOffset++
 		kafkaSamples = append(kafkaSamples, samples...)
 		kafkaHSamples = append(kafkaHSamples, hSamples...)
-		kafkaRecords = append(kafkaRecords, kafkaRecInfo{sampleTs, kafkaRecTs})
+		kafkaRecords = append(kafkaRecords, kafkaRecInfo{sampleTs, kafkaRecTs, kafkaOffset})
 	}
 
 	filterSamples := func(s []mimirpb.Sample, maxTime time.Time) []mimirpb.Sample {
@@ -194,13 +197,13 @@ func TestBlockBuilder(t *testing.T) {
 		require.Equal(t, expBlocksCreated, blocksAfter-blocksBefore, "mismatch in blocks created")
 
 		// Check if the kafka commit is as expected.
-		var expCommitTs, expLastTs int64
+		var expCommitTs, expLastOffset int64
 		expBlockMax := cycleEnd.Truncate(cfg.ConsumeInterval).UnixMilli()
 		commitTimeFinalised := false
 		for _, r := range kafkaRecords {
 			// The last record before the cycleEnd is the last seen timestamp.
 			if r.recTs.Before(cycleEnd) {
-				expLastTs = r.recTs.UnixMilli()
+				expLastOffset = r.offset
 			}
 
 			// The commit timestamp is timestamp until which all samples are in a block.
@@ -215,9 +218,9 @@ func TestBlockBuilder(t *testing.T) {
 		}
 
 		for _, part := range []int32{0, 1} {
-			commitRecTs, lastRecTs, blockEnd := getCommitMeta(t, part)
+			commitRecTs, lastRecOffset, blockEnd := getCommitMeta(t, part)
 			require.Equal(t, expCommitTs, commitRecTs)
-			require.Equal(t, expLastTs, lastRecTs)
+			require.Equal(t, expLastOffset, lastRecOffset)
 			require.Equal(t, expBlockMax, blockEnd)
 		}
 	}

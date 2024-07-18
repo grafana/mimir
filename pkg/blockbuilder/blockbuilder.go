@@ -339,7 +339,7 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 		// We look at the commit offset timestamp to determine how far behind we are lagging
 		// relative to the cycleEnd. We will consume the partition in parts accordingly.
 		offset := lag.Commit
-		commitRecTs, seenTillTs, lastBlockEnd, err := unmarshallCommitMeta(offset.Metadata)
+		commitRecTs, seenTillOffset, lastBlockEnd, err := unmarshallCommitMeta(offset.Metadata)
 		if err != nil {
 			// If there is an error in unmarshalling the metadata, treat it as if
 			// we have no commit. There is no reason to stop the cycle for this.
@@ -347,12 +347,12 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 		}
 
 		pl := partitionInfo{
-			Partition:    part,
-			Lag:          lag.Lag,
-			Commit:       offset,
-			CommitRecTs:  commitRecTs,
-			SeenTillTs:   seenTillTs,
-			LastBlockEnd: lastBlockEnd,
+			Partition:      part,
+			Lag:            lag.Lag,
+			Commit:         offset,
+			CommitRecTs:    commitRecTs,
+			SeenTillOffset: seenTillOffset,
+			LastBlockEnd:   lastBlockEnd,
 		}
 		if err := b.nextConsumeCycle(activePartCtx, pl, cycleEnd); err != nil {
 			level.Error(b.logger).Log("msg", "failed to consume partition", "err", err, "part", part)
@@ -365,10 +365,10 @@ type partitionInfo struct {
 	Partition int32
 	Lag       int64
 
-	Commit       kadm.Offset
-	CommitRecTs  int64
-	SeenTillTs   int64
-	LastBlockEnd int64
+	Commit         kadm.Offset
+	CommitRecTs    int64
+	SeenTillOffset int64
+	LastBlockEnd   int64
 }
 
 func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, pl partitionInfo, cycleEnd time.Time) error {
@@ -435,11 +435,11 @@ func (b *BlockBuilder) consumePartition(
 	cycleEnd time.Time,
 ) (retPl partitionInfo, retErr error) {
 	var (
-		part         = pl.Partition
-		seenTillTs   = pl.SeenTillTs
-		lastBlockEnd = pl.LastBlockEnd
-		lastCommit   = pl.Commit
-		lag          = pl.Lag
+		part           = pl.Partition
+		seenTillOffset = pl.SeenTillOffset
+		lastBlockEnd   = pl.LastBlockEnd
+		lastCommit     = pl.Commit
+		lag            = pl.Lag
 
 		blockEndAt = cycleEnd.Truncate(b.cfg.ConsumeInterval)
 		blockEnd   = blockEndAt.UnixMilli()
@@ -471,7 +471,7 @@ func (b *BlockBuilder) consumePartition(
 		level.Info(b.logger).Log("msg", "done consuming partition", "part", part, "dur", dur,
 			"start_lag", startingLag, "cycle_end", cycleEnd,
 			"last_block_end", time.UnixMilli(lastBlockEnd), "curr_block_end", time.UnixMilli(retPl.LastBlockEnd),
-			"last_seen_till", time.UnixMilli(seenTillTs), "curr_seen_till", time.UnixMilli(retPl.SeenTillTs),
+			"last_seen_till", seenTillOffset, "curr_seen_till", time.UnixMilli(retPl.SeenTillOffset),
 			"num_blocks", numBlocks, "compact_and_upload_dur", compactionDur)
 	}(time.Now(), lag)
 
@@ -481,7 +481,7 @@ func (b *BlockBuilder) consumePartition(
 	level.Info(b.logger).Log(
 		"msg", "consuming partition", "part", part, "lag", lag,
 		"cycle_end", cycleEnd, "last_block_end", time.UnixMilli(lastBlockEnd), "curr_block_end", blockEndAt,
-		"last_seen_till", time.UnixMilli(seenTillTs))
+		"last_seen_till", time.UnixMilli(seenTillOffset))
 
 	var (
 		done                         bool
@@ -537,7 +537,7 @@ func (b *BlockBuilder) consumePartition(
 
 			lag--
 
-			recProcessedBefore := rec.Timestamp.UnixMilli() <= seenTillTs
+			recProcessedBefore := rec.Offset <= seenTillOffset
 			allSamplesProcessed, err := builder.process(ctx, rec, lastBlockEnd, blockEnd, recProcessedBefore)
 			if err != nil {
 				// TODO(codesome): do we just ignore this? What if it was Mimir's issue and this leading to data loss?
@@ -612,9 +612,9 @@ func (b *BlockBuilder) consumePartition(
 	// We should take the max of "seen till" timestamp. If the partition was lagging
 	// due to some record not being processed because of a future sample, we might be
 	// coming back to the same consume cycle again.
-	commitSeenTillTs := seenTillTs
-	if commitSeenTillTs < lastRec.Timestamp.UnixMilli() {
-		commitSeenTillTs = lastRec.Timestamp.UnixMilli()
+	commitSeenTillOffset := seenTillOffset
+	if commitSeenTillOffset < lastRec.Offset {
+		commitSeenTillOffset = lastRec.Offset
 	}
 	// Take the max of block max times because of same reasons above.
 	commitBlockEnd := blockEnd
@@ -630,11 +630,11 @@ func (b *BlockBuilder) consumePartition(
 			Partition:   commitRec.Partition,
 			At:          commitRec.Offset + 1,
 			LeaderEpoch: commitRec.LeaderEpoch,
-			Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), commitSeenTillTs, commitBlockEnd),
+			Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), commitSeenTillOffset, commitBlockEnd),
 		},
-		CommitRecTs:  commitRec.Timestamp.UnixMilli(),
-		SeenTillTs:   commitSeenTillTs,
-		LastBlockEnd: commitBlockEnd,
+		CommitRecTs:    commitRec.Timestamp.UnixMilli(),
+		SeenTillOffset: commitSeenTillOffset,
+		LastBlockEnd:   commitBlockEnd,
 	}
 
 	err = commitRecord(ctx, b.logger, b.kafkaClient, commitRec, pl.Commit.Metadata)
@@ -712,14 +712,14 @@ const (
 // commitRecTs: timestamp of the record which was committed (and not the commit time).
 // lastRecTs: timestamp of the last record processed (which will be >= commitRecTs).
 // blockEnd: timestamp of the block end in this cycle.
-func marshallCommitMeta(commitRecTs, lastRecTs, blockEnd int64) string {
-	return fmt.Sprintf("%d,%d,%d,%d", kafkaCommitMetaV1, commitRecTs, lastRecTs, blockEnd)
+func marshallCommitMeta(commitRecTs, lastRecOffset, blockEnd int64) string {
+	return fmt.Sprintf("%d,%d,%d,%d", kafkaCommitMetaV1, commitRecTs, lastRecOffset, blockEnd)
 }
 
 // commitRecTs: timestamp of the record which was committed (and not the commit time).
 // lastRecTs: timestamp of the last record processed (which will be >= commitRecTs).
 // blockEnd: timestamp of the block end in this cycle.
-func unmarshallCommitMeta(meta string) (commitRecTs, lastRecTs, blockEnd int64, err error) {
+func unmarshallCommitMeta(meta string) (commitRecTs, lastRecOffset, blockEnd int64, err error) {
 	if meta == "" {
 		return
 	}
@@ -734,7 +734,7 @@ func unmarshallCommitMeta(meta string) (commitRecTs, lastRecTs, blockEnd int64, 
 
 	switch version {
 	case kafkaCommitMetaV1:
-		_, err = fmt.Sscanf(s, "%d,%d,%d", &commitRecTs, &lastRecTs, &blockEnd)
+		_, err = fmt.Sscanf(s, "%d,%d,%d", &commitRecTs, &lastRecOffset, &blockEnd)
 	default:
 		err = fmt.Errorf("unsupported commit meta version %d", version)
 	}
