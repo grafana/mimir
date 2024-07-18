@@ -4,12 +4,14 @@ package blockbuilder
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"math/rand"
 	"os"
 	"path"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,7 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func createWriteRequest(t *testing.T, samples []mimirpb.Sample, histograms []mimirpb.Histogram) []byte {
+func createWriteRequest(t *testing.T, suffix string, samples []mimirpb.Sample, histograms []mimirpb.Histogram) []byte {
 	req := mimirpb.WriteRequest{}
 
 	var seriesValue string
@@ -40,7 +42,7 @@ func createWriteRequest(t *testing.T, samples []mimirpb.Sample, histograms []mim
 	req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
 			Labels: []mimirpb.LabelAdapter{
-				{Name: "foo", Value: seriesValue},
+				{Name: "foo", Value: fmt.Sprintf("%s%s", seriesValue, suffix)},
 			},
 			Samples:    samples,
 			Histograms: histograms,
@@ -94,7 +96,7 @@ func TestTSDBBuilder(t *testing.T) {
 
 		var rec kgo.Record
 		rec.Key = []byte(userID)
-		rec.Value = createWriteRequest(t, samples, histograms)
+		rec.Value = createWriteRequest(t, "", samples, histograms)
 		return &rec
 	}
 	addFloatSample := func(builder *tsdbBuilder, ts int64, lastEnd, currEnd int64, recordProcessedBefore, accepted bool) {
@@ -261,8 +263,9 @@ func compareQuery(t *testing.T, db *tsdb.DB, expSamples []mimirpb.Sample, expHis
 	for ss.Next() {
 		series := ss.At()
 
-		require.True(t, labels.Compare(labels.FromStrings("foo", "float"), series.Labels()) == 0 ||
-			labels.Compare(labels.FromStrings("foo", "histogram"), series.Labels()) == 0)
+		fooVal := series.Labels().Get("foo")
+		require.True(t, strings.HasPrefix(fooVal, "float") ||
+			strings.HasPrefix(fooVal, "histogram"))
 
 		it := series.Iterator(nil)
 		for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
