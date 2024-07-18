@@ -74,6 +74,8 @@
 * [ENHANCEMENT] Dashboards: add panels to show writes to experimental ingest storage backend in the "Mimir / Ruler" dashboard, when `_config.show_ingest_storage_panels` is enabled. #8732
 * [ENHANCEMENT] Dashboards: show all series in tooltips on time series dashboard panels. #8748
 * [ENHANCEMENT] Dashboards: add compactor autoscaling panels to "Mimir / Compactor" dashboard. The panels are disabled by default, but can be enabled setting `_config.autoscaling.compactor.enabled` to `true`. #8777
+* [ENHANCEMENT] Alerts: added `MimirKafkaClientBufferedProduceBytesTooHigh` alert. #8762
+* [ENHANCEMENT] Dashboards: added "Kafka produced records / sec" panel to "Mimir / Writes" dashboard. #8762
 * [BUGFIX] Dashboards: fix "current replicas" in autoscaling panels when HPA is not active. #8566
 * [BUGFIX] Alerts: do not fire `MimirRingMembersMismatch` during the migration to experimental ingest storage. #8727
 
