@@ -103,11 +103,11 @@ func TestBlockBuilder(t *testing.T) {
 	// Helper functions.
 	createAndProduceSample := func(t *testing.T, sampleTs, kafkaRecTs time.Time) {
 		samples := floatSample(sampleTs.UnixMilli())
-		val := createWriteRequest(t, samples, nil)
+		val := createWriteRequest(t, "", samples, nil)
 		produceRecords(ctx, t, writeClient, kafkaRecTs, userID, testTopic, 0, val)
 
 		hSamples := histogramSample(sampleTs.UnixMilli())
-		val = createWriteRequest(t, nil, hSamples)
+		val = createWriteRequest(t, "", nil, hSamples)
 		produceRecords(ctx, t, writeClient, kafkaRecTs, userID, testTopic, 1, val)
 
 		kafkaSamples = append(kafkaSamples, samples...)
@@ -402,7 +402,7 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 		kafkaTime = kafkaTime.Add(cfg.ConsumeInterval / 2)
 		sampleTs := kafkaTime.Add(-time.Minute)
 		samples := floatSample(sampleTs.UnixMilli())
-		val := createWriteRequest(t, samples, nil)
+		val := createWriteRequest(t, "", samples, nil)
 		produceRecords(ctx, t, writeClient, kafkaTime, "1", testTopic, 0, val)
 		expSamples = append(expSamples, samples...)
 	}
@@ -557,4 +557,62 @@ func TestKafkaCommitMetaMarshalling(t *testing.T) {
 	// Error parsing
 	_, _, _, err = unmarshallCommitMeta("1,3,4")
 	require.Error(t, err)
+}
+
+func TestBlockBuilderMultiTenancy(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, testTopic)
+	writeClient := newKafkaProduceClient(t, addr)
+
+	var (
+		cfg, overrides = blockBuilderConfig(t, addr)
+		cycleEnd       = cycleEndAtStartup(cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+		kafkaTime      = cycleEnd.Truncate(cfg.ConsumeInterval).Add(-cfg.ConsumeInterval)
+		expSamples     = map[string][]mimirpb.Sample{}
+		uids           = []string{"1", "2", "3"}
+	)
+	// Producing some records for multiple tenants
+	for i := 0; i < 10; i++ {
+		sampleTs := kafkaTime
+		samples := floatSample(sampleTs.UnixMilli())
+		for _, uid := range uids {
+			val := createWriteRequest(t, uid, samples, nil)
+			produceRecords(ctx, t, writeClient, kafkaTime, uid, testTopic, 0, val)
+			expSamples[uid] = append(expSamples[uid], samples...)
+		}
+		kafkaTime = kafkaTime.Add(15 * time.Second)
+	}
+
+	bb, err := New(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry(), overrides)
+	require.NoError(t, err)
+	compactCalled := make(chan struct{}, 1)
+	bb.tsdbBuilder = func() builder {
+		testBuilder := newTestTSDBBuilder(cfg, overrides)
+		testBuilder.compactFunc = func() {
+			compactCalled <- struct{}{}
+		}
+		return testBuilder
+	}
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
+	})
+	<-compactCalled
+
+	for _, uid := range uids {
+		bucketDir := path.Join(cfg.BlocksStorageConfig.Bucket.Filesystem.Directory, uid)
+		db, err := tsdb.Open(bucketDir, log.NewNopLogger(), nil, nil, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+		compareQuery(t,
+			db,
+			expSamples[uid],
+			nil,
+			labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+		)
+	}
 }

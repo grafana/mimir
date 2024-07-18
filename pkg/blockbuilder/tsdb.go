@@ -315,8 +315,10 @@ func (b *tsdbBuilder) compactAndUpload(ctx context.Context, blockUploaderForUser
 
 		delete(b.tsdbs, tenant)
 
+		// Make a copy of userID because 'tenant' changes in the next iteration.
+		userID := tenant.id
 		eg.Go(func() error {
-			uploader := blockUploaderForUser(ctx, tenant.id)
+			uploader := blockUploaderForUser(ctx, userID)
 			for _, bn := range blockNames {
 				if err := uploader(filepath.Join(dbDir, bn)); err != nil {
 					return err
