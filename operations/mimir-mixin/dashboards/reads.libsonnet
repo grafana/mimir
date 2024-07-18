@@ -149,7 +149,7 @@ local filename = 'mimir-reads.json';
       $.row('Store-gateway')
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
-        $.qpsPanelNativeHistogram($.queries.store_gateway.requestsPerSecondMetric, '%s,route=~"/gatewaypb.StoreGateway/.*"' % $.jobMatcher($._config.job_names.store_gateway))
+        $.qpsPanelNativeHistogram($.queries.store_gateway.requestsPerSecondMetric, $.queries.store_gateway.readRequestsPerSecondSelector)
       )
       .addPanel(
         $.timeseriesPanel('Latency') +

@@ -38,10 +38,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       rulerMatcher: $.jobMatcher($._config.job_names.ruler),
       alertmanagerMatcher: $.jobMatcher($._config.job_names.alertmanager),
       namespaceMatcher: $.namespaceMatcher(),
+      storeGatewayMatcher: $.jobMatcher($._config.job_names.store_gateway),
       writeHTTPRoutesRegex: $.queries.write_http_routes_regex,
       writeGRPCRoutesRegex: $.queries.write_grpc_routes_regex,
       readHTTPRoutesRegex: $.queries.read_http_routes_regex,
       readGRPCIngesterRoute:  $.queries.read_grpc_ingester_route,
+      readGRPCStoreGatewayRoute: $.queries.read_grpc_store_gateway_route,
       perClusterLabel: $._config.per_cluster_label,
       recordingRulePrefix: $.recordingRulePrefix($.jobSelector('any')),  // The job name does not matter here.
       groupPrefixJobs: $._config.group_prefix_jobs,
@@ -51,6 +53,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     write_http_routes_regex: 'api_(v1|prom)_push|otlp_v1_metrics',
     write_grpc_routes_regex: '/distributor.Distributor/Push|/httpgrpc.*',
     read_grpc_ingester_route: '/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)',
+    read_grpc_store_gateway_route: '/gatewaypb.StoreGateway/.*',
     read_http_routes_regex: '(prometheus|api_prom)_api_v1_.+',
     query_http_routes_regex: '(prometheus|api_prom)_api_v1_query(_range)?',
 
@@ -273,6 +276,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
     store_gateway: {
       requestsPerSecondMetric: 'cortex_request_duration_seconds',
+      readRequestsPerSecondSelector: '%(storeGatewayMatcher)s,route=~"%(readGRPCStoreGatewayRoute)s"' % variables,
     },
   },
 }
