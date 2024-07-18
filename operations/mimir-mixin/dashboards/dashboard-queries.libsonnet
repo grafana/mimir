@@ -43,7 +43,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       writeGRPCDistributorRoutesRegex: $.queries.write_grpc_distributor_routes_regex,
       writeGRPCIngesterRoute: $.queries.write_grpc_ingester_route,
       readHTTPRoutesRegex: $.queries.read_http_routes_regex,
-      readGRPCIngesterRoute:  $.queries.read_grpc_ingester_route,
+      readGRPCIngesterRoute: $.queries.read_grpc_ingester_route,
       readGRPCStoreGatewayRoute: $.queries.read_grpc_store_gateway_route,
       perClusterLabel: $._config.per_cluster_label,
       recordingRulePrefix: $.recordingRulePrefix($.jobSelector('any')),  // The job name does not matter here.
