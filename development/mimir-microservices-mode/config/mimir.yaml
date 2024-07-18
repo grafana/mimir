@@ -51,9 +51,9 @@ blocks_storage:
     sync_interval: 1m
     # ignore_blocks_within and sync_interval must be small enough for the store-gateways
     # to discover & load new blocks shipped from the ingesters before they begin to be queried.
-    # With querier.query_store_after: 10m and sync_interval: 1m, anything larger than 4m causes issues.
+    # With querier.query_store_after: 10m and sync_interval: 1m, anything larger than 2m causes issues.
     # Slightly larger values for ignore_blocks_within work if sync_interval is reduced.
-    ignore_blocks_within: 4m
+    ignore_blocks_within: 2m
 
     index_cache:
       # Cache is configured via CLI flags. See docker-compose.jsonnet
@@ -113,7 +113,7 @@ alertmanager_storage:
 
 compactor:
   data_dir: "/tmp/mimir-compactor"
-  block_ranges: [ 4m, 8m, 16m ]
+  block_ranges: [ 2m, 4m, 8m, 16m ]
   compaction_interval: 1m
   compaction_concurrency: 2
   cleanup_interval: 1m
@@ -134,7 +134,6 @@ store_gateway:
 frontend:
   query_stats_enabled: true
   parallelize_shardable_queries: true
-  align_queries_with_step: true
   cache_results: true
   additional_query_queue_dimensions_enabled: true
   shard_active_series_queries: true

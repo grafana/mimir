@@ -250,14 +250,14 @@ func (g *StoreGateway) starting(ctx context.Context) (err error) {
 		}
 	}
 
-	// At this point, if sharding is enabled, the instance is registered with some tokens
-	// and we can run the initial synchronization.
+	// At this point, the instance is registered with some tokens
+	// and we can start the bucket stores.
 	g.bucketSync.WithLabelValues(syncReasonInitial).Inc()
-	if err = g.stores.InitialSync(ctx); err != nil {
-		return errors.Wrap(err, "initial blocks synchronization")
+	if err = services.StartAndAwaitRunning(ctx, g.stores); err != nil {
+		return errors.Wrap(err, "starting bucket stores")
 	}
 
-	// Now that the initial sync is done, we should have loaded all blocks
+	// After starting the store, we should have loaded all blocks
 	// assigned to our shard, so we can switch to ACTIVE and start serving
 	// requests.
 	if err = g.ringLifecycler.ChangeState(ctx, ring.ACTIVE); err != nil {
@@ -315,6 +315,10 @@ func (g *StoreGateway) stopping(_ error) error {
 	}
 
 	g.unsetPrepareShutdownMarker()
+
+	if err := services.StopAndAwaitTerminated(context.Background(), g.stores); err != nil {
+		level.Warn(g.logger).Log("msg", "failed to stop store-gateway stores", "err", err)
+	}
 	return nil
 }
 

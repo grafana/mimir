@@ -160,6 +160,7 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 	if err != nil {
 		return nil, mapEngineError(err)
 	}
+	warn, info := res.Warnings.AsStrings("", 0, 0)
 	return &PrometheusResponse{
 		Status: statusSuccess,
 		Data: &PrometheusData{
@@ -170,7 +171,8 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 		// Note that the positions based on the original query may be wrong as the rewritten
 		// query which is actually used is different, but the user does not see the rewritten
 		// query, so we pass in an empty string as the query so the positions will be hidden.
-		Warnings: res.Warnings.AsStrings("", 0),
+		Warnings: warn,
+		Infos:    info,
 	}, nil
 }
 
@@ -194,7 +196,21 @@ func newQuery(ctx context.Context, r MetricsQueryRequest, engine *promql.Engine,
 			r.GetQuery(),
 			util.TimeFromMillis(r.GetTime()),
 		)
-
+	case *remoteReadQueryRequest:
+		return engine.NewRangeQuery(
+			ctx,
+			queryable,
+			// Lookback period is not applied to remote read queries in the same way
+			// as regular queries. However we cannot set a zero lookback period
+			// because the engine will just use the default 5 minutes instead. So we
+			// set a lookback period of 1ns and add that amount to the start time so
+			// the engine will calculate an effective 0 lookback period.
+			promql.NewPrometheusQueryOpts(false, 1*time.Nanosecond),
+			r.GetQuery(),
+			util.TimeFromMillis(r.GetStart()).Add(1*time.Nanosecond),
+			util.TimeFromMillis(r.GetEnd()),
+			time.Duration(r.GetStep())*time.Millisecond,
+		)
 	default:
 		return nil, fmt.Errorf("unsupported query type %T", r)
 	}

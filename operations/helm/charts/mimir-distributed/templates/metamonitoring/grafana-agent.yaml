@@ -16,6 +16,12 @@ metadata:
   {{- end }}
 spec:
   serviceAccountName: {{ include "mimir.serviceAccountName" $ }}
+  {{- if $.Values.image.pullSecrets }}
+  imagePullSecrets:
+  {{- range $.Values.image.pullSecrets }}
+    - name: {{ . }}
+  {{- end }}
+  {{- end }}
   {{- with .podSecurityContext }}
   securityContext:
     {{- . | toYaml | nindent 4 }}
@@ -42,7 +48,15 @@ spec:
       securityContext:
         {{- . | toYaml | nindent 8 }}
   {{- end }}
-
+  {{- with .nodeSelector }}
+  nodeSelector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .tolerations }}
+  tolerations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" $ "component" "meta-monitoring") | nindent 6 }}
   logs:
     instanceSelector:
       matchLabels:

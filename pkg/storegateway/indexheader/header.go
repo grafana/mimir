@@ -34,20 +34,20 @@ type Reader interface {
 	io.Closer
 
 	// IndexVersion returns version of index.
-	IndexVersion() (int, error)
+	IndexVersion(context.Context) (int, error)
 
 	// PostingsOffset returns start and end offsets of postings for given name and value.
 	// The Start is inclusive and is the byte offset of the number_of_entries field of a posting list.
 	// The End is exclusive and is typically the byte offset of the CRC32 field.
 	// The End might be bigger than the actual posting ending, but not larger than the whole index file.
 	// NotFoundRangeErr is returned when no index can be found for given name and value.
-	PostingsOffset(name string, value string) (index.Range, error)
+	PostingsOffset(ctx context.Context, name string, value string) (index.Range, error)
 
 	// LookupSymbol returns string based on given reference.
 	// Error is return if the symbol can't be found.
-	LookupSymbol(o uint32) (string, error)
+	LookupSymbol(ctx context.Context, o uint32) (string, error)
 
-	SymbolsReader() (streamindex.SymbolsReader, error)
+	SymbolsReader(ctx context.Context) (streamindex.SymbolsReader, error)
 
 	// LabelValuesOffsets returns all label values and the offsets for their posting lists for given label name or error.
 	// The returned label values are sorted lexicographically (which the same as sorted by posting offset).
@@ -59,7 +59,7 @@ type Reader interface {
 	LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error)
 
 	// LabelNames returns all label names in sorted order.
-	LabelNames() ([]string, error)
+	LabelNames(ctx context.Context) ([]string, error)
 }
 
 type Config struct {
@@ -72,9 +72,12 @@ type Config struct {
 
 	// Maximum index-headers loaded into store-gateway concurrently
 	LazyLoadingConcurrency             int           `yaml:"lazy_loading_concurrency" category:"advanced"`
-	LazyLoadingConcurrencyQueueTimeout time.Duration `yaml:"lazy_loading_concurrency_queue_timeout" category:"experimental"`
+	LazyLoadingConcurrencyQueueTimeout time.Duration `yaml:"lazy_loading_concurrency_queue_timeout" category:"advanced"`
 
 	VerifyOnLoad bool `yaml:"verify_on_load" category:"advanced"`
+
+	// EagerLoadingPersistInterval is injected for testing purposes only.
+	EagerLoadingPersistInterval time.Duration `yaml:"-" doc:"hidden"`
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
@@ -82,8 +85,9 @@ func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.BoolVar(&cfg.LazyLoadingEnabled, prefix+"lazy-loading-enabled", DefaultIndexHeaderLazyLoadingEnabled, "If enabled, store-gateway will lazy load an index-header only once required by a query.")
 	f.DurationVar(&cfg.LazyLoadingIdleTimeout, prefix+"lazy-loading-idle-timeout", DefaultIndexHeaderLazyLoadingIdleTimeout, "If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.")
 	f.IntVar(&cfg.LazyLoadingConcurrency, prefix+"lazy-loading-concurrency", 4, "Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited.")
-	f.DurationVar(&cfg.LazyLoadingConcurrencyQueueTimeout, prefix+"lazy-loading-concurrency-queue-timeout", 0, "Timeout for the queue of index header loads. If the queue is full and the timeout is reached, the load will return an error. 0 means no timeout and the load will wait indefinitely.")
+	f.DurationVar(&cfg.LazyLoadingConcurrencyQueueTimeout, prefix+"lazy-loading-concurrency-queue-timeout", 5*time.Second, "Timeout for the queue of index header loads. If the queue is full and the timeout is reached, the load will return an error. 0 means no timeout and the load will wait indefinitely.")
 	f.BoolVar(&cfg.EagerLoadingStartupEnabled, prefix+"eager-loading-startup-enabled", true, "If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. Ignored if index-header lazy loading is disabled.")
+	f.DurationVar(&cfg.EagerLoadingPersistInterval, prefix+"eager-loading-persist-interval", time.Minute, "Interval at which the store-gateway persists block IDs of lazy loaded index-headers. Ignored if index-header eager loading is disabled.")
 	f.BoolVar(&cfg.VerifyOnLoad, prefix+"verify-on-load", false, "If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.")
 }
 

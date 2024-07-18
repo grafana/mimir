@@ -39,18 +39,20 @@ func TestStatsRenderer(t *testing.T) {
 	now := model.Time(time.Now().UnixMilli())
 
 	q := &mockSampleAndChunkQueryable{
-		queryableFn: func(int64, int64) (storage.Querier, error) {
+		queryableFn: func(_ , _ int64) (storage.Querier, error) {
 			return &mockQuerier{
-				seriesSet: series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
-					series.NewConcreteSeries(
-						labels.FromStrings("__name__", "test", "serial", "1"),
-						[]model.SamplePair{{Timestamp: model.Time(now), Value: 41}}, nil,
-					),
-					series.NewConcreteSeries(
-						labels.FromStrings("__name__", "test", "serial", "2"),
-						[]model.SamplePair{{Timestamp: model.Time(now), Value: 42}}, nil,
-					),
-				}),
+				selectFn: func(_ context.Context, _ bool, hints *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+					return series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+						series.NewConcreteSeries(
+							labels.FromStrings("__name__", "test", "serial", "1"),
+							[]model.SamplePair{{Timestamp: model.Time(now), Value: 41}}, nil,
+						),
+						series.NewConcreteSeries(
+							labels.FromStrings("__name__", "test", "serial", "2"),
+							[]model.SamplePair{{Timestamp: model.Time(now), Value: 42}}, nil,
+						),
+					})
+				},
 			}, nil
 		},
 	}

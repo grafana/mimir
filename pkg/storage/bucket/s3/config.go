@@ -122,14 +122,16 @@ type Config struct {
 	SignatureVersion     string              `yaml:"signature_version" category:"advanced"`
 	ListObjectsVersion   string              `yaml:"list_objects_version" category:"advanced"`
 	BucketLookupType     s3.BucketLookupType `yaml:"bucket_lookup_type" category:"advanced"`
+	DualstackEnabled     bool                `yaml:"dualstack_enabled" category:"experimental"`
 	StorageClass         string              `yaml:"storage_class" category:"experimental"`
 	NativeAWSAuthEnabled bool                `yaml:"native_aws_auth_enabled" category:"experimental"`
 	PartSize             uint64              `yaml:"part_size" category:"experimental"`
 	SendContentMd5       bool                `yaml:"send_content_md5" category:"experimental"`
 	STSEndpoint          string              `yaml:"sts_endpoint"`
 
-	SSE  SSEConfig  `yaml:"sse"`
-	HTTP HTTPConfig `yaml:"http"`
+	SSE         SSEConfig   `yaml:"sse"`
+	HTTP        HTTPConfig  `yaml:"http"`
+	TraceConfig TraceConfig `yaml:"trace"`
 }
 
 // RegisterFlags registers the flags for s3 storage with the provided prefix
@@ -152,9 +154,11 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Uint64Var(&cfg.PartSize, prefix+"s3.part-size", 0, "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.")
 	f.BoolVar(&cfg.SendContentMd5, prefix+"s3.send-content-md5", false, "If enabled, a Content-MD5 header is sent with S3 Put Object requests. Consumes more resources to compute the MD5, but may improve compatibility with object storage services that do not support checksums.")
 	f.Var(newBucketLookupTypeValue(s3.AutoLookup, &cfg.BucketLookupType), prefix+"s3.bucket-lookup-type", fmt.Sprintf("Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: %s.", strings.Join(supportedBucketLookupTypes, ", ")))
+	f.BoolVar(&cfg.DualstackEnabled, prefix+"s3.dualstack-enabled", true, "When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region.")
 	f.StringVar(&cfg.STSEndpoint, prefix+"s3.sts-endpoint", "", "Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.")
 	cfg.SSE.RegisterFlagsWithPrefix(prefix+"s3.sse.", f)
 	cfg.HTTP.RegisterFlagsWithPrefix(prefix, f)
+	cfg.TraceConfig.RegisterFlagsWithPrefix(prefix+"s3.trace.", f)
 }
 
 // Validate config and returns error on failure
@@ -265,6 +269,14 @@ func parseKMSEncryptionContext(data string) (map[string]string, error) {
 	decoded := map[string]string{}
 	err := errors.Wrap(json.Unmarshal([]byte(data), &decoded), "unable to parse KMS encryption context")
 	return decoded, err
+}
+
+type TraceConfig struct {
+	Enabled bool `yaml:"enabled" category:"advanced"`
+}
+
+func (cfg *TraceConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "When enabled, low-level S3 HTTP operation information is logged at the debug level.")
 }
 
 // bucketLookupTypeValue is an adapter between s3.BucketLookupType and flag.Value.

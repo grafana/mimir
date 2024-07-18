@@ -3,56 +3,25 @@
 package queue
 
 import (
-	"sync"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/require"
 )
 
-func testQuerierInflightRequestsGauge() *prometheus.GaugeVec {
-	return promauto.With(prometheus.NewPedanticRegistry()).NewGaugeVec(prometheus.GaugeOpts{
-		Name: "test_query_scheduler_querier_inflight_requests",
-		Help: "[test] Number of inflight requests being processed on a querier-scheduler connection.",
-	}, []string{"query_component"})
-}
-
-func TestQueryComponentUtilization_Concurrency(t *testing.T) {
-
-	requestCount := 100
-	queryComponentUtilization, err := NewQueryComponentUtilization(
-		DefaultReservedQueryComponentCapacity, testQuerierInflightRequestsGauge(),
+func testQuerierInflightRequestsGauge() *prometheus.SummaryVec {
+	return promauto.With(prometheus.NewPedanticRegistry()).NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "test_cortex_query_scheduler_querier_inflight_requests",
+			Help:       "[test] Number of inflight requests being processed on all querier-scheduler connections. Quantile buckets keep track of inflight requests over the last 60s.",
+			Objectives: map[float64]float64{0.5: 0.05, 0.75: 0.02, 0.8: 0.02, 0.9: 0.01, 0.95: 0.01, 0.99: 0.001},
+			MaxAge:     time.Minute,
+			AgeBuckets: 6,
+		},
+		[]string{"query_component"},
 	)
-	require.NoError(t, err)
-
-	mockForwardRequestToQuerier := func(t *testing.T, utilization *QueryComponentUtilization) {
-		expectedQueryComponent := randAdditionalQueueDimension(false)[0]
-
-		utilization.IncrementForComponentName(expectedQueryComponent)
-		require.GreaterOrEqual(t, utilization.ingesterInflightRequests.Load(), int64(0))
-		require.GreaterOrEqual(t, utilization.storeGatewayInflightRequests.Load(), int64(0))
-
-		utilization.DecrementForComponentName(expectedQueryComponent)
-		require.GreaterOrEqual(t, utilization.ingesterInflightRequests.Load(), int64(0))
-		require.GreaterOrEqual(t, utilization.storeGatewayInflightRequests.Load(), int64(0))
-	}
-
-	wg := sync.WaitGroup{}
-	start := make(chan struct{})
-	for i := 0; i < requestCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			<-start
-			mockForwardRequestToQuerier(t, queryComponentUtilization)
-		}()
-	}
-	close(start)
-	wg.Wait()
-	require.Equal(t, int64(0), queryComponentUtilization.ingesterInflightRequests.Load())
-	require.Equal(t, int64(0), queryComponentUtilization.storeGatewayInflightRequests.Load())
-	require.Equal(t, int64(0), queryComponentUtilization.querierInflightRequestsTotal.Load())
 }
 
 func TestExceedsUtilizationThresholdForQueryComponents(t *testing.T) {
@@ -254,16 +223,26 @@ func TestExceedsUtilizationThresholdForQueryComponents(t *testing.T) {
 			require.NoError(t, err)
 
 			for i := 0; i < testCase.ingesterInflightRequests; i++ {
-				queryComponentUtilization.IncrementForComponentName(ingesterQueueDimension)
+				ingesterInflightRequest := &SchedulerRequest{
+					FrontendAddr:              "frontend-a",
+					QueryID:                   uint64(i),
+					AdditionalQueueDimensions: []string{ingesterQueueDimension},
+				}
+				queryComponentUtilization.MarkRequestSent(ingesterInflightRequest)
 			}
 
 			for i := 0; i < testCase.storeGatewayInflightRequests; i++ {
-				queryComponentUtilization.IncrementForComponentName(storeGatewayQueueDimension)
+				storeGatewayInflightRequest := &SchedulerRequest{
+					FrontendAddr:              "frontend-b",
+					QueryID:                   uint64(i),
+					AdditionalQueueDimensions: []string{storeGatewayQueueDimension},
+				}
+				queryComponentUtilization.MarkRequestSent(storeGatewayInflightRequest)
 			}
 
 			exceedsThreshold, queryComponent := queryComponentUtilization.ExceedsThresholdForComponentName(
 				testCase.queryComponentName,
-				connectedWorkers,
+				int(connectedWorkers),
 				testCase.queueLen,
 				testCase.waitingWorkers,
 			)
@@ -284,7 +263,7 @@ func TestExceedsUtilizationThresholdForQueryComponents(t *testing.T) {
 			// a component utilization with reserved capacity 0 disables capacity checks
 			exceedsThreshold, queryComponent = disabledComponentUtilization.ExceedsThresholdForComponentName(
 				testCase.queryComponentName,
-				connectedWorkers,
+				int(connectedWorkers),
 				testCase.queueLen,
 				testCase.waitingWorkers,
 			)

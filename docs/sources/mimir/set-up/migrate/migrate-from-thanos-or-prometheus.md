@@ -69,6 +69,63 @@ Blocks from Prometheus don't have any external labels stored in them.
 Only blocks from Thanos use labels.
 {{< /admonition >}}
 
+{{< admonition type="note" >}}
+If you encounter the HTTP error 413 "Request Entity Too Large" when uploading blocks using mimirtool, and if Nginx is being used as a reverse proxy, the uploaded block size may be exceeding Nginx's default maximum allowed request body size.
+To resolve this issue:
+
+Determine the current size of the blocks you are trying to upload by running the following command(by default the blocks are sized around 500MB, but it can vary depending on the configuration of Prometheus or Thanos.)
+
+```bash
+find <path/to/blocks> -name 'chunks' -printf '%s\n' | numfmt --to=iec-i
+```
+
+This shows the size of each block's chunks directory in a human-readable format.
+Increase the client_max_body_size directive in the Nginx configuration:
+
+For manual Nginx deployments, open the Nginx configuration file (e.g., /etc/nginx/nginx.conf) and set the `client_max_body_size` directive inside the server block for the Mimir endpoint to a value about 5% larger than the maximum size of the blocks you are uploading. For example:
+
+```
+server {
+    ...
+    client_max_body_size 540M;
+    ...
+}
+```
+
+```
+location / {
+    ...
+    client_max_body_size 540M;
+    ...
+}
+```
+
+For Helm deployments of Mimir, you can set the `gateway.nginx.config.clientMaxBodySize` value in your Helm values file to a higher value, e.g.:
+
+```yaml
+gateway:
+  nginx:
+    config:
+      clientMaxBodySize: 540M
+```
+
+Apply the configuration changes:
+
+For manual Nginx deployments, save the configuration file and reload Nginx:
+
+```bash
+sudo nginx -s reload
+```
+
+For Helm deployments, upgrade your Mimir release with the updated values file:
+
+```bash
+helm upgrade <release-name> <chart-name> -f values.yaml
+```
+
+After increasing the `client_max_body_size` setting, you can upload the blocks without encountering the 413 error.
+{{< /admonition >}}
+
 ## Considerations on Thanos specific features
 
 Thanos requires that Prometheus is configured with external labels.

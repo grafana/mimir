@@ -82,23 +82,23 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 			return nil, fmt.Errorf("query expression produces a %s, but expression for range queries must produce an instant vector or scalar", parser.DocumentedType(expr.Type()))
 		}
 	}
-
-	switch expr.Type() {
-	case parser.ValueTypeMatrix:
-		q.root, err = q.convertToRangeVectorOperator(expr)
-		if err != nil {
-			return nil, err
-		}
-	case parser.ValueTypeVector:
-		q.root, err = q.convertToInstantVectorOperator(expr)
-		if err != nil {
-			return nil, err
-		}
-	default:
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("%s value as top-level expression", parser.DocumentedType(expr.Type())))
+	q.root, err = q.convertToOperator(expr)
+	if err != nil {
+		return nil, err
 	}
 
 	return q, nil
+}
+
+func (q *Query) convertToOperator(expr parser.Expr) (types.Operator, error) {
+	switch expr.Type() {
+	case parser.ValueTypeMatrix:
+		return q.convertToRangeVectorOperator(expr)
+	case parser.ValueTypeVector:
+		return q.convertToInstantVectorOperator(expr)
+	default:
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("%s value as top-level expression", parser.DocumentedType(expr.Type())))
+	}
 }
 
 func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantVectorOperator, error) {
@@ -145,44 +145,22 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, fmt.Errorf("unexpected parameter for %s aggregation: %s", e.Op, e.Param)
 		}
 
-		if e.Without {
-			return nil, compat.NewNotSupportedError("grouping with 'without'")
-		}
-
-		slices.Sort(e.Grouping)
-
 		inner, err := q.convertToInstantVectorOperator(e.Expr)
 		if err != nil {
 			return nil, err
 		}
 
-		return &operators.Aggregation{
-			Inner:    inner,
-			Start:    q.statement.Start,
-			End:      q.statement.End,
-			Interval: interval,
-			Grouping: e.Grouping,
-			Pool:     q.pool,
-		}, nil
+		return operators.NewAggregation(
+			inner,
+			q.statement.Start,
+			q.statement.End,
+			interval,
+			e.Grouping,
+			e.Without,
+			q.pool,
+		), nil
 	case *parser.Call:
-		if e.Func.Name != "rate" {
-			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
-		}
-
-		if len(e.Args) != 1 {
-			// Should be caught by the PromQL parser, but we check here for safety.
-			return nil, fmt.Errorf("expected exactly one argument for rate, got %v", len(e.Args))
-		}
-
-		inner, err := q.convertToRangeVectorOperator(e.Args[0])
-		if err != nil {
-			return nil, err
-		}
-
-		return &operators.RangeVectorFunction{
-			Inner: inner,
-			Pool:  q.pool,
-		}, nil
+		return q.convertFunctionCallToOperator(e)
 	case *parser.BinaryExpr:
 		if e.LHS.Type() != parser.ValueTypeVector || e.RHS.Type() != parser.ValueTypeVector {
 			return nil, compat.NewNotSupportedError("binary expression with scalars")
@@ -211,6 +189,24 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 	default:
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T", e))
 	}
+}
+
+func (q *Query) convertFunctionCallToOperator(e *parser.Call) (types.InstantVectorOperator, error) {
+	factory, ok := instantVectorFunctionOperatorFactories[e.Func.Name]
+	if !ok {
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
+	}
+
+	args := make([]types.Operator, len(e.Args))
+	for i := range e.Args {
+		a, err := q.convertToOperator(e.Args[i])
+		if err != nil {
+			return nil, err
+		}
+		args[i] = a
+	}
+
+	return factory(args, q.pool)
 }
 
 func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (types.RangeVectorOperator, error) {
@@ -407,8 +403,10 @@ func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o t
 
 func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o types.RangeVectorOperator, series []types.SeriesMetadata) (promql.Matrix, error) {
 	m := pooling.GetMatrix(len(series))
-	b := types.NewRingBuffer(q.pool)
-	defer b.Close()
+	floatBuffer := types.NewFPointRingBuffer(q.pool)
+	histogramBuffer := types.NewHPointRingBuffer(q.pool)
+	defer floatBuffer.Close()
+	defer histogramBuffer.Close()
 
 	for i, s := range series {
 		err := o.NextSeries(ctx)
@@ -420,20 +418,27 @@ func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o typ
 			return nil, err
 		}
 
-		b.Reset()
-		step, err := o.NextStepSamples(b)
+		floatBuffer.Reset()
+		histogramBuffer.Reset()
+		step, err := o.NextStepSamples(floatBuffer, histogramBuffer)
 		if err != nil {
 			return nil, err
 		}
 
-		floats, err := b.CopyPoints(step.RangeEnd)
+		floats, err := floatBuffer.CopyPoints(step.RangeEnd)
+		if err != nil {
+			return nil, err
+		}
+
+		histograms, err := histogramBuffer.CopyPoints(step.RangeEnd)
 		if err != nil {
 			return nil, err
 		}
 
 		m = append(m, promql.Series{
-			Metric: s.Labels,
-			Floats: floats,
+			Metric:     s.Labels,
+			Floats:     floats,
+			Histograms: histograms,
 		})
 	}
 

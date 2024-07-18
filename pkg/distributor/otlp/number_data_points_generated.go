@@ -19,6 +19,7 @@
 package otlp
 
 import (
+	"context"
 	"math"
 
 	"github.com/prometheus/common/model"
@@ -30,9 +31,13 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 )
 
-func (c *MimirConverter) addGaugeNumberDataPoints(dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, settings Settings, name string) {
+func (c *MimirConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
+	resource pcommon.Resource, settings Settings, name string) error {
 	for x := 0; x < dataPoints.Len(); x++ {
+		if err := c.everyN.checkContext(ctx); err != nil {
+			return err
+		}
+
 		pt := dataPoints.At(x)
 		labels := createAttributes(
 			resource,
@@ -58,11 +63,17 @@ func (c *MimirConverter) addGaugeNumberDataPoints(dataPoints pmetric.NumberDataP
 		}
 		c.addSample(sample, labels)
 	}
+
+	return nil
 }
 
-func (c *MimirConverter) addSumNumberDataPoints(dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string) {
+func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
+	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string) error {
 	for x := 0; x < dataPoints.Len(); x++ {
+		if err := c.everyN.checkContext(ctx); err != nil {
+			return err
+		}
+
 		pt := dataPoints.At(x)
 		lbls := createAttributes(
 			resource,
@@ -88,7 +99,10 @@ func (c *MimirConverter) addSumNumberDataPoints(dataPoints pmetric.NumberDataPoi
 		}
 		ts := c.addSample(sample, lbls)
 		if ts != nil {
-			exemplars := getPromExemplars[pmetric.NumberDataPoint](pt)
+			exemplars, err := getPromExemplars[pmetric.NumberDataPoint](ctx, &c.everyN, pt)
+			if err != nil {
+				return err
+			}
 			ts.Exemplars = append(ts.Exemplars, exemplars...)
 		}
 
@@ -96,7 +110,7 @@ func (c *MimirConverter) addSumNumberDataPoints(dataPoints pmetric.NumberDataPoi
 		if settings.ExportCreatedMetric && metric.Sum().IsMonotonic() {
 			startTimestamp := pt.StartTimestamp()
 			if startTimestamp == 0 {
-				return
+				return nil
 			}
 
 			createdLabels := make([]mimirpb.LabelAdapter, len(lbls))
@@ -110,4 +124,6 @@ func (c *MimirConverter) addSumNumberDataPoints(dataPoints pmetric.NumberDataPoi
 			c.addTimeSeriesIfNeeded(createdLabels, startTimestamp, pt.Timestamp())
 		}
 	}
+
+	return nil
 }

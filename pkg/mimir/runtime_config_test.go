@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -54,9 +55,9 @@ overrides:
 
 	loadedLimits := runtimeCfg.(*runtimeConfigValues).TenantLimits
 	require.Equal(t, 3, len(loadedLimits))
-	require.Equal(t, expected, *loadedLimits["1234"])
-	require.Equal(t, expected, *loadedLimits["1235"])
-	require.Equal(t, expected, *loadedLimits["1236"])
+	require.True(t, cmp.Equal(expected, *loadedLimits["1234"], cmp.AllowUnexported(validation.Limits{})))
+	require.True(t, cmp.Equal(expected, *loadedLimits["1235"], cmp.AllowUnexported(validation.Limits{})))
+	require.True(t, cmp.Equal(expected, *loadedLimits["1236"], cmp.AllowUnexported(validation.Limits{})))
 }
 
 func TestRuntimeConfigLoader_ShouldLoadEmptyFile(t *testing.T) {

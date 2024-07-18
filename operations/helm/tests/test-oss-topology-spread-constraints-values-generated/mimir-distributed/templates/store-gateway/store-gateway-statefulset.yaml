@@ -71,6 +71,11 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
             app.kubernetes.io/component: store-gateway
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       terminationGracePeriodSeconds: 120
       volumes:
         - name: config
@@ -140,7 +145,6 @@ spec:
               value: "536870912"
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "1000"
-          envFrom:
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
 apiVersion: apps/v1
@@ -214,6 +218,11 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
             app.kubernetes.io/component: store-gateway
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       terminationGracePeriodSeconds: 120
       volumes:
         - name: config
@@ -283,7 +292,6 @@ spec:
               value: "536870912"
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "1000"
-          envFrom:
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
 apiVersion: apps/v1
@@ -357,6 +365,11 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
             app.kubernetes.io/component: store-gateway
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       terminationGracePeriodSeconds: 120
       volumes:
         - name: config
@@ -426,4 +439,3 @@ spec:
               value: "536870912"
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "1000"
-          envFrom:

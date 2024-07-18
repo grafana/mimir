@@ -60,6 +60,7 @@ func newS3Config(cfg Config) (s3.Config, error) {
 		PutUserMetadata:    putUserMetadata,
 		SendContentMd5:     cfg.SendContentMd5,
 		SSEConfig:          sseCfg,
+		DisableDualstack:   !cfg.DualstackEnabled,
 		ListObjectsVersion: cfg.ListObjectsVersion,
 		BucketLookupType:   cfg.BucketLookupType,
 		AWSSDKAuth:         cfg.NativeAWSAuthEnabled,
@@ -80,6 +81,9 @@ func newS3Config(cfg Config) (s3.Config, error) {
 				KeyFile:    cfg.HTTP.TLSConfig.KeyPath,
 				ServerName: cfg.HTTP.TLSConfig.ServerName,
 			},
+		},
+		TraceConfig: s3.TraceConfig{
+			Enable: cfg.TraceConfig.Enabled,
 		},
 		// Enforce signature version 2 if CLI flag is set
 		SignatureV2: cfg.SignatureVersion == SignatureVersionV2,

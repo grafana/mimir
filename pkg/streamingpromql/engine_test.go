@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -32,6 +33,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
@@ -53,7 +55,6 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		"1":                            "scalar value as top-level expression",
 		"metric{} offset 2h":           "instant vector selector with 'offset'",
 		"avg(metric{})":                "'avg' aggregation",
-		"sum without(l) (metric{})":    "grouping with 'without'",
 		"rate(metric{}[5m] offset 2h)": "range vector selector with 'offset'",
 		"rate(metric{}[5m:1m])":        "PromQL expression type *parser.SubqueryExpr",
 		"avg_over_time(metric{}[5m])":  "'avg_over_time' function",
@@ -199,7 +200,15 @@ func TestRangeVectorSelectors(t *testing.T) {
 			some_metric{env="2"} 0+2x4
 			some_metric_with_gaps 0 1 _ 3
 			some_metric_with_stale_marker 0 1 stale 3
+			incr_histogram{env="1"}	{{schema:0 sum:4 count:4 buckets:[1 2 1]}}+{{sum:2 count:1 buckets:[1] offset:1}}x4
+			incr_histogram{env="2"}	{{schema:0 sum:4 count:4 buckets:[1 2 1]}}+{{sum:4 count:2 buckets:[1 2] offset:1}}x4
+			histogram_with_gaps	{{sum:1 count:1 buckets:[1]}} {{sum:2 count:2 buckets:[1 1]}} _ {{sum:3 count:3 buckets:[1 1 1]}}
+			histogram_with_stale_marker	{{sum:1 count:1 buckets:[1]}} {{sum:2 count:2 buckets:[1 1]}} stale {{sum:4 count:4 buckets:[1 1 1 1]}}
+			mixed_metric {{schema:0 sum:4 count:4 buckets:[1 2 1]}} 1 2 {{schema:0 sum:3 count:3 buckets:[1 2 1]}}
+			mixed_metric_histogram_first {{schema:0 sum:4 count:4 buckets:[1 2 1]}} 1
+			mixed_metric_float_first 1 {{schema:0 sum:4 count:4 buckets:[1 2 1]}}
 	`)
+
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
 	testCases := map[string]struct {
@@ -273,6 +282,279 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
+		"histogram: matches series with points in range": {
+			expr: "incr_histogram[1m]",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "incr_histogram", "env", "1"),
+						Histograms: []promql.HPoint{
+							{
+								T: timestamp.FromTime(baseT.Add(time.Minute)),
+								H: &histogram.FloatHistogram{
+									Sum:   6,
+									Count: 5,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 3,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 3, 1,
+									},
+								},
+							},
+							{
+								T: timestamp.FromTime(baseT.Add(2 * time.Minute)),
+								H: &histogram.FloatHistogram{
+									Sum:   8,
+									Count: 6,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 3,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 4, 1,
+									},
+								},
+							},
+						},
+					},
+					{
+						Metric: labels.FromStrings("__name__", "incr_histogram", "env", "2"),
+						Histograms: []promql.HPoint{
+							{
+								T: timestamp.FromTime(baseT.Add(time.Minute)),
+								H: &histogram.FloatHistogram{
+									Sum:   8,
+									Count: 6,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 3,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 3, 3,
+									},
+								},
+							},
+							{
+								T: timestamp.FromTime(baseT.Add(2 * time.Minute)),
+								H: &histogram.FloatHistogram{
+									Sum:   12,
+									Count: 8,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 3,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 4, 5,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"histogram: no samples in range": {
+			expr: "incr_histogram[1m]",
+			ts:   baseT.Add(20 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{},
+			},
+		},
+		"histogram: does not return points outside range if last selected point does not align to end of range": {
+			expr: "histogram_with_gaps[1m]",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "histogram_with_gaps"),
+						Histograms: []promql.HPoint{
+							{
+								T: timestamp.FromTime(baseT.Add(time.Minute)),
+								H: &histogram.FloatHistogram{
+									Sum:   2,
+									Count: 2,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 3,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 1, 0,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"histogram: metric with stale marker": {
+			expr: "histogram_with_stale_marker[3m]",
+			ts:   baseT.Add(3 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "histogram_with_stale_marker"),
+						Histograms: []promql.HPoint{
+							{
+								T: timestamp.FromTime(baseT),
+								H: &histogram.FloatHistogram{
+									Sum:   1,
+									Count: 1,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 2,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 0,
+									},
+								},
+							},
+							{
+								T: timestamp.FromTime(baseT.Add(time.Minute)),
+								H: &histogram.FloatHistogram{
+									Sum:   2,
+									Count: 2,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 2,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 1,
+									},
+								},
+							},
+							{
+								T: timestamp.FromTime(baseT.Add(3 * time.Minute)),
+								H: &histogram.FloatHistogram{
+									Sum:   4,
+									Count: 4,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 4,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 1, 1, 1,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"mixed series with histograms and floats": {
+			expr: "mixed_metric[4m]",
+			ts:   baseT.Add(4 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "mixed_metric"),
+						Floats: []promql.FPoint{
+							{
+								T: timestamp.FromTime(baseT.Add(time.Minute)),
+								F: 1,
+							},
+							{
+								T: timestamp.FromTime(baseT.Add(2 * time.Minute)),
+								F: 2,
+							},
+						},
+						Histograms: []promql.HPoint{
+							{
+								T: timestamp.FromTime(baseT.Add(3 * time.Minute)),
+								H: &histogram.FloatHistogram{
+									Sum:   3,
+									Count: 3,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 3,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 2, 1,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"mixed series with a histogram then a float": {
+			// This is unexpected, but consistent behavior between the engines
+			// See: https://github.com/prometheus/prometheus/issues/14172
+			expr: "mixed_metric_histogram_first[2m]",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "mixed_metric_histogram_first"),
+						Floats: []promql.FPoint{
+							{
+								T: timestamp.FromTime(baseT.Add(time.Minute)),
+								F: 1,
+							},
+						},
+					},
+				},
+			},
+		},
+		"mixed series with a float then a histogram": {
+			// No incorrect lookback
+			expr: "mixed_metric_float_first[2m]",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "mixed_metric_float_first"),
+						Floats: []promql.FPoint{
+							{
+								T: timestamp.FromTime(baseT),
+								F: 1,
+							},
+						},
+						Histograms: []promql.HPoint{
+							{
+								T: timestamp.FromTime(baseT.Add(time.Minute)),
+								H: &histogram.FloatHistogram{
+									Sum:   4,
+									Count: 4,
+									PositiveSpans: []histogram.Span{
+										{
+											Offset: 0,
+											Length: 3,
+										},
+									},
+									PositiveBuckets: []float64{
+										1, 2, 1,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -283,7 +565,24 @@ func TestRangeVectorSelectors(t *testing.T) {
 				defer q.Close()
 
 				res := q.Exec(context.Background())
-				require.Equal(t, expected, res)
+
+				// Because Histograms are pointers, it is hard to use Equal for the whole result
+				// Instead, compare each point individually.
+				expectedMatrix := expected.Value.(promql.Matrix)
+				resMatrix := res.Value.(promql.Matrix)
+				require.Equal(t, expectedMatrix.Len(), resMatrix.Len(), "Right number of results")
+				for i := range expectedMatrix {
+					if expectedMatrix[i].Histograms == nil {
+						require.Equal(t, expectedMatrix[i], resMatrix[i], "Results match expectation exactly (Floats)")
+					} else {
+						require.Equal(t, expectedMatrix[i].Metric, resMatrix[i].Metric, "Metric name matches")
+						require.Equal(t, expectedMatrix[i].Floats, resMatrix[i].Floats, "Float points match")
+						require.Equal(t, len(expectedMatrix[i].Histograms), len(resMatrix[i].Histograms), "Same number of histograms")
+						for j := range expectedMatrix[i].Histograms {
+							test.RequireFloatHistogramEqual(t, expectedMatrix[i].Histograms[j].H, resMatrix[i].Histograms[j].H)
+						}
+					}
+				}
 			}
 
 			t.Run("Mimir's engine", func(t *testing.T) {
@@ -470,6 +769,8 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			some_metric{idx="3"} 0+1x5
 			some_metric{idx="4"} 0+1x5
 			some_metric{idx="5"} 0+1x5
+			some_histogram{idx="1"} {{schema:1 sum:10 count:9 buckets:[3 3 3]}}x5
+			some_histogram{idx="2"} {{schema:1 sum:10 count:9 buckets:[3 3 3]}}x5
 	`)
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
@@ -524,12 +825,17 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			shouldSucceed: true,
 
 			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
-			// At peak we'll hold in memory: the running total for the sum() (a float and a bool at each step, with the number of steps rounded to the nearest power of 2), and the next series from the selector.
+			// At peak we'll hold in memory:
+			//  - the running total for the sum() (a float and a bool at each step, with the number of steps rounded to the nearest power of 2),
+			//  - and the next series from the selector.
 			rangeQueryExpectedPeak: 8*(pooling.Float64Size+pooling.BoolSize) + 8*pooling.FPointSize,
 			rangeQueryLimit:        8*(pooling.Float64Size+pooling.BoolSize) + 8*pooling.FPointSize,
 
 			// Each series has one sample, which is already a power of two.
-			// At peak we'll hold in memory: the running total for the sum() (a float and a bool), the next series from the selector, and the output sample.
+			// At peak we'll hold in memory:
+			//  - the running total for the sum() (a float and a bool),
+			//  - the next series from the selector,
+			//  - and the output sample.
 			instantQueryExpectedPeak: pooling.Float64Size + pooling.BoolSize + pooling.FPointSize + pooling.VectorSampleSize,
 			instantQueryLimit:        pooling.Float64Size + pooling.BoolSize + pooling.FPointSize + pooling.VectorSampleSize,
 		},
@@ -538,16 +844,59 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			shouldSucceed: false,
 
 			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
-			// At peak we'll hold in memory: the running total for the sum() (a float and a bool at each step, with the number of steps rounded to the nearest power of 2), and the next series from the selector.
+			// At peak we'll hold in memory:
+			// - the running total for the sum() (a float and a bool at each step, with the number of steps rounded to the nearest power of 2),
+			// - and the next series from the selector.
 			// The last thing to be allocated is the bool slice for the running total, so that won't contribute to the peak before the query is aborted.
 			rangeQueryExpectedPeak: 8*pooling.Float64Size + 8*pooling.FPointSize,
 			rangeQueryLimit:        8*(pooling.Float64Size+pooling.BoolSize) + 8*pooling.FPointSize - 1,
 
 			// Each series has one sample, which is already a power of two.
-			// At peak we'll hold in memory: the running total for the sum() (a float and a bool), the next series from the selector, and the output sample.
+			// At peak we'll hold in memory:
+			// - the running total for the sum() (a float and a bool),
+			// - the next series from the selector,
+			// - and the output sample.
 			// The last thing to be allocated is the bool slice for the running total, so that won't contribute to the peak before the query is aborted.
 			instantQueryExpectedPeak: pooling.Float64Size + pooling.FPointSize + pooling.VectorSampleSize,
 			instantQueryLimit:        pooling.Float64Size + pooling.BoolSize + pooling.FPointSize + pooling.VectorSampleSize - 1,
+		},
+		"histogram: limit enabled, but query does not exceed limit": {
+			expr:          "sum(some_histogram)",
+			shouldSucceed: true,
+
+			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
+			// At peak we'll hold in memory:
+			//  - the running total for the sum() (a histogram pointer at each step, with the number of steps rounded to the nearest power of 2),
+			//  - and the next series from the selector.
+			rangeQueryExpectedPeak: 8*pooling.HistogramPointerSize + 8*pooling.HPointSize,
+			rangeQueryLimit:        8*pooling.HistogramPointerSize + 8*pooling.HPointSize,
+			// Each series has one sample, which is already a power of two.
+			// At peak we'll hold in memory:
+			//  - the running total for the sum() (a histogram pointer),
+			//  - the next series from the selector,
+			//  - and the output sample.
+			instantQueryExpectedPeak: pooling.HistogramPointerSize + pooling.HPointSize + pooling.VectorSampleSize,
+			instantQueryLimit:        pooling.HistogramPointerSize + pooling.HPointSize + pooling.VectorSampleSize,
+		},
+		"histogram: limit enabled, and query exceeds limit": {
+			expr:          "sum(some_histogram)",
+			shouldSucceed: false,
+
+			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
+			// At peak we'll hold in memory:
+			//  - the running total for the sum() (a histogram pointer at each step, with the number of steps rounded to the nearest power of 2),
+			//  - and the next series from the selector.
+			// The last thing to be allocated is the HistogramPointerSize slice for the running total, so that won't contribute to the peak before the query is aborted.
+			rangeQueryExpectedPeak: 8 * pooling.HPointSize,
+			rangeQueryLimit:        8*pooling.HistogramPointerSize + 8*pooling.HPointSize - 1,
+			// Each series has one sample, which is already a power of two.
+			// At peak we'll hold in memory:
+			//  - the running total for the sum() (a histogram pointer),
+			//  - the next series from the selector,
+			//  - and the output sample.
+			// The last thing to be allocated is the HistogramPointerSize slice for the running total, so that won't contribute to the peak before the query is aborted.
+			instantQueryExpectedPeak: pooling.HPointSize + pooling.VectorSampleSize,
+			instantQueryLimit:        pooling.HistogramPointerSize + pooling.HPointSize + pooling.VectorSampleSize - 1,
 		},
 	}
 

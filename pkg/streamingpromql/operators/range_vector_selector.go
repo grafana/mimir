@@ -56,7 +56,7 @@ func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
 	return nil
 }
 
-func (m *RangeVectorSelector) NextStepSamples(floats *types.RingBuffer) (types.RangeVectorStepData, error) {
+func (m *RangeVectorSelector) NextStepSamples(floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer) (types.RangeVectorStepData, error) {
 	if m.nextT > m.Selector.End {
 		return types.RangeVectorStepData{}, types.EOS
 	}
@@ -70,8 +70,9 @@ func (m *RangeVectorSelector) NextStepSamples(floats *types.RingBuffer) (types.R
 
 	rangeStart := rangeEnd - m.rangeMilliseconds
 	floats.DiscardPointsBefore(rangeStart)
+	histograms.DiscardPointsBefore(rangeStart)
 
-	if err := m.fillBuffer(floats, rangeStart, rangeEnd); err != nil {
+	if err := m.fillBuffer(floats, histograms, rangeStart, rangeEnd); err != nil {
 		return types.RangeVectorStepData{}, err
 	}
 
@@ -84,7 +85,7 @@ func (m *RangeVectorSelector) NextStepSamples(floats *types.RingBuffer) (types.R
 	}, nil
 }
 
-func (m *RangeVectorSelector) fillBuffer(floats *types.RingBuffer, rangeStart, rangeEnd int64) error {
+func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer, rangeStart, rangeEnd int64) error {
 	// Keep filling the buffer until we reach the end of the range or the end of the iterator.
 	for {
 		valueType := m.chunkIterator.Next()
@@ -96,6 +97,8 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.RingBuffer, rangeStart, r
 		case chunkenc.ValFloat:
 			t, f := m.chunkIterator.At()
 			if value.IsStaleNaN(f) || t < rangeStart {
+				// Range vectors ignore stale markers
+				// https://github.com/prometheus/prometheus/issues/3746#issuecomment-361572859
 				continue
 			}
 
@@ -109,8 +112,25 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.RingBuffer, rangeStart, r
 			if t >= rangeEnd {
 				return nil
 			}
+		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+			t := m.chunkIterator.AtT()
+			if t < rangeStart {
+				continue
+			}
+			hPoint, _ := histograms.NextPoint()
+			hPoint.T, hPoint.H = m.chunkIterator.AtFloatHistogram(hPoint.H)
+			if value.IsStaleNaN(hPoint.H.Sum) {
+				// Range vectors ignore stale markers
+				// https://github.com/prometheus/prometheus/issues/3746#issuecomment-361572859
+				// We have to remove the last point since we didn't actually use it, and NextPoint already allocated it.
+				histograms.RemoveLastPoint()
+				continue
+			}
+
+			if t >= rangeEnd {
+				return nil
+			}
 		default:
-			// TODO: handle native histograms
 			return fmt.Errorf("unknown value type %s", valueType.String())
 		}
 	}

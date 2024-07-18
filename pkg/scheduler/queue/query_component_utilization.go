@@ -4,10 +4,10 @@ package queue
 
 import (
 	"math"
+	"sync"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/atomic"
 )
 
 type QueryComponent string
@@ -53,11 +53,15 @@ type QueryComponentUtilization struct {
 	// for queries to the less-loaded query component when the query queue becomes backlogged.
 	targetReservedCapacity float64
 
-	ingesterInflightRequests     *atomic.Int64
-	storeGatewayInflightRequests *atomic.Int64
-	querierInflightRequestsTotal *atomic.Int64
+	inflightRequestsMu sync.RWMutex
+	// inflightRequests tracks requests from the time the request was successfully sent to a querier
+	// to the time the request was completed by the querier or failed due to cancel, timeout, or disconnect.
+	inflightRequests             map[RequestKey]*SchedulerRequest
+	ingesterInflightRequests     int
+	storeGatewayInflightRequests int
+	querierInflightRequestsTotal int
 
-	querierInflightRequestsGauge *prometheus.GaugeVec
+	querierInflightRequestsMetric *prometheus.SummaryVec
 }
 
 // DefaultReservedQueryComponentCapacity reserves 1 / 3 of querier-worker connections
@@ -74,7 +78,7 @@ const MaxReservedQueryComponentCapacity = 0.5
 
 func NewQueryComponentUtilization(
 	targetReservedCapacity float64,
-	querierInflightRequests *prometheus.GaugeVec,
+	querierInflightRequestsMetric *prometheus.SummaryVec,
 ) (*QueryComponentUtilization, error) {
 
 	if targetReservedCapacity >= MaxReservedQueryComponentCapacity {
@@ -84,11 +88,12 @@ func NewQueryComponentUtilization(
 	return &QueryComponentUtilization{
 		targetReservedCapacity: targetReservedCapacity,
 
-		ingesterInflightRequests:     atomic.NewInt64(0),
-		storeGatewayInflightRequests: atomic.NewInt64(0),
-		querierInflightRequestsTotal: atomic.NewInt64(0),
+		inflightRequests:             map[RequestKey]*SchedulerRequest{},
+		ingesterInflightRequests:     0,
+		storeGatewayInflightRequests: 0,
+		querierInflightRequestsTotal: 0,
 
-		querierInflightRequestsGauge: querierInflightRequests,
+		querierInflightRequestsMetric: querierInflightRequestsMetric,
 	}, nil
 }
 
@@ -113,7 +118,7 @@ func NewQueryComponentUtilization(
 // As the inflight queries complete or fail, the component's utilization will naturally decrease.
 // This method will continue to indicate to skip queries for the component until it is back under the threshold.
 func (qcl *QueryComponentUtilization) ExceedsThresholdForComponentName(
-	name string, connectedWorkers int64, queueLen, waitingWorkers int,
+	name string, connectedWorkers, queueLen, waitingWorkers int,
 ) (bool, QueryComponent) {
 	if waitingWorkers > queueLen {
 		// excess querier-worker capacity; no need to reserve any for now
@@ -125,10 +130,10 @@ func (qcl *QueryComponentUtilization) ExceedsThresholdForComponentName(
 	}
 
 	// allow the functionality to be turned off via setting targetReservedCapacity to 0
-	minReservedConnections := int64(0)
+	minReservedConnections := 0
 	if qcl.targetReservedCapacity > 0 {
 		// reserve at least one connection in case (connected workers) * (reserved capacity) is less than one
-		minReservedConnections = int64(
+		minReservedConnections = int(
 			math.Ceil(
 				math.Max(qcl.targetReservedCapacity*float64(connectedWorkers), 1),
 			),
@@ -136,39 +141,83 @@ func (qcl *QueryComponentUtilization) ExceedsThresholdForComponentName(
 	}
 
 	isIngester, isStoreGateway := queryComponentFlags(name)
+	qcl.inflightRequestsMu.RLock()
+	defer qcl.inflightRequestsMu.RUnlock()
 	if isIngester {
-		if connectedWorkers-(qcl.ingesterInflightRequests.Load()) <= minReservedConnections {
+		if connectedWorkers-(qcl.ingesterInflightRequests) <= minReservedConnections {
 			return true, Ingester
 		}
 	}
 	if isStoreGateway {
-		if connectedWorkers-(qcl.storeGatewayInflightRequests.Load()) <= minReservedConnections {
+		if connectedWorkers-(qcl.storeGatewayInflightRequests) <= minReservedConnections {
 			return true, StoreGateway
 		}
 	}
 	return false, ""
 }
 
-// IncrementForComponentName is called when a request is sent to a querier
-func (qcl *QueryComponentUtilization) IncrementForComponentName(expectedQueryComponent string) {
+// MarkRequestSent is called when a request is sent to a querier
+func (qcl *QueryComponentUtilization) MarkRequestSent(req *SchedulerRequest) {
+	if req != nil {
+		qcl.inflightRequestsMu.Lock()
+		defer qcl.inflightRequestsMu.Unlock()
+
+		qcl.inflightRequests[req.Key()] = req
+		qcl.incrementForComponentName(req.ExpectedQueryComponentName())
+	}
+}
+
+// MarkRequestCompleted is called when a querier completes or fails a request
+func (qcl *QueryComponentUtilization) MarkRequestCompleted(req *SchedulerRequest) {
+	if req != nil {
+		qcl.inflightRequestsMu.Lock()
+		defer qcl.inflightRequestsMu.Unlock()
+
+		reqKey := req.Key()
+		if req, ok := qcl.inflightRequests[reqKey]; ok {
+			qcl.decrementForComponentName(req.ExpectedQueryComponentName())
+		}
+		delete(qcl.inflightRequests, reqKey)
+	}
+}
+
+func (qcl *QueryComponentUtilization) incrementForComponentName(expectedQueryComponent string) {
 	qcl.updateForComponentName(expectedQueryComponent, 1)
 }
 
-// DecrementForComponentName is called when a querier completes or fails a request
-func (qcl *QueryComponentUtilization) DecrementForComponentName(expectedQueryComponent string) {
+func (qcl *QueryComponentUtilization) decrementForComponentName(expectedQueryComponent string) {
 	qcl.updateForComponentName(expectedQueryComponent, -1)
 }
 
-func (qcl *QueryComponentUtilization) updateForComponentName(expectedQueryComponent string, increment int64) {
+func (qcl *QueryComponentUtilization) updateForComponentName(expectedQueryComponent string, increment int) {
 	isIngester, isStoreGateway := queryComponentFlags(expectedQueryComponent)
-
+	// lock is expected to be obtained by the calling method to mark the request as sent or completed
 	if isIngester {
-		qcl.ingesterInflightRequests.Add(increment)
-		qcl.querierInflightRequestsGauge.WithLabelValues(string(Ingester)).Add(float64(increment))
+		qcl.ingesterInflightRequests += increment
 	}
 	if isStoreGateway {
-		qcl.storeGatewayInflightRequests.Add(increment)
-		qcl.querierInflightRequestsGauge.WithLabelValues(string(StoreGateway)).Add(float64(increment))
+		qcl.storeGatewayInflightRequests += increment
 	}
-	qcl.querierInflightRequestsTotal.Add(increment)
+	qcl.querierInflightRequestsTotal += increment
+}
+
+func (qcl *QueryComponentUtilization) ObserveInflightRequests() {
+	qcl.inflightRequestsMu.RLock()
+	defer qcl.inflightRequestsMu.RUnlock()
+	qcl.querierInflightRequestsMetric.WithLabelValues(string(Ingester)).Observe(float64(qcl.ingesterInflightRequests))
+	qcl.querierInflightRequestsMetric.WithLabelValues(string(StoreGateway)).Observe(float64(qcl.storeGatewayInflightRequests))
+}
+
+// GetForComponent is a test-only util
+func (qcl *QueryComponentUtilization) GetForComponent(component QueryComponent) int {
+	qcl.inflightRequestsMu.RLock()
+	defer qcl.inflightRequestsMu.RUnlock()
+	switch component {
+	case Ingester:
+		return qcl.ingesterInflightRequests
+	case StoreGateway:
+		return qcl.storeGatewayInflightRequests
+	default:
+		return 0
+	}
 }

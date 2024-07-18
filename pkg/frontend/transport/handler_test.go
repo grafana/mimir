@@ -6,6 +6,7 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -20,6 +21,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/protobuf/proto"
+	"github.com/golang/snappy"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
@@ -28,10 +31,12 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -50,12 +55,19 @@ func TestWriteError(t *testing.T) {
 	}{
 		{http.StatusInternalServerError, errors.New("unknown")},
 		{http.StatusGatewayTimeout, context.DeadlineExceeded},
+		{http.StatusGatewayTimeout, errors.Wrap(context.DeadlineExceeded, "an error occurred")},
 		{StatusClientClosedRequest, context.Canceled},
+		{StatusClientClosedRequest, errors.Wrap(context.Canceled, "an error occurred")},
 		{http.StatusBadRequest, httpgrpc.Errorf(http.StatusBadRequest, "")},
+		{http.StatusBadRequest, errors.Wrap(httpgrpc.Errorf(http.StatusBadRequest, ""), "an error occurred")},
+		{http.StatusBadRequest, apierror.New(apierror.TypeBadData, "")},
+		{http.StatusBadRequest, errors.Wrap(apierror.New(apierror.TypeBadData, "invalid request"), "an error occurred")},
+		{http.StatusNotFound, apierror.New(apierror.TypeNotFound, "")},
+		{http.StatusNotFound, errors.Wrap(apierror.New(apierror.TypeNotFound, "invalid request"), "an error occurred")},
 	} {
 		t.Run(test.err.Error(), func(t *testing.T) {
 			w := httptest.NewRecorder()
-			writeError(w, test.err)
+			require.Equal(t, test.status, writeError(w, test.err))
 			require.Equal(t, test.status, w.Result().StatusCode)
 		})
 	}
@@ -64,14 +76,24 @@ func TestWriteError(t *testing.T) {
 func TestHandler_ServeHTTP(t *testing.T) {
 	const testRouteName = "the_test_route"
 
+	makeSuccessfulDownstreamResponse := func() *http.Response {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("{}")),
+		}
+	}
+
 	for _, tt := range []struct {
-		name                     string
-		cfg                      HandlerConfig
-		request                  func() *http.Request
-		expectedParams           url.Values
-		expectedMetrics          int
-		expectedActivity         string
-		expectedReadConsistency  string
+		name                    string
+		cfg                     HandlerConfig
+		request                 func() *http.Request
+		downstreamResponse      *http.Response
+		downstreamErr           error
+		expectedStatusCode      int
+		expectedParams          url.Values
+		expectedMetrics         int
+		expectedActivity        string
+		expectedReadConsistency string
 		expectedExtraStatsHeader string
 	}{
 		{
@@ -87,6 +109,8 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				r.Header.Add("User-Agent", "test-user-agent")
 				return r
 			},
+			downstreamResponse: makeSuccessfulDownstreamResponse(),
+			expectedStatusCode: 200,
 			expectedParams: url.Values{
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
@@ -104,6 +128,8 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				r.Header.Add("User-Agent", "test-user-agent")
 				return r
 			},
+			downstreamResponse: makeSuccessfulDownstreamResponse(),
+			expectedStatusCode: 200,
 			expectedParams: url.Values{
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
@@ -121,6 +147,8 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				r.Header.Add("User-Agent", "test-user-agent")
 				return r.WithContext(api.ContextWithReadConsistency(context.Background(), api.ReadConsistencyStrong))
 			},
+			downstreamResponse: makeSuccessfulDownstreamResponse(),
+			expectedStatusCode: 200,
 			expectedParams: url.Values{
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
@@ -138,10 +166,12 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				r.Header.Add("User-Agent", "test-user-agent")
 				return r
 			},
-			expectedParams:           url.Values{},
-			expectedMetrics:          5,
-			expectedActivity:         "user:12345 UA:test-user-agent req:GET /api/v1/query (no params)",
-			expectedReadConsistency:  "",
+			downstreamResponse:      makeSuccessfulDownstreamResponse(),
+			expectedStatusCode:      200,
+			expectedParams:          url.Values{},
+			expectedMetrics:         5,
+			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query (no params)",
+			expectedReadConsistency: "",
 			expectedExtraStatsHeader: "total_samples=0",
 		},
 		{
@@ -152,12 +182,111 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				r.Header.Add("User-Agent", "test-user-agent")
 				return r
 			},
+			downstreamResponse: makeSuccessfulDownstreamResponse(),
+			expectedStatusCode: 200,
 			expectedParams: url.Values{
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
 			expectedMetrics:         0,
 			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: "",
+		},
+		{
+			name: "handler with stats enabled, serving remote read query with snappy compression",
+			cfg:  HandlerConfig{QueryStatsEnabled: true, MaxBodySize: 1024},
+			request: func() *http.Request {
+				r := httptest.NewRequest("GET", "/api/v1/read", nil)
+				r.Header.Add("User-Agent", "test-user-agent")
+				r.Header.Add("Content-Type", "application/x-protobuf")
+				remoteReadRequest := &prompb.ReadRequest{
+					Queries: []*prompb.Query{
+						{
+							Matchers: []*prompb.LabelMatcher{
+								{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "some_metric"},
+								{Name: "foo", Type: prompb.LabelMatcher_RE, Value: ".*bar.*"},
+							},
+							StartTimestampMs: 0,
+							EndTimestampMs:   42,
+						},
+						{
+							Matchers: []*prompb.LabelMatcher{
+								{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "up"},
+							},
+							StartTimestampMs: 10,
+							EndTimestampMs:   20,
+							Hints: &prompb.ReadHints{
+								StepMs: 1000,
+							},
+						},
+					},
+				}
+				data, _ := proto.Marshal(remoteReadRequest) // Ignore error, if this fails, the test will fail.
+				r.Header.Add("Content-Encoding", "snappy")
+				compressed := snappy.Encode(nil, data)
+				r.Body = io.NopCloser(bytes.NewReader(compressed))
+				return r
+			},
+			downstreamResponse: makeSuccessfulDownstreamResponse(),
+			expectedActivity:   "user:12345 UA:test-user-agent req:GET /api/v1/read end_0=42&end_1=20&hints_1=%7B%22step_ms%22%3A1000%7D&matchers_0=%7B__name__%3D%22some_metric%22%2Cfoo%3D~%22.%2Abar.%2A%22%7D&matchers_1=%7B__name__%3D%22up%22%7D&start_0=0&start_1=10",
+			expectedMetrics:    5,
+			expectedStatusCode: 200,
+			expectedParams: url.Values{
+				"matchers_0": []string{"{__name__=\"some_metric\",foo=~\".*bar.*\"}"},
+				"start_0":    []string{"0"},
+				"end_0":      []string{"42"},
+				"matchers_1": []string{"{__name__=\"up\"}"},
+				"start_1":    []string{"10"},
+				"end_1":      []string{"20"},
+				"hints_1":    []string{"{\"step_ms\":1000}"},
+			},
+		},
+		{
+			name: "downstream returns an apierror with 4xx status code",
+			cfg:  HandlerConfig{QueryStatsEnabled: true},
+			request: func() *http.Request {
+				return httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+			},
+			downstreamErr:      apierror.New(apierror.TypeBadData, "invalid request"),
+			expectedStatusCode: 400,
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
+			expectedMetrics:         5,
+			expectedActivity:        "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: "",
+		},
+		{
+			name: "downstream returns a gRPC error with 4xx status code",
+			cfg:  HandlerConfig{QueryStatsEnabled: true},
+			request: func() *http.Request {
+				return httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+			},
+			downstreamErr:      httpgrpc.Errorf(http.StatusBadRequest, "invalid request"),
+			expectedStatusCode: 400,
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
+			expectedMetrics:         5,
+			expectedActivity:        "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: "",
+		},
+		{
+			name: "downstream returns a generic error",
+			cfg:  HandlerConfig{QueryStatsEnabled: true},
+			request: func() *http.Request {
+				return httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+			},
+			downstreamErr:      errors.New("something unexpected happened"),
+			expectedStatusCode: 500,
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
+			expectedMetrics:         5,
+			expectedActivity:        "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: "",
 		},
 	} {
@@ -170,13 +299,12 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				assert.Len(t, activities, 1)
 				assert.Equal(t, tt.expectedActivity, activities[0].Activity)
 
-				assert.NoError(t, req.ParseForm())
-				assert.Equal(t, tt.expectedParams, req.Form)
+				if req.Header.Get("Content-Type") != "application/x-protobuf" {
+					assert.NoError(t, req.ParseForm())
+					assert.Equal(t, tt.expectedParams, req.Form)
+				}
 
-				return &http.Response{
-					StatusCode: http.StatusOK,
-					Body:       io.NopCloser(strings.NewReader("{}")),
-				}, nil
+				return tt.downstreamResponse, tt.downstreamErr
 			})
 
 			reg := prometheus.NewPedanticRegistry()
@@ -195,7 +323,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 
 			handler.ServeHTTP(resp, req)
 			responseData, _ := io.ReadAll(resp.Body)
-			require.Equal(t, resp.Code, http.StatusOK)
+			require.Equal(t, tt.expectedStatusCode, resp.Code)
 
 			if tt.expectedExtraStatsHeader == "" {
 				assert.NotContains(t, resp.Header(), "X-Mimir-Query-Stats")
@@ -226,14 +354,13 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.Equal(t, level.InfoValue(), msg["level"])
 				require.Equal(t, "query stats", msg["msg"])
 				require.Equal(t, "query-frontend", msg["component"])
-				require.Equal(t, "success", msg["status"])
+				require.EqualValues(t, tt.expectedStatusCode, msg["status_code"])
 				require.Equal(t, "12345", msg["user"])
 				require.Equal(t, req.Method, msg["method"])
 				require.Equal(t, req.URL.Path, msg["path"])
 				require.Equal(t, testRouteName, msg["route_name"])
 				require.Equal(t, req.UserAgent(), msg["user_agent"])
 				require.Contains(t, msg, "response_time")
-				require.Equal(t, int64(len(responseData)), msg["response_size_bytes"])
 				require.Contains(t, msg, "query_wall_time_seconds")
 				require.EqualValues(t, 0, msg["fetched_series_count"])
 				require.EqualValues(t, 0, msg["fetched_chunk_bytes"])
@@ -243,6 +370,29 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.EqualValues(t, 0, msg["split_queries"])
 				require.EqualValues(t, 0, msg["estimated_series_count"])
 				require.EqualValues(t, 0, msg["queue_time_seconds"])
+
+				if tt.expectedStatusCode >= 200 && tt.expectedStatusCode < 300 {
+					require.Equal(t, "success", msg["status"])
+				} else {
+					require.Equal(t, "failed", msg["status"])
+				}
+
+				// The response size is tracked only for successful requests.
+				if tt.expectedStatusCode >= 200 && tt.expectedStatusCode < 300 {
+					require.Equal(t, int64(len(responseData)), msg["response_size_bytes"])
+				}
+
+				// Check that the HTTP or Protobuf request parameters are logged.
+				paramsLogged := 0
+				for key := range msg {
+					if strings.HasPrefix(key, "param_") {
+						paramsLogged++
+					}
+				}
+				require.Equal(t, len(tt.expectedParams), paramsLogged)
+				for key, value := range tt.expectedParams {
+					require.Equal(t, value[0], msg["param_"+key])
+				}
 
 				if tt.expectedReadConsistency != "" {
 					require.Equal(t, tt.expectedReadConsistency, msg["read_consistency"])
@@ -431,6 +581,8 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 	for _, tt := range []struct {
 		name                         string
 		requestFormFields            []string
+		requestAdditionalHeaders     map[string]string
+		logQueryRequestHeaders       []string
 		setQueryDetails              func(*querymiddleware.QueryDetails)
 		expectedLoggedFields         map[string]string
 		expectedMissingFields        []string
@@ -495,6 +647,61 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 			expectedLoggedFields: map[string]string{
 				"results_cache_miss_bytes": "10",
 				"results_cache_hit_bytes":  "200",
+				"header_cache_control":     "",
+			},
+		},
+		{
+			name:              "results cache turned off on request",
+			requestFormFields: []string{},
+			requestAdditionalHeaders: map[string]string{
+				"Cache-Control": "no-store",
+			},
+			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+				d.ResultsCacheMissBytes = 200
+				d.ResultsCacheHitBytes = 0
+			},
+			expectedLoggedFields: map[string]string{
+				"results_cache_miss_bytes": "200",
+				"results_cache_hit_bytes":  "0",
+				"header_cache_control":     "no-store",
+			},
+		},
+		{
+			name:              "header logging cache control header not logged twice upper case",
+			requestFormFields: []string{},
+			requestAdditionalHeaders: map[string]string{
+				"Cache-Control": "no-store",
+				"X-Form-ID":     "12345",
+			},
+			logQueryRequestHeaders: []string{"Cache-Control", "X-Form-ID"},
+			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+				d.ResultsCacheMissBytes = 200
+				d.ResultsCacheHitBytes = 0
+			},
+			expectedLoggedFields: map[string]string{
+				"results_cache_miss_bytes": "200",
+				"results_cache_hit_bytes":  "0",
+				"header_cache_control":     "no-store",
+				"header_x_form_id":         "12345",
+			},
+		},
+		{
+			name:              "header logging cache control header not logged twice - lower case",
+			requestFormFields: []string{},
+			requestAdditionalHeaders: map[string]string{
+				"Cache-Control": "no-store",
+				"x-form-id":     "12345",
+			},
+			logQueryRequestHeaders: []string{"cache-control", "X-Form-ID"},
+			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+				d.ResultsCacheMissBytes = 200
+				d.ResultsCacheHitBytes = 0
+			},
+			expectedLoggedFields: map[string]string{
+				"results_cache_miss_bytes": "200",
+				"results_cache_hit_bytes":  "0",
+				"header_cache_control":     "no-store",
+				"header_x_form_id":         "12345",
 			},
 		},
 	} {
@@ -515,9 +722,12 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 			t.Cleanup(func() { require.NoError(t, at.Close()) })
 
 			logger := &testLogger{}
-			handler := NewHandler(HandlerConfig{QueryStatsEnabled: true, MaxBodySize: 1024}, roundTripper, logger, reg, at)
+			handler := NewHandler(HandlerConfig{QueryStatsEnabled: true, MaxBodySize: 1024, LogQueryRequestHeaders: tt.logQueryRequestHeaders}, roundTripper, logger, reg, at)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/query", nil)
+			for header, value := range tt.requestAdditionalHeaders {
+				req.Header.Add(header, value)
+			}
 			req = req.WithContext(user.InjectOrgID(context.Background(), "12345"))
 			req.Form = map[string][]string{}
 			for _, field := range tt.requestFormFields {
@@ -532,6 +742,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 			require.Equal(t, []byte("{}"), responseData)
 
 			require.Len(t, logger.logMessages, 1)
+			require.Empty(t, logger.duplicates)
 
 			msg := logger.logMessages[0]
 			for field, expectedVal := range tt.expectedLoggedFields {
@@ -624,6 +835,7 @@ func TestHandler_ActiveSeriesWriteTimeout(t *testing.T) {
 
 type testLogger struct {
 	logMessages []map[string]interface{}
+	duplicates  []string
 }
 
 func (t *testLogger) Log(keyvals ...interface{}) error {
@@ -637,7 +849,9 @@ func (t *testLogger) Log(keyvals ...interface{}) error {
 	for i := 0; i < entryCount; i++ {
 		name := keyvals[2*i].(string)
 		value := keyvals[2*i+1]
-
+		if _, ok := msg[name]; ok {
+			t.duplicates = append(t.duplicates, name)
+		}
 		msg[name] = value
 	}
 
@@ -653,6 +867,8 @@ func TestFormatRequestHeaders(t *testing.T) {
 	fields := formatRequestHeaders(&h, []string{"X-Header-To-Log", "X-Header-Not-Present"})
 
 	expected := []interface{}{
+		"header_cache_control",
+		"",
 		"header_x_header_to_log",
 		"i should be logged!",
 	}

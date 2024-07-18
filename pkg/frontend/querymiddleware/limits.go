@@ -22,7 +22,6 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/util"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -133,7 +132,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 	// Clamp the time range based on the max query lookback and block retention period.
 	blocksRetentionPeriod := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.CompactorBlocksRetentionPeriod)
 	maxQueryLookback := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxQueryLookback)
-	maxLookback := util_math.Min(blocksRetentionPeriod, maxQueryLookback)
+	maxLookback := smallestPositiveNonZeroDuration(blocksRetentionPeriod, maxQueryLookback)
 	if maxLookback > 0 {
 		minStartTime := util.TimeToMillis(time.Now().Add(-maxLookback))
 
@@ -159,7 +158,10 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 				"maxQueryLookback", maxQueryLookback,
 				"blocksRetentionPeriod", blocksRetentionPeriod)
 
-			r = r.WithStartEnd(minStartTime, r.GetEnd())
+			r, err = r.WithStartEnd(minStartTime, r.GetEnd())
+			if err != nil {
+				return nil, apierror.New(apierror.TypeInternal, err.Error())
+			}
 		}
 	}
 
@@ -269,4 +271,20 @@ func (rth roundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (R
 	defer func() { _ = response.Body.Close() }()
 
 	return rth.codec.DecodeResponse(ctx, response, r, rth.logger)
+}
+
+// smallestPositiveNonZeroDuration returns the smallest positive and non-zero value
+// in the input values. If the input values slice is empty or they only contain
+// non-positive numbers, then this function will return 0.
+func smallestPositiveNonZeroDuration(values ...time.Duration) time.Duration {
+	smallest := time.Duration(0)
+
+	for _, value := range values {
+		if value > 0 && (smallest == 0 || smallest > value) {
+			smallest = value
+		}
+	}
+
+	return smallest
+
 }

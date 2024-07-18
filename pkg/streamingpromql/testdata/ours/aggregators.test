@@ -8,19 +8,69 @@ load 1m
   some_metric{env="prod", cluster="us"} 0+2x4
   some_metric{env="test", cluster="eu"} 0+3x4
   some_metric{env="test", cluster="us"} 0+4x4
+  some_other_metric{env="test", cluster="us"} 0+5x4
 
 # Range query, aggregating to one group.
 eval range from 0 to 4m step 1m sum(some_metric)
   {} 0 10 20 30 40
 
-# Range query, aggregating to multiple groups.
+# Range query, aggregating to multiple groups with 'by'.
 eval range from 0 to 4m step 1m sum by (env) (some_metric)
   {env="prod"} 0 3 6 9 12
   {env="test"} 0 7 14 21 28
 
+# Range query, aggregating to multiple groups with 'without'.
+eval range from 0 to 4m step 1m sum without (env) (some_metric)
+  {cluster="eu"} 0 4 8 12 16
+  {cluster="us"} 0 6 12 18 24
+
+# Range query, aggregating to a single group with 'without'.
+eval range from 0 to 4m step 1m sum without (env, cluster) (some_metric)
+  {} 0 10 20 30 40
+
+# 'without' should always ignore the metric name.
+eval range from 0 to 4m step 1m sum without(cluster) ({cluster="us"})
+  {env="prod"} 0 2 4 6 8
+  {env="test"} 0 9 18 27 36
+
 # If no series are matched, we shouldn't return any results.
 eval range from 0 to 4m step 1m sum(some_nonexistent_metric)
   # Should return no results.
+
+clear
+
+load 1m
+  some_metric{env="prod", cluster="eu", group="a", subgroup="1"} 0+1x4
+  some_metric{env="prod", cluster="eu", group="a", subgroup="2"} 0+2x4
+  some_metric{env="prod", cluster="eu", group="b", subgroup="1"} 0+3x4
+  some_metric{env="prod", cluster="us", group="a", subgroup="1"} 0+4x4
+  some_metric{env="prod", cluster="us", group="a", subgroup="2"} 0+5x4
+  some_metric{env="test", cluster="us", group="a", subgroup="2"} 0+6x4
+
+# 'without' with many input and output labels.
+eval range from 0 to 4m step 1m sum without(env) (some_metric)
+  {cluster="eu", group="a", subgroup="1"} 0 1 2 3 4
+  {cluster="eu", group="a", subgroup="2"} 0 2 4 6 8
+  {cluster="eu", group="b", subgroup="1"} 0 3 6 9 12
+  {cluster="us", group="a", subgroup="1"} 0 4 8 12 16
+  {cluster="us", group="a", subgroup="2"} 0 11 22 33 44
+
+eval range from 0 to 4m step 1m sum without(env, cluster) (some_metric)
+  {group="a", subgroup="1"} 0 5 10 15 20
+  {group="a", subgroup="2"} 0 13 26 39 52
+  {group="b", subgroup="1"} 0 3 6 9 12
+
+# 'without' with duplicate labels to remove.
+eval range from 0 to 4m step 1m sum without(env, cluster, env) (some_metric)
+  {group="a", subgroup="1"} 0 5 10 15 20
+  {group="a", subgroup="2"} 0 13 26 39 52
+  {group="b", subgroup="1"} 0 3 6 9 12
+
+# 'by' with duplicate grouping labels.
+eval range from 0 to 4m step 1m sum by(env, cluster, env) (some_metric)
+  {cluster="eu", env="prod"} 0 6 12 18 24
+  {cluster="us", env="prod"} 0 9 18 27 36
+  {cluster="us", env="test"} 0 6 12 18 24
 
 clear
 
@@ -31,3 +81,77 @@ load 1m
 eval range from 1m to 1m30s step 1s sum(some_metric_with_staleness)
   # Should return no results.
 
+clear
+
+# Test native histogram aggregations
+load 1m
+	single_histogram{label="value"} {{schema:0 sum:2 count:4 buckets:[1 2 1]}} {{sum:2 count:4 buckets:[1 2 1]}}
+	single_histogram{label="value2"} {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:0 sum:2 count:4 buckets:[1 2 1]}}
+	single_histogram{label="value2", another="value"} {{schema:1 sum:10 count:9 buckets:[3 3 3]}} {{schema:2 sum:2 count:4 buckets:[1 2 1]}}
+
+eval instant at 0m sum(single_histogram)
+	{} {{schema:0 sum:17 count:18 buckets:[5 12 1]}}
+
+eval instant at 0m sum by (label) (single_histogram)
+	{label="value"} {{schema:0 count:4 sum:2 buckets:[1 2 1]}}
+	{label="value2"} {{schema:1 count:14 sum:15 buckets:[4 6 4]}}
+
+eval range from 0 to 1m step 1m  sum(single_histogram)
+	{} {{schema:0 sum:17 count:18 buckets:[5 12 1]}} {{schema:0 sum:6 count:12 buckets:[3 7 2]}}
+
+clear
+
+# Test a mix of float and histogram values
+load 1m
+	single_histogram{label="value"}                    0 1 {{schema:0 sum:2 count:4 buckets:[1 2 1]}}  {{sum:2 count:4 buckets:[1 2 1]}}          2
+	single_histogram{label="value2"}                   0 2 {{schema:1 sum:5 count:5 buckets:[1 3 1]}}  {{schema:0 sum:2 count:4 buckets:[1 2 1]}} 4
+	single_histogram{label="value2", another="value"}  0 3 {{schema:1 sum:10 count:9 buckets:[3 3 3]}} {{schema:2 sum:2 count:4 buckets:[1 2 1]}} 6
+
+# TODO: Verify if these tests are correct. At the moment they match promql engine.
+# See: https://github.com/prometheus/prometheus/issues/14172
+
+# What I would expect
+# eval range from 0 to 4m step 1m  sum by (label) (single_histogram)
+#	{label="value"}  0 1 {{count:4 sum:2 buckets:[1 2 1]}}            {{sum:2 count:4 buckets:[1 2 1]}}          2
+#	{label="value2"} 0 5 {{schema:1 count:14 sum:15 buckets:[4 6 4]}} {{schema:2 count:8 sum:4 buckets:[4 6 4]}} 10
+
+# What both engines return
+eval range from 0 to 4m step 1m  sum by (label) (single_histogram)
+	{label="value"}  0 1 1 1 2
+	{label="value2"} 0 5 5 5 10
+
+clear
+
+# Test a mix of float and histogram values at the same point
+load 1m
+	single_histogram{label="value"}   0 1                                          {{schema:0 sum:2 count:4 buckets:[1 2 1]}} {{sum:2 count:4 buckets:[1 2 1]}} 2 {{sum:2 count:4 buckets:[1 2 1]}}
+	single_histogram{label="value2"}  0 {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:0 sum:2 count:4 buckets:[1 2 1]}} 4                                 6 {{sum:2 count:4 buckets:[1 2 1]}}
+
+# If a float is present, the histogram is ignored.
+# If a float comes after a histogram, a lookback'd float is used instead of the histogram (see: https://github.com/prometheus/prometheus/issues/14172)
+eval range from 0 to 5m step 1m  sum(single_histogram)
+	{} 0 1 1 5 8 {{sum:4 count:8 buckets:[2 4 2]}}
+
+clear
+
+# Test a mix of float and histogram values at the same point
+load 1m
+	single_histogram{label="value"}   3
+	single_histogram{label="value2"}  {{sum:5 count:5 buckets:[1 3 1]}}
+
+# "If either operator has to aggregate a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely."
+# TODO(jhesketh): Re-enable once we support annotations
+# eval_warn instant at 1m sum(single_histogram)
+
+clear
+
+# Test a mix of float and histogram values at the same point
+load 1m
+	single_histogram{label="value"}  {{sum:5 count:5 buckets:[1 3 1]}}
+	single_histogram{label="value2"}   3
+
+# "If either operator has to aggregate a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely."
+# TODO(jhesketh): Re-enable once we support annotations
+# eval_warn instant at 1m sum(single_histogram)
+
+clear
