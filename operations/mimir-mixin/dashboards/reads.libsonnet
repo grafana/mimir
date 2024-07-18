@@ -130,34 +130,38 @@ local filename = 'mimir-reads.json';
       $.row('Ingester')
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"%s"}' % [$.jobMatcher($._config.job_names.ingester), $._config.ingester_read_path_routes_regex])
+        $.qpsPanelNativeHistogram($.queries.ingester.requestsPerSecondMetric, '%s,route=~"%s"' % [$.jobMatcher($._config.job_names.ingester), $._config.ingester_read_path_routes_regex])
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.re('route', $._config.ingester_read_path_routes_regex)])
+        $.latencyRecordingRulePanelNativeHistogram($.queries.ingester.requestsPerSecondMetric, $.jobSelector($._config.job_names.ingester) + [utils.selector.re('route', $._config.ingester_read_path_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester), $._config.ingester_read_path_routes_regex], ''
-        )
+        $.perInstanceLatencyPanelNativeHistogram(
+          '0.99',
+          $.queries.ingester.requestsPerSecondMetric,
+          $.jobSelector($._config.job_names.ingester) + [utils.selector.re('route', $._config.ingester_read_path_routes_regex)],
+        ),
       )
     )
     .addRow(
       $.row('Store-gateway')
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/gatewaypb.StoreGateway/.*"}' % $.jobMatcher($._config.job_names.store_gateway))
+        $.qpsPanelNativeHistogram($.queries.store_gateway.requestsPerSecondMetric, '%s,route=~"/gatewaypb.StoreGateway/.*"' % $.jobMatcher($._config.job_names.store_gateway))
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', '/gatewaypb.StoreGateway/.*')])
+        $.latencyRecordingRulePanelNativeHistogram($.queries.store_gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', '/gatewaypb.StoreGateway/.*')])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/gatewaypb.StoreGateway/.*"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.store_gateway)], ''
-        )
+        $.perInstanceLatencyPanelNativeHistogram(
+          '0.99',
+          $.queries.store_gateway.requestsPerSecondMetric,
+          $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', '/gatewaypb.StoreGateway/.*')],
+        ),
       )
     )
     .addRowIf(

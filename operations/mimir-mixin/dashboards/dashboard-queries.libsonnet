@@ -239,6 +239,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
     ingester: {
+      requestsPerSecondMetric: 'cortex_request_duration_seconds',
+
       ingestOrClassicDeduplicatedQuery(perIngesterQuery, groupByLabels=''):: |||
         ( # Classic storage
           sum by (%(groupByCluster)s, %(groupByLabels)s) (%(perIngesterQuery)s)
@@ -263,6 +265,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
         groupByCluster: $._config.group_by_cluster,
         distributor: variables.distributorMatcher,
       },
+    },
+
+    store_gateway: {
+      requestsPerSecondMetric: 'cortex_request_duration_seconds',
     },
   },
 }
