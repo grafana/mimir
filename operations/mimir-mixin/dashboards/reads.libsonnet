@@ -154,14 +154,14 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanelNativeHistogram($.queries.store_gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', '/gatewaypb.StoreGateway/.*')])
+        $.latencyRecordingRulePanelNativeHistogram($.queries.store_gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', $._config.store_gateway_read_path_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.perInstanceLatencyPanelNativeHistogram(
           '0.99',
           $.queries.store_gateway.requestsPerSecondMetric,
-          $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', '/gatewaypb.StoreGateway/.*')],
+          $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', $._config.store_gateway_read_path_routes_regex)],
         ),
       )
     )

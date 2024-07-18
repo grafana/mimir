@@ -57,7 +57,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     write_grpc_ingester_route: '/cortex.Ingester/Push',
     read_http_routes_regex: '(prometheus|api_prom)_api_v1_.+',
     read_grpc_ingester_route: $._config.ingester_read_path_routes_regex,
-    read_grpc_store_gateway_route: '/gatewaypb.StoreGateway/.*',
+    read_grpc_store_gateway_route: $._config.store_gateway_read_path_routes_regex,
     query_http_routes_regex: '(prometheus|api_prom)_api_v1_query(_range)?',
 
     gateway: {
