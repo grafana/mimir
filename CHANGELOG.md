@@ -39,6 +39,7 @@
 * [ENHANCEMENT] Query-frontend: Add `header_cache_control` to query stats. #8590
 * [ENHANCEMENT] Query-scheduler: Introduce `query-scheduler.use-multi-algorithm-query-queue`, which allows use of an experimental queue structure, with no change in external queue behavior. #7873
 * [ENHANCEMENT] Expose a new `s3.trace.enabled` configuration option to enable detailed logging of operations against S3-compatible object stores. #8690
+* [ENHANCEMENT] memberlist: locally-generated messages (e.g. ring updates) are sent to gossip network before forwarded messages. Introduced `-memberlist.broadcast-timeout-for-local-updates-on-shutdown` option to modify how long to wait until queue with locally-generated messages is empty when shutting down. Previously this was hard-coded to 10s, and wait included all messages (locally-generated and forwarded). Now it defaults to 10s, 0 means no timeout. Increasing this value may help to avoid problem when ring updates on shutdown are not propagated to other nodes, and ring entry is left in a wrong state. #8761
 * [ENGANCEMENT] Query-frontend: experimental support for the `X-Mimir-Query-Stats` header to provide some out of bound statistics. #7966
 * [BUGFIX] Ruler: add support for draining any outstanding alert notifications before shutting down. This can be enabled with the `-ruler.drain-notification-queue-on-shutdown=true` CLI flag. #8346
 * [BUGFIX] Query-frontend: fix `-querier.max-query-lookback` enforcement when `-compactor.blocks-retention-period` is not set, and viceversa. #8388
@@ -59,8 +60,9 @@
 ### Mixin
 
 * [CHANGE] Dashboards: set default auto-refresh rate to 5m. #8758
-* [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards. #7674 #8502
-  * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric.
+* [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards.
+  * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric. #7674 #8502
+  * Writes dashboard: `cortex_request_duration_seconds` metric. #8757
 * [ENHANCEMENT] Alerts: `MimirRunningIngesterReceiveDelayTooHigh` alert has been tuned to be more reactive to high receive delay. #8538
 * [ENHANCEMENT] Dashboards: improve end-to-end latency and strong read consistency panels when experimental ingest storage is enabled. #8543
 * [ENHANCEMENT] Dashboards: Add panels for monitoring ingester autoscaling when not using ingest-storage. These panels are disabled by default, but can be enabled using the `autoscaling.ingester.enabled: true` config option. #8484

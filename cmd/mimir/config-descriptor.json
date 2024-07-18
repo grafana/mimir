@@ -15865,6 +15865,17 @@
         },
         {
           "kind": "field",
+          "name": "broadcast_timeout_for_local_updates_on_shutdown",
+          "required": false,
+          "desc": "Timeout for broadcasting all remaining locally-generated updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to locally-generated updates, not to broadcast messages that are result of incoming gossip updates. 0 = no timeout, wait until all locally-generated updates are sent.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10000000000,
+          "fieldFlag": "memberlist.broadcast-timeout-for-local-updates-on-shutdown",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "message_history_buffer_bytes",
           "required": false,
           "desc": "How much space to use for keeping received and sent messages in memory for troubleshooting (two buffers). 0 to disable.",
