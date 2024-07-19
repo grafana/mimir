@@ -33,13 +33,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
     local variables = {
       gatewayMatcher: $.jobMatcher($._config.job_names.gateway),
       distributorMatcher: $.jobMatcher($._config.job_names.distributor),
+      ingesterMatcher: $.jobMatcher($._config.job_names.ingester),
       queryFrontendMatcher: $.jobMatcher($._config.job_names.query_frontend),
       rulerMatcher: $.jobMatcher($._config.job_names.ruler),
       alertmanagerMatcher: $.jobMatcher($._config.job_names.alertmanager),
       namespaceMatcher: $.namespaceMatcher(),
+      storeGatewayMatcher: $.jobMatcher($._config.job_names.store_gateway),
       writeHTTPRoutesRegex: $.queries.write_http_routes_regex,
-      writeGRPCRoutesRegex: $.queries.write_grpc_routes_regex,
+      writeGRPCDistributorRoutesRegex: $.queries.write_grpc_distributor_routes_regex,
+      writeGRPCIngesterRoute: $.queries.write_grpc_ingester_route,
       readHTTPRoutesRegex: $.queries.read_http_routes_regex,
+      readGRPCIngesterRoute: $.queries.read_grpc_ingester_route,
+      readGRPCStoreGatewayRoute: $.queries.read_grpc_store_gateway_route,
       perClusterLabel: $._config.per_cluster_label,
       recordingRulePrefix: $.recordingRulePrefix($.jobSelector('any')),  // The job name does not matter here.
       groupPrefixJobs: $._config.group_prefix_jobs,
@@ -48,12 +53,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
     write_http_routes_regex: 'api_(v1|prom)_push|otlp_v1_metrics',
     write_grpc_routes_regex: '/distributor.Distributor/Push|/httpgrpc.*',
+    write_grpc_distributor_routes_regex: '/distributor.Distributor/Push|/httpgrpc.*',
+    write_grpc_ingester_route: '/cortex.Ingester/Push',
     read_http_routes_regex: '(prometheus|api_prom)_api_v1_.+',
+    read_grpc_ingester_route: $._config.ingester_read_path_routes_regex,
+    read_grpc_store_gateway_route: $._config.store_gateway_read_path_routes_regex,
     query_http_routes_regex: '(prometheus|api_prom)_api_v1_query(_range)?',
 
     gateway: {
-      // deprecated, will be removed
-      writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"}' % variables,
       readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
 
       local p = self,
@@ -69,12 +76,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
     distributor: {
-      // deprecated, will be removed
-      writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s"}' % variables,
-
       local p = self,
       requestsPerSecondMetric: 'cortex_request_duration_seconds',
-      writeRequestsPerSecondSelector: '%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s"' % variables,
+      writeRequestsPerSecondSelector: '%(distributorMatcher)s, route=~"%(writeGRPCDistributorRoutesRegex)s|%(writeHTTPRoutesRegex)s"' % variables,
       samplesPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_samples:rate5m{%(distributorMatcher)s})' % variables,
       exemplarsPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_exemplars:rate5m{%(distributorMatcher)s})' % variables,
 
@@ -83,9 +87,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
     query_frontend: {
-      // deprecated, will be removed
-      readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
-
       local p = self,
       requestsPerSecondMetric: 'cortex_request_duration_seconds',
       readRequestsPerSecondSelector: '%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"' % variables,
@@ -127,11 +128,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
       local queryPerSecond(name) = 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)%(route)s"}[$__rate_interval]))' %
                                    (variables { route: std.filter(function(r) r.name == name, overviewRoutes)[0].routeLabel }),
-      instantQueriesPerSecond: queryPerSecond('instantQuery'),
-      rangeQueriesPerSecond: queryPerSecond('rangeQuery'),
-      labelNamesQueriesPerSecond: queryPerSecond('labelNames'),
-      labelValuesQueriesPerSecond: queryPerSecond('labelValues'),
-      seriesQueriesPerSecond: queryPerSecond('series'),
+      local ncQueryPerSecond(name) = utils.ncHistogramSumBy(utils.ncHistogramCountRate(p.requestsPerSecondMetric, '%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)%(route)s"' %
+                                                                                                                  (variables { route: std.filter(function(r) r.name == name, overviewRoutes)[0].routeLabel }))),
+      ncInstantQueriesPerSecond: ncQueryPerSecond('instantQuery'),
+      ncRangeQueriesPerSecond: ncQueryPerSecond('rangeQuery'),
+      ncLabelNamesQueriesPerSecond: ncQueryPerSecond('labelNames'),
+      ncLabelValuesQueriesPerSecond: ncQueryPerSecond('labelValues'),
+      ncSeriesQueriesPerSecond: ncQueryPerSecond('series'),
       remoteReadQueriesPerSecond: queryPerSecond('remoteRead'),
       metadataQueriesPerSecond: queryPerSecond('metadata'),
       exemplarsQueriesPerSecond: queryPerSecond('exemplars'),
@@ -237,6 +240,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
     ingester: {
+      requestsPerSecondMetric: 'cortex_request_duration_seconds',
+      readRequestsPerSecondSelector: '%(ingesterMatcher)s,route=~"%(readGRPCIngesterRoute)s"' % variables,
+      writeRequestsPerSecondSelector: '%(ingesterMatcher)s, route="%(writeGRPCIngesterRoute)s"' % variables,
+
       ingestOrClassicDeduplicatedQuery(perIngesterQuery, groupByLabels=''):: |||
         ( # Classic storage
           sum by (%(groupByCluster)s, %(groupByLabels)s) (%(perIngesterQuery)s)
@@ -261,6 +268,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
         groupByCluster: $._config.group_by_cluster,
         distributor: variables.distributorMatcher,
       },
+    },
+
+    store_gateway: {
+      requestsPerSecondMetric: 'cortex_request_duration_seconds',
+      readRequestsPerSecondSelector: '%(storeGatewayMatcher)s,route=~"%(readGRPCStoreGatewayRoute)s"' % variables,
     },
   },
 }

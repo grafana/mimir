@@ -610,7 +610,7 @@ github.com/grafana/alerting/receivers/webex
 github.com/grafana/alerting/receivers/webhook
 github.com/grafana/alerting/receivers/wecom
 github.com/grafana/alerting/templates
-# github.com/grafana/dskit v0.0.0-20240704113758-97b2aa96bcb1
+# github.com/grafana/dskit v0.0.0-20240718080635-f5bd38371e1c
 ## explicit; go 1.21
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -997,7 +997,7 @@ github.com/prometheus/exporter-toolkit/web
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v0.0.0-20240704133652-fb0cb30e280c
+# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v0.0.0-20240711155029-3af4160b0afb
 ## explicit; go 1.21
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -1015,6 +1015,7 @@ github.com/prometheus/prometheus/model/value
 github.com/prometheus/prometheus/notifier
 github.com/prometheus/prometheus/prompb
 github.com/prometheus/prometheus/prompb/io/prometheus/client
+github.com/prometheus/prometheus/prompb/io/prometheus/write/v2
 github.com/prometheus/prometheus/promql
 github.com/prometheus/prometheus/promql/parser
 github.com/prometheus/prometheus/promql/parser/posrange
@@ -1147,10 +1148,10 @@ github.com/twmb/franz-go/pkg/kgo
 github.com/twmb/franz-go/pkg/kgo/internal/sticky
 github.com/twmb/franz-go/pkg/kversion
 github.com/twmb/franz-go/pkg/sasl
-# github.com/twmb/franz-go/pkg/kadm v1.12.0
+# github.com/twmb/franz-go/pkg/kadm v1.12.0 => github.com/pracucci/franz-go/pkg/kadm v0.0.0-20240711165048-831cca07c9a4
 ## explicit; go 1.21
 github.com/twmb/franz-go/pkg/kadm
-# github.com/twmb/franz-go/pkg/kfake v0.0.0-20240613152313-ee4cbf59292f
+# github.com/twmb/franz-go/pkg/kfake v0.0.0-20240710015325-a5f2b710830e
 ## explicit; go 1.21
 github.com/twmb/franz-go/pkg/kfake
 # github.com/twmb/franz-go/pkg/kmsg v1.8.0
@@ -1299,7 +1300,6 @@ go.opentelemetry.io/otel/metric/noop
 ## explicit; go 1.21
 go.opentelemetry.io/otel/trace
 go.opentelemetry.io/otel/trace/embedded
-go.opentelemetry.io/otel/trace/noop
 # go.uber.org/atomic v1.11.0
 ## explicit; go 1.18
 go.uber.org/atomic
@@ -1443,7 +1443,7 @@ google.golang.org/genproto/googleapis/type/expr
 ## explicit; go 1.20
 google.golang.org/genproto/googleapis/api
 google.golang.org/genproto/googleapis/api/annotations
-# google.golang.org/genproto/googleapis/rpc v0.0.0-20240708141625-4ad9e859172b
+# google.golang.org/genproto/googleapis/rpc v0.0.0-20240711142825-46eb208f015d
 ## explicit; go 1.20
 google.golang.org/genproto/googleapis/rpc/code
 google.golang.org/genproto/googleapis/rpc/errdetails
@@ -1646,7 +1646,7 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 sigs.k8s.io/yaml/goyaml.v3
-# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240704133652-fb0cb30e280c
+# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240711155029-3af4160b0afb
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
 # gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20240531075221-3685f1377d7b
@@ -1654,3 +1654,4 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240625192351-66ec17e3aa45
+# github.com/twmb/franz-go/pkg/kadm => github.com/pracucci/franz-go/pkg/kadm v0.0.0-20240711165048-831cca07c9a4

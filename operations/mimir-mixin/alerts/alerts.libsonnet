@@ -347,8 +347,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RingMembersMismatch'),
           expr: |||
             (
-              avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="%(component)s",%(job_regex)s}))
-              != sum by(%(alert_aggregation_labels)s) (up{%(job_regex)s})
+              avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="ingester",%(job_regex)s,%(job_not_regex)s}))
+              != sum by(%(alert_aggregation_labels)s) (up{%(job_regex)s,%(job_not_regex)s})
             )
             and
             (
@@ -357,29 +357,24 @@ local utils = import 'mixin-utils/utils.libsonnet';
           ||| % {
             alert_aggregation_labels: $._config.alert_aggregation_labels,
             per_instance_label: $._config.per_instance_label,
-            component: component_job[0],
-            job_regex: $.jobMatcher(component_job[1]),
+            job_regex: $.jobMatcher($._config.job_names.ingester),
+
+            // Exclude temporarily partition ingesters used during the migration to ingest storage.
+            // We exclude them because they will build a different ring, still named "ingester" but
+            // stored under a different prefix in the KV store.
+            job_not_regex: $.jobNotMatcher($._config.job_names.ingester_partition),
           },
           'for': '15m',
           labels: {
-            component: component_job[0],
+            component: 'ingester',
             severity: 'warning',
           },
           annotations: {
             message: |||
-              Number of members in %(product)s %(component)s hash ring does not match the expected number in %(alert_aggregation_variables)s.
-            ||| % { component: component_job[0], alert_aggregation_variables: $._config.alert_aggregation_variables, product: $._config.product },
+              Number of members in %(product)s ingester hash ring does not match the expected number in %(alert_aggregation_variables)s.
+            ||| % { alert_aggregation_variables: $._config.alert_aggregation_variables, product: $._config.product },
           },
-        }
-        // NOTE(jhesketh): It is expected that the stateless components may trigger this alert
-        //                 too often. Just alert on ingester for now.
-        for component_job in [
-          // ['compactor', $._config.job_names.compactor],
-          // ['distributor', $._config.job_names.distributor],
-          ['ingester', $._config.job_names.ingester],
-          // ['ruler', $._config.job_names.ruler],
-          // ['store-gateway', $._config.job_names.store_gateway],
-        ]
+        },
       ],
     },
     {

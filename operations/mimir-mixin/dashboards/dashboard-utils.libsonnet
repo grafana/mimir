@@ -56,6 +56,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
       ],
 
+      refresh: '5m',
+
       addRowIf(condition, row)::
         if condition
         then self.addRow(row)
@@ -194,6 +196,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
           min: 0,
         },
       },
+      options+: {
+        tooltip+: {
+          mode: 'multi',
+        },
+      },
     },
 
   qpsPanel(selector, statusLabelName='status_code')::
@@ -252,6 +259,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
         for target in super.targets
       ],
     },
+
+  perInstanceLatencyPanelNativeHistogram(quantile, metric, selector, instanceLabel=$._config.per_instance_label)::
+    $.hiddenLegendQueryPanel(
+      [
+        utils.showClassicHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel])),
+        utils.showNativeHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel])),
+      ],
+      ['', '']
+    ),
 
   // Creates a panel like queryPanel() but if the legend contains only 1 entry,
   // than it configures the series alias color to the one used to display failures.
@@ -1517,17 +1533,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row($.capitalize(rowTitlePrefix + 'query-frontend'))
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher(queryFrontendJobName), queryRoutesRegex])
+        $.qpsPanelNativeHistogram($.queries.query_frontend.requestsPerSecondMetric, utils.toPrometheusSelectorNaked($.jobSelector(queryFrontendJobName) + [utils.selector.re('route', queryRoutesRegex)]))
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector(queryFrontendJobName) + [utils.selector.re('route', queryRoutesRegex)])
+        $.latencyRecordingRulePanelNativeHistogram($.queries.query_frontend.requestsPerSecondMetric, $.jobSelector(queryFrontendJobName) + [utils.selector.re('route', queryRoutesRegex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher(queryFrontendJobName), queryRoutesRegex], ''
-        )
+        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.query_frontend.requestsPerSecondMetric, $.jobSelector(queryFrontendJobName) + [utils.selector.re('route', queryRoutesRegex)])
       ),
       local description = |||
         <p>

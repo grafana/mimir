@@ -10,8 +10,10 @@
 * [CHANGE] Store-gateway: enabled `-blocks-storage.bucket-store.max-concurrent-queue-timeout` by default with a timeout of 5 seconds. #8496
 * [CHANGE] Store-gateway: enabled `-blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout` by default with a timeout of 5 seconds . #8667
 * [CHANGE] Distributor: Incoming OTLP requests were previously size-limited by using limit from `-distributor.max-recv-msg-size` option. We have added option `-distributor.max-otlp-request-size` for limiting OTLP requests, with default value of 100 MiB. #8574
-* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.query-engine=mimir`. #8422 #8430 #8454 #8455 #8360 #8490 #8508
-* [FEATURE] Experimental Kafka-based ingest storage. #6888 #6894 #6929 #6940 #6951 #6974 #6982 #7029 #7030 #7091 #7142 #7147 #7148 #7153 #7160 #7193 #7349 #7376 #7388 #7391 #7393 #7394 #7402 #7404 #7423 #7424 #7437 #7486 #7503 #7508 #7540 #7621 #7682 #7685 #7694 #7695 #7696 #7697 #7701 #7733 #7734 #7741 #7752 #7838 #7851 #7871 #7877 #7880 #7882 #7887 #7891 #7925 #7955 #7967 #8031 #8063 #8077 #8088 #8135 #8176 #8184 #8194 #8216 #8217 #8222 #8233 #8503 #8542 #8579
+* [CHANGE] Query-frontend: Remove deprecated `frontend.align_queries_with_step` YAML configuration. The configuration option has been moved to per-tenant and default `limits` since Mimir 2.12. #8733 #8735
+* [CHANGE] Store-gateway: Change default of `-blocks-storage.bucket-store.max-concurrent` to 200. #8768
+* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.query-engine=mimir`. #8422 #8430 #8454 #8455 #8360 #8490 #8508 #8577 #8671
+* [FEATURE] Experimental Kafka-based ingest storage. #6888 #6894 #6929 #6940 #6951 #6974 #6982 #7029 #7030 #7091 #7142 #7147 #7148 #7153 #7160 #7193 #7349 #7376 #7388 #7391 #7393 #7394 #7402 #7404 #7423 #7424 #7437 #7486 #7503 #7508 #7540 #7621 #7682 #7685 #7694 #7695 #7696 #7697 #7701 #7733 #7734 #7741 #7752 #7838 #7851 #7871 #7877 #7880 #7882 #7887 #7891 #7925 #7955 #7967 #8031 #8063 #8077 #8088 #8135 #8176 #8184 #8194 #8216 #8217 #8222 #8233 #8503 #8542 #8579 #8657 #8686 #8688 #8703 #8706 #8708 #8738
   * What it is:
     * When the new ingest storage architecture is enabled, distributors write incoming write requests to a Kafka-compatible backend, and the ingesters asynchronously replay ingested data from Kafka. In this architecture, the write and read path are de-coupled through a Kafka-compatible backend. The write path and Kafka load is a function of the incoming write traffic, the read path load is a function of received queries. Whatever the load on the read path, it doesn't affect the write path.
   * New configuration options:
@@ -37,6 +39,8 @@
 * [ENHANCEMENT] Ingester, store-gateway: optimised regular expression matching for patterns like `1.*|2.*|3.*|...|1000.*`. #8632
 * [ENHANCEMENT] Query-frontend: Add `header_cache_control` to query stats. #8590
 * [ENHANCEMENT] Query-scheduler: Introduce `query-scheduler.use-multi-algorithm-query-queue`, which allows use of an experimental queue structure, with no change in external queue behavior. #7873
+* [ENHANCEMENT] Expose a new `s3.trace.enabled` configuration option to enable detailed logging of operations against S3-compatible object stores. #8690
+* [ENHANCEMENT] memberlist: locally-generated messages (e.g. ring updates) are sent to gossip network before forwarded messages. Introduced `-memberlist.broadcast-timeout-for-local-updates-on-shutdown` option to modify how long to wait until queue with locally-generated messages is empty when shutting down. Previously this was hard-coded to 10s, and wait included all messages (locally-generated and forwarded). Now it defaults to 10s, 0 means no timeout. Increasing this value may help to avoid problem when ring updates on shutdown are not propagated to other nodes, and ring entry is left in a wrong state. #8761
 * [BUGFIX] Ruler: add support for draining any outstanding alert notifications before shutting down. This can be enabled with the `-ruler.drain-notification-queue-on-shutdown=true` CLI flag. #8346
 * [BUGFIX] Query-frontend: fix `-querier.max-query-lookback` enforcement when `-compactor.blocks-retention-period` is not set, and viceversa. #8388
 * [BUGFIX] Ingester: fix sporadic `not found` error causing an internal server error if label names are queried with matchers during head compaction. #8391
@@ -51,15 +55,22 @@
 * [BUGFIX] Alertmanager: Fixes a number of bugs in silences which could cause an existing silence to be deleted/expired when updating the silence failed. This could happen when the replacing silence was invalid or exceeded limits. #8525
 * [BUGFIX] Alertmanager: Fix help message for utf-8-strict-mode. #8572
 * [BUGFIX] Query-frontend: Ensure that internal errors result in an HTTP 500 response code instead of 422. #8595 #8666
+* [BUGFIX] Configuration: Multi line envs variables are flatten during injection to be compatible with YAML syntax
 
 ### Mixin
 
-* [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards. #7674 #8502
-  * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric.
+* [CHANGE] Dashboards: set default auto-refresh rate to 5m. #8758
+* [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards.
+  * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric. #7674 #8502
+  * Writes dashboard: `cortex_request_duration_seconds` metric. #8757
+  * Reads dashboard: `cortex_request_duration_seconds` metric. #8752
 * [ENHANCEMENT] Alerts: `MimirRunningIngesterReceiveDelayTooHigh` alert has been tuned to be more reactive to high receive delay. #8538
 * [ENHANCEMENT] Dashboards: improve end-to-end latency and strong read consistency panels when experimental ingest storage is enabled. #8543
 * [ENHANCEMENT] Dashboards: Add panels for monitoring ingester autoscaling when not using ingest-storage. These panels are disabled by default, but can be enabled using the `autoscaling.ingester.enabled: true` config option. #8484
+* [ENHANCEMENT] Dashboards: add panels to show writes to experimental ingest storage backend in the "Mimir / Ruler" dashboard, when `_config.show_ingest_storage_panels` is enabled. #8732
+* [ENHANCEMENT] Dashboards: show all series in tooltips on time series dashboard panels. #8748
 * [BUGFIX] Dashboards: fix "current replicas" in autoscaling panels when HPA is not active. #8566
+* [BUGFIX] Alerts: do not fire `MimirRingMembersMismatch` during the migration to experimental ingest storage. #8727
 
 ### Jsonnet
 
@@ -70,6 +81,7 @@
   * `ingest_storage_migration_partition_ingester_zone_c_replicas`
 * [ENHANCEMENT] Distributor: increase `-distributor.remote-timeout` when the experimental ingest storage is enabled. #8518
 * [ENHANCEMENT] Memcached: Update to Memcached 1.6.28 and memcached-exporter 0.14.4. #8557
+* [ENHANCEMENT] Rollout-operator: Allow the rollout-operator to be used as Kubernetes statefulset webhook to enable `no-downscale` and `prepare-downscale` annotations to be used on ingesters or store-gateways. #8743
 
 ### Mimirtool
 
@@ -79,8 +91,8 @@
 
 * [CHANGE] Use test metrics that do not pass through 0 to make identifying incorrect results easier. #8630
 * [ENHANCEMENT] Include human-friendly timestamps in diffs logged when a test fails. #8630
-* [BUGFIX] Initialize test result metrics to 0 at startup so that alerts can correctly identify the first failure after startup. #8630
 * [ENHANCEMENT] Add histograms to measure latency of read and write requests. #8583
+* [BUGFIX] Initialize test result metrics to 0 at startup so that alerts can correctly identify the first failure after startup. #8630
 
 ### Query-tee
 
@@ -90,6 +102,8 @@
 * [ENHANCEMENT] Log user agent when processing a request. #8419
 * [ENHANCEMENT] Add `time` parameter to proxied instant queries if it is not included in the incoming request. This is optional but enabled by default, and can be disabled with `-proxy.add-missing-time-parameter-to-instant-queries=false`. #8419
 * [ENHANCEMENT] Add support for sending only a proportion of requests to all backends, with the remainder only sent to the preferred backend. The default behaviour is to send all requests to all backends. This can be configured with `-proxy.secondary-backends-request-proportion`. #8532
+* [ENHANCEMENT] Compare native histograms in query results when comparing results between two backends. #8724
+* [ENHANCEMENT] Don't consider responses to be different during response comparison if both backends' responses contain a different number of series, but all samples are within the recent sample window. #8749
 * [BUGFIX] Ensure any errors encountered while forwarding a request to a backend (eg. DNS resolution failures) are logged. #8419
 
 ### Documentation

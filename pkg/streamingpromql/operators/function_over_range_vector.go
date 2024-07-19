@@ -9,6 +9,7 @@ package operators
 import (
 	"context"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
@@ -60,14 +61,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 	m.floatBuffer.Reset()
 	m.histogramBuffer.Reset()
 
-	floats, err := m.Pool.GetFPointSlice(m.numSteps) // TODO: only allocate this if we have any floats (once we support native histograms)
-	if err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
-
-	data := types.InstantVectorSeriesData{
-		Floats: floats,
-	}
+	data := types.InstantVectorSeriesData{}
 
 	for {
 		step, err := m.Inner.NextStepSamples(m.floatBuffer, m.histogramBuffer)
@@ -79,14 +73,31 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		head, tail := m.floatBuffer.UnsafePoints(step.RangeEnd)
-		count := len(head) + len(tail)
-
-		if count < 2 {
-			// Not enough points, skip.
-			continue
+		err = m.computeNextStep(&data, step)
+		if err != nil {
+			return types.InstantVectorSeriesData{}, err
 		}
+	}
+}
 
+func (m *FunctionOverRangeVector) computeNextStep(data *types.InstantVectorSeriesData, step types.RangeVectorStepData) error {
+	var err error
+	// Floats
+	fHead, fTail := m.floatBuffer.UnsafePoints(step.RangeEnd)
+	fCount := len(fHead) + len(fTail)
+
+	// Histograms
+	hHead, hTail := m.histogramBuffer.UnsafePoints(step.RangeEnd)
+	hCount := len(hHead) + len(hTail)
+
+	if fCount > 0 && hCount > 0 {
+		// We need either at least two Histograms and no Floats, or at least two
+		// Floats and no Histograms to calculate a rate. Otherwise, drop this
+		// Vector element.
+		return nil
+	}
+
+	if fCount >= 2 {
 		firstPoint := m.floatBuffer.First()
 		lastPoint, _ := m.floatBuffer.LastAtOrBefore(step.RangeEnd) // We already know there is a point at or before this time, no need to check.
 		delta := lastPoint.F - firstPoint.F
@@ -94,10 +105,6 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 
 		accumulate := func(points []promql.FPoint) {
 			for _, p := range points {
-				if p.T > step.RangeEnd { // The buffer is already guaranteed to only contain points >= rangeStart.
-					return
-				}
-
 				if p.F < previousValue {
 					// Counter reset.
 					delta += previousValue
@@ -107,18 +114,115 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			}
 		}
 
-		accumulate(head)
-		accumulate(tail)
+		accumulate(fHead)
+		accumulate(fTail)
 
-		val := m.calculateRate(step.RangeStart, step.RangeEnd, firstPoint, lastPoint, delta, count)
-
+		val := m.calculateFloatRate(step.RangeStart, step.RangeEnd, firstPoint, lastPoint, delta, fCount)
+		if data.Floats == nil {
+			// Only get fPoint slice once we are sure we have float points.
+			// This potentially over-allocates as some points in the steps may be histograms,
+			// but this is expected to be rare.
+			data.Floats, err = m.Pool.GetFPointSlice(m.numSteps)
+			if err != nil {
+				return err
+			}
+		}
 		data.Floats = append(data.Floats, promql.FPoint{T: step.StepT, F: val})
 	}
+
+	if hCount >= 2 {
+		firstPoint := m.histogramBuffer.First()
+		lastPoint, _ := m.histogramBuffer.LastAtOrBefore(step.RangeEnd) // We already know there is a point at or before this time, no need to check.
+
+		currentSchema := firstPoint.H.Schema
+		if lastPoint.H.Schema < currentSchema {
+			currentSchema = lastPoint.H.Schema
+		}
+
+		delta := lastPoint.H.CopyToSchema(currentSchema)
+		_, err = delta.Sub(firstPoint.H)
+		if err != nil {
+			return err
+		}
+		previousValue := firstPoint.H
+
+		accumulate := func(points []promql.HPoint) error {
+			for _, p := range points {
+				if p.H.DetectReset(previousValue) {
+					// Counter reset.
+					_, err = delta.Add(previousValue)
+					if err != nil {
+						return err
+					}
+				}
+				if p.H.Schema < currentSchema {
+					delta = delta.CopyToSchema(p.H.Schema)
+				}
+
+				previousValue = p.H
+			}
+			return nil
+		}
+
+		err = accumulate(hHead)
+		if err != nil {
+			return err
+		}
+		err = accumulate(hTail)
+		if err != nil {
+			return err
+		}
+
+		val := m.calculateHistogramRate(step.RangeStart, step.RangeEnd, firstPoint, lastPoint, delta, hCount)
+		if data.Histograms == nil {
+			// Only get hPoint slice once we are sure we have histogram points.
+			// This potentially over-allocates as some points in the steps may be floats,
+			// but this is expected to be rare.
+			data.Histograms, err = m.Pool.GetHPointSlice(m.numSteps)
+			if err != nil {
+				return err
+			}
+		}
+
+		data.Histograms = append(data.Histograms, promql.HPoint{T: step.StepT, H: val})
+	}
+	return nil
 }
 
 // This is based on extrapolatedRate from promql/functions.go.
 // https://github.com/prometheus/prometheus/pull/13725 has a good explanation of the intended behaviour here.
-func (m *FunctionOverRangeVector) calculateRate(rangeStart, rangeEnd int64, firstPoint, lastPoint promql.FPoint, delta float64, count int) float64 {
+func (m *FunctionOverRangeVector) calculateHistogramRate(rangeStart, rangeEnd int64, firstPoint, lastPoint promql.HPoint, delta *histogram.FloatHistogram, count int) *histogram.FloatHistogram {
+	durationToStart := float64(firstPoint.T-rangeStart) / 1000
+	durationToEnd := float64(rangeEnd-lastPoint.T) / 1000
+
+	sampledInterval := float64(lastPoint.T-firstPoint.T) / 1000
+	averageDurationBetweenSamples := sampledInterval / float64(count-1)
+
+	extrapolationThreshold := averageDurationBetweenSamples * 1.1
+	extrapolateToInterval := sampledInterval
+
+	if durationToStart >= extrapolationThreshold {
+		durationToStart = averageDurationBetweenSamples / 2
+	}
+
+	extrapolateToInterval += durationToStart
+
+	if durationToEnd >= extrapolationThreshold {
+		durationToEnd = averageDurationBetweenSamples / 2
+	}
+
+	extrapolateToInterval += durationToEnd
+
+	factor := extrapolateToInterval / sampledInterval
+	factor /= m.rangeSeconds
+	delta.CounterResetHint = histogram.GaugeType
+	delta.Compact(0)
+	return delta.Mul(factor)
+}
+
+// This is based on extrapolatedRate from promql/functions.go.
+// https://github.com/prometheus/prometheus/pull/13725 has a good explanation of the intended behaviour here.
+func (m *FunctionOverRangeVector) calculateFloatRate(rangeStart, rangeEnd int64, firstPoint, lastPoint promql.FPoint, delta float64, count int) float64 {
 	durationToStart := float64(firstPoint.T-rangeStart) / 1000
 	durationToEnd := float64(rangeEnd-lastPoint.T) / 1000
 
@@ -133,6 +237,12 @@ func (m *FunctionOverRangeVector) calculateRate(rangeStart, rangeEnd int64, firs
 	}
 
 	if delta > 0 && firstPoint.F >= 0 {
+		// Counters cannot be negative. If we have any slope at all
+		// (i.e. delta went up), we can extrapolate the zero point
+		// of the counter. If the duration to the zero point is shorter
+		// than the durationToStart, we take the zero point as the start
+		// of the series, thereby avoiding extrapolation to negative
+		// counter values.
 		durationToZero := sampledInterval * (firstPoint.F / delta)
 		if durationToZero < durationToStart {
 			durationToStart = durationToZero

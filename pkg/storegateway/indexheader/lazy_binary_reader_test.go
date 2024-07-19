@@ -222,35 +222,6 @@ func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
 	})
 }
 
-func TestNewLazyBinaryReader_EagerLoadLazyLoadedIndexHeaders(t *testing.T) {
-	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
-
-	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
-		r.EagerLoad(context.Background())
-
-		require.NoError(t, err)
-		t.Cleanup(func() {
-			require.NoError(t, r.Close())
-		})
-
-		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
-		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
-
-		// The index should already be loaded, the following call will return reader already loaded above
-		v, err := r.IndexVersion(context.Background())
-		require.NoError(t, err)
-		require.Equal(t, 2, v)
-		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
-		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
-
-		labelNames, err := r.LabelNames(context.Background())
-		require.NoError(t, err)
-		require.Equal(t, []string{"a"}, labelNames)
-		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
-		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
-	})
-}
-
 func initBucketAndBlocksForTest(t testing.TB) (string, *filesystem.Bucket, ulid.ULID) {
 	ctx := context.Background()
 

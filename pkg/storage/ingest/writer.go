@@ -5,8 +5,6 @@ package ingest
 import (
 	"context"
 	"fmt"
-	"math"
-	"strconv"
 	"sync"
 	"time"
 
@@ -17,7 +15,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/plugin/kprom"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -62,12 +59,18 @@ type Writer struct {
 	// We support multiple Kafka clients to better parallelize the workload. The number of
 	// clients is fixed during the Writer lifecycle, but they're initialised lazily.
 	writersMx sync.RWMutex
-	writers   []*kgo.Client
+	writers   []*kafkaWriterClient
+
+	// Keep track of Kafka records size (bytes) currently in-flight in the Kafka client.
+	// This counter is used to implement a limit on the max buffered bytes.
+	writersBufferedBytes *atomic.Int64
 
 	// Metrics.
-	writeLatency      prometheus.Histogram
-	writeBytesTotal   prometheus.Counter
-	recordsPerRequest prometheus.Histogram
+	writeRequestsTotal prometheus.Counter
+	writeFailuresTotal *prometheus.CounterVec
+	writeLatency       prometheus.Histogram
+	writeBytesTotal    prometheus.Counter
+	recordsPerRequest  prometheus.Histogram
 
 	// The following settings can only be overridden in tests.
 	maxInflightProduceRequests int
@@ -78,10 +81,19 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		kafkaCfg:                   kafkaCfg,
 		logger:                     logger,
 		registerer:                 reg,
-		writers:                    make([]*kgo.Client, kafkaCfg.WriteClients),
+		writers:                    make([]*kafkaWriterClient, kafkaCfg.WriteClients),
 		maxInflightProduceRequests: 20,
+		writersBufferedBytes:       atomic.NewInt64(0),
 
 		// Metrics.
+		writeRequestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_writer_produce_requests_total",
+			Help: "Total number of produce requests issued to Kafka.",
+		}),
+		writeFailuresTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_writer_produce_failures_total",
+			Help: "Total number of failed produce requests issued to Kafka.",
+		}, []string{"reason"}),
 		writeLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                            "cortex_ingest_storage_writer_latency_seconds",
 			Help:                            "Latency to write an incoming request to the ingest storage.",
@@ -177,31 +189,54 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 
 // produceSync produces records to Kafka and returns once all records have been successfully committed,
 // or an error occurred.
-func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, records []*kgo.Record) kgo.ProduceResults {
+func (w *Writer) produceSync(ctx context.Context, client *kafkaWriterClient, records []*kgo.Record) kgo.ProduceResults {
 	var (
-		remaining = atomic.NewInt64(int64(len(records)))
-		done      = make(chan struct{})
-		resMx     sync.Mutex
-		res       kgo.ProduceResults
+		remaining        = atomic.NewInt64(int64(len(records)))
+		done             = make(chan struct{})
+		resMx            sync.Mutex
+		res              = make(kgo.ProduceResults, 0, len(records))
+		maxBufferedBytes = int64(w.kafkaCfg.ProducerMaxBufferedBytes)
 	)
 
+	w.writeRequestsTotal.Add(float64(len(records)))
+
+	onProduceDone := func(r *kgo.Record, err error) {
+		if maxBufferedBytes > 0 {
+			w.writersBufferedBytes.Add(-int64(len(r.Value)))
+		}
+
+		resMx.Lock()
+		res = append(res, kgo.ProduceResult{Record: r, Err: err})
+		resMx.Unlock()
+
+		if err != nil {
+			w.writeFailuresTotal.WithLabelValues(produceErrReason(err)).Inc()
+		}
+
+		// In case of error we'll wait for all responses anyway before returning from produceSync().
+		// It allows us to keep code easier, given we don't expect this function to be frequently
+		// called with multiple records.
+		if remaining.Dec() == 0 {
+			close(done)
+		}
+	}
+
 	for _, record := range records {
+		// Fast fail if the Kafka client buffer is full. Buffered bytes counter is decreased onProducerDone().
+		if maxBufferedBytes > 0 && w.writersBufferedBytes.Add(int64(len(record.Value))) > maxBufferedBytes {
+			onProduceDone(record, kgo.ErrMaxBuffered)
+			continue
+		}
+
 		// We use a new context to avoid that other Produce() may be cancelled when this call's context is
 		// canceled. It's important to note that cancelling the context passed to Produce() doesn't actually
 		// prevent the data to be sent over the wire (because it's never removed from the buffer) but in some
 		// cases may cause all requests to fail with context cancelled.
-		client.Produce(context.WithoutCancel(ctx), record, func(r *kgo.Record, err error) {
-			resMx.Lock()
-			res = append(res, kgo.ProduceResult{Record: r, Err: err})
-			resMx.Unlock()
-
-			// In case of error we'll wait for all responses anyway before returning from produceSync().
-			// It allows us to keep code easier, given we don't expect this function to be frequently
-			// called with multiple records.
-			if remaining.Dec() == 0 {
-				close(done)
-			}
-		})
+		//
+		// Produce() may theoretically block if the buffer is full, but we configure the Kafka client with
+		// unlimited buffer because we implement the buffer limit ourselves (see maxBufferedBytes). This means
+		// Produce() should never block for us in practice.
+		client.Produce(context.WithoutCancel(ctx), record, onProduceDone)
 	}
 
 	// Wait for a response or until the context has done.
@@ -214,7 +249,7 @@ func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, records []
 	}
 }
 
-func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*kgo.Client, error) {
+func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*kafkaWriterClient, error) {
 	// Check if the writer has already been created.
 	w.writersMx.RLock()
 	clientID := int(partitionID) % len(w.writers)
@@ -233,66 +268,12 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*kgo.Client, err
 	if writer != nil {
 		return writer, nil
 	}
-	newWriter, err := w.newKafkaWriter(clientID)
+	newWriter, err := newKafkaWriterClient(clientID, w.kafkaCfg, w.maxInflightProduceRequests, w.logger, w.registerer)
 	if err != nil {
 		return nil, err
 	}
 	w.writers[clientID] = newWriter
 	return newWriter, nil
-}
-
-// newKafkaWriter creates a new Kafka client.
-func (w *Writer) newKafkaWriter(clientID int) (*kgo.Client, error) {
-	logger := log.With(w.logger, "client_id", clientID)
-
-	// Do not export the client ID, because we use it to specify options to the backend.
-	metrics := kprom.NewMetrics("cortex_ingest_storage_writer",
-		kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"client_id": strconv.Itoa(clientID)}, w.registerer)),
-		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
-
-	opts := append(
-		commonKafkaClientOptions(w.kafkaCfg, metrics, logger),
-		kgo.RequiredAcks(kgo.AllISRAcks()),
-		kgo.DefaultProduceTopic(w.kafkaCfg.Topic),
-
-		// We set the partition field in each record.
-		kgo.RecordPartitioner(kgo.ManualPartitioner()),
-
-		// Set the upper bounds the size of a record batch.
-		kgo.ProducerBatchMaxBytes(producerBatchMaxBytes),
-
-		// By default, the Kafka client allows 1 Produce in-flight request per broker. Disabling write idempotency
-		// (which we don't need), we can increase the max number of in-flight Produce requests per broker. A higher
-		// number of in-flight requests, in addition to short buffering ("linger") in client side before firing the
-		// next Produce request allows us to reduce the end-to-end latency.
-		//
-		// The result of the multiplication of producer linger and max in-flight requests should match the maximum
-		// Produce latency expected by the Kafka backend in a steady state. For example, 50ms * 20 requests = 1s,
-		// which means the Kafka client will keep issuing a Produce request every 50ms as far as the Kafka backend
-		// doesn't take longer than 1s to process them (if it takes longer, the client will buffer data and stop
-		// issuing new Produce requests until some previous ones complete).
-		kgo.DisableIdempotentWrite(),
-		kgo.ProducerLinger(50*time.Millisecond),
-		kgo.MaxProduceRequestsInflightPerBroker(w.maxInflightProduceRequests),
-
-		// Unlimited number of Produce retries but a deadline on the max time a record can take to be delivered.
-		// With the default config it would retry infinitely.
-		//
-		// Details of the involved timeouts:
-		// - RecordDeliveryTimeout: how long a Kafka client Produce() call can take for a given record. The overhead
-		//   timeout is NOT applied.
-		// - ProduceRequestTimeout: how long to wait for the response to the Produce request (the Kafka protocol message)
-		//   after being sent on the network. The actual timeout is increased by the configured overhead.
-		//
-		// When a Produce request to Kafka fail, the client will retry up until the RecordDeliveryTimeout is reached.
-		// Once the timeout is reached, the Produce request will fail and all other buffered requests in the client
-		// (for the same partition) will fail too. See kgo.RecordDeliveryTimeout() documentation for more info.
-		kgo.RecordRetries(math.MaxInt64),
-		kgo.RecordDeliveryTimeout(w.kafkaCfg.WriteTimeout),
-		kgo.ProduceRequestTimeout(w.kafkaCfg.WriteTimeout),
-		kgo.RequestTimeoutOverhead(writerRequestTimeoutOverhead),
-	)
-	return kgo.NewClient(opts...)
 }
 
 // marshalWriteRequestToRecords marshals a mimirpb.WriteRequest to one or more Kafka records.
@@ -359,4 +340,22 @@ func successfulProduceRecordsStats(results kgo.ProduceResults) (count, sizeBytes
 	}
 
 	return
+}
+
+func produceErrReason(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, kgo.ErrRecordTimeout) {
+		return "timeout"
+	}
+	if errors.Is(err, kgo.ErrMaxBuffered) {
+		return "buffer-full"
+	}
+	if errors.Is(err, kerr.MessageTooLarge) {
+		return "record-too-large"
+	}
+	if errors.Is(err, context.Canceled) {
+		// This should never happen because we don't cancel produce requests, however we
+		// check this error anyway to detect if something unexpected happened.
+		return "canceled"
+	}
+	return "other"
 }

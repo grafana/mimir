@@ -3,29 +3,13 @@ title: "Migrate from single zone to zone-aware replication in Mimir Helm chart v
 menuTitle: "Migrate from single zone to zone-aware replication in Mimir Helm chart version 4.0"
 description: "Learn how to migrate from having a single availability zone to full zone-aware replication using the Grafana Mimir Helm chart"
 weight: 10
-refs:
-  shuffle-sharding:
-    - pattern: /
-      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-shuffle-sharding/
-  store-gateway:
-    - pattern: /
-      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/store-gateway/
-  alertmanager:
-    - pattern: /
-      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/alertmanager/
-  ingester:
-    - pattern: /
-      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/ingester/
-  zone-aware-replication:
-    - pattern: /
-      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-zone-aware-replication/
 ---
 
 # Migrate from single zone to zone-aware replication in Mimir Helm chart version 4.0
 
 The `mimir-distributed` Helm chart version 4.0 enables zone-aware replication by default. This is a breaking change for existing installations and requires a migration.
 
-This document explains how to migrate stateful components from single zone to [zone-aware replication] with Helm. The three components in question are the [alertmanager], the [store-gateway] and the [ingester].
+This document explains how to migrate stateful components from single zone to [zone-aware replication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-zone-aware-replication/) with Helm. The three components in question are the [alertmanager](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/), the [store-gateway](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/store-gateway/) and the [ingester](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/ingester/).
 
 The migration path of Alertmanager and store-gateway is straight forward, however migrating ingesters is more complicated.
 
@@ -628,7 +612,7 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
    1. If the current `<N>` above in `ingester.zoneAwareReplication.migration.replicas` is less than `ingester.replicas`, go back and increase `<N>` with at most 21 and repeat these four steps.
 
-1. If you are using [shuffle sharding], it must be turned off on the read path at this point.
+1. If you are using [shuffle sharding](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-shuffle-sharding/), it must be turned off on the read path at this point.
 
    1. Update your configuration with these values and keep them until otherwise instructed.
 
@@ -778,7 +762,7 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
    The 3 hours is calculated from 2h TSDB block range period + `blocks_storage.tsdb.head_compaction_idle_timeout` Grafana Mimir parameters to give enough time for ingesters to remove stale series from memory. Stale series will be there due to series being moved between ingesters.
 
-1. If you are using [shuffle sharding]:
+1. If you are using [shuffle sharding](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-shuffle-sharding/):
 
    1. Wait an extra 12 hours.
 

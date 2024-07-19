@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
+	promtestutil "github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
@@ -565,7 +566,7 @@ func TestMergeQueryable_Select(t *testing.T) {
 					for i := 0; seriesSet.Next(); i++ {
 						count++
 						if tc.expectedLabels != nil {
-							require.Equal(t, tc.expectedLabels[i], seriesSet.At().Labels(), fmt.Sprintf("labels index: %d", i))
+							promtestutil.RequireEqual(t, tc.expectedLabels[i], seriesSet.At().Labels(), fmt.Sprintf("labels index: %d", i))
 						}
 					}
 					require.Equal(t, tc.expectedSeriesCount, count)
@@ -954,7 +955,7 @@ func TestSetLabelsRetainExisting(t *testing.T) {
 			expected:         labels.FromStrings("a", "d", "original_a", "b"),
 		},
 	} {
-		assert.Equal(t, tc.expected, setLabelsRetainExisting(tc.labels, tc.additionalLabels...))
+		promtestutil.RequireEqual(t, tc.expected, setLabelsRetainExisting(tc.labels, tc.additionalLabels...))
 	}
 }
 
