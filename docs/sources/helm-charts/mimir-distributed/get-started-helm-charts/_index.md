@@ -143,19 +143,7 @@ Using a custom namespace solves problems later on because you do not have to ove
 The Grafana Mimir Helm chart can collect metrics, logs, or both, about Grafana Mimir itself. This is called _metamonitoring_.
 In the example that follows, metamonitoring scrapes metrics about Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir instance.
 
-1. Download the Grafana Agent Operator Custom Resource Definitions (CRDs) from
-   https://github.com/grafana/agent/tree/main/operations/agent-static-operator/crds.
-
-   Helm only installs Custom Resource Definitions on an initial chart installation and not on a chart upgrade.
-   For details, see [Some caveats and explanations](https://helm.sh/docs/chart_best_practices/custom_resource_definitions/#some-caveats-and-explanations).
-
-   If you did not enable metamonitoring when the chart was first installed, you must manually install the CRDs before performing a Helm upgrade to enable metamonitoring.
-
-1. Install the CRDs on your cluster:
-
-   ```bash
-   kubectl create -f operations/agent-static-operator/crds/
-   ```
+1. Deploy the Grafana Agent Operator Custom Resource Definitions (CRDs). For more information, refer to [Deploy the Agent Operator Custom Resource Definitions (CRDs)](https://grafana.com/docs/agent/<AGENT_VERSION>/operator/getting-started/#deploy-the-agent-operator-custom-resource-definitions-crds) in the Grafana Agent documentation.
 
 1. Create a YAML file called `custom.yaml` for your Helm values overrides.
    Add the following YAML snippet to `custom.yaml` to enable metamonitoring in Mimir:
