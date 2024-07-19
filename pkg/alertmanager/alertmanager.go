@@ -125,6 +125,8 @@ type Alertmanager struct {
 	receivers       []*nfstatus.Receiver
 	templatesMtx    sync.RWMutex
 	templates       []alertingTemplates.TemplateDefinition
+	emailCfgMtx     sync.RWMutex
+	emailCfg        alertingReceivers.EmailSenderConfig
 
 	// Pipeline created during last ApplyConfig call. Used for testing only.
 	lastPipeline notify.Stage
@@ -461,6 +463,23 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		return err
 	}
 
+	am.emailCfgMtx.Lock()
+	am.emailCfg = alertingReceivers.EmailSenderConfig{
+		AuthPassword:  string(cfg.Global.SMTPAuthPassword),
+		AuthUser:      cfg.Global.SMTPAuthUsername,
+		CertFile:      cfg.Global.HTTPConfig.TLSConfig.CertFile,
+		ContentTypes:  []string{"text/html"},
+		EhloIdentity:  cfg.Global.SMTPHello,
+		ExternalURL:   tmpl.ExternalURL.String(),
+		FromAddress:   cfg.Global.SMTPFrom,
+		FromName:      "Grafana",
+		Host:          cfg.Global.SMTPSmarthost.String(),
+		KeyFile:       cfg.Global.HTTPConfig.TLSConfig.KeyFile,
+		SkipVerify:    !cfg.Global.SMTPRequireTLS,
+		StaticHeaders: staticHeaders,
+	}
+	am.emailCfgMtx.Unlock()
+
 	timeIntervals := make(map[string][]timeinterval.TimeInterval, len(conf.MuteTimeIntervals)+len(conf.TimeIntervals))
 	for _, ti := range conf.MuteTimeIntervals {
 		timeIntervals[ti.Name] = ti.TimeIntervals
@@ -618,7 +637,11 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 	return integrationsMap, nil
 }
 
-func (am *Alertmanager) buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConfig, rcv *alertingNotify.APIReceiver, tmpl *template.Template) ([]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildGrafanaReceiverIntegrations(rcv *alertingNotify.APIReceiver, tmpl *template.Template) ([]*nfstatus.Integration, error) {
+	am.emailCfgMtx.RLock()
+	emailCfg := am.emailCfg
+	am.emailCfgMtx.RUnlock()
+
 	return buildGrafanaReceiverIntegrations(emailCfg, rcv, tmpl, am.logger)
 }
 
