@@ -2927,11 +2927,11 @@ func TestPromoteAndDeleteState(t *testing.T) {
 		State: &clusterpb.FullState{
 			Parts: []clusterpb.Part{
 				{
-					Key:  "nfl:" + user,
+					Key:  nflogStateKeyPrefix + user,
 					Data: mimirNflog,
 				},
 				{
-					Key:  "sil:" + user,
+					Key:  silencesStateKeyPrefix + user,
 					Data: mimirSilences,
 				},
 			},
@@ -3065,13 +3065,13 @@ func TestPromoteAndDeleteState(t *testing.T) {
 
 			// One part for notification log, another one for silences.
 			require.Len(t, s.Parts, 2)
-			require.True(t, s.Parts[0].Key == "nfl:"+user || s.Parts[1].Key == "nfl:"+user)
-			require.True(t, s.Parts[0].Key == "sil:"+user || s.Parts[1].Key == "sil:"+user)
+			require.True(t, s.Parts[0].Key == nflogStateKeyPrefix+user || s.Parts[1].Key == nflogStateKeyPrefix+user)
+			require.True(t, s.Parts[0].Key == silencesStateKeyPrefix+user || s.Parts[1].Key == silencesStateKeyPrefix+user)
 
 			var silencesPart, nflogPart string
 			for _, p := range s.Parts {
-				require.True(t, p.Key == "sil:"+user || p.Key == "nfl:"+user)
-				if p.Key == "sil:"+user {
+				require.True(t, p.Key == silencesStateKeyPrefix+user || p.Key == nflogStateKeyPrefix+user)
+				if p.Key == silencesStateKeyPrefix+user {
 					silencesPart = p.String()
 				} else {
 					nflogPart = p.String()

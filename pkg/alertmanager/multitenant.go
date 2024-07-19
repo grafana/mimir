@@ -739,9 +739,9 @@ func (am *MultitenantAlertmanager) promoteAndDeleteState(ctx context.Context, cf
 	for i, p := range s.State.Parts {
 		switch p.Key {
 		case "silences":
-			s.State.Parts[i].Key = "sil:" + cfg.User
+			s.State.Parts[i].Key = silencesStateKeyPrefix + cfg.User
 		case "notifications":
-			s.State.Parts[i].Key = "nfl:" + cfg.User
+			s.State.Parts[i].Key = nflogStateKeyPrefix + cfg.User
 		default:
 			return fmt.Errorf("unknown part key %q", p.Key)
 		}
