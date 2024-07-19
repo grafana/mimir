@@ -166,8 +166,8 @@ In the example that follows, metamonitoring scrapes metrics about Grafana Mimir 
 
 1. Upgrade Grafana Mimir by using the `helm` command:
 
-    ```bash
-    helm -n mimir-test upgrade mimir grafana/mimir-distributed -f custom.yaml
+   ```bash
+   helm -n mimir-test upgrade mimir grafana/mimir-distributed -f custom.yaml
    ```
 
 ## Start Grafana in Kubernetes and query metrics
