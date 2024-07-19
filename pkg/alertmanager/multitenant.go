@@ -554,7 +554,7 @@ func (am *MultitenantAlertmanager) loadAndSyncConfigs(ctx context.Context, syncR
 		return err
 	}
 
-	am.syncConfigs(cfgs)
+	am.syncConfigs(ctx, cfgs)
 	am.deleteUnusedLocalUserState()
 
 	// Note when cleaning up remote state, remember that the user may not necessarily be configured
@@ -640,7 +640,7 @@ func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
 	return alertmanagers.Includes(am.ringLifecycler.GetInstanceAddr())
 }
 
-func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertConfigDescs) {
+func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[string]alertspb.AlertConfigDescs) {
 	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgMap))
 	for user, cfgs := range cfgMap {
 		cfg, err := am.computeConfig(cfgs)
@@ -649,6 +649,23 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertC
 			level.Warn(am.logger).Log("msg", "error computing config", "err", err)
 			continue
 		}
+
+		// Promote state and update 'promoted' flag if needed.
+		am.alertmanagersMtx.Lock()
+		existing, ok := am.alertmanagers[user]
+		am.alertmanagersMtx.Unlock()
+
+		alreadyPromoted := ok && existing.promoted.Load()
+		if cfg.usingGrafanaConfig && !alreadyPromoted {
+			level.Debug(am.logger).Log("msg", "promoting state", "user", user)
+			if err := am.promoteAndDeleteState(ctx, cfg); err != nil {
+				level.Error(am.logger).Log("msg", "error promoting state", "err", err, "user", user)
+			}
+			level.Debug(am.logger).Log("msg", "finished promoting state", "user", user)
+		} else if !cfg.usingGrafanaConfig && alreadyPromoted {
+			existing.promoted.Store(false)
+		}
+
 		if err := am.setConfig(cfg); err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error applying config", "err", err)
@@ -721,9 +738,6 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	}
 }
 
-// TODO: Use taking https://github.com/grafana/mimir/pull/8637 as a reference.
-//
-//nolint:unused
 func (am *MultitenantAlertmanager) promoteAndDeleteState(ctx context.Context, cfg amConfig) error {
 	s, err := am.store.GetFullGrafanaState(ctx, cfg.User)
 	if err != nil {
@@ -763,6 +777,7 @@ func (am *MultitenantAlertmanager) promoteAndDeleteState(ctx context.Context, cf
 	if err := existing.mergeFullExternalState(s.State); err != nil {
 		return err
 	}
+	existing.promoted.Store(true)
 
 	// Delete state.
 	if err := am.store.DeleteFullGrafanaState(ctx, cfg.User); err != nil {
@@ -773,8 +788,9 @@ func (am *MultitenantAlertmanager) promoteAndDeleteState(ctx context.Context, cf
 
 type amConfig struct {
 	alertspb.AlertConfigDesc
-	tmplExternalURL *url.URL
-	staticHeaders   map[string]string
+	tmplExternalURL    *url.URL
+	staticHeaders      map[string]string
+	usingGrafanaConfig bool
 }
 
 // setConfig applies the given configuration to the alertmanager for `userID`,

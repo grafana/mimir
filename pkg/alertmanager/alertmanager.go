@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -128,6 +129,9 @@ type Alertmanager struct {
 	receivers       []*nfstatus.Receiver
 	templatesMtx    sync.RWMutex
 	templates       []alertingTemplates.TemplateDefinition
+
+	// promoted indicates if the Grafana Alertmanager configuration and state are being used.
+	promoted atomic.Bool
 
 	// Pipeline created during last ApplyConfig call. Used for testing only.
 	lastPipeline notify.Stage
