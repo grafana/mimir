@@ -3902,7 +3902,7 @@ bucket_store:
   # (advanced) Max number of concurrent queries to execute against the long-term
   # storage. The limit is shared across all tenants.
   # CLI flag: -blocks-storage.bucket-store.max-concurrent
-  [max_concurrent: <int> | default = 100]
+  [max_concurrent: <int> | default = 200]
 
   # (advanced) Timeout for the queue of queries waiting for execution. If the
   # queue is full and the timeout is reached, the query will be retried on

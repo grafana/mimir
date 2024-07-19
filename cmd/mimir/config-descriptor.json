@@ -7443,7 +7443,7 @@
               "required": false,
               "desc": "Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants.",
               "fieldValue": null,
-              "fieldDefaultValue": 100,
+              "fieldDefaultValue": 200,
               "fieldFlag": "blocks-storage.bucket-store.max-concurrent",
               "fieldType": "int",
               "fieldCategory": "advanced"
