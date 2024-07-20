@@ -1492,16 +1492,16 @@ This alert fires when the Kafka client buffer, used to write incoming write requ
 How it **works**:
 
 - Distributor and ruler encapsulate write requests into Kafka records and send them to Kafka.
-- The Kafka client has a limit on the total bytes size of records buffered to be sent to Kafka or sent to Kafka but not acknowledged yet.
-- When the limit is reached, Kafka client will reject to produce more records and it will fast fail.
+- The Kafka client has a limit on the total byte size of buffered records either sent to Kafka or sent to Kafka but not acknowledged yet.
+- When the limit is reached, the Kafka client stops producing more records and fast fails.
 - The limit is configured via `-ingest-storage.kafka.producer-max-buffered-bytes`.
-- The default limit is configured intentionally high so that when the buffer utilization gets close to the limit then there's probably an issue.
+- The default limit is configured intentionally high, so that when the buffer utilization gets close to the limit, this indicates that there's probably an issue.
 
 How to **investigate**:
 
 - Query `cortex_ingest_storage_writer_buffered_produce_bytes{quantile="1.0"}` metrics to see the actual buffer utilization peaks.
-  - If the buffer high utilization is isolated to a small set of pods, then there may be a issue in the client pods.
-  - If the buffer high utilization is spread across all or most pods, then there may be a issue in Kafka.
+  - If the high buffer utilization is isolated to a small set of pods, then there might be an issue in the client pods.
+  - If the high buffer utilization is spread across all or most pods, then there might be an issue in Kafka.
 
 ### Ingester is overloaded when consuming from Kafka
 
