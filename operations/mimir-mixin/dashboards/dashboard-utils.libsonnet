@@ -793,6 +793,33 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.autoScalingFailuresPanel(componentName)
     ),
 
+  ncSumCountRateStatPanel(metric, selectors, extra_selector, thresholds=[])::
+    local ncQuery = $.ncSumHistogramCountRate(metric, selectors, extra_selector);
+    local queries = [
+      utils.showClassicHistogramQuery(ncQuery),
+      utils.showNativeHistogramQuery(ncQuery),
+    ];
+    $.newStatPanel(
+      queries=queries,
+      legends=['', ''],
+      unit='percentunit',
+      thresholds=thresholds,
+    ),
+
+  ncLatencyStatPanel(quantile, metric, selectors, thresholds=[])::
+    local labels = std.join('_', [matcher.label for matcher in selectors]);
+    local metricStr = '%(labels)s:%(metric)s' % { labels: labels, metric: metric };
+    local queries = [
+      utils.showClassicHistogramQuery(utils.ncHistogramQuantile(quantile, metricStr, utils.toPrometheusSelectorNaked(selectors), from_recording=true)),
+      utils.showNativeHistogramQuery(utils.ncHistogramQuantile(quantile, metricStr, utils.toPrometheusSelectorNaked(selectors), from_recording=true)),
+    ];
+    $.newStatPanel(
+      queries=queries,
+      legends=['', ''],
+      unit='s',
+      thresholds=thresholds,
+    ),
+
   newStatPanel(queries, legends='', unit='percentunit', decimals=1, thresholds=[], instant=false, novalue='')::
     super.queryPanel(queries, legends) + {
       type: 'stat',

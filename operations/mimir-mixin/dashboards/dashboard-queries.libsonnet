@@ -25,6 +25,57 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
   },
 
+  ncSumHistogramCountRate(metric, selectors, extra_selector, rate_interval='$__rate_interval')::
+    local selectorsStr = $.toPrometheusSelector(selectors);
+    local extendedSelectorsStr = $.toPrometheusSelector(selectors + extra_selector);
+    {
+      classic: 'sum(rate(%(metric)s_count%(extendedSelectors)s[%(rateInterval)s])) /\nsum(rate(%(metric)s_count%(selectors)s[%(rateInterval)s]))' % {
+        metric: metric,
+        rateInterval: rate_interval,
+        extendedSelectors: extendedSelectorsStr,
+        selectors: selectorsStr,
+      },
+      native: 'sum(histogram_count(rate(%(metric)s%(extendedSelectors)s[%(rateInterval)s]))) /\nsum(histogram_count(rate(%(metric)s%(selectors)s[%(rateInterval)s])))' % {
+        metric: metric,
+        rateInterval: rate_interval,
+        extendedSelectors: extendedSelectorsStr,
+        selectors: selectorsStr,
+      },
+    },
+
+  ncAvgHistogramQuantile(quantile, metric, selectors, offset, rate_interval='$__rate_interval')::
+    local labels = std.join('_', [matcher.label for matcher in selectors]);
+    local metricStr = '%(labels)s:%(metric)s' % { labels: labels, metric: metric };
+    local selectorsStr = $.toPrometheusSelector(selectors);
+    {
+      classic: |||
+        1 - (
+          avg_over_time(histogram_quantile(%(quantile)s, sum by (le) (%(metric)s_bucket:sum_rate%(selectors)s offset %(offset)s))[%(rateInterval)s])
+          /
+          avg_over_time(histogram_quantile(%(quantile)s, sum by (le) (%(metric)s_bucket:sum_rate%(selectors)s))[%(rateInterval)s])
+        )
+      ||| % {
+        quantile: quantile,
+        metric: metricStr,
+        selectors: selectorsStr,
+        offset: offset,
+        rateInterval: rate_interval,
+      },
+      native: |||
+        1 - (
+          avg_over_time(histogram_quantile(%(quantile)s, sum(%(metric)s:sum_rate%(selectors)s offset %(offset)s))[%(rateInterval)s])
+          /
+          avg_over_time(histogram_quantile(%(quantile)s, sum(%(metric)s:sum_rate%(selectors)s))[%(rateInterval)s])
+        )
+      ||| % {
+        quantile: quantile,
+        metric: metricStr,
+        selectors: selectorsStr,
+        offset: offset,
+        rateInterval: rate_interval,
+      },
+    },
+
   // This object contains common queries used in the Mimir dashboards.
   // These queries are NOT intended to be configurable or overriddeable via jsonnet,
   // but they're defined in a common place just to share them between different dashboards.
