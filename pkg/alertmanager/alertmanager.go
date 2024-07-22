@@ -63,6 +63,7 @@ import (
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -129,8 +130,8 @@ type Alertmanager struct {
 	templatesMtx    sync.RWMutex
 	templates       []alertingTemplates.TemplateDefinition
 
-	// promoted indicates if the Grafana Alertmanager state has been merged before.
-	promoted bool
+	// promoted indicates if the Grafana Alertmanager configuration and state are being used.
+	promoted atomic.Bool
 
 	// Pipeline created during last ApplyConfig call. Used for testing only.
 	lastPipeline notify.Stage

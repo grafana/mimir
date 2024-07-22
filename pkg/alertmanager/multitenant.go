@@ -650,12 +650,8 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 			continue
 		}
 
-		if am.shouldPromote(cfgs) && !am.isPromoted(cfgs.Grafana.User) {
-			level.Debug(am.logger).Log("msg", "promoting state", "user", cfgs.Grafana.User)
-			if err := am.promoteAndDeleteState(ctx, cfg); err != nil {
-				level.Error(am.logger).Log("msg", "error promoting state", "err", err)
-			}
-			level.Debug(am.logger).Log("msg", "finished promoting state", "user", cfgs.Grafana.User)
+		if err := am.syncStates(ctx, cfg); err != nil {
+			level.Error(am.logger).Log("msg", "error syncing states", "err", err, "user", user)
 		}
 
 		if err := am.setConfig(cfg); err != nil {
@@ -691,14 +687,6 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 	}
 }
 
-// isPromoted returns true if the Alertmanager for a user is marked as promoted.
-func (am *MultitenantAlertmanager) isPromoted(user string) bool {
-	am.alertmanagersMtx.Lock()
-	defer am.alertmanagersMtx.Unlock()
-	existing, ok := am.alertmanagers[user]
-	return ok && existing.promoted
-}
-
 // computeConfig takes an AlertConfigDescs struct containing Mimir and Grafana configurations.
 // It returns the final configuration and external URL the Alertmanager will use.
 func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, error) {
@@ -706,7 +694,19 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		AlertConfigDesc: cfgs.Mimir,
 		tmplExternalURL: am.cfg.ExternalURL.URL,
 	}
-	if !am.shouldPromote(cfgs) {
+
+	switch {
+	// Mimir configuration.
+	case !cfgs.Grafana.Promoted:
+		level.Debug(am.logger).Log("msg", "grafana configuration not promoted, using mimir config", "user", cfgs.Mimir.User)
+		return cfg, nil
+
+	case cfgs.Grafana.Default:
+		level.Debug(am.logger).Log("msg", "grafana configuration is default, using mimir config", "user", cfgs.Mimir.User)
+		return cfg, nil
+
+	case cfgs.Grafana.RawConfig == "":
+		level.Debug(am.logger).Log("msg", "grafana configuration is empty, using mimir config", "user", cfgs.Mimir.User)
 		return cfg, nil
 	}
 
@@ -727,18 +727,27 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	}
 }
 
-// shouldPromote returns true if the Grafana configuration and state should be promoted.
-func (am *MultitenantAlertmanager) shouldPromote(cfgs alertspb.AlertConfigDescs) bool {
-	// A Grafana configuration can be promoted if it's marked as "promoted" and it's not default nor empty.
-	promotableGrafanaConfig := cfgs.Grafana.Promoted && !cfgs.Grafana.Default && cfgs.Grafana.RawConfig != ""
-	// A Mimir configuration can be ignored if it's default or empty.
-	ignorableMimirConfig := cfgs.Mimir.RawConfig == am.fallbackConfig || cfgs.Mimir.RawConfig == ""
+// syncStates promotes/unpromotes the Grafana state and updates the 'promoted' flag if needed.
+func (am *MultitenantAlertmanager) syncStates(ctx context.Context, cfg amConfig) error {
+	am.alertmanagersMtx.Lock()
+	userAM, ok := am.alertmanagers[cfg.User]
+	am.alertmanagersMtx.Unlock()
 
-	// TODO: when merging configurations is implemented we should return whether the Grafana configuration is promotable.
-	return promotableGrafanaConfig && ignorableMimirConfig
-}
+	// If we're not using Grafana config, mark the Alertmanager as not promoted.
+	if !cfg.usingGrafanaConfig {
+		if ok && userAM.promoted.CompareAndSwap(true, false) {
+			level.Debug(am.logger).Log("msg", "Grafana state unpromoted", "user", cfg.User)
+		}
+		return nil
+	}
 
-func (am *MultitenantAlertmanager) promoteAndDeleteState(ctx context.Context, cfg amConfig) error {
+	// If the Alertmanager is already promoted, do nothing.
+	if ok && userAM.promoted.Load() {
+		return nil
+	}
+
+	// Promote the Grafana Alertmanager state and mark the Alertmanager as promoted.
+	level.Debug(am.logger).Log("msg", "promoting Grafana state", "user", cfg.User)
 	s, err := am.store.GetFullGrafanaState(ctx, cfg.User)
 	if err != nil {
 		if errors.Is(err, alertspb.ErrNotFound) {
@@ -761,34 +770,37 @@ func (am *MultitenantAlertmanager) promoteAndDeleteState(ctx context.Context, cf
 		}
 	}
 
-	am.alertmanagersMtx.Lock()
-	existing, ok := am.alertmanagers[cfg.User]
-	am.alertmanagersMtx.Unlock()
 	if !ok {
-		level.Debug(am.logger).Log("msg", "no Alertmanager found, creating new one before applying state", "user", cfg.User)
+		level.Debug(am.logger).Log("msg", "no Alertmanager found, creating new one before applying Grafana state", "user", cfg.User)
 		if err := am.setConfig(cfg); err != nil {
 			return fmt.Errorf("error creating new Alertmanager for user %s: %w", cfg.User, err)
 		}
 		am.alertmanagersMtx.Lock()
-		existing = am.alertmanagers[cfg.User]
+		userAM, ok = am.alertmanagers[cfg.User]
 		am.alertmanagersMtx.Unlock()
+		if !ok {
+			return fmt.Errorf("Alertmanager for user %s not found after creation", cfg.User)
+		}
 	}
 
-	if err := existing.mergeFullExternalState(s.State); err != nil {
+	if err := userAM.mergeFullExternalState(s.State); err != nil {
 		return err
 	}
+	userAM.promoted.Store(true)
 
 	// Delete state.
 	if err := am.store.DeleteFullGrafanaState(ctx, cfg.User); err != nil {
 		return fmt.Errorf("error deleting grafana state for user %s: %w", cfg.User, err)
 	}
+	level.Debug(am.logger).Log("msg", "Grafana state promoted", "user", cfg.User)
 	return nil
 }
 
 type amConfig struct {
 	alertspb.AlertConfigDesc
-	tmplExternalURL *url.URL
-	staticHeaders   map[string]string
+	tmplExternalURL    *url.URL
+	staticHeaders      map[string]string
+	usingGrafanaConfig bool
 }
 
 // setConfig applies the given configuration to the alertmanager for `userID`,
