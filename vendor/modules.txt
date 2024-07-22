@@ -1151,7 +1151,7 @@ github.com/twmb/franz-go/pkg/sasl
 # github.com/twmb/franz-go/pkg/kadm v1.12.0 => github.com/pracucci/franz-go/pkg/kadm v0.0.0-20240711165048-831cca07c9a4
 ## explicit; go 1.21
 github.com/twmb/franz-go/pkg/kadm
-# github.com/twmb/franz-go/pkg/kfake v0.0.0-20240710015325-a5f2b710830e
+# github.com/twmb/franz-go/pkg/kfake v0.0.0-20240721000510-c5c735757b6b
 ## explicit; go 1.21
 github.com/twmb/franz-go/pkg/kfake
 # github.com/twmb/franz-go/pkg/kmsg v1.8.0
@@ -1336,7 +1336,7 @@ golang.org/x/crypto/pbkdf2
 golang.org/x/crypto/pkcs12
 golang.org/x/crypto/pkcs12/internal/rc2
 golang.org/x/crypto/scrypt
-# golang.org/x/exp v0.0.0-20240707233637-46b078467d37
+# golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 ## explicit; go 1.20
 golang.org/x/exp/constraints
 golang.org/x/exp/slices

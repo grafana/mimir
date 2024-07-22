@@ -75,7 +75,7 @@ require (
 	github.com/thanos-io/objstore v0.0.0-20240622095743-1afe5d4bc3cd
 	github.com/twmb/franz-go v1.17.0
 	github.com/twmb/franz-go/pkg/kadm v1.12.0
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20240710015325-a5f2b710830e
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20240721000510-c5c735757b6b
 	github.com/twmb/franz-go/pkg/kmsg v1.8.0
 	github.com/twmb/franz-go/plugin/kotel v1.4.1
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
@@ -84,7 +84,7 @@ require (
 	go.opentelemetry.io/otel v1.27.0
 	go.opentelemetry.io/otel/trace v1.27.0
 	go.uber.org/multierr v1.11.0
-	golang.org/x/exp v0.0.0-20240707233637-46b078467d37
+	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 	google.golang.org/api v0.183.0
 	google.golang.org/protobuf v1.34.2
 	sigs.k8s.io/kustomize/kyaml v0.16.0
