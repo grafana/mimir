@@ -590,3 +590,46 @@ func Benchmark_blockQuerierSeriesSet_seek(b *testing.B) {
 		}
 	}
 }
+
+func TestBlockQuerierSeriesIterator_ShouldMergeOverlappingChunks(t *testing.T) {
+	// Create 3 chunks with overlapping timeranges, but each sample is only in 1 chunk.
+	chunk1 := createAggrChunkWithSamples(promql.FPoint{T: 1, F: 1}, promql.FPoint{T: 3, F: 3}, promql.FPoint{T: 7, F: 7})
+	chunk2 := createAggrChunkWithSamples(promql.FPoint{T: 2, F: 2}, promql.FPoint{T: 5, F: 5}, promql.FPoint{T: 9, F: 9})
+	chunk3 := createAggrChunkWithSamples(promql.FPoint{T: 4, F: 4}, promql.FPoint{T: 6, F: 6}, promql.FPoint{T: 8, F: 8})
+
+	permutations := [][]storepb.AggrChunk{
+		{chunk1, chunk2, chunk3},
+		{chunk1, chunk3, chunk2},
+		{chunk2, chunk1, chunk3},
+		{chunk2, chunk3, chunk1},
+		{chunk3, chunk1, chunk2},
+		{chunk3, chunk2, chunk1},
+	}
+
+	for idx, permutation := range permutations {
+		t.Run(fmt.Sprintf("permutation %d", idx), func(t *testing.T) {
+			it, err := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), permutation)
+			require.NoError(t, err)
+
+			var actual []promql.FPoint
+			for it.Next() != chunkenc.ValNone {
+				ts, value := it.At()
+				actual = append(actual, promql.FPoint{T: ts, F: value})
+			}
+
+			require.NoError(t, it.Err())
+
+			assert.Equal(t, []promql.FPoint{
+				{T: 1, F: 1},
+				{T: 2, F: 2},
+				{T: 3, F: 3},
+				{T: 4, F: 4},
+				{T: 5, F: 5},
+				{T: 6, F: 6},
+				{T: 7, F: 7},
+				{T: 8, F: 8},
+				{T: 9, F: 9},
+			}, actual)
+		})
+	}
+}
