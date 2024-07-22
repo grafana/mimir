@@ -37,6 +37,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add missing fields in multiple topology spread constraints. #8533
 * [ENHANCEMENT] Add support for setting the image pull secrets, node selectors, tolerations and topology spread constraints for the Grafana Agent pods used for metamonitoring. #8670
 * [BUGFIX] Add missing container security context to run `continuous-test` under the restricted security policy. #8653
+* [BUGFIX] Add `global.extraVolumeMounts` to the exporter container on memcached statefulsets #8787
 
 ## 5.4.0
 
