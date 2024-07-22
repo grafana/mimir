@@ -91,7 +91,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       namespaceMatcher: $.namespaceMatcher(),
       storeGatewayMatcher: $.jobMatcher($._config.job_names.store_gateway),
       writeHTTPRoutesRegex: $.queries.write_http_routes_regex,
-      writeGRPCDistributorRoutesRegex: $.queries.write_grpc_distributor_routes_regex,
+      writeDistributorRoutesRegex: std.join('|', [$.queries.write_grpc_distributor_routes_regex, $.queries.write_http_routes_regex]),
       writeGRPCIngesterRoute: $.queries.write_grpc_ingester_route,
       readHTTPRoutesRegex: $.queries.read_http_routes_regex,
       readGRPCIngesterRoute: $.queries.read_grpc_ingester_route,
@@ -103,7 +103,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
     write_http_routes_regex: 'api_(v1|prom)_push|otlp_v1_metrics',
-    write_grpc_routes_regex: '/distributor.Distributor/Push|/httpgrpc.*',
     write_grpc_distributor_routes_regex: '/distributor.Distributor/Push|/httpgrpc.*',
     write_grpc_ingester_route: '/cortex.Ingester/Push',
     read_http_routes_regex: '(prometheus|api_prom)_api_v1_.+',
@@ -112,8 +111,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
     query_http_routes_regex: '(prometheus|api_prom)_api_v1_query(_range)?',
 
     gateway: {
-      readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
-
       local p = self,
       requestsPerSecondMetric: 'cortex_request_duration_seconds',
       writeRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"' % variables,
@@ -129,7 +126,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     distributor: {
       local p = self,
       requestsPerSecondMetric: 'cortex_request_duration_seconds',
-      writeRequestsPerSecondSelector: '%(distributorMatcher)s, route=~"%(writeGRPCDistributorRoutesRegex)s|%(writeHTTPRoutesRegex)s"' % variables,
+      writeRequestsPerSecondRouteRegex: '%(writeDistributorRoutesRegex)s' % variables,
+      writeRequestsPerSecondSelector: '%(distributorMatcher)s, route=~"%(writeDistributorRoutesRegex)s"' % variables,
       samplesPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_samples:rate5m{%(distributorMatcher)s})' % variables,
       exemplarsPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_exemplars:rate5m{%(distributorMatcher)s})' % variables,
 

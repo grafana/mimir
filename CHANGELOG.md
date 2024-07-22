@@ -62,8 +62,8 @@
 
 * [CHANGE] Dashboards: set default auto-refresh rate to 5m. #8758
 * [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards.
-  * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric. #7674 #8502
-  * Writes dashboard: `cortex_request_duration_seconds` metric. #8757
+  * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric. #7674 #8502 #8791
+  * Writes dashboard: `cortex_request_duration_seconds` metric. #8757 #8791
   * Reads dashboard: `cortex_request_duration_seconds` metric. #8752
   * Rollout progress dashboard. #8779
 * [ENHANCEMENT] Alerts: `MimirRunningIngesterReceiveDelayTooHigh` alert has been tuned to be more reactive to high receive delay. #8538
