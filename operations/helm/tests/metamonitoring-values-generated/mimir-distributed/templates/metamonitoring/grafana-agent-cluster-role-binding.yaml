@@ -4,7 +4,6 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: metamonitoring-values-mimir-grafana-agent
-  namespace: "citestns"
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: metamonitoring-values

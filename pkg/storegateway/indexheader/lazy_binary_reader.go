@@ -247,16 +247,6 @@ func (r *LazyBinaryReader) LabelNames(ctx context.Context) ([]string, error) {
 	return loaded.reader.LabelNames(ctx)
 }
 
-// EagerLoad attempts to eagerly load this index header.
-func (r *LazyBinaryReader) EagerLoad(ctx context.Context) {
-	loaded := r.getOrLoadReader(ctx)
-	if loaded.err != nil {
-		level.Warn(r.logger).Log("msg", "eager loading of lazy loaded index-header failed; skipping", "err", loaded.err)
-		return
-	}
-	loaded.inUse.Done()
-}
-
 // getOrLoadReader ensures the underlying binary index-header reader has been successfully loaded.
 // Returns the reader, wait group that should be used to signal that usage of reader is finished, and an error on failure.
 // Must be called without lock.
