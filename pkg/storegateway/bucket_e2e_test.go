@@ -820,7 +820,7 @@ func TestBucketStore_PersistsLazyLoadedBlocks(t *testing.T) {
 
 	// Wait for the blocks to be unloaded.
 	// Technically we need to wait for 3x persistInterval, and we've already waited 2x since last using the blocks.
-	// But we give some more time to avoid races/
+	// But we give some more time to avoid races.
 	time.Sleep(persistInterval * 2)
 	// The snapshot should be empty.
 	blocks, err = indexheader.RestoreLoadedBlocks(cfg.tempDir)
