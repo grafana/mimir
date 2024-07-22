@@ -793,6 +793,7 @@ func TestBucketStore_PersistsLazyLoadedBlocks(t *testing.T) {
 	cfg.logger = test.NewTestingLogger(t)
 	cfg.bucketStoreConfig.IndexHeader.EagerLoadingPersistInterval = persistInterval
 	cfg.bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled = true
+	cfg.bucketStoreConfig.IndexHeader.LazyLoadingIdleTimeout = persistInterval * 3
 	ctx := context.Background()
 
 	// Start the store so we generate some blocks and can use them in the mock snapshot.
@@ -816,6 +817,15 @@ func TestBucketStore_PersistsLazyLoadedBlocks(t *testing.T) {
 	blocks, err = indexheader.RestoreLoadedBlocks(cfg.tempDir)
 	assert.NoError(t, err)
 	assert.Len(t, blocks, cfg.numBlocks)
+
+	// Wait for the blocks to be unloaded.
+	// Technically we need to wait for 3x persistInterval, and we've already waited 2x since last using the blocks.
+	// But we give some more time to avoid races/
+	time.Sleep(persistInterval * 2)
+	// The snapshot should be empty.
+	blocks, err = indexheader.RestoreLoadedBlocks(cfg.tempDir)
+	assert.NoError(t, err)
+	assert.Empty(t, blocks)
 }
 
 type staticLoadedBlocks map[ulid.ULID]int64
