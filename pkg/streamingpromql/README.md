@@ -95,3 +95,7 @@ Elaborating on the example from before, the overall query would proceed like thi
 [^2]:
     This isn't done in a streaming fashion: all series' labels are loaded into memory at once.
     In a future iteration of the engine, `SeriesMetadata()` could be made streaming as well, but this is out of scope for now.
+
+## Implementation notes
+
+- Operators are not expected to be thread-safe: the engine currently evaluates queries from a single goroutine.

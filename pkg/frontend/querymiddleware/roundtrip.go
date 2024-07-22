@@ -58,17 +58,16 @@ var (
 
 // Config for query_range middleware chain.
 type Config struct {
-	SplitQueriesByInterval         time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
-	DeprecatedAlignQueriesWithStep bool          `yaml:"align_queries_with_step" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.12, remove in Mimir 2.14 (https://github.com/grafana/mimir/issues/6712)
-	ResultsCacheConfig             `yaml:"results_cache"`
-	CacheResults                   bool          `yaml:"cache_results"`
-	MaxRetries                     int           `yaml:"max_retries" category:"advanced"`
-	NotRunningTimeout              time.Duration `yaml:"not_running_timeout" category:"advanced"`
-	ShardedQueries                 bool          `yaml:"parallelize_shardable_queries"`
-	TargetSeriesPerShard           uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
-	ShardActiveSeriesQueries       bool          `yaml:"shard_active_series_queries" category:"experimental"`
-	UseActiveSeriesDecoder         bool          `yaml:"use_active_series_decoder" category:"experimental"`
-	RemoteReadLimitsEnabled        bool          `yaml:"remote_read_limits_enabled" category:"experimental"`
+	SplitQueriesByInterval   time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
+	ResultsCacheConfig       `yaml:"results_cache"`
+	CacheResults             bool          `yaml:"cache_results"`
+	MaxRetries               int           `yaml:"max_retries" category:"advanced"`
+	NotRunningTimeout        time.Duration `yaml:"not_running_timeout" category:"advanced"`
+	ShardedQueries           bool          `yaml:"parallelize_shardable_queries"`
+	TargetSeriesPerShard     uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
+	ShardActiveSeriesQueries bool          `yaml:"shard_active_series_queries" category:"experimental"`
+	UseActiveSeriesDecoder   bool          `yaml:"use_active_series_decoder" category:"experimental"`
+	RemoteReadLimitsEnabled  bool          `yaml:"remote_read_limits_enabled" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -98,12 +97,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
 	f.BoolVar(&cfg.RemoteReadLimitsEnabled, "query-frontend.remote-read-limits-enabled", false, "True to enable limits enforcement for remote read requests.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
-
-	// The query-frontend.align-queries-with-step flag has been moved to the limits.go file
-	// cfg.DeprecatedAlignQueriesWithStep is set to the default here for clarity
-	// and consistency with the process for migrating limits to per-tenant config
-	// TODO: Remove in Mimir 2.14
-	cfg.DeprecatedAlignQueriesWithStep = DefaultDeprecatedAlignQueriesWithStep
 }
 
 // Validate validates the config.

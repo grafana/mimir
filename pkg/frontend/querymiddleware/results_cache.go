@@ -159,6 +159,7 @@ func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Resp
 		Data:     data,
 		Headers:  promRes.Headers,
 		Warnings: promRes.Warnings,
+		Infos:    promRes.Infos,
 	}
 }
 
@@ -177,6 +178,7 @@ func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Respons
 		Status:   promRes.Status,
 		Data:     data,
 		Warnings: promRes.Warnings,
+		Infos:    promRes.Infos,
 	}
 }
 

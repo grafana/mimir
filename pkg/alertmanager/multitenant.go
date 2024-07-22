@@ -721,6 +721,56 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	}
 }
 
+// TODO: Use taking https://github.com/grafana/mimir/pull/8637 as a reference.
+//
+//nolint:unused
+func (am *MultitenantAlertmanager) promoteAndDeleteState(ctx context.Context, cfg amConfig) error {
+	s, err := am.store.GetFullGrafanaState(ctx, cfg.User)
+	if err != nil {
+		if errors.Is(err, alertspb.ErrNotFound) {
+			// This is expected if the state was already promoted.
+			level.Debug(am.logger).Log("msg", "grafana state not found, skipping promotion", "user", cfg.User)
+			return nil
+		}
+		return err
+	}
+
+	// Translate Grafana state keys to Mimir state keys.
+	for i, p := range s.State.Parts {
+		switch p.Key {
+		case "silences":
+			s.State.Parts[i].Key = silencesStateKeyPrefix + cfg.User
+		case "notifications":
+			s.State.Parts[i].Key = nflogStateKeyPrefix + cfg.User
+		default:
+			return fmt.Errorf("unknown part key %q", p.Key)
+		}
+	}
+
+	am.alertmanagersMtx.Lock()
+	existing, ok := am.alertmanagers[cfg.User]
+	am.alertmanagersMtx.Unlock()
+	if !ok {
+		level.Debug(am.logger).Log("msg", "no Alertmanager found, creating new one before applying state", "user", cfg.User)
+		if err := am.setConfig(cfg); err != nil {
+			return fmt.Errorf("error creating new Alertmanager for user %s: %w", cfg.User, err)
+		}
+		am.alertmanagersMtx.Lock()
+		existing = am.alertmanagers[cfg.User]
+		am.alertmanagersMtx.Unlock()
+	}
+
+	if err := existing.mergeFullExternalState(s.State); err != nil {
+		return err
+	}
+
+	// Delete state.
+	if err := am.store.DeleteFullGrafanaState(ctx, cfg.User); err != nil {
+		return fmt.Errorf("error deleting grafana state for user %s: %w", cfg.User, err)
+	}
+	return nil
+}
+
 type amConfig struct {
 	alertspb.AlertConfigDesc
 	tmplExternalURL *url.URL

@@ -37,6 +37,8 @@ func (f protobufFormatter) EncodeResponse(resp *PrometheusResponse) ([]byte, err
 		Status:    status,
 		ErrorType: errorType,
 		Error:     resp.Error,
+		Warnings:  resp.Warnings,
+		Infos:     resp.Infos,
 	}
 
 	if resp.Data != nil {
@@ -212,6 +214,7 @@ func (f protobufFormatter) DecodeResponse(buf []byte) (*PrometheusResponse, erro
 		Error:     resp.Error,
 		Data:      data,
 		Warnings:  resp.Warnings,
+		Infos:     resp.Infos,
 	}, nil
 }
 
