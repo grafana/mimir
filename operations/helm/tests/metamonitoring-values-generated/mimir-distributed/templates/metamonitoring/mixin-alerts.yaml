@@ -846,7 +846,7 @@ spec:
               message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has run out of disk space.
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorhasrunoutofdiskspace
             expr: |
-              increase(cortex_compactor_disk_out_of_space_errors_total{}[24h]) >= 1
+              increase(cortex_compactor_disk_out_of_space_errors_total{}[15m]) >= 1
             labels:
               reason: non-transient
               severity: critical
