@@ -260,11 +260,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ],
     },
 
-  perInstanceLatencyPanelNativeHistogram(quantile, metric, selector, instanceLabel=$._config.per_instance_label)::
+  perInstanceLatencyPanelNativeHistogram(quantile, metric, selector, instanceLabel=$._config.per_instance_label, from_recording=false)::
     $.hiddenLegendQueryPanel(
       [
-        utils.showClassicHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel])),
-        utils.showNativeHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel])),
+        utils.showClassicHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel], from_recording=from_recording)),
+        utils.showNativeHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel], from_recording=from_recording)),
       ],
       ['', '']
     ),
