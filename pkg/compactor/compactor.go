@@ -599,6 +599,9 @@ func (c *MultitenantCompactor) running(ctx context.Context) error {
 }
 
 func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
+	// TODO DEBUG - Do not compact blocks.
+	return
+
 	succeeded := false
 	compactionErrorCount := 0
 

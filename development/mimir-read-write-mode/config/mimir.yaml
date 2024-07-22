@@ -69,5 +69,16 @@ overrides_exporter:
 limits:
   native_histograms_ingestion_enabled: true
 
+  # TODO DEBUG - Disable query sharding.
+  query_sharding_total_shards: 0
+
 runtime_config:
   file: ./config/runtime.yaml
+
+frontend:
+  # TODO DEBUG - Do not cache results.
+  cache_results: false
+
+querier:
+  # TODO DEBUG - Try without chunks streaming.
+  prefer_streaming_chunks_from_store_gateways: false

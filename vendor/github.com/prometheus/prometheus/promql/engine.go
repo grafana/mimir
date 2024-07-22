@@ -2212,6 +2212,10 @@ func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) (Matrix, annota
 		}
 
 		ss.Floats, ss.Histograms = ev.matrixIterSlice(it, mint, maxt, nil, nil)
+
+		// TODO DEBUG
+		fmt.Println("evaluator.matrixSelector() series:", series.L)
+
 		totalSize := int64(len(ss.Floats)) + int64(totalHPointSize(ss.Histograms))
 		ev.samplesStats.IncrementSamplesAtTimestamp(ev.startTimestamp, totalSize)
 

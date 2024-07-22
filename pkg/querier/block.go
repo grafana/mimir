@@ -6,8 +6,10 @@
 package querier
 
 import (
+	"fmt"
 	"math"
 	"sort"
+	"time"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -93,6 +95,9 @@ func (bqss *blockQuerierSeriesSet) Warnings() annotations.Annotations {
 
 // newBlockQuerierSeries makes a new blockQuerierSeries. Input labels must be already sorted by name.
 func newBlockQuerierSeries(lbls labels.Labels, chunks []storepb.AggrChunk) *blockQuerierSeries {
+	// TODO DEBUG
+	fmt.Println("newBlockQuerierSeries() chunks:", len(chunks))
+
 	sort.Slice(chunks, func(i, j int) bool {
 		return chunks[i].MinTime < chunks[j].MinTime
 	})
@@ -124,6 +129,9 @@ func (bqs *blockQuerierSeries) Iterator(reuse chunkenc.Iterator) chunkenc.Iterat
 }
 
 func newBlockQuerierSeriesIterator(reuse chunkenc.Iterator, lbls labels.Labels, chunks []storepb.AggrChunk) (*blockQuerierSeriesIterator, error) {
+	// TODO DEBUG
+	fmt.Println("newBlockQuerierSeriesIterator() chunks:", len(chunks))
+
 	var it *blockQuerierSeriesIterator
 	r, ok := reuse.(*blockQuerierSeriesIterator)
 	if ok {
@@ -163,6 +171,9 @@ func newBlockQuerierSeriesIterator(reuse chunkenc.Iterator, lbls labels.Labels, 
 		it.iterators[i].maxT = c.MaxTime
 	}
 
+	// TODO DEBUG
+	fmt.Println("newBlockQuerierSeriesIterator() iterators:", len(it.iterators))
+
 	return it, nil
 }
 
@@ -184,6 +195,9 @@ type blockQuerierSeriesIterator struct {
 }
 
 func (it *blockQuerierSeriesIterator) Seek(t int64) chunkenc.ValueType {
+	// TODO DEBUG
+	fmt.Println("blockQuerierSeriesIterator.Seek() t:", t, "(", time.UnixMilli(t).String(), ")")
+
 	for ; it.i < len(it.iterators); it.i++ {
 		// We check the maxT property of each iterator because if the time range which its data covers ends at a lower
 		// time than the seeked <t> then we don't even need to try to seek to it, as this wouldn't succeed.
@@ -191,16 +205,25 @@ func (it *blockQuerierSeriesIterator) Seek(t int64) chunkenc.ValueType {
 			// Once we found an iterator which covers a time range that reaches beyond the seeked <t>
 			// we try to seek to and return the result.
 			if typ := it.iterators[it.i].Seek(t); typ != chunkenc.ValNone {
+				// TODO DEBUG
+				fmt.Println("blockQuerierSeriesIterator.Seek() return:", typ)
 				it.lastT = it.iterators[it.i].AtT()
 				return typ
 			}
 		}
 	}
 
+	// TODO DEBUG
+	fmt.Println("blockQuerierSeriesIterator.Seek() return:", chunkenc.ValNone)
 	return chunkenc.ValNone
 }
 
-func (it *blockQuerierSeriesIterator) At() (int64, float64) {
+func (it *blockQuerierSeriesIterator) At() (returnT int64, returnV float64) {
+	// TODO DEBUG
+	defer func() {
+		fmt.Println("blockQuerierSeriesIterator.At() return ts:", returnT, "(", time.UnixMilli(returnT).String(), ") value:", returnV)
+	}()
+
 	if it.i >= len(it.iterators) {
 		return 0, 0
 	}

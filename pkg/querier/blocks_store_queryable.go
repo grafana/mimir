@@ -735,6 +735,9 @@ func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShar
 // chunks for the fetched series iff it was a streaming call for series+chunks. startStreamingChunks must be called
 // before iterating on the series.
 func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, tenantID string, convertedMatchers []storepb.LabelMatcher) (_ []storage.SeriesSet, _ []ulid.ULID, _ annotations.Annotations, startStreamingChunks func(), estimateChunks func() int, _ error) {
+	// TODO DEBUG
+	fmt.Println("fetchSeriesFromStores() clients:", clients)
+
 	var (
 		// We deliberately only cancel this context if any store-gateway call fails, to ensure that all streams are aborted promptly.
 		// When all calls succeed, we rely on the parent context being cancelled, otherwise we'd abort all the store-gateway streams returned by this method, which makes them unusable.
@@ -753,6 +756,9 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 	)
 
 	debugQuery := chunkinfologger.IsChunkInfoLoggingEnabled(ctx)
+
+	// TODO DEBUG
+	logMx := sync.Mutex{}
 
 	// Concurrently fetch series from all clients.
 	for c, blockIDs := range clients {
@@ -822,6 +828,25 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 
 				// Response may either contain series, streaming series, warning or hints.
 				if s := resp.GetSeries(); s != nil {
+
+					// TODO DEBUG
+					logMx.Lock() // Make sure logs are not interleaved between concurrent requests.
+					fmt.Println("Received series with", len(s.Chunks), "chunks from", c.RemoteAddress(), "querying blocks", blockIDs)
+					for _, aggrChunk := range s.Chunks {
+						fmt.Println("  Chunk min time:", aggrChunk.MinTime, "(", time.UnixMilli(aggrChunk.MinTime).String(), ") max time:", aggrChunk.MaxTime, "(", time.UnixMilli(aggrChunk.MaxTime).String(), ")")
+
+						//chunk, err := chunkenc.FromData(chunkenc.EncXOR, aggrChunk.Raw.Data)
+						//if err != nil {
+						//	panic(err)
+						//}
+
+						//it := chunk.Iterator(nil)
+						//for it.Next() != chunkenc.ValNone {
+						//	ts, value := it.At()
+						//}
+					}
+					logMx.Unlock()
+
 					mySeries = append(mySeries, s)
 
 					// Add series fingerprint to query limiter; will return error if we are over the limit
