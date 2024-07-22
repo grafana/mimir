@@ -25,6 +25,57 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
   },
 
+  ncSumHistogramCountRate(metric, selectors, extra_selector, rate_interval='$__rate_interval')::
+    local selectorsStr = $.toPrometheusSelector(selectors);
+    local extendedSelectorsStr = $.toPrometheusSelector(selectors + extra_selector);
+    {
+      classic: 'sum(rate(%(metric)s_count%(extendedSelectors)s[%(rateInterval)s])) /\nsum(rate(%(metric)s_count%(selectors)s[%(rateInterval)s]))' % {
+        metric: metric,
+        rateInterval: rate_interval,
+        extendedSelectors: extendedSelectorsStr,
+        selectors: selectorsStr,
+      },
+      native: 'sum(histogram_count(rate(%(metric)s%(extendedSelectors)s[%(rateInterval)s]))) /\nsum(histogram_count(rate(%(metric)s%(selectors)s[%(rateInterval)s])))' % {
+        metric: metric,
+        rateInterval: rate_interval,
+        extendedSelectors: extendedSelectorsStr,
+        selectors: selectorsStr,
+      },
+    },
+
+  ncAvgHistogramQuantile(quantile, metric, selectors, offset, rate_interval='$__rate_interval')::
+    local labels = std.join('_', [matcher.label for matcher in selectors]);
+    local metricStr = '%(labels)s:%(metric)s' % { labels: labels, metric: metric };
+    local selectorsStr = $.toPrometheusSelector(selectors);
+    {
+      classic: |||
+        1 - (
+          avg_over_time(histogram_quantile(%(quantile)s, sum by (le) (%(metric)s_bucket:sum_rate%(selectors)s offset %(offset)s))[%(rateInterval)s])
+          /
+          avg_over_time(histogram_quantile(%(quantile)s, sum by (le) (%(metric)s_bucket:sum_rate%(selectors)s))[%(rateInterval)s])
+        )
+      ||| % {
+        quantile: quantile,
+        metric: metricStr,
+        selectors: selectorsStr,
+        offset: offset,
+        rateInterval: rate_interval,
+      },
+      native: |||
+        1 - (
+          avg_over_time(histogram_quantile(%(quantile)s, sum(%(metric)s:sum_rate%(selectors)s offset %(offset)s))[%(rateInterval)s])
+          /
+          avg_over_time(histogram_quantile(%(quantile)s, sum(%(metric)s:sum_rate%(selectors)s))[%(rateInterval)s])
+        )
+      ||| % {
+        quantile: quantile,
+        metric: metricStr,
+        selectors: selectorsStr,
+        offset: offset,
+        rateInterval: rate_interval,
+      },
+    },
+
   // This object contains common queries used in the Mimir dashboards.
   // These queries are NOT intended to be configurable or overriddeable via jsonnet,
   // but they're defined in a common place just to share them between different dashboards.
@@ -40,7 +91,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       namespaceMatcher: $.namespaceMatcher(),
       storeGatewayMatcher: $.jobMatcher($._config.job_names.store_gateway),
       writeHTTPRoutesRegex: $.queries.write_http_routes_regex,
-      writeGRPCDistributorRoutesRegex: $.queries.write_grpc_distributor_routes_regex,
+      writeDistributorRoutesRegex: std.join('|', [$.queries.write_grpc_distributor_routes_regex, $.queries.write_http_routes_regex]),
       writeGRPCIngesterRoute: $.queries.write_grpc_ingester_route,
       readHTTPRoutesRegex: $.queries.read_http_routes_regex,
       readGRPCIngesterRoute: $.queries.read_grpc_ingester_route,
@@ -52,7 +103,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
     write_http_routes_regex: 'api_(v1|prom)_push|otlp_v1_metrics',
-    write_grpc_routes_regex: '/distributor.Distributor/Push|/httpgrpc.*',
     write_grpc_distributor_routes_regex: '/distributor.Distributor/Push|/httpgrpc.*',
     write_grpc_ingester_route: '/cortex.Ingester/Push',
     read_http_routes_regex: '(prometheus|api_prom)_api_v1_.+',
@@ -61,8 +111,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
     query_http_routes_regex: '(prometheus|api_prom)_api_v1_query(_range)?',
 
     gateway: {
-      readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
-
       local p = self,
       requestsPerSecondMetric: 'cortex_request_duration_seconds',
       writeRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"' % variables,
@@ -78,7 +126,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     distributor: {
       local p = self,
       requestsPerSecondMetric: 'cortex_request_duration_seconds',
-      writeRequestsPerSecondSelector: '%(distributorMatcher)s, route=~"%(writeGRPCDistributorRoutesRegex)s|%(writeHTTPRoutesRegex)s"' % variables,
+      writeRequestsPerSecondRouteRegex: '%(writeDistributorRoutesRegex)s' % variables,
+      writeRequestsPerSecondSelector: '%(distributorMatcher)s, route=~"%(writeDistributorRoutesRegex)s"' % variables,
       samplesPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_samples:rate5m{%(distributorMatcher)s})' % variables,
       exemplarsPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_exemplars:rate5m{%(distributorMatcher)s})' % variables,
 

@@ -10,6 +10,7 @@
 * [CHANGE] Store-gateway: enabled `-blocks-storage.bucket-store.max-concurrent-queue-timeout` by default with a timeout of 5 seconds. #8496
 * [CHANGE] Store-gateway: enabled `-blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout` by default with a timeout of 5 seconds . #8667
 * [CHANGE] Distributor: Incoming OTLP requests were previously size-limited by using limit from `-distributor.max-recv-msg-size` option. We have added option `-distributor.max-otlp-request-size` for limiting OTLP requests, with default value of 100 MiB. #8574
+* [CHANGE] Distributor: remove metric `cortex_distributor_sample_delay_seconds`. #8698
 * [CHANGE] Query-frontend: Remove deprecated `frontend.align_queries_with_step` YAML configuration. The configuration option has been moved to per-tenant and default `limits` since Mimir 2.12. #8733 #8735
 * [CHANGE] Store-gateway: Change default of `-blocks-storage.bucket-store.max-concurrent` to 200. #8768
 * [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.query-engine=mimir`. #8422 #8430 #8454 #8455 #8360 #8490 #8508 #8577 #8671
@@ -24,6 +25,7 @@
     * `-ingest-storage.migration.distributor-send-to-ingesters-enabled`: enabled tee-ing writes to classic ingesters and Kafka, used during a live migration to the new ingest storage architecture.
     * `-ingester.partition-ring.*`: configures partitions ring backend.
 * [FEATURE] Querier: added support for `limitk()` and `limit_ratio()` experimental PromQL functions. Experimental functions are disabled by default, but can be enabled setting `-querier.promql-experimental-functions-enabled=true` in the query-frontend and querier. #8632
+* [FEATURE] Querier: experimental support for `X-Mimir-Chunk-Info-Logger` header that triggers logging information about TSDB chunks loaded from ingesters and store-gateways in the querier. The header should contain the comma separated list of labels for which their value will be included in the logs. #8599
 * [ENHANCEMENT] Compactor: Add `cortex_compactor_compaction_job_duration_seconds` and `cortex_compactor_compaction_job_blocks` histogram metrics to track duration of individual compaction jobs and number of blocks per job. #8371
 * [ENHANCEMENT] Rules: Added per namespace max rules per rule group limit. The maximum number of rules per rule groups for all namespaces continues to be configured by `-ruler.max-rules-per-rule-group`, but now, this can be superseded by the new `-ruler.max-rules-per-rule-group-by-namespace` option on a per namespace basis. This new limit can be overridden using the overrides mechanism to be applied per-tenant. #8378
 * [ENHANCEMENT] Rules: Added per namespace max rule groups per tenant limit. The maximum number of rule groups per rule tenant for all namespaces continues to be configured by `-ruler.max-rule-groups-per-tenant`, but now, this can be superseded by the new `-ruler.max-rule-groups-per-tenant-by-namespace` option on a per namespace basis. This new limit can be overridden using the overrides mechanism to be applied per-tenant. #8425
@@ -61,9 +63,10 @@
 
 * [CHANGE] Dashboards: set default auto-refresh rate to 5m. #8758
 * [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards.
-  * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric. #7674 #8502
-  * Writes dashboard: `cortex_request_duration_seconds` metric. #8757
+  * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric. #7674 #8502 #8791
+  * Writes dashboard: `cortex_request_duration_seconds` metric. #8757 #8791
   * Reads dashboard: `cortex_request_duration_seconds` metric. #8752
+  * Rollout progress dashboard. #8779
 * [ENHANCEMENT] Alerts: `MimirRunningIngesterReceiveDelayTooHigh` alert has been tuned to be more reactive to high receive delay. #8538
 * [ENHANCEMENT] Dashboards: improve end-to-end latency and strong read consistency panels when experimental ingest storage is enabled. #8543
 * [ENHANCEMENT] Dashboards: Add panels for monitoring ingester autoscaling when not using ingest-storage. These panels are disabled by default, but can be enabled using the `autoscaling.ingester.enabled: true` config option. #8484
@@ -83,6 +86,7 @@
 * [ENHANCEMENT] Memcached: Update to Memcached 1.6.28 and memcached-exporter 0.14.4. #8557
 * [ENHANCEMENT] Rollout-operator: Allow the rollout-operator to be used as Kubernetes statefulset webhook to enable `no-downscale` and `prepare-downscale` annotations to be used on ingesters or store-gateways. #8743
 * [ENHANCEMENT] Do not deploy ingester-zone-c when experimental ingest storage is enabled and `ingest_storage_ingester_zones` is configured to `2`. #8776
+* [ENHANCEMENT] Added the config option `ingest_storage_migration_classic_ingesters_no_scale_down_delay` to disable the downscale delay on classic ingesters when migrating to experimental ingest storage. #8775
 
 ### Mimirtool
 
@@ -91,6 +95,7 @@
 ### Mimir Continuous Test
 
 * [CHANGE] Use test metrics that do not pass through 0 to make identifying incorrect results easier. #8630
+* [FEATURE] Experimental support for the `-tests.send-chunks-debugging-header` boolean flag to send the `X-Mimir-Chunk-Info-Logger: series_id` header with queries. #8599
 * [ENHANCEMENT] Include human-friendly timestamps in diffs logged when a test fails. #8630
 * [ENHANCEMENT] Add histograms to measure latency of read and write requests. #8583
 * [BUGFIX] Initialize test result metrics to 0 at startup so that alerts can correctly identify the first failure after startup. #8630
