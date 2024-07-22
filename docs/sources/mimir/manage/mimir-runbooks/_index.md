@@ -649,7 +649,7 @@ Alternatively, if compactor concurrency is higher than 1, it could have been jus
 How to **investigate**:
 
 - Look at the disk space usage in the compactor's data volumes.
-- Look for an error with the string "no space left on device" to confirm that the compactor ran out of disk space.
+- Look for an error with the string `no space left on device` to confirm that the compactor ran out of disk space.
 
 How to **fix** it:
 
