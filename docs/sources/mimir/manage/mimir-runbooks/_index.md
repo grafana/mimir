@@ -654,7 +654,7 @@ How to **investigate**:
 How to **fix** it:
 
 - The only long-term solution is to give the compactor more disk space, as it requires more space to fit the largest single job into its disk.
-- If the number of blocks that the compactor is failing to compact is not very significant and you want it to skip them in order to focus on more recent blocks instead, you can consider marking the affected blocks for no compaction:
+- If the number of blocks that the compactor is failing to compact is not very significant and you want to skip compacting them and focus on more recent blocks instead, consider marking the affected blocks for no compaction:
   ```
   ./tools/markblocks/markblocks -backend gcs -gcs.bucket-name <bucket> -mark no-compact -tenant <tenant-id> -details "focus on newer blocks"
   ```
