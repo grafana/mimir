@@ -642,7 +642,8 @@ How to **investigate**:
 ### MimirCompactorHasRunOutOfDiskSpace
 
 This alert fires when the compactor has run out of disk space at least once.
-When this happens the compaction will fail and after some time the compactor will retry the failed compaction, but it is very likely that on each retry it will just hit the same disk space limit again and it won't be able to recover on its own.
+When this happens the compaction will fail and after some time the compactor will retry the failed compaction. 
+Unless the compactor concurrency is >=1 it is very likely that on each retry it will just hit the same disk space limit again and it won't be able to recover on its own.
 
 How to **investigate**:
 
@@ -651,12 +652,9 @@ How to **investigate**:
 
 How to **fix** it:
 
-- The only long-term solution is to give the compactor more disk space, this can be achieved by doing one or multiple of:
-  - Horizontally scale the compactors
-  - Grow each compactor's disk
+- The only long-term solution is to give the compactor more disk space, as it requires more space to fit the largest single job into its disk.
 - If the number of blocks that the compactor is failing to compact is not very significant and you want it to skip them in order to focus on more recent blocks instead, you can consider marking the affected blocks for no compaction:
   ```
-  # in this example the object storage backend is GCS
   ./tools/markblocks/markblocks -backend gcs -gcs.bucket-name <bucket> -mark no-compact -tenant <tenant-id> -details "focus on newer blocks"
   ```
 
