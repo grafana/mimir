@@ -6643,7 +6643,7 @@
               "kind": "field",
               "name": "producer_max_buffered_bytes",
               "required": false,
-              "desc": "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. 0 to disable the limit.",
+              "desc": "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit.",
               "fieldValue": null,
               "fieldDefaultValue": 1073741824,
               "fieldFlag": "ingest-storage.kafka.producer-max-buffered-bytes",

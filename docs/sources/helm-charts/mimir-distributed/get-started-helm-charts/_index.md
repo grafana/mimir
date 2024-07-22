@@ -136,6 +136,40 @@ Using a custom namespace solves problems later on because you do not have to ove
 
 1. Wait until all of the pods have a status of `Running` or `Completed`, which might take a few minutes.
 
+## Generate some test metrics
+
+{{< docs/shared source="alloy" lookup="agent-deprecation.md" version="next" >}}
+
+The Grafana Mimir Helm chart can collect metrics, logs, or both, about Grafana Mimir itself. This is called _metamonitoring_.
+In the example that follows, metamonitoring scrapes metrics about Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir instance.
+
+1. Deploy the Grafana Agent Operator Custom Resource Definitions (CRDs). For more information, refer to [Deploy the Agent Operator Custom Resource Definitions (CRDs)](https://grafana.com/docs/agent/latest/operator/getting-started/#deploy-the-agent-operator-custom-resource-definitions-crds) in the Grafana Agent documentation.
+
+1. Create a YAML file called `custom.yaml` for your Helm values overrides.
+   Add the following YAML snippet to `custom.yaml` to enable metamonitoring in Mimir:
+
+   ```yaml
+   metaMonitoring:
+     serviceMonitor:
+       enabled: true
+     grafanaAgent:
+       enabled: true
+       installOperator: true
+       metrics:
+         additionalRemoteWriteConfigs:
+           - url: "http://mimir-nginx.mimir-test.svc:80/api/v1/push"
+   ```
+
+   {{< admonition type="note" >}}
+   In a production environment the `url` above would point to an external system, independent of your Grafana Mimir instance, such as an instance of Grafana Cloud Metrics.
+   {{< /admonition >}}
+
+1. Upgrade Grafana Mimir by using the `helm` command:
+
+   ```bash
+   helm -n mimir-test upgrade mimir grafana/mimir-distributed -f custom.yaml
+   ```
+
 ## Start Grafana in Kubernetes and query metrics
 
 1. Install Grafana in the same Kubernetes cluster.
