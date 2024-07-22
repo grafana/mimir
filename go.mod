@@ -71,7 +71,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/okzk/sdnotify v0.0.0-20180710141335-d9becc38acbd
 	github.com/prometheus/procfs v0.15.1
-	github.com/shirou/gopsutil/v4 v4.24.5
+	github.com/shirou/gopsutil/v4 v4.24.6
 	github.com/thanos-io/objstore v0.0.0-20240622095743-1afe5d4bc3cd
 	github.com/twmb/franz-go v1.17.0
 	github.com/twmb/franz-go/pkg/kadm v1.12.0
