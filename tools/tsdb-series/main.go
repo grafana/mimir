@@ -131,7 +131,7 @@ func printBlockIndex(ctx context.Context, blockDir string, printChunks bool, ser
 		}
 
 		if seriesStats {
-			minT, maxT, samples := computeChunkStats(chr, chks)
+			minT, maxT, samples := computeChunkStats(chr, chks, false)
 			dpm := float64(samples) / (maxT.Sub(minT).Minutes())
 			fmt.Println("series:", lbls.String(), "minT:", formatTime(minT), "maxT:", formatTime(maxT), "samples:", samples, "dpm:", dpm)
 		} else {
@@ -140,9 +140,14 @@ func printBlockIndex(ctx context.Context, blockDir string, printChunks bool, ser
 
 		if printChunks {
 			for _, c := range chks {
+				_, _, sampleCount := computeChunkStats(chr, []chunks.Meta{c}, false)
+
 				fmt.Println("chunk:", c.Ref,
 					"min time:", c.MinTime, formatTime(timestamp.Time(c.MinTime)),
-					"max time:", c.MaxTime, formatTime(timestamp.Time(c.MaxTime)))
+					"max time:", c.MaxTime, formatTime(timestamp.Time(c.MaxTime)),
+					"samples:", sampleCount)
+
+				computeChunkStats(chr, []chunks.Meta{c}, true)
 			}
 		}
 	}
@@ -157,7 +162,7 @@ func formatTime(ts time.Time) string {
 	return ts.UTC().Format(time.RFC3339Nano)
 }
 
-func computeChunkStats(chr tsdb.ChunkReader, chks []chunks.Meta) (time.Time, time.Time, int) {
+func computeChunkStats(chr tsdb.ChunkReader, chks []chunks.Meta, print bool) (time.Time, time.Time, int) {
 	if len(chks) == 0 {
 		return time.Time{}, time.Time{}, 0
 	}
@@ -173,20 +178,34 @@ func computeChunkStats(chr tsdb.ChunkReader, chks []chunks.Meta) (time.Time, tim
 			return time.Time{}, time.Time{}, 0
 		}
 
-		if c != nil {
-			totalSamples += c.NumSamples()
-		} else if it != nil {
-			i := it.Iterator(nil)
+		if print {
+			i := c.Iterator(nil)
+
 			for i.Next() != chunkenc.ValNone {
-				totalSamples++
+				t, v := i.At()
+				fmt.Println("  T:", formatTime(timestamp.Time(t)), "Value:", v)
 			}
+
 			if err := i.Err(); err != nil {
 				level.Error(logger).Log("msg", "got error while iterating chunk", "chunk", cm.Ref, "err", err)
 				return time.Time{}, time.Time{}, 0
 			}
 		} else {
-			level.Error(logger).Log("msg", "can't determine samples in chunk", "chunk", cm.Ref)
-			return time.Time{}, time.Time{}, 0
+			if c != nil {
+				totalSamples += c.NumSamples()
+			} else if it != nil {
+				i := it.Iterator(nil)
+				for i.Next() != chunkenc.ValNone {
+					totalSamples++
+				}
+				if err := i.Err(); err != nil {
+					level.Error(logger).Log("msg", "got error while iterating chunk", "chunk", cm.Ref, "err", err)
+					return time.Time{}, time.Time{}, 0
+				}
+			} else {
+				level.Error(logger).Log("msg", "can't determine samples in chunk", "chunk", cm.Ref)
+				return time.Time{}, time.Time{}, 0
+			}
 		}
 	}
 
