@@ -777,6 +777,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
       |||
     ),
 
+  cpuBasedAutoScalingRow(componentTitle)::
+    local componentName = std.strReplace(std.asciiLower(componentTitle), '-', '_');
+    super.row('%s – autoscaling' % [componentTitle])
+    .addPanel(
+      $.autoScalingActualReplicas(componentName)
+    )
+    .addPanel(
+      $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel(componentName, 'CPU', 'cpu')
+    )
+    .addPanel(
+      $.autoScalingFailuresPanel(componentName)
+    ),
+
   cpuAndMemoryBasedAutoScalingRow(componentTitle)::
     local componentName = std.strReplace(std.asciiLower(componentTitle), '-', '_');
     super.row('%s – autoscaling' % [componentTitle])
