@@ -150,6 +150,7 @@ spec:
             {{- toYaml $.ctx.Values.memcachedExporter.resources | nindent 12 }}
           securityContext:
             {{- toYaml $.ctx.Values.memcachedExporter.containerSecurityContext | nindent 12 }}
+          {{- if or .extraVolumeMounts $.ctx.Values.global.extraVolumeMounts }}
           volumeMounts:
             {{- with .extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
@@ -157,6 +158,7 @@ spec:
             {{- with $.ctx.Values.global.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
       {{- end }}
 {{- end -}}
 {{- end -}}
