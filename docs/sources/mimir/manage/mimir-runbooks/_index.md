@@ -643,7 +643,7 @@ How to **investigate**:
 
 This alert fires when the compactor has run out of disk space at least once.
 When this happens the compaction will fail and after some time the compactor will retry the failed compaction.
-It's very likely that on each retry of the job,  the compactor will just hit the same disk space limit again and it won't be able to recover on its own.
+It's very likely that on each retry of the job, the compactor will just hit the same disk space limit again and it won't be able to recover on its own.
 Alternatively, if compactor concurrency is higher than 1, it could have been just an unlucky combination of jobs that caused compactor to run out of disk space.
 
 How to **investigate**:
