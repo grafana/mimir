@@ -18,7 +18,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -64,6 +63,7 @@ import (
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
