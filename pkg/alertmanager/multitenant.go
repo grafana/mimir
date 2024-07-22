@@ -745,7 +745,7 @@ func (am *MultitenantAlertmanager) syncStates(ctx context.Context, cfg amConfig)
 		return nil
 	}
 
-	// Promote the Grafana Alertmanager state and mark the Alertmanager al promoted.
+	// Promote the Grafana Alertmanager state and mark the Alertmanager as promoted.
 	level.Debug(am.logger).Log("msg", "promoting Grafana state", "user", cfg.User)
 	s, err := am.store.GetFullGrafanaState(ctx, cfg.User)
 	if err != nil {
