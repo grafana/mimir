@@ -3165,13 +3165,13 @@ func TestSyncStates(t *testing.T) {
 				prometheus.NewPedanticRegistry(),
 			)
 
-			am.setConfig(amConfig{
+			require.NoError(t, am.setConfig(amConfig{
 				AlertConfigDesc: alertspb.AlertConfigDesc{
 					User:      user,
 					RawConfig: simpleConfigOne,
 				},
 				tmplExternalURL: externalURL,
-			})
+			}))
 			am.alertmanagers[user].promoted.Store(test.initialPromoted)
 
 			require.NoError(t, am.syncStates(ctx, test.cfg))
