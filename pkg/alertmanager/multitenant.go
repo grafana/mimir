@@ -726,7 +726,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	}
 }
 
-// syncStates promotes/unpromoted the Grafana state and updates 'promoted' flag if needed.
+// syncStates promotes/unpromotes the Grafana state and updates the 'promoted' flag if needed.
 func (am *MultitenantAlertmanager) syncStates(ctx context.Context, cfg amConfig) error {
 	am.alertmanagersMtx.Lock()
 	userAM, ok := am.alertmanagers[cfg.User]
