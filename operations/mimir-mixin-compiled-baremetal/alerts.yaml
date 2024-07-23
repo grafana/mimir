@@ -1032,7 +1032,7 @@ groups:
             * 100 > 50
           for: 5m
           labels:
-            severity: warning
+            severity: critical
     - name: mimir_continuous_test
       rules:
         - alert: MimirContinuousTestNotRunningOnWrites

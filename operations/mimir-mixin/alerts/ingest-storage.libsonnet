@@ -177,7 +177,7 @@
             * 100 > 50
           ||| % $._config,
           labels: {
-            severity: 'warning',
+            severity: 'critical',
           },
           annotations: {
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s Kafka client produce buffer utilization is {{ printf "%%.2f" $value }}%%.' % $._config,
