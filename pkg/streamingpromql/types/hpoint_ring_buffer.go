@@ -78,6 +78,8 @@ func (b *HPointRingBuffer) UnsafePoints(maxT int64) (head []promql.HPoint, tail 
 // PutHPointSlice when it is no longer needed.
 // Calling UnsafePoints is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
 // points into the slice, whereas UnsafePoints returns a view into the internal state of this buffer.
+// In addition to copying the points, CopyPoints will also duplicate the FloatHistogram values
+// so that they are also safe to modify.
 func (b *HPointRingBuffer) CopyPoints(maxT int64) ([]promql.HPoint, error) {
 	if b.size == 0 {
 		return nil, nil
@@ -89,8 +91,19 @@ func (b *HPointRingBuffer) CopyPoints(maxT int64) ([]promql.HPoint, error) {
 		return nil, err
 	}
 
-	combined = append(combined, head...)
-	combined = append(combined, tail...)
+	combine := func(p []promql.HPoint) {
+		for i := range p {
+			combined = append(combined,
+				promql.HPoint{
+					T: p[i].T,
+					H: p[i].H.Copy(),
+				},
+			)
+		}
+	}
+
+	combine(head)
+	combine(tail)
 
 	return combined, nil
 }
@@ -125,6 +138,23 @@ func (b *HPointRingBuffer) ForEach(f func(p promql.HPoint)) {
 // If this buffer is non-empty, p.T must be greater than or equal to the
 // timestamp of the last point in the buffer.
 func (b *HPointRingBuffer) Append(p promql.HPoint) error {
+	hPoint, err := b.NextPoint()
+	if err != nil {
+		return err
+	}
+	hPoint.T = p.T
+	hPoint.H = p.H
+	return nil
+}
+
+// NextPoint gets the next point in this buffer, expanding it if required.
+// The returned point's timestamp (HPoint.T) must be set to greater than or equal
+// to the timestamp of the last point in the buffer before further methods
+// are called on this buffer (with the exception of RemoveLastPoint, Reset or Close).
+//
+// This method allows reusing an existing HPoint in this buffer where possible,
+// reducing the number of FloatHistograms allocated.
+func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 	if b.size == len(b.points) {
 		// Create a new slice, copy the elements from the current slice.
 		newSize := b.size * 2
@@ -134,7 +164,7 @@ func (b *HPointRingBuffer) Append(p promql.HPoint) error {
 
 		newSlice, err := b.pool.GetHPointSlice(newSize)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		newSlice = newSlice[:cap(newSlice)]
@@ -148,9 +178,24 @@ func (b *HPointRingBuffer) Append(p promql.HPoint) error {
 	}
 
 	nextIndex := (b.firstIndex + b.size) % len(b.points)
-	b.points[nextIndex] = p
 	b.size++
-	return nil
+	return &b.points[nextIndex], nil
+}
+
+// Remove the last point that was allocated.
+// This is used for when NextPoint allocates a point that is then unused and
+// needs to be returned to the ring buffer.
+// This occurs when a histogram point has a stale marker.
+// It panics if the buffer is empty.
+func (b *HPointRingBuffer) RemoveLastPoint() {
+	if b.size == 0 {
+		panic("There are no points to remove")
+	}
+
+	b.size--
+	if b.size == 0 {
+		b.firstIndex = 0
+	}
 }
 
 // Reset clears the contents of this buffer.

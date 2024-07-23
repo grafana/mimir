@@ -17,8 +17,7 @@ The `mimir-distributed` Helm chart provides metamonitoring support, which takes 
 For more information about Helm chart metamonitoring, refer to [Collect metrics and logs via the Helm chart](/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/).
 If you are using Helm chart metamonitoring, go to [Installing Grafana Mimir dashboards and alerts]({{< relref "./installing-dashboards-and-alerts" >}}).
 
-If you are not, then continue reading.
-Your Prometheus or Grafana Agent must be configured to add these labels in order for the dashboards and alerts to function.
+If you're not using the Helm chart, you must configure your Prometheus or Grafana Alloy instance to add these labels for the dashboards and alerts to function.
 The following table shows the required label names and whether they can be customized when [compiling dashboards or alerts from sources]({{< relref "./installing-dashboards-and-alerts" >}}).
 
 | Label name  | Configurable? | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
@@ -29,7 +28,7 @@ The following table shows the required label names and whether they can be custo
 | `pod`       | Yes           | The unique identifier of a Mimir replica, for example the Pod ID when running on Kubernetes. You can configure the instance label via the `per_instance_label` field in the mixin configuration.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `instance`  | Yes           | The unique identifier of the node or machine where the Mimir replica is running, for example the node when running on Kubernetes. You can configure the node label via the `per_node_label` field in the mixin configuration.                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
-For rules and alerts to function properly, you must configure your Prometheus or Grafana Agent to scrape metrics from Grafana Mimir at an interval of `15s` or shorter.
+For rules and alerts to function, you must configure your Prometheus or Grafana Alloy instance to scrape metrics from Grafana Mimir at an interval of `15s` or shorter.
 
 ## Deployment type
 

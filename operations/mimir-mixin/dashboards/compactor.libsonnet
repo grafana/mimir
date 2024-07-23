@@ -360,5 +360,9 @@ local fixTargetsForTransformations(panel, refIds) = panel {
     .addRows($.getObjectStoreRows('Object Store', 'compactor'))
     .addRow(
       $.kvStoreRow('Key-value store for compactors ring', 'compactor', '.+')
+    )
+    .addRowIf(
+      $._config.autoscaling.compactor.enabled,
+      $.cpuBasedAutoScalingRow('Compactor'),
     ),
 }

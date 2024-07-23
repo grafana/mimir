@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
@@ -144,12 +143,12 @@ func TestIngesterQuerying(t *testing.T) {
 						},
 					},
 					Histograms: []prompb.Histogram{
-						remote.HistogramToHistogramProto(queryStart.UnixMilli(), test.GenerateTestHistogram(1)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep).UnixMilli(), test.GenerateTestHistogram(2)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*2).UnixMilli(), test.GenerateTestHistogram(3)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*3).UnixMilli(), test.GenerateTestHistogram(4)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*4).UnixMilli(), test.GenerateTestHistogram(5)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*5).UnixMilli(), test.GenerateTestHistogram(6)),
+						prompb.FromIntHistogram(queryStart.UnixMilli(), test.GenerateTestHistogram(1)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep).UnixMilli(), test.GenerateTestHistogram(2)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*2).UnixMilli(), test.GenerateTestHistogram(3)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*3).UnixMilli(), test.GenerateTestHistogram(4)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*4).UnixMilli(), test.GenerateTestHistogram(5)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*5).UnixMilli(), test.GenerateTestHistogram(6)),
 					},
 				},
 			},
@@ -196,12 +195,12 @@ func TestIngesterQuerying(t *testing.T) {
 						},
 					},
 					Histograms: []prompb.Histogram{
-						remote.FloatHistogramToHistogramProto(queryStart.UnixMilli(), test.GenerateTestFloatHistogram(1)),
-						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep).UnixMilli(), test.GenerateTestFloatHistogram(2)),
-						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep*2).UnixMilli(), test.GenerateTestFloatHistogram(3)),
-						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep*3).UnixMilli(), test.GenerateTestFloatHistogram(4)),
-						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep*4).UnixMilli(), test.GenerateTestFloatHistogram(5)),
-						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep*5).UnixMilli(), test.GenerateTestFloatHistogram(6)),
+						prompb.FromFloatHistogram(queryStart.UnixMilli(), test.GenerateTestFloatHistogram(1)),
+						prompb.FromFloatHistogram(queryStart.Add(queryStep).UnixMilli(), test.GenerateTestFloatHistogram(2)),
+						prompb.FromFloatHistogram(queryStart.Add(queryStep*2).UnixMilli(), test.GenerateTestFloatHistogram(3)),
+						prompb.FromFloatHistogram(queryStart.Add(queryStep*3).UnixMilli(), test.GenerateTestFloatHistogram(4)),
+						prompb.FromFloatHistogram(queryStart.Add(queryStep*4).UnixMilli(), test.GenerateTestFloatHistogram(5)),
+						prompb.FromFloatHistogram(queryStart.Add(queryStep*5).UnixMilli(), test.GenerateTestFloatHistogram(6)),
 					},
 				},
 			},
@@ -258,10 +257,10 @@ func TestIngesterQuerying(t *testing.T) {
 						},
 					},
 					Histograms: []prompb.Histogram{
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*2).UnixMilli(), test.GenerateTestHistogram(3)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*3).UnixMilli(), test.GenerateTestHistogram(4)),
-						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep*4).UnixMilli(), test.GenerateTestFloatHistogram(5)),
-						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep*5).UnixMilli(), test.GenerateTestFloatHistogram(6)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*2).UnixMilli(), test.GenerateTestHistogram(3)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*3).UnixMilli(), test.GenerateTestHistogram(4)),
+						prompb.FromFloatHistogram(queryStart.Add(queryStep*4).UnixMilli(), test.GenerateTestFloatHistogram(5)),
+						prompb.FromFloatHistogram(queryStart.Add(queryStep*5).UnixMilli(), test.GenerateTestFloatHistogram(6)),
 					},
 				},
 			},
@@ -325,10 +324,10 @@ func TestIngesterQuerying(t *testing.T) {
 					},
 					Histograms: []prompb.Histogram{
 						// This first of these will fail to get appended because there's already a float sample for that timestamp.
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*2).UnixMilli(), test.GenerateTestHistogram(3)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*3).UnixMilli(), test.GenerateTestHistogram(4)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*4).UnixMilli(), test.GenerateTestHistogram(5)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*5).UnixMilli(), test.GenerateTestHistogram(6)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*2).UnixMilli(), test.GenerateTestHistogram(3)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*3).UnixMilli(), test.GenerateTestHistogram(4)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*4).UnixMilli(), test.GenerateTestHistogram(5)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*5).UnixMilli(), test.GenerateTestHistogram(6)),
 					},
 				},
 			},

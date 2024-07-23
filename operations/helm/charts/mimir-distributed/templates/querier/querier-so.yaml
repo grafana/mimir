@@ -53,7 +53,7 @@ spec:
       {{- if .Values.kedaAutoscaling.customHeaders }}
       customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.kedaAutoscaling.customHeaders)) | quote }}
       {{- end }}
-    name: cortex_querier_hpa_default
+    name: cortex_querier_hpa_default_predictive
     type: prometheus
   {{- end }}
 {{- end }}

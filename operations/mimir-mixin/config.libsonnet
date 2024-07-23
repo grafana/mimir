@@ -72,6 +72,7 @@
     // docs/sources/mimir/manage/monitoring-grafana-mimir/requirements.md
     job_names: {
       ingester: ['ingester.*', 'cortex', 'mimir', 'mimir-write.*'],  // Match also custom and per-zone ingester deployments.
+      ingester_partition: ['ingester.*-partition'],  // Match exclusively temporarily partition ingesters run during the migration to ingest storage.
       distributor: ['distributor.*', 'cortex', 'mimir', 'mimir-write.*'],  // Match also per-zone distributor deployments.
       querier: ['querier.*', 'cortex', 'mimir', 'mimir-read.*'],  // Match also custom querier deployments.
       ruler_querier: ['ruler-querier.*'],  // Match also custom querier deployments.
@@ -645,6 +646,10 @@
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'ingester-zone-a',
       },
+      compactor: {
+        enabled: false,
+        hpa_name: $._config.autoscaling_hpa_prefix + 'compactor',
+      },
     },
 
 
@@ -655,6 +660,9 @@
 
     // All query methods from IngesterServer interface. Basically everything except Push.
     ingester_read_path_routes_regex: '/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)',
+
+    // All query methods from StoregatewayServer interface.
+    store_gateway_read_path_routes_regex: '/gatewaypb.StoreGateway/.*',
 
     // The default datasource used for dashboards.
     dashboard_datasource: 'default',

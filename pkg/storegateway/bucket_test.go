@@ -561,6 +561,16 @@ func (o omitMatchersStrategy) selectPostings(groups []postingGroup) (selected, o
 	return
 }
 
+type selectAllStrategy struct{}
+
+func (selectAllStrategy) name() string {
+	return "all"
+}
+
+func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
+	return groups, nil
+}
+
 func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	tb := test.NewTB(t)
 	const series = 50000
@@ -1831,7 +1841,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		indexReaderPool: indexheader.NewReaderPool(log.NewNopLogger(), indexheader.Config{
 			LazyLoadingEnabled:     false,
 			LazyLoadingIdleTimeout: 0,
-		}, gate.NewNoop(), indexheader.NewReaderPoolMetrics(nil), nil),
+		}, gate.NewNoop(), indexheader.NewReaderPoolMetrics(nil)),
 		blockSet:             newBucketBlockSet(),
 		metrics:              NewBucketStoreMetrics(nil),
 		postingsStrategy:     selectAllStrategy{},
