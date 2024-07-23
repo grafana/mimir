@@ -156,33 +156,15 @@ local filename = 'mimir-writes.json';
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.distributor.requestsPerSecondMetric, $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '%s' % $.queries.distributor.writeRequestsPerSecondRouteRegex)])
       )
-      .addPanelIf(
-        $._config.show_ingest_storage_panels,
-        $.timeseriesPanel('Sync write to Kafka latency (ingest storage)') +
-        $.panelDescription(
-          'Sync write to Kafka latency (ingest storage)',
-          |||
-            Latency of synchronous write operation used to store data into Kafka.
-          |||
-        ) +
-        $.queryPanel(
-          [
-            'histogram_avg(sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
-            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
-            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
-            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
-          ],
-          [
-            'avg',
-            '99th percentile',
-            '99.9th percentile',
-            '100th percentile',
-          ],
-        ) + {
-          fieldConfig+: {
-            defaults+: { unit: 's' },
-          },
-        },
+    )
+    .addRowIf(
+      $._config.show_ingest_storage_panels,
+      $.row('Distributor (ingest storage)')
+      .addPanel(
+        $.ingestStorageKafkaProducedRecordsRatePanel('distributor')
+      )
+      .addPanel(
+        $.ingestStorageKafkaProducedRecordsLatencyPanel('distributor')
       )
     )
     .addRowsIf(std.objectHasAll($._config.injectRows, 'postDistributor'), $._config.injectRows.postDistributor($))
