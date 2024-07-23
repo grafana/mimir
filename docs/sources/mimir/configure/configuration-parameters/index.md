@@ -4151,7 +4151,7 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.batch-series-size
   [streaming_series_batch_size: <int> | default = 5000]
 
-  # (advanced) This parameter controls the tradeoff in fetching series versus
+  # (advanced) This parameter controls the trade-off in fetching series versus
   # fetching postings to fulfill a series request. Increasing the series
   # preference results in fetching more series and reducing the volume of
   # postings fetched. Reducing the series preference results in the opposite.
