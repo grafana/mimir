@@ -82,6 +82,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   queries:: {
     // Define the supported replacement variables in a single place. Most of them are frequently used.
     local variables = {
+      requestsPerSecondMetric: $.requests_per_second_metric,
       gatewayMatcher: $.jobMatcher($._config.job_names.gateway),
       distributorMatcher: $.jobMatcher($._config.job_names.distributor),
       ingesterMatcher: $.jobMatcher($._config.job_names.ingester),
@@ -90,18 +91,21 @@ local utils = import 'mixin-utils/utils.libsonnet';
       alertmanagerMatcher: $.jobMatcher($._config.job_names.alertmanager),
       namespaceMatcher: $.namespaceMatcher(),
       storeGatewayMatcher: $.jobMatcher($._config.job_names.store_gateway),
+      rulerQueryFrontendMatcher: $.jobMatcher($._config.job_names.ruler_query_frontend),
       writeHTTPRoutesRegex: $.queries.write_http_routes_regex,
       writeDistributorRoutesRegex: std.join('|', [$.queries.write_grpc_distributor_routes_regex, $.queries.write_http_routes_regex]),
       writeGRPCIngesterRoute: $.queries.write_grpc_ingester_route,
       readHTTPRoutesRegex: $.queries.read_http_routes_regex,
       readGRPCIngesterRoute: $.queries.read_grpc_ingester_route,
       readGRPCStoreGatewayRoute: $.queries.read_grpc_store_gateway_route,
+      rulerQueryFrontendRoutesRegex: $.queries.ruler_query_frontend_routes_regex,
       perClusterLabel: $._config.per_cluster_label,
       recordingRulePrefix: $.recordingRulePrefix($.jobSelector('any')),  // The job name does not matter here.
       groupPrefixJobs: $._config.group_prefix_jobs,
       instance: $._config.per_instance_label,
     },
 
+    requests_per_second_metric: 'cortex_request_duration_seconds',
     write_http_routes_regex: 'api_(v1|prom)_push|otlp_v1_metrics',
     write_grpc_distributor_routes_regex: '/distributor.Distributor/Push|/httpgrpc.*',
     write_grpc_ingester_route: '/cortex.Ingester/Push',
@@ -111,10 +115,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
     query_http_routes_regex: '(prometheus|api_prom)_api_v1_query(_range)?',
     alertmanager_http_routes_regex: 'api_v1_alerts|alertmanager',
     alertmanager_grpc_routes_regex: '/alertmanagerpb.Alertmanager/HandleRequest',
+    // Both support gRPC and HTTP requests. HTTP request is used when rule evaluation query requests go through the query-tee.
+    ruler_query_frontend_routes_regex: '/httpgrpc.HTTP/Handle|.*api_v1_query',
 
     gateway: {
       local p = self,
-      requestsPerSecondMetric: 'cortex_request_duration_seconds',
+      requestsPerSecondMetric: $.queries.requests_per_second_metric,
       writeRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"' % variables,
       readRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"' % variables,
 
@@ -127,7 +133,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
     distributor: {
       local p = self,
-      requestsPerSecondMetric: 'cortex_request_duration_seconds',
+      requestsPerSecondMetric: $.queries.requests_per_second_metric,
       writeRequestsPerSecondRouteRegex: '%(writeDistributorRoutesRegex)s' % variables,
       writeRequestsPerSecondSelector: '%(distributorMatcher)s, route=~"%(writeDistributorRoutesRegex)s"' % variables,
       samplesPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_samples:rate5m{%(distributorMatcher)s})' % variables,
@@ -139,7 +145,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
     query_frontend: {
       local p = self,
-      requestsPerSecondMetric: 'cortex_request_duration_seconds',
+      requestsPerSecondMetric: $.queries.requests_per_second_metric,
       readRequestsPerSecondSelector: '%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"' % variables,
       // These query routes are used in the overview and other dashboard, everythign else is considered "other" queries.
       // Has to be a list to keep the same colors as before, see overridesNonErrorColorsPalette.
@@ -198,7 +204,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
     ruler: {
-      requestsPerSecondMetric: 'cortex_request_duration_seconds',
+      requestsPerSecondMetric: $.queries.requests_per_second_metric,
       evaluations: {
         successPerSecond:
           |||
@@ -253,7 +259,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
     alertmanager: {
-      requestsPerSecondMetric: 'cortex_request_duration_seconds',
+      requestsPerSecondMetric: $.queries.requests_per_second_metric,
       notifications: {
         // Notifications / sec attempted to deliver by the Alertmanager to the receivers.
         totalPerSecond: |||
@@ -293,7 +299,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
     ingester: {
-      requestsPerSecondMetric: 'cortex_request_duration_seconds',
+      requestsPerSecondMetric: $.queries.requests_per_second_metric,
       readRequestsPerSecondSelector: '%(ingesterMatcher)s,route=~"%(readGRPCIngesterRoute)s"' % variables,
       writeRequestsPerSecondSelector: '%(ingesterMatcher)s, route="%(writeGRPCIngesterRoute)s"' % variables,
 
@@ -324,8 +330,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
     store_gateway: {
-      requestsPerSecondMetric: 'cortex_request_duration_seconds',
+      requestsPerSecondMetric: $.queries.requests_per_second_metric,
       readRequestsPerSecondSelector: '%(storeGatewayMatcher)s,route=~"%(readGRPCStoreGatewayRoute)s"' % variables,
+    },
+
+    ruler_query_frontend: {
+      requestsPerSecondMetric: $.queries.requests_per_second_metric,
+      readRequestsPerSecondSelector: '%(rulerQueryFrontendMatcher)s,route=~"%(rulerQueryFrontendRoutesRegex)s"' % variables,
     },
   },
 }
