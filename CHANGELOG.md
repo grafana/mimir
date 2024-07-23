@@ -68,6 +68,7 @@
   * Writes dashboard: `cortex_request_duration_seconds` metric. #8757 #8791
   * Reads dashboard: `cortex_request_duration_seconds` metric. #8752
   * Rollout progress dashboard. #8779
+  * Alertmanager dashboard. #8792
 * [ENHANCEMENT] Alerts: `MimirRunningIngesterReceiveDelayTooHigh` alert has been tuned to be more reactive to high receive delay. #8538
 * [ENHANCEMENT] Dashboards: improve end-to-end latency and strong read consistency panels when experimental ingest storage is enabled. #8543
 * [ENHANCEMENT] Dashboards: Add panels for monitoring ingester autoscaling when not using ingest-storage. These panels are disabled by default, but can be enabled using the `autoscaling.ingester.enabled: true` config option. #8484
