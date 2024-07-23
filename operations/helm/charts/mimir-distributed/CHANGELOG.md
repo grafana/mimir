@@ -41,6 +41,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Memcached: Update to Memcached 1.6.28 and memcached-exporter 0.14.4. #8557
 * [ENHANCEMENT] Add missing fields in multiple topology spread constraints. #8533
 * [ENHANCEMENT] Add support for setting the image pull secrets, node selectors, tolerations and topology spread constraints for the Grafana Agent pods used for metamonitoring. #8670
+* [ENHANCEMENT] Add support for setting resource requests and limits in the Grafana Agent pods used for metamonitoring. #8715
 * [BUGFIX] Add missing container security context to run `continuous-test` under the restricted security policy. #8653
 * [BUGFIX] Add `global.extraVolumeMounts` to the exporter container on memcached statefulsets #8787
 * [BUGFIX] Fix helm releases failing when `querier.kedaAutoscaling.predictiveScalingEnabled=true`. #8731
