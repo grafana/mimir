@@ -215,8 +215,6 @@ The following features or configuration parameters are currently deprecated and 
   - `-ingester.return-only-grpc-errors`
 - Ingester client
   - `-ingester.client.report-grpc-codes-in-instrumentation-label-enabled`
-- Mimirtool
-  - the flag `--rule-files`
 - Querier
   - the flag `-querier.prefer-streaming-chunks-from-store-gateways`
 
