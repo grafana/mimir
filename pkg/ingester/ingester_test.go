@@ -7697,16 +7697,7 @@ func TestIngester_PushInstanceLimitsWithCircuitBreaker_LimitInflightRequestsUsin
 			go func() {
 				require.NoError(t, server.Serve(listener))
 			}()
-
-			cbCfg := client.CircuitBreakerConfig{
-				Enabled:                   true,
-				FailureThreshold:          1,
-				FailureExecutionThreshold: 1,
-				ThresholdingPeriod:        60 * time.Second,
-				CooldownPeriod:            60 * time.Second,
-			}
 			clientCfg := defaultClientTestConfig()
-			clientCfg.CircuitBreaker = cbCfg
 
 			inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
 			client, err := client.MakeIngesterClient(inst, clientCfg, client.NewMetrics(registry), util_test.NewTestingLogger(t))

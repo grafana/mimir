@@ -925,20 +925,6 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 	}
 }
 
-func TestDistributor_PushWithCircuitBreakers(t *testing.T) {
-	ds, _, _, _ := prepare(t, prepConfig{
-		numIngesters:       3,
-		happyIngesters:     3,
-		numDistributors:    1,
-		circuitBreakerOpen: true,
-	})
-
-	ctx := user.InjectOrgID(context.Background(), "user")
-	err := ds[0].push(ctx, NewParsedRequest(makeWriteRequest(123456789000, 10, 0, false, true, "foo")))
-	require.Error(t, err)
-	require.ErrorAs(t, err, &circuitBreakerOpenError{})
-}
-
 func TestDistributor_PushQuery(t *testing.T) {
 	const metricName = "foo"
 	ctx := user.InjectOrgID(context.Background(), "user")
@@ -4999,8 +4985,7 @@ type prepConfig struct {
 
 	configure func(*Config)
 
-	timeOut            bool
-	circuitBreakerOpen bool
+	timeOut bool
 
 	// Ingest storage specific configuration.
 	ingestStorageEnabled          bool
@@ -5159,7 +5144,6 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			zone:                          zone,
 			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
 			timeOut:                       cfg.timeOut,
-			circuitBreakerOpen:            cfg.circuitBreakerOpen,
 			disableStreamingResponse:      cfg.disableStreamingResponse,
 		}
 
@@ -5759,7 +5743,6 @@ type mockIngester struct {
 	timeOut                       bool
 	tokens                        []uint32
 	id                            int
-	circuitBreakerOpen            bool
 	disableStreamingResponse      bool
 
 	// partitionReader is responsible to consume a partition from Kafka when the
@@ -5864,10 +5847,6 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ..
 
 	if i.timeOut {
 		return nil, context.DeadlineExceeded
-	}
-
-	if i.circuitBreakerOpen {
-		return nil, client.ErrCircuitBreakerOpen{}
 	}
 
 	if len(req.Timeseries) > 0 && i.timeseries == nil {
