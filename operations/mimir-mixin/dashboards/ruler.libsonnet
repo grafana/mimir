@@ -106,7 +106,7 @@ local filename = 'mimir-ruler.json';
         local labels = std.join('_', [matcher.label for matcher in selectors]);
         local metricStr = '%(labels)s:%(metric)s' % { labels: labels, metric: $.queries.gateway.requestsPerSecondMetric };
         $.timeseriesPanel('Per route p99 latency') +
-        $.perInstanceLatencyPanelNativeHistogram('0.99', metricStr, selectors, instanceLabel='route', from_recording=true) +
+        $.perInstanceLatencyPanelNativeHistogram('0.99', metricStr, selectors, legends=['{{ route }}', '{{ route }}'], instanceLabel='route', from_recording=true) +
         { fieldConfig+: { defaults+: { unit: 's' } } },
       )
     )
