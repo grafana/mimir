@@ -87,6 +87,17 @@
         },
         {
           "kind": "field",
+          "name": "utf8_names_enabled",
+          "required": false,
+          "desc": "you know it",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "api.utf8-names-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "enable_otel_metadata_translation",
           "required": false,
           "desc": "If true, store metadata when ingesting metrics via OTLP. This makes metric descriptions and types available for metrics ingested via OTLP.",
