@@ -8,7 +8,6 @@ package client
 import (
 	"flag"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
@@ -74,7 +73,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("ingester.client", f)
 }
 
-func (cfg *Config) Validate(logger log.Logger) error {
+func (cfg *Config) Validate() error {
 	return cfg.GRPCClientConfig.Validate()
 }
 
