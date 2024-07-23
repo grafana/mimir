@@ -187,6 +187,22 @@ func (s *Stats) LoadQueueTime() time.Duration {
 	return time.Duration(atomic.LoadInt64((*int64)(&s.QueueTime)))
 }
 
+func (s *Stats) AddTotalSamples(c uint64) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddUint64(&s.TotalSamples, c)
+}
+
+func (s *Stats) LoadTotalSamples() uint64 {
+	if s == nil {
+		return 0
+	}
+
+	return atomic.LoadUint64(&s.TotalSamples)
+}
+
 // Merge the provided Stats into this one.
 func (s *Stats) Merge(other *Stats) {
 	if s == nil || other == nil {
@@ -202,6 +218,7 @@ func (s *Stats) Merge(other *Stats) {
 	s.AddFetchedIndexBytes(other.LoadFetchedIndexBytes())
 	s.AddEstimatedSeriesCount(other.LoadEstimatedSeriesCount())
 	s.AddQueueTime(other.LoadQueueTime())
+	s.AddTotalSamples(other.LoadTotalSamples())
 }
 
 // Copy returns a copy of the stats. Use this rather than regular struct assignment

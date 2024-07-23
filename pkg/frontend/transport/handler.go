@@ -43,6 +43,7 @@ const (
 	ServiceTimingHeaderName   = "Server-Timing"
 	cacheControlHeader        = "Cache-Control"
 	cacheControlLogField      = "header_cache_control"
+	MimirQueryStatsHeaderName = "X-Mimir-Query-Stats"
 )
 
 var (
@@ -246,6 +247,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if f.cfg.QueryStatsEnabled {
 		writeServiceTimingHeader(queryResponseTime, hs, queryDetails.QuerierStats)
+		writeStatsHeader(hs, queryDetails.QuerierStats)
 	}
 
 	w.WriteHeader(resp.StatusCode)
@@ -331,6 +333,7 @@ func (f *Handler) reportQueryStats(
 		"split_queries", stats.LoadSplitQueries(),
 		"estimated_series_count", stats.GetEstimatedSeriesCount(),
 		"queue_time_seconds", stats.LoadQueueTime().Seconds(),
+		"total_samples", stats.LoadTotalSamples(),
 	}, formatQueryString(details, queryString)...)
 
 	if details != nil {
@@ -484,6 +487,12 @@ func writeServiceTimingHeader(queryResponseTime time.Duration, headers http.Head
 		parts = append(parts, statsValue("querier_wall_time", stats.LoadWallTime()))
 		parts = append(parts, statsValue("response_time", queryResponseTime))
 		headers.Set(ServiceTimingHeaderName, strings.Join(parts, ", "))
+	}
+}
+
+func writeStatsHeader(headers http.Header, stats *querier_stats.Stats) {
+	if stats != nil {
+		headers.Set(MimirQueryStatsHeaderName, fmt.Sprintf("total_samples=%d", stats.LoadTotalSamples()))
 	}
 }
 

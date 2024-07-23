@@ -84,16 +84,17 @@ func TestHandler_ServeHTTP(t *testing.T) {
 	}
 
 	for _, tt := range []struct {
-		name                    string
-		cfg                     HandlerConfig
-		request                 func() *http.Request
-		downstreamResponse      *http.Response
-		downstreamErr           error
-		expectedStatusCode      int
-		expectedParams          url.Values
-		expectedMetrics         int
-		expectedActivity        string
-		expectedReadConsistency string
+		name                     string
+		cfg                      HandlerConfig
+		request                  func() *http.Request
+		downstreamResponse       *http.Response
+		downstreamErr            error
+		expectedStatusCode       int
+		expectedParams           url.Values
+		expectedMetrics          int
+		expectedActivity         string
+		expectedReadConsistency  string
+		expectedExtraStatsHeader string
 	}{
 		{
 			name: "handler with stats enabled, POST request with params",
@@ -114,9 +115,10 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         5,
-			expectedActivity:        "user:12345 UA:test-user-agent req:POST /api/v1/query query=some_metric&time=42",
-			expectedReadConsistency: "",
+			expectedMetrics:          5,
+			expectedActivity:         "user:12345 UA:test-user-agent req:POST /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency:  "",
+			expectedExtraStatsHeader: "total_samples=0",
 		},
 		{
 			name: "handler with stats enabled, GET request with params",
@@ -132,9 +134,10 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         5,
-			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
-			expectedReadConsistency: "",
+			expectedMetrics:          5,
+			expectedActivity:         "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency:  "",
+			expectedExtraStatsHeader: "total_samples=0",
 		},
 		{
 			name: "handler with stats enabled, GET request with params and read consistency specified",
@@ -150,9 +153,10 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         5,
-			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
-			expectedReadConsistency: api.ReadConsistencyStrong,
+			expectedMetrics:          5,
+			expectedActivity:         "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency:  api.ReadConsistencyStrong,
+			expectedExtraStatsHeader: "total_samples=0",
 		},
 		{
 			name: "handler with stats enabled, GET request without params",
@@ -162,12 +166,13 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				r.Header.Add("User-Agent", "test-user-agent")
 				return r
 			},
-			downstreamResponse:      makeSuccessfulDownstreamResponse(),
-			expectedStatusCode:      200,
-			expectedParams:          url.Values{},
-			expectedMetrics:         5,
-			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query (no params)",
-			expectedReadConsistency: "",
+			downstreamResponse:       makeSuccessfulDownstreamResponse(),
+			expectedStatusCode:       200,
+			expectedParams:           url.Values{},
+			expectedMetrics:          5,
+			expectedActivity:         "user:12345 UA:test-user-agent req:GET /api/v1/query (no params)",
+			expectedReadConsistency:  "",
+			expectedExtraStatsHeader: "total_samples=0",
 		},
 		{
 			name: "handler with stats disabled, GET request with params",
@@ -235,6 +240,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"end_1":      []string{"20"},
 				"hints_1":    []string{"{\"step_ms\":1000}"},
 			},
+			expectedExtraStatsHeader: "total_samples=0",
 		},
 		{
 			name: "downstream returns an apierror with 4xx status code",
@@ -319,6 +325,12 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			handler.ServeHTTP(resp, req)
 			responseData, _ := io.ReadAll(resp.Body)
 			require.Equal(t, tt.expectedStatusCode, resp.Code)
+
+			if tt.expectedExtraStatsHeader == "" {
+				assert.NotContains(t, resp.Header(), "X-Mimir-Query-Stats")
+			} else {
+				assert.Equal(t, tt.expectedExtraStatsHeader, resp.Header().Get("X-Mimir-Query-Stats"))
+			}
 
 			count, err := promtest.GatherAndCount(
 				reg,
