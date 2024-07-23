@@ -28,7 +28,7 @@
             "type": "dashboards"
          }
       ],
-      "refresh": "10s",
+      "refresh": "5m",
       "rows": [
          {
             "collapse": false,
@@ -616,14 +616,20 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
+                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n < ($latency_metrics * +Inf)",
+                        "format": "time_series",
+                        "legendFormat": "{{status}}",
+                        "refId": "A_classic"
+                     },
+                     {
+                        "expr": "sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n < ($latency_metrics * -Inf)",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A"
@@ -665,29 +671,47 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"})) * 1e3",
+                        "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"})) * 1e3 < ($latency_metrics * +Inf)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
-                        "refId": "A"
+                        "refId": "A_classic"
                      },
                      {
-                        "expr": "histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"})) * 1e3",
+                        "expr": "histogram_quantile(0.99, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"})) * 1e3 < ($latency_metrics * -Inf)",
+                        "format": "time_series",
+                        "legendFormat": "99th percentile",
+                        "refId": "A_native"
+                     },
+                     {
+                        "expr": "histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"})) * 1e3 < ($latency_metrics * +Inf)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
-                        "refId": "B"
+                        "refId": "B_classic"
                      },
                      {
-                        "expr": "1e3 * sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}) / sum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"})",
+                        "expr": "histogram_quantile(0.50, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"})) * 1e3 < ($latency_metrics * -Inf)",
+                        "format": "time_series",
+                        "legendFormat": "50th percentile",
+                        "refId": "B_native"
+                     },
+                     {
+                        "expr": "1e3 * sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}) /\nsum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"})\n < ($latency_metrics * +Inf)",
                         "format": "time_series",
                         "legendFormat": "Average",
-                        "refId": "C"
+                        "refId": "C_classic"
+                     },
+                     {
+                        "expr": "1e3 * sum(histogram_sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"})) /\nsum(histogram_count(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}))\n < ($latency_metrics * -Inf)",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "refId": "C_native"
                      }
                   ],
                   "title": "Latency",
@@ -734,7 +758,14 @@
                   "targets": [
                      {
                         "exemplar": true,
-                        "expr": "histogram_quantile(0.99, sum by(le, pod) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.99, sum by (le,pod) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval]))) < ($latency_metrics * +Inf)",
+                        "format": "time_series",
+                        "legendFormat": "",
+                        "legendLink": null
+                     },
+                     {
+                        "exemplar": true,
+                        "expr": "histogram_quantile(0.99, sum by (pod) (rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval]))) < ($latency_metrics * -Inf)",
                         "format": "time_series",
                         "legendFormat": "",
                         "legendLink": null
@@ -924,14 +955,20 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\",route=\"/cortex.Ingester/Push\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
+                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=\"/cortex.Ingester/Push\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n < ($latency_metrics * +Inf)",
+                        "format": "time_series",
+                        "legendFormat": "{{status}}",
+                        "refId": "A_classic"
+                     },
+                     {
+                        "expr": "sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=\"/cortex.Ingester/Push\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n < ($latency_metrics * -Inf)",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A"
@@ -973,29 +1010,47 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=\"/cortex.Ingester/Push\"})) * 1e3",
+                        "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=\"/cortex.Ingester/Push\"})) * 1e3 < ($latency_metrics * +Inf)",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
-                        "refId": "A"
+                        "refId": "A_classic"
                      },
                      {
-                        "expr": "histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=\"/cortex.Ingester/Push\"})) * 1e3",
+                        "expr": "histogram_quantile(0.99, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=\"/cortex.Ingester/Push\"})) * 1e3 < ($latency_metrics * -Inf)",
+                        "format": "time_series",
+                        "legendFormat": "99th percentile",
+                        "refId": "A_native"
+                     },
+                     {
+                        "expr": "histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=\"/cortex.Ingester/Push\"})) * 1e3 < ($latency_metrics * +Inf)",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
-                        "refId": "B"
+                        "refId": "B_classic"
                      },
                      {
-                        "expr": "1e3 * sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=\"/cortex.Ingester/Push\"}) / sum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=\"/cortex.Ingester/Push\"})",
+                        "expr": "histogram_quantile(0.50, sum (cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=\"/cortex.Ingester/Push\"})) * 1e3 < ($latency_metrics * -Inf)",
+                        "format": "time_series",
+                        "legendFormat": "50th percentile",
+                        "refId": "B_native"
+                     },
+                     {
+                        "expr": "1e3 * sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=\"/cortex.Ingester/Push\"}) /\nsum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=\"/cortex.Ingester/Push\"})\n < ($latency_metrics * +Inf)",
                         "format": "time_series",
                         "legendFormat": "Average",
-                        "refId": "C"
+                        "refId": "C_classic"
+                     },
+                     {
+                        "expr": "1e3 * sum(histogram_sum(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=\"/cortex.Ingester/Push\"})) /\nsum(histogram_count(cluster_job_route:cortex_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=\"/cortex.Ingester/Push\"}))\n < ($latency_metrics * -Inf)",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "refId": "C_native"
                      }
                   ],
                   "title": "Latency",
@@ -1042,7 +1097,14 @@
                   "targets": [
                      {
                         "exemplar": true,
-                        "expr": "histogram_quantile(0.99, sum by(le, pod) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=\"/cortex.Ingester/Push\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.99, sum by (le,pod) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=\"/cortex.Ingester/Push\"}[$__rate_interval]))) < ($latency_metrics * +Inf)",
+                        "format": "time_series",
+                        "legendFormat": "",
+                        "legendLink": null
+                     },
+                     {
+                        "exemplar": true,
+                        "expr": "histogram_quantile(0.99, sum by (pod) (rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=\"/cortex.Ingester/Push\"}[$__rate_interval]))) < ($latency_metrics * -Inf)",
                         "format": "time_series",
                         "legendFormat": "",
                         "legendLink": null
@@ -1145,7 +1207,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1206,7 +1268,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1255,7 +1317,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1304,7 +1366,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1500,7 +1562,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1549,7 +1611,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1775,7 +1837,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1824,7 +1886,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2050,7 +2112,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2099,7 +2161,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2221,7 +2283,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2277,7 +2339,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2399,7 +2461,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2455,7 +2517,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2577,7 +2639,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2663,7 +2725,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2719,7 +2781,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2799,7 +2861,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2866,7 +2928,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2915,7 +2977,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2964,7 +3026,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -3013,7 +3075,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -3073,7 +3135,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -3121,7 +3183,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -3213,6 +3275,35 @@
                "tags": [ ],
                "tagsQuery": "",
                "type": "query",
+               "useTags": false
+            },
+            {
+               "current": {
+                  "selected": true,
+                  "text": "classic",
+                  "value": "1"
+               },
+               "description": "Choose between showing latencies based on low precision classic or high precision native histogram metrics.",
+               "hide": 0,
+               "includeAll": false,
+               "label": "Latency metrics",
+               "multi": false,
+               "name": "latency_metrics",
+               "options": [
+                  {
+                     "selected": false,
+                     "text": "native",
+                     "value": "-1"
+                  },
+                  {
+                     "selected": true,
+                     "text": "classic",
+                     "value": "1"
+                  }
+               ],
+               "query": "native : -1,classic : 1",
+               "skipUrlSync": false,
+               "type": "custom",
                "useTags": false
             }
          ]

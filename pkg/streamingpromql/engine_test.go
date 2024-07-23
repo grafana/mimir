@@ -55,7 +55,6 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		"1":                            "scalar value as top-level expression",
 		"metric{} offset 2h":           "instant vector selector with 'offset'",
 		"avg(metric{})":                "'avg' aggregation",
-		"sum without(l) (metric{})":    "grouping with 'without'",
 		"rate(metric{}[5m] offset 2h)": "range vector selector with 'offset'",
 		"rate(metric{}[5m:1m])":        "PromQL expression type *parser.SubqueryExpr",
 		"avg_over_time(metric{}[5m])":  "'avg_over_time' function",

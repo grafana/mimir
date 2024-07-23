@@ -1567,7 +1567,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 
 		// This index reader shouldn't be used for ExpandedPostings, since it doesn't have the correct strategy.
 		// It's here only to make sure the block is held open inside the goroutine below.
-		indexr := b.indexReader(selectAllStrategy{})
+		indexr := b.indexReader(nil)
 
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(b.logger, indexr, "close block index reader")

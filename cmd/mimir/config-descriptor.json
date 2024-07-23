@@ -6643,7 +6643,7 @@
               "kind": "field",
               "name": "producer_max_buffered_bytes",
               "required": false,
-              "desc": "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is applied per Kafka client. 0 to disable the limit.",
+              "desc": "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit.",
               "fieldValue": null,
               "fieldDefaultValue": 1073741824,
               "fieldFlag": "ingest-storage.kafka.producer-max-buffered-bytes",
@@ -7049,6 +7049,27 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "trace",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "enabled",
+                  "required": false,
+                  "desc": "When enabled, low-level S3 HTTP operation information is logged at the debug level.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.s3.trace.enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -7422,7 +7443,7 @@
               "required": false,
               "desc": "Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants.",
               "fieldValue": null,
-              "fieldDefaultValue": 100,
+              "fieldDefaultValue": 200,
               "fieldFlag": "blocks-storage.bucket-store.max-concurrent",
               "fieldType": "int",
               "fieldCategory": "advanced"
@@ -9471,35 +9492,14 @@
             },
             {
               "kind": "field",
-              "name": "series_selection_strategy",
+              "name": "series_fetch_preference",
               "required": false,
-              "desc": "This option controls the strategy to selection of series and deferring application of matchers. A more aggressive strategy will fetch less posting lists at the cost of more series. This is useful when querying large blocks in which many series share the same label name and value. Supported values (most aggressive to least aggressive): speculative, worst-case, worst-case-small-posting-lists, all.",
+              "desc": "This parameter controls the trade-off in fetching series versus fetching postings to fulfill a series request. Increasing the series preference results in fetching more series and reducing the volume of postings fetched. Reducing the series preference results in the opposite. Increase this parameter to reduce the rate of fetched series bytes (see \"Mimir / Queries\" dashboard) or API calls to the object store. Must be a positive floating point number.",
               "fieldValue": null,
-              "fieldDefaultValue": "worst-case",
-              "fieldFlag": "blocks-storage.bucket-store.series-selection-strategy",
-              "fieldType": "string",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "block",
-              "name": "series_selection_strategies",
-              "required": false,
-              "desc": "",
-              "blockEntries": [
-                {
-                  "kind": "field",
-                  "name": "worst_case_series_preference",
-                  "required": false,
-                  "desc": "This option is only used when blocks-storage.bucket-store.series-selection-strategy=worst-case. Increasing the series preference results in fetching more series than postings. Must be a positive floating point number.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 0.75,
-                  "fieldFlag": "blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference",
-                  "fieldType": "float",
-                  "fieldCategory": "experimental"
-                }
-              ],
-              "fieldValue": null,
-              "fieldDefaultValue": null
+              "fieldDefaultValue": 0.75,
+              "fieldFlag": "blocks-storage.bucket-store.series-fetch-preference",
+              "fieldType": "float",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -13021,6 +13021,27 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "trace",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "enabled",
+                  "required": false,
+                  "desc": "When enabled, low-level S3 HTTP operation information is logged at the debug level.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.s3.trace.enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -15161,6 +15182,27 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "trace",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "enabled",
+                  "required": false,
+                  "desc": "When enabled, low-level S3 HTTP operation information is logged at the debug level.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "alertmanager-storage.s3.trace.enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -15797,6 +15839,17 @@
           "fieldValue": null,
           "fieldDefaultValue": 20000000000,
           "fieldFlag": "memberlist.leave-timeout",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "broadcast_timeout_for_local_updates_on_shutdown",
+          "required": false,
+          "desc": "Timeout for broadcasting all remaining locally-generated updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to locally-generated updates, not to broadcast messages that are result of incoming gossip updates. 0 = no timeout, wait until all locally-generated updates are sent.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10000000000,
+          "fieldFlag": "memberlist.broadcast-timeout-for-local-updates-on-shutdown",
           "fieldType": "duration",
           "fieldCategory": "advanced"
         },
@@ -17540,6 +17593,27 @@
                       "fieldDefaultValue": "",
                       "fieldFlag": "common.storage.s3.http.tls-server-name",
                       "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "block",
+                  "name": "trace",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "enabled",
+                      "required": false,
+                      "desc": "When enabled, low-level S3 HTTP operation information is logged at the debug level.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "common.storage.s3.trace.enabled",
+                      "fieldType": "boolean",
                       "fieldCategory": "advanced"
                     }
                   ],

@@ -134,7 +134,6 @@ store_gateway:
 frontend:
   query_stats_enabled: true
   parallelize_shardable_queries: true
-  align_queries_with_step: true
   cache_results: true
   additional_query_queue_dimensions_enabled: true
   shard_active_series_queries: true
