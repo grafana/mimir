@@ -87,6 +87,8 @@ Usage of ./cmd/mimir/mimir:
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -alertmanager-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
+  -alertmanager-storage.s3.trace.enabled
+    	When enabled, low-level S3 HTTP operation information is logged at the debug level.
   -alertmanager-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
   -alertmanager-storage.swift.auth-url string
@@ -544,7 +546,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-header.verify-on-load
     	If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.
   -blocks-storage.bucket-store.max-concurrent int
-    	Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants. (default 100)
+    	Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants. (default 200)
   -blocks-storage.bucket-store.max-concurrent-queue-timeout duration
     	Timeout for the queue of queries waiting for execution. If the queue is full and the timeout is reached, the query will be retried on another store-gateway. 0 means no timeout and all queries will wait indefinitely for their turn. (default 5s)
   -blocks-storage.bucket-store.meta-sync-concurrency int
@@ -669,12 +671,10 @@ Usage of ./cmd/mimir/mimir:
     	Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. (default 524288)
   -blocks-storage.bucket-store.posting-offsets-in-mem-sampling int
     	Controls what is the ratio of postings offsets that the store will hold in memory. (default 32)
+  -blocks-storage.bucket-store.series-fetch-preference float
+    	This parameter controls the trade-off in fetching series versus fetching postings to fulfill a series request. Increasing the series preference results in fetching more series and reducing the volume of postings fetched. Reducing the series preference results in the opposite. Increase this parameter to reduce the rate of fetched series bytes (see "Mimir / Queries" dashboard) or API calls to the object store. Must be a positive floating point number. (default 0.75)
   -blocks-storage.bucket-store.series-hash-cache-max-size-bytes uint
     	Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled. (default 1073741824)
-  -blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference float
-    	[experimental] This option is only used when blocks-storage.bucket-store.series-selection-strategy=worst-case. Increasing the series preference results in fetching more series than postings. Must be a positive floating point number. (default 0.75)
-  -blocks-storage.bucket-store.series-selection-strategy string
-    	[experimental] This option controls the strategy to selection of series and deferring application of matchers. A more aggressive strategy will fetch less posting lists at the cost of more series. This is useful when querying large blocks in which many series share the same label name and value. Supported values (most aggressive to least aggressive): speculative, worst-case, worst-case-small-posting-lists, all. (default "worst-case")
   -blocks-storage.bucket-store.sync-dir string
     	Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time. (default "./tsdb-sync/")
   -blocks-storage.bucket-store.sync-interval duration
@@ -747,6 +747,8 @@ Usage of ./cmd/mimir/mimir:
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -blocks-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
+  -blocks-storage.s3.trace.enabled
+    	When enabled, low-level S3 HTTP operation information is logged at the debug level.
   -blocks-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
   -blocks-storage.swift.auth-url string
@@ -927,6 +929,8 @@ Usage of ./cmd/mimir/mimir:
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -common.storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
+  -common.storage.s3.trace.enabled
+    	When enabled, low-level S3 HTTP operation information is logged at the debug level.
   -common.storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -common.storage.swift.auth-version int
@@ -1336,7 +1340,7 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.max-consumer-lag-at-startup duration
     	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
   -ingest-storage.kafka.producer-max-buffered-bytes int
-    	The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is applied per Kafka client. 0 to disable the limit. (default 1073741824)
+    	The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit. (default 1073741824)
   -ingest-storage.kafka.producer-max-record-size-bytes int
     	The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes. (default 15983616)
   -ingest-storage.kafka.target-consumer-lag-at-startup duration
@@ -1547,8 +1551,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.read-path-memory-utilization-limit uint
     	[experimental] Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
-  -ingester.return-only-grpc-errors
-    	[deprecated] When enabled only gRPC errors will be returned by the ingester. (default true)
   -ingester.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -ingester.ring.consul.cas-retry-delay duration
@@ -1673,6 +1675,8 @@ Usage of ./cmd/mimir/mimir:
     	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
   -memberlist.bind-port int
     	Port to listen on for gossip messages. (default 7946)
+  -memberlist.broadcast-timeout-for-local-updates-on-shutdown duration
+    	Timeout for broadcasting all remaining locally-generated updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to locally-generated updates, not to broadcast messages that are result of incoming gossip updates. 0 = no timeout, wait until all locally-generated updates are sent. (default 10s)
   -memberlist.cluster-label string
     	The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.
   -memberlist.cluster-label-verification-disabled
@@ -1905,8 +1909,6 @@ Usage of ./cmd/mimir/mimir:
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
     	Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled. (default 3s)
-  -querier.prefer-streaming-chunks-from-store-gateways
-    	[experimental] Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this. (default true)
   -querier.promql-experimental-functions-enabled
     	[experimental] Enable experimental PromQL functions. This config option should be set on query-frontend too when query sharding is enabled.
   -querier.query-engine string
@@ -2505,6 +2507,8 @@ Usage of ./cmd/mimir/mimir:
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -ruler-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
+  -ruler-storage.s3.trace.enabled
+    	When enabled, low-level S3 HTTP operation information is logged at the debug level.
   -ruler-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
   -ruler-storage.swift.auth-url string
@@ -2987,6 +2991,8 @@ Usage of ./cmd/mimir/mimir:
     	The timeout for a single read request. (default 1m0s)
   -tests.run-interval duration
     	How frequently tests should run. (default 5m0s)
+  -tests.send-chunks-debugging-header
+    	Request debugging on the server side via header.
   -tests.smoke-test
     	Run a smoke test, i.e. run all tests once and exit.
   -tests.tenant-id string

@@ -8,19 +8,69 @@ load 1m
   some_metric{env="prod", cluster="us"} 0+2x4
   some_metric{env="test", cluster="eu"} 0+3x4
   some_metric{env="test", cluster="us"} 0+4x4
+  some_other_metric{env="test", cluster="us"} 0+5x4
 
 # Range query, aggregating to one group.
 eval range from 0 to 4m step 1m sum(some_metric)
   {} 0 10 20 30 40
 
-# Range query, aggregating to multiple groups.
+# Range query, aggregating to multiple groups with 'by'.
 eval range from 0 to 4m step 1m sum by (env) (some_metric)
   {env="prod"} 0 3 6 9 12
   {env="test"} 0 7 14 21 28
 
+# Range query, aggregating to multiple groups with 'without'.
+eval range from 0 to 4m step 1m sum without (env) (some_metric)
+  {cluster="eu"} 0 4 8 12 16
+  {cluster="us"} 0 6 12 18 24
+
+# Range query, aggregating to a single group with 'without'.
+eval range from 0 to 4m step 1m sum without (env, cluster) (some_metric)
+  {} 0 10 20 30 40
+
+# 'without' should always ignore the metric name.
+eval range from 0 to 4m step 1m sum without(cluster) ({cluster="us"})
+  {env="prod"} 0 2 4 6 8
+  {env="test"} 0 9 18 27 36
+
 # If no series are matched, we shouldn't return any results.
 eval range from 0 to 4m step 1m sum(some_nonexistent_metric)
   # Should return no results.
+
+clear
+
+load 1m
+  some_metric{env="prod", cluster="eu", group="a", subgroup="1"} 0+1x4
+  some_metric{env="prod", cluster="eu", group="a", subgroup="2"} 0+2x4
+  some_metric{env="prod", cluster="eu", group="b", subgroup="1"} 0+3x4
+  some_metric{env="prod", cluster="us", group="a", subgroup="1"} 0+4x4
+  some_metric{env="prod", cluster="us", group="a", subgroup="2"} 0+5x4
+  some_metric{env="test", cluster="us", group="a", subgroup="2"} 0+6x4
+
+# 'without' with many input and output labels.
+eval range from 0 to 4m step 1m sum without(env) (some_metric)
+  {cluster="eu", group="a", subgroup="1"} 0 1 2 3 4
+  {cluster="eu", group="a", subgroup="2"} 0 2 4 6 8
+  {cluster="eu", group="b", subgroup="1"} 0 3 6 9 12
+  {cluster="us", group="a", subgroup="1"} 0 4 8 12 16
+  {cluster="us", group="a", subgroup="2"} 0 11 22 33 44
+
+eval range from 0 to 4m step 1m sum without(env, cluster) (some_metric)
+  {group="a", subgroup="1"} 0 5 10 15 20
+  {group="a", subgroup="2"} 0 13 26 39 52
+  {group="b", subgroup="1"} 0 3 6 9 12
+
+# 'without' with duplicate labels to remove.
+eval range from 0 to 4m step 1m sum without(env, cluster, env) (some_metric)
+  {group="a", subgroup="1"} 0 5 10 15 20
+  {group="a", subgroup="2"} 0 13 26 39 52
+  {group="b", subgroup="1"} 0 3 6 9 12
+
+# 'by' with duplicate grouping labels.
+eval range from 0 to 4m step 1m sum by(env, cluster, env) (some_metric)
+  {cluster="eu", env="prod"} 0 6 12 18 24
+  {cluster="us", env="prod"} 0 9 18 27 36
+  {cluster="us", env="test"} 0 6 12 18 24
 
 clear
 

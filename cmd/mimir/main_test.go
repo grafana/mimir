@@ -374,32 +374,84 @@ func TestExpandEnvironmentVariables(t *testing.T) {
 	var tests = []struct {
 		in  string
 		out string
+		env string
 	}{
 		// Environment variables can be specified as ${env} or $env.
-		{"x$y", "xy"},
-		{"x${y}", "xy"},
+		{"x$y", "xy", "y"},
+		{"x${y}", "xy", "y"},
 
 		// Environment variables are case-sensitive. Neither are replaced.
-		{"x$Y", "x"},
-		{"x${Y}", "x"},
+		{"x$Y", "x", "y"},
+		{"x${Y}", "x", "y"},
 
 		// Defaults can only be specified when using braces.
-		{"x${Z:D}", "xD"},
-		{"x${Z:A B C D}", "xA B C D"}, // Spaces are allowed in the default.
-		{"x${Z:}", "x"},
+		{"x${Z:D}", "xD", "y"},
+		{"x${Z:A B C D}", "xA B C D", "y"}, // Spaces are allowed in the default.
+		{"x${Z:}", "x", "y"},
 
 		// Defaults don't work unless braces are used.
-		{"x$y:D", "xy:D"},
+		{"x$y:D", "xy:D", "y"},
+
+		// multiline case are managed, useful for Google Cloud Service Accounts
+		{"x$y", "x{\t\t\t\"foo\": \"bar\"\t\t}", `{
+			"foo": "bar"
+		}`},
 	}
 
 	for _, test := range tests {
 		test := test
 		t.Run(test.in, func(t *testing.T) {
-			_ = os.Setenv("y", "y")
+			_ = os.Setenv("y", test.env)
 			output := expandEnvironmentVariables([]byte(test.in))
 			assert.Equal(t, test.out, string(output), "Input: %s", test.in)
 		})
 	}
+}
+
+func TestWithGoogleCloudServiceAccountEnvVariable(t *testing.T) {
+	var configuration = `
+	common:
+	  storage:
+		gcs:
+		  service_account: >-
+		    ${COMMON_STORAGE_GCS_SERVICE_ACCOUNT}
+	
+	blocks_storage:
+	  storage_prefix: monitoringmetricsv1blocks
+	  tsdb:
+		flush_blocks_on_shutdown: true
+	`
+	var serviceAccountEnvValue = `{
+	  "type": "service_account",
+	  "project_id": "my-project",
+	  "private_key_id": "1234abc",
+	  "private_key": "-----BEGIN PRIVATE KEY-----\n\n-----END PRIVATE KEY-----\n",
+	  "client_email": "test@my-project.iam.gserviceaccount.com",
+	  "client_id": "5678",
+	  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+	  "token_uri": "https://oauth2.googleapis.com/token",
+	  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+	  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/test%40my-project.iam.gserviceaccount.com"
+	}`
+
+	var expectedResult = `
+	common:
+	  storage:
+		gcs:
+		  service_account: >-
+		    {	  "type": "service_account",	  "project_id": "my-project",	  "private_key_id": "1234abc",	  "private_key": "-----BEGIN PRIVATE KEY-----\n\n-----END PRIVATE KEY-----\n",	  "client_email": "test@my-project.iam.gserviceaccount.com",	  "client_id": "5678",	  "auth_uri": "https://accounts.google.com/o/oauth2/auth",	  "token_uri": "https://oauth2.googleapis.com/token",	  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",	  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/test%40my-project.iam.gserviceaccount.com"	}
+	
+	blocks_storage:
+	  storage_prefix: monitoringmetricsv1blocks
+	  tsdb:
+		flush_blocks_on_shutdown: true
+	`
+
+	t.Run("test with google cloud service account in env variable", func(t *testing.T) {
+		_ = os.Setenv("COMMON_STORAGE_GCS_SERVICE_ACCOUNT", serviceAccountEnvValue)
+		output := expandEnvironmentVariables([]byte(configuration))
+		assert.Equal(t, expectedResult, string(output), "Input: %s", "")
+	})
 }
 
 func TestParseConfigFileParameter(t *testing.T) {

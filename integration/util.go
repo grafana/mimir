@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage/remote"
 
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -148,25 +147,25 @@ type generateHistogramFunc func(tsMillis int64, value int) prompb.Histogram
 
 func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
 	return generateHistogramSeriesWrapper(func(tsMillis int64, value int) prompb.Histogram {
-		return remote.HistogramToHistogramProto(tsMillis, generateTestHistogram(value))
+		return prompb.FromIntHistogram(tsMillis, generateTestHistogram(value))
 	}, name, ts, additionalLabels...)
 }
 
 func GenerateFloatHistogramSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
 	return generateHistogramSeriesWrapper(func(tsMillis int64, value int) prompb.Histogram {
-		return remote.FloatHistogramToHistogramProto(tsMillis, generateTestFloatHistogram(value))
+		return prompb.FromFloatHistogram(tsMillis, generateTestFloatHistogram(value))
 	}, name, ts, additionalLabels...)
 }
 
 func GenerateGaugeHistogramSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
 	return generateHistogramSeriesWrapper(func(tsMillis int64, value int) prompb.Histogram {
-		return remote.HistogramToHistogramProto(tsMillis, generateTestGaugeHistogram(value))
+		return prompb.FromIntHistogram(tsMillis, generateTestGaugeHistogram(value))
 	}, name, ts, additionalLabels...)
 }
 
 func GenerateGaugeFloatHistogramSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
 	return generateHistogramSeriesWrapper(func(tsMillis int64, value int) prompb.Histogram {
-		return remote.FloatHistogramToHistogramProto(tsMillis, generateTestGaugeFloatHistogram(value))
+		return prompb.FromFloatHistogram(tsMillis, generateTestGaugeFloatHistogram(value))
 	}, name, ts, additionalLabels...)
 }
 
@@ -240,7 +239,7 @@ func GenerateNHistogramSeries(nSeries, nExemplars int, name func() string, ts ti
 
 		series = append(series, prompb.TimeSeries{
 			Labels:     lbls,
-			Histograms: []prompb.Histogram{remote.HistogramToHistogramProto(tsMillis, generateTestHistogram(i))},
+			Histograms: []prompb.Histogram{prompb.FromIntHistogram(tsMillis, generateTestHistogram(i))},
 			Exemplars:  exemplars,
 		})
 	}

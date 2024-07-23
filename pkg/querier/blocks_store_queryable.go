@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/tracing"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -36,6 +37,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/series"
@@ -48,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -260,9 +263,6 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	)
 
 	streamingBufferSize := querierCfg.StreamingChunksPerStoreGatewaySeriesBufferSize
-	if !querierCfg.PreferStreamingChunksFromStoreGateways {
-		streamingBufferSize = 0
-	}
 
 	return NewBlocksStoreQueryable(stores, finder, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
 }
@@ -749,6 +749,8 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		streams       []storegatewaypb.StoreGateway_SeriesClient
 	)
 
+	debugQuery := chunkinfologger.IsChunkInfoLoggingEnabled(ctx)
+
 	// Concurrently fetch series from all clients.
 	for c, blockIDs := range clients {
 		// Change variables scope since it will be used in a goroutine.
@@ -879,6 +881,14 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				}
 			}
 
+			// debug
+			var chunkInfo *chunkinfologger.ChunkInfoLogger
+			if debugQuery {
+				traceID, spanID, _ := tracing.ExtractTraceSpanID(ctx)
+				chunkInfo = chunkinfologger.NewChunkInfoLogger("store-gateway message", traceID, spanID, q.logger, chunkinfologger.ChunkInfoLoggingFromContext(ctx))
+				chunkInfo.LogSelect("store-gateway", minT, maxT)
+			}
+
 			reqStats.AddFetchedIndexBytes(indexBytesFetched)
 			var streamReader *storeGatewayStreamReader
 			if len(mySeries) > 0 {
@@ -896,6 +906,13 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					"fetched index bytes", indexBytesFetched,
 					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
 					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
+				if chunkInfo != nil {
+					for i, s := range mySeries {
+						chunkInfo.StartSeries(mimirpb.FromLabelAdaptersToLabels(s.Labels))
+						chunkInfo.FormatStoreGatewayChunkInfo(c.RemoteAddress(), s.Chunks)
+						chunkInfo.EndSeries(i == len(mySeries)-1)
+					}
+				}
 			} else if len(myStreamingSeries) > 0 {
 				// FetchedChunks and FetchedChunkBytes are added by the SeriesChunksStreamReader.
 				reqStats.AddFetchedSeries(uint64(len(myStreamingSeries)))
@@ -918,7 +935,15 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			if len(mySeries) > 0 {
 				seriesSets = append(seriesSets, &blockQuerierSeriesSet{series: mySeries})
 			} else if len(myStreamingSeries) > 0 {
-				seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{series: myStreamingSeries, streamReader: streamReader})
+				if chunkInfo != nil {
+					chunkInfo.SetMsg("store-gateway streaming")
+				}
+				seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{
+					series:        myStreamingSeries,
+					streamReader:  streamReader,
+					chunkInfo:     chunkInfo,
+					remoteAddress: c.RemoteAddress(),
+				})
 				streamReaders = append(streamReaders, streamReader)
 			}
 			warnings.Merge(myWarnings)

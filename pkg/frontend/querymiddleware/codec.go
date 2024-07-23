@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -237,6 +238,7 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 
 	promResponses := make([]*PrometheusResponse, 0, len(responses))
 	promWarningsMap := make(map[string]struct{}, 0)
+	promInfosMap := make(map[string]struct{}, 0)
 	var present struct{}
 
 	for _, res := range responses {
@@ -253,11 +255,19 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 		for _, warning := range pr.Warnings {
 			promWarningsMap[warning] = present
 		}
+		for _, info := range pr.Infos {
+			promInfosMap[info] = present
+		}
 	}
 
 	var promWarnings []string
 	for warning := range promWarningsMap {
 		promWarnings = append(promWarnings, warning)
+	}
+
+	var promInfos []string
+	for info := range promInfosMap {
+		promInfos = append(promInfos, info)
 	}
 
 	// Merge the responses.
@@ -270,6 +280,7 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 			Result:     matrixMerge(promResponses),
 		},
 		Warnings: promWarnings,
+		Infos:    promInfos,
 	}, nil
 }
 
@@ -586,6 +597,12 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 			for _, v := range h.Values {
 				// There should only be one value, but add all of them for completeness.
 				req.Header.Add(compat.ForceFallbackHeaderName, v)
+			}
+		}
+		if h.Name == chunkinfologger.ChunkInfoLoggingHeader {
+			for _, v := range h.Values {
+				// There should only be one value, but add all of them for completeness.
+				req.Header.Add(chunkinfologger.ChunkInfoLoggingHeader, v)
 			}
 		}
 	}

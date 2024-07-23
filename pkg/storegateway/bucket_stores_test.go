@@ -124,7 +124,7 @@ func TestBucketStores_InitialSync(t *testing.T) {
 
 			# HELP cortex_bucket_stores_gate_queries_concurrent_max Number of maximum concurrent queries allowed.
 			# TYPE cortex_bucket_stores_gate_queries_concurrent_max gauge
-			cortex_bucket_stores_gate_queries_concurrent_max{gate="query"} 100
+			cortex_bucket_stores_gate_queries_concurrent_max{gate="query"} 200
 			cortex_bucket_stores_gate_queries_concurrent_max{gate="index_header"} 4
 
 			# HELP cortex_bucket_stores_gate_queries_in_flight Number of queries that are currently in flight.
@@ -266,7 +266,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 
 			# HELP cortex_bucket_stores_gate_queries_concurrent_max Number of maximum concurrent queries allowed.
 			# TYPE cortex_bucket_stores_gate_queries_concurrent_max gauge
-			cortex_bucket_stores_gate_queries_concurrent_max{gate="query"} 100
+			cortex_bucket_stores_gate_queries_concurrent_max{gate="query"} 200
 			cortex_bucket_stores_gate_queries_concurrent_max{gate="index_header"} 4
 
 			# HELP cortex_bucket_stores_gate_queries_in_flight Number of queries that are currently in flight.
