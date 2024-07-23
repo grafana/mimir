@@ -1485,6 +1485,24 @@ How to **investigate**:
 - Check if ingesters are processing too many records, and they need to be scaled up (vertically or horizontally).
 - Check actual error in logs to see whether the `-ingest-storage.kafka.wait-strong-read-consistency-timeout` or the request timeout has been hit first.
 
+### MimirKafkaClientBufferedProduceBytesTooHigh
+
+This alert fires when the Kafka client buffer, used to write incoming write requests to Kafka, is getting full.
+
+How it **works**:
+
+- Distributor and ruler encapsulate write requests into Kafka records and send them to Kafka.
+- The Kafka client has a limit on the total byte size of buffered records either sent to Kafka or sent to Kafka but not acknowledged yet.
+- When the limit is reached, the Kafka client stops producing more records and fast fails.
+- The limit is configured via `-ingest-storage.kafka.producer-max-buffered-bytes`.
+- The default limit is configured intentionally high, so that when the buffer utilization gets close to the limit, this indicates that there's probably an issue.
+
+How to **investigate**:
+
+- Query `cortex_ingest_storage_writer_buffered_produce_bytes{quantile="1.0"}` metrics to see the actual buffer utilization peaks.
+  - If the high buffer utilization is isolated to a small set of pods, then there might be an issue in the client pods.
+  - If the high buffer utilization is spread across all or most pods, then there might be an issue in Kafka.
+
 ### Ingester is overloaded when consuming from Kafka
 
 This runbook covers the case an ingester is overloaded when ingesting metrics data (consuming) from Kafka.

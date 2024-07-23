@@ -1784,4 +1784,55 @@ local utils = import 'mixin-utils/utils.libsonnet';
         defaults+: { unit: 's' },
       },
     },
+
+  ingestStorageKafkaProducedRecordsRatePanel(jobName)::
+    $.timeseriesPanel('Kafka produced records / sec') +
+    $.panelDescription(
+      'Kafka produced records / sec',
+      'Rate of records synchronously produced to Kafka.',
+    ) +
+    $.queryPanel([
+      |||
+        sum(rate(cortex_ingest_storage_writer_produce_requests_total{%(job_matcher)s}[$__rate_interval]))
+        -
+        (sum(rate(cortex_ingest_storage_writer_produce_failures_total{%(job_matcher)s}[$__rate_interval])) or vector(0))
+      ||| % { job_matcher: $.jobMatcher($._config.job_names[jobName]) },
+      |||
+        sum by(reason) (rate(cortex_ingest_storage_writer_produce_failures_total{%(job_matcher)s}[$__rate_interval]))
+      ||| % { job_matcher: $.jobMatcher($._config.job_names[jobName]) },
+    ], [
+      'success',
+      'failed - {{ reason }}',
+    ]) +
+    $.stack +
+    $.aliasColors({
+      success: $._colors.success,
+    }),
+
+  ingestStorageKafkaProducedRecordsLatencyPanel(jobName)::
+    $.timeseriesPanel('Kafka produced records latency') +
+    $.panelDescription(
+      'Kafka produced records latency',
+      |||
+        Latency of records synchronously produced to Kafka.
+      |||
+    ) +
+    $.queryPanel(
+      [
+        'histogram_avg(sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+      ],
+      [
+        'avg',
+        '99th percentile',
+        '99.9th percentile',
+        '100th percentile',
+      ],
+    ) + {
+      fieldConfig+: {
+        defaults+: { unit: 's' },
+      },
+    },
 }
