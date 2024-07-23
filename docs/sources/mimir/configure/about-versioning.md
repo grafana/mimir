@@ -167,7 +167,6 @@ The following features are currently experimental:
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
   - Use of Redis cache backend (`-blocks-storage.bucket-store.chunks-cache.backend=redis`, `-blocks-storage.bucket-store.index-cache.backend=redis`, `-blocks-storage.bucket-store.metadata-cache.backend=redis`)
-  - `-blocks-storage.bucket-store.series-selection-strategy`
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
 - Read-write deployment mode
 - API endpoints:
