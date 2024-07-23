@@ -2824,7 +2824,7 @@ func TestIngester_Push(t *testing.T) {
 					if testData.expectedErr == nil {
 						assert.NoError(t, err)
 					} else {
-						handledErr := i.mapPushErrorToErrorWithStatus(err)
+						handledErr := mapPushErrorToErrorWithStatus(err)
 						errWithStatus, ok := handledErr.(globalerror.ErrorWithStatus)
 						assert.True(t, ok)
 						assert.True(t, errWithStatus.Equals(testData.expectedErr))
