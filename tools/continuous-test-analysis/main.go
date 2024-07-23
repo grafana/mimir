@@ -83,11 +83,16 @@ func run() error {
 		firstFailureLineIndex := slices.IndexFunc(failureDetailsLines, valueDiffers)
 		lastFailureLineIndex := lastIndex(failureDetailsLines, valueDiffers)
 		const failureContextLines = 8
-		firstFailureLine := max(0, firstFailureLineIndex-failureContextLines)
+		firstFailureLine := max(2, firstFailureLineIndex-failureContextLines)
 		lastFailureLine := min(len(failureDetailsLines)-1, lastFailureLineIndex+failureContextLines)
 
 		for i := firstFailureLine; i <= lastFailureLine; i++ {
 			failureDetailsLine := failureDetailsLines[i]
+
+			if failureDetailsLine == "" {
+				continue
+			}
+
 			sampleT, expected, actual := parseFailureDetailsLine(failureDetailsLine)
 
 			err := w.Write([]string{
