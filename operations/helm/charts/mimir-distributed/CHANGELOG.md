@@ -34,11 +34,14 @@ Entries should include a reference to the Pull Request that introduced the chang
   * Writes dashboard: `cortex_request_duration_seconds` metric. #8757
   * Reads dashboard: `cortex_request_duration_seconds` metric. #8752
   * Rollout progress dashboard. #8779
+  * Alertmanager dashboard. #8792
+  * Ruler dashboard: `cortex_request_duration_seconds` metric. #8795
   * Queries dashboard: `cortex_request_duration_seconds` metric. #8800
 * [ENHANCEMENT] Memcached: Update to Memcached 1.6.28 and memcached-exporter 0.14.4. #8557
 * [ENHANCEMENT] Add missing fields in multiple topology spread constraints. #8533
 * [ENHANCEMENT] Add support for setting the image pull secrets, node selectors, tolerations and topology spread constraints for the Grafana Agent pods used for metamonitoring. #8670
 * [BUGFIX] Add missing container security context to run `continuous-test` under the restricted security policy. #8653
+* [BUGFIX] Add `global.extraVolumeMounts` to the exporter container on memcached statefulsets #8787
 
 ## 5.4.0
 
