@@ -6,6 +6,7 @@ local filename = 'mimir-queries.json';
     assert std.md5(filename) == 'b3abe8d5c040395cc36615cb4334c92d' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Queries') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
+    .addShowNativeLatencyVariable()
     .addRow(
       $.row('Query-frontend')
       .addPanel(
@@ -235,23 +236,27 @@ local filename = 'mimir-queries.json';
           |||
         ) +
         $.queryPanel(
-          [
+          local ncSumRate = utils.ncHistogramSumBy(utils.ncHistogramCountRate($.queries.ingester.requestsPerSecondMetric, $.queries.ingester.readRequestsPerSecondSelector));
+          local scSuccessful =
             |||
               (
                 sum(rate(cortex_ingest_storage_strong_consistency_requests_total{%s}[$__rate_interval]))
                 -
                 sum(rate(cortex_ingest_storage_strong_consistency_failures_total{%s}[$__rate_interval]))
               )
-              /
-              sum(rate(cortex_request_duration_seconds_count{%s,route=~"%s"}[$__rate_interval]))
-            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester), $._config.ingester_read_path_routes_regex],
+            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)];
+          local scFailed =
             |||
               sum(rate(cortex_ingest_storage_strong_consistency_failures_total{%s}[$__rate_interval]))
-              /
-              sum(rate(cortex_request_duration_seconds_count{%s,route=~"%s"}[$__rate_interval]))
-            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester), $._config.ingester_read_path_routes_regex],
+            ||| % [$.jobMatcher($._config.job_names.ingester)];
+          local scRate(sc, rate) = std.join(' / ', [sc, rate]);
+          [
+            scRate(scSuccessful, utils.showClassicHistogramQuery(ncSumRate)),
+            scRate(scSuccessful, utils.showNativeHistogramQuery(ncSumRate)),
+            scRate(scFailed, utils.showClassicHistogramQuery(ncSumRate)),
+            scRate(scFailed, utils.showNativeHistogramQuery(ncSumRate)),
           ],
-          ['successful', 'failed'],
+          ['successful', 'successful', 'failed', 'failed'],
         )
         + $.aliasColors({ failed: $._colors.failed, successful: $._colors.success })
         + { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } }
