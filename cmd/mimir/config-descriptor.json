@@ -9481,35 +9481,14 @@
             },
             {
               "kind": "field",
-              "name": "series_selection_strategy",
+              "name": "series_fetch_preference",
               "required": false,
-              "desc": "This option controls the strategy to selection of series and deferring application of matchers. A more aggressive strategy will fetch less posting lists at the cost of more series. This is useful when querying large blocks in which many series share the same label name and value. Supported values (most aggressive to least aggressive): speculative, worst-case, worst-case-small-posting-lists, all.",
+              "desc": "This parameter controls the trade-off in fetching series versus fetching postings to fulfill a series request. Increasing the series preference results in fetching more series and reducing the volume of postings fetched. Reducing the series preference results in the opposite. Increase this parameter to reduce the rate of fetched series bytes (see \"Mimir / Queries\" dashboard) or API calls to the object store. Must be a positive floating point number.",
               "fieldValue": null,
-              "fieldDefaultValue": "worst-case",
-              "fieldFlag": "blocks-storage.bucket-store.series-selection-strategy",
-              "fieldType": "string",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "block",
-              "name": "series_selection_strategies",
-              "required": false,
-              "desc": "",
-              "blockEntries": [
-                {
-                  "kind": "field",
-                  "name": "worst_case_series_preference",
-                  "required": false,
-                  "desc": "This option is only used when blocks-storage.bucket-store.series-selection-strategy=worst-case. Increasing the series preference results in fetching more series than postings. Must be a positive floating point number.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 0.75,
-                  "fieldFlag": "blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference",
-                  "fieldType": "float",
-                  "fieldCategory": "experimental"
-                }
-              ],
-              "fieldValue": null,
-              "fieldDefaultValue": null
+              "fieldDefaultValue": 0.75,
+              "fieldFlag": "blocks-storage.bucket-store.series-fetch-preference",
+              "fieldType": "float",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,

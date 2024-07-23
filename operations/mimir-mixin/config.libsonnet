@@ -646,6 +646,10 @@
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'ingester-zone-a',
       },
+      compactor: {
+        enabled: false,
+        hpa_name: $._config.autoscaling_hpa_prefix + 'compactor',
+      },
     },
 
 

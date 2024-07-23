@@ -8,6 +8,9 @@
     ingest_storage_ingester_instance_ring_dedicated_prefix_enabled: false,
     ingest_storage_ingester_instance_ring_dedicated_prefix: 'partition-ingesters/',
 
+    // How many zones ingesters should be deployed to.
+    ingest_storage_ingester_zones: 3,
+
     commonConfig+:: if !$._config.ingest_storage_enabled then {} else
       $.ingest_storage_args +
 
@@ -108,4 +111,20 @@
   ),
 
   ingester_args+:: if !$._config.ingest_storage_enabled then {} else $.ingest_storage_ingester_args,
+
+  //
+  // Enforce the configured ingester zones.
+  //
+
+  assert !$._config.ingest_storage_enabled || ($._config.ingest_storage_ingester_zones >= 2 && $._config.ingest_storage_ingester_zones <= 3) : 'ingest storage requires either 2 or 3 ingester zones',
+
+  ingester_zone_c_statefulset:
+    if $._config.ingest_storage_enabled && $._config.ingest_storage_ingester_zones < 3
+    then null
+    else super.ingester_zone_c_statefulset,
+
+  ingester_zone_c_service:
+    if $._config.ingest_storage_enabled && $._config.ingest_storage_ingester_zones < 3
+    then null
+    else super.ingester_zone_c_service,
 }

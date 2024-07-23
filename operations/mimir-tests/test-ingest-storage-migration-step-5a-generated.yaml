@@ -239,57 +239,6 @@ metadata:
   name: overrides
   namespace: default
 ---
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: replicatemplates.rollout-operator.grafana.com
-spec:
-  group: rollout-operator.grafana.com
-  names:
-    categories:
-    - all
-    kind: ReplicaTemplate
-    plural: replicatemplates
-    singular: replicatemplate
-  scope: Namespaced
-  versions:
-  - additionalPrinterColumns:
-    - description: Status replicas
-      jsonPath: .status.replicas
-      name: StatusReplicas
-      type: string
-    - description: Spec replicas
-      jsonPath: .spec.replicas
-      name: SpecReplicas
-      type: string
-    name: v1
-    schema:
-      openAPIV3Schema:
-        properties:
-          spec:
-            properties:
-              labelSelector:
-                type: string
-              replicas:
-                default: 1
-                minimum: 0
-                type: integer
-            type: object
-          status:
-            properties:
-              replicas:
-                type: integer
-            type: object
-        type: object
-    served: true
-    storage: true
-    subresources:
-      scale:
-        labelSelectorPath: .spec.labelSelector
-        specReplicasPath: .spec.replicas
-        statusReplicasPath: .status.replicas
-      status: {}
----
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -320,14 +269,6 @@ rules:
   - statefulsets/status
   verbs:
   - update
-- apiGroups:
-  - rollout-operator.grafana.com
-  resources:
-  - replicatemplates/scale
-  - replicatemplates/status
-  verbs:
-  - get
-  - patch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -452,6 +393,29 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
+    name: ingester-zone-a-partition
+  name: ingester-zone-a-partition
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: ingester-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ingester-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ingester-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ingester-zone-a-partition
+    rollout-group: ingester
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
     name: ingester-zone-b
   name: ingester-zone-b
   namespace: default
@@ -469,6 +433,75 @@ spec:
     targetPort: 7946
   selector:
     name: ingester-zone-b
+    rollout-group: ingester
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ingester-zone-b-partition
+  name: ingester-zone-b-partition
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: ingester-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ingester-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ingester-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ingester-zone-b-partition
+    rollout-group: ingester
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ingester-zone-c
+  name: ingester-zone-c
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: ingester-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ingester-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ingester-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ingester-zone-c
+    rollout-group: ingester
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    name: ingester-zone-c-partition
+  name: ingester-zone-c-partition
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: ingester-http-metrics
+    port: 8080
+    targetPort: 8080
+  - name: ingester-grpc
+    port: 9095
+    targetPort: 9095
+  - name: ingester-gossip-ring
+    port: 7946
+    targetPort: 7946
+  selector:
+    name: ingester-zone-c-partition
     rollout-group: ingester
 ---
 apiVersion: v1
@@ -850,7 +883,7 @@ spec:
         - -ingest-storage.kafka.topic=ingest
         - -ingester.partition-ring.prefix=
         - -ingester.ring.heartbeat-timeout=10m
-        - -ingester.ring.prefix=partition-ingesters/
+        - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
@@ -1040,10 +1073,6 @@ spec:
     spec:
       containers:
       - args:
-        - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
-        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.topic=ingest
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-queriers-per-tenant=10
@@ -1131,10 +1160,6 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
-        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.topic=ingest
         - -query-frontend.max-queriers-per-tenant=10
         - -query-scheduler.max-outstanding-requests-per-tenant=100
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -1257,7 +1282,7 @@ spec:
         - -ingest-storage.kafka.topic=ingest
         - -ingester.partition-ring.prefix=
         - -ingester.ring.heartbeat-timeout=10m
-        - -ingester.ring.prefix=partition-ingesters/
+        - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
@@ -1457,10 +1482,6 @@ spec:
     spec:
       containers:
       - args:
-        - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
-        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.topic=ingest
         - -query-frontend.cache-results=false
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-queriers-per-tenant=10
@@ -1551,10 +1572,6 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
-        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.topic=ingest
         - -query-frontend.max-queriers-per-tenant=10
         - -query-scheduler.max-outstanding-requests-per-tenant=100
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -1618,10 +1635,6 @@ spec:
         - -alertmanager.storage.path=/data
         - -alertmanager.web.external-url=http://test/alertmanager
         - -common.storage.backend=gcs
-        - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
-        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.topic=ingest
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1727,10 +1740,6 @@ spec:
         - -compactor.split-and-merge-shards=0
         - -compactor.split-groups=1
         - -compactor.symbols-flushers-concurrency=4
-        - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
-        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.topic=ingest
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1794,20 +1803,16 @@ metadata:
   annotations:
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
-    grafana.com/rollout-delayed-downscale: 13h
-    grafana.com/rollout-mirror-replicas-from-resource-api-version: rollout-operator.grafana.com/v1
-    grafana.com/rollout-mirror-replicas-from-resource-kind: ReplicaTemplate
-    grafana.com/rollout-mirror-replicas-from-resource-name: ingester-zone-a
-    grafana.com/rollout-prepare-delayed-downscale-url: http://pod/ingester/prepare-partition-downscale
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: "0"
+    grafana.com/min-time-between-zones-downscale: 0s
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
   name: ingester-zone-a
   namespace: default
 spec:
   podManagementPolicy: Parallel
+  replicas: 1
   selector:
     matchLabels:
       name: ingester-zone-a
@@ -1845,10 +1850,146 @@ spec:
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-tenant-shard-size=3
+        - -ingest-storage.ingestion-partition-tenant-shard-size=1
+        - -ingester.max-global-metadata-per-metric=10
+        - -ingester.max-global-metadata-per-user=30000
+        - -ingester.max-global-series-per-user=150000
+        - -ingester.ring.heartbeat-period=2m
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.instance-availability-zone=zone-a
+        - -ingester.ring.num-tokens=512
+        - -ingester.ring.prefix=
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=memberlist
+        - -ingester.ring.tokens-file-path=/data/tokens
+        - -ingester.ring.unregister-on-shutdown=true
+        - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=500
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=ingester
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: ingester-a-only
+        - name: GOGC
+          value: "off"
+        - name: GOMEMLIMIT
+          value: 1Gi
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        - name: Z
+          value: "123"
+        image: grafana/mimir:2.13.0
+        imagePullPolicy: IfNotPresent
+        name: ingester
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 25Gi
+          requests:
+            cpu: "4"
+            memory: 15Gi
+        volumeMounts:
+        - mountPath: /data
+          name: ingester-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 1200
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: OnDelete
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: ingester-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+      storageClassName: fast
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "80"
+    rollout-max-unavailable: "50"
+  labels:
+    grafana.com/prepare-downscale: "true"
+    rollout-group: ingester
+  name: ingester-zone-a-partition
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      name: ingester-zone-a-partition
+      rollout-group: ingester
+  serviceName: ingester-zone-a-partition
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: ingester-zone-a-partition
+        rollout-group: ingester
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - ingester
+              - key: name
+                operator: NotIn
+                values:
+                - ingester-zone-a-partition
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -blocks-storage.tsdb.block-ranges-period=2h
+        - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
+        - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
+        - -common.storage.backend=gcs
+        - -distributor.health-check-ingesters=true
+        - -distributor.ingestion-tenant-shard-size=3
         - -ingest-storage.enabled=true
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.consumer-group=ingester-zone-a-<partition>
         - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
@@ -1945,7 +2086,7 @@ metadata:
     grafana.com/rollout-downscale-leader: ingester-zone-a
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: "0"
+    grafana.com/min-time-between-zones-downscale: 0s
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
   name: ingester-zone-b
@@ -1989,10 +2130,140 @@ spec:
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-tenant-shard-size=3
+        - -ingest-storage.ingestion-partition-tenant-shard-size=1
+        - -ingester.max-global-metadata-per-metric=10
+        - -ingester.max-global-metadata-per-user=30000
+        - -ingester.max-global-series-per-user=150000
+        - -ingester.ring.heartbeat-period=2m
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.instance-availability-zone=zone-b
+        - -ingester.ring.num-tokens=512
+        - -ingester.ring.prefix=
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=memberlist
+        - -ingester.ring.tokens-file-path=/data/tokens
+        - -ingester.ring.unregister-on-shutdown=true
+        - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=500
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=ingester
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: all-ingesters
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.13.0
+        imagePullPolicy: IfNotPresent
+        name: ingester
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 25Gi
+          requests:
+            cpu: "4"
+            memory: 15Gi
+        volumeMounts:
+        - mountPath: /data
+          name: ingester-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 1200
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: OnDelete
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: ingester-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+      storageClassName: fast
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "80"
+    rollout-max-unavailable: "50"
+  labels:
+    grafana.com/prepare-downscale: "true"
+    rollout-group: ingester
+  name: ingester-zone-b-partition
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      name: ingester-zone-b-partition
+      rollout-group: ingester
+  serviceName: ingester-zone-b-partition
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: ingester-zone-b-partition
+        rollout-group: ingester
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - ingester
+              - key: name
+                operator: NotIn
+                values:
+                - ingester-zone-b-partition
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -blocks-storage.tsdb.block-ranges-period=2h
+        - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
+        - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
+        - -common.storage.backend=gcs
+        - -distributor.health-check-ingesters=true
+        - -distributor.ingestion-tenant-shard-size=3
         - -ingest-storage.enabled=true
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.consumer-group=ingester-zone-b-<partition>
         - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
@@ -2004,6 +2275,274 @@ spec:
         - -ingester.ring.heartbeat-period=2m
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.instance-availability-zone=zone-b
+        - -ingester.ring.num-tokens=512
+        - -ingester.ring.prefix=partition-ingesters/
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=memberlist
+        - -ingester.ring.tokens-file-path=/data/tokens
+        - -ingester.ring.unregister-on-shutdown=true
+        - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=500
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=ingester
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: all-ingesters
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.13.0
+        imagePullPolicy: IfNotPresent
+        name: ingester
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 25Gi
+          requests:
+            cpu: "4"
+            memory: 15Gi
+        volumeMounts:
+        - mountPath: /data
+          name: ingester-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 1200
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: OnDelete
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: ingester-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+      storageClassName: fast
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "80"
+    grafana.com/rollout-downscale-leader: ingester-zone-b
+    rollout-max-unavailable: "50"
+  labels:
+    grafana.com/min-time-between-zones-downscale: 0s
+    grafana.com/prepare-downscale: "true"
+    rollout-group: ingester
+  name: ingester-zone-c
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      name: ingester-zone-c
+      rollout-group: ingester
+  serviceName: ingester-zone-c
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: ingester-zone-c
+        rollout-group: ingester
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - ingester
+              - key: name
+                operator: NotIn
+                values:
+                - ingester-zone-c
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -blocks-storage.tsdb.block-ranges-period=2h
+        - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
+        - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
+        - -common.storage.backend=gcs
+        - -distributor.health-check-ingesters=true
+        - -distributor.ingestion-tenant-shard-size=3
+        - -ingest-storage.ingestion-partition-tenant-shard-size=1
+        - -ingester.max-global-metadata-per-metric=10
+        - -ingester.max-global-metadata-per-user=30000
+        - -ingester.max-global-series-per-user=150000
+        - -ingester.ring.heartbeat-period=2m
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.instance-availability-zone=zone-c
+        - -ingester.ring.num-tokens=512
+        - -ingester.ring.prefix=
+        - -ingester.ring.replication-factor=3
+        - -ingester.ring.store=memberlist
+        - -ingester.ring.tokens-file-path=/data/tokens
+        - -ingester.ring.unregister-on-shutdown=true
+        - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=500
+        - -server.grpc.keepalive.min-time-between-pings=10s
+        - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
+        - -target=ingester
+        - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: all-ingesters
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
+        image: grafana/mimir:2.13.0
+        imagePullPolicy: IfNotPresent
+        name: ingester
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 9095
+          name: grpc
+        - containerPort: 7946
+          name: gossip-ring
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          limits:
+            memory: 25Gi
+          requests:
+            cpu: "4"
+            memory: 15Gi
+        volumeMounts:
+        - mountPath: /data
+          name: ingester-data
+        - mountPath: /etc/mimir
+          name: overrides
+      securityContext:
+        runAsUser: 0
+      terminationGracePeriodSeconds: 1200
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+  updateStrategy:
+    type: OnDelete
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: ingester-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+      storageClassName: fast
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "80"
+    rollout-max-unavailable: "50"
+  labels:
+    grafana.com/prepare-downscale: "true"
+    rollout-group: ingester
+  name: ingester-zone-c-partition
+  namespace: default
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      name: ingester-zone-c-partition
+      rollout-group: ingester
+  serviceName: ingester-zone-c-partition
+  template:
+    metadata:
+      labels:
+        gossip_ring_member: "true"
+        name: ingester-zone-c-partition
+        rollout-group: ingester
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - ingester
+              - key: name
+                operator: NotIn
+                values:
+                - ingester-zone-c-partition
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -blocks-storage.tsdb.block-ranges-period=2h
+        - -blocks-storage.tsdb.dir=/data/tsdb
+        - -blocks-storage.tsdb.head-compaction-interval=15m
+        - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.wal-replay-concurrency=3
+        - -common.storage.backend=gcs
+        - -distributor.health-check-ingesters=true
+        - -distributor.ingestion-tenant-shard-size=3
+        - -ingest-storage.enabled=true
+        - -ingest-storage.ingestion-partition-tenant-shard-size=1
+        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
+        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.consumer-group=ingester-zone-c-<partition>
+        - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
+        - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
+        - -ingest-storage.kafka.topic=ingest
+        - -ingester.max-global-metadata-per-metric=10
+        - -ingester.max-global-metadata-per-user=30000
+        - -ingester.max-global-series-per-user=150000
+        - -ingester.partition-ring.prefix=
+        - -ingester.push-grpc-method-enabled=false
+        - -ingester.ring.heartbeat-period=2m
+        - -ingester.ring.heartbeat-timeout=10m
+        - -ingester.ring.instance-availability-zone=zone-c
         - -ingester.ring.num-tokens=512
         - -ingester.ring.prefix=partition-ingesters/
         - -ingester.ring.replication-factor=3
@@ -2354,10 +2893,6 @@ spec:
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
-        - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
-        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.topic=ingest
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -2499,10 +3034,6 @@ spec:
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
-        - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
-        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.topic=ingest
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -2646,10 +3177,6 @@ spec:
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
-        - -ingest-storage.enabled=true
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
-        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.topic=ingest
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -2759,68 +3286,3 @@ spec:
         memory: 512Mi
   size: 3
   version: 3.3.13
----
-apiVersion: rollout-operator.grafana.com/v1
-kind: ReplicaTemplate
-metadata:
-  name: ingester-zone-a
-  namespace: default
-spec:
-  labelSelector: name=unused
----
-apiVersion: keda.sh/v1alpha1
-kind: ScaledObject
-metadata:
-  name: ingester-zone-a
-  namespace: default
-spec:
-  advanced:
-    horizontalPodAutoscalerConfig:
-      behavior:
-        scaleDown:
-          policies:
-          - periodSeconds: 1800
-            type: Percent
-            value: 10
-          selectPolicy: Max
-          stabilizationWindowSeconds: 3600
-        scaleUp:
-          policies:
-          - periodSeconds: 600
-            type: Percent
-            value: 100
-          selectPolicy: Min
-          stabilizationWindowSeconds: 1800
-  maxReplicaCount: 15
-  minReplicaCount: 2
-  pollingInterval: 10
-  scaleTargetRef:
-    apiVersion: rollout-operator.grafana.com/v1
-    kind: ReplicaTemplate
-    name: ingester-zone-a
-  triggers:
-  - metadata:
-      ignoreNullValues: "false"
-      metricName: cortex_ingester_zone_a_replicas_hpa_default
-      query: |-
-        (sum(
-            sum by (pod) (cortex_ingester_owned_series{cluster="test-cluster", job="default/ingester-zone-a", container="ingester"})
-            and
-            sum by (pod) (kube_pod_status_ready{cluster="test-cluster",namespace="default", pod=~"ingester-zone-a.*", condition="true"}) > 0
-        )
-         / (
-            sum(kube_pod_status_ready{cluster="test-cluster", namespace="default", pod=~"ingester-zone-a.*", condition="true"})
-            /
-            scalar(kube_statefulset_status_replicas{cluster="test-cluster", namespace="default", statefulset="ingester-zone-a"})
-        )
-        )  and ((
-            sum(kube_pod_status_ready{cluster="test-cluster", namespace="default", pod=~"ingester-zone-a.*", condition="true"})
-            /
-            scalar(kube_statefulset_status_replicas{cluster="test-cluster", namespace="default", statefulset="ingester-zone-a"})
-        )
-         > 0.7)
-      serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "1500000"
-    metricType: AverageValue
-    name: cortex_ingester_zone_a_replicas_hpa_default
-    type: prometheus
