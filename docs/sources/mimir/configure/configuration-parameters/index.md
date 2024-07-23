@@ -1448,12 +1448,6 @@ store_gateway_client:
 # CLI flag: -querier.shuffle-sharding-ingesters-enabled
 [shuffle_sharding_ingesters_enabled: <boolean> | default = true]
 
-# (experimental) Request store-gateways stream chunks. Store-gateways will only
-# respond with a stream of chunks if the target store-gateway supports this, and
-# this preference will be ignored by store-gateways that do not support this.
-# CLI flag: -querier.prefer-streaming-chunks-from-store-gateways
-[prefer_streaming_chunks_from_store_gateways: <boolean> | default = true]
-
 # (advanced) Number of series to buffer per ingester when streaming chunks from
 # ingesters.
 # CLI flag: -querier.streaming-chunks-per-ingester-buffer-size
@@ -4147,22 +4141,15 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.batch-series-size
   [streaming_series_batch_size: <int> | default = 5000]
 
-  # (experimental) This option controls the strategy to selection of series and
-  # deferring application of matchers. A more aggressive strategy will fetch
-  # less posting lists at the cost of more series. This is useful when querying
-  # large blocks in which many series share the same label name and value.
-  # Supported values (most aggressive to least aggressive): speculative,
-  # worst-case, worst-case-small-posting-lists, all.
-  # CLI flag: -blocks-storage.bucket-store.series-selection-strategy
-  [series_selection_strategy: <string> | default = "worst-case"]
-
-  series_selection_strategies:
-    # (experimental) This option is only used when
-    # blocks-storage.bucket-store.series-selection-strategy=worst-case.
-    # Increasing the series preference results in fetching more series than
-    # postings. Must be a positive floating point number.
-    # CLI flag: -blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference
-    [worst_case_series_preference: <float> | default = 0.75]
+  # (advanced) This parameter controls the trade-off in fetching series versus
+  # fetching postings to fulfill a series request. Increasing the series
+  # preference results in fetching more series and reducing the volume of
+  # postings fetched. Reducing the series preference results in the opposite.
+  # Increase this parameter to reduce the rate of fetched series bytes (see
+  # "Mimir / Queries" dashboard) or API calls to the object store. Must be a
+  # positive floating point number.
+  # CLI flag: -blocks-storage.bucket-store.series-fetch-preference
+  [series_fetch_preference: <float> | default = 0.75]
 
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is

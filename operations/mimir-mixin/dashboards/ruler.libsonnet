@@ -14,6 +14,7 @@ local filename = 'mimir-ruler.json';
     assert std.md5(filename) == '631e15d5d85afb2ca8e35d62984eeaa0' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Ruler') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
+    .addShowNativeLatencyVariable()
     .addRow(
       ($.row('Headlines') + {
          height: '100px',
@@ -94,20 +95,18 @@ local filename = 'mimir-ruler.json';
       $.row('Configuration API (gateway)')
       .addPanel(
         $.timeseriesPanel('QPS') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.gateway), ruler_config_api_routes_re])
+        $.qpsPanelNativeHistogram($.queries.ruler.requestsPerSecondMetric, utils.toPrometheusSelectorNaked($.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', ruler_config_api_routes_re)]))
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', ruler_config_api_routes_re)])
+        $.latencyRecordingRulePanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', ruler_config_api_routes_re)])
       )
       .addPanel(
         local selectors = $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', ruler_config_api_routes_re)];
+        local labels = std.join('_', [matcher.label for matcher in selectors]);
+        local metricStr = '%(labels)s:%(metric)s' % { labels: labels, metric: $.queries.gateway.requestsPerSecondMetric };
         $.timeseriesPanel('Per route p99 latency') +
-        $.queryPanel(
-          'histogram_quantile(0.99, sum by (route, le) (%s:cortex_request_duration_seconds_bucket:sum_rate%s))' %
-          [$.recordingRulePrefix(selectors), utils.toPrometheusSelector(selectors)],
-          '{{ route }}'
-        ) +
+        $.perInstanceLatencyPanelNativeHistogram('0.99', metricStr, selectors, legends=['{{ route }}', '{{ route }}'], instanceLabel='route', from_recording=true) +
         { fieldConfig+: { defaults+: { unit: 's' } } },
       )
     )
@@ -126,53 +125,10 @@ local filename = 'mimir-ruler.json';
       $._config.show_ingest_storage_panels,
       $.row('Writes (ingest storage)')
       .addPanel(
-        $.timeseriesPanel('Requests / sec') +
-        $.panelDescription(
-          'Requests / sec',
-          'Rate of synchronous write operation from ruler to Kafka backend.',
-        ) +
-        $.queryPanel([
-          |||
-            sum(rate(cortex_ingest_storage_writer_produce_requests_total{%(job_matcher)s}[$__rate_interval]))
-            -
-            (sum(rate(cortex_ingest_storage_writer_produce_failures_total{%(job_matcher)s}[$__rate_interval])) or vector(0))
-          ||| % { job_matcher: $.jobMatcher($._config.job_names.ruler) },
-          |||
-            sum by(reason) (rate(cortex_ingest_storage_writer_produce_failures_total{%(job_matcher)s}[$__rate_interval]))
-          ||| % { job_matcher: $.jobMatcher($._config.job_names.ruler) },
-        ], [
-          'success',
-          'failed - {{ reason }}',
-        ]) +
-        $.stack +
-        $.aliasColors({
-          success: $._colors.success,
-        })
+        $.ingestStorageKafkaProducedRecordsRatePanel('ruler')
       )
       .addPanel(
-        $.timeseriesPanel('Latency') +
-        $.panelDescription(
-          'Latency',
-          'Latency of synchronous write operation from ruler to Kafka backend.',
-        ) +
-        $.queryPanel(
-          [
-            'histogram_avg(sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ruler)],
-            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ruler)],
-            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ruler)],
-            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ruler)],
-          ],
-          [
-            'avg',
-            '99th percentile',
-            '99.9th percentile',
-            '100th percentile',
-          ],
-        ) + {
-          fieldConfig+: {
-            defaults+: { unit: 's' },
-          },
-        },
+        $.ingestStorageKafkaProducedRecordsLatencyPanel('ruler')
       )
     )
     .addRow(
