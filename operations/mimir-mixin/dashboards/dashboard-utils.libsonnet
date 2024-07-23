@@ -260,14 +260,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ],
     },
 
-  perInstanceLatencyPanelNativeHistogram(quantile, metric, selector, instanceLabel=$._config.per_instance_label)::
-    $.hiddenLegendQueryPanel(
-      [
-        utils.showClassicHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel])),
-        utils.showNativeHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel])),
-      ],
-      ['', '']
-    ),
+  perInstanceLatencyPanelNativeHistogram(quantile, metric, selector, legends=null, instanceLabel=$._config.per_instance_label, from_recording=false)::
+    local queries = [
+      utils.showClassicHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel], from_recording=from_recording)),
+      utils.showNativeHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel], from_recording=from_recording)),
+    ];
+    if legends == null then
+      $.hiddenLegendQueryPanel(queries, ['', ''])
+    else
+      $.queryPanel(queries, legends),
 
   // Creates a panel like queryPanel() but if the legend contains only 1 entry,
   // than it configures the series alias color to the one used to display failures.

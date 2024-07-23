@@ -198,6 +198,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
     ruler: {
+      requestsPerSecondMetric: 'cortex_request_duration_seconds',
       evaluations: {
         successPerSecond:
           |||
