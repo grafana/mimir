@@ -1707,7 +1707,8 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 	}
 	defer q.Close()
 
-	vals, _, err := q.LabelValues(ctx, labelName, matchers...)
+	hints := &storage.LabelHints{}
+	vals, _, err := q.LabelValues(ctx, labelName, hints, matchers...)
 	if err != nil {
 		return nil, err
 	}
@@ -1759,7 +1760,8 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 	}
 	defer q.Close()
 
-	names, _, err := q.LabelNames(ctx, matchers...)
+	hints := &storage.LabelHints{}
+	names, _, err := q.LabelNames(ctx, hints, matchers...)
 	if err != nil {
 		return nil, err
 	}

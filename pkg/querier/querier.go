@@ -383,7 +383,7 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 }
 
 // LabelValues implements storage.Querier.
-func (mq multiQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (mq multiQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	ctx, queriers, err := mq.getQueriers(ctx)
 	if errors.Is(err, errEmptyTimeRange) {
 		return nil, nil, nil
@@ -393,7 +393,7 @@ func (mq multiQuerier) LabelValues(ctx context.Context, name string, matchers ..
 	}
 
 	if len(queriers) == 1 {
-		return queriers[0].LabelValues(ctx, name, matchers...)
+		return queriers[0].LabelValues(ctx, name, hints, matchers...)
 	}
 
 	var (
@@ -409,7 +409,7 @@ func (mq multiQuerier) LabelValues(ctx context.Context, name string, matchers ..
 		querier := querier
 		g.Go(func() error {
 			// NB: Values are sorted in Mimir already.
-			myValues, myWarnings, err := querier.LabelValues(ctx, name, matchers...)
+			myValues, myWarnings, err := querier.LabelValues(ctx, name, hints, matchers...)
 			if err != nil {
 				return err
 			}
@@ -430,7 +430,7 @@ func (mq multiQuerier) LabelValues(ctx context.Context, name string, matchers ..
 	return util.MergeSlices(sets...), warnings, nil
 }
 
-func (mq multiQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (mq multiQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	ctx, queriers, err := mq.getQueriers(ctx)
 	if errors.Is(err, errEmptyTimeRange) {
 		return nil, nil, nil
@@ -440,7 +440,7 @@ func (mq multiQuerier) LabelNames(ctx context.Context, matchers ...*labels.Match
 	}
 
 	if len(queriers) == 1 {
-		return queriers[0].LabelNames(ctx, matchers...)
+		return queriers[0].LabelNames(ctx, hints, matchers...)
 	}
 
 	var (
@@ -456,7 +456,7 @@ func (mq multiQuerier) LabelNames(ctx context.Context, matchers ...*labels.Match
 		querier := querier
 		g.Go(func() error {
 			// NB: Names are sorted in Mimir already.
-			myNames, myWarnings, err := querier.LabelNames(ctx, matchers...)
+			myNames, myWarnings, err := querier.LabelNames(ctx, hints, matchers...)
 			if err != nil {
 				return err
 			}

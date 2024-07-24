@@ -507,7 +507,7 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 			querier, err := queryable.Querier(mint, maxt)
 			require.NoError(t, err)
 
-			names, warnings, err := querier.LabelNames(ctx, someMatchers...)
+			names, warnings, err := querier.LabelNames(ctx, &storage.LabelHints{}, someMatchers...)
 			require.NoError(t, err)
 			assert.Empty(t, warnings)
 			assert.Equal(t, labelNames, names)
