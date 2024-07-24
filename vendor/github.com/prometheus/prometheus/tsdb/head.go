@@ -2157,6 +2157,7 @@ type memSeries struct {
 
 	nextAt                           int64 // Timestamp at which to cut the next chunk.
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
+	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
 	lastValue float64
@@ -2172,8 +2173,6 @@ type memSeries struct {
 
 	// txs is nil if isolation is disabled.
 	txs *txRing
-
-	pendingCommit bool // Whether there are samples waiting to be committed to this series.
 }
 
 // memSeriesOOOFields contains the fields required by memSeries
