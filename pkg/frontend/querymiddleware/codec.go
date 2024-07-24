@@ -677,8 +677,6 @@ func (c prometheusCodec) EncodeLabelsQueryRequest(ctx context.Context, req Label
 		r.Header.Add(api.ReadConsistencyHeader, level)
 	}
 
-	// TODO propagate the header here as well (but this function is currently not used)
-
 	return r.WithContext(ctx), nil
 }
 
