@@ -606,8 +606,21 @@ func (r *PartitionReader) fetchFirstOffsetAfterTime(ctx context.Context, cl *kgo
 	return offsetRes.Offset, true, nil
 }
 
-// WaitReadConsistency waits until all data produced up until now has been consumed by the reader.
-func (r *PartitionReader) WaitReadConsistency(ctx context.Context) (returnErr error) {
+// WaitReadConsistencyUntilLastProducedOffset waits until all data produced up until now has been consumed by the reader.
+func (r *PartitionReader) WaitReadConsistencyUntilLastProducedOffset(ctx context.Context) (returnErr error) {
+	return r.waitReadConsistency(ctx, func(ctx context.Context) (int64, error) {
+		return r.offsetReader.WaitNextFetchLastProducedOffset(ctx)
+	})
+}
+
+// WaitReadConsistencyUntilOffset waits until all data up until input offset has been consumed by the reader.
+func (r *PartitionReader) WaitReadConsistencyUntilOffset(ctx context.Context, offset int64) (returnErr error) {
+	return r.waitReadConsistency(ctx, func(_ context.Context) (int64, error) {
+		return offset, nil
+	})
+}
+
+func (r *PartitionReader) waitReadConsistency(ctx context.Context, getOffset func(context.Context) (int64, error)) (returnErr error) {
 	startTime := time.Now()
 	r.metrics.strongConsistencyRequests.Inc()
 
@@ -642,15 +655,15 @@ func (r *PartitionReader) WaitReadConsistency(ctx context.Context) (returnErr er
 		return fmt.Errorf("partition reader service is not running (state: %s)", state.String())
 	}
 
-	// Get the last produced offset.
-	lastProducedOffset, err := r.offsetReader.WaitNextFetchLastProducedOffset(ctx)
+	// Get the offset to wait for.
+	offset, err := getOffset(ctx)
 	if err != nil {
 		return err
 	}
 
-	spanLog.DebugLog("msg", "catching up with last produced offset", "offset", lastProducedOffset)
+	spanLog.DebugLog("msg", "catching up with offset", "offset", offset)
 
-	return r.consumedOffsetWatcher.Wait(ctx, lastProducedOffset)
+	return r.consumedOffsetWatcher.Wait(ctx, offset)
 }
 
 func (r *PartitionReader) pollFetches(ctx context.Context) kgo.Fetches {

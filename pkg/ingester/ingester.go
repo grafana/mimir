@@ -4103,7 +4103,7 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 		return nil
 	}
 
-	return errors.Wrap(i.ingestReader.WaitReadConsistency(ctx), "wait for read consistency")
+	return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilLastProducedOffset(ctx), "wait for read consistency")
 }
 
 func createManagerThenStartAndAwaitHealthy(ctx context.Context, srvs ...services.Service) (*services.Manager, error) {

@@ -6500,7 +6500,7 @@ func (i *mockIngester) enforceReadConsistency(ctx context.Context) error {
 		return nil
 	}
 
-	return i.partitionReader.WaitReadConsistency(ctx)
+	return i.partitionReader.WaitReadConsistencyUntilLastProducedOffset(ctx)
 }
 
 func (i *mockIngester) enforceQueryDelay(ctx context.Context) error {
