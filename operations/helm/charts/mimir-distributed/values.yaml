@@ -3548,6 +3548,8 @@ metaMonitoring:
   dashboards:
     # -- If enabled, Grafana dashboards are deployed
     enabled: false
+    # -- Alternative namespace to create dashboards ConfigMaps in
+    namespace: null
     # -- Annotations to add to the Grafana dashboard ConfigMap
     annotations:
       k8s-sidecar-target-directory: /tmp/dashboards/Mimir Dashboards
