@@ -799,7 +799,7 @@ func (c *ownedSeriesWithPartitionsRingTestContext) pushUserSeries(t *testing.T) 
 	}
 
 	// Wait until the ingester ingested all series from Kafka.
-	require.NoError(t, c.ing.ingestReader.WaitReadConsistency(context.Background()))
+	require.NoError(t, c.ing.ingestReader.WaitReadConsistencyUntilLastProducedOffset(context.Background()))
 
 	// After pushing series, set db in test context.
 	db := c.ing.getTSDB(c.user)
