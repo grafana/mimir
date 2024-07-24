@@ -863,7 +863,6 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetric
 			Buckets:                         prometheus.DefBuckets,
 		}),
 		lastConsumedOffset: lastConsumedOffset,
-		kprom: NewKafkaReaderClientMetrics("cortex_ingest_storage_reader",
-			prometheus.WrapRegistererWith(prometheus.Labels{"partition": strconv.Itoa(int(partitionID))}, reg)),
+		kprom:              NewKafkaReaderClientMetrics("partition-reader", reg),
 	}
 }

@@ -248,8 +248,7 @@ func newQueryTripperware(
 	if cfg.IngestStorageConfig.Enabled {
 		var err error
 
-		// TODO an option here could be adding "component" and use the same metrics prefix as ingester. May be a cleaner approach.
-		kafkaMetrics := ingest.NewKafkaReaderClientMetrics("cortex_query_frontend_ingest_storage", registerer)
+		kafkaMetrics := ingest.NewKafkaReaderClientMetrics("query-frontend", registerer)
 		kafkaClient, err := ingest.NewKafkaReaderClient(cfg.IngestStorageConfig.KafkaConfig, kafkaMetrics, log)
 		if err != nil {
 			return nil, err
