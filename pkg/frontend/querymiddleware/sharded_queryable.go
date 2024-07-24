@@ -137,12 +137,12 @@ func (q *shardedQuerier) handleEmbeddedQueries(ctx context.Context, queries []st
 }
 
 // LabelValues implements storage.LabelQuerier.
-func (q *shardedQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *shardedQuerier) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, errNotImplemented
 }
 
 // LabelNames implements storage.LabelQuerier.
-func (q *shardedQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *shardedQuerier) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, errNotImplemented
 }
 

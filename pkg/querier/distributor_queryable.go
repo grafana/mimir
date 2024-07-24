@@ -181,7 +181,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	return storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 }
 
-func (q *distributorQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *distributorQuerier) LabelValues(ctx context.Context, name string, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.LabelValues")
 	defer spanLog.Span.Finish()
 
@@ -204,7 +204,7 @@ func (q *distributorQuerier) LabelValues(ctx context.Context, name string, match
 	return lvs, nil, err
 }
 
-func (q *distributorQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *distributorQuerier) LabelNames(ctx context.Context, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.LabelNames")
 	defer spanLog.Span.Finish()
 
