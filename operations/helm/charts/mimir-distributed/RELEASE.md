@@ -50,7 +50,7 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 
 1. Notify open PRs about the cut change log.
 
-   - From the root directory of the repository run 
+   - From the root directory of the repository run
 
      ```bash
      ./tools/release/notify-changelog-cut.sh operations/helm/charts/mimir-distributed/CHANGELOG.md
