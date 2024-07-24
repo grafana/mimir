@@ -6,7 +6,6 @@
 package querier
 
 import (
-	"math"
 	"sort"
 
 	"github.com/pkg/errors"
@@ -124,20 +123,9 @@ func (bqs *blockQuerierSeries) Iterator(reuse chunkenc.Iterator) chunkenc.Iterat
 }
 
 func newBlockQuerierSeriesIterator(reuse chunkenc.Iterator, lbls labels.Labels, chunks []storepb.AggrChunk) (*blockQuerierSeriesIterator, error) {
-	var it *blockQuerierSeriesIterator
-	r, ok := reuse.(*blockQuerierSeriesIterator)
-	if ok {
-		it = r
-		it.i = 0
-	} else {
-		it = &blockQuerierSeriesIterator{}
-	}
-	if cap(it.iterators) < len(chunks) {
-		it.iterators = make([]iteratorWithMaxTime, len(chunks))
-	}
-	it.iterators = it.iterators[:len(chunks)]
+	it := &blockQuerierSeriesIterator{}
 	it.labels = lbls
-	it.lastT = math.MinInt64
+	iterators := make([]iteratorWithMaxTime, len(chunks)) // TODO: reuse existing slice from tree?
 
 	for i, c := range chunks {
 		var (
@@ -159,9 +147,11 @@ func newBlockQuerierSeriesIterator(reuse chunkenc.Iterator, lbls labels.Labels, 
 			return nil, errors.Wrapf(err, "failed to initialize chunk from %v type encoded raw data (series: %v min time: %d max time: %d)", c.Raw.Type, lbls, c.MinTime, c.MaxTime)
 		}
 
-		it.iterators[i].Iterator = ch.Iterator(it.iterators[i].Iterator)
-		it.iterators[i].maxT = c.MaxTime
+		iterators[i].Iterator = ch.Iterator(nil) // TODO: reuse existing iterator
+		iterators[i].maxT = c.MaxTime
 	}
+
+	it.tree = newSeriesChunksIteratorTree(iterators) // TODO: reuse existing tree
 
 	return it, nil
 }
@@ -178,99 +168,57 @@ type blockQuerierSeriesIterator struct {
 	// only used for error reporting
 	labels labels.Labels
 
-	iterators []iteratorWithMaxTime
-	i         int
-	lastT     int64
+	tree *seriesChunksIteratorTree
 }
 
 func (it *blockQuerierSeriesIterator) Seek(t int64) chunkenc.ValueType {
-	for ; it.i < len(it.iterators); it.i++ {
-		// We check the maxT property of each iterator because if the time range which its data covers ends at a lower
-		// time than the seeked <t> then we don't even need to try to seek to it, as this wouldn't succeed.
-		if it.iterators[it.i].maxT >= t {
-			// Once we found an iterator which covers a time range that reaches beyond the seeked <t>
-			// we try to seek to and return the result.
-			if typ := it.iterators[it.i].Seek(t); typ != chunkenc.ValNone {
-				it.lastT = it.iterators[it.i].AtT()
-				return typ
-			}
-		}
-	}
+	it.tree.Seek(t)
 
-	return chunkenc.ValNone
+	return it.tree.WinnerValueType()
 }
 
 func (it *blockQuerierSeriesIterator) At() (int64, float64) {
-	if it.i >= len(it.iterators) {
-		return 0, 0
+	if i := it.tree.WinnerIterator(); i != nil {
+		return i.At()
 	}
 
-	t, v := it.iterators[it.i].At()
-	it.lastT = t
-	return t, v
+	return 0, 0
 }
 
 func (it *blockQuerierSeriesIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
-	if it.i >= len(it.iterators) {
-		return 0, nil
+	if i := it.tree.WinnerIterator(); i != nil {
+		return i.AtHistogram(h)
 	}
 
-	t, h := it.iterators[it.i].AtHistogram(h)
-	it.lastT = t
-	return t, h
+	return 0, nil
 }
 
 func (it *blockQuerierSeriesIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
-	if it.i >= len(it.iterators) {
-		return 0, nil
+	if i := it.tree.WinnerIterator(); i != nil {
+		return i.AtFloatHistogram(fh)
 	}
 
-	t, fh := it.iterators[it.i].AtFloatHistogram(fh)
-	it.lastT = t
-	return t, fh
+	return 0, nil
 }
 
 func (it *blockQuerierSeriesIterator) AtT() int64 {
-	if it.i >= len(it.iterators) {
-		return 0
+	if i := it.tree.WinnerIterator(); i != nil {
+		return i.AtT()
 	}
 
-	t := it.iterators[it.i].AtT()
-	it.lastT = t
-	return t
+	return 0
 }
 
 func (it *blockQuerierSeriesIterator) Next() chunkenc.ValueType {
-	if it.i >= len(it.iterators) {
+	if !it.tree.Next() {
 		return chunkenc.ValNone
 	}
 
-	if typ := it.iterators[it.i].Next(); typ != chunkenc.ValNone {
-		it.lastT = it.iterators[it.i].AtT()
-		return typ
-	}
-	if it.iterators[it.i].Err() != nil {
-		return chunkenc.ValNone
-	}
-
-	it.i++
-
-	if it.i >= len(it.iterators) {
-		return chunkenc.ValNone
-	}
-
-	// Chunks are guaranteed to be ordered but not generally guaranteed to not overlap.
-	// We must ensure to skip any overlapping range between adjacent chunks.
-	// .Seek() will update it.lastT if it succeeds
-	return it.Seek(it.lastT + 1)
+	return it.tree.WinnerValueType()
 }
 
 func (it *blockQuerierSeriesIterator) Err() error {
-	if it.i >= len(it.iterators) {
-		return nil
-	}
-
-	err := it.iterators[it.i].Err()
+	err := it.tree.err
 	if err != nil {
 		return errors.Wrapf(err, "cannot iterate chunk for series: %v", it.labels)
 	}
