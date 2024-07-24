@@ -173,7 +173,11 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 		t.Parallel()
 
 		for _, withOffset := range []bool{false, true} {
+			withOffset := withOffset
+
 			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
+				t.Parallel()
+
 				consumedRecords := atomic.NewInt64(0)
 
 				// We define a custom consume function which introduces a delay once the 2nd record
@@ -233,7 +237,11 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 		t.Parallel()
 
 		for _, withOffset := range []bool{false, true} {
+			withOffset := withOffset
+
 			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
+				t.Parallel()
+
 				// Create a consumer with no buffer capacity.
 				consumer := newTestConsumer(0)
 
@@ -281,7 +289,11 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 		t.Parallel()
 
 		for _, withOffset := range []bool{false, true} {
+			withOffset := withOffset
+
 			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
+				t.Parallel()
+
 				// Create a consumer with no buffer capacity.
 				consumer := newTestConsumer(0)
 
@@ -329,7 +341,11 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 		t.Parallel()
 
 		for _, withOffset := range []bool{false, true} {
+			withOffset := withOffset
+
 			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
+				t.Parallel()
+
 				reader, _, reg := setup(t, newTestConsumer(0))
 				waitCtx := createTestContextWithTimeout(t, time.Second)
 				createTestContextWithTimeout(t, time.Second)
@@ -357,7 +373,11 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 		t.Parallel()
 
 		for _, withOffset := range []bool{false, true} {
+			withOffset := withOffset
+
 			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
+				t.Parallel()
+
 				reader, _, reg := setup(t, newTestConsumer(0))
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
 
