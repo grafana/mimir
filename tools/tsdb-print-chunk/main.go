@@ -99,6 +99,6 @@ func counterResetHintString(crh histogram.CounterResetHint) string {
 	case histogram.GaugeType:
 		return "GaugeType"
 	default:
-		return "*"
+		return "unrecognized counter reset hint"
 	}
 }

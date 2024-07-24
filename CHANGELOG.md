@@ -142,6 +142,7 @@
 * [CHANGE] `wal-reader`: Renamed `-series-entries` to `-print-series`. Renamed `-print-series-with-samples` to `-print-samples`. #8568
 * [ENHANCEMENT] `wal-reader`: References to unknown series from Samples, Exemplars, histogram or tombstones records are now always logged. #8568
 * [ENHANCEMENT] `tsdb-series`: added `-stats` option to print min/max time of chunks, total number of samples and DPM for each series. #8420
+* [ENHANCEMENT] `tsdb-print-chunk`: print counter reset information for native histograms. #8812
 
 ## 2.13.0
 
