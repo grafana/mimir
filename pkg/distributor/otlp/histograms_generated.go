@@ -53,7 +53,7 @@ func (c *MimirConverter) addExponentialHistogramDataPoints(ctx context.Context, 
 		lbls := createAttributes(
 			resource,
 			pt.Attributes(),
-			settings.ExternalLabels,
+			settings,
 			nil,
 			true,
 			model.MetricNameLabel,
