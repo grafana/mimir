@@ -326,7 +326,7 @@ func TestPartitionOffsetClient_FetchPartitionStartOffset(t *testing.T) {
 	})
 }
 
-func TestPartitionOffsetClient_FetchLastProducedOffsets(t *testing.T) {
+func TestPartitionOffsetClient_FetchTopicLastProducedOffsets(t *testing.T) {
 	const (
 		numPartitions = 3
 		topicName     = "test"
@@ -348,7 +348,7 @@ func TestPartitionOffsetClient_FetchLastProducedOffsets(t *testing.T) {
 			reader         = newPartitionOffsetClient(client, topicName, reg, logger)
 		)
 
-		offsets, err := reader.FetchLastProducedOffsets(ctx)
+		offsets, err := reader.FetchTopicLastProducedOffsets(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, map[int32]int64{0: -1, 1: -1, 2: -1}, offsets)
 
@@ -357,7 +357,7 @@ func TestPartitionOffsetClient_FetchLastProducedOffsets(t *testing.T) {
 		produceRecord(ctx, t, client, topicName, 0, []byte("message 2"))
 		produceRecord(ctx, t, client, topicName, 1, []byte("message 3"))
 
-		offsets, err = reader.FetchLastProducedOffsets(ctx)
+		offsets, err = reader.FetchTopicLastProducedOffsets(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, map[int32]int64{0: 1, 1: 0, 2: -1}, offsets)
 
@@ -366,7 +366,7 @@ func TestPartitionOffsetClient_FetchLastProducedOffsets(t *testing.T) {
 		produceRecord(ctx, t, client, topicName, 1, []byte("message 5"))
 		produceRecord(ctx, t, client, topicName, 2, []byte("message 6"))
 
-		offsets, err = reader.FetchLastProducedOffsets(ctx)
+		offsets, err = reader.FetchTopicLastProducedOffsets(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, map[int32]int64{0: 2, 1: 1, 2: 0}, offsets)
 
@@ -413,20 +413,20 @@ func TestPartitionOffsetClient_FetchLastProducedOffsets(t *testing.T) {
 
 		wg := sync.WaitGroup{}
 
-		// Run the 1st FetchLastProducedOffsets() with a timeout which is expected to expire
+		// Run the 1st FetchTopicLastProducedOffsets() with a timeout which is expected to expire
 		// before the request will succeed.
 		runAsync(&wg, func() {
 			ctxWithTimeout, cancel := context.WithTimeout(ctx, firstRequestTimeout)
 			defer cancel()
 
-			_, err := reader.FetchLastProducedOffsets(ctxWithTimeout)
+			_, err := reader.FetchTopicLastProducedOffsets(ctxWithTimeout)
 			require.ErrorIs(t, err, context.DeadlineExceeded)
 		})
 
-		// Run a 2nd FetchLastProducedOffsets() once the 1st request is received. This request
+		// Run a 2nd FetchTopicLastProducedOffsets() once the 1st request is received. This request
 		// is expected to succeed.
 		runAsyncAfter(&wg, firstRequestReceived, func() {
-			offsets, err := reader.FetchLastProducedOffsets(ctx)
+			offsets, err := reader.FetchTopicLastProducedOffsets(ctx)
 			require.NoError(t, err)
 			assert.Equal(t, expectedOffsets, offsets)
 		})
@@ -456,7 +456,7 @@ func TestPartitionOffsetClient_FetchLastProducedOffsets(t *testing.T) {
 		})
 
 		startTime := time.Now()
-		_, err := reader.FetchLastProducedOffsets(ctx)
+		_, err := reader.FetchTopicLastProducedOffsets(ctx)
 		elapsedTime := time.Since(startTime)
 
 		require.Error(t, err)

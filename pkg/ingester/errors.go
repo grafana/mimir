@@ -614,24 +614,3 @@ func mapReadErrorToErrorWithStatus(err error) error {
 	}
 	return newErrorWithStatus(err, errCode)
 }
-
-// mapReadErrorToErrorWithHTTPOrGRPCStatus maps ingesterError objects to an appropriate
-// globalerror.ErrorWithStatus, which may contain both HTTP and gRPC error codes.
-func mapReadErrorToErrorWithHTTPOrGRPCStatus(err error) error {
-	var (
-		ingesterErr ingesterError
-	)
-	if errors.As(err, &ingesterErr) {
-		switch ingesterErr.errorCause() {
-		case mimirpb.TOO_BUSY:
-			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
-		case mimirpb.SERVICE_UNAVAILABLE:
-			return newErrorWithStatus(err, codes.Unavailable)
-		case mimirpb.METHOD_NOT_ALLOWED:
-			return newErrorWithStatus(err, codes.Unimplemented)
-		case mimirpb.CIRCUIT_BREAKER_OPEN:
-			return newErrorWithStatus(err, codes.Unavailable)
-		}
-	}
-	return err
-}

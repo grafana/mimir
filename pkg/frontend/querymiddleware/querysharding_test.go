@@ -2226,11 +2226,11 @@ func (m *querierMock) Select(_ context.Context, sorted bool, _ *storage.SelectHi
 	return newSeriesIteratorMock(filtered)
 }
 
-func (m *querierMock) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (m *querierMock) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (m *querierMock) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (m *querierMock) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 

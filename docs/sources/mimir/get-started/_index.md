@@ -163,12 +163,30 @@ Use the `prometheus.remote_write` component in Grafana Alloy to send metrics to 
 ```
 prometheus.remote_write "LABEL" {
   endpoint {
-    url = http://<ingress-host>/api/v1/push
+    url = http://localhost:9009/api/v1/push
 
     ...
   }
 
   ...
+}
+```
+
+The configuration for Alloy that scrapes itself and writes those metrics to Grafana Mimir looks similar to this:
+
+```
+prometheus.exporter.self "self_metrics" {
+}
+
+prometheus.scrape "self_scrape" {
+  targets    = prometheus.exporter.self.self_metrics.targets
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+prometheus.remote_write "mimir" {
+  endpoint {
+    url = "http://localhost:9009/api/v1/push"
+  }
 }
 ```
 

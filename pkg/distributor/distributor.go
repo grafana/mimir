@@ -137,7 +137,6 @@ type Distributor struct {
 	nonHASamples                     *prometheus.CounterVec
 	dedupedSamples                   *prometheus.CounterVec
 	labelsHistogram                  prometheus.Histogram
-	sampleDelayHistogram             prometheus.Histogram
 	incomingSamplesPerRequest        *prometheus.HistogramVec
 	incomingExemplarsPerRequest      *prometheus.HistogramVec
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
@@ -312,7 +311,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
-			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics, log)
+			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics)
 		})
 	}
 
@@ -394,27 +393,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name:    "cortex_labels_per_sample",
 			Help:    "Number of labels per sample.",
 			Buckets: []float64{5, 10, 15, 20, 25},
-		}),
-		sampleDelayHistogram: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name: "cortex_distributor_sample_delay_seconds",
-			Help: "Number of seconds by which a sample came in late wrt wallclock.",
-			Buckets: []float64{
-				-60 * 1,      // 1 min early
-				-15,          // 15s early
-				-5,           // 5s early
-				30,           // 30s
-				60 * 1,       // 1 min
-				60 * 2,       // 2 min
-				60 * 4,       // 4 min
-				60 * 8,       // 8 min
-				60 * 10,      // 10 min
-				60 * 30,      // 30 min
-				60 * 60,      // 1h
-				60 * 60 * 2,  // 2h
-				60 * 60 * 3,  // 3h
-				60 * 60 * 6,  // 6h
-				60 * 60 * 24, // 24h
-			},
 		}),
 		incomingSamplesPerRequest: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_distributor_samples_per_request",
@@ -739,20 +717,13 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 	now := model.TimeFromUnixNano(nowt.UnixNano())
 
 	for _, s := range ts.Samples {
-
-		delta := now - model.Time(s.TimestampMs)
-		d.sampleDelayHistogram.Observe(float64(delta) / 1000)
-
 		if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s); err != nil {
 			return err
 		}
 	}
 
 	histogramsUpdated := false
-	for i, h := range ts.Histograms {
-		delta := now - model.Time(h.Timestamp)
-		d.sampleDelayHistogram.Observe(float64(delta) / 1000)
-
+	for i := range ts.Histograms {
 		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[i])
 		if err != nil {
 			return err

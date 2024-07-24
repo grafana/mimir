@@ -19,6 +19,7 @@
     ingest_storage_migration_querier_enabled: false,
 
     // Controls the procedure to decommission classic ingesters.
+    ingest_storage_migration_classic_ingesters_no_scale_down_delay: false,
     ingest_storage_migration_classic_ingesters_scale_down: false,
     ingest_storage_migration_classic_ingesters_zone_a_decommission: false,
     ingest_storage_migration_classic_ingesters_zone_b_decommission: false,
@@ -173,20 +174,24 @@
     'ingester_zone_a_statefulset',
     if $._config.ingest_storage_migration_classic_ingesters_zone_a_decommission then
       null
-    else if $._config.ingest_storage_migration_classic_ingesters_scale_down then
-      statefulSet.mixin.spec.withReplicas(0) +
-      statefulSet.mixin.metadata.withLabelsMixin({
-        'grafana.com/min-time-between-zones-downscale': '0s',
-      })
-    else
-      {},
+    else (
+      (
+        if !$._config.ingest_storage_migration_classic_ingesters_no_scale_down_delay && !$._config.ingest_storage_migration_classic_ingesters_scale_down then {} else
+          statefulSet.mixin.metadata.withLabelsMixin({
+            'grafana.com/min-time-between-zones-downscale': '0s',
+          })
+      ) + (
+        if !$._config.ingest_storage_migration_classic_ingesters_scale_down then {} else
+          statefulSet.mixin.spec.withReplicas(0)
+      )
+    ),
   ),
 
   ingester_zone_b_statefulset: overrideSuperIfExists(
     'ingester_zone_b_statefulset',
     if $._config.ingest_storage_migration_classic_ingesters_zone_b_decommission then
       null
-    else if $._config.ingest_storage_migration_classic_ingesters_scale_down then
+    else if $._config.ingest_storage_migration_classic_ingesters_no_scale_down_delay || $._config.ingest_storage_migration_classic_ingesters_scale_down then
       statefulSet.mixin.metadata.withLabelsMixin({
         'grafana.com/min-time-between-zones-downscale': '0s',
       })
@@ -198,7 +203,7 @@
     'ingester_zone_c_statefulset',
     if $._config.ingest_storage_migration_classic_ingesters_zone_c_decommission then
       null
-    else if $._config.ingest_storage_migration_classic_ingesters_scale_down then
+    else if $._config.ingest_storage_migration_classic_ingesters_no_scale_down_delay || $._config.ingest_storage_migration_classic_ingesters_scale_down then
       statefulSet.mixin.metadata.withLabelsMixin({
         'grafana.com/min-time-between-zones-downscale': '0s',
       })

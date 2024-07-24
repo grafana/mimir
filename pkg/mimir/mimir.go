@@ -246,9 +246,6 @@ func (c *Config) Validate(log log.Logger) error {
 		return errors.Wrap(err, "invalid ingest storage config")
 	}
 	if c.isAnyModuleEnabled(Ingester, Write, All) {
-		if c.IngestStorage.Enabled && !c.Ingester.DeprecatedReturnOnlyGRPCErrors {
-			return errors.New("to use ingest storage (-ingest-storage.enabled) also enable -ingester.return-only-grpc-errors")
-		}
 		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
 			return errors.New("cannot disable Push gRPC method in ingester, while ingest storage (-ingest-storage.enabled) is not enabled")
 		}
@@ -266,7 +263,7 @@ func (c *Config) Validate(log log.Logger) error {
 		return fmt.Errorf("querier timeout (%s) must be lower than or equal to HTTP server write timeout (%s)",
 			c.Querier.EngineConfig.Timeout, c.Server.HTTPServerWriteTimeout)
 	}
-	if err := c.IngesterClient.Validate(log); err != nil {
+	if err := c.IngesterClient.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
 	if err := c.Ingester.Validate(log); err != nil {

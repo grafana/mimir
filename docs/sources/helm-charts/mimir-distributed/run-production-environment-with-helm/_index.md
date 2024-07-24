@@ -6,28 +6,6 @@ aliases:
 menuTitle: "Run Mimir in production"
 description: "Learn how to run Grafana Mimir in production using the mimir-distributed Helm chart."
 weight: 40
-refs:
-  ingesters-failure-and-data-loss:
-    - pattern: /
-      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/ingester/#ingesters-failure-and-data-loss
-  collecting-metrics-and-logs-from-grafana-mimir:
-    - pattern: /
-      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/manage/monitor-grafana-mimir/collecting-metrics-and-logs/
-  planning-grafana-mimir-capacity:
-    - pattern: /
-      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/manage/run-production-environment/planning-capacity/
-  configure-grafana-mimir-object-storage-backend:
-    - pattern: /
-      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-object-storage-backend/
-  replication-across-availability-zones:
-    - pattern: /
-      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-zone-aware-replication/
-  installing-grafana-mimir-dashboards-and-alerts:
-    - pattern: /
-      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/manage/monitor-grafana-mimir/installing-dashboards-and-alerts/
-  store-gateway:-blocks-sharding-and-replication:
-    - pattern: /
-      destination: /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/store-gateway/#blocks-sharding-and-replication
 ---
 
 # Run Grafana Mimir in production using the Helm chart
@@ -84,7 +62,7 @@ usage patterns. Therefore, use the sizing plans as starting
 point for sizing your Grafana Mimir cluster, rather than as strict guidelines.
 To get a better idea of how to plan capacity, refer to the YAML comments at
 the beginning of `small.yaml` and `large.yaml` files, which relate to read and write workloads.
-See also [Planning Grafana Mimir capacity].
+See also [Planning Grafana Mimir capacity](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/run-production-environment/planning-capacity/).
 
 To use a sizing plan, copy it from the [mimir](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed)
 GitHub repository, and pass it as a values file to the `helm` command. Note that sizing plans may change with new
@@ -113,8 +91,8 @@ number_of_nodes >= max(number_of_ingesters_pods, number_of_store_gateway_pods)
 ```
 
 For more information about the failure modes of either the ingester or store-gateway
-component, refer to [Ingesters failure and data loss]
-or [Store-gateway: Blocks sharding and replication].
+component, refer to [Ingesters failure and data loss](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/ingester/#ingesters-failure-and-data-loss)
+or [Store-gateway: Blocks sharding and replication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/store-gateway/#blocks-sharding-and-replication).
 
 ## Decide whether you need geographical redundancy, fast rolling updates, or both.
 
@@ -127,7 +105,7 @@ configure the Helm chart to deploy Grafana Mimir with zone-aware replication.
 
 ### New installations
 
-Grafana Mimir supports [replication across availability zones]
+Grafana Mimir supports [replication across availability zones](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-zone-aware-replication/)
 within your Kubernetes cluster.
 This further increases fault tolerance of the Mimir cluster. Even if you
 do not currently have multiple zones across your Kubernetes cluster, you
@@ -182,7 +160,7 @@ zone-aware replication.
 ## Configure Mimir to use object storage
 
 For the different object storage types that Mimir supports, and examples,
-see [Configure Grafana Mimir object storage backend].
+see [Configure Grafana Mimir object storage backend](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-object-storage-backend/).
 
 1. Add the following YAML to your values file, if you are not using the sizing
    plans that are mentioned in [Plan capacity](#plan-capacity):
