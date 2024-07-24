@@ -92,7 +92,7 @@ func SingleRangeVectorFunctionOperatorFactory(name string, metadataFunc function
 		return &operators.FunctionOverRangeVector{
 			Inner:               inner,
 			Pool:                pool,
-			MetadataFunc:        functions.DropSeriesName,
+			MetadataFunc:        metadataFunc,
 			RangeVectorStepFunc: rangeStepFunc,
 		}, nil
 	}
