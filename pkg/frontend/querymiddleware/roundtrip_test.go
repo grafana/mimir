@@ -83,6 +83,7 @@ func TestTripperware_RangeQuery(t *testing.T) {
 		},
 		true,
 		nil,
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -134,6 +135,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 			Timeout:    time.Minute,
 		},
 		true,
+		nil,
 		nil,
 	)
 	require.NoError(t, err)
@@ -503,6 +505,7 @@ func TestTripperware_Metrics(t *testing.T) {
 					Timeout:    time.Minute,
 				},
 				true,
+				nil,
 				reg,
 			)
 			require.NoError(t, err)
@@ -761,6 +764,7 @@ func TestTripperware_RemoteRead(t *testing.T) {
 					Timeout:    time.Minute,
 				},
 				true,
+				nil,
 				reg,
 			)
 			require.NoError(t, err)

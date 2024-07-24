@@ -15,7 +15,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/cache"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
@@ -84,9 +83,6 @@ type Config struct {
 	ExtraRangeQueryMiddlewares   []MetricsQueryMiddleware `yaml:"-"`
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
-
-	// This config is dynamically injected because defined outside the query-frontend config.
-	IngestStorageConfig ingest.Config `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -197,9 +193,10 @@ func NewTripperware(
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
 	engineExperimentalFunctionsEnabled bool,
+	ingestStorageTopicOffsetsReader *ingest.TopicOffsetsReader,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, engineExperimentalFunctionsEnabled, registerer)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, engineExperimentalFunctionsEnabled, ingestStorageTopicOffsetsReader, registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -217,6 +214,7 @@ func newQueryTripperware(
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
 	engineExperimentalFunctionsEnabled bool,
+	ingestStorageTopicOffsetsReader *ingest.TopicOffsetsReader,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
 	// Disable concurrency limits for sharded queries.
@@ -244,27 +242,10 @@ func newQueryTripperware(
 
 	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(cfg, log, limits, codec, c, cacheKeyGenerator, cacheExtractor, engine, registerer)
 
-	var partitionOffsetsReader *ingest.TopicOffsetsReader
-	if cfg.IngestStorageConfig.Enabled {
-		var err error
-
-		kafkaMetrics := ingest.NewKafkaReaderClientMetrics("query-frontend", registerer)
-		kafkaClient, err := ingest.NewKafkaReaderClient(cfg.IngestStorageConfig.KafkaConfig, kafkaMetrics, log)
-		if err != nil {
-			return nil, err
-		}
-
-		// TODO wrap the registerer adding "component", otherwise metrics have conflicts in single-binary mode
-		partitionOffsetsReader = ingest.NewTopicOffsetsReader(kafkaClient, cfg.IngestStorageConfig.KafkaConfig.Topic, cfg.IngestStorageConfig.KafkaConfig.LastProducedOffsetPollInterval, registerer, log)
-
-		// TODO how do we fit the service lifecycle here?
-		if err := services.StartAndAwaitRunning(context.Background(), partitionOffsetsReader); err != nil {
-			return nil, err
-		}
-	}
-
 	return func(next http.RoundTripper) http.RoundTripper {
-		// TODO comment that round tripper are executed in reverse order (because they're wrappers)
+		// IMPORTANT: roundtrippers are executed in *reverse* order because they are wrappers.
+		// It means that the first roundtrippers defined in this function will be the last to be
+		// executed.
 
 		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
 		instant := newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...)
@@ -279,28 +260,27 @@ func newQueryTripperware(
 		activeNativeHistogramMetrics := next
 		labels := next
 
-		// Inject the cardinality and labels query cache roundtripper only if the query results cache is enabled.
-		if cfg.CacheResults {
-			cardinality = newCardinalityQueryCacheRoundTripper(c, cacheKeyGenerator, limits, cardinality, log, registerer)
-			labels = newLabelsQueryCacheRoundTripper(c, cacheKeyGenerator, limits, labels, log, registerer)
-		}
-
 		if cfg.ShardActiveSeriesQueries {
 			activeSeries = newShardActiveSeriesMiddleware(activeSeries, cfg.UseActiveSeriesDecoder, limits, log)
 			activeNativeHistogramMetrics = newShardActiveNativeHistogramMetricsMiddleware(activeNativeHistogramMetrics, limits, log)
 		}
 
-		// TODO what's the right place to inject it?
-		// TODO we need to find a better design to wrap roundtrippers
-		if cfg.IngestStorageConfig.Enabled {
-			queryrange = newReadConsistencyRoundTripper(queryrange, partitionOffsetsReader, limits, log)
-			instant = newReadConsistencyRoundTripper(instant, partitionOffsetsReader, limits, log)
-			cardinality = newReadConsistencyRoundTripper(cardinality, partitionOffsetsReader, limits, log)
-			activeSeries = newReadConsistencyRoundTripper(activeSeries, partitionOffsetsReader, limits, log)
-			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, partitionOffsetsReader, limits, log)
-			labels = newReadConsistencyRoundTripper(labels, partitionOffsetsReader, limits, log)
-			remoteRead = newReadConsistencyRoundTripper(remoteRead, partitionOffsetsReader, limits, log)
-			next = newReadConsistencyRoundTripper(next, partitionOffsetsReader, limits, log)
+		// Enforce read consistency after caching.
+		if ingestStorageTopicOffsetsReader != nil {
+			queryrange = newReadConsistencyRoundTripper(queryrange, ingestStorageTopicOffsetsReader, limits, log)
+			instant = newReadConsistencyRoundTripper(instant, ingestStorageTopicOffsetsReader, limits, log)
+			cardinality = newReadConsistencyRoundTripper(cardinality, ingestStorageTopicOffsetsReader, limits, log)
+			activeSeries = newReadConsistencyRoundTripper(activeSeries, ingestStorageTopicOffsetsReader, limits, log)
+			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, ingestStorageTopicOffsetsReader, limits, log)
+			labels = newReadConsistencyRoundTripper(labels, ingestStorageTopicOffsetsReader, limits, log)
+			remoteRead = newReadConsistencyRoundTripper(remoteRead, ingestStorageTopicOffsetsReader, limits, log)
+			next = newReadConsistencyRoundTripper(next, ingestStorageTopicOffsetsReader, limits, log)
+		}
+
+		// Look up cache as first thing.
+		if cfg.CacheResults {
+			cardinality = newCardinalityQueryCacheRoundTripper(c, cacheKeyGenerator, limits, cardinality, log, registerer)
+			labels = newLabelsQueryCacheRoundTripper(c, cacheKeyGenerator, limits, labels, log, registerer)
 		}
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
