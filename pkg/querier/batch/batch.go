@@ -102,7 +102,6 @@ func newIteratorAdapter(it *iteratorAdapter, underlying iterator) chunkenc.Itera
 
 // Seek implements chunkenc.Iterator.
 func (a *iteratorAdapter) Seek(t int64) chunkenc.ValueType {
-
 	// Optimisation: fulfill the seek using current batch if possible.
 	if a.curr.Length > 0 && a.curr.Index < a.curr.Length {
 		if t <= a.curr.Timestamps[a.curr.Index] {
@@ -199,5 +198,5 @@ func (a *iteratorAdapter) AtT() int64 {
 
 // Err implements chunkenc.Iterator.
 func (a *iteratorAdapter) Err() error {
-	return nil
+	return a.underlying.Err()
 }

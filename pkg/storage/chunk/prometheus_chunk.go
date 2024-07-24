@@ -24,7 +24,7 @@ type prometheusChunk struct {
 
 func (p *prometheusChunk) NewIterator(iterator Iterator) Iterator {
 	if p.chunk == nil {
-		return errorIterator("Prometheus chunk is not set")
+		return ErrorIterator("Prometheus chunk is not set")
 	}
 
 	if pit, ok := iterator.(*prometheusChunkIterator); ok {
@@ -298,19 +298,19 @@ func (p *prometheusChunkIterator) Err() error {
 	return p.it.Err()
 }
 
-type errorIterator string
+type ErrorIterator string
 
-func (e errorIterator) Scan() chunkenc.ValueType                      { return chunkenc.ValNone }
-func (e errorIterator) FindAtOrAfter(_ model.Time) chunkenc.ValueType { return chunkenc.ValNone }
-func (e errorIterator) Value() model.SamplePair                       { panic("no values") }
-func (e errorIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+func (e ErrorIterator) Scan() chunkenc.ValueType                      { return chunkenc.ValNone }
+func (e ErrorIterator) FindAtOrAfter(_ model.Time) chunkenc.ValueType { return chunkenc.ValNone }
+func (e ErrorIterator) Value() model.SamplePair                       { panic("no values") }
+func (e ErrorIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	panic("no integer histograms")
 }
-func (e errorIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+func (e ErrorIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	panic("no float histograms")
 }
-func (e errorIterator) Timestamp() int64 { panic("no samples") }
-func (e errorIterator) Batch(_ int, _ chunkenc.ValueType, _ *zeropool.Pool[*histogram.Histogram], _ *zeropool.Pool[*histogram.FloatHistogram]) Batch {
+func (e ErrorIterator) Timestamp() int64 { panic("no samples") }
+func (e ErrorIterator) Batch(_ int, _ chunkenc.ValueType, _ *zeropool.Pool[*histogram.Histogram], _ *zeropool.Pool[*histogram.FloatHistogram]) Batch {
 	panic("no values")
 }
-func (e errorIterator) Err() error { return errors.New(string(e)) }
+func (e ErrorIterator) Err() error { return errors.New(string(e)) }
