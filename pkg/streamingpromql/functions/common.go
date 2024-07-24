@@ -3,9 +3,10 @@
 package functions
 
 import (
+	"github.com/prometheus/prometheus/promql"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/prometheus/prometheus/promql"
 )
 
 // SeriesMetadataFunction is a function to operate on the metadata across series.
