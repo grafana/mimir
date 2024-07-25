@@ -20,6 +20,9 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
+// Invoke this with a command like:
+//
+//	go run . -bucket-index bucket-index.json.gz -start 2024-07-24T12:00:00Z -end 2024-07-24T13:00:00Z
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
