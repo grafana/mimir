@@ -1,10 +1,12 @@
 package main
 
 import (
+	"compress/gzip"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"flag"
+	"io"
 	"log/slog"
 	"os"
 	"slices"
@@ -26,12 +28,12 @@ func main() {
 }
 
 func run() error {
-	bucketIndexFile, startT, endT, err := parseFlags()
+	bucketIndexFile, bucketIndexIsCompressed, startT, endT, err := parseFlags()
 	if err != nil {
 		return err
 	}
 
-	bucketIndex, err := readBucketIndex(bucketIndexFile)
+	bucketIndex, err := readBucketIndex(bucketIndexFile, bucketIndexIsCompressed)
 	if err != nil {
 		return err
 	}
@@ -96,8 +98,9 @@ func run() error {
 	return w.Error()
 }
 
-func parseFlags() (string, time.Time, time.Time, error) {
+func parseFlags() (string, bool, time.Time, time.Time, error) {
 	bucketIndexFile := flag.String("bucket-index", "", "Path to bucket index file (uncompressed JSON)")
+	compressed := flag.Bool("bucket-index-compressed", true, "If true, treat the file provided with -bucket-index as a gzip-compressed JSON file. If false, treat the file as an uncompressed JSON file.")
 
 	var startT, endT flagext.Time
 	flag.Var(&startT, "start", "Start time")
@@ -105,29 +108,44 @@ func parseFlags() (string, time.Time, time.Time, error) {
 	flag.Parse()
 
 	if *bucketIndexFile == "" {
-		return "", time.Time{}, time.Time{}, errors.New("must provide bucket index file")
+		return "", false, time.Time{}, time.Time{}, errors.New("must provide bucket index file")
 	}
 
 	if time.Time(startT).IsZero() {
-		return "", time.Time{}, time.Time{}, errors.New("must provide start time")
+		return "", false, time.Time{}, time.Time{}, errors.New("must provide start time")
 	}
 
 	if time.Time(endT).IsZero() {
-		return "", time.Time{}, time.Time{}, errors.New("must provide start time")
+		return "", false, time.Time{}, time.Time{}, errors.New("must provide start time")
 	}
 
-	return *bucketIndexFile, time.Time(startT), time.Time(endT), nil
+	return *bucketIndexFile, *compressed, time.Time(startT), time.Time(endT), nil
 }
 
-func readBucketIndex(bucketIndexFile string) (*bucketindex.Index, error) {
+func readBucketIndex(bucketIndexFile string, isCompressed bool) (*bucketindex.Index, error) {
 	f, err := os.Open(bucketIndexFile)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 
+	var reader io.Reader
+
+	if isCompressed {
+		gzipReader, err := gzip.NewReader(f)
+		if err != nil {
+			return nil, err
+		}
+
+		defer gzipReader.Close()
+
+		reader = gzipReader
+	} else {
+		reader = f
+	}
+
 	index := &bucketindex.Index{}
-	d := json.NewDecoder(f)
+	d := json.NewDecoder(reader)
 	if err := d.Decode(index); err != nil {
 		return nil, err
 	}
