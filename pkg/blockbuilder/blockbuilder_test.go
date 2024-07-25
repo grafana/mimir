@@ -70,6 +70,8 @@ func TestBlockBuilder(t *testing.T) {
 		userID = "1"
 	)
 
+	require.NoError(t, os.Setenv("POD_NAME", "block-builder-0"))
+
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
@@ -89,6 +91,8 @@ func TestBlockBuilder(t *testing.T) {
 		kafkaTime      = time.Now().Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
 		parentT        = t
 	)
+	cfg.TotalBlockBuilders = 1
+	cfg.TotalPartitions = 2
 
 	bb, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides)
 	require.NoError(t, err)
@@ -142,11 +146,10 @@ func TestBlockBuilder(t *testing.T) {
 		counts := 0
 		done := false
 		for !done {
-			<-time.After(200 * time.Millisecond)
 			select {
 			case <-compactCalled:
 				counts++
-			default:
+			case <-time.After(3 * time.Second):
 				done = true
 			}
 		}
@@ -177,7 +180,7 @@ func TestBlockBuilder(t *testing.T) {
 	}
 
 	getCommitMeta := func(t *testing.T, part int32) (int64, int64, int64) {
-		offsets, err := kadm.NewClient(bb.kafkaClient).FetchOffsetsForTopics(ctx, testGroup, testTopic)
+		offsets, err := kadm.NewClient(bb.kafkaClients[part]).FetchOffsetsForTopics(ctx, testGroup, testTopic)
 		require.NoError(t, err)
 		offset, ok := offsets.Lookup(testTopic, part)
 		require.True(t, ok)
@@ -186,15 +189,7 @@ func TestBlockBuilder(t *testing.T) {
 		return commitRecTs, lastRecTs, blockEnd
 	}
 
-	nextConsumeCycleWithChecks := func(t *testing.T, cycleEnd time.Time, expBlocksCreated, expCompacts int) {
-		blocksBefore := numBlocksInBucket(t)
-
-		require.NoError(t, bb.NextConsumeCycle(ctx, cycleEnd))
-		require.Equal(t, expCompacts, collectCompacts(), "mismatch in compact calls")
-
-		blocksAfter := numBlocksInBucket(t)
-		require.Equal(t, expBlocksCreated, blocksAfter-blocksBefore, "mismatch in blocks created")
-
+	checkCommit := func(t *testing.T, cycleEnd time.Time) {
 		// Check if the kafka commit is as expected.
 		var expCommitTs, expLastTs int64
 		expBlockMax := cycleEnd.Truncate(cfg.ConsumeInterval).UnixMilli()
@@ -224,12 +219,25 @@ func TestBlockBuilder(t *testing.T) {
 		}
 	}
 
+	nextConsumeCycleWithChecks := func(t *testing.T, cycleEnd time.Time, expBlocksCreated, expCompacts int) {
+		blocksBefore := numBlocksInBucket(t)
+
+		require.NoError(t, bb.NextConsumeCycle(ctx, cycleEnd))
+		require.Equal(t, expCompacts, collectCompacts(), "mismatch in compact calls")
+
+		blocksAfter := numBlocksInBucket(t)
+		require.Equal(t, expBlocksCreated, blocksAfter-blocksBefore, "mismatch in blocks created")
+
+		checkCommit(t, cycleEnd)
+	}
+
 	t.Run("starting fresh with existing data but no kafka commit", func(t *testing.T) {
 		// LookbackOnNoCommit is 12h, so this sample should be skipped.
 		oldTime := time.Now().Truncate(cfg.ConsumeInterval).Add(-13 * time.Hour)
 		createAndProduceSample(t, oldTime.Add(-time.Minute), oldTime)
 		kafkaSamples = kafkaSamples[:len(kafkaSamples)-1]
 		kafkaHSamples = kafkaHSamples[:len(kafkaHSamples)-1]
+		cycleEOnStart := cycleEndAtStartup(cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
 
 		for i := int64(0); i < 12; i++ {
 			kafkaTime = kafkaTime.Add(cfg.ConsumeInterval / 2)
@@ -253,6 +261,8 @@ func TestBlockBuilder(t *testing.T) {
 		compacts := collectCompacts()
 		require.True(t, compacts <= 2)
 
+		checkCommit(t, cycleEOnStart)
+
 		compareQuery(t,
 			dbOnBucketDir(t),
 			filterSamples(kafkaSamples, cycleEndAtStartup(cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)),
@@ -263,6 +273,7 @@ func TestBlockBuilder(t *testing.T) {
 
 	var cycleEnd time.Time
 	t.Run("when there is some lag", func(t *testing.T) {
+		//t.Skip()
 		// Add samples worth at least 3 cycles.
 		for i := int64(0); i < 6; i++ {
 			kafkaTime = kafkaTime.Add(cfg.ConsumeInterval / 2)
@@ -270,7 +281,6 @@ func TestBlockBuilder(t *testing.T) {
 		}
 
 		cycleEnd = kafkaTime.Add(-cfg.ConsumeInterval).Truncate(cfg.ConsumeInterval).Add(cfg.ConsumeInterval + cfg.ConsumeIntervalBuffer)
-
 		require.NoError(t, bb.NextConsumeCycle(ctx, cycleEnd))
 
 		// We want number of cycles to be at least 3 per partition. But not more than 4 because of any
@@ -288,6 +298,7 @@ func TestBlockBuilder(t *testing.T) {
 	})
 
 	t.Run("normal case of no lag", func(t *testing.T) {
+		//t.Skip()
 		for i := int64(0); i < 3; i++ {
 			kafkaTime = kafkaTime.Add(cfg.ConsumeInterval / 10)
 			createAndProduceSample(t, kafkaTime.Add(-time.Minute), kafkaTime)
@@ -306,6 +317,7 @@ func TestBlockBuilder(t *testing.T) {
 	})
 
 	t.Run("out of order w.r.t. old cycle and future record with valid sample", func(t *testing.T) {
+		//t.Skip()
 		kafkaTime = cycleEnd
 
 		// Out of order sample w.r.t. samples in last cycle. But for this cycle,
@@ -394,6 +406,8 @@ func TestBlockBuilder(t *testing.T) {
 
 // Testing block builder starting up with an existing kafka commit.
 func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
+	require.NoError(t, os.Setenv("POD_NAME", "block-builder-0"))
+
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
@@ -403,12 +417,17 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 	writeClient := newKafkaProduceClient(t, addr)
 
 	cfg, overrides := blockBuilderConfig(t, addr)
-
+	cfg.TotalPartitions = 1
+	cfg.TotalBlockBuilders = 1
 	// Producing some records
 	kafkaTime := time.Now().Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
+	ceStartup := cycleEndAtStartup(cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
 	var expSamples []mimirpb.Sample
 	for i := int64(0); i < 12; i++ {
 		kafkaTime = kafkaTime.Add(cfg.ConsumeInterval / 2)
+		if kafkaTime.After(ceStartup) {
+			break
+		}
 		sampleTs := kafkaTime.Add(-time.Minute)
 		samples := floatSample(sampleTs.UnixMilli())
 		val := createWriteRequest(t, "", samples, nil)
@@ -428,23 +447,20 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 	require.NoError(t, err)
 	fetches := kc.PollFetches(ctx)
 	require.NoError(t, fetches.Err())
-
 	var recs []*kgo.Record
 	for it := fetches.RecordIter(); !it.Done(); {
 		recs = append(recs, it.Next())
 	}
 	require.Len(t, recs, len(expSamples))
-
 	// Choosing the midpoint record to commit and as the last seen record as well.
 	commitRec := recs[len(recs)/2]
 	lastRec := commitRec
 	blockEnd := commitRec.Timestamp.Truncate(cfg.ConsumeInterval).Add(cfg.ConsumeInterval)
 
 	meta := marshallCommitMeta(commitRec.Timestamp.UnixMilli(), lastRec.Timestamp.UnixMilli(), blockEnd.UnixMilli())
-	err = commitRecord(ctx, logger, kc, commitRec, meta)
+	err = commitRecord(ctx, log.NewNopLogger(), kc, testGroup, commitRec, meta)
 	require.NoError(t, err)
 	kc.CloseAllowingRebalance()
-
 	// Because there is a commit, on startup, the block builder should consume samples only after the commit.
 	expSamples = expSamples[1+(len(expSamples)/2):]
 
@@ -458,14 +474,17 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 		}
 		return testBuilder
 	}
-
 	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
 	})
 
 	// We expect at least N cycles for a lagging block-builder to catch up from the last commit to the partition's high watermark.
-	for i := 0; i < 4; i++ {
+	compacts := 4
+	if len(recs) != 12 {
+		compacts = 3
+	}
+	for i := 0; i < compacts; i++ {
 		<-compactCalled
 	}
 
@@ -473,7 +492,6 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 	db, err := tsdb.Open(bucketDir, log.NewNopLogger(), nil, nil, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
-
 	compareQuery(t,
 		db,
 		expSamples,
@@ -569,6 +587,8 @@ func TestKafkaCommitMetaMarshalling(t *testing.T) {
 }
 
 func TestBlockBuilderMultiTenancy(t *testing.T) {
+	require.NoError(t, os.Setenv("POD_NAME", "block-builder-0"))
+
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
@@ -582,6 +602,8 @@ func TestBlockBuilderMultiTenancy(t *testing.T) {
 		expSamples     = map[string][]mimirpb.Sample{}
 		uids           = []string{"1", "2", "3"}
 	)
+	cfg.TotalPartitions = 1
+	cfg.TotalBlockBuilders = 1
 	// Producing some records for multiple tenants
 	for i := 0; i < 10; i++ {
 		sampleTs := kafkaTime
@@ -609,7 +631,16 @@ func TestBlockBuilderMultiTenancy(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
 	})
-	<-compactCalled
+
+	// Wait for all compacts.
+	done := false
+	for !done {
+		select {
+		case <-compactCalled:
+		case <-time.After(3 * time.Second):
+			done = true
+		}
+	}
 
 	for _, uid := range uids {
 		bucketDir := path.Join(cfg.BlocksStorageConfig.Bucket.Filesystem.Directory, uid)

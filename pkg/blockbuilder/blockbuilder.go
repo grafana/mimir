@@ -8,7 +8,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"sync"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -18,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
 	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/plugin/kprom"
@@ -28,18 +30,18 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// errPartitionLost signals the consumer that its active partition was lost due to group rebalance.
-var errPartitionLost = errors.New("partition lost")
-
 type BlockBuilder struct {
 	services.Service
 
-	cfg         Config
-	logger      log.Logger
-	register    prometheus.Registerer
-	limits      *validation.Overrides
-	kafkaClient *kgo.Client
-	bucket      objstore.Bucket
+	id int
+
+	cfg          Config
+	logger       log.Logger
+	register     prometheus.Registerer
+	limits       *validation.Overrides
+	kafkaClients map[int32]*kgo.Client
+	groupClient  *kgo.Client // Used only to commit. TODO: see why kadm client on kafkaClients is not able to commit.
+	bucket       objstore.Bucket
 
 	metrics blockBuilderMetrics
 
@@ -47,9 +49,9 @@ type BlockBuilder struct {
 	tsdbBuilder func() builder
 
 	// mu protects the following fields
-	mu               sync.Mutex
-	parts            partitions
-	cancelActivePart context.CancelCauseFunc
+	//mu               sync.Mutex
+	//parts            partitions
+	//cancelActivePart context.CancelCauseFunc
 }
 
 func New(
@@ -59,12 +61,30 @@ func New(
 	limits *validation.Overrides,
 ) (_ *BlockBuilder, err error) {
 	b := &BlockBuilder{
-		cfg:      cfg,
-		logger:   logger,
-		register: reg,
-		limits:   limits,
-		metrics:  newBlockBuilderMetrics(reg),
+		cfg:          cfg,
+		logger:       logger,
+		register:     reg,
+		limits:       limits,
+		metrics:      newBlockBuilderMetrics(reg),
+		kafkaClients: make(map[int32]*kgo.Client),
 	}
+
+	if cfg.TotalBlockBuilders <= 0 || cfg.TotalPartitions <= 0 {
+		return nil, fmt.Errorf("total block builders and total partitions must be greater than 0")
+	}
+
+	podName := os.Getenv("POD_NAME")
+	splits := strings.Split(podName, "-")
+	if len(splits) == 0 {
+		return nil, fmt.Errorf("pod id not found in the name %s", podName)
+	}
+	id, err := strconv.Atoi(splits[len(splits)-1])
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse pod id from %s: %w", podName, err)
+	}
+
+	b.id = id
+	level.Info(b.logger).Log("msg", "initialising block builder", "id", id)
 
 	b.tsdbBuilder = func() builder {
 		return newTSDBBuilder(b.logger, b.limits, b.cfg.BlocksStorageConfig)
@@ -84,6 +104,17 @@ func New(
 func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	const fetchMaxBytes = 100_000_000
 
+	defer func() {
+		if err != nil {
+			if b.groupClient != nil {
+				b.groupClient.Close()
+			}
+			for _, cl := range b.kafkaClients {
+				cl.Close()
+			}
+		}
+	}()
+
 	// Empty any previous artifacts.
 	if err := os.RemoveAll(b.cfg.BlocksStorageConfig.TSDB.Dir); err != nil {
 		return fmt.Errorf("removing tsdb dir: %w", err)
@@ -92,134 +123,211 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 		return fmt.Errorf("creating tsdb dir: %w", err)
 	}
 
-	opts := []kgo.Opt{
-		kgo.ClientID(b.cfg.Kafka.ClientID),
-		kgo.SeedBrokers(b.cfg.Kafka.Address),
-		kgo.DialTimeout(b.cfg.Kafka.DialTimeout),
+	// TODO: metrics without clashes
+	//metrics := kprom.NewMetrics(
+	//	"cortex_blockbuilder_kafka",
+	//	kprom.Registerer(b.register),
+	//	kprom.FetchAndProduceDetail(kprom.ByNode, kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes),
+	//)
 
+	opts := []kgo.Opt{
 		kgo.ConsumeTopics(b.cfg.Kafka.Topic),
 		kgo.ConsumerGroup(b.cfg.Kafka.ConsumerGroup),
-		kgo.DisableAutoCommit(),
 		kgo.Balancers(kgo.RoundRobinBalancer()),
-		kgo.BlockRebalanceOnPoll(),
-		kgo.OnPartitionsAssigned(b.handlePartitionsAssigned),
-		kgo.OnPartitionsRevoked(b.handlePartitionsLost),
-		kgo.OnPartitionsLost(b.handlePartitionsLost),
-
+		kgo.DisableAutoCommit(),
 		kgo.FetchMinBytes(128),
 		kgo.FetchMaxBytes(fetchMaxBytes),
 		kgo.FetchMaxWait(5 * time.Second),
 		kgo.FetchMaxPartitionBytes(50_000_000),
-
-		kgo.MetadataMinAge(10 * time.Second),
-		kgo.MetadataMaxAge(10 * time.Second),
-
 		// BrokerMaxReadBytes sets the maximum response size that can be read from
 		// Kafka. This is a safety measure to avoid OOMing on invalid responses.
 		// franz-go recommendation is to set it 2x FetchMaxBytes.
 		kgo.BrokerMaxReadBytes(2 * fetchMaxBytes),
 	}
-
-	metrics := kprom.NewMetrics(
-		"cortex_blockbuilder_kafka",
-		kprom.Registerer(b.register),
-		kprom.FetchAndProduceDetail(kprom.ByNode, kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes),
+	opts = append(
+		commonKafkaClientOptions(b.cfg.Kafka, b.logger, nil),
+		opts...,
 	)
-	opts = append(opts,
-		kgo.WithLogger(newKafkaLogger(b.logger)),
-		kgo.WithHooks(metrics),
-	)
-	b.kafkaClient, err = kgo.NewClient(opts...)
+	groupClient, err := kgo.NewClient(opts...)
 	if err != nil {
 		return fmt.Errorf("creating kafka client: %w", err)
 	}
 
-	level.Info(b.logger).Log("msg", "waiting until kafka brokers are reachable")
+	b.groupClient = groupClient
 
+	var myParts []int
+	for part := 0; part < b.cfg.TotalPartitions; part++ {
+		if part%b.cfg.TotalBlockBuilders != b.id {
+			continue
+		}
+
+		myParts = append(myParts, part)
+
+		startAt, err := b.findCommitToStartAt(ctx, int32(part), nil)
+		if err != nil {
+			return fmt.Errorf("finding commit to start at: %w", err)
+		}
+
+		opts := []kgo.Opt{
+			kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
+				b.cfg.Kafka.Topic: {int32(part): kgo.NewOffset().At(startAt)},
+			}),
+			kgo.FetchMinBytes(128),
+			kgo.FetchMaxBytes(fetchMaxBytes),
+			kgo.FetchMaxWait(5 * time.Second),
+			kgo.FetchMaxPartitionBytes(50_000_000),
+			// BrokerMaxReadBytes sets the maximum response size that can be read from
+			// Kafka. This is a safety measure to avoid OOMing on invalid responses.
+			// franz-go recommendation is to set it 2x FetchMaxBytes.
+			kgo.BrokerMaxReadBytes(2 * fetchMaxBytes),
+		}
+
+		opts = append(
+			commonKafkaClientOptions(b.cfg.Kafka, b.logger, nil),
+			opts...,
+		)
+		kafkaClient, err := kgo.NewClient(opts...)
+		if err != nil {
+			return fmt.Errorf("creating kafka client: %w", err)
+		}
+
+		b.kafkaClients[int32(part)] = kafkaClient
+
+	}
+
+	level.Info(b.logger).Log("msg", "waiting until kafka brokers are reachable", "parts", myParts)
 	return b.waitKafka(ctx)
 }
 
-func (b *BlockBuilder) handlePartitionsAssigned(_ context.Context, _ *kgo.Client, assignment map[string][]int32) {
-	level.Info(b.logger).Log("msg", "partition assigned", "assignment", fmt.Sprintf("%+v", assignment))
+const (
+	// kafkaOffsetStart is a special offset value that means the beginning of the partition.
+	//kafkaOffsetStart = int64(-2)
 
-	for topic, parts := range assignment {
-		b.metrics.assignedPartitions.WithLabelValues(topic).Set(float64(len(parts)))
+	// kafkaOffsetEnd is a special offset value that means the end of the partition.
+	kafkaOffsetEnd = int64(-1)
+)
+
+func (b *BlockBuilder) findCommitToStartAt(ctx context.Context, part int32, metrics *kprom.Metrics) (int64, error) {
+	// We use an ephemeral client to fetch the offset and then create a new client with this offset.
+	// The reason for this is that changing the offset of an existing client requires to have used this client for fetching at least once.
+	// We don't want to do noop fetches just to warm up the client, so we create a new client instead.
+	cl, err := kgo.NewClient(commonKafkaClientOptions(b.cfg.Kafka, b.logger, metrics)...)
+	if err != nil {
+		return kafkaOffsetEnd, fmt.Errorf("unable to create bootstrap client: %w", err)
+	}
+	defer cl.Close()
+
+	fetchOffset := func(ctx context.Context) (offset int64, err error) {
+		offset, exists, err := b.fetchLastCommittedOffset(ctx, cl, part)
+		if err != nil {
+			return -1, err
+		}
+		if exists {
+			level.Info(b.logger).Log("msg", "starting consumption from last consumed offset", "start_offset", offset, "consumer_group", b.cfg.Kafka.ConsumerGroup)
+			return offset, nil
+		}
+
+		offset = kafkaOffsetEnd
+		level.Info(b.logger).Log("msg", "starting consumption from partition start because no offset has been found", "start_offset", offset)
+
+		return offset, err
 	}
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	retry := backoff.New(ctx, backoff.Config{
+		MinBackoff: 100 * time.Millisecond,
+		MaxBackoff: 2 * time.Second,
+		MaxRetries: 10,
+	})
+	var (
+		startOffset int64
+	)
+	for retry.Ongoing() {
+		startOffset, err = fetchOffset(ctx)
+		if err == nil {
+			return startOffset, nil
+		}
 
-	// If there is active partition processing in flight, we cancel it and let it starts over.
-	// Note, there is a trade-off to explore further: if the new assignment includes the partition, which we're processing
-	// now, we may not want to cancel it. But the new assignment resets the kafkaClient's internal offset. Thus, we
-	// will have to seek the client to the last consumed (*not last committed*) offset before resume processing.
-	if b.cancelActivePart != nil {
-		b.cancelActivePart(errPartitionLost)
-		b.cancelActivePart = nil
+		level.Warn(b.logger).Log("msg", "failed to fetch offset", "err", err)
+		retry.Wait()
 	}
 
-	// Pause fetching of all assigned partitions. We manage the order and the pace of the consumption within blockbuilder's cycles.
-	assignment = b.kafkaClient.PauseFetchPartitions(assignment)
+	// Handle the case the context was canceled before the first attempt.
+	if err == nil {
+		err = retry.Err()
+	}
 
-	parts := assignment[b.cfg.Kafka.Topic]
-	b.parts.update(parts)
+	return kafkaOffsetEnd, err
 }
 
-func (b *BlockBuilder) handlePartitionsLost(_ context.Context, _ *kgo.Client, lostAssignment map[string][]int32) {
-	level.Info(b.logger).Log("msg", "partition lost", "lost", fmt.Sprintf("%+v", lostAssignment))
-
-	// Unpause fetching of all previously assigned partitions. After rebalance gets completed,
-	// the instance will receive a new assignment, and will start managing the set's consumption.
-	b.kafkaClient.ResumeFetchPartitions(lostAssignment)
-
-	for topic, parts := range lostAssignment {
-		if topic != b.cfg.Kafka.Topic {
-			continue
-		}
-		for _, part := range parts {
-			b.metrics.consumerLag.DeleteLabelValues(topic, fmt.Sprintf("%d", part))
-			b.metrics.processPartitionDuration.DeleteLabelValues(fmt.Sprintf("%d", part))
-			b.metrics.compactAndUploadDuration.DeleteLabelValues(fmt.Sprintf("%d", part))
-		}
+// fetchLastCommittedOffset returns the last consumed offset which has been committed by the PartitionReader
+// to the consumer group.
+func (b *BlockBuilder) fetchLastCommittedOffset(ctx context.Context, cl *kgo.Client, part int32) (offset int64, exists bool, _ error) {
+	offsets, err := kadm.NewClient(cl).FetchOffsets(ctx, b.cfg.Kafka.ConsumerGroup)
+	if errors.Is(err, kerr.GroupIDNotFound) || errors.Is(err, kerr.UnknownTopicOrPartition) {
+		return 0, false, nil
 	}
+	if err != nil {
+		return 0, false, fmt.Errorf("unable to fetch group offsets: %w", err)
+	}
+
+	offsetRes, exists := offsets.Lookup(b.cfg.Kafka.Topic, part)
+	if !exists {
+		return 0, false, nil
+	}
+	if offsetRes.Err != nil {
+		return 0, false, offsetRes.Err
+	}
+
+	return offsetRes.At, true, nil
+}
+
+func commonKafkaClientOptions(cfg KafkaConfig, logger log.Logger, metrics *kprom.Metrics) []kgo.Opt {
+	opts := []kgo.Opt{
+		kgo.ClientID(cfg.ClientID),
+		kgo.SeedBrokers(cfg.Address),
+		kgo.DialTimeout(cfg.DialTimeout),
+		kgo.MetadataMinAge(10 * time.Second),
+		kgo.MetadataMaxAge(10 * time.Second),
+		kgo.WithLogger(newKafkaLogger(logger)),
+	}
+	if metrics != nil {
+		opts = append(opts, kgo.WithHooks(metrics))
+	}
+	return opts
 }
 
 func (b *BlockBuilder) waitKafka(ctx context.Context) error {
-	boff := backoff.New(ctx, backoff.Config{
-		MinBackoff: 100 * time.Millisecond,
-		MaxBackoff: time.Second,
-		MaxRetries: 0,
-	})
-	var pinged bool
-	for boff.Ongoing() {
-		if !pinged {
-			err := b.kafkaClient.Ping(ctx)
+Outer:
+	for part, kafkaClient := range b.kafkaClients {
+		boff := backoff.New(ctx, backoff.Config{
+			MinBackoff: 100 * time.Millisecond,
+			MaxBackoff: time.Second,
+			MaxRetries: 0,
+		})
+		for boff.Ongoing() {
+			err := kafkaClient.Ping(ctx)
 			if err == nil {
-				pinged = true
-				boff.Reset()
+				kafkaClient.PauseFetchPartitions(map[string][]int32{b.cfg.Kafka.Topic: {part}})
+				continue Outer
 			}
+
+			level.Error(b.logger).Log(
+				"msg", "waiting for kafka ping to succeed",
+				"part", part,
+				"num_retries", boff.NumRetries(),
+			)
+			boff.Wait()
 		}
-
-		b.mu.Lock()
-		partsLen := b.parts.len()
-		b.mu.Unlock()
-
-		if partsLen != 0 {
-			return nil
-		}
-
-		level.Error(b.logger).Log(
-			"msg", "waiting for group assignment",
-			"num_retries", boff.NumRetries(),
-		)
-		boff.Wait()
+		return boff.Err()
 	}
-	return boff.Err()
+
+	return nil
 }
 
 func (b *BlockBuilder) stopping(_ error) error {
-	if b.kafkaClient != nil {
-		b.kafkaClient.Close()
+	b.groupClient.Close()
+	for _, cl := range b.kafkaClients {
+		cl.Close()
 	}
 
 	return nil
@@ -275,49 +383,19 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 		b.metrics.consumeCycleDuration.Observe(time.Since(t).Seconds())
 	}(time.Now())
 
-	kadmClient := kadm.NewClient(b.kafkaClient)
-
-	// We start a new cycle with always resetting the partitions queue's cursor.
-	b.mu.Lock()
-	b.parts.reset()
-	b.mu.Unlock()
-
-	defer func() {
-		b.mu.Lock()
-		defer b.mu.Unlock()
-
-		if b.cancelActivePart != nil {
-			b.cancelActivePart(context.Canceled)
-			b.cancelActivePart = nil
+	for part, kafkaClient := range b.kafkaClients {
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
-	}()
-
-	for ctx.Err() == nil {
-		b.mu.Lock()
-		// The activePartCtx context is cancelled to let the processing of this partition to bail out
-		// if the partition was lost after the rebalancing.
-		activePartCtx, cancel := context.WithCancelCause(ctx)
-		b.cancelActivePart = cancel
-
-		part := b.parts.next()
-		b.mu.Unlock()
-
 		if part < 0 {
 			return nil
 		}
 
 		level.Debug(b.logger).Log("msg", "next consume cycle", "part", part)
 
-		lags, err := kadmClient.Lag(activePartCtx, b.cfg.Kafka.ConsumerGroup)
+		lag, err := b.getLagForPartition(ctx, kadm.NewClient(kafkaClient), part)
 		if err != nil {
-			return fmt.Errorf("get consumer group lag: %w", err)
-		} else if err := lags.Error(); err != nil {
-			return fmt.Errorf("get consumer group lag: %w", err)
-		}
-
-		groupLag := lags[b.cfg.Kafka.ConsumerGroup].Lag
-		lag, ok := groupLag.Lookup(b.cfg.Kafka.Topic, part)
-		if !ok {
+			level.Error(b.logger).Log("msg", "failed to get partition lag", "err", err, "part", part)
 			continue
 		}
 
@@ -356,11 +434,40 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 			SeenTillTs:   seenTillTs,
 			LastBlockEnd: lastBlockEnd,
 		}
-		if err := b.nextConsumeCycle(activePartCtx, pl, cycleEnd); err != nil {
+		if err := b.nextConsumeCycle(ctx, kafkaClient, pl, cycleEnd); err != nil {
 			level.Error(b.logger).Log("msg", "failed to consume partition", "err", err, "part", part)
 		}
 	}
 	return nil
+}
+
+func (b *BlockBuilder) getLagForPartition(ctx context.Context, admClient *kadm.Client, part int32) (kadm.GroupMemberLag, error) {
+	boff := backoff.New(ctx, backoff.Config{
+		MinBackoff: 100 * time.Millisecond,
+		MaxBackoff: time.Second,
+		MaxRetries: 10,
+	})
+	var lastErr error
+	for boff.Ongoing() {
+		lags, err := admClient.Lag(ctx, b.cfg.Kafka.ConsumerGroup)
+		if err != nil {
+			lastErr = fmt.Errorf("get consumer group lag: %w", err)
+			continue
+		} else if err := lags.Error(); err != nil {
+			lastErr = fmt.Errorf("get consumer group lag: %w", err)
+			continue
+		}
+
+		groupLag := lags[b.cfg.Kafka.ConsumerGroup].Lag
+		lag, ok := groupLag.Lookup(b.cfg.Kafka.Topic, part)
+		if ok {
+			return lag, nil
+		}
+		lastErr = fmt.Errorf("partition %d not found in lag response", part)
+		boff.Wait()
+	}
+
+	return kadm.GroupMemberLag{}, lastErr
 }
 
 type partitionInfo struct {
@@ -373,7 +480,7 @@ type partitionInfo struct {
 	LastBlockEnd int64
 }
 
-func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, pl partitionInfo, cycleEnd time.Time) error {
+func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, client *kgo.Client, pl partitionInfo, cycleEnd time.Time) error {
 	// TODO(codesome): Add an option to block builder to start consuming from the end for the first rollout.
 	var commitRecTime time.Time
 	var skipRecordsBefore time.Time
@@ -396,7 +503,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, pl partitionInfo, c
 		// more than 1.5 times the consume interval.
 		// When there is no kafka commit, we play safe and assume seenTillTs and
 		// lastBlockEnd was 0 to not discard any samples unnecessarily.
-		_, err := b.consumePartition(ctx, pl, cycleEnd, skipRecordsBefore)
+		_, err := b.consumePartition(ctx, client, pl, cycleEnd, skipRecordsBefore)
 		if err != nil {
 			return fmt.Errorf("consume partition %d: %w", pl.Partition, err)
 		}
@@ -411,7 +518,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, pl partitionInfo, c
 		// Instead of looking for the commit metadata for each iteration, we use the data returned by consumePartition
 		// in the next iteration.
 		var err error
-		pl, err = b.consumePartition(ctx, pl, ce, skipRecordsBefore)
+		pl, err = b.consumePartition(ctx, client, pl, ce, skipRecordsBefore)
 		if err != nil {
 			return fmt.Errorf("consume partition %d: %w", pl.Partition, err)
 		}
@@ -435,6 +542,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, pl partitionInfo, c
 // * retBlockMax: timestamp of the block end in this cycle (part of commit metadata).
 func (b *BlockBuilder) consumePartition(
 	ctx context.Context,
+	client *kgo.Client,
 	pl partitionInfo,
 	cycleEnd time.Time,
 	skipRecordsBefore time.Time,
@@ -450,16 +558,12 @@ func (b *BlockBuilder) consumePartition(
 		blockEnd   = blockEndAt.UnixMilli()
 	)
 
-	// Make sure to unblock rebalance of the group after the partition was consumed AND after we (potentially) committed
-	// this partition's offset to the group.
-	defer b.kafkaClient.AllowRebalance()
-
 	// TopicPartition to resume consuming on this iteration.
 	// Note: pause/resume is a client-local state. On restart or a crash, the client will be assigned its share of partitions,
 	// during consumer group's rebalancing, and it will continue consuming as usual.
 	tp := map[string][]int32{b.cfg.Kafka.Topic: {part}}
-	b.kafkaClient.ResumeFetchPartitions(tp)
-	defer b.kafkaClient.PauseFetchPartitions(tp)
+	client.ResumeFetchPartitions(tp)
+	defer client.PauseFetchPartitions(tp)
 
 	var (
 		numBlocks     int
@@ -491,16 +595,16 @@ func (b *BlockBuilder) consumePartition(
 	var (
 		done                         bool
 		commitRec, firstRec, lastRec *kgo.Record
+		preFirstRec                  *kgo.Record // Record that is discarded to be before the lookback, and right before firstRec.
 	)
 	for !done {
 		if err := context.Cause(ctx); err != nil {
 			return pl, err
 		}
-
 		// Limit the time the consumer blocks waiting for a new batch. If not set, the consumer will hang
 		// when it lands on an inactive partition.
 		ctx1, cancel := context.WithTimeout(ctx, b.cfg.Kafka.PollTimeout)
-		fetches := b.kafkaClient.PollFetches(ctx1)
+		fetches := client.PollFetches(ctx1)
 		cancel()
 
 		if fetches.IsClientClosed() {
@@ -527,6 +631,10 @@ func (b *BlockBuilder) consumePartition(
 		for !recIter.Done() {
 			rec := recIter.Next()
 			if rec.Timestamp.Before(skipRecordsBefore) {
+				lag--
+				if firstRec == nil {
+					preFirstRec = rec
+				}
 				continue
 			}
 
@@ -571,8 +679,6 @@ func (b *BlockBuilder) consumePartition(
 			}
 			lastRec = rec
 		}
-
-		b.kafkaClient.AllowRebalance()
 	}
 
 	compactStart := time.Now()
@@ -589,14 +695,19 @@ func (b *BlockBuilder) consumePartition(
 		return pl, nil
 	}
 
-	// If the very first record fetched was from the next cycle, i.e. no lastRec, we must rewind partition's
-	// offset and re-consume this record again on the next cycle.
-	if lastRec == nil {
+	// No records were for this cycle, which can be the case if the very first record fetched
+	// was from the next cycle and/or there were records that were beyond the look back before this.
+	// We must rewind partition's offset and re-consume this record again on the next cycle, but we
+	// skip the records that didn't make the cut in this cycle.
+	if lastRec == nil && preFirstRec != nil {
+		// We have a record that was beyond the lookback. We must commit the record before this.
+		commitRec = preFirstRec
+	} else if lastRec == nil {
 		rec := kgo.EpochOffset{
 			Epoch:  firstRec.LeaderEpoch,
 			Offset: firstRec.Offset,
 		}
-		b.seekPartition(part, rec)
+		b.seekPartition(client, part, rec)
 		return pl, nil
 	}
 
@@ -613,14 +724,14 @@ func (b *BlockBuilder) consumePartition(
 			Epoch:  commitRec.LeaderEpoch,
 			Offset: commitRec.Offset + 1, // offset+1 means everything up (including) to commitRec was processed
 		}
-		b.seekPartition(part, rec)
+		b.seekPartition(client, part, rec)
 	}()
 
 	// We should take the max of "seen till" timestamp. If the partition was lagging
 	// due to some record not being processed because of a future sample, we might be
 	// coming back to the same consume cycle again.
 	commitSeenTillTs := seenTillTs
-	if commitSeenTillTs < lastRec.Timestamp.UnixMilli() {
+	if lastRec != nil && commitSeenTillTs < lastRec.Timestamp.UnixMilli() {
 		commitSeenTillTs = lastRec.Timestamp.UnixMilli()
 	}
 	// Take the max of block max times because of same reasons above.
@@ -644,17 +755,17 @@ func (b *BlockBuilder) consumePartition(
 		LastBlockEnd: commitBlockEnd,
 	}
 
-	err = commitRecord(ctx, b.logger, b.kafkaClient, commitRec, pl.Commit.Metadata)
+	err = commitRecord(ctx, b.logger, b.groupClient, b.cfg.Kafka.ConsumerGroup, commitRec, pl.Commit.Metadata)
 	return pl, err
 }
 
-func (b *BlockBuilder) seekPartition(part int32, rec kgo.EpochOffset) {
+func (b *BlockBuilder) seekPartition(client *kgo.Client, part int32, rec kgo.EpochOffset) {
 	offsets := map[string]map[int32]kgo.EpochOffset{
 		b.cfg.Kafka.Topic: {
 			part: rec,
 		},
 	}
-	b.kafkaClient.SetOffsets(offsets)
+	client.SetOffsets(offsets)
 }
 
 func (b *BlockBuilder) blockUploaderForUser(ctx context.Context, userID string) blockUploader {
@@ -683,7 +794,7 @@ func (b *BlockBuilder) blockUploaderForUser(ctx context.Context, userID string) 
 	}
 }
 
-func commitRecord(ctx context.Context, l log.Logger, kc *kgo.Client, commitRec *kgo.Record, meta string) error {
+func commitRecord(ctx context.Context, l log.Logger, kc *kgo.Client, group string, commitRec *kgo.Record, meta string) error {
 	if commitRec == nil {
 		return nil
 	}
@@ -708,6 +819,8 @@ func commitRecord(ctx context.Context, l log.Logger, kc *kgo.Client, commitRec *
 	}
 
 	level.Debug(l).Log("msg", "successfully committed to Kafka", "part", commitRec.Partition, "offset", commitRec.Offset)
+
+	_ = group // For lint.
 
 	return nil
 }
@@ -752,6 +865,8 @@ type Config struct {
 	ConsumeInterval       time.Duration `yaml:"consume_interval"`
 	ConsumeIntervalBuffer time.Duration `yaml:"consume_interval_buffer"`
 	LookbackOnNoCommit    time.Duration `yaml:"lookback_on_no_commit" category:"advanced"`
+	TotalBlockBuilders    int           `yaml:"total_block_builders"`
+	TotalPartitions       int           `yaml:"total_partitions"`
 
 	Kafka               KafkaConfig                    `yaml:"kafka"`
 	BlocksStorageConfig mimir_tsdb.BlocksStorageConfig `yaml:"-"` // TODO(codesome): check how this is passed. Copied over form ingester.
@@ -763,6 +878,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.ConsumeInterval, "block-builder.consume-interval", time.Hour, "Interval between block consumption cycles.")
 	f.DurationVar(&cfg.ConsumeIntervalBuffer, "block-builder.consume-interval-buffer", 15*time.Minute, "Extra buffer between subsequent block consumption cycles to avoid small blocks.")
 	f.DurationVar(&cfg.LookbackOnNoCommit, "block-builder.lookback-on-no-commit", 12*time.Hour, "How much of the historical records to look back when there is no kafka commit for a partition.")
+	f.IntVar(&cfg.TotalPartitions, "block-builder.total-partitions", 0, "How many total kafka partitions exist.")
+	f.IntVar(&cfg.TotalBlockBuilders, "block-builder.total-block-builders", 0, "Total block builders deployed.")
 }
 
 func (cfg *Config) Validate() error {
