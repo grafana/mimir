@@ -126,7 +126,7 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 				assert.True(t, ok)
 				assert.Equal(t, int64(0), actual)
 
-				actual, ok = offsets.Lookup(3)
+				_, ok = offsets.Lookup(3)
 				assert.False(t, ok)
 			} else {
 				assert.Empty(t, downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))

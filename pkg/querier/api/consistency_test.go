@@ -69,7 +69,7 @@ func TestReadConsistencyClientUnaryInterceptor_And_ReadConsistencyServerUnaryInt
 	clientIncomingCtx = ContextWithReadConsistencyEncodedOffsets(clientIncomingCtx, encodedOffsets)
 
 	var clientOutgoingCtx context.Context
-	clientHandler := func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
+	clientHandler := func(ctx context.Context, _ string, _, _ any, _ *grpc.ClientConn, _ ...grpc.CallOption) error {
 		clientOutgoingCtx = ctx
 		return nil
 	}
@@ -84,7 +84,7 @@ func TestReadConsistencyClientUnaryInterceptor_And_ReadConsistencyServerUnaryInt
 
 	// Run the gRPC server interceptor.
 	var serverOutgoingCtx context.Context
-	serverHandler := func(ctx context.Context, req any) (any, error) {
+	serverHandler := func(ctx context.Context, _ any) (any, error) {
 		serverOutgoingCtx = ctx
 		return nil, nil
 	}
@@ -111,7 +111,7 @@ func TestReadConsistencyClientStreamInterceptor_And_ReadConsistencyServerStreamI
 	clientIncomingCtx = ContextWithReadConsistencyEncodedOffsets(clientIncomingCtx, encodedOffsets)
 
 	var clientOutgoingCtx context.Context
-	clientHandler := func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+	clientHandler := func(ctx context.Context, _ *grpc.StreamDesc, _ *grpc.ClientConn, _ string, _ ...grpc.CallOption) (grpc.ClientStream, error) {
 		clientOutgoingCtx = ctx
 		return nil, nil
 	}
@@ -127,7 +127,7 @@ func TestReadConsistencyClientStreamInterceptor_And_ReadConsistencyServerStreamI
 
 	// Run the gRPC server interceptor.
 	var serverOutgoingCtx context.Context
-	serverHandler := func(srv any, stream grpc.ServerStream) error {
+	serverHandler := func(_ any, stream grpc.ServerStream) error {
 		serverOutgoingCtx = stream.Context()
 		return nil
 	}
