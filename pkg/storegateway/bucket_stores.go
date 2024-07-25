@@ -532,7 +532,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 		fetcher,
 		u.syncDirForUser(userID),
 		u.cfg.BucketStore,
-		selectPostingsStrategy(u.logger, u.cfg.BucketStore.SeriesSelectionStrategyName, u.cfg.BucketStore.SelectionStrategies.WorstCaseSeriesPreference),
+		worstCaseFetchedDataStrategy{postingListActualSizeFactor: u.cfg.BucketStore.SeriesFetchPreference},
 		NewChunksLimiterFactory(func() uint64 {
 			return uint64(u.limits.MaxChunksPerQuery(userID))
 		}),
@@ -555,24 +555,6 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 	u.metaFetcherMetrics.AddUserRegistry(userID, fetcherReg)
 
 	return bs, nil
-}
-
-func selectPostingsStrategy(l log.Logger, name string, worstCaseSeriesPreference float64) postingsSelectionStrategy {
-	switch name {
-	case tsdb.AllPostingsStrategy:
-		return selectAllStrategy{}
-	case tsdb.SpeculativePostingsStrategy:
-		return speculativeFetchedDataStrategy{}
-	case tsdb.WorstCasePostingsStrategy:
-		return worstCaseFetchedDataStrategy{postingListActualSizeFactor: worstCaseSeriesPreference}
-	case tsdb.WorstCaseSmallPostingListsPostingsStrategy:
-		return worstCaseFetchedDataStrategy{postingListActualSizeFactor: 0.3}
-	default:
-		// This should only be reached if the tsdb package has mismatching names for these strategies.
-		// Prefer keeping the store-gateway running as opposed to failing, since strategies are still an experimental feature anyway.
-		level.Warn(l).Log("msg", "unknown posting strategy; using "+tsdb.AllPostingsStrategy+" instead", "strategy", name)
-		return selectAllStrategy{}
-	}
 }
 
 // closeBucketStoreAndDeleteLocalFilesForExcludedTenants closes bucket store and removes local "sync" directories

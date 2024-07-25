@@ -114,7 +114,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 			# HELP cortex_ingest_storage_writer_produce_requests_total Total number of produce requests issued to Kafka.
 			# TYPE cortex_ingest_storage_writer_produce_requests_total counter
-			cortex_ingest_storage_writer_produce_requests_total 1
+			cortex_ingest_storage_writer_produce_requests_total{client_id="0"} 1
 		`, len(fetches.Records()[0].Value))),
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
@@ -204,7 +204,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 			# HELP cortex_ingest_storage_writer_produce_requests_total Total number of produce requests issued to Kafka.
 			# TYPE cortex_ingest_storage_writer_produce_requests_total counter
-			cortex_ingest_storage_writer_produce_requests_total 2
+			cortex_ingest_storage_writer_produce_requests_total{client_id="0"} 2
 		`, expectedBytes)),
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
@@ -228,7 +228,7 @@ func TestWriter_WriteSync(t *testing.T) {
 				_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 				config := createTestKafkaConfig(clusterAddr, topicName)
 				config.WriteClients = writeClients
-				writer, _ := createTestWriter(t, config)
+				writer, reg := createTestWriter(t, config)
 
 				// Write to partitions.
 				for partitionID, series := range seriesPerPartition {
@@ -258,6 +258,24 @@ func TestWriter_WriteSync(t *testing.T) {
 						assert.Equal(t, expected.Labels, received.Timeseries[idx].Labels)
 						assert.Equal(t, expected.Samples, received.Timeseries[idx].Samples)
 					}
+				}
+
+				// Check metrics. The actual metrics depends on how many clients we have, so we're just checking it for
+				// the case of 1 and 2 clients.
+				if writeClients == 1 {
+					assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+						# HELP cortex_ingest_storage_writer_produce_requests_total Total number of produce requests issued to Kafka.
+						# TYPE cortex_ingest_storage_writer_produce_requests_total counter
+						cortex_ingest_storage_writer_produce_requests_total{client_id="0"} 2
+					`), "cortex_ingest_storage_writer_produce_requests_total"))
+				}
+				if writeClients == 2 {
+					assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+						# HELP cortex_ingest_storage_writer_produce_requests_total Total number of produce requests issued to Kafka.
+						# TYPE cortex_ingest_storage_writer_produce_requests_total counter
+						cortex_ingest_storage_writer_produce_requests_total{client_id="0"} 1
+						cortex_ingest_storage_writer_produce_requests_total{client_id="1"} 1
+					`), "cortex_ingest_storage_writer_produce_requests_total"))
 				}
 			})
 		}
@@ -415,11 +433,11 @@ func TestWriter_WriteSync(t *testing.T) {
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_writer_produce_requests_total Total number of produce requests issued to Kafka.
 			# TYPE cortex_ingest_storage_writer_produce_requests_total counter
-			cortex_ingest_storage_writer_produce_requests_total 1
+			cortex_ingest_storage_writer_produce_requests_total{client_id="0"} 1
 
 			# HELP cortex_ingest_storage_writer_produce_failures_total Total number of failed produce requests issued to Kafka.
 			# TYPE cortex_ingest_storage_writer_produce_failures_total counter
-			cortex_ingest_storage_writer_produce_failures_total{reason="other"} 1
+			cortex_ingest_storage_writer_produce_failures_total{client_id="0",reason="other"} 1
 		`),
 			"cortex_ingest_storage_writer_produce_requests_total",
 			"cortex_ingest_storage_writer_produce_failures_total"))
@@ -449,11 +467,11 @@ func TestWriter_WriteSync(t *testing.T) {
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_writer_produce_requests_total Total number of produce requests issued to Kafka.
 			# TYPE cortex_ingest_storage_writer_produce_requests_total counter
-			cortex_ingest_storage_writer_produce_requests_total 1
+			cortex_ingest_storage_writer_produce_requests_total{client_id="0"} 1
 
 			# HELP cortex_ingest_storage_writer_produce_failures_total Total number of failed produce requests issued to Kafka.
 			# TYPE cortex_ingest_storage_writer_produce_failures_total counter
-			cortex_ingest_storage_writer_produce_failures_total{reason="timeout"} 1
+			cortex_ingest_storage_writer_produce_failures_total{client_id="0",reason="timeout"} 1
 		`),
 			"cortex_ingest_storage_writer_produce_requests_total",
 			"cortex_ingest_storage_writer_produce_failures_total"))
@@ -599,11 +617,11 @@ func TestWriter_WriteSync(t *testing.T) {
 
 			# HELP cortex_ingest_storage_writer_produce_requests_total Total number of produce requests issued to Kafka.
 			# TYPE cortex_ingest_storage_writer_produce_requests_total counter
-			cortex_ingest_storage_writer_produce_requests_total 2
+			cortex_ingest_storage_writer_produce_requests_total{client_id="0"} 2
 
 			# HELP cortex_ingest_storage_writer_produce_failures_total Total number of failed produce requests issued to Kafka.
 			# TYPE cortex_ingest_storage_writer_produce_failures_total counter
-			cortex_ingest_storage_writer_produce_failures_total{reason="record-too-large"} 1
+			cortex_ingest_storage_writer_produce_failures_total{client_id="0",reason="record-too-large"} 1
 		`, len(fetches.Records()[0].Value))),
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
@@ -638,7 +656,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 
 		cfg := createTestKafkaConfig(clusterAddr, topicName)
-		cfg.ProducerMaxBufferedBytes = (estimatedRecordSize * 4) - 1 // Configure the test so that we expect 3 produced records.
+		cfg.ProducerMaxBufferedBytes = int64((estimatedRecordSize * 4) - 1) // Configure the test so that we expect 3 produced records.
 		cfg.WriteTimeout = time.Second
 
 		// Pre-condition checks.
@@ -718,12 +736,12 @@ func TestWriter_WriteSync(t *testing.T) {
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_writer_produce_requests_total Total number of produce requests issued to Kafka.
 			# TYPE cortex_ingest_storage_writer_produce_requests_total counter
-			cortex_ingest_storage_writer_produce_requests_total 10
+			cortex_ingest_storage_writer_produce_requests_total{client_id="0"} 10
 
 			# HELP cortex_ingest_storage_writer_produce_failures_total Total number of failed produce requests issued to Kafka.
 			# TYPE cortex_ingest_storage_writer_produce_failures_total counter
-			cortex_ingest_storage_writer_produce_failures_total{reason="buffer-full"} 7
-			cortex_ingest_storage_writer_produce_failures_total{reason="timeout"} 3
+			cortex_ingest_storage_writer_produce_failures_total{client_id="0",reason="buffer-full"} 7
+			cortex_ingest_storage_writer_produce_failures_total{client_id="0",reason="timeout"} 3
 		`),
 			"cortex_ingest_storage_writer_produce_requests_total",
 			"cortex_ingest_storage_writer_produce_failures_total"))
@@ -748,12 +766,12 @@ func TestWriter_WriteSync(t *testing.T) {
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_writer_produce_requests_total Total number of produce requests issued to Kafka.
 			# TYPE cortex_ingest_storage_writer_produce_requests_total counter
-			cortex_ingest_storage_writer_produce_requests_total 13
+			cortex_ingest_storage_writer_produce_requests_total{client_id="0"} 13
 
 			# HELP cortex_ingest_storage_writer_produce_failures_total Total number of failed produce requests issued to Kafka.
 			# TYPE cortex_ingest_storage_writer_produce_failures_total counter
-			cortex_ingest_storage_writer_produce_failures_total{reason="buffer-full"} 7
-			cortex_ingest_storage_writer_produce_failures_total{reason="timeout"} 3
+			cortex_ingest_storage_writer_produce_failures_total{client_id="0",reason="buffer-full"} 7
+			cortex_ingest_storage_writer_produce_failures_total{client_id="0",reason="timeout"} 3
 		`),
 			"cortex_ingest_storage_writer_produce_requests_total",
 			"cortex_ingest_storage_writer_produce_failures_total"))
@@ -845,7 +863,9 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 	require.NotZero(t, writeFailureCount.Load())
 
 	// We expect the buffered bytes to get down to 0 once all write requests completed.
-	require.Zero(t, writer.writersBufferedBytes.Load())
+	producer, err := writer.getKafkaWriterForPartition(partitionID)
+	require.NoError(t, err)
+	require.Zero(t, producer.bufferedBytes.Load())
 }
 
 func TestMarshalWriteRequestToRecords(t *testing.T) {

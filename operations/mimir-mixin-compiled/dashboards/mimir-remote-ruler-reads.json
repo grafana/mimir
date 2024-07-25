@@ -91,7 +91,13 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(\n  rate(\n    cortex_request_duration_seconds_count{\n      cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\",\n      route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"\n    }[$__rate_interval]\n  )\n)\n",
+                        "expr": "sum (rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\",route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"}[$__rate_interval])) < ($latency_metrics * +Inf)",
+                        "format": "time_series",
+                        "instant": true,
+                        "refId": "A_classic"
+                     },
+                     {
+                        "expr": "sum (histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\",route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"}[$__rate_interval]))) < ($latency_metrics * -Inf)",
                         "format": "time_series",
                         "instant": true,
                         "refId": "A"

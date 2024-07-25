@@ -21,7 +21,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
-func TestKafkaWriterClient_ShouldExposeBufferedBytesLimit(t *testing.T) {
+func TestKafkaProducer_ShouldExposeBufferedBytesLimit(t *testing.T) {
 	const (
 		numPartitions = 1
 		topicName     = "test"
@@ -32,18 +32,22 @@ func TestKafkaWriterClient_ShouldExposeBufferedBytesLimit(t *testing.T) {
 	cfg.ProducerMaxBufferedBytes = 1024 * 1024
 
 	reg := prometheus.NewPedanticRegistry()
-	client, err := newKafkaWriterClient(1, cfg, 1, log.NewNopLogger(), reg)
+	prefixedReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, reg)
+
+	client, err := newKafkaWriterClient(cfg, 1, log.NewNopLogger(), prefixedReg)
 	require.NoError(t, err)
-	t.Cleanup(client.Close)
+
+	producer := NewKafkaProducer(client, cfg.ProducerMaxBufferedBytes, prefixedReg)
+	t.Cleanup(producer.Close)
 
 	assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingest_storage_writer_buffered_produce_bytes_limit The bytes limit on buffered produce records. Produce requests fail once this limit is reached.
 		# TYPE cortex_ingest_storage_writer_buffered_produce_bytes_limit gauge
-		cortex_ingest_storage_writer_buffered_produce_bytes_limit{client_id="1"} 1.048576e+06
+		cortex_ingest_storage_writer_buffered_produce_bytes_limit 1.048576e+06
 	`), "cortex_ingest_storage_writer_buffered_produce_bytes_limit"))
 }
 
-func TestKafkaWriterClient_ShouldTrackBufferedProduceBytes(t *testing.T) {
+func TestKafkaProducer_ProduceSync_ShouldTrackBufferedProduceBytes(t *testing.T) {
 	const (
 		numPartitions = 1
 		topicName     = "test"
@@ -61,9 +65,13 @@ func TestKafkaWriterClient_ShouldTrackBufferedProduceBytes(t *testing.T) {
 	ctx := context.Background()
 	cfg := createTestKafkaConfig(clusterAddr, topicName)
 	reg := prometheus.NewPedanticRegistry()
-	client, err := newKafkaWriterClient(1, cfg, 1, log.NewNopLogger(), reg)
+	prefixedReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, reg)
+
+	client, err := newKafkaWriterClient(cfg, 1, log.NewNopLogger(), prefixedReg)
 	require.NoError(t, err)
-	t.Cleanup(client.Close)
+
+	producer := NewKafkaProducer(client, cfg.ProducerMaxBufferedBytes, prefixedReg)
+	t.Cleanup(producer.Close)
 
 	wg := sync.WaitGroup{}
 
@@ -106,7 +114,7 @@ func TestKafkaWriterClient_ShouldTrackBufferedProduceBytes(t *testing.T) {
 	wg.Wait()
 }
 
-func getSummaryQuantileValue(t require.TestingT, reg *prometheus.Registry, metricName string, quantile float64) float64 {
+func getSummaryQuantileValue(t require.TestingT, reg prometheus.Gatherer, metricName string, quantile float64) float64 {
 	const delta = 0.0001
 
 	metrics, err := reg.Gather()

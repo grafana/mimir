@@ -89,10 +89,10 @@ func dumpResponse(res QueryStreamResponse) {
 					fmt.Println("  - Sample:", sampleType.String(), "ts:", chunkIterator.Timestamp(), "value:", chunkIterator.Value().Value)
 				case chunkenc.ValHistogram:
 					ts, h = chunkIterator.AtHistogram(h)
-					fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "value:", h)
+					fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "value:", h, "hint:", counterResetHintString(h.CounterResetHint))
 				case chunkenc.ValFloatHistogram:
 					ts, fh := chunkIterator.AtFloatHistogram(fh)
-					fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "value:", fh)
+					fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "value:", fh, "hint:", counterResetHintString(fh.CounterResetHint))
 				default:
 					panic(fmt.Errorf("unknown sample type %s", sampleType.String()))
 				}
@@ -102,5 +102,20 @@ func dumpResponse(res QueryStreamResponse) {
 				panic(chunkIterator.Err())
 			}
 		}
+	}
+}
+
+func counterResetHintString(crh histogram.CounterResetHint) string {
+	switch crh {
+	case histogram.UnknownCounterReset:
+		return "UnknownCounterReset"
+	case histogram.CounterReset:
+		return "CounterReset"
+	case histogram.NotCounterReset:
+		return "NotCounterReset"
+	case histogram.GaugeType:
+		return "GaugeType"
+	default:
+		return "unrecognized counter reset hint"
 	}
 }

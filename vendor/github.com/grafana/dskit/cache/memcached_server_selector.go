@@ -7,7 +7,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/cespare/xxhash"
+	"github.com/cespare/xxhash/v2"
 	"github.com/facette/natsort"
 	"github.com/grafana/gomemcache/memcache"
 )

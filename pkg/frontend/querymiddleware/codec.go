@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -45,6 +46,9 @@ var (
 	errNegativeStep   = apierror.New(apierror.TypeBadData, `invalid parameter "step": zero or negative query resolution step widths are not accepted. Try a positive integer`)
 	errStepTooSmall   = apierror.New(apierror.TypeBadData, "exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
 	allFormats        = []string{formatJSON, formatProtobuf}
+
+	// List of HTTP headers to propagate when a Prometheus request is encoded into a HTTP request.
+	prometheusCodecPropagateHeaders = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader}
 )
 
 const (
@@ -591,12 +595,15 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 		req.Header.Add(api.ReadConsistencyHeader, consistency)
 	}
 
+	// Propagate allowed HTTP headers.
 	for _, h := range r.GetHeaders() {
-		if h.Name == compat.ForceFallbackHeaderName {
-			for _, v := range h.Values {
-				// There should only be one value, but add all of them for completeness.
-				req.Header.Add(compat.ForceFallbackHeaderName, v)
-			}
+		if !slices.Contains(prometheusCodecPropagateHeaders, h.Name) {
+			continue
+		}
+
+		for _, v := range h.Values {
+			// There should only be one value, but add all of them for completeness.
+			req.Header.Add(h.Name, v)
 		}
 	}
 
