@@ -8,6 +8,7 @@ package querymiddleware
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -22,6 +23,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -32,9 +34,13 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kgo"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
 func TestTripperware_RangeQuery(t *testing.T) {
@@ -789,6 +795,167 @@ func TestTripperware_RemoteRead(t *testing.T) {
 				require.NoError(t, err)
 				_, err := io.ReadAll(resp.Body)
 				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) {
+	const (
+		topic         = "test"
+		numPartitions = 10
+		tenantID      = "user-1"
+	)
+
+	tests := map[string]struct {
+		makeRequest func() *http.Request
+	}{
+		"range query": {
+			makeRequest: func() *http.Request {
+				return httptest.NewRequest("GET", queryRangePathSuffix+"?start=1536673680&end=1536716880&step=120&query=up", nil)
+			},
+		},
+		"instant query": {
+			makeRequest: func() *http.Request {
+				return httptest.NewRequest("GET", instantQueryPathSuffix+"?time=1536673680&query=up", nil)
+			},
+		},
+		"cardinality label names": {
+			makeRequest: func() *http.Request {
+				return httptest.NewRequest("GET", cardinalityLabelNamesPathSuffix, nil)
+			},
+		},
+		"cardinality label values": {
+			makeRequest: func() *http.Request {
+				return httptest.NewRequest("GET", cardinalityLabelValuesPathSuffix, nil)
+			},
+		},
+		"cardinality active series": {
+			makeRequest: func() *http.Request {
+				return httptest.NewRequest("GET", cardinalityActiveSeriesPathSuffix, nil)
+			},
+		},
+		"cardinality active native histograms": {
+			makeRequest: func() *http.Request {
+				return httptest.NewRequest("GET", cardinalityActiveNativeHistogramMetricsPathSuffix, nil)
+			},
+		},
+		"label names": {
+			makeRequest: func() *http.Request {
+				return httptest.NewRequest("GET", labelNamesPathSuffix, nil)
+			},
+		},
+		"remote read": {
+			makeRequest: func() *http.Request {
+				return makeTestHTTPRequestFromRemoteRead(&prompb.ReadRequest{
+					Queries: []*prompb.Query{
+						{
+							Matchers:         []*prompb.LabelMatcher{{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "some_metric"}},
+							StartTimestampMs: time.Now().Add(-60 * 24 * time.Hour).UnixMilli(),
+							EndTimestampMs:   time.Now().UnixMilli(),
+						},
+					},
+				})
+			},
+		},
+	}
+
+	ctx := context.Background()
+	logger := log.NewNopLogger()
+
+	// Setup a fake Kafka cluster.
+	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topic)
+
+	// Write some records to different partitions.
+	expectedOffsets := produceKafkaRecords(t, clusterAddr, topic,
+		&kgo.Record{Partition: 0},
+		&kgo.Record{Partition: 0},
+		&kgo.Record{Partition: 0},
+		&kgo.Record{Partition: 1},
+		&kgo.Record{Partition: 1},
+		&kgo.Record{Partition: 2},
+	)
+
+	// Create the topic offsets reader.
+	readClient, err := ingest.NewKafkaReaderClient(createKafkaConfig(clusterAddr, topic), nil, logger)
+	require.NoError(t, err)
+	t.Cleanup(readClient.Close)
+
+	offsetsReader := ingest.NewTopicOffsetsReader(readClient, topic, 100*time.Millisecond, nil, logger)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, offsetsReader))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, offsetsReader))
+	})
+
+	// Create the tripperware.
+	tw, err := NewTripperware(
+		makeTestConfig(func(cfg *Config) {
+			cfg.ShardedQueries = false
+			cfg.SplitQueriesByInterval = 0
+			cfg.CacheResults = false
+		}),
+		log.NewNopLogger(),
+		mockLimits{},
+		NewPrometheusCodec(nil, 0, formatJSON),
+		nil,
+		promql.EngineOpts{
+			Logger:     log.NewNopLogger(),
+			Reg:        nil,
+			MaxSamples: 1000,
+			Timeout:    time.Minute,
+		},
+		true,
+		offsetsReader,
+		nil,
+	)
+	require.NoError(t, err)
+
+	// Test it against all routes.
+	for testName, testData := range tests {
+		testData := testData
+
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			for _, consistencyLevel := range []string{querierapi.ReadConsistencyEventual, querierapi.ReadConsistencyStrong} {
+				consistencyLevel := consistencyLevel
+
+				t.Run(fmt.Sprintf("consistency level: %s", consistencyLevel), func(t *testing.T) {
+					// Create a roundtripper that captures the downstream HTTP request.
+					var downstreamReq *http.Request
+
+					tripper := tw(RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+						downstreamReq = req
+
+						return &http.Response{
+							StatusCode: 200,
+							Body:       io.NopCloser(strings.NewReader("{}")),
+							Header:     http.Header{"Content-Type": []string{"application/json"}},
+						}, nil
+					}))
+
+					// Send an HTTP request through the roundtripper.
+					req := testData.makeRequest()
+					req = req.WithContext(user.InjectOrgID(req.Context(), tenantID))
+					req = req.WithContext(querierapi.ContextWithReadConsistency(req.Context(), consistencyLevel))
+
+					res, err := tripper.RoundTrip(req)
+					require.NoError(t, err)
+					require.NotNil(t, res)
+					require.NotNil(t, downstreamReq)
+
+					if consistencyLevel == querierapi.ReadConsistencyStrong {
+						offsets := querierapi.EncodedOffsets(downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))
+
+						for partitionID, expectedOffset := range expectedOffsets {
+							actual, ok := offsets.Lookup(partitionID)
+							assert.True(t, ok)
+							assert.Equal(t, expectedOffset, actual)
+						}
+					} else {
+						assert.Empty(t, downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))
+					}
+				})
 			}
 		})
 	}

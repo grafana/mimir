@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -68,16 +69,8 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 
 			_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topic)
 
-			cfg := ingest.KafkaConfig{}
-			flagext.DefaultValues(&cfg)
-			cfg.Address = clusterAddr
-			cfg.Topic = topic
-
 			// Write some records to different partitions.
-			writeClient, err := ingest.NewKafkaWriterClient(cfg, 1, logger, nil)
-			require.NoError(t, err)
-
-			writeRes := writeClient.ProduceSync(ctx,
+			expectedOffsets := produceKafkaRecords(t, clusterAddr, topic,
 				&kgo.Record{Partition: 0},
 				&kgo.Record{Partition: 0},
 				&kgo.Record{Partition: 0},
@@ -85,11 +78,11 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 				&kgo.Record{Partition: 1},
 				&kgo.Record{Partition: 2},
 			)
-			require.NoError(t, writeRes.FirstErr())
 
 			// Create the topic offsets reader.
-			readClient, err := ingest.NewKafkaReaderClient(cfg, nil, logger)
+			readClient, err := ingest.NewKafkaReaderClient(createKafkaConfig(clusterAddr, topic), nil, logger)
 			require.NoError(t, err)
+			t.Cleanup(readClient.Close)
 
 			reader := ingest.NewTopicOffsetsReader(readClient, topic, 100*time.Millisecond, nil, logger)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
@@ -114,23 +107,54 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 			if testData.expectedOffsets {
 				offsets := querierapi.EncodedOffsets(downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))
 
-				actual, ok := offsets.Lookup(0)
-				assert.True(t, ok)
-				assert.Equal(t, int64(2), actual)
+				for partitionID, expectedOffset := range expectedOffsets {
+					actual, ok := offsets.Lookup(partitionID)
+					assert.True(t, ok)
+					assert.Equal(t, expectedOffset, actual)
+				}
 
-				actual, ok = offsets.Lookup(1)
-				assert.True(t, ok)
-				assert.Equal(t, int64(1), actual)
-
-				actual, ok = offsets.Lookup(2)
-				assert.True(t, ok)
-				assert.Equal(t, int64(0), actual)
-
-				_, ok = offsets.Lookup(3)
+				// Partition 3 was never written, so there should be no offset for it.
+				_, ok := offsets.Lookup(3)
 				assert.False(t, ok)
 			} else {
 				assert.Empty(t, downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))
 			}
 		})
 	}
+}
+
+func createKafkaConfig(clusterAddr, topic string) ingest.KafkaConfig {
+	cfg := ingest.KafkaConfig{}
+	flagext.DefaultValues(&cfg)
+	cfg.Address = clusterAddr
+	cfg.Topic = topic
+
+	return cfg
+}
+
+// produceKafkaRecords produces the input records to Kafka and returns the highest produced offset
+// for each partition.
+func produceKafkaRecords(t *testing.T, clusterAddr, topic string, records ...*kgo.Record) map[int32]int64 {
+	cfg := createKafkaConfig(clusterAddr, topic)
+	reg := prometheus.NewPedanticRegistry()
+
+	writeClient, err := ingest.NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), reg)
+	require.NoError(t, err)
+	t.Cleanup(writeClient.Close)
+
+	writeRes := writeClient.ProduceSync(context.Background(), records...)
+	require.NoError(t, writeRes.FirstErr())
+
+	// Collect the highest produced offset for each partition.
+	offsets := make(map[int32]int64)
+	for _, res := range writeRes {
+		partition := res.Record.Partition
+		offset := res.Record.Offset
+
+		if prev, ok := offsets[partition]; !ok || prev < offset {
+			offsets[partition] = offset
+		}
+	}
+
+	return offsets
 }
