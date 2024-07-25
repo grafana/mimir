@@ -291,16 +291,14 @@ func TestEncodedOffsets_Lookup_SpecialCases(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			serialized := EncodedOffsets(testData.encoded)
-
 			for expectedPartitionID, expectedOffset := range testData.expectedPartitions {
-				actualOffset, ok := serialized.Lookup(expectedPartitionID)
+				actualOffset, ok := testData.encoded.Lookup(expectedPartitionID)
 				require.True(t, ok)
 				assert.Equalf(t, expectedOffset, actualOffset, "partition ID: %d", expectedPartitionID)
 			}
 
 			for _, unexpectedPartitionID := range testData.unexpectedPartitions {
-				_, ok := serialized.Lookup(unexpectedPartitionID)
+				_, ok := testData.encoded.Lookup(unexpectedPartitionID)
 				assert.Falsef(t, ok, "partition ID: %d", unexpectedPartitionID)
 			}
 		})

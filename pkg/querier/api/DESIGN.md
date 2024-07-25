@@ -18,13 +18,13 @@ We benchmarked it taking in account what we consider the worst case scenario:
 
 | Encoding format                                                                                           | Bytes length |
 | --------------------------------------------------------------------------------------------------------- | ------------ |
-| Comma-separated string: "<partition id>:<offset id>"                                                      | 23889        |
-| Binary-encoded list of <partition id> <offset id> pairs, encoded with: Varint + base64                    | 15916        |
-| Binary-encoded list of <partition id> <offset id> pairs, encoded with: Varint + snappy + base64           | 7980         |
-| Binary-encoded list of <offset id> only, encoded with: Varint + snappy + base64                           | 5364         |
-| Binary-encoded list of <partition id> <offset id> pairs, encoded with: Int32 / int64 + base64             | 16000        |
-| Binary-encoded list of <partition id> <offset id> pairs, encoded with: Int32 / int64 + snappy + base64    | 10688        |
-| Binary-encoded list of <offset id> only, encoded with: Int + snappy + base64                              | 5356         |
+| Comma-separated string: "partition_id:offset_id"                                                      | 23889        |
+| Binary-encoded list of partition_id offset_id pairs, encoded with: Varint + base64                    | 15916        |
+| Binary-encoded list of partition_id offset_id pairs, encoded with: Varint + snappy + base64           | 7980         |
+| Binary-encoded list of offset_id only, encoded with: Varint + snappy + base64                           | 5364         |
+| Binary-encoded list of partition_id offset_id pairs, encoded with: Int32 / int64 + base64             | 16000        |
+| Binary-encoded list of partition_id offset_id pairs, encoded with: Int32 / int64 + snappy + base64    | 10688        |
+| Binary-encoded list of offset_id only, encoded with: Int + snappy + base64                              | 5356         |
 
 ### Encoding performance
 
@@ -32,13 +32,13 @@ The encoding is the process to covert a `map[int32]int64` into the HTTP header v
 
 | Encoding format                                                                                           | CPU         | Memory     | Allocations |
 | --------------------------------------------------------------------------------------------------------- | ----------- | ---------- | ----------- |
-| Comma-separated string: "<partition id>:<offset id>"                                                      | 33543 ns/op | 27264 B/op | 1 allocs/op |
-| Binary-encoded list of <partition id> <offset id> pairs, encoded with: Varint + base64                    | 31210 ns/op | 45232 B/op | 8 allocs/op |
-| Binary-encoded list of <partition id> <offset id> pairs, encoded with: Varint + snappy + base64           | 37613 ns/op | 43184 B/op | 8 allocs/op |
-| Binary-encoded list of <offset id> only, encoded with: Varint + snappy + base64                           | 37453 ns/op | 39088 B/op | 8 allocs/op |
-| Binary-encoded list of <partition id> <offset id> pairs, encoded with: Int32 / int64 + base64             | 16403 ns/op | 45232 B/op | 8 allocs/op |
-| Binary-encoded list of <partition id> <offset id> pairs, encoded with: Int32 / int64 + snappy + base64    | 25639 ns/op | 59568 B/op | 9 allocs/op |
-| Binary-encoded list of <offset id> only, encoded with: Int + snappy + base64                              | 22443 ns/op | 34224 B/op | 8 allocs/op |
+| Comma-separated string: "partition_id:offset_id"                                                      | 33543 ns/op | 27264 B/op | 1 allocs/op |
+| Binary-encoded list of partition_id offset_id pairs, encoded with: Varint + base64                    | 31210 ns/op | 45232 B/op | 8 allocs/op |
+| Binary-encoded list of partition_id offset_id pairs, encoded with: Varint + snappy + base64           | 37613 ns/op | 43184 B/op | 8 allocs/op |
+| Binary-encoded list of offset_id only, encoded with: Varint + snappy + base64                           | 37453 ns/op | 39088 B/op | 8 allocs/op |
+| Binary-encoded list of partition_id offset_id pairs, encoded with: Int32 / int64 + base64             | 16403 ns/op | 45232 B/op | 8 allocs/op |
+| Binary-encoded list of partition_id offset_id pairs, encoded with: Int32 / int64 + snappy + base64    | 25639 ns/op | 59568 B/op | 9 allocs/op |
+| Binary-encoded list of offset_id only, encoded with: Int + snappy + base64                              | 22443 ns/op | 34224 B/op | 8 allocs/op |
 
 ### Decoding performance
 
@@ -46,13 +46,13 @@ The decoding is the process to covert the HTTP header value string into a `map[i
 
 | Encoding format                                                                                           | CPU         | Memory      | Allocations  |
 | --------------------------------------------------------------------------------------------------------- | ----------- | ----------- | ------------ |
-| Comma-separated string: "<partition id>:<offset id>"                                                      | N/A         | N/A         | N/A          |
-| Binary-encoded list of <partition id> <offset id> pairs, encoded with: Varint + base64                    | 64179 ns/op | 114722 B/op | 49 allocs/op |
-| Binary-encoded list of <partition id> <offset id> pairs, encoded with: Varint + snappy + base64           | 58544 ns/op | 105252 B/op | 48 allocs/op |
-| Binary-encoded list of <offset id> only, encoded with: Varint + snappy + base64                           | 46693 ns/op | 90072 B/op  | 31 allocs/op |
-| Binary-encoded list of <partition id> <offset id> pairs, encoded with: Int32 / int64 + base64             | 56468 ns/op | 114724 B/op | 49 allocs/op |
-| Binary-encoded list of <partition id> <offset id> pairs, encoded with: Int32 / int64 + snappy + base64    | 54670 ns/op | 114724 B/op | 49 allocs/op |
-| Binary-encoded list of <offset id> only, encoded with: Int + snappy + base64                              | 40447 ns/op | 88027 B/op  | 31 allocs/op |
+| Comma-separated string: "partition_id:offset_id"                                                      | N/A         | N/A         | N/A          |
+| Binary-encoded list of partition_id offset_id pairs, encoded with: Varint + base64                    | 64179 ns/op | 114722 B/op | 49 allocs/op |
+| Binary-encoded list of partition_id offset_id pairs, encoded with: Varint + snappy + base64           | 58544 ns/op | 105252 B/op | 48 allocs/op |
+| Binary-encoded list of offset_id only, encoded with: Varint + snappy + base64                           | 46693 ns/op | 90072 B/op  | 31 allocs/op |
+| Binary-encoded list of partition_id offset_id pairs, encoded with: Int32 / int64 + base64             | 56468 ns/op | 114724 B/op | 49 allocs/op |
+| Binary-encoded list of partition_id offset_id pairs, encoded with: Int32 / int64 + snappy + base64    | 54670 ns/op | 114724 B/op | 49 allocs/op |
+| Binary-encoded list of offset_id only, encoded with: Int + snappy + base64                              | 40447 ns/op | 88027 B/op  | 31 allocs/op |
 
 ### Lookup performance
 
@@ -60,13 +60,13 @@ The lookup is the process to read 1 specific partition offset from the HTTP head
 
 | Encoding format                                                                                           | CPU         | Memory      | Allocations  |
 | --------------------------------------------------------------------------------------------------------- | ----------- | ----------- | ------------ |
-| Comma-separated string: "<partition id>:<offset id>"                                                      | 4200 ns/op  | 3 B/op      | 1 allocs/op  |
-| Binary-encoded list of <partition id> <offset id> pairs, encoded with: Varint + base64                    | 23399 ns/op | 48193 B/op  | 13 allocs/op |
-| Binary-encoded list of <partition id> <offset id> pairs, encoded with: Varint + snappy + base64           | 18063 ns/op | 38720 B/op  | 12 allocs/op |
-| Binary-encoded list of <offset id> only, encoded with: Varint + snappy + base64                           | 13120 ns/op | 24384 B/op  | 10 allocs/op |
-| Binary-encoded list of <partition id> <offset id> pairs, encoded with: Int32 / int64 + base64             | 18974 ns/op | 48192 B/op  | 13 allocs/op |
-| Binary-encoded list of <partition id> <offset id> pairs, encoded with: Int32 / int64 + snappy + base64    | 17451 ns/op | 48193 B/op  | 13 allocs/op |
-| Binary-encoded list of <offset id> only, encoded with: Int + snappy + base64                              | 9615 ns/op  | 22336 B/op  | 10 allocs/op |
+| Comma-separated string: "partition_id:offset_id"                                                      | 4200 ns/op  | 3 B/op      | 1 allocs/op  |
+| Binary-encoded list of partition_id offset_id pairs, encoded with: Varint + base64                    | 23399 ns/op | 48193 B/op  | 13 allocs/op |
+| Binary-encoded list of partition_id offset_id pairs, encoded with: Varint + snappy + base64           | 18063 ns/op | 38720 B/op  | 12 allocs/op |
+| Binary-encoded list of offset_id only, encoded with: Varint + snappy + base64                           | 13120 ns/op | 24384 B/op  | 10 allocs/op |
+| Binary-encoded list of partition_id offset_id pairs, encoded with: Int32 / int64 + base64             | 18974 ns/op | 48192 B/op  | 13 allocs/op |
+| Binary-encoded list of partition_id offset_id pairs, encoded with: Int32 / int64 + snappy + base64    | 17451 ns/op | 48193 B/op  | 13 allocs/op |
+| Binary-encoded list of offset_id only, encoded with: Int + snappy + base64                              | 9615 ns/op  | 22336 B/op  | 10 allocs/op |
 
 ### Considerations
 
@@ -77,5 +77,5 @@ The lookup is the process to read 1 specific partition offset from the HTTP head
   - The most efficient lookup (good)
   - The only encoding format that is easy to debug, because the HTTP header value is human readable (good)
 - The "varbit + snappy + base64" format is probably the best alternative among the tested ones, if we accept non-human readable HTTP header value:
-  - The shortest bytes length, excluding options without "<partition ID>" (good)
+  - The shortest bytes length, excluding options without partition_id (good)
   - Encoding / decoding is on average with other formats
