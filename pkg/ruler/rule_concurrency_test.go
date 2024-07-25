@@ -3,7 +3,6 @@ package ruler
 import (
 	"bytes"
 	"context"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util/validation"
 )
