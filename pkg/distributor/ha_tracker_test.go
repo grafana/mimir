@@ -136,7 +136,7 @@ func TestHATrackerConfig_Validate(t *testing.T) {
 }
 
 // Test that values are set in the HATracker after WatchPrefix has found it in the KVStore.
-func TestWatchPrefixAssignment(t *testing.T) {
+func TestHATrackerWatchPrefixAssignment(t *testing.T) {
 	cluster := "c1"
 	replica := "r1"
 
@@ -166,7 +166,7 @@ func TestWatchPrefixAssignment(t *testing.T) {
 	checkReplicaTimestamp(t, time.Second, c, "user", cluster, replica, now)
 }
 
-func TestCheckReplicaOverwriteTimeout(t *testing.T) {
+func TestHATrackerCheckReplicaOverwriteTimeout(t *testing.T) {
 	replica1 := "replica1"
 	replica2 := "replica2"
 
@@ -212,7 +212,7 @@ func TestCheckReplicaOverwriteTimeout(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestCheckReplicaMultiCluster(t *testing.T) {
+func TestHATrackerCheckReplicaMultiCluster(t *testing.T) {
 	replica1 := "replica1"
 	replica2 := "replica2"
 
@@ -262,7 +262,7 @@ func TestCheckReplicaMultiCluster(t *testing.T) {
 	}), uint64(0))
 }
 
-func TestCheckReplicaMultiClusterTimeout(t *testing.T) {
+func TestHATrackerCheckReplicaMultiClusterTimeout(t *testing.T) {
 	replica1 := "replica1"
 	replica2 := "replica2"
 
@@ -337,7 +337,7 @@ func TestCheckReplicaMultiClusterTimeout(t *testing.T) {
 }
 
 // Test that writes only happen every update timeout.
-func TestCheckReplicaUpdateTimeout(t *testing.T) {
+func TestHATrackerCheckReplicaUpdateTimeout(t *testing.T) {
 	replica := "r1"
 	cluster := "c1"
 	user := "user"
@@ -393,7 +393,7 @@ func TestCheckReplicaUpdateTimeout(t *testing.T) {
 }
 
 // Test that writes only happen every write timeout.
-func TestCheckReplicaMultiUser(t *testing.T) {
+func TestHATrackerCheckReplicaMultiUser(t *testing.T) {
 	replica := "r1"
 	cluster := "c1"
 
@@ -436,7 +436,7 @@ func TestCheckReplicaMultiUser(t *testing.T) {
 	checkReplicaTimestamp(t, time.Second, c, "user2", cluster, replica, now)
 }
 
-func TestCheckReplicaUpdateTimeoutJitter(t *testing.T) {
+func TestHATrackerCheckReplicaUpdateTimeoutJitter(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
@@ -519,7 +519,7 @@ func TestCheckReplicaUpdateTimeoutJitter(t *testing.T) {
 	}
 }
 
-func TestFindHALabels(t *testing.T) {
+func TestHATrackerFindHALabels(t *testing.T) {
 	replicaLabel, clusterLabel := "replica", "cluster"
 	type expectedOutput struct {
 		cluster string
@@ -576,7 +576,7 @@ func TestHATrackerConfig_ShouldCustomizePrefixDefaultValue(t *testing.T) {
 	assert.NotEqual(t, haConfig.KVStore.Prefix, ringConfig.KVStore.Prefix)
 }
 
-func TestHAClustersLimit(t *testing.T) {
+func TestHATrackerClustersLimit(t *testing.T) {
 	const userID = "user"
 
 	codec := GetReplicaDescCodec()
@@ -722,7 +722,7 @@ func TestHATracker_MetricsCleanup(t *testing.T) {
 	`), metrics...))
 }
 
-func TestCheckReplicaCleanup(t *testing.T) {
+func TestHATrackerCheckReplicaCleanup(t *testing.T) {
 	replica := "r1"
 	cluster := "c1"
 	userID := "user"
