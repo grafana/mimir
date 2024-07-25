@@ -16,7 +16,6 @@ ingest_storage:
     topic:   mimir-ingest
 
 ingester:
-  return_only_grpc_errors:     true
   track_ingester_owned_series: true
 
   partition_ring:
