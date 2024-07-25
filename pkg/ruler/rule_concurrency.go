@@ -189,6 +189,7 @@ func (c *MultiTenantConcurrencyController) Allow(ctx context.Context, group *rul
 	return false
 }
 
+// isRuleIndependent checks if the rule is independent of other rules.
 func isRuleIndependent(rule rules.Rule) bool {
 	return rule.NoDependentRules() && rule.NoDependencyRules()
 }
@@ -201,6 +202,7 @@ func isGroupAtRisk(group *rules.Group) bool {
 	return lastEvaluation < interval*IntervalToEvaluationThreshold/100
 }
 
+// NoopConcurrencyController is a concurrency controller that does not allow for concurrency.
 type NoopConcurrencyController struct{}
 
 func (n *NoopConcurrencyController) Done(_ context.Context) {}

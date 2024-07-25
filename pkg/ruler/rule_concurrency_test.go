@@ -9,13 +9,14 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
-	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestDynamicSemaphore(t *testing.T) {
@@ -85,7 +86,7 @@ func TestDynamicSemaphore(t *testing.T) {
 func TestMultiTenantConcurrencyController(t *testing.T) {
 	logger := log.NewNopLogger()
 	reg := prometheus.NewPedanticRegistry()
-	limits := validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+	limits := validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
 		tenantLimits["user1"] = validation.MockDefaultLimits()
 		tenantLimits["user1"].RulerMaxConcurrentRuleEvaluationsPerTenant = 2
 		tenantLimits["user2"] = validation.MockDefaultLimits()
