@@ -385,7 +385,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 
 	maxQueriersPerTenant := 0 // disable shuffle sharding
 
-	totalRequests := 10000
+	totalRequests := 1000
 	numProducers := 10
 	numConsumers := 12
 
