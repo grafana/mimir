@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
+	//lint:ignore faillint Allow to import the math util package, since it's an isolated package (doesn't come with many other deps).
 	"github.com/grafana/mimir/pkg/util/math"
 )
 
