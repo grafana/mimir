@@ -1153,9 +1153,9 @@ func MaxDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time
 	return result
 }
 
-// PreferredStringPerTenant returns the preferred string value among the actual settings for the
-// given tenants. The order of preference is specified in the input preferences slice. A preference
-// with lower index means higher importance. If no setting matches the any of the specified preferences,
+// PreferredStringPerTenant returns the preferred string value among the actual settings read calling f()
+// for the input tenantIDs. The order of preference is specified in the input preferences slice. A preference
+// with lower index means higher importance. If no setting matches any of the specified preferences,
 // then the value from the first tenant is returned.
 func PreferredStringPerTenant(tenantIDs []string, f func(string) string, preferences []string) string {
 	// Fast path in case there's 0 or 1 tenant.
