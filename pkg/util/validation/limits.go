@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"math"
 	"reflect"
-	"slices"
 	"strings"
 	"time"
 
@@ -1151,43 +1150,6 @@ func MaxDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time
 		}
 	}
 	return result
-}
-
-// PreferredStringPerTenant returns the preferred string value among the actual settings read calling f()
-// for the input tenantIDs. The order of preference is specified in the input preferences slice. A preference
-// with lower index means higher importance. If no setting matches any of the specified preferences,
-// then the value from the first tenant is returned.
-func PreferredStringPerTenant(tenantIDs []string, f func(string) string, preferences []string) string {
-	// Fast path in case there's 0 or 1 tenant.
-	if len(tenantIDs) == 0 {
-		return ""
-	}
-	if len(tenantIDs) == 1 {
-		return f(tenantIDs[0])
-	}
-
-	// Fetch all values.
-	values := make([]string, 0, len(tenantIDs))
-	for _, tenantID := range tenantIDs {
-		values = append(values, f(tenantID))
-	}
-
-	// Sort values based on preferences.
-	slices.SortStableFunc(values, func(a, b string) int {
-		aWeight := slices.Index(preferences, a)
-		if aWeight < 0 {
-			aWeight = len(preferences)
-		}
-
-		bWeight := slices.Index(preferences, b)
-		if bWeight < 0 {
-			bWeight = len(preferences)
-		}
-
-		return aWeight - bWeight
-	})
-
-	return values[0]
 }
 
 // MustRegisterExtension registers the extensions type with given name

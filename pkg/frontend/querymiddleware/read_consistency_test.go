@@ -4,6 +4,7 @@ package querymiddleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -21,6 +22,7 @@ import (
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/testkafka"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestReadConsistencyRoundTripper(t *testing.T) {
@@ -119,6 +121,39 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 			} else {
 				assert.Empty(t, downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))
 			}
+		})
+	}
+}
+
+func TestGetDefaultReadConsistency(t *testing.T) {
+	defaults := validation.Limits{IngestStorageReadConsistency: querierapi.ReadConsistencyEventual}
+	tenantLimits := map[string]*validation.Limits{
+		// tenant-a has no overrides
+		"tenant-b": {IngestStorageReadConsistency: querierapi.ReadConsistencyEventual},
+		"tenant-c": {IngestStorageReadConsistency: querierapi.ReadConsistencyStrong},
+	}
+
+	ov, err := validation.NewOverrides(defaults, validation.NewMockTenantLimits(tenantLimits))
+	require.NoError(t, err)
+
+	tests := []struct {
+		tenantIDs []string
+		expected  string
+	}{
+		// Single tenant.
+		{tenantIDs: []string{"tenant-a"}, expected: querierapi.ReadConsistencyEventual},
+		{tenantIDs: []string{"tenant-b"}, expected: querierapi.ReadConsistencyEventual},
+		{tenantIDs: []string{"tenant-c"}, expected: querierapi.ReadConsistencyStrong},
+
+		// Multi tenant.
+		{tenantIDs: []string{"tenant-a", "tenant-b"}, expected: querierapi.ReadConsistencyEventual},
+		{tenantIDs: []string{"tenant-a", "tenant-c"}, expected: querierapi.ReadConsistencyStrong},
+		{tenantIDs: []string{"tenant-b", "tenant-c"}, expected: querierapi.ReadConsistencyStrong},
+	}
+
+	for testID, testData := range tests {
+		t.Run(fmt.Sprintf("Test case #%d", testID), func(t *testing.T) {
+			assert.Equal(t, testData.expected, getDefaultReadConsistency(testData.tenantIDs, ov))
 		})
 	}
 }

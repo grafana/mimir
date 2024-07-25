@@ -13,7 +13,6 @@ import (
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type readConsistencyRoundTripper struct {
@@ -49,7 +48,7 @@ func (r *readConsistencyRoundTripper) RoundTrip(req *http.Request) (*http.Respon
 	// Detect the requested read consistency level.
 	level, ok := querierapi.ReadConsistencyFromContext(req.Context())
 	if !ok {
-		level = validation.PreferredStringPerTenant(tenantIDs, r.limits.IngestStorageReadConsistency, []string{querierapi.ReadConsistencyStrong})
+		level = getDefaultReadConsistency(tenantIDs, r.limits)
 	}
 
 	if level != querierapi.ReadConsistencyStrong {
@@ -65,4 +64,16 @@ func (r *readConsistencyRoundTripper) RoundTrip(req *http.Request) (*http.Respon
 	req.Header.Add(querierapi.ReadConsistencyOffsetsHeader, string(querierapi.EncodeOffsets(offsets)))
 
 	return r.next.RoundTrip(req)
+}
+
+// getDefaultReadConsistency returns the default read consistency for the input tenantIDs,
+// giving preference to strong consistency if enabled for any of the tenants.
+func getDefaultReadConsistency(tenantIDs []string, limits Limits) string {
+	for _, tenantID := range tenantIDs {
+		if limits.IngestStorageReadConsistency(tenantID) == querierapi.ReadConsistencyStrong {
+			return querierapi.ReadConsistencyStrong
+		}
+	}
+
+	return querierapi.ReadConsistencyEventual
 }
