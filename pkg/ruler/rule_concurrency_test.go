@@ -184,3 +184,54 @@ cortex_ruler_global_rule_evaluation_concurrency_current 0
 cortex_ruler_global_rule_evaluation_concurrency_release_total 4
 `)))
 }
+
+func TestIsRuleIndependent(t *testing.T) {
+	tests := map[string]struct {
+		rule     rules.Rule
+		expected bool
+	}{
+		"rule has neither dependencies nor dependents": {
+			rule: func() rules.Rule {
+				r := rules.NewRecordingRule("test", nil, nil)
+				r.SetNoDependentRules(true)
+				r.SetNoDependencyRules(true)
+				return r
+			}(),
+			expected: true,
+		},
+		"rule has both dependencies and dependents": {
+			rule: func() rules.Rule {
+				r := rules.NewRecordingRule("test", nil, nil)
+				r.SetNoDependentRules(false)
+				r.SetNoDependencyRules(false)
+				return r
+			}(),
+			expected: false,
+		},
+		"rule has dependents": {
+			rule: func() rules.Rule {
+				r := rules.NewRecordingRule("test", nil, nil)
+				r.SetNoDependentRules(false)
+				r.SetNoDependencyRules(true)
+				return r
+			}(),
+			expected: false,
+		},
+		"rule has dependencies": {
+			rule: func() rules.Rule {
+				r := rules.NewRecordingRule("test", nil, nil)
+				r.SetNoDependentRules(true)
+				r.SetNoDependencyRules(false)
+				return r
+			}(),
+			expected: false,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			result := isRuleIndependent(tc.rule)
+			require.Equal(t, tc.expected, result)
+		})
+	}
+}
