@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -100,7 +102,8 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 				req = req.WithContext(querierapi.ContextWithReadConsistency(req.Context(), testData.reqConsistency))
 			}
 
-			rt := newReadConsistencyRoundTripper(downstream, reader, testData.limits, log.NewNopLogger())
+			reg := prometheus.NewPedanticRegistry()
+			rt := newReadConsistencyRoundTripper(downstream, reader, testData.limits, log.NewNopLogger(), newReadConsistencyMetrics(reg))
 			_, err = rt.RoundTrip(req)
 			require.NoError(t, err)
 
@@ -121,6 +124,24 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 			} else {
 				assert.Empty(t, downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))
 			}
+
+			// Metrics should be tracked only if the strong consistency is enforced.
+			expectedRequests := 0
+			if testData.expectedOffsets {
+				expectedRequests = 1
+			}
+
+			assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+				# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
+				# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
+				cortex_ingest_storage_strong_consistency_requests_total{component="query-frontend"} %d
+
+				# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
+				# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
+				cortex_ingest_storage_strong_consistency_failures_total{component="query-frontend"} 0
+			`, expectedRequests)),
+				"cortex_ingest_storage_strong_consistency_requests_total",
+				"cortex_ingest_storage_strong_consistency_failures_total"))
 		})
 	}
 }
