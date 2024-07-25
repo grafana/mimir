@@ -630,6 +630,10 @@
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'ruler-querier',
       },
+      store_gateway: {
+        enabled: true,
+        hpa_name: $._config.autoscaling_hpa_prefix + 'store-gateway-zone-a',
+      },
       distributor: {
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'distributor',

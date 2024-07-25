@@ -301,6 +301,38 @@ local filename = 'mimir-reads.json';
         ),
       )
     )
+    .addRowIf(
+      $._config.autoscaling.store_gateway.enabled,
+      $.row('Store-gateway – autoscaling')
+      .addPanel(
+        $.autoScalingActualReplicas('store_gateway') + { title: 'Replicas (leader zone)' } +
+        $.panelDescription(
+          'Replicas (leader zone)',
+          |||
+            The minimum, maximum, and current number of replicas for the leader zone of store-gateways.
+            Other zones scale to follow this zone (with delay for downscale).
+          |||
+        )
+      )
+      .addPanel(
+        $.timeseriesPanel('Replicas') +
+        $.panelDescription('Replicas', 'Number of store-gateway replicas per zone.') +
+        $.queryPanel(
+          [
+            'sum by (%s) (up{%s})' % [$._config.per_job_label, $.jobMatcher($._config.job_names.store_gateway)],
+          ],
+          [
+            '{{ %(per_job_label)s }}' % $._config.per_job_label,
+          ],
+        ),
+      )
+      .addPanel(
+        $.autoScalingDesiredReplicasByValueScalingMetricPanel('store_gateway', '', '') + { title: 'Desired replicas (leader zone)' }
+      )
+      .addPanel(
+        $.autoScalingFailuresPanel('store_gateway') + { title: 'Autoscaler failures rate' }
+      ),
+    )
     .addRow(
       $.kvStoreRow('Store-gateway – key-value store for store-gateways ring', 'store_gateway', 'store-gateway')
     )
