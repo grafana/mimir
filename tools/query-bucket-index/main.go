@@ -60,7 +60,7 @@ func run() error {
 
 	w := csv.NewWriter(os.Stdout)
 	err = w.Write([]string{
-		"ULID",
+		"Block ID",
 		"Min time",
 		"Max time",
 		"Uploaded at",
