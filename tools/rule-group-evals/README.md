@@ -19,11 +19,11 @@
 2. run 
 
     ```bash
-    go run main.go download /tmp/destination
+    go run . download /tmp/destination
     ```
 
 3. run 
 
     ```bash
-    go run main.go analyze /tmp/destination
+    go run . analyze /tmp/destination
     ```
