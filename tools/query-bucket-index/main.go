@@ -108,7 +108,10 @@ func parseFlags() (string, bool, time.Time, time.Time, error) {
 	var startT, endT flagext.Time
 	flag.Var(&startT, "start", "Start time")
 	flag.Var(&endT, "end", "End time")
-	flag.Parse()
+
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		return "", false, time.Time{}, time.Time{}, err
+	}
 
 	if *bucketIndexFile == "" {
 		return "", false, time.Time{}, time.Time{}, errors.New("must provide bucket index file")
