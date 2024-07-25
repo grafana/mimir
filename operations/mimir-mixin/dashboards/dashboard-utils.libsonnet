@@ -773,7 +773,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       title,
       |||
         The rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom
-        metrics server is unable to query the scaling metric from Prometheus so the autoscaler woudln't work properly.
+        metrics server is unable to query the scaling metric from Prometheus so the autoscaler wouldn't work properly.
       |||
     ),
 
