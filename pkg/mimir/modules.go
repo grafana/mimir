@@ -719,7 +719,6 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReader() (services.Service, error) 
 		return nil, err
 	}
 
-	// TODO wrap the registerer adding "component", otherwise metrics have conflicts in single-binary mode
 	t.QueryFrontendTopicOffsetsReader = ingest.NewTopicOffsetsReader(kafkaClient, t.Cfg.IngestStorage.KafkaConfig.Topic, t.Cfg.IngestStorage.KafkaConfig.LastProducedOffsetPollInterval, t.Registerer, util_log.Logger)
 	return t.QueryFrontendTopicOffsetsReader, nil
 }
