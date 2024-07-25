@@ -14,6 +14,7 @@ ingest_storage:
   kafka:
     address: kafka:9092
     topic:   mimir-ingest
+    last_produced_offset_poll_interval: 500ms
 
 ingester:
   track_ingester_owned_series: true
