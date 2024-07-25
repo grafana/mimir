@@ -192,7 +192,7 @@ func TestIsRuleIndependent(t *testing.T) {
 	}{
 		"rule has neither dependencies nor dependents": {
 			rule: func() rules.Rule {
-				r := rules.NewRecordingRule("test", nil, nil)
+				r := rules.NewRecordingRule("test", nil, labels.Labels{})
 				r.SetNoDependentRules(true)
 				r.SetNoDependencyRules(true)
 				return r
@@ -201,7 +201,7 @@ func TestIsRuleIndependent(t *testing.T) {
 		},
 		"rule has both dependencies and dependents": {
 			rule: func() rules.Rule {
-				r := rules.NewRecordingRule("test", nil, nil)
+				r := rules.NewRecordingRule("test", nil, labels.Labels{})
 				r.SetNoDependentRules(false)
 				r.SetNoDependencyRules(false)
 				return r
@@ -210,7 +210,7 @@ func TestIsRuleIndependent(t *testing.T) {
 		},
 		"rule has dependents": {
 			rule: func() rules.Rule {
-				r := rules.NewRecordingRule("test", nil, nil)
+				r := rules.NewRecordingRule("test", nil, labels.Labels{})
 				r.SetNoDependentRules(false)
 				r.SetNoDependencyRules(true)
 				return r
@@ -219,7 +219,7 @@ func TestIsRuleIndependent(t *testing.T) {
 		},
 		"rule has dependencies": {
 			rule: func() rules.Rule {
-				r := rules.NewRecordingRule("test", nil, nil)
+				r := rules.NewRecordingRule("test", nil, labels.Labels{})
 				r.SetNoDependentRules(true)
 				r.SetNoDependencyRules(false)
 				return r
