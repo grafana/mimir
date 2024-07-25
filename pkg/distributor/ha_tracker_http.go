@@ -22,34 +22,45 @@ var haTrackerStatusPageHTML string
 var haTrackerStatusPageTemplate = template.Must(template.New("ha-tracker").Parse(haTrackerStatusPageHTML))
 
 type haTrackerStatusPageContents struct {
-	Elected []haTrackerReplica `json:"elected"`
-	Now     time.Time          `json:"now"`
+	Elected        []haTrackerReplica            `json:"elected"`
+	ElectedPerUser map[string][]haTrackerReplica `json:"electedPerUser"`
+	Now            time.Time                     `json:"now"`
 }
 
 type haTrackerReplica struct {
-	UserID       string        `json:"userID"`
-	Cluster      string        `json:"cluster"`
-	Replica      string        `json:"replica"`
-	ElectedAt    time.Time     `json:"electedAt"`
-	UpdateTime   time.Duration `json:"updateDuration"`
-	FailoverTime time.Duration `json:"failoverDuration"`
+	UserID         string        `json:"userID"`
+	Cluster        string        `json:"cluster"`
+	Replica        string        `json:"replica"`
+	ElectedAt      time.Time     `json:"electedAt"`
+	UpdateTime     time.Duration `json:"updateDuration"`
+	TimeToFailover time.Duration `json:"failoverDuration"`
+
+	FailoverTimeoutForUser time.Duration `json:"failoverTimeoutForUser"`
 }
 
 func (h *haTracker) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	h.electedLock.RLock()
 
+	electedRepicasPerUser := map[string][]haTrackerReplica{}
 	var electedReplicas []haTrackerReplica
 	for userID, clusters := range h.clusters {
+		failoverTimeout := h.getFailoverTimeoutForUser(userID)
+
 		for cluster, entry := range clusters {
 			desc := &entry.elected
-			electedReplicas = append(electedReplicas, haTrackerReplica{
-				UserID:       userID,
-				Cluster:      cluster,
-				Replica:      desc.Replica,
-				ElectedAt:    timestamp.Time(desc.ReceivedAt),
-				UpdateTime:   time.Until(timestamp.Time(desc.ReceivedAt).Add(h.cfg.UpdateTimeout)),
-				FailoverTime: time.Until(timestamp.Time(desc.ReceivedAt).Add(h.cfg.FailoverTimeout)),
-			})
+			r := haTrackerReplica{
+				UserID:         userID,
+				Cluster:        cluster,
+				Replica:        desc.Replica,
+				ElectedAt:      timestamp.Time(desc.ReceivedAt),
+				UpdateTime:     time.Until(timestamp.Time(desc.ReceivedAt).Add(h.cfg.UpdateTimeout)),
+				TimeToFailover: time.Until(timestamp.Time(desc.ReceivedAt).Add(failoverTimeout)),
+
+				FailoverTimeoutForUser: failoverTimeout,
+			}
+
+			electedReplicas = append(electedReplicas, r)
+			electedRepicasPerUser[userID] = append(electedRepicasPerUser[userID], r)
 		}
 	}
 	h.electedLock.RUnlock()
@@ -65,7 +76,8 @@ func (h *haTracker) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	})
 
 	util.RenderHTTPResponse(w, haTrackerStatusPageContents{
-		Elected: electedReplicas,
-		Now:     time.Now(),
+		Elected:        electedReplicas,
+		ElectedPerUser: electedRepicasPerUser,
+		Now:            time.Now(),
 	}, haTrackerStatusPageTemplate, req)
 }

@@ -8,29 +8,34 @@
 <body>
 <h1>HA Tracker Status</h1>
 <p>Current time: {{ .Now }}</p>
-<table width="100%" border="1">
-    <thead>
-    <tr>
-        <th>User ID</th>
-        <th>Cluster</th>
-        <th>Replica</th>
-        <th>Elected Time</th>
-        <th>Time Until Update</th>
-        <th>Time Until Failover</th>
-    </tr>
-    </thead>
-    <tbody>
-    {{ range .Elected }}
+
+{{ range $u, $e := .ElectedPerUser }}
+<h3>{{ $u }}</h3>
+    <p>Failover timeout for user: {{ if $e }}{{ (index $e 0).FailoverTimeoutForUser }}{{ end }}</p>
+
+    <table width="100%" border="1">
+        <thead>
         <tr>
-            <td>{{ .UserID }}</td>
-            <td>{{ .Cluster }}</td>
-            <td>{{ .Replica }}</td>
-            <td>{{ .ElectedAt }}</td>
-            <td>{{ .UpdateTime }}</td>
-            <td>{{ .FailoverTime }}</td>
+            <th>Cluster</th>
+            <th>Replica</th>
+            <th>Elected Time</th>
+            <th>Time Until Update</th>
+            <th>Time Until Failover</th>
         </tr>
-    {{ end }}
-    </tbody>
-</table>
+        </thead>
+        <tbody>
+        {{ range $e }}
+            <tr>
+                <td>{{ .UserID }}</td>
+                <td>{{ .Cluster }}</td>
+                <td>{{ .Replica }}</td>
+                <td>{{ .ElectedAt }}</td>
+                <td>{{ .UpdateTime }}</td>
+                <td>{{ .TimeToFailover }}</td>
+            </tr>
+        {{ end }}
+        </tbody>
+    </table>
+{{ end }}
 </body>
 </html>
