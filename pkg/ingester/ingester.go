@@ -4103,9 +4103,6 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 	spanLog := spanlogger.FromContext(ctx, i.logger)
 	spanLog.DebugLog("msg", "checked read consistency", "level", level)
 
-	// TODO remove this
-	fmt.Println("enforceReadConsistency() consistency level:", level, "partition ID:", i.ingestPartitionID)
-
 	if level != api.ReadConsistencyStrong {
 		return nil
 	}
@@ -4114,16 +4111,10 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 	// for our partition.
 	if offsets, ok := api.ReadConsistencyEncodedOffsetsFromContext(ctx); ok {
 		if offset, ok := offsets.Lookup(i.ingestPartitionID); ok {
-			// TODO remove this
-			fmt.Println("enforceReadConsistency() offset:", offset)
-
 			spanLog.DebugLog("msg", "enforcing read consistency", "offset", offset)
 			return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilOffset(ctx, offset), "wait for read consistency")
 		}
 	}
-
-	// TODO remove this
-	fmt.Println("enforceReadConsistency() NO offset in the request")
 
 	spanLog.DebugLog("msg", "enforcing read consistency", "offset", "last produced")
 	return errors.Wrap(i.ingestReader.WaitReadConsistencyUntilLastProducedOffset(ctx), "wait for read consistency")
