@@ -378,13 +378,17 @@ func TestCheckReplicaUpdateTimeout(t *testing.T) {
 	assert.NoError(t, err)
 	checkReplicaTimestamp(t, time.Second, c, user, cluster, replica, startTime)
 
+	receivedAt := updateTime
+
 	// Now we've waited > 1s, so the timestamp should update.
 	updateTime = time.Unix(0, startTime.UnixNano()).Add(1100 * time.Millisecond)
 	c.updateKVStoreAll(context.Background(), updateTime)
 
+	// Timestamp stored in KV should be time when we have received a request (called "checkReplica"), not current time (updateTime).
+	checkReplicaTimestamp(t, time.Second, c, user, cluster, replica, receivedAt)
+
 	err = c.checkReplica(context.Background(), user, cluster, replica, updateTime)
 	assert.NoError(t, err)
-	checkReplicaTimestamp(t, time.Second, c, user, cluster, replica, updateTime)
 }
 
 // Test that writes only happen every write timeout.
