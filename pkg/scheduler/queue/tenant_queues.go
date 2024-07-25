@@ -55,11 +55,7 @@ func newQueueBroker(
 	var tree Tree
 	var err error
 	if useMultiAlgoTreeQueue {
-		tree, err = NewTree(
-			tqas,               // root; QueuingAlgorithm selects tenants
-			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
-			&roundRobinState{}, // query components; QueuingAlgorithm selects query from local queue
-		)
+		tree, err = NewTree(&querierWorkerPrioritizationQueueAlgo{}, tqas, &roundRobinState{})
 	} else {
 		// by default, use the legacy tree queue
 		tree = NewTreeQueue("root")
@@ -73,7 +69,8 @@ func newQueueBroker(
 		tree:                             tree,
 		tenantQuerierAssignments:         tqas,
 		maxTenantQueueSize:               maxTenantQueueSize,
-		additionalQueueDimensionsEnabled: additionalQueueDimensionsEnabled,
+		additionalQueueDimensionsEnabled: true,
+		prioritizeQueryComponents:        true,
 	}
 
 	return qb

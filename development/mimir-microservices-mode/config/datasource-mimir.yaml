@@ -1,17 +1,34 @@
 apiVersion: 1
 datasources:
-- name: Mimir
+- name: Mimir team-a
   type: prometheus
   access: proxy
-  uid: mimir
-  orgID: 1
+  uid: mimir-team-a
+  orgID: team-a
   url: http://nginx:8080/prometheus
   isDefault: true
   jsonData:
     prometheusType: Mimir
     exemplarTraceIdDestinations:
-    - name: traceID
-      datasourceUid: jaeger
+      - name: traceID
+        datasourceUid: jaeger
+    httpHeaderName1: 'X-Scope-OrgID'
+  secureJsonData:
+    httpHeaderValue1: 'team-a'
+- name: Mimir team-b
+  type: prometheus
+  access: proxy
+  uid: mimir-team-b
+  orgID: team-b
+  url: http://nginx:8080/prometheus
+  jsonData:
+    prometheusType: Mimir
+    exemplarTraceIdDestinations:
+      - name: traceID
+        datasourceUid: jaeger
+    httpHeaderName1: 'X-Scope-OrgID'
+  secureJsonData:
+    httpHeaderValue1: 'team-b'
 - name: Jaeger
   type: jaeger
   access: proxy

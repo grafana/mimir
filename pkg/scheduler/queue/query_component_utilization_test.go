@@ -160,7 +160,7 @@ func TestIsOverUtilizedForQueryComponents(t *testing.T) {
 			}
 
 			isOverUtilized, queryComponent := queryComponentUtilizationLimitByConnections.IsOverUtilized(
-				queryComponentUtilization, testCase.queryComponentName,
+				queryComponentUtilization, testCase.queryComponentName, 2,
 			)
 			require.Equal(t, queryComponent, testCase.thresholdExceededComponent)
 			// we should only return a component when exceedsThreshold is true and vice versa
@@ -168,7 +168,7 @@ func TestIsOverUtilizedForQueryComponents(t *testing.T) {
 
 			// a component utilization with reserved capacity 0 disables capacity checks
 			isOverUtilized, queryComponent = queryComponentUtilizationLimitDisabled.IsOverUtilized(
-				queryComponentUtilization, testCase.queryComponentName,
+				queryComponentUtilization, testCase.queryComponentName, 2,
 			)
 			require.False(t, isOverUtilized)
 			require.Equal(t, queryComponent, QueryComponent(""))
@@ -202,7 +202,7 @@ func TestIsOverUtilizedForQueryComponents_CornerCases(t *testing.T) {
 	// no component should be marked as exceeding the threshold with only one connected worker
 	for _, queryComponentName := range queryComponentNames {
 		isOverUtilized, queryComponent := queryComponentUtilizationLimitByConnections.IsOverUtilized(
-			queryComponentUtilization, queryComponentName,
+			queryComponentUtilization, queryComponentName, 4,
 		)
 		require.False(t, isOverUtilized)
 		require.Equal(t, queryComponent, QueryComponent(""))
@@ -221,7 +221,7 @@ func TestIsOverUtilizedForQueryComponents_CornerCases(t *testing.T) {
 	// every component should be marked as exceeding the threshold
 	for _, queryComponentName := range queryComponentNames {
 		isOverUtilized, _ := queryComponentUtilizationLimitByConnections.IsOverUtilized(
-			queryComponentUtilization, queryComponentName,
+			queryComponentUtilization, queryComponentName, 4,
 		)
 		require.True(t, isOverUtilized)
 	}

@@ -55,15 +55,15 @@ func TestQueryComponentUtilizationDequeue_DefaultRoundRobin(t *testing.T) {
 	connectedWorkers := 10
 	// with 10 connected workers, if queue len >= waiting workers,
 	// no component can have more than 6 inflight requests.
-	testReservedCapacity := 0.4
+	//testReservedCapacity := 0.4
 
 	var err error
 	queryComponentUtilization, err := NewQueryComponentUtilization(testQuerierInflightRequestsMetric())
 	require.NoError(t, err)
 
 	utilizationCheckThresholdImpl := &QueryComponentUtilizationLimitByConnections{
-		targetReservedCapacity: testReservedCapacity,
-		connectedWorkers:       connectedWorkers,
+		//targetReservedCapacity: testReservedCapacity,
+		connectedWorkers: connectedWorkers,
 	}
 
 	queryComponentUtilizationQueueAlgo := queryComponentQueueAlgoSkipOverUtilized{
@@ -92,15 +92,15 @@ func TestQueryComponentUtilizationDequeue_SkipComponentExceedsThreshold(t *testi
 	connectedWorkers := 5
 	// with 5 connected workers, if queue len >= waiting workers,
 	// no component can have more than 3 inflight requests.
-	testReservedCapacity := 0.4
+	//testReservedCapacity := 0.4
 
 	var err error
 	queryComponentUtilization, err := NewQueryComponentUtilization(testQuerierInflightRequestsMetric())
 	require.NoError(t, err)
 
 	utilizationCheckThresholdImpl := &QueryComponentUtilizationLimitByConnections{
-		targetReservedCapacity: testReservedCapacity,
-		connectedWorkers:       connectedWorkers,
+		//targetReservedCapacity: testReservedCapacity,
+		connectedWorkers: connectedWorkers,
 	}
 
 	queryComponentUtilizationQueueAlgo := queryComponentQueueAlgoSkipOverUtilized{

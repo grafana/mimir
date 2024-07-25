@@ -17,7 +17,7 @@ type QueryComponentUtilizationLimit interface {
 	//
 	// The implementation should return true if the query component is over-utilized, and false otherwise.
 	// Defining utilization and the threshold for over-utilization is left to the implementation.
-	IsOverUtilized(utilization *QueryComponentUtilization, queryComponentName string) (bool, QueryComponent)
+	IsOverUtilized(utilization *QueryComponentUtilization, queryComponentName string, activeComponentCount int) (bool, QueryComponent)
 }
 
 // DefaultReservedQueryComponentCapacity reserves 1 / 3 of querier-worker connections
@@ -42,8 +42,8 @@ const MaxReservedQueryComponentCapacity = 0.5
 type QueryComponentUtilizationLimitByConnections struct {
 	// targetReservedCapacity sets the portion of querier-worker connections
 	// we aim to reserve for queries to the less-utilized query component;
-	targetReservedCapacity float64
-	connectedWorkers       int
+	//targetReservedCapacity float64
+	connectedWorkers int
 }
 
 func NewQueryComponentUtilizationLimitByConnections(
@@ -54,8 +54,8 @@ func NewQueryComponentUtilizationLimitByConnections(
 	}
 
 	return &QueryComponentUtilizationLimitByConnections{
-		targetReservedCapacity: targetReservedCapacity,
-		connectedWorkers:       0,
+		//targetReservedCapacity: targetReservedCapacity,
+		connectedWorkers: 0,
 	}, nil
 }
 
@@ -64,12 +64,13 @@ func (qcul *QueryComponentUtilizationLimitByConnections) SetConnectedWorkers(con
 }
 
 func (qcul *QueryComponentUtilizationLimitByConnections) IsOverUtilized(
-	utilization *QueryComponentUtilization, queryComponentName string,
+	utilization *QueryComponentUtilization, queryComponentName string, activeComponentCount int,
 ) (bool, QueryComponent) {
+	targetReservedCapacity := 1 / float64(activeComponentCount)
 	// allow the functionality to be turned off via setting targetReservedCapacity to 0
-	if qcul.targetReservedCapacity == 0 {
-		return false, ""
-	}
+	//if qcul.targetReservedCapacity == 0 {
+	//	return false, ""
+	//}
 
 	if qcul.connectedWorkers <= 1 {
 		// corner case; cannot reserve capacity with only one worker available
@@ -80,7 +81,7 @@ func (qcul *QueryComponentUtilizationLimitByConnections) IsOverUtilized(
 	//reserve at least one connection in case (connected workers) * (reserved capacity) is less than one
 	minReservedConnections = int(
 		math.Ceil(
-			math.Max(qcul.targetReservedCapacity*float64(qcul.connectedWorkers), 1),
+			math.Max(targetReservedCapacity*float64(qcul.connectedWorkers), 1),
 		),
 	)
 
@@ -166,7 +167,7 @@ func (qa *queryComponentQueueAlgoSkipOverUtilized) dequeueSelectNode(node *Node)
 	for !qa.checkedAllNodesBeforeSkips() {
 		// have not made it through first rotation yet
 		currentNodeName := qa.nodeOrder[qa.currentNodeOrderIndex]
-		isOverUtilized, _ := qa.limit.IsOverUtilized(qa.utilization, currentNodeName)
+		isOverUtilized, _ := qa.limit.IsOverUtilized(qa.utilization, currentNodeName, len(node.queueMap))
 
 		if isOverUtilized {
 			// a query component associated with this queue node is utilizing
