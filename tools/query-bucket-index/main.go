@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"slices"
 	"strconv"
@@ -22,7 +22,7 @@ import (
 
 func main() {
 	if err := run(); err != nil {
-		slog.Error("application failed", "err", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
