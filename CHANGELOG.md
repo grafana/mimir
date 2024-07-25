@@ -141,6 +141,7 @@
 ### Tools
 
 * [CHANGE] `wal-reader`: Renamed `-series-entries` to `-print-series`. Renamed `-print-series-with-samples` to `-print-samples`. #8568
+* [FEATURE] `query-bucket-index`: add new tool to query a bucket index file and print the blocks that would be used for a given query time range. #8818
 * [ENHANCEMENT] `wal-reader`: References to unknown series from Samples, Exemplars, histogram or tombstones records are now always logged. #8568
 * [ENHANCEMENT] `tsdb-series`: added `-stats` option to print min/max time of chunks, total number of samples and DPM for each series. #8420
 * [ENHANCEMENT] `tsdb-print-chunk`: print counter reset information for native histograms. #8812
