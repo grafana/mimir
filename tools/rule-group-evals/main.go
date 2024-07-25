@@ -166,6 +166,7 @@ func noErr(err error) {
 }
 
 func downloadRules(destination string) {
+	// The mapping should be <namespace>: <cluster>.
 	namespaces := map[string]string{}
 
 	for namespace, cluster := range namespaces {
@@ -176,7 +177,7 @@ func downloadRules(destination string) {
 
 func downloadNamespaceRules(desitnation string, cluster string, namespace string) {
 	fmt.Println("downloading", cluster, namespace)
-	kubefwd := exec.Command("kubectl", "--context", cluster, "--namespace", namespace, "port-forward", "svc/ruler", "8080:80", "-n", namespace)
+	kubefwd := exec.Command("kubectl", "--context", cluster, "--namespace", namespace, "port-forward", "svc/ruler", "8080:80")
 	noErr(kubefwd.Start())
 	defer func() { _, _ = kubefwd.Process.Wait() }()
 	defer func() { noErr(kubefwd.Process.Kill()) }()
