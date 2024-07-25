@@ -8,6 +8,7 @@ package distributor
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -874,4 +875,97 @@ func getSumOfHistogramSampleCount(families []*dto.MetricFamily, metricName strin
 	}
 
 	return sum
+}
+
+func TestHATrackerChangeInElectedReplicaClearsLastSeenTimestamp(t *testing.T) {
+	const userID = "user"
+
+	codec := GetReplicaDescCodec()
+	kvStore, closer := consul.NewInMemoryClient(codec, log.NewLogfmtLogger(os.Stdout), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	mock := kv.PrefixClient(kvStore, "prefix")
+
+	// Start two trackers.
+	t1, err := newHATracker(HATrackerConfig{
+		EnableHATracker:        true,
+		KVStore:                kv.Config{Mock: mock},
+		UpdateTimeout:          5 * time.Second,
+		UpdateTimeoutJitterMax: 0,
+		FailoverTimeout:        5 * time.Second,
+	}, trackerLimits{maxClusters: 2}, nil, log.NewNopLogger())
+
+	t2, err := newHATracker(HATrackerConfig{
+		EnableHATracker:        true,
+		KVStore:                kv.Config{Mock: mock},
+		UpdateTimeout:          5 * time.Second,
+		UpdateTimeoutJitterMax: 0,
+		FailoverTimeout:        5 * time.Second,
+	}, trackerLimits{maxClusters: 2}, nil, log.NewNopLogger())
+
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), t1))
+	defer services.StopAndAwaitTerminated(context.Background(), t1) //nolint:errcheck
+
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), t2))
+	defer services.StopAndAwaitTerminated(context.Background(), t2) //nolint:errcheck
+
+	now := time.Now()
+
+	const cluster = "cluster"
+	const firstReplica = "first"
+	const secondReplica = "second"
+
+	assert.NoError(t, t1.checkReplica(context.Background(), userID, cluster, firstReplica, now))
+	// Both trackers will see "first" replica as current.
+	checkReplicaTimestamp(t, time.Second, t1, userID, cluster, firstReplica, now)
+	checkReplicaTimestamp(t, time.Second, t2, userID, cluster, firstReplica, now)
+
+	// Ten seconds later, t1 receives request from first replica again
+	now = now.Add(10 * time.Second)
+	assert.NoError(t, t1.checkReplica(context.Background(), userID, cluster, firstReplica, now))
+
+	// And t2 receives request from second replica.
+	assert.Error(t, t2.checkReplica(context.Background(), userID, cluster, secondReplica, now))
+	secondReplicaReceivedAtT2 := now
+
+	// Now t2 updates the KV store... and overwrite elected replica.
+	t2.updateKVStoreAll(context.Background(), now)
+
+	// t1 is reading updates from KV store, and should see second replica being the elected one.
+	checkReplicaTimestamp(t, time.Second, t1, userID, cluster, secondReplica, secondReplicaReceivedAtT2)
+
+	// Furthermore, t1 has never seen "second" replica, so it should not have "electedLastSeenTimestamp" set.
+	{
+		t1.electedLock.RLock()
+		info := t1.clusters[userID][cluster]
+		t1.electedLock.RUnlock()
+
+		require.Zero(t, info.electedLastSeenTimestamp)
+	}
+
+	// Continuing the test, say both t1 and t2 receive request from "first" replica now.
+	// They both reject it.
+	now = now.Add(9 * time.Second)
+	firstReceivedAtT1 := now
+	assert.Error(t, t1.checkReplica(context.Background(), userID, cluster, firstReplica, now))
+	now = now.Add(1 * time.Second)
+	firstReceivedAtT2 := now
+	assert.Error(t, t2.checkReplica(context.Background(), userID, cluster, firstReplica, now))
+
+	// Now t1 updates the KV Store.
+	t1.updateKVStoreAll(context.Background(), now)
+
+	// t2 is reading updates from KV store, and should see "second" replica being the elected one.
+	checkReplicaTimestamp(t, time.Second, t2, userID, cluster, firstReplica, firstReceivedAtT1)
+
+	// Since t2 has seen new elected replica too, we should have non-zero "electedLastSeenTimestamp".
+	{
+		t2.electedLock.RLock()
+		info := t2.clusters[userID][cluster]
+		t2.electedLock.RUnlock()
+
+		require.Equal(t, firstReceivedAtT2.UnixMilli(), info.electedLastSeenTimestamp)
+	}
 }

@@ -465,6 +465,13 @@ func (h *haTracker) updateCache(userID, cluster string, desc *ReplicaDesc) {
 	}
 	if desc.Replica != entry.elected.Replica {
 		h.electedReplicaChanges.WithLabelValues(userID, cluster).Inc()
+
+		if entry.nonElectedLastSeenReplica == desc.Replica {
+			entry.electedLastSeenTimestamp = entry.nonElectedLastSeenTimestamp
+		} else {
+			// clear electedLastSeenTimestamp since we don't know when we have seen this replica.
+			entry.electedLastSeenTimestamp = 0
+		}
 	}
 	entry.elected = *desc
 	h.electedReplicaTimestamp.WithLabelValues(userID, cluster).Set(float64(desc.ReceivedAt / 1000))
