@@ -126,9 +126,9 @@ func newBlockQuerierSeriesIterator(reuse chunkenc.Iterator, lbls labels.Labels, 
 		c := c
 
 		genericChunk := batch.NewGenericChunk(c.MinTime, c.MaxTime, func(reuse chunk.Iterator) chunk.Iterator {
-			encoding, err := chunkEncodingForAggrChunk(c, lbls)
-			if err != nil {
-				return chunk.ErrorIterator(err.Error())
+			encoding, ok := c.GetChunkEncoding()
+			if !ok {
+				return chunk.ErrorIterator(fmt.Sprintf("cannot create new chunk for series %s: unknown encoded raw data type %v", lbls, c.Raw.Type))
 			}
 
 			ch, err := chunk.NewForEncoding(encoding)
@@ -147,17 +147,4 @@ func newBlockQuerierSeriesIterator(reuse chunkenc.Iterator, lbls labels.Labels, 
 	}
 
 	return batch.NewGenericChunkMergeIterator(reuse, lbls, genericChunks)
-}
-
-func chunkEncodingForAggrChunk(c storepb.AggrChunk, lbls labels.Labels) (chunk.Encoding, error) {
-	switch c.Raw.Type {
-	case storepb.Chunk_XOR:
-		return chunk.PrometheusXorChunk, nil
-	case storepb.Chunk_Histogram:
-		return chunk.PrometheusHistogramChunk, nil
-	case storepb.Chunk_FloatHistogram:
-		return chunk.PrometheusFloatHistogramChunk, nil
-	default:
-		return 0, fmt.Errorf("failed to initialize chunk from unknown encoded raw data type %v (series: %v, min time: %d, max time: %d)", c.Raw.Type, lbls, c.MinTime, c.MaxTime)
-	}
 }
