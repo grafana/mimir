@@ -3,10 +3,9 @@
 package functions
 
 import (
-	"github.com/prometheus/prometheus/promql"
-
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/prometheus/prometheus/model/histogram"
 )
 
 // SeriesMetadataFunction is a function to operate on the metadata across series.
@@ -48,7 +47,20 @@ func Passthrough(seriesData types.InstantVectorSeriesData, _ *pooling.LimitingPo
 	return seriesData, nil
 }
 
-// RangeVectorStepFunction is a function to operate on a range vector step.
+// RangeVectorStepFunction is a function that operates on a range vector step.
+//
 // floatBuffer and histogramBuffer will contain the values for the step range.
 // They may also contain values outside of the step, so step.RangeEnd needs to be considered.
-type RangeVectorStepFunction func(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer) (*promql.FPoint, *promql.HPoint, error)
+//
+// Parameters:
+//   - step: the range vector step data to be processed.
+//   - rangeSeconds: the duration of the range in seconds.
+//   - floatBuffer: a ring buffer containing float values for the step range.
+//   - histogramBuffer: a ring buffer containing histogram values for the step range.
+//
+// Returns:
+//   - hasFloat bool: a boolean indicating if a float value is present.
+//   - f float64: the float value.
+//   - h *histogram.FloatHistogram: nil if no histogram is present.
+//   - err error.
+type RangeVectorStepFunction func(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer) (hasFloat bool, f float64, h *histogram.FloatHistogram, err error)

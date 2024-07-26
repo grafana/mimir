@@ -12,6 +12,8 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/promql"
 )
 
 // FunctionOverRangeVector performs a rate calculation over a range vector.
@@ -60,6 +62,9 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 
 	data := types.InstantVectorSeriesData{}
 
+	var hasFloat bool
+	var f float64
+	var h *histogram.FloatHistogram
 	for {
 		step, err := m.Inner.NextStepSamples(m.floatBuffer, m.histogramBuffer)
 
@@ -70,11 +75,11 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		fPoint, hPoint, err := m.RangeVectorStepFunc(step, m.rangeSeconds, m.floatBuffer, m.histogramBuffer)
+		hasFloat, f, h, err = m.RangeVectorStepFunc(step, m.rangeSeconds, m.floatBuffer, m.histogramBuffer)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
-		if fPoint != nil {
+		if hasFloat {
 			if data.Floats == nil {
 				// Only get fPoint slice once we are sure we have float points.
 				// This potentially over-allocates as some points in the steps may be histograms,
@@ -84,9 +89,9 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
-			data.Floats = append(data.Floats, *fPoint)
+			data.Floats = append(data.Floats, promql.FPoint{T: step.StepT, F: f})
 		}
-		if hPoint != nil {
+		if h != nil {
 			if data.Histograms == nil {
 				// Only get hPoint slice once we are sure we have histogram points.
 				// This potentially over-allocates as some points in the steps may be floats,
@@ -96,7 +101,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
-			data.Histograms = append(data.Histograms, *hPoint)
+			data.Histograms = append(data.Histograms, promql.HPoint{T: step.StepT, H: h})
 		}
 	}
 }

@@ -12,7 +12,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer) (*promql.FPoint, *promql.HPoint, error) {
+func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer) (bool, float64, *histogram.FloatHistogram, error) {
 	var err error
 	// Floats
 	fHead, fTail := floatBuffer.UnsafePoints(step.RangeEnd)
@@ -26,7 +26,7 @@ func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *typ
 		// We need either at least two Histograms and no Floats, or at least two
 		// Floats and no Histograms to calculate a rate. Otherwise, drop this
 		// Vector element.
-		return nil, nil, nil
+		return false, 0, nil, nil
 	}
 
 	if fCount >= 2 {
@@ -50,7 +50,7 @@ func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *typ
 		accumulate(fTail)
 
 		val := calculateFloatRate(step.RangeStart, step.RangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount)
-		return &promql.FPoint{T: step.StepT, F: val}, nil, nil
+		return true, val, nil, nil
 	}
 
 	if hCount >= 2 {
@@ -65,7 +65,7 @@ func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *typ
 		delta := lastPoint.H.CopyToSchema(currentSchema)
 		_, err = delta.Sub(firstPoint.H)
 		if err != nil {
-			return nil, nil, err
+			return false, 0, nil, err
 		}
 		previousValue := firstPoint.H
 
@@ -89,17 +89,17 @@ func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *typ
 
 		err = accumulate(hHead)
 		if err != nil {
-			return nil, nil, err
+			return false, 0, nil, err
 		}
 		err = accumulate(hTail)
 		if err != nil {
-			return nil, nil, err
+			return false, 0, nil, err
 		}
 
 		val := calculateHistogramRate(step.RangeStart, step.RangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount)
-		return nil, &promql.HPoint{T: step.StepT, H: val}, nil
+		return false, 0, val, err
 	}
-	return nil, nil, nil
+	return false, 0, nil, nil
 }
 
 // This is based on extrapolatedRate from promql/functions.go.
