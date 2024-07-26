@@ -26,8 +26,8 @@ const IntervalToEvaluationThreshold = 50.00
 type DynamicSemaphore struct {
 	maxConcurrency func() int64
 
-	mtx      sync.Mutex
-	acquired int64
+	acquiredMtx sync.Mutex
+	acquired    int64
 }
 
 // NewDynamicSemaphore creates a new DynamicSemaphore
@@ -40,9 +40,10 @@ func NewDynamicSemaphore(maxConcurrency func() int64) *DynamicSemaphore {
 
 // TryAcquire tries to acquire a token from the semaphore.
 func (ds *DynamicSemaphore) TryAcquire() bool {
-	ds.mtx.Lock()
-	defer ds.mtx.Unlock()
 	maxTokens := ds.maxConcurrency()
+
+	ds.acquiredMtx.Lock()
+	defer ds.acquiredMtx.Unlock()
 	if ds.acquired < maxTokens {
 		ds.acquired++
 		return true
@@ -53,8 +54,8 @@ func (ds *DynamicSemaphore) TryAcquire() bool {
 
 // Release releases a token back to the semaphore.
 func (ds *DynamicSemaphore) Release() {
-	ds.mtx.Lock()
-	defer ds.mtx.Unlock()
+	ds.acquiredMtx.Lock()
+	defer ds.acquiredMtx.Unlock()
 	if ds.acquired > 0 {
 		ds.acquired--
 	} else {
@@ -72,20 +73,20 @@ type MultiTenantConcurrencyControllerMetrics struct {
 func newMultiTenantConcurrencyControllerMetrics(reg prometheus.Registerer) *MultiTenantConcurrencyControllerMetrics {
 	return &MultiTenantConcurrencyControllerMetrics{
 		CurrentConcurrency: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_ruler_global_rule_evaluation_concurrency_current",
-			Help: "Current number of active global concurrency slots",
+			Name: "cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use",
+			Help: "Current number of concurrency slots currently in use across all tenants",
 		}),
 		AcquireTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ruler_global_rule_evaluation_concurrency_acquire_total",
-			Help: "Total number of acquired concurrency slots",
+			Name: "cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total",
+			Help: "Total number of started attempts to acquire concurrency slots across all tenants",
 		}),
 		AcquireFailedTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ruler_global_rule_evaluation_concurrency_acquire_failed_total",
-			Help: "Total number of failed attempts to acquire concurrency slots",
+			Name: "cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total",
+			Help: "Total number of incomplete attempts to acquire concurrency slots across all tenants",
 		}),
 		ReleaseTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ruler_global_rule_evaluation_concurrency_release_total",
-			Help: "Total number of released concurrency slots",
+			Name: "cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total",
+			Help: "Total number of concurrency slots we're done using across all tenants",
 		}),
 	}
 }
@@ -97,16 +98,16 @@ type MultiTenantConcurrencyController struct {
 	maxGlobalConcurrency int64
 	metrics              *MultiTenantConcurrencyControllerMetrics
 
-	globalConcurrency semaphore.Weighted
-	mtx               sync.Mutex
-	tenantConcurrency map[string]*DynamicSemaphore
+	globalConcurrency    semaphore.Weighted
+	tenantConcurrencyMtx sync.Mutex
+	tenantConcurrency    map[string]*DynamicSemaphore
 }
 
 // NewMultiTenantConcurrencyController creates a new MultiTenantConcurrencyController.
 func NewMultiTenantConcurrencyController(logger log.Logger, maxGlobalConcurrency int64, limits RulesLimits, reg prometheus.Registerer) *MultiTenantConcurrencyController {
 	return &MultiTenantConcurrencyController{
 		metrics:              newMultiTenantConcurrencyControllerMetrics(reg),
-		logger:               log.With(logger, "component", "ruler.MultiTenantConcurrencyController"),
+		logger:               log.With(logger, "component", "concurrency-controller"),
 		maxGlobalConcurrency: maxGlobalConcurrency,
 		limits:               limits,
 		globalConcurrency:    *semaphore.NewWeighted(maxGlobalConcurrency),
@@ -126,14 +127,14 @@ func (c *MultiTenantConcurrencyController) Done(ctx context.Context) {
 		return
 	}
 
-	c.mtx.Lock()
+	c.tenantConcurrencyMtx.Lock()
 	tc, ok := c.tenantConcurrency[userID]
-	c.mtx.Unlock()
+	c.tenantConcurrencyMtx.Unlock()
 
 	if ok {
 		tc.Release()
 	} else {
-		c.logger.Log("msg", "tenant concurrency controller: tenant not found", "tenant", userID)
+		level.Error(c.logger).Log("msg", "tenant concurrency controller: tenant not found", "tenant", userID)
 	}
 }
 
@@ -168,7 +169,7 @@ func (c *MultiTenantConcurrencyController) Allow(ctx context.Context, group *rul
 		return false
 	}
 
-	c.mtx.Lock()
+	c.tenantConcurrencyMtx.Lock()
 	tc, ok := c.tenantConcurrency[userID]
 	if !ok {
 		tc = NewDynamicSemaphore(func() int64 {
@@ -176,7 +177,7 @@ func (c *MultiTenantConcurrencyController) Allow(ctx context.Context, group *rul
 		})
 		c.tenantConcurrency[userID] = tc
 	}
-	c.mtx.Unlock()
+	c.tenantConcurrencyMtx.Unlock()
 
 	if tc.TryAcquire() {
 		return true

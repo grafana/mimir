@@ -55,7 +55,7 @@ func TestDynamicSemaphore(t *testing.T) {
 		sema.Release()
 		sema.Release()
 		sema.Release()
-		sema.mtx.Lock()
+		sema.acquiredMtx.Lock()
 		require.Equal(t, int64(0), sema.acquired)
 	})
 
@@ -120,18 +120,18 @@ func TestMultiTenantConcurrencyController(t *testing.T) {
 
 	// Let's check the metrics up until this point.
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-# HELP cortex_ruler_global_rule_evaluation_concurrency_acquire_failed_total Total number of failed attempts to acquire concurrency slots
-# TYPE cortex_ruler_global_rule_evaluation_concurrency_acquire_failed_total counter
-cortex_ruler_global_rule_evaluation_concurrency_acquire_failed_total 2
-# HELP cortex_ruler_global_rule_evaluation_concurrency_acquire_total Total number of acquired concurrency slots
-# TYPE cortex_ruler_global_rule_evaluation_concurrency_acquire_total counter
-cortex_ruler_global_rule_evaluation_concurrency_acquire_total 5
-# HELP cortex_ruler_global_rule_evaluation_concurrency_current Current number of active global concurrency slots
-# TYPE cortex_ruler_global_rule_evaluation_concurrency_current gauge
-cortex_ruler_global_rule_evaluation_concurrency_current 3
-# HELP cortex_ruler_global_rule_evaluation_concurrency_release_total Total number of released concurrency slots
-# TYPE cortex_ruler_global_rule_evaluation_concurrency_release_total counter
-cortex_ruler_global_rule_evaluation_concurrency_release_total 0
+# HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total Total number of incomplete attempts to acquire concurrency slots across all tenants
+# TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total counter
+cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total 2
+# HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total Total number of started attempts to acquire concurrency slots across all tenants
+# TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total counter
+cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total 5
+# HELP cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use Current number of concurrency slots currently in use across all tenants
+# TYPE cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use gauge
+cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use 3
+# HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total Total number of concurrency slots we're done using across all tenants
+# TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total counter
+cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total 0
 `)))
 
 	// Now let's release some slots and acquire one for tenant 2 which previously failed.
@@ -141,18 +141,18 @@ cortex_ruler_global_rule_evaluation_concurrency_release_total 0
 
 	// Let's look at the metrics again.
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-# HELP cortex_ruler_global_rule_evaluation_concurrency_acquire_failed_total Total number of failed attempts to acquire concurrency slots
-# TYPE cortex_ruler_global_rule_evaluation_concurrency_acquire_failed_total counter
-cortex_ruler_global_rule_evaluation_concurrency_acquire_failed_total 3
-# HELP cortex_ruler_global_rule_evaluation_concurrency_acquire_total Total number of acquired concurrency slots
-# TYPE cortex_ruler_global_rule_evaluation_concurrency_acquire_total counter
-cortex_ruler_global_rule_evaluation_concurrency_acquire_total 7
-# HELP cortex_ruler_global_rule_evaluation_concurrency_current Current number of active global concurrency slots
-# TYPE cortex_ruler_global_rule_evaluation_concurrency_current gauge
-cortex_ruler_global_rule_evaluation_concurrency_current 3
-# HELP cortex_ruler_global_rule_evaluation_concurrency_release_total Total number of released concurrency slots
-# TYPE cortex_ruler_global_rule_evaluation_concurrency_release_total counter
-cortex_ruler_global_rule_evaluation_concurrency_release_total 1
+# HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total Total number of incomplete attempts to acquire concurrency slots across all tenants
+# TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total counter
+cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total 3
+# HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total Total number of started attempts to acquire concurrency slots across all tenants
+# TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total counter
+cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total 7
+# HELP cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use Current number of concurrency slots currently in use across all tenants
+# TYPE cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use gauge
+cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use 3
+# HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total Total number of concurrency slots we're done using across all tenants
+# TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total counter
+cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total 1
 `)))
 
 	// Release all slots, to make sure there is room for the next set of edge cases.
@@ -168,18 +168,18 @@ cortex_ruler_global_rule_evaluation_concurrency_release_total 1
 
 	// Check the metrics one final time to ensure there are no active slots in use.
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-# HELP cortex_ruler_global_rule_evaluation_concurrency_acquire_failed_total Total number of failed attempts to acquire concurrency slots
-# TYPE cortex_ruler_global_rule_evaluation_concurrency_acquire_failed_total counter
-cortex_ruler_global_rule_evaluation_concurrency_acquire_failed_total 3
-# HELP cortex_ruler_global_rule_evaluation_concurrency_acquire_total Total number of acquired concurrency slots
-# TYPE cortex_ruler_global_rule_evaluation_concurrency_acquire_total counter
-cortex_ruler_global_rule_evaluation_concurrency_acquire_total 10
-# HELP cortex_ruler_global_rule_evaluation_concurrency_current Current number of active global concurrency slots
-# TYPE cortex_ruler_global_rule_evaluation_concurrency_current gauge
-cortex_ruler_global_rule_evaluation_concurrency_current 0
-# HELP cortex_ruler_global_rule_evaluation_concurrency_release_total Total number of released concurrency slots
-# TYPE cortex_ruler_global_rule_evaluation_concurrency_release_total counter
-cortex_ruler_global_rule_evaluation_concurrency_release_total 4
+# HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total Total number of incomplete attempts to acquire concurrency slots across all tenants
+# TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total counter
+cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total 3
+# HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total Total number of started attempts to acquire concurrency slots across all tenants
+# TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total counter
+cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total 10
+# HELP cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use Current number of concurrency slots currently in use across all tenants
+# TYPE cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use gauge
+cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use 0
+# HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total Total number of concurrency slots we're done using across all tenants
+# TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total counter
+cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total 4
 `)))
 }
 
