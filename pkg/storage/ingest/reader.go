@@ -603,7 +603,7 @@ func (r *PartitionReader) WaitReadConsistencyUntilOffset(ctx context.Context, of
 }
 
 func (r *PartitionReader) waitReadConsistency(ctx context.Context, getOffset func(context.Context) (int64, error)) error {
-	_, err := r.metrics.strongConsistencyInstrumentation.Observe(func() (any, error) {
+	_, err := r.metrics.strongConsistencyInstrumentation.Observe(func() (struct{}, error) {
 		spanLog := spanlogger.FromContext(ctx, r.logger)
 		spanLog.DebugLog("msg", "waiting for read consistency")
 
@@ -617,18 +617,18 @@ func (r *PartitionReader) waitReadConsistency(ctx context.Context, getOffset fun
 		// Ensure the service is running. Some subservices used below are created when starting
 		// so they're not available before that.
 		if state := r.Service.State(); state != services.Running {
-			return nil, fmt.Errorf("partition reader service is not running (state: %s)", state.String())
+			return struct{}{}, fmt.Errorf("partition reader service is not running (state: %s)", state.String())
 		}
 
 		// Get the offset to wait for.
 		offset, err := getOffset(ctx)
 		if err != nil {
-			return nil, err
+			return struct{}{}, err
 		}
 
 		spanLog.DebugLog("msg", "catching up with offset", "offset", offset)
 
-		return nil, r.consumedOffsetWatcher.Wait(ctx, offset)
+		return struct{}{}, r.consumedOffsetWatcher.Wait(ctx, offset)
 	})
 
 	return err
@@ -778,7 +778,7 @@ type readerMetrics struct {
 	fetchesErrors                    prometheus.Counter
 	fetchesTotal                     prometheus.Counter
 	fetchWaitDuration                prometheus.Histogram
-	strongConsistencyInstrumentation *StrongReadConsistencyInstrumentation[any]
+	strongConsistencyInstrumentation *StrongReadConsistencyInstrumentation[struct{}]
 	lastConsumedOffset               prometheus.Gauge
 	consumeLatency                   prometheus.Histogram
 	kprom                            *kprom.Metrics
@@ -832,7 +832,7 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetric
 			Help:                        "How long a consumer spent processing a batch of records from Kafka.",
 			NativeHistogramBucketFactor: 1.1,
 		}),
-		strongConsistencyInstrumentation: NewStrongReadConsistencyInstrumentation[any](component, reg),
+		strongConsistencyInstrumentation: NewStrongReadConsistencyInstrumentation[struct{}](component, reg),
 		lastConsumedOffset:               lastConsumedOffset,
 		kprom:                            NewKafkaReaderClientMetrics(component, reg),
 	}

@@ -921,6 +921,8 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 				consistencyLevel := consistencyLevel
 
 				t.Run(fmt.Sprintf("consistency level: %s", consistencyLevel), func(t *testing.T) {
+					t.Parallel()
+
 					// Create a roundtripper that captures the downstream HTTP request.
 					var downstreamReq *http.Request
 
