@@ -130,8 +130,8 @@ type Alertmanager struct {
 	templatesMtx    sync.RWMutex
 	templates       []alertingTemplates.TemplateDefinition
 
-	// promoted indicates if the Grafana Alertmanager configuration and state are being used.
-	promoted atomic.Bool
+	// usingGrafanaState indicates if the Grafana Alertmanager state is being used.
+	usingGrafanaState atomic.Bool
 
 	// Pipeline created during last ApplyConfig call. Used for testing only.
 	lastPipeline notify.Stage

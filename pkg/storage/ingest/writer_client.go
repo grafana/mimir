@@ -18,11 +18,11 @@ import (
 	"go.uber.org/atomic"
 )
 
-// newKafkaWriterClient returns the kgo.Client that should be used by the Writer.
+// NewKafkaWriterClient returns the kgo.Client that should be used by the Writer.
 //
 // The input prometheus.Registerer must be wrapped with a prefix (the names of metrics
 // registered don't have a prefix).
-func newKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, logger log.Logger, reg prometheus.Registerer) (*kgo.Client, error) {
+func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, logger log.Logger, reg prometheus.Registerer) (*kgo.Client, error) {
 	// Do not export the client ID, because we use it to specify options to the backend.
 	metrics := kprom.NewMetrics(
 		"", // No prefix. We expect the input prometheus.Registered to be wrapped with a prefix.

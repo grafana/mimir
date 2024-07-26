@@ -1787,7 +1787,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 			close(continueExecution)
 		}()
 
-		_, _, err := q.LabelNames(ctx, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
+		_, _, err := q.LabelNames(ctx, &storage.LabelHints{}, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
 
 		// We expect the returned error to be context.Canceled and not a gRPC error.
 		assert.ErrorIs(t, err, context.Canceled)
@@ -1835,7 +1835,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 			close(continueExecution)
 		}()
 
-		_, _, err := q.LabelValues(ctx, labels.MetricName)
+		_, _, err := q.LabelValues(ctx, labels.MetricName, &storage.LabelHints{})
 
 		// We expect the returned error to be context.Canceled and not a gRPC error.
 		assert.ErrorIs(t, err, context.Canceled)
@@ -2441,7 +2441,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				}
 
 				if testFunc == "LabelNames" {
-					names, warnings, err := q.LabelNames(ctx)
+					names, warnings, err := q.LabelNames(ctx, &storage.LabelHints{})
 					if testData.expectedErr != "" {
 						require.Equal(t, testData.expectedErr, err.Error())
 						continue
@@ -2458,7 +2458,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				}
 
 				if testFunc == "LabelValues" {
-					values, warnings, err := q.LabelValues(ctx, labels.MetricName)
+					values, warnings, err := q.LabelValues(ctx, labels.MetricName, &storage.LabelHints{})
 					if testData.expectedErr != "" {
 						require.Equal(t, testData.expectedErr, err.Error())
 						continue
@@ -2514,9 +2514,9 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				var err error
 				switch testFunc {
 				case "LabelNames":
-					_, _, err = q.LabelNames(ctx)
+					_, _, err = q.LabelNames(ctx, &storage.LabelHints{})
 				case "LabelValues":
-					_, _, err = q.LabelValues(ctx, labels.MetricName)
+					_, _, err = q.LabelValues(ctx, labels.MetricName, &storage.LabelHints{})
 				}
 
 				require.Error(t, err)
@@ -2661,13 +2661,13 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 				},
 			}
 
-			_, _, err := q.LabelNames(ctx)
+			_, _, err := q.LabelNames(ctx, &storage.LabelHints{})
 			require.NoError(t, err)
 			require.Len(t, finder.Calls, 1)
 			assert.Equal(t, testData.expectedMinT, finder.Calls[0].Arguments.Get(2))
 			assert.Equal(t, testData.expectedMaxT, finder.Calls[0].Arguments.Get(3))
 
-			_, _, err = q.LabelValues(ctx, "foo")
+			_, _, err = q.LabelValues(ctx, "foo", &storage.LabelHints{})
 			require.Len(t, finder.Calls, 2)
 			require.NoError(t, err)
 			assert.Equal(t, testData.expectedMinT, finder.Calls[1].Arguments.Get(2))

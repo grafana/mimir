@@ -136,12 +136,7 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 		return allChunks[i].MinTime < allChunks[j].MinTime
 	})
 
-	it, err := newBlockQuerierSeriesIterator(reuse, bqs.Labels(), allChunks)
-	if err != nil {
-		return series.NewErrIterator(err)
-	}
-
-	return it
+	return newBlockQuerierSeriesIterator(reuse, bqs.Labels(), allChunks)
 }
 
 // storeGatewayStreamReader is responsible for managing the streaming of chunks from a storegateway and buffering

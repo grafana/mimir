@@ -34,6 +34,8 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	testutil "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -68,7 +70,7 @@ func requireEqualMetricsQueryRequest(t *testing.T, expected, actual MetricsQuery
 	require.Equal(t, expected.GetHints(), actual.GetHints())
 }
 
-func TestMetricsQueryRequest(t *testing.T) {
+func TestPrometheusCodec_EncodeMetricsQueryRequest(t *testing.T) {
 	codec := newTestPrometheusCodec()
 
 	for i, tc := range []struct {
@@ -472,7 +474,7 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 	}
 }
 
-func TestLabelsQueryRequest(t *testing.T) {
+func TestPrometheusCodec_EncodeLabelsQueryRequest(t *testing.T) {
 	codec := newTestPrometheusCodec()
 
 	for _, testCase := range []struct {
@@ -687,7 +689,7 @@ func TestLabelsQueryRequest(t *testing.T) {
 	}
 }
 
-func TestPrometheusCodec_EncodeRequest_AcceptHeader(t *testing.T) {
+func TestPrometheusCodec_EncodeMetricsQueryRequest_AcceptHeader(t *testing.T) {
 	for _, queryResultPayloadFormat := range allFormats {
 		t.Run(queryResultPayloadFormat, func(t *testing.T) {
 			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, queryResultPayloadFormat)
@@ -707,7 +709,7 @@ func TestPrometheusCodec_EncodeRequest_AcceptHeader(t *testing.T) {
 	}
 }
 
-func TestPrometheusCodec_EncodeRequest_ReadConsistency(t *testing.T) {
+func TestPrometheusCodec_EncodeMetricsQueryRequest_ReadConsistency(t *testing.T) {
 	for _, consistencyLevel := range api.ReadConsistencies {
 		t.Run(consistencyLevel, func(t *testing.T) {
 			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf)
@@ -717,6 +719,30 @@ func TestPrometheusCodec_EncodeRequest_ReadConsistency(t *testing.T) {
 			require.Equal(t, consistencyLevel, encodedRequest.Header.Get(api.ReadConsistencyHeader))
 		})
 	}
+}
+
+func TestPrometheusCodec_EncodeMetricsQueryRequest_ShouldPropagateHeadersInAllowList(t *testing.T) {
+	const notAllowedHeader = "X-Some-Name"
+
+	codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf)
+
+	req, err := codec.EncodeMetricsQueryRequest(context.Background(), &PrometheusInstantQueryRequest{
+		headers: []*PrometheusHeader{
+			// Allowed.
+			{Name: compat.ForceFallbackHeaderName, Values: []string{"true"}},
+			{Name: chunkinfologger.ChunkInfoLoggingHeader, Values: []string{"label"}},
+			{Name: api.ReadConsistencyOffsetsHeader, Values: []string{string(api.EncodeOffsets(map[int32]int64{0: 1, 1: 2}))}},
+
+			// Not allowed.
+			{Name: notAllowedHeader, Values: []string{"some-value"}},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"true"}, req.Header.Values(compat.ForceFallbackHeaderName))
+	require.Equal(t, []string{"label"}, req.Header.Values(chunkinfologger.ChunkInfoLoggingHeader))
+	require.Equal(t, []string{string(api.EncodeOffsets(map[int32]int64{0: 1, 1: 2}))}, req.Header.Values(api.ReadConsistencyOffsetsHeader))
+	require.Empty(t, req.Header.Values(notAllowedHeader))
 }
 
 func TestPrometheusCodec_EncodeResponse_ContentNegotiation(t *testing.T) {

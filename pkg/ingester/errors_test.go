@@ -844,51 +844,6 @@ func TestMapReadErrorToErrorWithStatus(t *testing.T) {
 	}
 }
 
-func TestMapReadErrorToErrorWithHTTPOrGRPCStatus(t *testing.T) {
-	const originalMsg = "this is an error"
-	originalErr := errors.New(originalMsg)
-
-	testCases := map[string]struct {
-		err                 error
-		expectedTranslation error
-	}{
-		"a generic error is not translated": {
-			err:                 originalErr,
-			expectedTranslation: originalErr,
-		},
-		"an unavailableError gets translated into an ErrorWithStatus Unavailable error with details": {
-			err:                 newUnavailableError(services.Stopping),
-			expectedTranslation: newErrorWithStatus(newUnavailableError(services.Stopping), codes.Unavailable),
-		},
-		"a wrapped unavailableError gets translated into an ErrorWithStatus Unavailable error": {
-			err:                 fmt.Errorf("wrapped: %w", newUnavailableError(services.Stopping)),
-			expectedTranslation: newErrorWithStatus(fmt.Errorf("wrapped: %w", newUnavailableError(services.Stopping)), codes.Unavailable),
-		},
-		"errTooBusy gets translated into an errorWithHTTPStatus with status code 503": {
-			err:                 errTooBusy,
-			expectedTranslation: newErrorWithHTTPStatus(errTooBusy, http.StatusServiceUnavailable),
-		},
-		"a wrapped errTooBusy gets translated into an errorWithHTTPStatus with status code 503": {
-			err:                 fmt.Errorf("wrapped: %w", errTooBusy),
-			expectedTranslation: newErrorWithHTTPStatus(fmt.Errorf("wrapped: %w", errTooBusy), http.StatusServiceUnavailable),
-		},
-		"a circuitBreakerOpenError gets translated into an ErrorWithStatus Unavailable error": {
-			err:                 newCircuitBreakerOpenError("foo", 1*time.Second),
-			expectedTranslation: newErrorWithStatus(newCircuitBreakerOpenError("foo", 1*time.Second), codes.Unavailable),
-		},
-		"a wrapped circuitBreakerOpenError gets translated into an ErrorWithStatus Unavailable": {
-			err:                 fmt.Errorf("wrapped: %w", newCircuitBreakerOpenError("foo", 1*time.Second)),
-			expectedTranslation: newErrorWithStatus(fmt.Errorf("wrapped: %w", newCircuitBreakerOpenError("foo", 1*time.Second)), codes.Unavailable),
-		},
-	}
-	for name, tc := range testCases {
-		t.Run(name, func(t *testing.T) {
-			handledErr := mapReadErrorToErrorWithHTTPOrGRPCStatus(tc.err)
-			require.Equal(t, tc.expectedTranslation, handledErr)
-		})
-	}
-}
-
 type mockIngesterErr string
 
 func (e mockIngesterErr) Error() string {

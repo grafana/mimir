@@ -1257,7 +1257,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 			skipRecentSamples: time.Hour,
 		},
 		{
-			name: "should not fail when all float samples in a vector are recent, there are a different number of series in one result and configured to skip recent samples",
+			name: "should not fail when there are a different number of series in a vector, and all float samples are within the configured skip recent samples interval",
 			expected: json.RawMessage(`{
 							"status": "success",
 							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[` + now + `,"10"]}]}
@@ -1269,7 +1269,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 			skipRecentSamples: time.Hour,
 		},
 		{
-			name: "should not fail when all histogram samples in a vector are recent, there are a different number of series in one result and configured to skip recent samples",
+			name: "should not fail when there are a different number of series in a vector, and all histogram samples are within the configured skip recent samples interval",
 			expected: json.RawMessage(`{
 							"status": "success",
 							"data": {
@@ -1328,7 +1328,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 			skipRecentSamples: time.Hour,
 		},
 		{
-			name: "should fail when some float samples in a vector are recent, there are a different number of series in one result and configured to skip recent samples",
+			name: "should fail when there are a different number of series in a vector, and some float samples are outside the configured skip recent samples interval",
 			expected: json.RawMessage(`{
 							"status": "success",
 							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[` + now + `,"10"]}]}
@@ -1343,7 +1343,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 			err:               errors.New("expected 1 metrics but got 2"),
 		},
 		{
-			name: "should fail when some histogram samples in a vector are recent, there are a different number of series in one result and configured to skip recent samples",
+			name: "should fail when there are a different number of series in a vector, and some histogram samples are outside the configured skip recent samples interval",
 			expected: json.RawMessage(`{
 							"status": "success",
 							"data": {
@@ -1467,7 +1467,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 			skipRecentSamples: time.Hour,
 		},
 		{
-			name: "should not fail when all float samples in a matrix are recent, there are a different number of series in one result and configured to skip recent samples",
+			name: "should not fail when there are a different number of series in a matrix, and all float samples are within the configured skip recent samples interval",
 			expected: json.RawMessage(`{
 							"status": "success",
 							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[` + now + `,"10"]]}]}
@@ -1479,7 +1479,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 			skipRecentSamples: time.Hour,
 		},
 		{
-			name: "should not fail when all histogram samples in a matrix are recent, there are a different number of series in one result and configured to skip recent samples",
+			name: "should not fail when there are a different number of series in a matrix, and all histogram samples are within the configured skip recent samples interval",
 			expected: json.RawMessage(`{
 							"status": "success",
 							"data": {
@@ -1538,7 +1538,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 			skipRecentSamples: time.Hour,
 		},
 		{
-			name: "should fail when some float samples in a matrix are recent, there are a different number of series in one result and configured to skip recent samples",
+			name: "should fail when there are a different number of series in a matrix, and some float samples are outside the configured skip recent samples interval",
 			expected: json.RawMessage(`{
 							"status": "success",
 							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[` + now + `,"10"]]}]}
@@ -1553,7 +1553,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 			err:               errors.New("expected 1 metrics but got 2"),
 		},
 		{
-			name: "should fail when some histogram samples in a matrix are recent, there are a different number of series in one result and configured to skip recent samples",
+			name: "should fail when there are a different number of series in a matrix, and some histogram samples are outside the configured skip recent samples interval",
 			expected: json.RawMessage(`{
 							"status": "success",
 							"data": {

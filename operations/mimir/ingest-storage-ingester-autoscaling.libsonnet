@@ -13,9 +13,6 @@
     // The target number of active series per ingester.
     ingest_storage_ingester_autoscaling_active_series_threshold: 1500000,
 
-    // How many zones ingesters have been deployed to.
-    ingest_storage_ingester_zones: 3,
-
     // How long to wait before terminating an ingester after it has been notified about the scale down.
     ingest_storage_ingester_downscale_delay: if 'querier.query-ingesters-within' in $.querier_args then
       $.querier_args['querier.query-ingesters-within']

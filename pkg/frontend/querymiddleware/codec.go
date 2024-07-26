@@ -46,6 +46,9 @@ var (
 	errNegativeStep   = apierror.New(apierror.TypeBadData, `invalid parameter "step": zero or negative query resolution step widths are not accepted. Try a positive integer`)
 	errStepTooSmall   = apierror.New(apierror.TypeBadData, "exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
 	allFormats        = []string{formatJSON, formatProtobuf}
+
+	// List of HTTP headers to propagate when a Prometheus request is encoded into a HTTP request.
+	prometheusCodecPropagateHeaders = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader, api.ReadConsistencyOffsetsHeader}
 )
 
 const (
@@ -588,22 +591,19 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
-	if consistency, ok := api.ReadConsistencyFromContext(ctx); ok {
-		req.Header.Add(api.ReadConsistencyHeader, consistency)
+	if level, ok := api.ReadConsistencyFromContext(ctx); ok {
+		req.Header.Add(api.ReadConsistencyHeader, level)
 	}
 
+	// Propagate allowed HTTP headers.
 	for _, h := range r.GetHeaders() {
-		if h.Name == compat.ForceFallbackHeaderName {
-			for _, v := range h.Values {
-				// There should only be one value, but add all of them for completeness.
-				req.Header.Add(compat.ForceFallbackHeaderName, v)
-			}
+		if !slices.Contains(prometheusCodecPropagateHeaders, h.Name) {
+			continue
 		}
-		if h.Name == chunkinfologger.ChunkInfoLoggingHeader {
-			for _, v := range h.Values {
-				// There should only be one value, but add all of them for completeness.
-				req.Header.Add(chunkinfologger.ChunkInfoLoggingHeader, v)
-			}
+
+		for _, v := range h.Values {
+			// There should only be one value, but add all of them for completeness.
+			req.Header.Add(h.Name, v)
 		}
 	}
 
@@ -673,8 +673,8 @@ func (c prometheusCodec) EncodeLabelsQueryRequest(ctx context.Context, req Label
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
-	if consistency, ok := api.ReadConsistencyFromContext(ctx); ok {
-		r.Header.Add(api.ReadConsistencyHeader, consistency)
+	if level, ok := api.ReadConsistencyFromContext(ctx); ok {
+		r.Header.Add(api.ReadConsistencyHeader, level)
 	}
 
 	return r.WithContext(ctx), nil

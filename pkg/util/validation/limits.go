@@ -1044,6 +1044,7 @@ func (o *Overrides) AlignQueriesWithStep(userID string) bool {
 	return o.getOverridesForUser(userID).AlignQueriesWithStep
 }
 
+// IngestStorageReadConsistency returns the default read consistency for the tenant.
 func (o *Overrides) IngestStorageReadConsistency(userID string) string {
 	return o.getOverridesForUser(userID).IngestStorageReadConsistency
 }

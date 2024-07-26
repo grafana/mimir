@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -32,7 +31,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -733,13 +731,13 @@ func TestHandler_toOtlpGRPCHTTPStatus(t *testing.T) {
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
 		},
-		"a circuitBreakerOpenError gets translated into gRPC codes.Unavailable and HTTP 503 statuses": {
-			err:                newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}),
+		"an ingesterPushError with CIRCUIT_BREAKER_OPEN cause gets translated into an Unavailable error with CIRCUIT_BREAKER_OPEN cause": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.CIRCUIT_BREAKER_OPEN), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Unavailable,
 		},
-		"a wrapped circuitBreakerOpenError gets translated into gRPC codes.Unavailable and HTTP 503 statuses": {
-			err:                errors.Wrap(newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}), fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)),
+		"a wrapped ingesterPushError with CIRCUIT_BREAKER_OPEN cause gets translated into an Unavailable error with CIRCUIT_BREAKER_OPEN cause": {
+			err:                errors.Wrap(newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.CIRCUIT_BREAKER_OPEN), ingesterID), "wrapped"),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Unavailable,
 		},

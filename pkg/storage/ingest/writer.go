@@ -202,7 +202,7 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, 
 	// Add the client ID to logger so that we can easily distinguish Kafka clients in logs.
 	clientLogger := log.With(w.logger, "client_id", clientID)
 
-	newClient, err := newKafkaWriterClient(w.kafkaCfg, w.maxInflightProduceRequests, clientLogger, clientReg)
+	newClient, err := NewKafkaWriterClient(w.kafkaCfg, w.maxInflightProduceRequests, clientLogger, clientReg)
 	if err != nil {
 		return nil, err
 	}

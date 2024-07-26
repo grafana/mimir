@@ -671,12 +671,10 @@ Usage of ./cmd/mimir/mimir:
     	Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. (default 524288)
   -blocks-storage.bucket-store.posting-offsets-in-mem-sampling int
     	Controls what is the ratio of postings offsets that the store will hold in memory. (default 32)
+  -blocks-storage.bucket-store.series-fetch-preference float
+    	This parameter controls the trade-off in fetching series versus fetching postings to fulfill a series request. Increasing the series preference results in fetching more series and reducing the volume of postings fetched. Reducing the series preference results in the opposite. Increase this parameter to reduce the rate of fetched series bytes (see "Mimir / Queries" dashboard) or API calls to the object store. Must be a positive floating point number. (default 0.75)
   -blocks-storage.bucket-store.series-hash-cache-max-size-bytes uint
     	Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled. (default 1073741824)
-  -blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference float
-    	[experimental] This option is only used when blocks-storage.bucket-store.series-selection-strategy=worst-case. Increasing the series preference results in fetching more series than postings. Must be a positive floating point number. (default 0.75)
-  -blocks-storage.bucket-store.series-selection-strategy string
-    	[experimental] This option controls the strategy to selection of series and deferring application of matchers. A more aggressive strategy will fetch less posting lists at the cost of more series. This is useful when querying large blocks in which many series share the same label name and value. Supported values (most aggressive to least aggressive): speculative, worst-case, worst-case-small-posting-lists, all. (default "worst-case")
   -blocks-storage.bucket-store.sync-dir string
     	Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time. (default "./tsdb-sync/")
   -blocks-storage.bucket-store.sync-interval duration
@@ -1375,16 +1373,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -ingester.client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
-  -ingester.client.circuit-breaker.cooldown-period duration
-    	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 10s)
-  -ingester.client.circuit-breaker.enabled
-    	[experimental] Enable circuit breaking when making requests to ingesters
-  -ingester.client.circuit-breaker.failure-execution-threshold uint
-    	[experimental] How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures (default 100)
-  -ingester.client.circuit-breaker.failure-threshold uint
-    	[experimental] Max percentage of requests that can fail over period before the circuit breaker opens (default 10)
-  -ingester.client.circuit-breaker.thresholding-period duration
-    	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -ingester.client.connect-backoff-max-delay duration
@@ -1405,8 +1393,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ingester.client.initial-stream-window-size value
     	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
-  -ingester.client.report-grpc-codes-in-instrumentation-label-enabled
-    	[deprecated] If set to true, gRPC status codes will be reported in "status_code" label of "cortex_ingester_client_request_duration_seconds" metric. Otherwise, they will be reported as "error" (default true)
   -ingester.client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ingester.client.tls-cert-path string
@@ -1553,8 +1539,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.read-path-memory-utilization-limit uint
     	[experimental] Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
-  -ingester.return-only-grpc-errors
-    	[deprecated] When enabled only gRPC errors will be returned by the ingester. (default true)
   -ingester.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -ingester.ring.consul.cas-retry-delay duration
@@ -1913,8 +1897,6 @@ Usage of ./cmd/mimir/mimir:
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
     	Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled. (default 3s)
-  -querier.prefer-streaming-chunks-from-store-gateways
-    	[experimental] Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this. (default true)
   -querier.promql-experimental-functions-enabled
     	[experimental] Enable experimental PromQL functions. This config option should be set on query-frontend too when query sharding is enabled.
   -querier.query-engine string

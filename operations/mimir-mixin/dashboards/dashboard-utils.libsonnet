@@ -260,14 +260,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ],
     },
 
-  perInstanceLatencyPanelNativeHistogram(quantile, metric, selector, instanceLabel=$._config.per_instance_label)::
-    $.hiddenLegendQueryPanel(
-      [
-        utils.showClassicHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel])),
-        utils.showNativeHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel])),
-      ],
-      ['', '']
-    ),
+  perInstanceLatencyPanelNativeHistogram(quantile, metric, selector, legends=null, instanceLabel=$._config.per_instance_label, from_recording=false)::
+    local queries = [
+      utils.showClassicHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel], from_recording=from_recording)),
+      utils.showNativeHistogramQuery(utils.ncHistogramQuantile(quantile, metric, utils.toPrometheusSelectorNaked(selector), [instanceLabel], from_recording=from_recording)),
+    ];
+    if legends == null then
+      $.hiddenLegendQueryPanel(queries, ['', ''])
+    else
+      $.queryPanel(queries, legends),
 
   // Creates a panel like queryPanel() but if the legend contains only 1 entry,
   // than it configures the series alias color to the one used to display failures.
@@ -773,8 +774,21 @@ local utils = import 'mixin-utils/utils.libsonnet';
       title,
       |||
         The rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom
-        metrics server is unable to query the scaling metric from Prometheus so the autoscaler woudln't work properly.
+        metrics server is unable to query the scaling metric from Prometheus so the autoscaler wouldn't work properly.
       |||
+    ),
+
+  cpuBasedAutoScalingRow(componentTitle)::
+    local componentName = std.strReplace(std.asciiLower(componentTitle), '-', '_');
+    super.row('%s – autoscaling' % [componentTitle])
+    .addPanel(
+      $.autoScalingActualReplicas(componentName)
+    )
+    .addPanel(
+      $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel(componentName, 'CPU', 'cpu')
+    )
+    .addPanel(
+      $.autoScalingFailuresPanel(componentName)
     ),
 
   cpuAndMemoryBasedAutoScalingRow(componentTitle)::
@@ -1759,6 +1773,57 @@ local utils = import 'mixin-utils/utils.libsonnet';
         'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
         'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
         'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+      ],
+      [
+        'avg',
+        '99th percentile',
+        '99.9th percentile',
+        '100th percentile',
+      ],
+    ) + {
+      fieldConfig+: {
+        defaults+: { unit: 's' },
+      },
+    },
+
+  ingestStorageKafkaProducedRecordsRatePanel(jobName)::
+    $.timeseriesPanel('Kafka produced records / sec') +
+    $.panelDescription(
+      'Kafka produced records / sec',
+      'Rate of records synchronously produced to Kafka.',
+    ) +
+    $.queryPanel([
+      |||
+        sum(rate(cortex_ingest_storage_writer_produce_requests_total{%(job_matcher)s}[$__rate_interval]))
+        -
+        (sum(rate(cortex_ingest_storage_writer_produce_failures_total{%(job_matcher)s}[$__rate_interval])) or vector(0))
+      ||| % { job_matcher: $.jobMatcher($._config.job_names[jobName]) },
+      |||
+        sum by(reason) (rate(cortex_ingest_storage_writer_produce_failures_total{%(job_matcher)s}[$__rate_interval]))
+      ||| % { job_matcher: $.jobMatcher($._config.job_names[jobName]) },
+    ], [
+      'success',
+      'failed - {{ reason }}',
+    ]) +
+    $.stack +
+    $.aliasColors({
+      success: $._colors.success,
+    }),
+
+  ingestStorageKafkaProducedRecordsLatencyPanel(jobName)::
+    $.timeseriesPanel('Kafka produced records latency') +
+    $.panelDescription(
+      'Kafka produced records latency',
+      |||
+        Latency of records synchronously produced to Kafka.
+      |||
+    ) +
+    $.queryPanel(
+      [
+        'histogram_avg(sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
       ],
       [
         'avg',

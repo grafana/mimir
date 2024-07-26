@@ -311,7 +311,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
-			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics, log)
+			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics)
 		})
 	}
 

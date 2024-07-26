@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: 2.13.0
+  tag: r300-e243636
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -951,6 +951,7 @@ ingester:
     # If true and ingester.statefulSet.enabled is true,
     # Ingester will create/use a Persistent Volume Claim
     # If false, use emptyDir
+    # It is advisable to enable volume persistence in ingester to avoid losing metrics.
     #
     enabled: true
 
@@ -3643,6 +3644,22 @@ metaMonitoring:
     #    image: grafana/agent
     #    tag: v0.29.0
 
+    # -- Resource requests and limits for the grafana-agent and config-reloader containers in the meta-monitoring
+    # StatefulSet and DaemonSet created by the grafana-agent-operator. You can define one or both sections under resources.
+    resources:
+    #   configReloader:
+    #     requests:
+    #       cpu: 5m
+    #       memory: 10Mi
+    #     limits:
+    #       memory: 50Mi
+    #   grafanaAgent:
+    #     requests:
+    #       cpu: 20m
+    #       memory: 700Mi
+    #     limits:
+    #       memory: 1400Mi
+
     # -- Controls whether to install the Grafana Agent Operator and its CRDs.
     # Note that helm will not install CRDs if this flag is enabled during an upgrade.
     # In that case install the CRDs manually from https://github.com/grafana/agent/tree/main/operations/agent-static-operator/crds
@@ -3828,7 +3845,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: v2.13.0
+    tag: r300-f8726ed0
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics

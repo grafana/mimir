@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
@@ -23,15 +24,15 @@ func TestMergeIter(t *testing.T) {
 			chunk4 := mkGenericChunk(t, model.TimeFromUnix(75), 100, enc)
 			chunk5 := mkGenericChunk(t, model.TimeFromUnix(100), 100, enc)
 
-			iter := NewGenericChunkMergeIterator(nil, []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+			iter := NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
 			testIter(t, 200, iter, enc)
-			iter = NewGenericChunkMergeIterator(nil, []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+			iter = NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
 			testSeek(t, 200, iter, enc)
 
 			// Re-use iterator.
-			iter = NewGenericChunkMergeIterator(iter, []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+			iter = NewGenericChunkMergeIterator(iter, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
 			testIter(t, 200, iter, enc)
-			iter = NewGenericChunkMergeIterator(iter, []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+			iter = NewGenericChunkMergeIterator(iter, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
 			testSeek(t, 200, iter, enc)
 		})
 	}
@@ -53,10 +54,10 @@ func TestMergeHarder(t *testing.T) {
 				from = from.Add(time.Duration(offset) * time.Second)
 			}
 			iter := newMergeIterator(nil, chunks)
-			testIter(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter), enc)
+			testIter(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter, labels.EmptyLabels()), enc)
 
 			iter = newMergeIterator(nil, chunks)
-			testSeek(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter), enc)
+			testSeek(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter, labels.EmptyLabels()), enc)
 		})
 	}
 }

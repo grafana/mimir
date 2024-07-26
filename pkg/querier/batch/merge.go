@@ -69,6 +69,10 @@ func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 }
 
 func (c *mergeIterator) Seek(t int64, size int) chunkenc.ValueType {
+	if c.currErr != nil {
+		// We've already failed. Stop.
+		return chunkenc.ValNone
+	}
 
 	// Optimisation to see if the seek is within our current caches batches.
 found:
@@ -109,6 +113,11 @@ found:
 }
 
 func (c *mergeIterator) Next(size int) chunkenc.ValueType {
+	if c.currErr != nil {
+		// We've already failed. Stop.
+		return chunkenc.ValNone
+	}
+
 	// Pop the last built batch in a way that doesn't extend the slice.
 	if c.batches.len() > 0 {
 		// The first batch is not needed anymore, so we remove it.

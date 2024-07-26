@@ -86,17 +86,17 @@ func (q *readConsistencyQuerier) Select(ctx context.Context, sortSeries bool, hi
 }
 
 // LabelValues implements storage.Querier.
-func (q *readConsistencyQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *readConsistencyQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	ctx = forceStrongReadConsistencyIfQueryingAlertsForStateMetric(ctx, matchers, q.logger)
 
-	return q.next.LabelValues(ctx, name, matchers...)
+	return q.next.LabelValues(ctx, name, hints, matchers...)
 }
 
 // LabelNames implements storage.Querier.
-func (q *readConsistencyQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *readConsistencyQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	ctx = forceStrongReadConsistencyIfQueryingAlertsForStateMetric(ctx, matchers, q.logger)
 
-	return q.next.LabelNames(ctx, matchers...)
+	return q.next.LabelNames(ctx, hints, matchers...)
 }
 
 // Close implements storage.Querier.
