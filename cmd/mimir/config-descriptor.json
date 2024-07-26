@@ -4384,7 +4384,7 @@
           "fieldDefaultValue": 4,
           "fieldFlag": "ruler.max-independent-rule-evaluation-concurrency-per-tenant",
           "fieldType": "int",
-          "fieldCategory": "advanced"
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
