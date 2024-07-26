@@ -455,7 +455,7 @@ Examples:
   "tokengen" "tokengenJob"
 -}}
 {{- $componentSection := index $componentsMap .component -}}
-{{- if not $componentSection -}}{{- printf "No component section mapping for %s not found in values; submit a bug report if you are a user, edit mimir.componentSectionFromName if you are a contributor" .component | fail -}}{{- end -}}
+{{- if not $componentSection -}}{{- $componentSection := .component -}}{{- end -}}
 {{- $section := .ctx.Values -}}
 {{- range regexSplit "\\." $componentSection -1 -}}
   {{- $section = index $section . -}}
