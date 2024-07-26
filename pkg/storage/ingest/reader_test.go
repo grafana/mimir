@@ -222,11 +222,11 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
 					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-					cortex_ingest_storage_strong_consistency_requests_total 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader"} 1
 		
 					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-					cortex_ingest_storage_strong_consistency_failures_total 0
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 0
 				`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
 			})
 		}
@@ -275,11 +275,11 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
 					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-					cortex_ingest_storage_strong_consistency_requests_total 2
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader"} 2
 		
 					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-					cortex_ingest_storage_strong_consistency_failures_total 1
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 1
 				`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
 			})
 		}
@@ -327,11 +327,11 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
 					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-					cortex_ingest_storage_strong_consistency_requests_total 2
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader"} 2
 		
 					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-					cortex_ingest_storage_strong_consistency_failures_total 1
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 1
 				`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
 			})
 		}
@@ -359,11 +359,11 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
 					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-					cortex_ingest_storage_strong_consistency_requests_total 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader"} 1
 		
 					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-					cortex_ingest_storage_strong_consistency_failures_total 0
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 0
 				`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
 			})
 		}
@@ -395,11 +395,11 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
 					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-					cortex_ingest_storage_strong_consistency_requests_total 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader"} 1
 		
 					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-					cortex_ingest_storage_strong_consistency_failures_total 1
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 1
 				`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
 			})
 		}
