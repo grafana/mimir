@@ -505,6 +505,10 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 	am.receivers = receivers
 	am.receiversMtx.Unlock()
 
+	am.templatesMtx.Lock()
+	am.templates = tmpls
+	am.templatesMtx.Unlock()
+
 	pipeline := am.pipelineBuilder.New(
 		baseIntegrationsMap,
 		waitFunc,
