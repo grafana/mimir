@@ -96,7 +96,7 @@ func TestMultiTenantConcurrencyController(t *testing.T) {
 	rg := rules.NewGroup(rules.GroupOptions{
 		File:     "test.rules",
 		Name:     "test",
-		Interval: 1 * time.Minute,
+		Interval: -1 * time.Minute, // by default, groups should be at risk.
 		Opts:     &rules.ManagerOptions{},
 	})
 
@@ -109,7 +109,7 @@ func TestMultiTenantConcurrencyController(t *testing.T) {
 	user1Ctx := user.InjectOrgID(context.Background(), "user1")
 	user2Ctx := user.InjectOrgID(context.Background(), "user2")
 
-	controller := NewMultiTenantConcurrencyController(logger, 3, limits, reg)
+	controller := NewMultiTenantConcurrencyController(logger, 3, 50.0, reg, limits)
 
 	require.True(t, controller.Allow(user1Ctx, rg, rule1))
 	require.True(t, controller.Allow(user1Ctx, rg, rule1))
@@ -161,7 +161,13 @@ cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total 1
 	controller.Done(user2Ctx)
 
 	// Finally, let's try a few edge cases.
-	require.False(t, controller.Allow(user1Ctx, &rules.Group{}, rule1)) // Should not be allowed with a group that is not at risk.
+	rg2 := rules.NewGroup(rules.GroupOptions{
+		File:     "test.rules",
+		Name:     "test",
+		Interval: 1 * time.Minute, // group not at risk.
+		Opts:     &rules.ManagerOptions{},
+	})
+	require.False(t, controller.Allow(user1Ctx, rg2, rule1)) // Should not be allowed with a group that is not at risk.
 	rule1.SetNoDependencyRules(false)
 	require.False(t, controller.Allow(user1Ctx, rg, rule1))             // Should not be allowed as the rule is no longer independent.
 	require.False(t, controller.Allow(context.Background(), rg, rule1)) // Should fail with a context that holds no userID.
@@ -230,6 +236,67 @@ func TestIsRuleIndependent(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			result := isRuleIndependent(tc.rule)
 			require.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestGroupAtRisk(t *testing.T) {
+	logger := log.NewNopLogger()
+	reg := prometheus.NewPedanticRegistry()
+	limits := validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+		tenantLimits["user1"] = validation.MockDefaultLimits()
+		tenantLimits["user1"].RulerMaxIndependentRuleEvaluationConcurrencyPerTenant = 2
+		tenantLimits["user2"] = validation.MockDefaultLimits()
+		tenantLimits["user2"].RulerMaxIndependentRuleEvaluationConcurrencyPerTenant = 2
+	})
+
+	exp, err := parser.ParseExpr("vector(1)")
+	require.NoError(t, err)
+	rule1 := rules.NewRecordingRule("test", exp, labels.Labels{})
+	rule1.SetNoDependencyRules(true)
+	rule1.SetNoDependentRules(true)
+
+	controller := NewMultiTenantConcurrencyController(logger, 3, 50.0, reg, limits)
+
+	tc := map[string]struct {
+		group    *rules.Group
+		expected bool
+	}{
+		"group last evaluation greater than interval": {
+			group: func() *rules.Group {
+				g := rules.NewGroup(rules.GroupOptions{
+					Interval: -1 * time.Minute,
+					Opts:     &rules.ManagerOptions{},
+				})
+				return g
+			}(),
+			expected: true,
+		},
+		"group last evaluation less than interval": {
+			group: func() *rules.Group {
+				g := rules.NewGroup(rules.GroupOptions{
+					Interval: 1 * time.Minute,
+					Opts:     &rules.ManagerOptions{},
+				})
+				return g
+			}(),
+			expected: false,
+		},
+		"group last evaluation exactly at concurrency trigger threshold": {
+			group: func() *rules.Group {
+				g := rules.NewGroup(rules.GroupOptions{
+					Interval: 0 * time.Minute,
+					Opts:     &rules.ManagerOptions{},
+				})
+				return g
+			}(),
+			expected: true,
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tt.expected, controller.isGroupAtRisk(tt.group))
 		})
 	}
 }

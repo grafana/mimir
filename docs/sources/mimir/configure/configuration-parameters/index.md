@@ -2086,6 +2086,13 @@ tenant_federation:
 # allow to be evaluated concurrently across all tenants. 0 to disable.
 # CLI flag: -ruler.max-independent-rule-evaluation-concurrency
 [max_independent_rule_evaluation_concurrency: <int> | default = 0]
+
+# (experimental) Threshold of the interval to last rule group runtime duration
+# to allow a rule to be evaluated concurrency. Expressed in terms of percentage
+# and as a float. By default, the rule group runtime duration must exceed 50.0%
+# of the evaluation interval.
+# CLI flag: -ruler.threshold-independent-rule-evaluation-concurrency
+[threshold_independent_rule_evaluation_concurrency: <float> | default = 50]
 ```
 
 ### ruler_storage

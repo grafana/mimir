@@ -2773,6 +2773,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable rule groups to query against multiple tenants. The tenant IDs involved need to be in the rule group's 'source_tenants' field. If this flag is set to 'false' when there are federated rule groups that already exist, then these rules groups will be skipped during evaluations.
   -ruler.tenant-shard-size int
     	The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.
+  -ruler.threshold-independent-rule-evaluation-concurrency float
+    	[experimental] Threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. Expressed in terms of percentage and as a float. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval. (default 50)
   -runtime-config.file comma-separated-list-of-strings
     	Comma separated list of yaml files with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
   -runtime-config.reload-period duration
