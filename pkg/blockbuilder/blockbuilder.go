@@ -35,13 +35,15 @@ type BlockBuilder struct {
 
 	id int
 
-	cfg          Config
-	logger       log.Logger
-	register     prometheus.Registerer
-	limits       *validation.Overrides
-	kafkaClients map[int32]*kgo.Client
-	groupClient  *kgo.Client // Used only to commit. TODO: see why kadm client on kafkaClients is not able to commit.
-	bucket       objstore.Bucket
+	cfg         Config
+	logger      log.Logger
+	register    prometheus.Registerer
+	limits      *validation.Overrides
+	kafkaClient *kgo.Client
+	parts       []int32
+	//kafkaClients map[int32]*kgo.Client
+	groupClient *kgo.Client // Used only to commit. TODO: see why kadm client on kafkaClients is not able to commit.
+	bucket      objstore.Bucket
 
 	metrics blockBuilderMetrics
 
@@ -61,12 +63,12 @@ func New(
 	limits *validation.Overrides,
 ) (_ *BlockBuilder, err error) {
 	b := &BlockBuilder{
-		cfg:          cfg,
-		logger:       logger,
-		register:     reg,
-		limits:       limits,
-		metrics:      newBlockBuilderMetrics(reg),
-		kafkaClients: make(map[int32]*kgo.Client),
+		cfg:      cfg,
+		logger:   logger,
+		register: reg,
+		limits:   limits,
+		metrics:  newBlockBuilderMetrics(reg),
+		//kafkaClients: make(map[int32]*kgo.Client),
 	}
 
 	if cfg.TotalBlockBuilders <= 0 || cfg.TotalPartitions <= 0 {
@@ -109,9 +111,12 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 			if b.groupClient != nil {
 				b.groupClient.Close()
 			}
-			for _, cl := range b.kafkaClients {
-				cl.Close()
+			if b.kafkaClient != nil {
+				b.kafkaClient.Close()
 			}
+			//for _, cl := range b.kafkaClients {
+			//	cl.Close()
+			//}
 		}
 	}()
 
@@ -155,56 +160,61 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 
 	b.groupClient = groupClient
 
-	var myParts []int
+	var myParts []int32
+	startAtMap := map[int32]kgo.Offset{}
 	for part := 0; part < b.cfg.TotalPartitions; part++ {
 		if part%b.cfg.TotalBlockBuilders != b.id {
 			continue
 		}
 
-		myParts = append(myParts, part)
+		myParts = append(myParts, int32(part))
 
 		startAt, err := b.findCommitToStartAt(ctx, int32(part), nil)
 		if err != nil {
 			return fmt.Errorf("finding commit to start at: %w", err)
 		}
 
-		opts := []kgo.Opt{
-			kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
-				b.cfg.Kafka.Topic: {int32(part): kgo.NewOffset().At(startAt)},
-			}),
-			kgo.FetchMinBytes(128),
-			kgo.FetchMaxBytes(fetchMaxBytes),
-			kgo.FetchMaxWait(5 * time.Second),
-			kgo.FetchMaxPartitionBytes(50_000_000),
-			// BrokerMaxReadBytes sets the maximum response size that can be read from
-			// Kafka. This is a safety measure to avoid OOMing on invalid responses.
-			// franz-go recommendation is to set it 2x FetchMaxBytes.
-			kgo.BrokerMaxReadBytes(2 * fetchMaxBytes),
-		}
-
-		opts = append(
-			commonKafkaClientOptions(b.cfg.Kafka, b.logger, nil),
-			opts...,
-		)
-		kafkaClient, err := kgo.NewClient(opts...)
-		if err != nil {
-			return fmt.Errorf("creating kafka client: %w", err)
-		}
-
-		b.kafkaClients[int32(part)] = kafkaClient
+		startAtMap[int32(part)] = kgo.NewOffset().At(startAt)
 
 	}
 
-	level.Info(b.logger).Log("msg", "waiting until kafka brokers are reachable", "parts", myParts)
+	opts = []kgo.Opt{
+		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
+			b.cfg.Kafka.Topic: startAtMap,
+		}),
+		kgo.FetchMinBytes(128),
+		kgo.FetchMaxBytes(fetchMaxBytes),
+		kgo.FetchMaxWait(5 * time.Second),
+		kgo.FetchMaxPartitionBytes(50_000_000),
+		// BrokerMaxReadBytes sets the maximum response size that can be read from
+		// Kafka. This is a safety measure to avoid OOMing on invalid responses.
+		// franz-go recommendation is to set it 2x FetchMaxBytes.
+		kgo.BrokerMaxReadBytes(2 * fetchMaxBytes),
+	}
+
+	opts = append(
+		commonKafkaClientOptions(b.cfg.Kafka, b.logger, nil),
+		opts...,
+	)
+	b.kafkaClient, err = kgo.NewClient(opts...)
+	if err != nil {
+		return fmt.Errorf("creating kafka client: %w", err)
+	}
+	b.parts = myParts
+	//b.kafkaClient.PauseFetchPartitions(map[string][]int32{b.cfg.Kafka.Topic: myParts})
+
+	//b.kafkaClients[int32(part)] = kafkaClient
+
+	level.Info(b.logger).Log("msg", "waiting until kafka brokers are reachable", "parts", fmt.Sprintf("%v", myParts))
 	return b.waitKafka(ctx)
 }
 
 const (
 	// kafkaOffsetStart is a special offset value that means the beginning of the partition.
-	//kafkaOffsetStart = int64(-2)
+	kafkaOffsetStart = int64(-2)
 
 	// kafkaOffsetEnd is a special offset value that means the end of the partition.
-	kafkaOffsetEnd = int64(-1)
+	//kafkaOffsetEnd = int64(-1)
 )
 
 func (b *BlockBuilder) findCommitToStartAt(ctx context.Context, part int32, metrics *kprom.Metrics) (int64, error) {
@@ -213,7 +223,7 @@ func (b *BlockBuilder) findCommitToStartAt(ctx context.Context, part int32, metr
 	// We don't want to do noop fetches just to warm up the client, so we create a new client instead.
 	cl, err := kgo.NewClient(commonKafkaClientOptions(b.cfg.Kafka, b.logger, metrics)...)
 	if err != nil {
-		return kafkaOffsetEnd, fmt.Errorf("unable to create bootstrap client: %w", err)
+		return kafkaOffsetStart, fmt.Errorf("unable to create bootstrap client: %w", err)
 	}
 	defer cl.Close()
 
@@ -227,7 +237,7 @@ func (b *BlockBuilder) findCommitToStartAt(ctx context.Context, part int32, metr
 			return offset, nil
 		}
 
-		offset = kafkaOffsetEnd
+		offset = kafkaOffsetStart
 		level.Info(b.logger).Log("msg", "starting consumption from partition start because no offset has been found", "start_offset", offset)
 
 		return offset, err
@@ -256,7 +266,7 @@ func (b *BlockBuilder) findCommitToStartAt(ctx context.Context, part int32, metr
 		err = retry.Err()
 	}
 
-	return kafkaOffsetEnd, err
+	return kafkaOffsetStart, err
 }
 
 // fetchLastCommittedOffset returns the last consumed offset which has been committed by the PartitionReader
@@ -297,38 +307,31 @@ func commonKafkaClientOptions(cfg KafkaConfig, logger log.Logger, metrics *kprom
 }
 
 func (b *BlockBuilder) waitKafka(ctx context.Context) error {
-Outer:
-	for part, kafkaClient := range b.kafkaClients {
-		boff := backoff.New(ctx, backoff.Config{
-			MinBackoff: 100 * time.Millisecond,
-			MaxBackoff: time.Second,
-			MaxRetries: 0,
-		})
-		for boff.Ongoing() {
-			err := kafkaClient.Ping(ctx)
-			if err == nil {
-				kafkaClient.PauseFetchPartitions(map[string][]int32{b.cfg.Kafka.Topic: {part}})
-				continue Outer
-			}
-
-			level.Error(b.logger).Log(
-				"msg", "waiting for kafka ping to succeed",
-				"part", part,
-				"num_retries", boff.NumRetries(),
-			)
-			boff.Wait()
+	boff := backoff.New(ctx, backoff.Config{
+		MinBackoff: 100 * time.Millisecond,
+		MaxBackoff: time.Second,
+		MaxRetries: 0,
+	})
+	for boff.Ongoing() {
+		err := b.kafkaClient.Ping(ctx)
+		if err == nil {
+			b.kafkaClient.PauseFetchPartitions(map[string][]int32{b.cfg.Kafka.Topic: b.parts})
+			return nil
 		}
-		return boff.Err()
-	}
 
-	return nil
+		level.Error(b.logger).Log(
+			"msg", "waiting for kafka ping to succeed",
+			"part", fmt.Sprintf("%v", b.parts),
+			"num_retries", boff.NumRetries(),
+		)
+		boff.Wait()
+	}
+	return boff.Err()
 }
 
 func (b *BlockBuilder) stopping(_ error) error {
 	b.groupClient.Close()
-	for _, cl := range b.kafkaClients {
-		cl.Close()
-	}
+	b.kafkaClient.Close()
 
 	return nil
 }
@@ -383,7 +386,7 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 		b.metrics.consumeCycleDuration.Observe(time.Since(t).Seconds())
 	}(time.Now())
 
-	for part, kafkaClient := range b.kafkaClients {
+	for _, part := range b.parts {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -393,7 +396,7 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 
 		level.Debug(b.logger).Log("msg", "next consume cycle", "part", part)
 
-		lag, err := b.getLagForPartition(ctx, kadm.NewClient(kafkaClient), part)
+		lag, err := b.getLagForPartition(ctx, kadm.NewClient(b.kafkaClient), part)
 		if err != nil {
 			level.Error(b.logger).Log("msg", "failed to get partition lag", "err", err, "part", part)
 			continue
@@ -434,7 +437,7 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 			SeenTillTs:   seenTillTs,
 			LastBlockEnd: lastBlockEnd,
 		}
-		if err := b.nextConsumeCycle(ctx, kafkaClient, pl, cycleEnd); err != nil {
+		if err := b.nextConsumeCycle(ctx, b.kafkaClient, pl, cycleEnd); err != nil {
 			level.Error(b.logger).Log("msg", "failed to consume partition", "err", err, "part", part)
 		}
 	}
@@ -680,6 +683,8 @@ func (b *BlockBuilder) consumePartition(
 			lastRec = rec
 		}
 	}
+
+	client.PauseFetchPartitions(tp)
 
 	compactStart := time.Now()
 	var err error

@@ -180,7 +180,7 @@ func TestBlockBuilder(t *testing.T) {
 	}
 
 	getCommitMeta := func(t *testing.T, part int32) (int64, int64, int64) {
-		offsets, err := kadm.NewClient(bb.kafkaClients[part]).FetchOffsetsForTopics(ctx, testGroup, testTopic)
+		offsets, err := kadm.NewClient(bb.kafkaClient).FetchOffsetsForTopics(ctx, testGroup, testTopic)
 		require.NoError(t, err)
 		offset, ok := offsets.Lookup(testTopic, part)
 		require.True(t, ok)
