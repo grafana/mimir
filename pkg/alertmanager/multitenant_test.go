@@ -3068,7 +3068,8 @@ func TestSyncStates(t *testing.T) {
 				require.Nil(t, am.alertmanagers[user])
 				return
 			}
-			require.True(t, am.alertmanagers[user].promoted.Load())
+			require.NotNil(t, am.alertmanagers[user])
+			require.True(t, am.alertmanagers[user].usingGrafanaState.Load())
 
 			// Grafana state should be deleted after merging.
 			_, err = store.GetFullGrafanaState(ctx, user)
@@ -3076,6 +3077,7 @@ func TestSyncStates(t *testing.T) {
 			require.Equal(t, "alertmanager storage object not found", err.Error())
 
 			// States should be merged.
+			require.NotNil(t, am.alertmanagers[user])
 			s, err := am.alertmanagers[user].getFullState()
 			require.NoError(t, err)
 
@@ -3172,10 +3174,12 @@ func TestSyncStates(t *testing.T) {
 				},
 				tmplExternalURL: externalURL,
 			}))
-			am.alertmanagers[user].promoted.Store(test.initialPromoted)
+			require.NotNil(t, am.alertmanagers[user])
+			am.alertmanagers[user].usingGrafanaState.Store(test.initialPromoted)
 
 			require.NoError(t, am.syncStates(ctx, test.cfg))
-			require.Equal(t, test.expPromoted, am.alertmanagers[test.cfg.User].promoted.Load())
+			am.alertmanagers[user].usingGrafanaState.Store(test.initialPromoted)
+			require.Equal(t, test.expPromoted, am.alertmanagers[user].usingGrafanaState.Load())
 		})
 	}
 }

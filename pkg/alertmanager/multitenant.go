@@ -732,20 +732,21 @@ func (am *MultitenantAlertmanager) syncStates(ctx context.Context, cfg amConfig)
 	userAM, ok := am.alertmanagers[cfg.User]
 	am.alertmanagersMtx.Unlock()
 
-	// If we're not using Grafana config, mark the Alertmanager as not promoted.
+	// If we're not using Grafana configuration, we shouldn't use Grafana state.
+	// Update the flag accordingly.
 	if !cfg.usingGrafanaConfig {
-		if ok && userAM.promoted.CompareAndSwap(true, false) {
+		if ok && userAM.usingGrafanaState.CompareAndSwap(true, false) {
 			level.Debug(am.logger).Log("msg", "Grafana state unpromoted", "user", cfg.User)
 		}
 		return nil
 	}
 
-	// If the Alertmanager is already promoted, do nothing.
-	if ok && userAM.promoted.Load() {
+	// If the Alertmanager is already using Grafana state, do nothing.
+	if ok && userAM.usingGrafanaState.Load() {
 		return nil
 	}
 
-	// Promote the Grafana Alertmanager state and mark the Alertmanager as promoted.
+	// Promote the Grafana Alertmanager state and update the usingGrafanaState flag.
 	level.Debug(am.logger).Log("msg", "promoting Grafana state", "user", cfg.User)
 	s, err := am.store.GetFullGrafanaState(ctx, cfg.User)
 	if err != nil {
@@ -785,7 +786,7 @@ func (am *MultitenantAlertmanager) syncStates(ctx context.Context, cfg amConfig)
 	if err := userAM.mergeFullExternalState(s.State); err != nil {
 		return err
 	}
-	userAM.promoted.Store(true)
+	userAM.usingGrafanaState.Store(true)
 
 	// Delete state.
 	if err := am.store.DeleteFullGrafanaState(ctx, cfg.User); err != nil {
