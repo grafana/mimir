@@ -48,7 +48,7 @@ func TestStreamingChunkSeries_HappyPath(t *testing.T) {
 
 	expectedChunks, err := client.FromChunks(series.labels, []client.Chunk{chunkUniqueToFirstSource, chunkUniqueToSecondSource, chunkPresentInBothSources})
 	require.NoError(t, err)
-	assertChunkIteratorsEqual(t, iterator, batch.NewChunkMergeIterator(nil, expectedChunks))
+	assertChunkIteratorsEqual(t, iterator, batch.NewChunkMergeIterator(nil, series.labels, expectedChunks))
 
 	m, err := metrics.NewMetricFamilyMapFromGatherer(reg)
 	require.NoError(t, err)
