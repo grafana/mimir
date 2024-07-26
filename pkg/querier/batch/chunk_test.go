@@ -36,10 +36,10 @@ func testChunkIter(t *testing.T, encoding chunk.Encoding) {
 	iter := &chunkIterator{}
 
 	iter.reset(chunk)
-	testIter(t, 100, newIteratorAdapter(nil, iter), encoding)
+	testIter(t, 100, newIteratorAdapter(nil, iter, labels.EmptyLabels()), encoding)
 
 	iter.reset(chunk)
-	testSeek(t, 100, newIteratorAdapter(nil, iter), encoding)
+	testSeek(t, 100, newIteratorAdapter(nil, iter, labels.EmptyLabels()), encoding)
 }
 
 func mkChunk(t require.TestingT, from model.Time, points int, encoding chunk.Encoding) chunk.Chunk {

@@ -7,8 +7,6 @@ package querier
 
 import (
 	"fmt"
-	"github.com/grafana/mimir/pkg/querier/batch"
-	"github.com/grafana/mimir/pkg/storage/chunk"
 	"sort"
 
 	"github.com/pkg/errors"
@@ -18,6 +16,8 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/batch"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
@@ -146,7 +146,7 @@ func newBlockQuerierSeriesIterator(reuse chunkenc.Iterator, lbls labels.Labels, 
 		genericChunks = append(genericChunks, genericChunk)
 	}
 
-	return batch.NewGenericChunkMergeIterator(reuse, genericChunks)
+	return batch.NewGenericChunkMergeIterator(reuse, lbls, genericChunks)
 }
 
 func chunkEncodingForAggrChunk(c storepb.AggrChunk, lbls labels.Labels) (chunk.Encoding, error) {

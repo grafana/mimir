@@ -110,7 +110,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 				},
 			},
 			expectedMetric: labels.FromStrings("foo", "bar"),
-			expectedErr:    `cannot unmarshal chunk for series {foo="bar"}: EOF`,
+			expectedErr:    `error reading chunks for series {foo="bar"}: EOF`,
 		},
 	}
 
