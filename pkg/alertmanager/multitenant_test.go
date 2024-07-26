@@ -2865,7 +2865,7 @@ func Test_configChanged(t *testing.T) {
 	}
 }
 
-func TestPromoteAndDeleteState(t *testing.T) {
+func TestSyncStates(t *testing.T) {
 	user := "test-user"
 	externalURL, err := url.Parse("http://test.com")
 	require.NoError(t, err)
@@ -2940,21 +2940,31 @@ func TestPromoteAndDeleteState(t *testing.T) {
 
 	ctx := context.Background()
 	tests := []struct {
-		name              string
-		cfg               amConfig
-		mimirState        *alertspb.FullStateDesc
-		parts             map[string][]byte
-		expNoAlertmanager bool
-		expErr            string
+		name                 string
+		cfg                  amConfig
+		mimirState           *alertspb.FullStateDesc
+		parts                map[string][]byte
+		expNoNewAlertmanager bool
+		expErr               string
 	}{
+		{
+			name: "not using grafana config should be a no-op",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User: user,
+				},
+			},
+			expNoNewAlertmanager: true,
+		},
 		{
 			name: "no grafana state should be a no-op",
 			cfg: amConfig{
 				AlertConfigDesc: alertspb.AlertConfigDesc{
 					User: user,
 				},
+				usingGrafanaConfig: true,
 			},
-			expNoAlertmanager: true,
+			expNoNewAlertmanager: true,
 		},
 		{
 			name: "invalid alertmanager configuration should cause an error",
@@ -2963,7 +2973,8 @@ func TestPromoteAndDeleteState(t *testing.T) {
 					User:      user,
 					RawConfig: "invalid",
 				},
-				tmplExternalURL: externalURL,
+				tmplExternalURL:    externalURL,
+				usingGrafanaConfig: true,
 			},
 			parts:  map[string][]byte{"notifications": grafanaNflog},
 			expErr: fmt.Sprintf("error creating new Alertmanager for user %[1]s: no usable Alertmanager configuration for %[1]s", user),
@@ -2975,7 +2986,8 @@ func TestPromoteAndDeleteState(t *testing.T) {
 					User:      user,
 					RawConfig: simpleConfigOne,
 				},
-				tmplExternalURL: externalURL,
+				tmplExternalURL:    externalURL,
+				usingGrafanaConfig: true,
 			},
 			parts:  map[string][]byte{"invalid": []byte("invalid")},
 			expErr: "unknown part key \"invalid\"",
@@ -2987,7 +2999,8 @@ func TestPromoteAndDeleteState(t *testing.T) {
 					User:      user,
 					RawConfig: simpleConfigOne,
 				},
-				tmplExternalURL: externalURL,
+				tmplExternalURL:    externalURL,
+				usingGrafanaConfig: true,
 			},
 			parts: map[string][]byte{"notifications": grafanaNflog},
 		},
@@ -2998,7 +3011,8 @@ func TestPromoteAndDeleteState(t *testing.T) {
 					User:      user,
 					RawConfig: simpleConfigOne,
 				},
-				tmplExternalURL: externalURL,
+				tmplExternalURL:    externalURL,
+				usingGrafanaConfig: true,
 			},
 			mimirState: &testMimirState,
 			parts:      map[string][]byte{"notifications": grafanaNflog, "silences": grafanaSilences},
@@ -3037,7 +3051,7 @@ func TestPromoteAndDeleteState(t *testing.T) {
 			}
 
 			if test.expErr != "" {
-				err := am.promoteAndDeleteState(ctx, test.cfg)
+				err := am.syncStates(ctx, test.cfg)
 				require.Error(t, err)
 				require.Equal(t, test.expErr, err.Error())
 				require.Nil(t, am.alertmanagers[user])
@@ -3048,11 +3062,14 @@ func TestPromoteAndDeleteState(t *testing.T) {
 			if am, ok := am.alertmanagers[user]; ok {
 				am.silences.SetBroadcast(func(_ []byte) {})
 			}
-			require.NoError(t, am.promoteAndDeleteState(ctx, test.cfg))
-			if test.expNoAlertmanager {
+
+			require.NoError(t, am.syncStates(ctx, test.cfg))
+			if test.expNoNewAlertmanager {
 				require.Nil(t, am.alertmanagers[user])
 				return
 			}
+			require.NotNil(t, am.alertmanagers[user])
+			require.True(t, am.alertmanagers[user].usingGrafanaState.Load())
 
 			// Grafana state should be deleted after merging.
 			_, err = store.GetFullGrafanaState(ctx, user)
@@ -3060,6 +3077,7 @@ func TestPromoteAndDeleteState(t *testing.T) {
 			require.Equal(t, "alertmanager storage object not found", err.Error())
 
 			// States should be merged.
+			require.NotNil(t, am.alertmanagers[user])
 			s, err := am.alertmanagers[user].getFullState()
 			require.NoError(t, err)
 
@@ -3089,6 +3107,79 @@ func TestPromoteAndDeleteState(t *testing.T) {
 				require.True(t, strings.Contains(nflogPart, "mimir webhook"))
 				require.True(t, strings.Contains(silencesPart, "mimir silence"))
 			}
+		})
+	}
+
+	preExistingAlertmanagerTests := []struct {
+		name            string
+		cfg             amConfig
+		initialPromoted bool
+		expPromoted     bool
+	}{
+		{
+			name: "not using grafana config should toggle the promoted flag off",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL: externalURL,
+			},
+			initialPromoted: true,
+			expPromoted:     false,
+		},
+		{
+			name: "not using grafana config should be a no-op if the alertmanager is not promoted",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL: externalURL,
+			},
+			initialPromoted: false,
+			expPromoted:     false,
+		},
+		{
+			name: "attempting to promote an already promoted alertmanager should not change the flag",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL:    externalURL,
+				usingGrafanaConfig: true,
+			},
+			initialPromoted: true,
+			expPromoted:     true,
+		},
+	}
+
+	for _, test := range preExistingAlertmanagerTests {
+		t.Run(test.name, func(t *testing.T) {
+			store := prepareInMemoryAlertStore()
+			am := setupSingleMultitenantAlertmanager(t,
+				mockAlertmanagerConfig(t),
+				store,
+				nil,
+				featurecontrol.NoopFlags{},
+				log.NewNopLogger(),
+				prometheus.NewPedanticRegistry(),
+			)
+
+			require.NoError(t, am.setConfig(amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      test.cfg.User,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL: externalURL,
+			}))
+			require.NotNil(t, am.alertmanagers[test.cfg.User])
+			am.alertmanagers[test.cfg.User].usingGrafanaState.Store(test.initialPromoted)
+
+			require.NoError(t, am.syncStates(ctx, test.cfg))
+			require.NotNil(t, am.alertmanagers[test.cfg.User])
+			require.Equal(t, test.expPromoted, am.alertmanagers[test.cfg.User].usingGrafanaState.Load())
 		})
 	}
 }

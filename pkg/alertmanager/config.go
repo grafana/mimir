@@ -43,8 +43,9 @@ func createUsableGrafanaConfig(gCfg alertspb.GrafanaAlertConfigDesc, mCfg *alert
 	}
 
 	return amConfig{
-		AlertConfigDesc: alertspb.ToProto(string(rawCfg), amCfg.Templates, gCfg.User),
-		tmplExternalURL: externalURL,
-		staticHeaders:   gCfg.StaticHeaders,
+		AlertConfigDesc:    alertspb.ToProto(string(rawCfg), amCfg.Templates, gCfg.User),
+		tmplExternalURL:    externalURL,
+		staticHeaders:      gCfg.StaticHeaders,
+		usingGrafanaConfig: true,
 	}, nil
 }
