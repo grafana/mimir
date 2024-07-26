@@ -894,6 +894,7 @@ func TestHATrackerChangeInElectedReplicaClearsLastSeenTimestamp(t *testing.T) {
 		UpdateTimeoutJitterMax: 0,
 		FailoverTimeout:        5 * time.Second,
 	}, trackerLimits{maxClusters: 2}, nil, log.NewNopLogger())
+	require.NoError(t, err)
 
 	t2, err := newHATracker(HATrackerConfig{
 		EnableHATracker:        true,
@@ -902,12 +903,11 @@ func TestHATrackerChangeInElectedReplicaClearsLastSeenTimestamp(t *testing.T) {
 		UpdateTimeoutJitterMax: 0,
 		FailoverTimeout:        5 * time.Second,
 	}, trackerLimits{maxClusters: 2}, nil, log.NewNopLogger())
-
 	require.NoError(t, err)
+
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), t1))
 	defer services.StopAndAwaitTerminated(context.Background(), t1) //nolint:errcheck
 
-	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), t2))
 	defer services.StopAndAwaitTerminated(context.Background(), t2) //nolint:errcheck
 
