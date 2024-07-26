@@ -151,7 +151,7 @@ type RulesLimits interface {
 	RulerAlertingRulesEvaluationEnabled(userID string) bool
 	RulerSyncRulesOnChangesEnabled(userID string) bool
 	RulerProtectedNamespaces(userID string) []string
-	RulerMaxConcurrentRuleEvaluationsPerTenant(userID string) int64
+	RulerMaxIndependentRuleEvaluationConcurrencyPerTenant(userID string) int64
 }
 
 func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Counter, remoteQuerier bool) rules.QueryFunc {

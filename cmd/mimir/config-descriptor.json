@@ -4377,14 +4377,14 @@
         },
         {
           "kind": "field",
-          "name": "ruler_max_concurrent_rule_evaluations_per_tenant",
+          "name": "ruler_max_independent_rule_evaluation_concurrency_per_tenant",
           "required": false,
-          "desc": "Maximum number of independent rules that can run concurrently for each tenant. Depends on `-ruler.max-global-rule-evaluation-concurrency` being more than 0 and ideally this flag should be a lower value. 0 to disable.",
+          "desc": "Maximum number of independent rules that can run concurrently for each tenant. Depends on ruler.max-independent-rule-evaluation-concurrency being greater than 0. Ideally this flag should be a lower value. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 4,
-          "fieldFlag": "ruler.max-concurrent-rule-evaluations-per-tenant",
+          "fieldFlag": "ruler.max-independent-rule-evaluation-concurrency-per-tenant",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -12570,12 +12570,12 @@
         },
         {
           "kind": "field",
-          "name": "max_global_rule_evaluation_concurrency",
+          "name": "max_independent_rule_evaluation_concurrency",
           "required": false,
-          "desc": "Allow rules that don't have dependencies to be evaluated concurrently. 0 to disable.",
+          "desc": "Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
-          "fieldFlag": "ruler.max-global-rule-evaluation-concurrency",
+          "fieldFlag": "ruler.max-independent-rule-evaluation-concurrency",
           "fieldType": "int",
           "fieldCategory": "experimental"
         }

@@ -137,7 +137,7 @@ type Config struct {
 	RingCheckPeriod             time.Duration `yaml:"-"`
 	rulerSyncQueuePollFrequency time.Duration `yaml:"-"`
 
-	MaxGlobalRuleEvaluationConcurrency int64 `yaml:"max_global_rule_evaluation_concurrency" category:"experimental"`
+	MaxIndependentRuleEvaluationConcurrency int64 `yaml:"max_independent_rule_evaluation_concurrency" category:"experimental"`
 }
 
 // Validate config and returns error on failure
@@ -191,7 +191,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.BoolVar(&cfg.EnableQueryStats, "ruler.query-stats-enabled", false, "Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.")
 
-	f.Int64Var(&cfg.MaxGlobalRuleEvaluationConcurrency, "ruler.max-global-rule-evaluation-concurrency", 0, "Allow rules that don't have dependencies to be evaluated concurrently. 0 to disable.")
+	f.Int64Var(&cfg.MaxIndependentRuleEvaluationConcurrency, "ruler.max-independent-rule-evaluation-concurrency", 0, "Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.")
 
 	cfg.RingCheckPeriod = 5 * time.Second
 }

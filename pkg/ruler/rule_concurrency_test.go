@@ -22,11 +22,9 @@ import (
 )
 
 func TestDynamicSemaphore(t *testing.T) {
-	logger := log.NewNopLogger()
-
 	t.Run("TestDynamicSemaphore", func(t *testing.T) {
 		limitFunc := func() int64 { return 2 }
-		sema := NewDynamicSemaphore(logger, limitFunc)
+		sema := NewDynamicSemaphore(limitFunc)
 
 		require.True(t, sema.TryAcquire())
 		require.True(t, sema.TryAcquire())
@@ -40,7 +38,7 @@ func TestDynamicSemaphore(t *testing.T) {
 		var limit atomic.Int64
 		limit.Store(2)
 		limitFunc := func() int64 { return limit.Load() }
-		sema := NewDynamicSemaphore(logger, limitFunc)
+		sema := NewDynamicSemaphore(limitFunc)
 
 		require.True(t, sema.TryAcquire())
 		require.True(t, sema.TryAcquire())
@@ -65,7 +63,7 @@ func TestDynamicSemaphore(t *testing.T) {
 		var limit atomic.Int64
 		limit.Store(2)
 		limitFunc := func() int64 { return limit.Load() }
-		sema := NewDynamicSemaphore(logger, limitFunc)
+		sema := NewDynamicSemaphore(limitFunc)
 
 		require.True(t, sema.TryAcquire())
 		require.True(t, sema.TryAcquire())
@@ -90,9 +88,9 @@ func TestMultiTenantConcurrencyController(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	limits := validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
 		tenantLimits["user1"] = validation.MockDefaultLimits()
-		tenantLimits["user1"].RulerMaxConcurrentRuleEvaluationsPerTenant = 2
+		tenantLimits["user1"].RulerMaxIndependentRuleEvaluationConcurrencyPerTenant = 2
 		tenantLimits["user2"] = validation.MockDefaultLimits()
-		tenantLimits["user2"].RulerMaxConcurrentRuleEvaluationsPerTenant = 2
+		tenantLimits["user2"].RulerMaxIndependentRuleEvaluationConcurrencyPerTenant = 2
 	})
 
 	rg := rules.NewGroup(rules.GroupOptions{

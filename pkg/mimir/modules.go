@@ -872,8 +872,8 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 	var concurrencyController ruler.MultiTenantRuleConcurrencyController
 	concurrencyController = &ruler.NoopConcurrencyController{}
-	if t.Cfg.Ruler.MaxGlobalRuleEvaluationConcurrency > 0 {
-		concurrencyController = ruler.NewMultiTenantConcurrencyController(util_log.Logger, t.Cfg.Ruler.MaxGlobalRuleEvaluationConcurrency, t.Overrides, t.Registerer)
+	if t.Cfg.Ruler.MaxIndependentRuleEvaluationConcurrency > 0 {
+		concurrencyController = ruler.NewMultiTenantConcurrencyController(util_log.Logger, t.Cfg.Ruler.MaxIndependentRuleEvaluationConcurrency, t.Overrides, t.Registerer)
 	}
 	managerFactory := ruler.DefaultTenantManagerFactory(
 		t.Cfg.Ruler,

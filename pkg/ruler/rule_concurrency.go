@@ -24,7 +24,6 @@ const IntervalToEvaluationThreshold = 50.00
 // DynamicSemaphore is a semaphore that can dynamically change its max concurrency.
 // It is necessary as the max concurrency is defined by the user limits which can be changed at runtime.
 type DynamicSemaphore struct {
-	logger         log.Logger
 	maxConcurrency func() int64
 
 	mtx      sync.Mutex
@@ -32,9 +31,8 @@ type DynamicSemaphore struct {
 }
 
 // NewDynamicSemaphore creates a new DynamicSemaphore
-func NewDynamicSemaphore(logger log.Logger, maxConcurrency func() int64) *DynamicSemaphore {
+func NewDynamicSemaphore(maxConcurrency func() int64) *DynamicSemaphore {
 	return &DynamicSemaphore{
-		logger:         logger,
 		maxConcurrency: maxConcurrency,
 		acquired:       0,
 	}
@@ -173,8 +171,8 @@ func (c *MultiTenantConcurrencyController) Allow(ctx context.Context, group *rul
 	c.mtx.Lock()
 	tc, ok := c.tenantConcurrency[userID]
 	if !ok {
-		tc = NewDynamicSemaphore(c.logger, func() int64 {
-			return c.limits.RulerMaxConcurrentRuleEvaluationsPerTenant(userID)
+		tc = NewDynamicSemaphore(func() int64 {
+			return c.limits.RulerMaxIndependentRuleEvaluationConcurrencyPerTenant(userID)
 		})
 		c.tenantConcurrency[userID] = tc
 	}
