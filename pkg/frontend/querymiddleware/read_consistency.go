@@ -57,7 +57,7 @@ func (r *readConsistencyRoundTripper) RoundTrip(req *http.Request) (_ *http.Resp
 		return r.next.RoundTrip(req)
 	}
 
-	return r.metrics.Observe(func() (*http.Response, error) {
+	return r.metrics.Observe(false, func() (*http.Response, error) {
 		// Fetch last produced offsets.
 		offsets, err := r.offsetsReader.WaitNextFetchLastProducedOffset(ctx)
 		if err != nil {

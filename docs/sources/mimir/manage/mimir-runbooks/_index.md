@@ -1486,6 +1486,18 @@ How to **investigate**:
 - Check if ingesters are processing too many records, and they need to be scaled up (vertically or horizontally).
 - Check actual error in the query-frontend and/or ingester logs to see whether the `-ingest-storage.kafka.wait-strong-read-consistency-timeout` or the request timeout has been hit first.
 
+### MimirStrongConsistencyOffsetNotPropagatedToIngesters
+
+This alert fires when ingesters receive an unexpected high number of strongly consistent requests without an offset specified.
+
+How it **works**:
+
+- See [`MimirStrongConsistencyEnforcementFailed`](#MimirStrongConsistencyEnforcementFailed).
+
+How to **investigate**:
+
+- We expect query-frontend to fetch the last produced offsets and then propagate it down to ingesters. If it's not happening, then it's likely we introduced a bug in Mimir that's breaking the propagation of offsets from query-frontend to ingester. You should investigate the Mimir code changes and fix it.
+
 ### MimirKafkaClientBufferedProduceBytesTooHigh
 
 This alert fires when the Kafka client buffer, used to write incoming write requests to Kafka, is getting full.
