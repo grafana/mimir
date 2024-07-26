@@ -205,9 +205,13 @@ func (p *prometheusChunkIterator) Scan() chunkenc.ValueType {
 }
 
 func (p *prometheusChunkIterator) FindAtOrAfter(time model.Time) chunkenc.ValueType {
-	// FindAtOrAfter must return OLDEST value at given time. That means we need to start with a fresh iterator,
-	// otherwise we cannot guarantee OLDEST.
-	p.it = p.c.Iterator(p.it)
+	if p.it.AtT() > int64(time) {
+		// FindAtOrAfter must return OLDEST value at given time.
+		// If we are already beyond the desired time, then we need to start with a fresh iterator,
+		// otherwise we cannot guarantee OLDEST.
+		p.it = p.c.Iterator(p.it)
+	}
+
 	return p.it.Seek(int64(time))
 }
 
