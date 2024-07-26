@@ -3169,17 +3169,17 @@ func TestSyncStates(t *testing.T) {
 
 			require.NoError(t, am.setConfig(amConfig{
 				AlertConfigDesc: alertspb.AlertConfigDesc{
-					User:      user,
+					User:      test.cfg.User,
 					RawConfig: simpleConfigOne,
 				},
 				tmplExternalURL: externalURL,
 			}))
-			require.NotNil(t, am.alertmanagers[user])
-			am.alertmanagers[user].usingGrafanaState.Store(test.initialPromoted)
+			require.NotNil(t, am.alertmanagers[test.cfg.User])
+			am.alertmanagers[test.cfg.User].usingGrafanaState.Store(test.initialPromoted)
 
 			require.NoError(t, am.syncStates(ctx, test.cfg))
-			am.alertmanagers[user].usingGrafanaState.Store(test.initialPromoted)
-			require.Equal(t, test.expPromoted, am.alertmanagers[user].usingGrafanaState.Load())
+			require.NotNil(t, am.alertmanagers[test.cfg.User])
+			require.Equal(t, test.expPromoted, am.alertmanagers[test.cfg.User].usingGrafanaState.Load())
 		})
 	}
 }
