@@ -21,7 +21,7 @@
 * [CHANGE] Distributor, ruler: remove deprecated `-ingester.client.report-grpc-codes-in-instrumentation-label-enabled`. #8700
 * [CHANGE] Ingester client: experimental support for client-side circuit breakers, their configuration options (`-ingester.client.circuit-breaker.*`) and metrics (`cortex_ingester_client_circuit_breaker_results_total`, `cortex_ingester_client_circuit_breaker_transitions_total`) were removed. #8802
 * [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.query-engine=mimir`. #8422 #8430 #8454 #8455 #8360 #8490 #8508 #8577 #8671 #8747
-* [FEATURE] Experimental Kafka-based ingest storage. #6888 #6894 #6929 #6940 #6951 #6974 #6982 #7029 #7030 #7091 #7142 #7147 #7148 #7153 #7160 #7193 #7349 #7376 #7388 #7391 #7393 #7394 #7402 #7404 #7423 #7424 #7437 #7486 #7503 #7508 #7540 #7621 #7682 #7685 #7694 #7695 #7696 #7697 #7701 #7733 #7734 #7741 #7752 #7838 #7851 #7871 #7877 #7880 #7882 #7887 #7891 #7925 #7955 #7967 #8031 #8063 #8077 #8088 #8135 #8176 #8184 #8194 #8216 #8217 #8222 #8233 #8503 #8542 #8579 #8657 #8686 #8688 #8703 #8706 #8708 #8738 #8750 #8778
+* [FEATURE] Experimental Kafka-based ingest storage. #6888 #6894 #6929 #6940 #6951 #6974 #6982 #7029 #7030 #7091 #7142 #7147 #7148 #7153 #7160 #7193 #7349 #7376 #7388 #7391 #7393 #7394 #7402 #7404 #7423 #7424 #7437 #7486 #7503 #7508 #7540 #7621 #7682 #7685 #7694 #7695 #7696 #7697 #7701 #7733 #7734 #7741 #7752 #7838 #7851 #7871 #7877 #7880 #7882 #7887 #7891 #7925 #7955 #7967 #8031 #8063 #8077 #8088 #8135 #8176 #8184 #8194 #8216 #8217 #8222 #8233 #8503 #8542 #8579 #8657 #8686 #8688 #8703 #8706 #8708 #8738 #8750 #8778 #8809
   * What it is:
     * When the new ingest storage architecture is enabled, distributors write incoming write requests to a Kafka-compatible backend, and the ingesters asynchronously replay ingested data from Kafka. In this architecture, the write and read path are de-coupled through a Kafka-compatible backend. The write path and Kafka load is a function of the incoming write traffic, the read path load is a function of received queries. Whatever the load on the read path, it doesn't affect the write path.
   * New configuration options:
@@ -119,6 +119,7 @@
 * [FEATURE] Experimental support for the `-tests.send-chunks-debugging-header` boolean flag to send the `X-Mimir-Chunk-Info-Logger: series_id` header with queries. #8599
 * [ENHANCEMENT] Include human-friendly timestamps in diffs logged when a test fails. #8630
 * [ENHANCEMENT] Add histograms to measure latency of read and write requests. #8583
+* [ENHANCEMENT] Log successful test runs in addition to failed test runs. #8817
 * [BUGFIX] Initialize test result metrics to 0 at startup so that alerts can correctly identify the first failure after startup. #8630
 
 ### Query-tee
@@ -140,8 +141,11 @@
 ### Tools
 
 * [CHANGE] `wal-reader`: Renamed `-series-entries` to `-print-series`. Renamed `-print-series-with-samples` to `-print-samples`. #8568
+* [FEATURE] `query-bucket-index`: add new tool to query a bucket index file and print the blocks that would be used for a given query time range. #8818
 * [ENHANCEMENT] `wal-reader`: References to unknown series from Samples, Exemplars, histogram or tombstones records are now always logged. #8568
 * [ENHANCEMENT] `tsdb-series`: added `-stats` option to print min/max time of chunks, total number of samples and DPM for each series. #8420
+* [ENHANCEMENT] `tsdb-print-chunk`: print counter reset information for native histograms. #8812
+* [ENHANCEMENT] `grpcurl-query-ingesters`: print counter reset information for native histograms. #8820
 
 ## 2.13.0
 

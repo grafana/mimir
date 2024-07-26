@@ -951,6 +951,7 @@ ingester:
     # If true and ingester.statefulSet.enabled is true,
     # Ingester will create/use a Persistent Volume Claim
     # If false, use emptyDir
+    # It is advisable to enable volume persistence in ingester to avoid losing metrics.
     #
     enabled: true
 
