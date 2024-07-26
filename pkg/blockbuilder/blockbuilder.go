@@ -240,6 +240,7 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 	for {
 		select {
 		case cycleEnd := <-time.After(waitTime):
+			level.Info(b.logger).Log("msg", "triggering next consume from running", "cycle_end", cycleEnd, "cycle_time", nextCycleTime)
 			err := b.NextConsumeCycle(ctx, cycleEnd.Add(-time.Second))
 			if err != nil {
 				b.metrics.consumeCycleFailures.Inc()
@@ -252,6 +253,7 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 			waitTime = time.Until(nextCycleTime)
 		// TODO(codesome): track "-waitTime" (when waitTime < 0), which is the time we ran over. Should have an alert on this.
 		case <-ctx.Done():
+			level.Info(b.logger).Log("msg", "context cancelled, stopping block builder")
 			return nil
 		}
 	}
@@ -374,6 +376,7 @@ type partitionInfo struct {
 func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, pl partitionInfo, cycleEnd time.Time) error {
 	// TODO(codesome): Add an option to block builder to start consuming from the end for the first rollout.
 	var commitRecTime time.Time
+	var skipRecordsBefore time.Time
 	if pl.CommitRecTs > 0 {
 		commitRecTime = time.UnixMilli(pl.CommitRecTs)
 	}
@@ -384,6 +387,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, pl partitionInfo, c
 		// a lot of records in a single partition consumption call and end up in an OOM loop.
 		// TODO(codesome): add a test for this.
 		commitRecTime = time.Now().Add(-b.cfg.LookbackOnNoCommit).Truncate(b.cfg.ConsumeInterval)
+		skipRecordsBefore = commitRecTime
 	}
 
 	lagging := cycleEnd.Sub(commitRecTime) > 3*b.cfg.ConsumeInterval/2
@@ -392,7 +396,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, pl partitionInfo, c
 		// more than 1.5 times the consume interval.
 		// When there is no kafka commit, we play safe and assume seenTillTs and
 		// lastBlockEnd was 0 to not discard any samples unnecessarily.
-		_, err := b.consumePartition(ctx, pl, cycleEnd)
+		_, err := b.consumePartition(ctx, pl, cycleEnd, skipRecordsBefore)
 		if err != nil {
 			return fmt.Errorf("consume partition %d: %w", pl.Partition, err)
 		}
@@ -407,7 +411,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, pl partitionInfo, c
 		// Instead of looking for the commit metadata for each iteration, we use the data returned by consumePartition
 		// in the next iteration.
 		var err error
-		pl, err = b.consumePartition(ctx, pl, ce)
+		pl, err = b.consumePartition(ctx, pl, ce, skipRecordsBefore)
 		if err != nil {
 			return fmt.Errorf("consume partition %d: %w", pl.Partition, err)
 		}
@@ -433,6 +437,7 @@ func (b *BlockBuilder) consumePartition(
 	ctx context.Context,
 	pl partitionInfo,
 	cycleEnd time.Time,
+	skipRecordsBefore time.Time,
 ) (retPl partitionInfo, retErr error) {
 	var (
 		part         = pl.Partition
@@ -521,13 +526,15 @@ func (b *BlockBuilder) consumePartition(
 		recIter := fetches.RecordIter()
 		for !recIter.Done() {
 			rec := recIter.Next()
+			if rec.Timestamp.Before(skipRecordsBefore) {
+				continue
+			}
 
 			if firstRec == nil {
 				firstRec = rec
 			}
 
 			level.Debug(b.logger).Log("msg", "process record", "offset", rec.Offset, "rec", rec.Timestamp, "last_bmax", lastBlockEnd, "bmax", blockEnd)
-
 			// Stop consuming after we reached the cycleEnd marker.
 			// NOTE: the timestamp of the record is when the record was produced relative to distributor's time.
 			if rec.Timestamp.After(cycleEnd) {
