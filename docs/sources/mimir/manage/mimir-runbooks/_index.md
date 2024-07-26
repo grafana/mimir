@@ -1469,21 +1469,22 @@ How to **investigate**:
   - If the call exists and it's waiting on a lock then there may be a deadlock.
   - If the call doesn't exist then it could either mean processing is not stuck (false positive) or the `pushToStorage` wasn't called at all, and so you should investigate the callers in the code.
 
-### MimirIngesterFailsEnforceStrongConsistencyOnReadPath
+### MimirStrongConsistencyEnforcementFailed
 
-This alert fires when too many read-requests with strong consistency are failing.
+This alert fires when too many read requests with strong consistency are failing.
 
 How it **works**:
 
-- When read request asks for strong-consistency guarantee, ingester will read the last produced offset from Kafka, and wait until record with this offset is consumed.
-- If read request times out during this wait, either because of the request timeout or the configured `-ingest-storage.kafka.wait-strong-read-consistency-timeout` (whatever happens first), that is considered to be a failure of request with strong-consistency.
+- When read request asks for strong-consistency guarantee, query-frontend reads the last produced offsets from Kafka and propagates this information down to ingesters. Then, ingesters wait until record with the requested offset is consumed.
+- If fetching the last produced offsets fail or the read request times out when fetching offsets or waiting for the offset to be consumed, that is considered to be a failure of request with strong-consistency. Ingesters waiting fails if the requested offset doesn't get consumed within the configured `-ingest-storage.kafka.wait-strong-read-consistency-timeout`.
 - If requests keep failing due to failure to enforce strong-consistency, this alert is raised.
 
 How to **investigate**:
 
+- Check failures and latency to the "last produced offset" on `Mimir / Queries` dashboard.
 - Check wait latency of requests with strong-consistency on `Mimir / Queries` dashboard.
 - Check if ingesters are processing too many records, and they need to be scaled up (vertically or horizontally).
-- Check actual error in logs to see whether the `-ingest-storage.kafka.wait-strong-read-consistency-timeout` or the request timeout has been hit first.
+- Check actual error in the query-frontend and/or ingester logs to see whether the `-ingest-storage.kafka.wait-strong-read-consistency-timeout` or the request timeout has been hit first.
 
 ### MimirKafkaClientBufferedProduceBytesTooHigh
 

@@ -153,7 +153,7 @@
         },
 
         {
-          alert: $.alertName('IngesterFailsEnforceStrongConsistencyOnReadPath'),
+          alert: $.alertName('StrongConsistencyEnforcementFailed'),
           'for': '5m',
           expr: |||
             sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_strong_consistency_failures_total[1m])) > 0
