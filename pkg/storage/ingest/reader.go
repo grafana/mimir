@@ -590,20 +590,20 @@ func (r *PartitionReader) fetchFirstOffsetAfterTime(ctx context.Context, cl *kgo
 
 // WaitReadConsistencyUntilLastProducedOffset waits until all data produced up until now has been consumed by the reader.
 func (r *PartitionReader) WaitReadConsistencyUntilLastProducedOffset(ctx context.Context) (returnErr error) {
-	return r.waitReadConsistency(ctx, func(ctx context.Context) (int64, error) {
+	return r.waitReadConsistency(ctx, false, func(ctx context.Context) (int64, error) {
 		return r.offsetReader.WaitNextFetchLastProducedOffset(ctx)
 	})
 }
 
 // WaitReadConsistencyUntilOffset waits until all data up until input offset has been consumed by the reader.
 func (r *PartitionReader) WaitReadConsistencyUntilOffset(ctx context.Context, offset int64) (returnErr error) {
-	return r.waitReadConsistency(ctx, func(_ context.Context) (int64, error) {
+	return r.waitReadConsistency(ctx, true, func(_ context.Context) (int64, error) {
 		return offset, nil
 	})
 }
 
-func (r *PartitionReader) waitReadConsistency(ctx context.Context, getOffset func(context.Context) (int64, error)) error {
-	_, err := r.metrics.strongConsistencyInstrumentation.Observe(func() (struct{}, error) {
+func (r *PartitionReader) waitReadConsistency(ctx context.Context, withOffset bool, getOffset func(context.Context) (int64, error)) error {
+	_, err := r.metrics.strongConsistencyInstrumentation.Observe(withOffset, func() (struct{}, error) {
 		spanLog := spanlogger.FromContext(ctx, r.logger)
 		spanLog.DebugLog("msg", "waiting for read consistency")
 
@@ -839,18 +839,18 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetric
 }
 
 type StrongReadConsistencyInstrumentation[T any] struct {
-	requests prometheus.Counter
+	requests *prometheus.CounterVec
 	failures prometheus.Counter
 	latency  prometheus.Histogram
 }
 
 func NewStrongReadConsistencyInstrumentation[T any](component string, reg prometheus.Registerer) *StrongReadConsistencyInstrumentation[T] {
-	return &StrongReadConsistencyInstrumentation[T]{
-		requests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+	i := &StrongReadConsistencyInstrumentation[T]{
+		requests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name:        "cortex_ingest_storage_strong_consistency_requests_total",
-			Help:        "Total number of requests for which strong consistency has been requested.",
+			Help:        "Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.",
 			ConstLabels: map[string]string{"component": component},
-		}),
+		}, []string{"with_offset"}),
 		failures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name:        "cortex_ingest_storage_strong_consistency_failures_total",
 			Help:        "Total number of failures while waiting for strong consistency to be enforced.",
@@ -866,11 +866,18 @@ func NewStrongReadConsistencyInstrumentation[T any](component string, reg promet
 			ConstLabels:                     map[string]string{"component": component},
 		}),
 	}
+
+	// Init metrics.
+	for _, value := range []bool{true, false} {
+		i.requests.WithLabelValues(strconv.FormatBool(value))
+	}
+
+	return i
 }
 
-func (i *StrongReadConsistencyInstrumentation[T]) Observe(f func() (T, error)) (_ T, returnErr error) {
+func (i *StrongReadConsistencyInstrumentation[T]) Observe(withOffset bool, f func() (T, error)) (_ T, returnErr error) {
 	startTime := time.Now()
-	i.requests.Inc()
+	i.requests.WithLabelValues(strconv.FormatBool(withOffset)).Inc()
 
 	defer func() {
 		// Do not track failure or latency if the request was canceled (because the tracking would be incorrect).

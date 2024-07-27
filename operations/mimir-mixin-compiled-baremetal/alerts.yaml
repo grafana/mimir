@@ -1012,15 +1012,27 @@ groups:
           for: 5m
           labels:
             severity: critical
-        - alert: MimirIngesterFailsEnforceStrongConsistencyOnReadPath
+        - alert: MimirStrongConsistencyEnforcementFailed
           annotations:
             message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to enforce strong-consistency on read-path.
-            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterfailsenforcestrongconsistencyonreadpath
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstrongconsistencyenforcementfailed
           expr: |
             sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_strong_consistency_failures_total[1m])) > 0
           for: 5m
           labels:
             severity: critical
+        - alert: MimirStrongConsistencyOffsetNotPropagatedToIngesters
+          annotations:
+            message: Mimir ingesters in {{ $labels.cluster }}/{{ $labels.namespace }} are receiving an unexpected high number of strongly consistent requests without an offset specified.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstrongconsistencyoffsetnotpropagatedtoingesters
+          expr: |
+            sum by (cluster, namespace) (rate(cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="false"}[1m]))
+            /
+            sum by (cluster, namespace) (rate(cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader"}[1m]))
+            * 100 > 5
+          for: 5m
+          labels:
+            severity: warning
         - alert: MimirKafkaClientBufferedProduceBytesTooHigh
           annotations:
             message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} Kafka client produce buffer utilization is {{ printf "%.2f" $value }}%.
