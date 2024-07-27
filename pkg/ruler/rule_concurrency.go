@@ -94,7 +94,7 @@ type MultiTenantConcurrencyController struct {
 	logger                   log.Logger
 	limits                   RulesLimits
 	maxGlobalConcurrency     int64
-	thresholdRuleConcurrency float64
+	thresholdRuleConcurrency float64 // Percentage of the rule interval at which we consider the rule group at risk of missing its evaluation.
 	metrics                  *MultiTenantConcurrencyControllerMetrics
 
 	globalConcurrency    semaphore.Weighted

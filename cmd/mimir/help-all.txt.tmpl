@@ -2623,6 +2623,8 @@ Usage of ./cmd/mimir/mimir:
     	This grace period controls which alerts the ruler restores after a restart. Alerts with "for" duration lower than this grace period are not restored after a ruler restart. This means that if the alerts have been firing before the ruler restarted, they will now go to pending state and then to firing again after their "for" duration expires. Alerts with "for" duration greater than or equal to this grace period that have been pending before the ruler restart will remain in pending state for at least this grace period. Alerts with "for" duration greater than or equal to this grace period that have been firing before the ruler restart will continue to be firing after the restart. (default 2m0s)
   -ruler.for-outage-tolerance duration
     	Max time to tolerate outage for restoring "for" state of alert. (default 1h0m0s)
+  -ruler.independent-rule-evaluation-concurrency-min-duration-percentage float
+    	[experimental] Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval. (default 50)
   -ruler.max-independent-rule-evaluation-concurrency int
     	[experimental] Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.
   -ruler.max-independent-rule-evaluation-concurrency-per-tenant int
@@ -2773,8 +2775,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable rule groups to query against multiple tenants. The tenant IDs involved need to be in the rule group's 'source_tenants' field. If this flag is set to 'false' when there are federated rule groups that already exist, then these rules groups will be skipped during evaluations.
   -ruler.tenant-shard-size int
     	The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.
-  -ruler.threshold-independent-rule-evaluation-concurrency float
-    	[experimental] Threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. Expressed in terms of percentage and as a float. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval. (default 50)
   -runtime-config.file comma-separated-list-of-strings
     	Comma separated list of yaml files with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
   -runtime-config.reload-period duration

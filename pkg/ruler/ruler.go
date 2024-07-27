@@ -137,8 +137,8 @@ type Config struct {
 	RingCheckPeriod             time.Duration `yaml:"-"`
 	rulerSyncQueuePollFrequency time.Duration `yaml:"-"`
 
-	MaxIndependentRuleEvaluationConcurrency       int64   `yaml:"max_independent_rule_evaluation_concurrency" category:"experimental"`
-	ThresholdIndependentRuleEvaluationConcurrency float64 `yaml:"threshold_independent_rule_evaluation_concurrency" category:"experimental"`
+	MaxIndependentRuleEvaluationConcurrency                    int64   `yaml:"max_independent_rule_evaluation_concurrency" category:"experimental"`
+	IndependentRuleEvaluationConcurrencyMinDurationPercentange float64 `yaml:"threshold_independent_rule_evaluation_concurrency" category:"experimental"`
 }
 
 // Validate config and returns error on failure
@@ -193,7 +193,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.EnableQueryStats, "ruler.query-stats-enabled", false, "Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.")
 
 	f.Int64Var(&cfg.MaxIndependentRuleEvaluationConcurrency, "ruler.max-independent-rule-evaluation-concurrency", 0, "Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.")
-	f.Float64Var(&cfg.ThresholdIndependentRuleEvaluationConcurrency, "ruler.threshold-independent-rule-evaluation-concurrency", 50.0, "Threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. Expressed in terms of percentage and as a float. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval.")
+	f.Float64Var(&cfg.IndependentRuleEvaluationConcurrencyMinDurationPercentange, "ruler.independent-rule-evaluation-concurrency-min-duration-percentage", 50.0, "Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval.")
 
 	cfg.RingCheckPeriod = 5 * time.Second
 }
