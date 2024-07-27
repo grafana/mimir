@@ -140,7 +140,6 @@ func (c *MultiTenantConcurrencyController) Done(ctx context.Context) {
 
 // Allow tries to acquire a slot from the concurrency controller.
 func (c *MultiTenantConcurrencyController) Allow(ctx context.Context, group *rules.Group, rule rules.Rule) bool {
-	c.metrics.AcquireTotal.Inc()
 	// To allow a rule to be executed concurrently, we need 3 conditions:
 	// 1. The rule group must be at risk of missing its evaluation.
 	// 2. The rule must not have any rules that depend on it.
@@ -154,6 +153,7 @@ func (c *MultiTenantConcurrencyController) Allow(ctx context.Context, group *rul
 	}
 
 	// Next, try to acquire a global concurrency slot.
+	c.metrics.AcquireTotal.Inc()
 	if !c.globalConcurrency.TryAcquire(1) {
 		c.metrics.AcquireFailedTotal.Inc()
 		return false
