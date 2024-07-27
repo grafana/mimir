@@ -891,11 +891,24 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			queryFunc = rules.EngineQueryFunc(eng, queryable)
 		}
 	}
+
+	var concurrencyController ruler.MultiTenantRuleConcurrencyController
+	concurrencyController = &ruler.NoopConcurrencyController{}
+	if t.Cfg.Ruler.MaxIndependentRuleEvaluationConcurrency > 0 {
+		concurrencyController = ruler.NewMultiTenantConcurrencyController(
+			util_log.Logger,
+			t.Cfg.Ruler.MaxIndependentRuleEvaluationConcurrency,
+			t.Cfg.Ruler.IndependentRuleEvaluationConcurrencyMinDurationPercentange,
+			t.Registerer,
+			t.Overrides,
+		)
+	}
 	managerFactory := ruler.DefaultTenantManagerFactory(
 		t.Cfg.Ruler,
 		t.Distributor,
 		embeddedQueryable,
 		queryFunc,
+		concurrencyController,
 		t.Overrides,
 		t.Registerer,
 	)
@@ -911,7 +924,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	)
 
 	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
-	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver)
+	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver, concurrencyController)
 	if err != nil {
 		return nil, err
 	}
