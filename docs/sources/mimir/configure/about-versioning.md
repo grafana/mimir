@@ -66,6 +66,7 @@ The following features are currently experimental:
   - Allow control over independent rules to be evaluated concurrently as long as they exceed a certain threshold on their rule group last duration runtime against their interval. We have both a limit on the number of rules that can be executed per ruler and per tenant:
   - `-ruler.max-independent-rule-evaluation-concurrency`
   - `-ruler.max-independent-rule-evaluation-concurrency-per-tenant`
+  - `-ruler.independent-rule-evaluation-concurrency-min-duration-percentage`
 - Distributor
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`
