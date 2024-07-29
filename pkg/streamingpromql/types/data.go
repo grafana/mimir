@@ -22,7 +22,7 @@ type InstantVectorSeriesData struct {
 	// Samples must not have duplicate timestamps.
 	// HPoint contains a pointer to a histogram, and consecutive HPoints may contain a reference
 	// to the same FloatHistogram.
-	// It is therefore important to check for references to the same FloatHistogram before in
+	// It is therefore important to check for references to the same FloatHistogram in
 	// subsequent points before mutating it.
 	Histograms []promql.HPoint
 }
