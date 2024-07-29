@@ -352,7 +352,7 @@ func (f *Handler) reportQueryStats(
 	}
 
 	// Log the read consistency only when explicitly defined.
-	if consistency, ok := querierapi.ReadConsistencyFromContext(r.Context()); ok {
+	if consistency, ok := querierapi.ReadConsistencyLevelFromContext(r.Context()); ok {
 		logMessage = append(logMessage, "read_consistency", consistency)
 	}
 

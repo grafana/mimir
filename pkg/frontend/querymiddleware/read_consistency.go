@@ -48,7 +48,7 @@ func (r *readConsistencyRoundTripper) RoundTrip(req *http.Request) (_ *http.Resp
 	}
 
 	// Detect the requested read consistency level.
-	level, ok := querierapi.ReadConsistencyFromContext(req.Context())
+	level, ok := querierapi.ReadConsistencyLevelFromContext(req.Context())
 	if !ok {
 		level = getDefaultReadConsistency(tenantIDs, r.limits)
 	}

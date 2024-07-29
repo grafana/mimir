@@ -596,7 +596,7 @@ func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDe
 				matchersString := strings.Join(matchersStrings, ",")
 
 				// Ensure the read consistency injected in the context is the expected one.
-				actual, _ := api.ReadConsistencyFromContext(ctx)
+				actual, _ := api.ReadConsistencyLevelFromContext(ctx)
 				expected, hasExpected := testData.expectedReadConsistency[matchersString]
 				assert.Truef(t, hasExpected, "missing expected read consistency for matchers: %s", matchersString)
 				assert.Equal(t, expected, actual)
@@ -679,7 +679,7 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 
 		if isQueryingAlertsForStateMetric("", matchers...) {
 			// Ensure it's queried with strong read consistency.
-			actual, ok := api.ReadConsistencyFromContext(ctx)
+			actual, ok := api.ReadConsistencyLevelFromContext(ctx)
 			assert.True(t, ok)
 			assert.Equal(t, api.ReadConsistencyStrong, actual)
 

@@ -51,7 +51,7 @@ func TestConsistencyMiddleware(t *testing.T) {
 	assert.Equal(t, string(encodedOffsets), downstreamReq.Header.Get(ReadConsistencyOffsetsHeader))
 
 	// Should inject consistency settings in the context.
-	actualLevel, ok := ReadConsistencyFromContext(downstreamReq.Context())
+	actualLevel, ok := ReadConsistencyLevelFromContext(downstreamReq.Context())
 	require.True(t, ok)
 	assert.Equal(t, ReadConsistencyStrong, actualLevel)
 
@@ -65,7 +65,7 @@ func TestReadConsistencyClientUnaryInterceptor_And_ReadConsistencyServerUnaryInt
 
 	// Run the gRPC client interceptor.
 	clientIncomingCtx := context.Background()
-	clientIncomingCtx = ContextWithReadConsistency(clientIncomingCtx, ReadConsistencyStrong)
+	clientIncomingCtx = ContextWithReadConsistencyLevel(clientIncomingCtx, ReadConsistencyStrong)
 	clientIncomingCtx = ContextWithReadConsistencyEncodedOffsets(clientIncomingCtx, encodedOffsets)
 
 	var clientOutgoingCtx context.Context
@@ -93,7 +93,7 @@ func TestReadConsistencyClientUnaryInterceptor_And_ReadConsistencyServerUnaryInt
 	require.NoError(t, err)
 
 	// Should inject consistency settings in the context.
-	actualLevel, ok := ReadConsistencyFromContext(serverOutgoingCtx)
+	actualLevel, ok := ReadConsistencyLevelFromContext(serverOutgoingCtx)
 	require.True(t, ok)
 	assert.Equal(t, ReadConsistencyStrong, actualLevel)
 
@@ -107,7 +107,7 @@ func TestReadConsistencyClientStreamInterceptor_And_ReadConsistencyServerStreamI
 
 	// Run the gRPC client interceptor.
 	clientIncomingCtx := context.Background()
-	clientIncomingCtx = ContextWithReadConsistency(clientIncomingCtx, ReadConsistencyStrong)
+	clientIncomingCtx = ContextWithReadConsistencyLevel(clientIncomingCtx, ReadConsistencyStrong)
 	clientIncomingCtx = ContextWithReadConsistencyEncodedOffsets(clientIncomingCtx, encodedOffsets)
 
 	var clientOutgoingCtx context.Context
@@ -135,7 +135,7 @@ func TestReadConsistencyClientStreamInterceptor_And_ReadConsistencyServerStreamI
 	require.NoError(t, ReadConsistencyServerStreamInterceptor(nil, &serverStreamMock{ctx: serverIncomingCtx}, nil, serverHandler))
 
 	// Should inject consistency settings in the context.
-	actualLevel, ok := ReadConsistencyFromContext(serverOutgoingCtx)
+	actualLevel, ok := ReadConsistencyLevelFromContext(serverOutgoingCtx)
 	require.True(t, ok)
 	assert.Equal(t, ReadConsistencyStrong, actualLevel)
 

@@ -371,7 +371,7 @@ func getHeader(headers []*httpgrpc.Header, name string) string {
 // it as an HTTP header to the list of input headers. This is required to propagate the read consistency
 // through the network when issuing an HTTPgRPC request.
 func injectHTTPGrpcReadConsistencyHeader(ctx context.Context, headers []*httpgrpc.Header) []*httpgrpc.Header {
-	if level, ok := api.ReadConsistencyFromContext(ctx); ok {
+	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
 		headers = append(headers, &httpgrpc.Header{
 			Key:    textproto.CanonicalMIMEHeaderKey(api.ReadConsistencyHeader),
 			Values: []string{level},
