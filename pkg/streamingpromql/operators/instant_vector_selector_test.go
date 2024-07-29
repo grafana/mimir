@@ -34,10 +34,10 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 	}{
 		"different histograms at each point": {
 			data: `
-                load 1m
-                    my_metric {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:20 count:7 buckets:[9 10 1]}} {{schema:0 sum:21 count:8 buckets:[9 10 2]}}
-                #             0m										 1m                                           2m
-            `,
+				load 1m
+					my_metric {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:20 count:7 buckets:[9 10 1]}} {{schema:0 sum:21 count:8 buckets:[9 10 2]}}
+					#         0m                                         1m                                           2m
+			`,
 			stepCount: 3,
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 3)
@@ -47,10 +47,10 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 		},
 		"different histograms at each point, some due to lookback": {
 			data: `
-                load 30s
-                    my_metric {{schema:0 sum:3 count:2 buckets:[1 0 1]}} _ {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:20 count:7 buckets:[9 10 1]}} _  _    {{schema:0 sum:21 count:8 buckets:[9 10 2]}}
-				#             0m									   30s 1m                                         1m30s                                        2m 2m30 3m
-            `,
+				load 30s
+					my_metric {{schema:0 sum:3 count:2 buckets:[1 0 1]}} _ {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:20 count:7 buckets:[9 10 1]}} _  _    {{schema:0 sum:21 count:8 buckets:[9 10 2]}}
+				#             0m                                       30s 1m                                         1m30s                                        2m 2m30 3m
+			`,
 			stepCount: 4,
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 4)
@@ -61,9 +61,9 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 		},
 		"same histogram at each point due to lookback": {
 			data: `
-                load 1m
-                    my_metric {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
-            `,
+				load 1m
+					my_metric {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+			`,
 			stepCount: 3,
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 3)
@@ -73,9 +73,9 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 		},
 		"same histogram at each point not due to lookback": {
 			data: `
-                load 1m
-                    my_metric {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
-            `,
+				load 1m
+					my_metric {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+			`,
 			stepCount: 2,
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 2)
@@ -84,10 +84,10 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 		},
 		"last point is from lookback and is the same as the previous point": {
 			data: `
-                load 30s
-                    my_metric {{schema:0 sum:3 count:2 buckets:[1 0 1]}} _ {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 
-				#             0m									   30s 1m                                         1m30s (nothing)    2m (nothing)
-            `,
+				load 30s
+					my_metric {{schema:0 sum:3 count:2 buckets:[1 0 1]}} _ {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 
+					#         0m                                       30s 1m                                         1m30s (nothing)    2m (nothing)
+			`,
 			stepCount: 3,
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 3)
@@ -97,10 +97,10 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 		},
 		"last point is from lookback but is not the same as the previous point": {
 			data: `
-                load 30s
-                    my_metric {{schema:0 sum:3 count:2 buckets:[1 0 1]}} _ {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:20 count:7 buckets:[9 10 1]}} 
-				#             0m									   30s 1m                                         1m30s                                        2m (nothing)
-            `,
+				load 30s
+					my_metric {{schema:0 sum:3 count:2 buckets:[1 0 1]}} _ {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:20 count:7 buckets:[9 10 1]}} 
+					#         0m                                       30s 1m                                         1m30s                                        2m (nothing)
+			`,
 			stepCount: 3,
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 3)
@@ -111,9 +111,9 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 
 		"point has same value as a previous point, but there is a different histogram value in between": {
 			data: `
-                load 1m
-                    my_metric {{schema:0 sum:3 count:2 buckets:[1 0 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:3 count:2 buckets:[1 0 1]}}
-            `,
+				load 1m
+					my_metric {{schema:0 sum:3 count:2 buckets:[1 0 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:3 count:2 buckets:[1 0 1]}}
+			`,
 			stepCount: 3,
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 3)
