@@ -84,7 +84,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 		case chunkenc.ValFloat:
 			t, f = v.memoizedIterator.At()
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
-			if atT := v.memoizedIterator.AtT(); atT == lastHistogramT {
+			if atT := v.memoizedIterator.AtT(); atT == lastHistogramT && lastHistogram != nil {
 				// We're still looking at the last histogram we used, don't bother creating another FloatHistogram.
 				// Consuming operators are expected to check for the same FloatHistogram instance used at multiple points and copy it
 				// if they are going to mutate it, so this is safe to do.
@@ -106,7 +106,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				continue
 			}
 			if h != nil {
-				if t == lastHistogramT {
+				if t == lastHistogramT && lastHistogram != nil {
 					// Reuse exactly the same FloatHistogram as last time.
 					// PeekPrev can return a new FloatHistogram instance with the same underlying bucket slices as a previous call
 					// to AtFloatHistogram.
