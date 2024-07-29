@@ -350,7 +350,8 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 
 	for {
 		select {
-		case cycleEnd := <-time.After(waitTime):
+		case <-time.After(waitTime):
+			cycleEnd = nextCycleTime
 			level.Info(b.logger).Log("msg", "triggering next consume from running", "cycle_end", cycleEnd, "cycle_time", nextCycleTime)
 			err := b.NextConsumeCycle(ctx, cycleEnd.Add(-time.Second))
 			if err != nil {
@@ -517,6 +518,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, client *kgo.Client,
 	// We are lagging behind. We need to consume the partition in parts.
 	// We iterate through all the cycleEnds starting from the first one after commit until the cycleEnd.
 	cycleEndStartAt := commitRecTime.Truncate(b.cfg.ConsumeInterval).Add(b.cfg.ConsumeInterval + b.cfg.ConsumeIntervalBuffer)
+	level.Info(b.logger).Log("msg", "partition is lagging behind", "part", pl.Partition, "lag", pl.Lag, "cycle_end_start", cycleEndStartAt, "cycle_end", cycleEnd)
 	for ce := cycleEndStartAt; cycleEnd.Sub(ce) >= 0; ce = ce.Add(b.cfg.ConsumeInterval) {
 		// Instead of looking for the commit metadata for each iteration, we use the data returned by consumePartition
 		// in the next iteration.
@@ -598,7 +600,7 @@ func (b *BlockBuilder) consumePartition(
 	var (
 		done                         bool
 		commitRec, firstRec, lastRec *kgo.Record
-		preFirstRec                  *kgo.Record // Record that is discarded to be before the lookback, and right before firstRec.
+		lastDiscardedBeforeFirstRec  *kgo.Record // Record that is discarded to be before the lookback, and right before firstRec.
 	)
 	for !done {
 		if err := context.Cause(ctx); err != nil {
@@ -636,7 +638,7 @@ func (b *BlockBuilder) consumePartition(
 			if rec.Timestamp.Before(skipRecordsBefore) {
 				lag--
 				if firstRec == nil {
-					preFirstRec = rec
+					lastDiscardedBeforeFirstRec = rec
 				}
 				continue
 			}
@@ -695,25 +697,29 @@ func (b *BlockBuilder) consumePartition(
 	compactionDur = time.Since(compactStart)
 	b.metrics.compactAndUploadDuration.WithLabelValues(fmt.Sprintf("%d", part)).Observe(compactionDur.Seconds())
 
-	// Nothing was processed.
-	if lastRec == nil && firstRec == nil {
+	// Nothing was processed, including that there was not discarded record.
+	if lastRec == nil && firstRec == nil && lastDiscardedBeforeFirstRec == nil {
+		level.Info(b.logger).Log("msg", "no records were processed in consumePartition", "part", part)
 		return pl, nil
 	}
 
-	// No records were for this cycle, which can be the case if the very first record fetched
-	// was from the next cycle and/or there were records that were beyond the look back before this.
-	// We must rewind partition's offset and re-consume this record again on the next cycle, but we
-	// skip the records that didn't make the cut in this cycle.
-	if lastRec == nil && preFirstRec != nil {
-		// We have a record that was beyond the lookback. We must commit the record before this.
-		commitRec = preFirstRec
-	} else if lastRec == nil {
-		rec := kgo.EpochOffset{
-			Epoch:  firstRec.LeaderEpoch,
-			Offset: firstRec.Offset,
+	// No records were for this cycle.
+	if lastRec == nil {
+		if lastDiscardedBeforeFirstRec != nil {
+			// We have a record that was beyond the lookback and was discarded.
+			// We must commit the last discarded.
+			commitRec = lastDiscardedBeforeFirstRec
+		} else {
+			// First record fetched was from the next cycle.
+			// Rewind partition's offset and re-consume this record again on the next cycle.
+			// No need to re-commit since the commit point did not change.
+			rec := kgo.EpochOffset{
+				Epoch:  firstRec.LeaderEpoch,
+				Offset: firstRec.Offset,
+			}
+			b.seekPartition(client, part, rec)
+			return pl, nil
 		}
-		b.seekPartition(client, part, rec)
-		return pl, nil
 	}
 
 	// All samples in all records were processed. We can commit the last record's offset.

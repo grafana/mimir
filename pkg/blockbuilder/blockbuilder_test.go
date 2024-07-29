@@ -656,3 +656,64 @@ func TestBlockBuilderMultiTenancy(t *testing.T) {
 		)
 	}
 }
+
+// This test is trying to test a particular case/bug:
+// When there is no commit on startup, and say the first cycle end is at t1 for the consumption,
+// and all the samples are before t1 minus the lookback time, then the first consumption cycle of
+// catchup will end up consuming (and discard) all records. But the next cycle should not get stuck
+// since there is no record to consume here. Before the bug fix, a wrong lag was communicated
+// to the subsequent cycle without resetting the client's offset and it would get stuck.
+func TestBlockBuilder_LongCatchupWithNoRecordsProcessed(t *testing.T) {
+	require.NoError(t, os.Setenv("POD_NAME", "block-builder-0"))
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	logger := test.NewTestingLogger(t)
+
+	_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 1, testTopic)
+	writeClient := newKafkaProduceClient(t, addr)
+
+	cfg, overrides := blockBuilderConfig(t, addr)
+	cfg.TotalPartitions = 1
+	cfg.TotalBlockBuilders = 1
+	cfg.LookbackOnNoCommit = 3 * time.Hour
+	// Producing some records
+	kafkaTime := time.Now().Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
+	for i := int64(0); i < 3; i++ {
+		kafkaTime = kafkaTime.Add(cfg.ConsumeInterval / 2)
+		sampleTs := kafkaTime.Add(-time.Minute)
+		samples := floatSample(sampleTs.UnixMilli())
+		val := createWriteRequest(t, "", samples, nil)
+		produceRecords(ctx, t, writeClient, kafkaTime, "1", testTopic, 0, val)
+	}
+
+	bb, err := New(cfg, logger, prometheus.NewPedanticRegistry(), overrides)
+	require.NoError(t, err)
+	compactCalled := make(chan struct{}, 10)
+	bb.tsdbBuilder = func() builder {
+		testBuilder := newTestTSDBBuilder(cfg, overrides)
+		testBuilder.compactFunc = func() {
+			compactCalled <- struct{}{}
+		}
+		return testBuilder
+	}
+	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
+	})
+
+	// First cycle should happen normally.
+	select {
+	case <-compactCalled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first compaction did not happen within expected time")
+	}
+	// Second cycle is prone to getting stuck. So we wait for a while and then check if the
+	// second compaction happens.
+	select {
+	case <-compactCalled:
+	case <-time.After(15 * time.Second):
+		t.Fatal("second compaction did not happen within expected time")
+	}
+}
