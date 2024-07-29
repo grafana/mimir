@@ -29,7 +29,7 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 
 	testCases := map[string]struct {
 		data      string
-		stepCount int
+		stepCount int // For each test case, the step is always 1m, and the lookback window is always 5m. The points loaded in 'data' may be at different intervals.
 		check     func(t *testing.T, points []promql.HPoint, floats []promql.FPoint)
 	}{
 		"different histograms at each point": {
