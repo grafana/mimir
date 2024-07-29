@@ -142,7 +142,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			request: func() *http.Request {
 				r := httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
 				r.Header.Add("User-Agent", "test-user-agent")
-				return r.WithContext(api.ContextWithReadConsistency(context.Background(), api.ReadConsistencyStrong))
+				return r.WithContext(api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyStrong))
 			},
 			downstreamResponse: makeSuccessfulDownstreamResponse(),
 			expectedStatusCode: 200,

@@ -99,7 +99,7 @@ func TestReadConsistencyRoundTripper(t *testing.T) {
 			req = req.WithContext(user.InjectOrgID(req.Context(), tenantID))
 
 			if testData.reqConsistency != "" {
-				req = req.WithContext(querierapi.ContextWithReadConsistency(req.Context(), testData.reqConsistency))
+				req = req.WithContext(querierapi.ContextWithReadConsistencyLevel(req.Context(), testData.reqConsistency))
 			}
 
 			reg := prometheus.NewPedanticRegistry()

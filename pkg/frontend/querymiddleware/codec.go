@@ -591,7 +591,7 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
-	if level, ok := api.ReadConsistencyFromContext(ctx); ok {
+	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
 		req.Header.Add(api.ReadConsistencyHeader, level)
 	}
 
@@ -673,7 +673,7 @@ func (c prometheusCodec) EncodeLabelsQueryRequest(ctx context.Context, req Label
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
-	if level, ok := api.ReadConsistencyFromContext(ctx); ok {
+	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
 		r.Header.Add(api.ReadConsistencyHeader, level)
 	}
 
