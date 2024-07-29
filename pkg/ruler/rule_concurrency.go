@@ -17,6 +17,7 @@ import (
 
 type MultiTenantRuleConcurrencyController interface {
 	rules.RuleConcurrencyController
+	RemoveTenant(userID string)
 }
 
 // DynamicSemaphore is a semaphore that can dynamically change its max concurrency.
@@ -100,6 +101,13 @@ type MultiTenantConcurrencyController struct {
 	globalConcurrency    semaphore.Weighted
 	tenantConcurrencyMtx sync.Mutex
 	tenantConcurrency    map[string]*DynamicSemaphore
+}
+
+// RemoveTenant removes a tenant from the concurrency controller.
+func (c *MultiTenantConcurrencyController) RemoveTenant(userID string) {
+	c.tenantConcurrencyMtx.Lock()
+	defer c.tenantConcurrencyMtx.Unlock()
+	delete(c.tenantConcurrency, userID)
 }
 
 // NewMultiTenantConcurrencyController creates a new MultiTenantConcurrencyController.
@@ -206,6 +214,7 @@ func isRuleIndependent(rule rules.Rule) bool {
 // NoopConcurrencyController is a concurrency controller that does not allow for concurrency.
 type NoopConcurrencyController struct{}
 
+func (n *NoopConcurrencyController) RemoveTenant(_ string)  {}
 func (n *NoopConcurrencyController) Done(_ context.Context) {}
 func (n *NoopConcurrencyController) Allow(_ context.Context, _ *rules.Group, _ rules.Rule) bool {
 	return false

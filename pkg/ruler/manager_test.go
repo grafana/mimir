@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
@@ -46,7 +47,8 @@ func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
 		user2Group1 = createRuleGroup("group-1", user2, createRecordingRule("sum:metric_1", "sum(metric_1)"))
 	)
 
-	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, nil)
+	concurrencyController := &controllerMock{}
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, concurrencyController)
 	require.NoError(t, err)
 
 	// Initialise the manager with some rules and start it.
@@ -67,6 +69,7 @@ func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
 
 		// Ensure the ruler manager has been stopped for all users.
 		assertManagerMockStopped(t, initialUser1Manager)
+		// assertUserRemovedFromConcurrencyController(t, concurrencyController, user1)
 		assertManagerMockStopped(t, initialUser2Manager)
 		assertManagerMockNotRunningForUser(t, m, user1)
 		assertManagerMockNotRunningForUser(t, m, user2)
@@ -408,6 +411,12 @@ func assertManagerMockStopped(t *testing.T, m *managerMock) {
 	})
 }
 
+func assertUserRemovedFromConcurrencyController(t *testing.T, c *controllerMock, userID string) {
+	t.Helper()
+
+	require.Contains(t, c.Removed(), userID)
+}
+
 func assertRuleGroupsMappedOnDisk(t *testing.T, m *DefaultMultiTenantManager, userID string, expectedRuleGroups rulespb.RuleGroupList) {
 	t.Helper()
 
@@ -463,6 +472,30 @@ func (m *managerMock) Run() {
 	if m.onStop != nil {
 		m.onStop()
 	}
+}
+
+type controllerMock struct {
+	mtx     sync.Mutex
+	removed []string
+}
+
+func (cm *controllerMock) Allow(_ context.Context, _ *promRules.Group, _ promRules.Rule) bool {
+	return false
+}
+
+func (cm *controllerMock) Done(_ context.Context) {
+}
+
+func (cm *controllerMock) RemoveTenant(UserID string) {
+	cm.mtx.Lock()
+	defer cm.mtx.Unlock()
+	cm.removed = append(cm.removed, UserID)
+}
+
+func (cm *controllerMock) Removed() []string {
+	cm.mtx.Lock()
+	defer cm.mtx.Unlock()
+	return cm.removed
 }
 
 func (m *managerMock) Stop() {

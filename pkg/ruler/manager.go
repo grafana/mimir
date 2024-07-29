@@ -347,7 +347,12 @@ func (r *DefaultMultiTenantManager) removeUsersIf(shouldRemove func(userID strin
 
 		// Stop manager in the background, so we don't block further resharding operations.
 		// The manager won't terminate until any inflight evaluations are complete.
-		go mngr.Stop()
+		// Only once the manager has been stopped we should remove the user from the concurrencyController.
+		go func() {
+			mngr.Stop()
+			r.concurrencyController.RemoveTenant(userID)
+		}()
+
 		delete(r.userManagers, userID)
 
 		r.mapper.cleanupUser(userID)

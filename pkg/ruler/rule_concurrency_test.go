@@ -187,6 +187,13 @@ cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use 0
 # TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total counter
 cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total 4
 `)))
+
+	// Remove both tenants.
+	controller.RemoveTenant("user1")
+	controller.RemoveTenant("user2")
+	controller.tenantConcurrencyMtx.Lock()
+	require.Len(t, controller.tenantConcurrency, 0)
+	controller.tenantConcurrencyMtx.Unlock()
 }
 
 func TestIsRuleIndependent(t *testing.T) {
