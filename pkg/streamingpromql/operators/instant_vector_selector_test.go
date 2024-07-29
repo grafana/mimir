@@ -41,6 +41,10 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			stepCount: 3,
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 3)
+				require.Equal(t, 5.0, points[0].H.Sum)
+				require.Equal(t, 20.0, points[1].H.Sum)
+				require.Equal(t, 21.0, points[2].H.Sum)
+
 				requireNotSame(t, points[0].H, points[1].H)
 				requireNotSame(t, points[1].H, points[2].H)
 			},
@@ -54,6 +58,11 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			stepCount: 4,
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 4)
+				require.Equal(t, 3.0, points[0].H.Sum)
+				require.Equal(t, 5.0, points[1].H.Sum)
+				require.Equal(t, 20.0, points[2].H.Sum)
+				require.Equal(t, 21.0, points[3].H.Sum)
+
 				requireNotSame(t, points[0].H, points[1].H)
 				requireNotSame(t, points[1].H, points[2].H)
 				requireNotSame(t, points[2].H, points[3].H)
@@ -67,6 +76,10 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			stepCount: 3,
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 3)
+				require.Equal(t, 5.0, points[0].H.Sum)
+				require.Equal(t, 5.0, points[1].H.Sum)
+				require.Equal(t, 5.0, points[2].H.Sum)
+
 				require.Same(t, points[0].H, points[1].H)
 				require.Same(t, points[1].H, points[2].H)
 			},
@@ -79,6 +92,9 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			stepCount: 2,
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 2)
+				require.Equal(t, 5.0, points[0].H.Sum)
+				require.Equal(t, 5.0, points[1].H.Sum)
+
 				requireNotSame(t, points[0].H, points[1].H)
 			},
 		},
@@ -91,6 +107,10 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			stepCount: 3,
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 3)
+				require.Equal(t, 3.0, points[0].H.Sum)
+				require.Equal(t, 5.0, points[1].H.Sum)
+				require.Equal(t, 5.0, points[2].H.Sum)
+
 				requireNotSame(t, points[0].H, points[1].H)
 				require.Same(t, points[1].H, points[2].H)
 			},
@@ -104,6 +124,10 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			stepCount: 3,
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 3)
+				require.Equal(t, 3.0, points[0].H.Sum)
+				require.Equal(t, 5.0, points[1].H.Sum)
+				require.Equal(t, 20.0, points[2].H.Sum)
+
 				requireNotSame(t, points[0].H, points[1].H)
 				requireNotSame(t, points[1].H, points[2].H)
 			},
@@ -117,6 +141,10 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			stepCount: 3,
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 3)
+				require.Equal(t, 3.0, points[0].H.Sum)
+				require.Equal(t, 5.0, points[1].H.Sum)
+				require.Equal(t, 3.0, points[2].H.Sum)
+
 				requireNotSame(t, points[0].H, points[1].H)
 				requireNotSame(t, points[1].H, points[2].H)
 
@@ -133,6 +161,9 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 		//	stepCount: 3,
 		//	check: func(t *testing.T, hPoints []promql.HPoint, fPoints []promql.FPoint) {
 		//		require.Len(t, hPoints, 2)
+		//		require.Equal(t, 3.0, hPoints[0].H.Sum)
+		//		require.Equal(t, 3.0, hPoints[1].H.Sum)
+		//
 		//		require.Same(t, hPoints[0].H, hPoints[1].H)
 		//
 		//		require.Equal(t, []promql.FPoint{{T: 60000, F: 2}}, fPoints)
