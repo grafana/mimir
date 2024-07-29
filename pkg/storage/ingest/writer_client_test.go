@@ -34,7 +34,7 @@ func TestKafkaProducer_ShouldExposeBufferedBytesLimit(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	prefixedReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, reg)
 
-	client, err := newKafkaWriterClient(cfg, 1, log.NewNopLogger(), prefixedReg)
+	client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prefixedReg)
 	require.NoError(t, err)
 
 	producer := NewKafkaProducer(client, cfg.ProducerMaxBufferedBytes, prefixedReg)
@@ -67,7 +67,7 @@ func TestKafkaProducer_ProduceSync_ShouldTrackBufferedProduceBytes(t *testing.T)
 	reg := prometheus.NewPedanticRegistry()
 	prefixedReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, reg)
 
-	client, err := newKafkaWriterClient(cfg, 1, log.NewNopLogger(), prefixedReg)
+	client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prefixedReg)
 	require.NoError(t, err)
 
 	producer := NewKafkaProducer(client, cfg.ProducerMaxBufferedBytes, prefixedReg)

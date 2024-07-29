@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"golang.org/x/exp/slices"
 
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -192,9 +193,10 @@ func NewTripperware(
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
 	engineExperimentalFunctionsEnabled bool,
+	ingestStorageTopicOffsetsReader *ingest.TopicOffsetsReader,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, engineExperimentalFunctionsEnabled, registerer)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, engineExperimentalFunctionsEnabled, ingestStorageTopicOffsetsReader, registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -212,6 +214,7 @@ func newQueryTripperware(
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
 	engineExperimentalFunctionsEnabled bool,
+	ingestStorageTopicOffsetsReader *ingest.TopicOffsetsReader,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
 	// Disable concurrency limits for sharded queries.
@@ -240,6 +243,10 @@ func newQueryTripperware(
 	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(cfg, log, limits, codec, c, cacheKeyGenerator, cacheExtractor, engine, registerer)
 
 	return func(next http.RoundTripper) http.RoundTripper {
+		// IMPORTANT: roundtrippers are executed in *reverse* order because they are wrappers.
+		// It means that the first roundtrippers defined in this function will be the last to be
+		// executed.
+
 		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
 		instant := newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...)
 		remoteRead := newRemoteReadRoundTripper(next, remoteReadMiddleware...)
@@ -253,15 +260,29 @@ func newQueryTripperware(
 		activeNativeHistogramMetrics := next
 		labels := next
 
-		// Inject the cardinality and labels query cache roundtripper only if the query results cache is enabled.
-		if cfg.CacheResults {
-			cardinality = newCardinalityQueryCacheRoundTripper(c, cacheKeyGenerator, limits, cardinality, log, registerer)
-			labels = newLabelsQueryCacheRoundTripper(c, cacheKeyGenerator, limits, labels, log, registerer)
-		}
-
 		if cfg.ShardActiveSeriesQueries {
 			activeSeries = newShardActiveSeriesMiddleware(activeSeries, cfg.UseActiveSeriesDecoder, limits, log)
 			activeNativeHistogramMetrics = newShardActiveNativeHistogramMetricsMiddleware(activeNativeHistogramMetrics, limits, log)
+		}
+
+		// Enforce read consistency after caching.
+		if ingestStorageTopicOffsetsReader != nil {
+			metrics := newReadConsistencyMetrics(registerer)
+
+			queryrange = newReadConsistencyRoundTripper(queryrange, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			instant = newReadConsistencyRoundTripper(instant, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			cardinality = newReadConsistencyRoundTripper(cardinality, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			activeSeries = newReadConsistencyRoundTripper(activeSeries, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			labels = newReadConsistencyRoundTripper(labels, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			remoteRead = newReadConsistencyRoundTripper(remoteRead, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			next = newReadConsistencyRoundTripper(next, ingestStorageTopicOffsetsReader, limits, log, metrics)
+		}
+
+		// Look up cache as first thing.
+		if cfg.CacheResults {
+			cardinality = newCardinalityQueryCacheRoundTripper(c, cacheKeyGenerator, limits, cardinality, log, registerer)
+			labels = newLabelsQueryCacheRoundTripper(c, cacheKeyGenerator, limits, labels, log, registerer)
 		}
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
