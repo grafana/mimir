@@ -404,6 +404,19 @@ func (s *Scheduler) cancelRequestAndRemoveFromPending(key queue.RequestKey, reas
 	return req
 }
 
+func (s *Scheduler) transformRequestQueueError(err error) error {
+	if errors.Is(err, queue.ErrStopped) && !s.isRunning() {
+		// Return a more clear error if the queue is stopped because the query-scheduler is not running.
+		return schedulerpb.ErrSchedulerIsNotRunning
+	}
+
+	// the main other error we receive here is if the querier itself is ErrQuerierShuttingDown;
+	// this information was submitted via another endpoint and processed internally
+	// by the RequestQueue's tracking of querier connections. The error bubbles up here
+	// as a way to exit this loop and allow the querier to shut down gracefully.
+	return err
+}
+
 // QuerierLoop is started by querier to receive queries from scheduler.
 func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer) error {
 	resp, err := querier.Recv()
@@ -412,9 +425,20 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 	}
 
 	querierID := resp.GetQuerierID()
+	//querierContext := querier.Context()
+	//fmt.Println(querierContext)
+	//querierContextA := querier.Context()
+	//fmt.Println(querierContextA)
+	//querierContextB := querier.Context()
+	//fmt.Println(querierContextB)
 
-	s.requestQueue.SubmitRegisterQuerierConnection(querierID)
-	defer s.requestQueue.SubmitUnregisterQuerierConnection(querierID)
+	//s.requestQueue.SubmitRegisterQuerierConnection(querierID)
+	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(queue.QuerierID(querierID))
+	registeredQuerierWorkerConn, err := s.requestQueue.AwaitRegisterQuerierWorkerConnection(querier.Context(), querierWorkerConn)
+	if err != nil {
+		return s.transformRequestQueueError(err)
+	}
+	defer s.requestQueue.AwaitUnregisterQuerierConnection(querier.Context(), registeredQuerierWorkerConn)
 
 	lastUserIndex := queue.FirstTenant()
 
@@ -422,16 +446,9 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 	for s.isRunningOrStopping() {
 		queueReq, idx, err := s.requestQueue.WaitForRequestForQuerier(querier.Context(), lastUserIndex, querierID)
 		if err != nil {
-			// Return a more clear error if the queue is stopped because the query-scheduler is not running.
-			if errors.Is(err, queue.ErrStopped) && !s.isRunning() {
-				return schedulerpb.ErrSchedulerIsNotRunning
-			}
-			// the main other error we receive here is if the querier itself is shutting down;
-			// this information was submitted via another endpoint and processed internally
-			// by the RequestQueue's tracking of querier connections. The error bubbles up here
-			// as a way to exit this loop and allow the querier to shut down gracefully.
-			return err
+			return s.transformRequestQueueError(err)
 		}
+
 		lastUserIndex = idx
 
 		schedulerReq := queueReq.(*queue.SchedulerRequest)
