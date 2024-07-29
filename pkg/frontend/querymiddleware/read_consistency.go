@@ -22,10 +22,10 @@ type readConsistencyRoundTripper struct {
 	offsetsReader *ingest.TopicOffsetsReader
 	limits        Limits
 	logger        log.Logger
-	metrics       *ingest.StrongReadConsistencyInstrumentation[*http.Response]
+	metrics       *ingest.StrongReadConsistencyInstrumentation[map[int32]int64]
 }
 
-func newReadConsistencyRoundTripper(next http.RoundTripper, offsetsReader *ingest.TopicOffsetsReader, limits Limits, logger log.Logger, metrics *ingest.StrongReadConsistencyInstrumentation[*http.Response]) http.RoundTripper {
+func newReadConsistencyRoundTripper(next http.RoundTripper, offsetsReader *ingest.TopicOffsetsReader, limits Limits, logger log.Logger, metrics *ingest.StrongReadConsistencyInstrumentation[map[int32]int64]) http.RoundTripper {
 	return &readConsistencyRoundTripper{
 		next:          next,
 		limits:        limits,
@@ -57,17 +57,17 @@ func (r *readConsistencyRoundTripper) RoundTrip(req *http.Request) (_ *http.Resp
 		return r.next.RoundTrip(req)
 	}
 
-	return r.metrics.Observe(false, func() (*http.Response, error) {
-		// Fetch last produced offsets.
-		offsets, err := r.offsetsReader.WaitNextFetchLastProducedOffset(ctx)
-		if err != nil {
-			return nil, errors.Wrap(err, "wait for last produced offsets")
-		}
-
-		req.Header.Add(querierapi.ReadConsistencyOffsetsHeader, string(querierapi.EncodeOffsets(offsets)))
-
-		return r.next.RoundTrip(req)
+	// Fetch last produced offsets.
+	offsets, err := r.metrics.Observe(false, func() (map[int32]int64, error) {
+		return r.offsetsReader.WaitNextFetchLastProducedOffset(ctx)
 	})
+	if err != nil {
+		return nil, errors.Wrap(err, "wait for last produced offsets")
+	}
+
+	req.Header.Add(querierapi.ReadConsistencyOffsetsHeader, string(querierapi.EncodeOffsets(offsets)))
+
+	return r.next.RoundTrip(req)
 }
 
 // getDefaultReadConsistency returns the default read consistency for the input tenantIDs,
@@ -82,7 +82,7 @@ func getDefaultReadConsistency(tenantIDs []string, limits Limits) string {
 	return querierapi.ReadConsistencyEventual
 }
 
-func newReadConsistencyMetrics(reg prometheus.Registerer) *ingest.StrongReadConsistencyInstrumentation[*http.Response] {
+func newReadConsistencyMetrics(reg prometheus.Registerer) *ingest.StrongReadConsistencyInstrumentation[map[int32]int64] {
 	const component = "query-frontend"
-	return ingest.NewStrongReadConsistencyInstrumentation[*http.Response](component, reg)
+	return ingest.NewStrongReadConsistencyInstrumentation[map[int32]int64](component, reg)
 }
