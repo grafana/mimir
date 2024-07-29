@@ -260,9 +260,8 @@ func otlpHandler(
 				errorMsg string
 			)
 			if st, ok := grpcutil.ErrorToStatus(err); ok {
-				// TODO: This code is needed for backwards compatibility,
-				// and can be removed once -ingester.return-only-grpc-errors
-				// is removed.
+				// This code is needed for a correct handling of errors returned by the supplier function.
+				// These errors are created by using the httpgrpc package.
 				httpCode = httpRetryableToOTLPRetryable(int(st.Code()))
 				grpcCode = st.Code()
 				errorMsg = st.Message()

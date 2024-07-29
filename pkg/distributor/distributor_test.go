@@ -12,7 +12,6 @@ import (
 	"io"
 	"math"
 	"math/rand"
-	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -7393,8 +7392,6 @@ func TestHandlePushError(t *testing.T) {
 	testErrorMsg := "this is a test error message"
 	userID := "test"
 	errWithUserID := fmt.Errorf("user=%s: %s", userID, testErrorMsg)
-	httpGrpc4xxErr := httpgrpc.Errorf(http.StatusBadRequest, testErrorMsg)
-	httpGrpc5xxErr := httpgrpc.Errorf(http.StatusServiceUnavailable, testErrorMsg)
 	test := map[string]struct {
 		pushError          error
 		expectedGRPCError  *status.Status
@@ -7407,14 +7404,6 @@ func TestHandlePushError(t *testing.T) {
 		"a context.DeadlineExceeded error gives context.DeadlineExceeded": {
 			pushError:          context.DeadlineExceeded,
 			expectedOtherError: context.DeadlineExceeded,
-		},
-		"a 4xx HTTP gRPC error gives the same 4xx HTTP gRPC error": {
-			pushError:          httpGrpc4xxErr,
-			expectedOtherError: httpGrpc4xxErr,
-		},
-		"a 5xx HTTP gRPC error gives the same 5xx HTTP gRPC error": {
-			pushError:          httpGrpc5xxErr,
-			expectedOtherError: httpGrpc5xxErr,
 		},
 		"an Error gives the error returned by toErrorWithGRPCStatus()": {
 			pushError:         mockDistributorErr(testErrorMsg),
