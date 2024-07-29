@@ -1066,6 +1066,7 @@ spec:
         - -ingest-storage.enabled=true
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
@@ -1483,6 +1484,7 @@ spec:
         - -ingest-storage.enabled=true
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
         - -query-frontend.cache-results=false
         - -query-frontend.max-cache-freshness=10m

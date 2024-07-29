@@ -14,7 +14,7 @@
     commonConfig+:: if !$._config.ingest_storage_enabled then {} else
       $.ingest_storage_args +
 
-      // The following should only be configured on distributors and ingesters, but it's currently required to pass
+      // The following should only be configured on distributors, ingesters and query-frontends, but it's currently required to pass
       // config validation when ingest storage is enabled.
       // TODO remove once we've improved the config validation.
       $.ingest_storage_kafka_consumer_args,
@@ -78,6 +78,12 @@
     $.ingest_storage_kafka_producer_args +
     $.ingest_storage_ruler_args,
 
+  ingester_args+:: if !$._config.ingest_storage_enabled then {} else
+    $.ingest_storage_ingester_args,
+
+  query_frontend_args+:: if !$._config.ingest_storage_enabled then {} else
+    $.ingest_storage_query_frontend_args,
+
   ingest_storage_distributor_args+:: {
     // Increase the default remote write timeout (applied to writing to Kafka too) because writing
     // to Kafka-compatible backend may be slower than writing to ingesters.
@@ -110,7 +116,10 @@
     }
   ),
 
-  ingester_args+:: if !$._config.ingest_storage_enabled then {} else $.ingest_storage_ingester_args,
+  ingest_storage_query_frontend_args+:: {
+    // Reduce the LPO polling interval to improve latency of strong consistency reads.
+    'ingest-storage.kafka.last-produced-offset-poll-interval': '500ms',
+  },
 
   //
   // Enforce the configured ingester zones.
