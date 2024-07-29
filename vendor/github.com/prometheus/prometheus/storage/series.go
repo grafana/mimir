@@ -341,7 +341,13 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			app.Append(t, v)
 		case chunkenc.ValHistogram:
 			t, h = seriesIter.AtHistogram(nil)
+			//fmt.Printf("KRAJO before compacting histogram: %v %v %s\n", h.PositiveSpans, h.PositiveBuckets[0], h.String())
+			h = h.Copy().Compact(0)
+			//fmt.Printf("KRAJO appending histogram with positive spans: %v %v %s\n", h.PositiveSpans, h.PositiveBuckets[0], h.String())
 			newChk, recoded, app, err = app.AppendHistogram(nil, t, h, false)
+			if newChk != nil {
+				fmt.Printf("KRAJO open newChk %d recoded %v header %d\n", t, recoded, newChk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
+			}
 			if err != nil {
 				return errChunksIterator{err: err}
 			}

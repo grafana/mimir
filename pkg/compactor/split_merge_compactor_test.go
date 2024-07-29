@@ -21,10 +21,12 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -678,6 +680,94 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			}
 		})
 	}
+}
+
+func TestMultitenantCompactor_CounterReset(t *testing.T) {
+	const (
+		userID = "user"
+		blockRange = 2 * time.Hour
+	)
+
+	var (
+		//blockRangeMillis = blockRange.Milliseconds()
+		compactionRanges = mimir_tsdb.DurationList{blockRange, 2 * blockRange, 4 * blockRange}
+
+		ctx        = context.Background()
+		workDir    = t.TempDir()
+		storageDir = "/tmp/k" //t.TempDir()
+		fixtureDir = filepath.Join("fixtures", "test-counter-reset")
+	)
+
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+	require.NoError(t, err)
+	userBkt := bucket.NewUserBucketClient(userID, bkt, nil)
+
+	// Copy blocks from fixtures dir to the test bucket.
+	var metas []*block.Meta
+
+	entries, err := os.ReadDir(fixtureDir)
+	require.NoError(t, err)
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		blockDir := filepath.Join(fixtureDir, entry.Name())
+
+		blockID, err := ulid.Parse(entry.Name())
+		require.NoErrorf(t, err, "parsing block ID from directory name %q", entry.Name())
+
+		meta, err := block.ReadMetaFromDir(blockDir)
+		require.NoErrorf(t, err, "reading meta from block at &s", blockDir)
+
+		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), userBkt, filepath.Join(fixtureDir, blockID.String()), meta))
+
+		metas = append(metas, meta)
+	}
+
+	// We expect 2 blocks have been copied.
+	require.Len(t, metas, 3)
+
+	storageCfg := mimir_tsdb.BlocksStorageConfig{}
+	flagext.DefaultValues(&storageCfg)
+	storageCfg.Bucket.Backend = bucket.Filesystem
+	storageCfg.Bucket.Filesystem.Directory = storageDir
+
+	compactorCfg := prepareConfig(t)
+	compactorCfg.DataDir = workDir
+	compactorCfg.BlockRanges = compactionRanges
+	tsdbPlanner := &tsdbPlannerMock{}
+	//c, _, tsdbPlanner, logs, _ := prepare(t, cfg, bkt)
+
+	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return(metas, nil)
+
+	cfgProvider := newMockConfigProvider()
+	cfgProvider.splitAndMergeShards[userID] = 32
+
+	logger := log.NewLogfmtLogger(os.Stdout)
+	reg := prometheus.NewPedanticRegistry()
+
+	c, err := NewMultitenantCompactor(compactorCfg, storageCfg, cfgProvider, logger, reg)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+	})
+
+	// Wait until the first compaction run completed.
+	test.Poll(t, 300*time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_compactor_runs_completed_total Total number of compaction runs successfully completed.
+			# TYPE cortex_compactor_runs_completed_total counter
+			cortex_compactor_runs_completed_total 1
+		`), "cortex_compactor_runs_completed_total")
+	})
+
+	// Stop the compactor.
+	//require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
+
+	require.True(t, false)
 }
 
 func TestMultitenantCompactor_ShouldGuaranteeSeriesShardingConsistencyOverTheTime(t *testing.T) {

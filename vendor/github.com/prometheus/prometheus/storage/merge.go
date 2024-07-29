@@ -433,6 +433,7 @@ func (h *genericSeriesSetHeap) Pop() interface{} {
 //
 // It's optimized for non-overlap cases as well.
 func ChainedSeriesMerge(series ...Series) Series {
+	fmt.Printf("KRAJO ChainedSeriesMerge %d\n", len(series))
 	if len(series) == 0 {
 		return nil
 	}
@@ -544,7 +545,10 @@ func (c *chainSampleIterator) AtHistogram(h *histogram.Histogram) (int64, *histo
 	// `CounterReset`. But then we needed to track the previous sample
 	// in more detail, which might not be worth it.
 	if !c.consecutive && h.CounterResetHint != histogram.GaugeType {
+		fmt.Printf("KRAJO chainSampleIterator.AtHistogram %p %d %d->%d\n", c.curr, t, h.CounterResetHint, histogram.UnknownCounterReset)
 		h.CounterResetHint = histogram.UnknownCounterReset
+	} else {
+		fmt.Printf("KRAJO chainSampleIterator.AtHistogram %p %d %d\n", c.curr, t, h.CounterResetHint)
 	}
 	return t, h
 }
@@ -561,7 +565,10 @@ func (c *chainSampleIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (in
 	// `CounterReset`. But then we needed to track the previous sample
 	// in more detail, which might not be worth it.
 	if !c.consecutive && fh.CounterResetHint != histogram.GaugeType {
+		fmt.Printf("KRAJO chainSampleIterator.AtFloatHistogram %d %d->%d\n", t, fh.CounterResetHint, histogram.UnknownCounterReset)
 		fh.CounterResetHint = histogram.UnknownCounterReset
+	} else {
+		fmt.Printf("KRAJO chainSampleIterator.AtFloatHistogram %d %d\n", t, fh.CounterResetHint)
 	}
 	return t, fh
 }

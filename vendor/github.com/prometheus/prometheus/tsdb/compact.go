@@ -872,6 +872,7 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blockPop
 	}
 
 	// We use MinTime and MaxTime from first output block, because ALL output blocks have the same min/max times set.
+	fmt.Printf("KRAJO populateBlock call: blockPopulator: %T, %v mergeFunc: %T, %v\n", blockPopulator, blockPopulator, c.mergeFunc, c.mergeFunc)
 	if err := blockPopulator.PopulateBlock(c.ctx, c.metrics, c.logger, c.chunkPool, c.mergeFunc, c.concurrencyOpts, blocks, outBlocks[0].meta.MinTime, outBlocks[0].meta.MaxTime, outBlocks, AllSortedPostings); err != nil {
 		return fmt.Errorf("populate block: %w", err)
 	}
@@ -1088,6 +1089,14 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 			// Postings can only be iterated once.
 			k, v := index.AllPostingsKey()
 			all, err := indexr.Postings(ctx, k, v)
+			// all, err := indexr.PostingsForMatchers(ctx, false, 
+			// 	labels.MustNewMatcher(labels.MatchEqual, "__name__", "cortex_request_duration_seconds"),
+			// 	labels.MustNewMatcher(labels.MatchEqual, "pod", "cortex-gw-internal-6dd85c67f-2ghwr"),
+			// 	labels.MustNewMatcher(labels.MatchEqual, "namespace", "cortex-ops-01"),
+			// 	labels.MustNewMatcher(labels.MatchEqual, "route", "api_v1_push"),
+			// 	labels.MustNewMatcher(labels.MatchEqual, "status_code", "200"),
+			// 	labels.MustNewMatcher(labels.MatchEqual, "ws", "false"),
+			// )
 			if err != nil {
 				return err
 			}
@@ -1155,6 +1164,21 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 		default:
 		}
 		s := set.At()
+		if s.Labels().Get("__name__") != "cortex_request_duration_seconds" {
+			continue
+		}
+		if s.Labels().Get("pod") != "cortex-gw-internal-6dd85c67f-2ghwr" {
+			continue
+		}
+		if s.Labels().Get("namespace") != "cortex-ops-01" {
+			continue
+		}
+		if s.Labels().Get("route") != "api_v1_push" {
+			continue
+		}
+		if s.Labels().Get("status_code") != "200" {
+			continue
+		}
 
 		chksIter := s.Iterator(chksIter)
 		var chks []chunks.Meta

@@ -263,6 +263,7 @@ func (a *HistogramAppender) appendable(h *histogram.Histogram) (
 	}
 	if h.CounterResetHint == histogram.CounterReset {
 		// Always honor the explicit counter reset hint.
+		fmt.Printf("KRAJO appendable explicit counter reset hint\n")
 		counterReset = true
 		return
 	}
@@ -280,6 +281,7 @@ func (a *HistogramAppender) appendable(h *histogram.Histogram) (
 	if h.Count < a.cnt {
 		// There has been a counter reset.
 		counterReset = true
+		fmt.Printf("KRAJO appendable count reset\n")
 		return
 	}
 
@@ -289,12 +291,14 @@ func (a *HistogramAppender) appendable(h *histogram.Histogram) (
 
 	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.FloatBucketsMatch(h.CustomValues, a.customValues) {
 		counterReset = true
+		fmt.Printf("KRAJO custombucket changed\n")
 		return
 	}
 
 	if h.ZeroCount < a.zCnt {
 		// There has been a counter reset since ZeroThreshold didn't change.
 		counterReset = true
+		fmt.Printf("KRAJO appendable count reset\n")
 		return
 	}
 
@@ -302,17 +306,22 @@ func (a *HistogramAppender) appendable(h *histogram.Histogram) (
 	positiveInserts, ok = expandSpansForward(a.pSpans, h.PositiveSpans)
 	if !ok {
 		counterReset = true
+		fmt.Printf("KRAJO appendable positive spans reset %v %v\n", a.pSpans, h.PositiveSpans)
 		return
 	}
 	negativeInserts, ok = expandSpansForward(a.nSpans, h.NegativeSpans)
 	if !ok {
 		counterReset = true
+		fmt.Printf("KRAJO appendable negative spans reset\n")
 		return
 	}
 
 	if counterResetInAnyBucket(a.pBuckets, h.PositiveBuckets, a.pSpans, h.PositiveSpans) ||
 		counterResetInAnyBucket(a.nBuckets, h.NegativeBuckets, a.nSpans, h.NegativeSpans) {
 		counterReset, positiveInserts, negativeInserts = true, nil, nil
+		if counterReset {
+			fmt.Printf("KRAJO appendable count in a bucket reset\n")
+		}
 		return
 	}
 
@@ -662,6 +671,7 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 	// Adding counter-like histogram.
 	if h.CounterResetHint != histogram.GaugeType {
 		pForwardInserts, nForwardInserts, okToAppend, counterReset := a.appendable(h)
+		fmt.Printf("KRAJO HistogramAppender.AppendHistogram t=%d okToAppend: %v, counterReset: %v\n", t, okToAppend, counterReset)
 		if !okToAppend || counterReset {
 			if appendOnly {
 				if counterReset {
