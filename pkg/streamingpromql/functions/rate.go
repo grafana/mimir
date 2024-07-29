@@ -27,78 +27,91 @@ func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *typ
 	}
 
 	if fCount >= 2 {
-		firstPoint := floatBuffer.First()
-		lastPoint, _ := floatBuffer.LastAtOrBefore(step.RangeEnd) // We already know there is a point at or before this time, no need to check.
-		delta := lastPoint.F - firstPoint.F
-		previousValue := firstPoint.F
-
-		accumulate := func(points []promql.FPoint) {
-			for _, p := range points {
-				if p.F < previousValue {
-					// Counter reset.
-					delta += previousValue
-				}
-
-				previousValue = p.F
-			}
-		}
-
-		accumulate(fHead)
-		accumulate(fTail)
-
-		val := calculateFloatRate(step.RangeStart, step.RangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount)
+		val := floatRate(fCount, floatBuffer, step, fHead, fTail, rangeSeconds)
 		return val, true, nil, nil
 	}
 
 	if hCount >= 2 {
-		firstPoint := histogramBuffer.First()
-		lastPoint, _ := histogramBuffer.LastAtOrBefore(step.RangeEnd) // We already know there is a point at or before this time, no need to check.
-
-		currentSchema := firstPoint.H.Schema
-		if lastPoint.H.Schema < currentSchema {
-			currentSchema = lastPoint.H.Schema
-		}
-
-		delta := lastPoint.H.CopyToSchema(currentSchema)
-		_, err := delta.Sub(firstPoint.H)
+		val, err := histogramRate(histogramBuffer, step, hHead, hTail, rangeSeconds, hCount)
 		if err != nil {
 			return 0, false, nil, err
 		}
-		previousValue := firstPoint.H
-
-		accumulate := func(points []promql.HPoint) error {
-			for _, p := range points {
-				if p.H.DetectReset(previousValue) {
-					// Counter reset.
-					_, err = delta.Add(previousValue)
-					if err != nil {
-						return err
-					}
-				}
-				if p.H.Schema < currentSchema {
-					delta = delta.CopyToSchema(p.H.Schema)
-				}
-
-				previousValue = p.H
-			}
-			return nil
-		}
-
-		err = accumulate(hHead)
-		if err != nil {
-			return 0, false, nil, err
-
-		}
-		err = accumulate(hTail)
-		if err != nil {
-			return 0, false, nil, err
-
-		}
-
-		val := calculateHistogramRate(step.RangeStart, step.RangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount)
-		return 0, false, val, err
+		return 0, false, val, nil
 	}
 	return 0, false, nil, nil
+}
+
+func histogramRate(histogramBuffer *types.HPointRingBuffer, step types.RangeVectorStepData, hHead []promql.HPoint, hTail []promql.HPoint, rangeSeconds float64, hCount int) (*histogram.FloatHistogram, error) {
+	firstPoint := histogramBuffer.First()
+	lastPoint, _ := histogramBuffer.LastAtOrBefore(step.RangeEnd) // We already know there is a point at or before this time, no need to check.
+
+	currentSchema := firstPoint.H.Schema
+	if lastPoint.H.Schema < currentSchema {
+		currentSchema = lastPoint.H.Schema
+	}
+
+	delta := lastPoint.H.CopyToSchema(currentSchema)
+	_, err := delta.Sub(firstPoint.H)
+	if err != nil {
+		return nil, err
+	}
+	previousValue := firstPoint.H
+
+	accumulate := func(points []promql.HPoint) error {
+		for _, p := range points {
+			if p.H.DetectReset(previousValue) {
+				// Counter reset.
+				_, err = delta.Add(previousValue)
+				if err != nil {
+					return err
+				}
+			}
+			if p.H.Schema < currentSchema {
+				delta = delta.CopyToSchema(p.H.Schema)
+			}
+
+			previousValue = p.H
+		}
+		return nil
+	}
+
+	err = accumulate(hHead)
+	if err != nil {
+		return nil, err
+
+	}
+	err = accumulate(hTail)
+	if err != nil {
+		return nil, err
+
+	}
+
+	val := calculateHistogramRate(step.RangeStart, step.RangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount)
+	return val, err
+}
+
+func floatRate(fCount int, floatBuffer *types.FPointRingBuffer, step types.RangeVectorStepData, fHead []promql.FPoint, fTail []promql.FPoint, rangeSeconds float64) float64 {
+	firstPoint := floatBuffer.First()
+	lastPoint, _ := floatBuffer.LastAtOrBefore(step.RangeEnd) // We already know there is a point at or before this time, no need to check.
+	delta := lastPoint.F - firstPoint.F
+	previousValue := firstPoint.F
+
+	accumulate := func(points []promql.FPoint) {
+		for _, p := range points {
+			if p.F < previousValue {
+				// Counter reset.
+				delta += previousValue
+			}
+
+			previousValue = p.F
+		}
+	}
+
+	accumulate(fHead)
+	accumulate(fTail)
+
+	val := calculateFloatRate(step.RangeStart, step.RangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount)
+	return val
 }
 
 // This is based on extrapolatedRate from promql/functions.go.
