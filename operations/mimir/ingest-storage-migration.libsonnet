@@ -148,8 +148,18 @@
     (if !$._config.ingest_storage_migration_write_to_classic_ingesters_enabled then {} else writeToClassicIngestersArgs),
 
   //
-  // Read path (components reading from ingesters): querier, ruler-querier.
+  // Read path. Affected components:
   //
+  // - Querier, ruler-querier: read from ingesters
+  // - Query-frontend: fetch partition offsets to enforce strong read consistency
+  //
+
+  query_frontend_args+:: if !$._config.ingest_storage_migration_querier_enabled then {} else
+    // Explicitly include all the ingest storage config because during the migration the ingest storage
+    // may not be enabled globally yet.
+    $.ingest_storage_args +
+    $.ingest_storage_kafka_consumer_args +
+    $.ingest_storage_query_frontend_args,
 
   querier_args+:: if !$._config.ingest_storage_migration_querier_enabled then {} else
     // Explicitly include all the ingest storage config because during the migration the ingest storage
