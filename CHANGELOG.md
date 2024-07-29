@@ -96,6 +96,7 @@
 * [ENHANCEMENT] Alerts: added `MimirKafkaClientBufferedProduceBytesTooHigh` alert. #8763
 * [ENHANCEMENT] Dashboards: added "Kafka produced records / sec" panel to "Mimir / Writes" dashboard. #8763
 * [ENHANCEMENT] Alerts: added `MimirStrongConsistencyOffsetNotPropagatedToIngesters` alert, and rename `MimirIngesterFailsEnforceStrongConsistencyOnReadPath` alert to `MimirStrongConsistencyEnforcementFailed`. #8831
+* [ENHANCEMENT] Dashboards: remove "All" option for namespace dropdown in dashboards. #8829
 * [BUGFIX] Dashboards: fix "current replicas" in autoscaling panels when HPA is not active. #8566
 * [BUGFIX] Alerts: do not fire `MimirRingMembersMismatch` during the migration to experimental ingest storage. #8727
 

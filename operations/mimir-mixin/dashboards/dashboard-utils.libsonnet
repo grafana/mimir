@@ -100,10 +100,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
         if multi then
           if $._config.singleBinary
-          then d.addMultiTemplate('job', $._config.dashboard_variables.job_query, $._config.per_job_label, sort=sortAscending)
+          then d.addMultiTemplate('job', $._config.dashboard_variables.job_query, $._config.per_job_label, sort=sortAscending, includeAll=false)
           else d
                .addMultiTemplate('cluster', $._config.dashboard_variables.cluster_query, '%s' % $._config.per_cluster_label, sort=sortAscending)
-               .addMultiTemplate('namespace', $._config.dashboard_variables.namespace_query, '%s' % $._config.per_namespace_label, sort=sortAscending)
+               .addMultiTemplate('namespace', $._config.dashboard_variables.namespace_query, '%s' % $._config.per_namespace_label, sort=sortAscending, includeAll=false)
         else
           if $._config.singleBinary
           then d.addTemplate('job', $._config.dashboard_variables.job_query, $._config.per_job_label, sort=sortAscending)
