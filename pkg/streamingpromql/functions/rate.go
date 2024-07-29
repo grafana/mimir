@@ -12,13 +12,10 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer) (bool, float64, *histogram.FloatHistogram, error) {
-	var err error
-	// Floats
+func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer) (float64, bool, *histogram.FloatHistogram, error) {
 	fHead, fTail := floatBuffer.UnsafePoints(step.RangeEnd)
 	fCount := len(fHead) + len(fTail)
 
-	// Histograms
 	hHead, hTail := histogramBuffer.UnsafePoints(step.RangeEnd)
 	hCount := len(hHead) + len(hTail)
 
@@ -26,7 +23,7 @@ func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *typ
 		// We need either at least two Histograms and no Floats, or at least two
 		// Floats and no Histograms to calculate a rate. Otherwise, drop this
 		// Vector element.
-		return false, 0, nil, nil
+		return 0, false, nil, nil
 	}
 
 	if fCount >= 2 {
@@ -50,7 +47,7 @@ func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *typ
 		accumulate(fTail)
 
 		val := calculateFloatRate(step.RangeStart, step.RangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount)
-		return true, val, nil, nil
+		return val, true, nil, nil
 	}
 
 	if hCount >= 2 {
@@ -63,9 +60,9 @@ func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *typ
 		}
 
 		delta := lastPoint.H.CopyToSchema(currentSchema)
-		_, err = delta.Sub(firstPoint.H)
+		_, err := delta.Sub(firstPoint.H)
 		if err != nil {
-			return false, 0, nil, err
+			return 0, false, nil, err
 		}
 		previousValue := firstPoint.H
 
@@ -89,17 +86,19 @@ func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *typ
 
 		err = accumulate(hHead)
 		if err != nil {
-			return false, 0, nil, err
+			return 0, false, nil, err
+
 		}
 		err = accumulate(hTail)
 		if err != nil {
-			return false, 0, nil, err
+			return 0, false, nil, err
+
 		}
 
 		val := calculateHistogramRate(step.RangeStart, step.RangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount)
-		return false, 0, val, err
+		return 0, false, val, err
 	}
-	return false, 0, nil, nil
+	return 0, false, nil, nil
 }
 
 // This is based on extrapolatedRate from promql/functions.go.

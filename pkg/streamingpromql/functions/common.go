@@ -64,4 +64,4 @@ func Passthrough(seriesData types.InstantVectorSeriesData, _ *pooling.LimitingPo
 //   - f float64: the float value.
 //   - h *histogram.FloatHistogram: nil if no histogram is present.
 //   - err error.
-type RangeVectorStepFunction func(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer) (hasFloat bool, f float64, h *histogram.FloatHistogram, err error)
+type RangeVectorStepFunction func(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error)

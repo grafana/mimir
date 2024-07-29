@@ -105,7 +105,7 @@ func SingleRangeVectorFunctionOperatorFactory(name string, metadataFunc function
 //   - name: The name of the function.
 //   - rangeStepFunc: The function to handle a range vector step
 
-func SingleRangeVectorTransformationFunctionOperatorFactory(name string, rangeStepFunc functions.RangeVectorStepFunction) InstantVectorFunctionOperatorFactory {
+func RangeVectorTransformationFunctionOperatorFactory(name string, rangeStepFunc functions.RangeVectorStepFunction) InstantVectorFunctionOperatorFactory {
 	return SingleRangeVectorFunctionOperatorFactory(name, functions.DropSeriesName, rangeStepFunc)
 }
 
@@ -130,7 +130,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"log10":           InstantVectorTransformationFunctionOperatorFactory("log10", functions.Log10),
 	"log2":            InstantVectorTransformationFunctionOperatorFactory("log2", functions.Log2),
 	"rad":             InstantVectorTransformationFunctionOperatorFactory("rad", functions.Rad),
-	"rate":            SingleRangeVectorTransformationFunctionOperatorFactory("rate", functions.Rate),
+	"rate":            RangeVectorTransformationFunctionOperatorFactory("rate", functions.Rate),
 	"sgn":             InstantVectorTransformationFunctionOperatorFactory("sgn", functions.Sgn),
 	"sin":             InstantVectorTransformationFunctionOperatorFactory("sin", functions.Sin),
 	"sinh":            InstantVectorTransformationFunctionOperatorFactory("sinh", functions.Sinh),
