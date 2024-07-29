@@ -509,7 +509,7 @@ func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			// create and use manager factory
 			pusher := newPusherMock()
 			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
-			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, options.limits, nil)
+			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, &NoopConcurrencyController{}, options.limits, nil)
 
 			manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
@@ -614,7 +614,7 @@ func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDe
 
 			// Create the manager from the factory.
 			queryable := &storage.MockQueryable{MockQuerier: querier}
-			managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), options.limits, nil)
+			managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), &NoopConcurrencyController{}, options.limits, nil)
 			manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
 			// Load rules into manager.
@@ -710,7 +710,7 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 
 	// Create the manager from the factory.
 	queryable := &storage.MockQueryable{MockQuerier: querier}
-	managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), options.limits, nil)
+	managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), &NoopConcurrencyController{}, options.limits, nil)
 	manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
 	// Load rules into manager.

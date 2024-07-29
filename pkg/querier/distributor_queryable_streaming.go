@@ -90,5 +90,5 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 		return series.NewErrIterator(err)
 	}
 
-	return batch.NewChunkMergeIterator(it, chunks)
+	return batch.NewChunkMergeIterator(it, s.labels, chunks)
 }

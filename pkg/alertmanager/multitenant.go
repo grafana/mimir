@@ -554,7 +554,7 @@ func (am *MultitenantAlertmanager) loadAndSyncConfigs(ctx context.Context, syncR
 		return err
 	}
 
-	am.syncConfigs(cfgs)
+	am.syncConfigs(ctx, cfgs)
 	am.deleteUnusedLocalUserState()
 
 	// Note when cleaning up remote state, remember that the user may not necessarily be configured
@@ -640,7 +640,7 @@ func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
 	return alertmanagers.Includes(am.ringLifecycler.GetInstanceAddr())
 }
 
-func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertConfigDescs) {
+func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[string]alertspb.AlertConfigDescs) {
 	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgMap))
 	for user, cfgs := range cfgMap {
 		cfg, err := am.computeConfig(cfgs)
@@ -649,6 +649,11 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertC
 			level.Warn(am.logger).Log("msg", "error computing config", "err", err)
 			continue
 		}
+
+		if err := am.syncStates(ctx, cfg); err != nil {
+			level.Error(am.logger).Log("msg", "error syncing states", "err", err, "user", user)
+		}
+
 		if err := am.setConfig(cfg); err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error applying config", "err", err)
@@ -721,10 +726,28 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	}
 }
 
-// TODO: Use taking https://github.com/grafana/mimir/pull/8637 as a reference.
-//
-//nolint:unused
-func (am *MultitenantAlertmanager) promoteAndDeleteState(ctx context.Context, cfg amConfig) error {
+// syncStates promotes/unpromotes the Grafana state and updates the 'promoted' flag if needed.
+func (am *MultitenantAlertmanager) syncStates(ctx context.Context, cfg amConfig) error {
+	am.alertmanagersMtx.Lock()
+	userAM, ok := am.alertmanagers[cfg.User]
+	am.alertmanagersMtx.Unlock()
+
+	// If we're not using Grafana configuration, we shouldn't use Grafana state.
+	// Update the flag accordingly.
+	if !cfg.usingGrafanaConfig {
+		if ok && userAM.usingGrafanaState.CompareAndSwap(true, false) {
+			level.Debug(am.logger).Log("msg", "Grafana state unpromoted", "user", cfg.User)
+		}
+		return nil
+	}
+
+	// If the Alertmanager is already using Grafana state, do nothing.
+	if ok && userAM.usingGrafanaState.Load() {
+		return nil
+	}
+
+	// Promote the Grafana Alertmanager state and update the usingGrafanaState flag.
+	level.Debug(am.logger).Log("msg", "promoting Grafana state", "user", cfg.User)
 	s, err := am.store.GetFullGrafanaState(ctx, cfg.User)
 	if err != nil {
 		if errors.Is(err, alertspb.ErrNotFound) {
@@ -747,34 +770,37 @@ func (am *MultitenantAlertmanager) promoteAndDeleteState(ctx context.Context, cf
 		}
 	}
 
-	am.alertmanagersMtx.Lock()
-	existing, ok := am.alertmanagers[cfg.User]
-	am.alertmanagersMtx.Unlock()
 	if !ok {
-		level.Debug(am.logger).Log("msg", "no Alertmanager found, creating new one before applying state", "user", cfg.User)
+		level.Debug(am.logger).Log("msg", "no Alertmanager found, creating new one before applying Grafana state", "user", cfg.User)
 		if err := am.setConfig(cfg); err != nil {
 			return fmt.Errorf("error creating new Alertmanager for user %s: %w", cfg.User, err)
 		}
 		am.alertmanagersMtx.Lock()
-		existing = am.alertmanagers[cfg.User]
+		userAM, ok = am.alertmanagers[cfg.User]
 		am.alertmanagersMtx.Unlock()
+		if !ok {
+			return fmt.Errorf("Alertmanager for user %s not found after creation", cfg.User)
+		}
 	}
 
-	if err := existing.mergeFullExternalState(s.State); err != nil {
+	if err := userAM.mergeFullExternalState(s.State); err != nil {
 		return err
 	}
+	userAM.usingGrafanaState.Store(true)
 
 	// Delete state.
 	if err := am.store.DeleteFullGrafanaState(ctx, cfg.User); err != nil {
 		return fmt.Errorf("error deleting grafana state for user %s: %w", cfg.User, err)
 	}
+	level.Debug(am.logger).Log("msg", "Grafana state promoted", "user", cfg.User)
 	return nil
 }
 
 type amConfig struct {
 	alertspb.AlertConfigDesc
-	tmplExternalURL *url.URL
-	staticHeaders   map[string]string
+	tmplExternalURL    *url.URL
+	staticHeaders      map[string]string
+	usingGrafanaConfig bool
 }
 
 // setConfig applies the given configuration to the alertmanager for `userID`,
