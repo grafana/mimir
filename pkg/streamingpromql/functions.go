@@ -43,17 +43,17 @@ func SingleInputVectorFunctionOperatorFactory(name string, metadataFunc function
 	}
 }
 
-// TransformationFunctionOperatorFactory creates an InstantVectorFunctionOperatorFactory for functions
+// InstantVectorTransformationFunctionOperatorFactory creates an InstantVectorFunctionOperatorFactory for functions
 // that have exactly 1 argument (v instant-vector), and drop the series __name__ label.
 //
 // Parameters:
 //   - name: The name of the function.
 //   - seriesDataFunc: The function to handle series data
-func TransformationFunctionOperatorFactory(name string, seriesDataFunc functions.InstantVectorFunction) InstantVectorFunctionOperatorFactory {
+func InstantVectorTransformationFunctionOperatorFactory(name string, seriesDataFunc functions.InstantVectorFunction) InstantVectorFunctionOperatorFactory {
 	return SingleInputVectorFunctionOperatorFactory(name, functions.DropSeriesName, seriesDataFunc)
 }
 
-// LabelManipulationFunctionOperatorFactory creates an InstantVectorFunctionOperator for functions
+// InstantVectorLabelManipulationFunctionOperatorFactory creates an InstantVectorFunctionOperator for functions
 // that have exactly 1 argument (v instant-vector), and need to manipulate the labels of
 // each series without manipulating the returned samples.
 // The values of v are passed through.
@@ -65,56 +65,78 @@ func TransformationFunctionOperatorFactory(name string, seriesDataFunc functions
 // Returns:
 //
 //	An InstantVectorFunctionOperator.
-func LabelManipulationFunctionOperatorFactory(name string, metadataFunc functions.SeriesMetadataFunction) InstantVectorFunctionOperatorFactory {
+func InstantVectorLabelManipulationFunctionOperatorFactory(name string, metadataFunc functions.SeriesMetadataFunction) InstantVectorFunctionOperatorFactory {
 	return SingleInputVectorFunctionOperatorFactory(name, metadataFunc, functions.Passthrough)
 }
 
-func createRateFunctionOperator(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error) {
-	if len(args) != 1 {
-		// Should be caught by the PromQL parser, but we check here for safety.
-		return nil, fmt.Errorf("expected exactly 1 argument for rate, got %v", len(args))
-	}
+// SingleRangeVectorFunctionOperatorFactory creates an InstantVectorFunctionOperatorFactory for functions
+// that have exactly 1 argument (v range-vector).
+//
+// Parameters:
+//   - name: The name of the function.
+//   - metadataFunc: The function for handling metadata
+//   - rangeStepFunc: The function to handle a range vector step
+func SingleRangeVectorFunctionOperatorFactory(name string, metadataFunc functions.SeriesMetadataFunction, rangeStepFunc functions.RangeVectorStepFunction) InstantVectorFunctionOperatorFactory {
+	return func(args []types.Operator, pool *pooling.LimitingPool) (types.InstantVectorOperator, error) {
+		if len(args) != 1 {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", name, len(args))
+		}
 
-	inner, ok := args[0].(types.RangeVectorOperator)
-	if !ok {
-		// Should be caught by the PromQL parser, but we check here for safety.
-		return nil, fmt.Errorf("expected a range vector argument for rate, got %T", args[0])
-	}
+		inner, ok := args[0].(types.RangeVectorOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a range vector argument for %s, got %T", name, args[0])
+		}
 
-	return &operators.FunctionOverRangeVector{
-		Inner: inner,
-		Pool:  pool,
-	}, nil
+		return &operators.FunctionOverRangeVector{
+			Inner:               inner,
+			Pool:                pool,
+			MetadataFunc:        metadataFunc,
+			RangeVectorStepFunc: rangeStepFunc,
+		}, nil
+	}
+}
+
+// SingleRangeVectorTransformationFunctionOperatorFactory creates an InstantVectorFunctionOperatorFactory for functions
+// that have exactly 1 argument (v range-vector), and drop the series __name__ label.
+//
+// Parameters:
+//   - name: The name of the function.
+//   - rangeStepFunc: The function to handle a range vector step
+
+func RangeVectorTransformationFunctionOperatorFactory(name string, rangeStepFunc functions.RangeVectorStepFunction) InstantVectorFunctionOperatorFactory {
+	return SingleRangeVectorFunctionOperatorFactory(name, functions.DropSeriesName, rangeStepFunc)
 }
 
 // These functions return an instant-vector.
 var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOperatorFactory{
-	"abs":             TransformationFunctionOperatorFactory("abs", functions.Abs),
-	"acos":            TransformationFunctionOperatorFactory("acos", functions.Acos),
-	"acosh":           TransformationFunctionOperatorFactory("acosh", functions.Acosh),
-	"asin":            TransformationFunctionOperatorFactory("asin", functions.Asin),
-	"asinh":           TransformationFunctionOperatorFactory("asinh", functions.Asinh),
-	"atan":            TransformationFunctionOperatorFactory("atan", functions.Atan),
-	"atanh":           TransformationFunctionOperatorFactory("atanh", functions.Atanh),
-	"ceil":            TransformationFunctionOperatorFactory("ceil", functions.Ceil),
-	"cos":             TransformationFunctionOperatorFactory("cos", functions.Cos),
-	"cosh":            TransformationFunctionOperatorFactory("cosh", functions.Cosh),
-	"deg":             TransformationFunctionOperatorFactory("deg", functions.Deg),
-	"exp":             TransformationFunctionOperatorFactory("exp", functions.Exp),
-	"floor":           TransformationFunctionOperatorFactory("floor", functions.Floor),
-	"histogram_count": TransformationFunctionOperatorFactory("histogram_count", functions.HistogramCount),
-	"histogram_sum":   TransformationFunctionOperatorFactory("histogram_sum", functions.HistogramSum),
-	"ln":              TransformationFunctionOperatorFactory("ln", functions.Ln),
-	"log10":           TransformationFunctionOperatorFactory("log10", functions.Log10),
-	"log2":            TransformationFunctionOperatorFactory("log2", functions.Log2),
-	"rad":             TransformationFunctionOperatorFactory("rad", functions.Rad),
-	"rate":            createRateFunctionOperator,
-	"sgn":             TransformationFunctionOperatorFactory("sgn", functions.Sgn),
-	"sin":             TransformationFunctionOperatorFactory("sin", functions.Sin),
-	"sinh":            TransformationFunctionOperatorFactory("sinh", functions.Sinh),
-	"sqrt":            TransformationFunctionOperatorFactory("sqrt", functions.Sqrt),
-	"tan":             TransformationFunctionOperatorFactory("tan", functions.Tan),
-	"tanh":            TransformationFunctionOperatorFactory("tanh", functions.Tanh),
+	"abs":             InstantVectorTransformationFunctionOperatorFactory("abs", functions.Abs),
+	"acos":            InstantVectorTransformationFunctionOperatorFactory("acos", functions.Acos),
+	"acosh":           InstantVectorTransformationFunctionOperatorFactory("acosh", functions.Acosh),
+	"asin":            InstantVectorTransformationFunctionOperatorFactory("asin", functions.Asin),
+	"asinh":           InstantVectorTransformationFunctionOperatorFactory("asinh", functions.Asinh),
+	"atan":            InstantVectorTransformationFunctionOperatorFactory("atan", functions.Atan),
+	"atanh":           InstantVectorTransformationFunctionOperatorFactory("atanh", functions.Atanh),
+	"ceil":            InstantVectorTransformationFunctionOperatorFactory("ceil", functions.Ceil),
+	"cos":             InstantVectorTransformationFunctionOperatorFactory("cos", functions.Cos),
+	"cosh":            InstantVectorTransformationFunctionOperatorFactory("cosh", functions.Cosh),
+	"deg":             InstantVectorTransformationFunctionOperatorFactory("deg", functions.Deg),
+	"exp":             InstantVectorTransformationFunctionOperatorFactory("exp", functions.Exp),
+	"floor":           InstantVectorTransformationFunctionOperatorFactory("floor", functions.Floor),
+	"histogram_count": InstantVectorTransformationFunctionOperatorFactory("histogram_count", functions.HistogramCount),
+	"histogram_sum":   InstantVectorTransformationFunctionOperatorFactory("histogram_sum", functions.HistogramSum),
+	"ln":              InstantVectorTransformationFunctionOperatorFactory("ln", functions.Ln),
+	"log10":           InstantVectorTransformationFunctionOperatorFactory("log10", functions.Log10),
+	"log2":            InstantVectorTransformationFunctionOperatorFactory("log2", functions.Log2),
+	"rad":             InstantVectorTransformationFunctionOperatorFactory("rad", functions.Rad),
+	"rate":            RangeVectorTransformationFunctionOperatorFactory("rate", functions.Rate),
+	"sgn":             InstantVectorTransformationFunctionOperatorFactory("sgn", functions.Sgn),
+	"sin":             InstantVectorTransformationFunctionOperatorFactory("sin", functions.Sin),
+	"sinh":            InstantVectorTransformationFunctionOperatorFactory("sinh", functions.Sinh),
+	"sqrt":            InstantVectorTransformationFunctionOperatorFactory("sqrt", functions.Sqrt),
+	"tan":             InstantVectorTransformationFunctionOperatorFactory("tan", functions.Tan),
+	"tanh":            InstantVectorTransformationFunctionOperatorFactory("tanh", functions.Tanh),
 }
 
 func RegisterInstantVectorFunctionOperatorFactory(functionName string, factory InstantVectorFunctionOperatorFactory) error {
