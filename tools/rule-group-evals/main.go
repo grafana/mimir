@@ -127,7 +127,7 @@ func printAnalysisResultsCSV(groups []*Group) {
 		return int(b.estimatedDurationPercentage() - a.estimatedDurationPercentage())
 	})
 
-	fmt.Println(`"Rule group","Evaluation interval (sec)","Num strong consistency rules","Current duration (sec)","Estimated duration with strong read consistency (sec)", "Estimated duration with strong read consistency (%)"`)
+	fmt.Println(`"Rule group","Evaluation interval (sec)","Num rules","Num strong consistency rules","Current duration (sec)","Estimated duration with strong read consistency (sec)", "Estimated duration with strong read consistency (%)"`)
 	for _, group := range groups {
 		// Skip rule groups with no strong consistency rules, since they're not affected.
 		if group.rulesStrongConsistencyCount == 0 {
@@ -137,6 +137,7 @@ func printAnalysisResultsCSV(groups []*Group) {
 		fmt.Println(strings.Join([]string{
 			group.Name,
 			fmt.Sprintf("%.0f", group.EvaluationInterval().Seconds()),
+			strconv.Itoa(len(group.Rules)),
 			strconv.Itoa(group.rulesStrongConsistencyCount),
 			fmt.Sprintf("%.2f", group.rulesTotalEvaluationDuration.Seconds()),
 			fmt.Sprintf("%.2f", group.rulesEstimatedTotalEvaluationWithStrongConsistencyDuration.Seconds()),
