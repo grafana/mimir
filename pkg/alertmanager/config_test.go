@@ -20,7 +20,6 @@ func TestCreateUsableGrafanaConfig(t *testing.T) {
 			"empty grafana config",
 			alertspb.GrafanaAlertConfigDesc{
 				ExternalUrl:   "http://test:3000",
-				Hash:          "abc123",
 				RawConfig:     "",
 				StaticHeaders: map[string]string{"test": "test"},
 			},
@@ -31,7 +30,6 @@ func TestCreateUsableGrafanaConfig(t *testing.T) {
 			"invalid grafana config",
 			alertspb.GrafanaAlertConfigDesc{
 				ExternalUrl:   "http://test:3000",
-				Hash:          "abc123",
 				RawConfig:     "invalid",
 				StaticHeaders: map[string]string{"test": "test"},
 			},
@@ -42,7 +40,6 @@ func TestCreateUsableGrafanaConfig(t *testing.T) {
 			"no mimir config",
 			alertspb.GrafanaAlertConfigDesc{
 				ExternalUrl:   "http://test:3000",
-				Hash:          "abc123",
 				RawConfig:     grafanaConfig,
 				StaticHeaders: map[string]string{"test": "test"},
 			},
@@ -53,7 +50,6 @@ func TestCreateUsableGrafanaConfig(t *testing.T) {
 			"non-empty mimir config",
 			alertspb.GrafanaAlertConfigDesc{
 				ExternalUrl:   "http://test:3000",
-				Hash:          "abc123",
 				RawConfig:     grafanaConfig,
 				StaticHeaders: map[string]string{"test": "test"},
 			},
