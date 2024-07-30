@@ -1495,8 +1495,12 @@ func TestRulerPerRuleConcurrency(t *testing.T) {
 
 	// Configure the ruler.
 	rulerFlags := mergeFlags(CommonStorageBackendFlags(), RulerFlags(), BlocksStorageFlags(), map[string]string{
+		// Evaluate rules often.
+		"-ruler.evaluation-interval": "5s",
+		// No delay
+		"-ruler.evaluation-delay-duration":                                       "0",
+		"-ruler.poll-interval":                                                   "2s",
 		"-ruler.max-independent-rule-evaluation-concurrency":                     "4",
-		"-ingester.ring.replication-factor":                                      "1",
 		"-ruler.max-independent-rule-evaluation-concurrency-per-tenant":          "2",
 		`-ruler.independent-rule-evaluation-concurrency-min-duration-percentage`: "-50", // This makes sure no matter the ratio, we will attempt concurrency.
 	})
@@ -1505,38 +1509,42 @@ func TestRulerPerRuleConcurrency(t *testing.T) {
 	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags)
 	require.NoError(t, s.StartAndWaitReady(ruler))
 
-	// Upload rule groups to one of the rulers.
+	// Upload rule groups to one of the rulers for two users
 	c, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), "user-1")
 	require.NoError(t, err)
-
 	c2, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), "user-2")
 	require.NoError(t, err)
 
 	rg := rulefmt.RuleGroup{
-		Name:     "a_rule_group",
-		Interval: 10,
+		Name:     "nameX",
+		Interval: 5,
 		Rules: []rulefmt.RuleNode{
 			recordingRule("tenant_vector_one", "count(series_1)"),
-			recordingRule("tenant_vector_two", "count(up)"),
-			recordingRule("tenant_vector_three", "count(up)"),
-			recordingRule("tenant_vector_four", "count(up)"),
-			recordingRule("tenant_vector_five", "count(up)"),
-			recordingRule("tenant_vector_six", "count(up)"),
-			recordingRule("tenant_vector_seven", "count(up)"),
-			recordingRule("tenant_vector_eight", "count(up)"),
-			recordingRule("tenant_vector_nine", "count(up)"),
-			recordingRule("tenant_vector_ten", "count(up)"),
+			recordingRule("tenant_vector_two", "count(series_1)"),
+			recordingRule("tenant_vector_three", "count(series_1)"),
+			recordingRule("tenant_vector_four", "count(series_1)"),
+			recordingRule("tenant_vector_five", "count(series_1)"),
+			recordingRule("tenant_vector_six", "count(series_1)"),
+			recordingRule("tenant_vector_seven", "count(series_1)"),
+			recordingRule("tenant_vector_eight", "count(series_1)"),
+			recordingRule("tenant_vector_nine", "count(series_1)"),
+			recordingRule("tenant_vector_ten", "count(series_1)"),
 		},
 	}
 
-	require.NoError(t, c.SetRuleGroup(rg, "test"))
-	require.NoError(t, c2.SetRuleGroup(rg, "test"))
+	require.NoError(t, c.SetRuleGroup(rg, "fileY"))
+	require.NoError(t, c2.SetRuleGroup(rg, "fileY"))
 
 	// Wait until rulers have loaded all rules.
 	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(20), []string{"cortex_prometheus_rule_group_rules"}, e2e.WaitMissingMetrics))
 
-	// We should have at least 20 attempts.
+	// We should have at least 10 attempts.
 	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(20), []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total"}, e2e.WaitMissingMetrics))
+	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Less(20), []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total"}, e2e.WaitMissingMetrics))
+	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Less(20), []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total"}, e2e.WaitMissingMetrics))
+
+	// We should never have more than the allowed concurrency slots at the same time.
+	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Less(4), []string{"cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use"}, e2e.WaitMissingMetrics))
 }
 
 func TestRulerEnableAPIs(t *testing.T) {
