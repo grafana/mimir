@@ -30,7 +30,7 @@ func TestConcurrentQueries(t *testing.T) {
 	// Future improvements would include adding other kinds of queries, testing instant queries, and varying the time range queried to catch other
 	// issues.
 
-	data := `
+	const data = `
 		load 1m
 			native_histogram{group="a", instance="1"} {{schema:3 sum:4 count:4 buckets:[1 2 1]}}+{{schema:3 sum:2 count:6 buckets:[1 2 3]}}x9
 			native_histogram{group="a", instance="2"} {{schema:5 sum:8 count:7 buckets:[1 5 1]}}+{{schema:5 sum:10 count:7 buckets:[1 2 3 1]}}x9
