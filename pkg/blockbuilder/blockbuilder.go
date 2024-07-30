@@ -21,7 +21,6 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/plugin/kprom"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -41,8 +40,6 @@ type BlockBuilder struct {
 	limits      *validation.Overrides
 	kafkaClient *kgo.Client
 	parts       []int32
-	//kafkaClients map[int32]*kgo.Client
-	groupClient *kgo.Client // Used only to commit. TODO: see why kadm client on kafkaClients is not able to commit.
 	bucket      objstore.Bucket
 
 	metrics blockBuilderMetrics
@@ -108,9 +105,6 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 
 	defer func() {
 		if err != nil {
-			if b.groupClient != nil {
-				b.groupClient.Close()
-			}
 			if b.kafkaClient != nil {
 				b.kafkaClient.Close()
 			}
@@ -127,38 +121,6 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	if err := os.MkdirAll(b.cfg.BlocksStorageConfig.TSDB.Dir, os.ModePerm); err != nil {
 		return fmt.Errorf("creating tsdb dir: %w", err)
 	}
-
-	// TODO: metrics without clashes
-	//metrics := kprom.NewMetrics(
-	//	"cortex_blockbuilder_kafka",
-	//	kprom.Registerer(b.register),
-	//	kprom.FetchAndProduceDetail(kprom.ByNode, kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes),
-	//)
-
-	opts := []kgo.Opt{
-		kgo.ConsumeTopics(b.cfg.Kafka.Topic),
-		kgo.ConsumerGroup(b.cfg.Kafka.ConsumerGroup),
-		kgo.Balancers(kgo.RoundRobinBalancer()),
-		kgo.DisableAutoCommit(),
-		kgo.FetchMinBytes(128),
-		kgo.FetchMaxBytes(fetchMaxBytes),
-		kgo.FetchMaxWait(5 * time.Second),
-		kgo.FetchMaxPartitionBytes(50_000_000),
-		// BrokerMaxReadBytes sets the maximum response size that can be read from
-		// Kafka. This is a safety measure to avoid OOMing on invalid responses.
-		// franz-go recommendation is to set it 2x FetchMaxBytes.
-		kgo.BrokerMaxReadBytes(2 * fetchMaxBytes),
-	}
-	opts = append(
-		commonKafkaClientOptions(b.cfg.Kafka, b.logger, nil),
-		opts...,
-	)
-	groupClient, err := kgo.NewClient(opts...)
-	if err != nil {
-		return fmt.Errorf("creating kafka client: %w", err)
-	}
-
-	b.groupClient = groupClient
 
 	var myParts []int32
 	startAtMap := map[int32]kgo.Offset{}
@@ -178,7 +140,7 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 
 	}
 
-	opts = []kgo.Opt{
+	opts := []kgo.Opt{
 		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
 			b.cfg.Kafka.Topic: startAtMap,
 		}),
@@ -192,8 +154,14 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 		kgo.BrokerMaxReadBytes(2 * fetchMaxBytes),
 	}
 
+	// TODO: metrics without clashes
+	metrics := kprom.NewMetrics(
+		"cortex_blockbuilder_kafka",
+		kprom.Registerer(b.register),
+		kprom.FetchAndProduceDetail(kprom.ByNode, kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes),
+	)
 	opts = append(
-		commonKafkaClientOptions(b.cfg.Kafka, b.logger, nil),
+		commonKafkaClientOptions(b.cfg.Kafka, b.logger, metrics),
 		opts...,
 	)
 	b.kafkaClient, err = kgo.NewClient(opts...)
@@ -201,12 +169,16 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 		return fmt.Errorf("creating kafka client: %w", err)
 	}
 	b.parts = myParts
-	//b.kafkaClient.PauseFetchPartitions(map[string][]int32{b.cfg.Kafka.Topic: myParts})
-
-	//b.kafkaClients[int32(part)] = kafkaClient
 
 	level.Info(b.logger).Log("msg", "waiting until kafka brokers are reachable", "parts", fmt.Sprintf("%v", myParts))
-	return b.waitKafka(ctx)
+	err = b.waitKafka(ctx)
+	if err != nil {
+		return err
+	}
+
+	b.kafkaClient.PauseFetchPartitions(map[string][]int32{b.cfg.Kafka.Topic: b.parts})
+
+	return nil
 }
 
 const (
@@ -315,7 +287,6 @@ func (b *BlockBuilder) waitKafka(ctx context.Context) error {
 	for boff.Ongoing() {
 		err := b.kafkaClient.Ping(ctx)
 		if err == nil {
-			b.kafkaClient.PauseFetchPartitions(map[string][]int32{b.cfg.Kafka.Topic: b.parts})
 			return nil
 		}
 
@@ -330,7 +301,6 @@ func (b *BlockBuilder) waitKafka(ctx context.Context) error {
 }
 
 func (b *BlockBuilder) stopping(_ error) error {
-	b.groupClient.Close()
 	b.kafkaClient.Close()
 
 	return nil
@@ -453,16 +423,15 @@ func (b *BlockBuilder) getLagForPartition(ctx context.Context, admClient *kadm.C
 	})
 	var lastErr error
 	for boff.Ongoing() {
-		lags, err := admClient.Lag(ctx, b.cfg.Kafka.ConsumerGroup)
+		if lastErr != nil {
+			level.Error(b.logger).Log("msg", "failed to get consumer group lag", "err", lastErr, "part", part)
+		}
+		groupLag, err := getGroupLag(ctx, admClient, b.cfg.Kafka.Topic, b.cfg.Kafka.ConsumerGroup)
 		if err != nil {
-			lastErr = fmt.Errorf("get consumer group lag: %w", err)
-			continue
-		} else if err := lags.Error(); err != nil {
 			lastErr = fmt.Errorf("get consumer group lag: %w", err)
 			continue
 		}
 
-		groupLag := lags[b.cfg.Kafka.ConsumerGroup].Lag
 		lag, ok := groupLag.Lookup(b.cfg.Kafka.Topic, part)
 		if ok {
 			return lag, nil
@@ -472,6 +441,175 @@ func (b *BlockBuilder) getLagForPartition(ctx context.Context, admClient *kadm.C
 	}
 
 	return kadm.GroupMemberLag{}, lastErr
+}
+
+// getGroupLag is the inlined version of `kadm.Client.Lag` but updated to work with when the group
+// doesn't have live participants.
+// Similar to `kadm.CalculateGroupLagWithStartOffsets`, it takes into account that the group may not have any commits.
+func getGroupLag(ctx context.Context, admClient *kadm.Client, topic, group string) (kadm.GroupLag, error) {
+	offsets, err := admClient.FetchOffsetsForTopics(ctx, group, topic)
+	if err != nil {
+		if !errors.Is(err, kerr.GroupIDNotFound) {
+			return nil, fmt.Errorf("fetch offsets: %w", err)
+		}
+	}
+	startOffsets, err := admClient.ListStartOffsets(ctx, topic)
+	if err != nil {
+		return nil, err
+	}
+	endOffsets, err := admClient.ListEndOffsets(ctx, topic)
+	if err != nil {
+		return nil, err
+	}
+
+	// For now, if the group doesn't have any commits, we use startOffsets as the starting point.
+	if len(offsets) == 0 {
+		offsets = make(kadm.OffsetResponses)
+		for t, pt := range startOffsets.Offsets() {
+			resp := make(map[int32]kadm.OffsetResponse)
+			for _, o := range pt {
+				resp[o.Partition] = kadm.OffsetResponse{
+					Offset: o,
+				}
+			}
+			offsets[t] = resp
+		}
+	}
+
+	return calculateGroupLag(offsets, startOffsets, endOffsets), nil
+}
+
+var errListMissing = errors.New("missing from list offsets")
+
+// Inlined from https://github.com/grafana/mimir/blob/04df05d32320cd19281591a57c19cceba63ceabf/vendor/github.com/twmb/franz-go/pkg/kadm/groups.go#L1711
+func calculateGroupLag(commit kadm.OffsetResponses, startOffsets, endOffsets kadm.ListedOffsets) kadm.GroupLag {
+	l := make(map[string]map[int32]kadm.GroupMemberLag)
+	for t, ps := range commit {
+		lt := l[t]
+		if lt == nil {
+			lt = make(map[int32]kadm.GroupMemberLag)
+			l[t] = lt
+		}
+		tstart := startOffsets[t]
+		tend := endOffsets[t]
+		for p, pcommit := range ps {
+			var (
+				pend = kadm.ListedOffset{
+					Topic:     t,
+					Partition: p,
+					Err:       errListMissing,
+				}
+				pstart = pend
+				perr   error
+			)
+
+			// In order of priority, perr (the error on the Lag
+			// calculation) is non-nil if:
+			//
+			//  * The topic is missing from end ListOffsets
+			//  * The partition is missing from end ListOffsets
+			//  * OffsetFetch has an error on the partition
+			//  * ListOffsets has an error on the partition
+			//
+			// If we have no error, then we can calculate lag.
+			// We *do* allow an error on start ListedOffsets;
+			// if there are no start offsets or the start offset
+			// has an error, it is not used for lag calculation.
+			perr = errListMissing
+			if tend != nil {
+				if pendActual, ok := tend[p]; ok {
+					pend = pendActual
+					perr = nil
+				}
+			}
+			if perr == nil {
+				if perr = pcommit.Err; perr == nil {
+					perr = pend.Err
+				}
+			}
+			if tstart != nil {
+				if pstartActual, ok := tstart[p]; ok {
+					pstart = pstartActual
+				}
+			}
+
+			lag := int64(-1)
+			if perr == nil {
+				lag = pend.Offset
+				if pstart.Err == nil {
+					lag = pend.Offset - pstart.Offset
+				}
+				if pcommit.At >= 0 {
+					lag = pend.Offset - pcommit.At
+				}
+				if lag < 0 {
+					lag = 0
+				}
+			}
+
+			lt[p] = kadm.GroupMemberLag{
+				Topic:     t,
+				Partition: p,
+				Commit:    pcommit.Offset,
+				Start:     pstart,
+				End:       pend,
+				Lag:       lag,
+				Err:       perr,
+			}
+		}
+	}
+
+	// Now we look at all topics that we calculated lag for, and check out
+	// the partitions we listed. If those partitions are missing from the
+	// lag calculations above, the partitions were not committed to and we
+	// count that as entirely lagging.
+	for t, lt := range l {
+		tstart := startOffsets[t]
+		tend := endOffsets[t]
+		for p, pend := range tend {
+			if _, ok := lt[p]; ok {
+				continue
+			}
+			pcommit := kadm.Offset{
+				Topic:       t,
+				Partition:   p,
+				At:          -1,
+				LeaderEpoch: -1,
+			}
+			perr := pend.Err
+			lag := int64(-1)
+			if perr == nil {
+				lag = pend.Offset
+			}
+			pstart := kadm.ListedOffset{
+				Topic:     t,
+				Partition: p,
+				Err:       errListMissing,
+			}
+			if tstart != nil {
+				if pstartActual, ok := tstart[p]; ok {
+					pstart = pstartActual
+					if pstart.Err == nil {
+						lag = pend.Offset - pstart.Offset
+						if lag < 0 {
+							lag = 0
+						}
+					}
+				}
+			}
+			lt[p] = kadm.GroupMemberLag{
+				Topic:     t,
+				Partition: p,
+				Commit:    pcommit,
+				Start:     pstart,
+				End:       pend,
+				Lag:       lag,
+				Err:       perr,
+			}
+		}
+	}
+
+	return l
 }
 
 type partitionInfo struct {
@@ -686,8 +824,6 @@ func (b *BlockBuilder) consumePartition(
 		}
 	}
 
-	client.PauseFetchPartitions(tp)
-
 	compactStart := time.Now()
 	var err error
 	numBlocks, err = builder.compactAndUpload(ctx, b.blockUploaderForUser)
@@ -766,7 +902,7 @@ func (b *BlockBuilder) consumePartition(
 		LastBlockEnd: commitBlockEnd,
 	}
 
-	err = commitRecord(ctx, b.logger, b.groupClient, b.cfg.Kafka.ConsumerGroup, commitRec, pl.Commit.Metadata)
+	err = commitRecord(ctx, b.logger, client, b.cfg.Kafka.ConsumerGroup, pl.Commit)
 	return pl, err
 }
 
@@ -805,33 +941,14 @@ func (b *BlockBuilder) blockUploaderForUser(ctx context.Context, userID string) 
 	}
 }
 
-func commitRecord(ctx context.Context, l log.Logger, kc *kgo.Client, group string, commitRec *kgo.Record, meta string) error {
-	if commitRec == nil {
-		return nil
+func commitRecord(ctx context.Context, l log.Logger, client *kgo.Client, group string, offset kadm.Offset) error {
+	offsets := make(kadm.Offsets)
+	offsets.Add(offset)
+	if err := kadm.NewClient(client).CommitAllOffsets(ctx, group, offsets); err != nil {
+		return fmt.Errorf("commit with part %d, offset %d: %w", offset.Partition, offset.At, err)
 	}
 
-	ctx = kgo.PreCommitFnContext(ctx, func(req *kmsg.OffsetCommitRequest) error {
-		for ti := range req.Topics {
-			if req.Topics[ti].Topic != commitRec.Topic {
-				continue
-			}
-			for pi := range req.Topics[ti].Partitions {
-				if req.Topics[ti].Partitions[pi].Partition == commitRec.Partition {
-					req.Topics[ti].Partitions[pi].Metadata = &meta
-				}
-			}
-		}
-		level.Info(l).Log("commit request", fmt.Sprintf("%+v", req))
-		return nil
-	})
-
-	if err := kc.CommitRecords(ctx, commitRec); err != nil {
-		return fmt.Errorf("commit record with part %d, offset %d: %w", commitRec.Partition, commitRec.Offset, err)
-	}
-
-	level.Debug(l).Log("msg", "successfully committed to Kafka", "part", commitRec.Partition, "offset", commitRec.Offset)
-
-	_ = group // For lint.
+	level.Debug(l).Log("msg", "successfully committed to Kafka", "part", offset.Partition, "offset", offset.At)
 
 	return nil
 }

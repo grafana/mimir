@@ -439,9 +439,6 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 	// a record and then commit it.
 	opts := []kgo.Opt{
 		kgo.ClientID("1"), kgo.SeedBrokers(addr), kgo.ConsumeTopics(testTopic),
-		kgo.ConsumerGroup(testGroup),
-		kgo.Balancers(kgo.RoundRobinBalancer()),
-		kgo.DisableAutoCommit(),
 	}
 	kc, err := kgo.NewClient(opts...)
 	require.NoError(t, err)
@@ -457,8 +454,17 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 	lastRec := commitRec
 	blockEnd := commitRec.Timestamp.Truncate(cfg.ConsumeInterval).Add(cfg.ConsumeInterval)
 
+	require.NotNil(t, commitRec)
+
 	meta := marshallCommitMeta(commitRec.Timestamp.UnixMilli(), lastRec.Timestamp.UnixMilli(), blockEnd.UnixMilli())
-	err = commitRecord(ctx, log.NewNopLogger(), kc, testGroup, commitRec, meta)
+	offset := kadm.Offset{
+		Topic:       commitRec.Topic,
+		Partition:   commitRec.Partition,
+		At:          commitRec.Offset + 1,
+		LeaderEpoch: -1, // not a group consumer
+		Metadata:    meta,
+	}
+	err = commitRecord(ctx, log.NewNopLogger(), kc, testGroup, offset)
 	require.NoError(t, err)
 	kc.CloseAllowingRebalance()
 	// Because there is a commit, on startup, the block builder should consume samples only after the commit.
