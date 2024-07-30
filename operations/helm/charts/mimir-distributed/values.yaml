@@ -3548,7 +3548,7 @@ metaMonitoring:
   dashboards:
     # -- If enabled, Grafana dashboards are deployed
     enabled: false
-    # -- Alternative namespace to create dashboards ConfigMaps in
+    # -- Alternative namespace to create dashboards ConfigMaps in. They are created in the Helm release namespace by default.
     namespace: null
     # -- Annotations to add to the Grafana dashboard ConfigMap
     annotations:
