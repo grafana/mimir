@@ -12581,7 +12581,7 @@
         },
         {
           "kind": "field",
-          "name": "threshold_independent_rule_evaluation_concurrency",
+          "name": "independent_rule_evaluation_concurrency_min_duration_percentage",
           "required": false,
           "desc": "Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval.",
           "fieldValue": null,

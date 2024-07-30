@@ -2091,7 +2091,7 @@ tenant_federation:
 # duration to allow a rule to be evaluated concurrency. By default, the rule
 # group runtime duration must exceed 50.0% of the evaluation interval.
 # CLI flag: -ruler.independent-rule-evaluation-concurrency-min-duration-percentage
-[threshold_independent_rule_evaluation_concurrency: <float> | default = 50]
+[independent_rule_evaluation_concurrency_min_duration_percentage: <float> | default = 50]
 ```
 
 ### ruler_storage
