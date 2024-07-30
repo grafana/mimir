@@ -4399,6 +4399,9 @@ continuous_test:
   maxQueryAge: "48h"
   # -- Interval between test runs
   runInterval: "5m"
+  # -- The endpoint to use for writing metrics to and querying from your instance.
+  # Defaults to the derived gateway URL, but you may want to test from an external ingress which you can configure here.
+  endpoint: '{{ include "mimir.gatewayUrl" . }}'
 
   # -- Pod affinity settings for the continuous test replicas
   affinity: {}
