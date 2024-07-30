@@ -1550,12 +1550,7 @@ func TestRulerPerRuleConcurrency(t *testing.T) {
 	// The magic number here is because we have a maximum per tenant concurrency of 2. So we expect at least 4 (2 slots * 2 tenants) to complete successfully.
 	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(4), []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total"}, e2e.WaitMissingMetrics))
 	require.NoError(t, ruler.WaitSumMetricsWithOptions(func(sums ...float64) bool {
-		var total float64
-		for _, sum := range sums {
-			total += sum
-		}
-
-		return total == 20
+		return e2e.SumValues(sums) == 20
 	}, []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total", "cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total"}, e2e.WaitMissingMetrics))
 }
 
