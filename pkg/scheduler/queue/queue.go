@@ -85,9 +85,8 @@ type Request interface{}
 // WorkerID is unique only per querier; querier-1 and querier-2 will both have a WorkerID=0.
 // WorkerID is derived internally in order to distribute worker connections across queue dimensions
 type QuerierWorkerConn struct {
-	QuerierID    QuerierID
-	WorkerID     int
-	isRegistered bool
+	QuerierID QuerierID
+	WorkerID  int
 }
 
 const unregisteredWorkerID = -1
@@ -135,8 +134,7 @@ type RequestQueue struct {
 	requestsToEnqueue             chan requestToEnqueue
 	requestsSent                  chan *SchedulerRequest
 	requestsCompleted             chan *SchedulerRequest
-	querierOperations             chan querierOperation
-	awaitableQuerierOperations    chan *QuerierWorkerOperation
+	querierWorkerOperations       chan *querierWorkerOperation
 	waitingQuerierConns           chan *waitingQuerierConn
 	waitingQuerierConnsToDispatch *list.List
 
@@ -162,17 +160,17 @@ const (
 	forgetDisconnected
 )
 
-type QuerierWorkerOperation struct {
+type querierWorkerOperation struct {
 	ctx                   context.Context
 	querierWorkerConn     *QuerierWorkerConn
 	operation             QuerierOperationType
 	recvQuerierWorkerConn chan *QuerierWorkerConn
 }
 
-func NewQuerierWorkerOperation(
+func newQuerierWorkerOperation(
 	ctx context.Context, querierWorkerConn *QuerierWorkerConn, opType QuerierOperationType,
-) *QuerierWorkerOperation {
-	return &QuerierWorkerOperation{
+) *querierWorkerOperation {
+	return &querierWorkerOperation{
 		ctx:                   ctx,
 		querierWorkerConn:     querierWorkerConn,
 		operation:             opType,
@@ -180,10 +178,10 @@ func NewQuerierWorkerOperation(
 	}
 }
 
-func NewAwaitableQuerierWorkerOperation(
+func newAwaitableQuerierWorkerOperation(
 	ctx context.Context, querierWorkerConn *QuerierWorkerConn, opType QuerierOperationType,
-) *QuerierWorkerOperation {
-	return &QuerierWorkerOperation{
+) *querierWorkerOperation {
+	return &querierWorkerOperation{
 		ctx:                   ctx,
 		querierWorkerConn:     querierWorkerConn,
 		operation:             opType,
@@ -191,15 +189,15 @@ func NewAwaitableQuerierWorkerOperation(
 	}
 }
 
-func (qwo *QuerierWorkerOperation) IsAwaitable() bool {
+func (qwo *querierWorkerOperation) IsAwaitable() bool {
 	return qwo.recvQuerierWorkerConn != nil
 }
 
-func (qwo *QuerierWorkerOperation) AwaitQuerierWorkerConnUpdate() (*QuerierWorkerConn, error) {
+func (qwo *querierWorkerOperation) AwaitQuerierWorkerConnUpdate() (*QuerierWorkerConn, error) {
 	if !qwo.IsAwaitable() {
 		// if the operation was not created with a receiver channel, the request queue will
 		// process it asynchronously and the caller will not be able to wait for the result.
-		return nil, errors.New("cannot await update for non-awaitable QuerierWorkerOperation")
+		return nil, errors.New("cannot await update for non-awaitable querier-worker operation")
 	}
 
 	select {
@@ -252,8 +250,7 @@ func NewRequestQueue(
 		requestsToEnqueue:             make(chan requestToEnqueue),
 		requestsSent:                  make(chan *SchedulerRequest),
 		requestsCompleted:             make(chan *SchedulerRequest),
-		awaitableQuerierOperations:    make(chan *QuerierWorkerOperation),
-		querierOperations:             make(chan querierOperation),
+		querierWorkerOperations:       make(chan *querierWorkerOperation),
 		waitingQuerierConns:           make(chan *waitingQuerierConn),
 		waitingQuerierConnsToDispatch: list.New(),
 
@@ -306,11 +303,9 @@ func (q *RequestQueue) dispatcherLoop() {
 		case <-q.stopRequested:
 			// Nothing much to do here - fall through to the stop logic below to see if we can stop immediately.
 			stopping = true
-		case querierOp := <-q.querierOperations:
-			// Need to attempt to dispatch queries only if querier operation results in a resharding
-			needToDispatchQueries = q.processQuerierOperation(querierOp)
-		case awaitableQuerierOp := <-q.awaitableQuerierOperations:
-			needToDispatchQueries = q.processQuerierWorkerOperation(awaitableQuerierOp)
+		case querierWorkerOp := <-q.querierWorkerOperations:
+			// Need to attempt to dispatch queries only if querier-worker operation results in a resharding
+			needToDispatchQueries = q.processQuerierWorkerOperation(querierWorkerOp)
 		case reqToEnqueue := <-q.requestsToEnqueue:
 			err := q.enqueueRequestInternal(reqToEnqueue)
 			reqToEnqueue.errChan <- err
@@ -513,34 +508,24 @@ func (q *RequestQueue) GetConnectedQuerierWorkersMetric() float64 {
 	return float64(q.connectedQuerierWorkers.Load())
 }
 
-func (q *RequestQueue) submitForgetDisconnectedQueriers(_ context.Context) {
-	q.submitQuerierOperation("", forgetDisconnected)
-}
-
-func (q *RequestQueue) AwaitRegisterQuerierWorkerConnection(
+func (q *RequestQueue) AwaitRegisterQuerierWorkerConn(
 	ctx context.Context, conn *QuerierWorkerConn,
 ) (*QuerierWorkerConn, error) {
 	return q.awaitQuerierWorkerOperation(ctx, conn, registerConnection)
 }
 
-func (q *RequestQueue) AwaitUnregisterQuerierConnection(
-	ctx context.Context, conn *QuerierWorkerConn,
-) (*QuerierWorkerConn, error) {
-	return q.awaitQuerierWorkerOperation(ctx, conn, unregisterConnection)
-}
-
 func (q *RequestQueue) awaitQuerierWorkerOperation(
 	ctx context.Context, conn *QuerierWorkerConn, opType QuerierOperationType,
 ) (*QuerierWorkerConn, error) {
-	op := NewAwaitableQuerierWorkerOperation(
+	op := newAwaitableQuerierWorkerOperation(
 		ctx, conn, opType,
 	)
 
 	// we do not check for a context cancel here;
-	// if the caller - which is generally a querier-worker's QuerierLoop instance - is canceled,
-	// we still want the dispatcherLoop to process the operation and update the querier-worker connection.
+	// if the caller's context is canceled, we still want the dispatcherLoop to process the operation
+	// and update its tracking of querier-worker connections and querier shutting down / forget-delay states
 	select {
-	case q.awaitableQuerierOperations <- op:
+	case q.querierWorkerOperations <- op:
 		// client context cancels will be checked for in AwaitQuerierWorkerConnUpdate
 		return op.AwaitQuerierWorkerConnUpdate()
 	case <-q.stopCompleted:
@@ -548,38 +533,53 @@ func (q *RequestQueue) awaitQuerierWorkerOperation(
 	}
 }
 
-//func (q *RequestQueue) SubmitRegisterQuerierConnection(querierID string) {
-//	q.submitQuerierOperation(querierID, registerConnection)
-//}
-
-//func (q *RequestQueue) SubmitUnregisterQuerierworkerConn(querierID string, workerID int) {
-//	q.submitQuerierWorkerOperation(querierID, unregisterConnection)
-//}
-
-func (q *RequestQueue) SubmitNotifyQuerierShutdown(querierID string) {
-	q.submitQuerierOperation(querierID, notifyShutdown)
+func (q *RequestQueue) SubmitUnregisterQuerierWorkerConn(ctx context.Context, conn *QuerierWorkerConn) {
+	q.submitQuerierWorkerOperation(ctx, conn, unregisterConnection)
 }
 
-func (q *RequestQueue) submitQuerierOperation(querierID string, operation QuerierOperationType) {
-	op := querierOperation{
-		querierID: QuerierID(querierID),
-		operation: operation,
-	}
+func (q *RequestQueue) submitForgetDisconnectedQueriers(ctx context.Context) {
+	querierWorkerOp := NewUnregisteredQuerierWorkerConn("")
+	q.submitQuerierWorkerOperation(ctx, querierWorkerOp, forgetDisconnected)
+}
 
+func (q *RequestQueue) SubmitNotifyQuerierShutdown(ctx context.Context, querierID QuerierID) {
+	// NotifyQuerierShutdown requests are submitted from the querier to a separate endpoint;
+	// this connection is outside the QuerierLoop and is not associated with a querier-worker.
+	// Create a generic querier-worker connection to submit the operation.
+	conn := NewUnregisteredQuerierWorkerConn(querierID)
+	q.submitQuerierWorkerOperation(ctx, conn, notifyShutdown)
+}
+
+func (q *RequestQueue) submitQuerierWorkerOperation(
+	ctx context.Context, conn *QuerierWorkerConn, opType QuerierOperationType,
+) {
+	op := newQuerierWorkerOperation(ctx, conn, opType)
+
+	// we do not check for a context cancel here;
+	// if the caller's context is canceled, we still want the dispatcherLoop to process the operation
+	// and update its tracking of querier-worker connections and querier shutting down / forget-delay states
 	select {
-	case q.querierOperations <- op:
+	case q.querierWorkerOperations <- op:
 		// The dispatcher has received the operation. There's nothing more to do.
 	case <-q.stopCompleted:
 		// The dispatcher stopped before it could process the operation. There's nothing more to do.
 	}
 }
 
-func (q *RequestQueue) processQuerierWorkerOperation(querierWorkerOp *QuerierWorkerOperation) (resharded bool) {
+func (q *RequestQueue) processQuerierWorkerOperation(querierWorkerOp *querierWorkerOperation) (resharded bool) {
 	switch querierWorkerOp.operation {
 	case registerConnection:
-		resharded = q.processRegisterQuerierConnection(querierWorkerOp.querierWorkerConn)
+		resharded = q.processRegisterQuerierWorkerConn(querierWorkerOp.querierWorkerConn)
 	case unregisterConnection:
-		resharded = q.processUnregisterQuerierConnection(querierWorkerOp.querierWorkerConn)
+		resharded = q.processUnregisterQuerierWorkerConn(querierWorkerOp.querierWorkerConn)
+	case notifyShutdown:
+		// No cleanup needed here in response to a graceful shutdown; just set querier state to shutting down.
+		// All subsequent waitingQuerierConns for the querier will receive an ErrQuerierShuttingDown.
+		// The querier-worker's end of the QuerierLoop will exit once it has received enough errors,
+		// and the Querier connection counts will be decremented as the workers disconnect.
+		resharded = q.queueBroker.notifyQuerierShutdown(querierWorkerOp.querierWorkerConn.QuerierID)
+	case forgetDisconnected:
+		resharded = q.processForgetDisconnectedQueriers()
 	default:
 		msg := fmt.Sprintf(
 			"received unknown querier-worker event %v for querier ID %v",
@@ -587,40 +587,24 @@ func (q *RequestQueue) processQuerierWorkerOperation(querierWorkerOp *QuerierWor
 		)
 		panic(msg)
 	}
-	select {
-	case querierWorkerOp.recvQuerierWorkerConn <- querierWorkerOp.querierWorkerConn:
-	case <-querierWorkerOp.ctx.Done():
-	case <-q.stopCompleted:
+	if querierWorkerOp.IsAwaitable() {
+		select {
+		case querierWorkerOp.recvQuerierWorkerConn <- querierWorkerOp.querierWorkerConn:
+		case <-querierWorkerOp.ctx.Done():
+		case <-q.stopCompleted:
+		}
 	}
 
 	return resharded
 }
 
-func (q *RequestQueue) processQuerierOperation(querierOp querierOperation) (resharded bool) {
-	switch querierOp.operation {
-	//case registerConnection:
-	//	return q.processRegisterQuerierConnection(querierOp.querierID)
-
-	case notifyShutdown:
-		// No cleanup needed here in response to a graceful shutdown; just set querier state to shutting down.
-		// All subsequent waitingQuerierConns for the querier will receive an ErrQuerierShuttingDown.
-		// The querier-worker's end of the QuerierLoop will exit once it has received enough errors,
-		// and the Querier connection counts will be decremented as the workers disconnect.
-		return q.queueBroker.notifyQuerierShutdown(querierOp.querierID)
-	case forgetDisconnected:
-		return q.processForgetDisconnectedQueriers()
-	default:
-		panic(fmt.Sprintf("received unknown querier event %v for querier ID %v", querierOp.operation, querierOp.querierID))
-	}
-}
-
-func (q *RequestQueue) processRegisterQuerierConnection(conn *QuerierWorkerConn) (resharded bool) {
+func (q *RequestQueue) processRegisterQuerierWorkerConn(conn *QuerierWorkerConn) (resharded bool) {
 	q.connectedQuerierWorkers.Inc()
 	q.queueBroker.addQuerierWorkerConn(conn)
 	return resharded
 }
 
-func (q *RequestQueue) processUnregisterQuerierConnection(conn *QuerierWorkerConn) (resharded bool) {
+func (q *RequestQueue) processUnregisterQuerierWorkerConn(conn *QuerierWorkerConn) (resharded bool) {
 	q.connectedQuerierWorkers.Dec()
 	return q.queueBroker.removeQuerierWorkerConn(conn, time.Now())
 }

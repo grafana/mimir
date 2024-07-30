@@ -234,83 +234,83 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 
 }
 
-//	func BenchmarkConcurrentQueueOperations(b *testing.B) {
-//		treeTypes := buildTreeTestsStruct()
-//
-//		for _, t := range treeTypes {
-//			b.Run(t.name, func(b *testing.B) {
-//				maxQueriersPerTenant := 0 // disable shuffle sharding
-//				forgetQuerierDelay := time.Duration(0)
-//				maxOutstandingRequestsPerTenant := 100
-//
-//				for _, numTenants := range []int{1, 10, 1000} {
-//					b.Run(fmt.Sprintf("%v tenants", numTenants), func(b *testing.B) {
-//
-//						// Query-frontends run 5 parallel streams per scheduler by default,
-//						// and we typically see 2-5 frontends running at any one time.
-//						for _, numProducers := range []int{10, 25} {
-//							b.Run(fmt.Sprintf("%v concurrent producers", numProducers), func(b *testing.B) {
-//
-//								// Queriers run with parallelism of 16 when query sharding is enabled.
-//								for _, numConsumers := range []int{16, 160, 1600} {
-//									b.Run(fmt.Sprintf("%v concurrent consumers", numConsumers), func(b *testing.B) {
-//										queue, err := NewRequestQueue(
-//											log.NewNopLogger(),
-//											maxOutstandingRequestsPerTenant,
-//											true,
-//											t.useMultiAlgoTreeQueue,
-//											forgetQuerierDelay,
-//											promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
-//											promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
-//											promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-//											promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
-//										)
-//										require.NoError(b, err)
-//
-//										startSignalChan := make(chan struct{})
-//										queueActorsErrGroup, ctx := errgroup.WithContext(context.Background())
-//
-//										require.NoError(b, queue.starting(ctx))
-//										b.Cleanup(func() {
-//											require.NoError(b, queue.stop(nil))
-//										})
-//
-//										runProducer := runQueueProducerIters(
-//											queue, maxQueriersPerTenant, b.N, numProducers, numTenants, startSignalChan, nil,
-//										)
-//
-//										for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
-//											producerIdx := producerIdx
-//											queueActorsErrGroup.Go(func() error {
-//												return runProducer(producerIdx)
-//											})
-//										}
-//
-//										runConsumer := runQueueConsumerIters(ctx, queue, b.N, numConsumers, startSignalChan, nil)
-//
-//										for consumerIdx := 0; consumerIdx < numConsumers; consumerIdx++ {
-//											consumerIdx := consumerIdx
-//											queueActorsErrGroup.Go(func() error {
-//												return runConsumer(consumerIdx)
-//											})
-//										}
-//
-//										b.ResetTimer()
-//										close(startSignalChan)
-//										err = queueActorsErrGroup.Wait()
-//										if err != nil {
-//											require.NoError(b, err)
-//										}
-//									})
-//								}
-//							})
-//						}
-//					})
-//				}
-//
-//			})
-//		}
-//	}
+func BenchmarkConcurrentQueueOperations(b *testing.B) {
+	treeTypes := buildTreeTestsStruct()
+
+	for _, t := range treeTypes {
+		b.Run(t.name, func(b *testing.B) {
+			maxQueriersPerTenant := 0 // disable shuffle sharding
+			forgetQuerierDelay := time.Duration(0)
+			maxOutstandingRequestsPerTenant := 100
+
+			for _, numTenants := range []int{1, 10, 1000} {
+				b.Run(fmt.Sprintf("%v tenants", numTenants), func(b *testing.B) {
+
+					// Query-frontends run 5 parallel streams per scheduler by default,
+					// and we typically see 2-5 frontends running at any one time.
+					for _, numProducers := range []int{10, 25} {
+						b.Run(fmt.Sprintf("%v concurrent producers", numProducers), func(b *testing.B) {
+
+							// Queriers run with parallelism of 16 when query sharding is enabled.
+							for _, numConsumers := range []int{16, 160, 1600} {
+								b.Run(fmt.Sprintf("%v concurrent consumers", numConsumers), func(b *testing.B) {
+									queue, err := NewRequestQueue(
+										log.NewNopLogger(),
+										maxOutstandingRequestsPerTenant,
+										true,
+										t.useMultiAlgoTreeQueue,
+										forgetQuerierDelay,
+										promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+										promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+										promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+										promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+									)
+									require.NoError(b, err)
+
+									startSignalChan := make(chan struct{})
+									queueActorsErrGroup, ctx := errgroup.WithContext(context.Background())
+
+									require.NoError(b, queue.starting(ctx))
+									b.Cleanup(func() {
+										require.NoError(b, queue.stop(nil))
+									})
+
+									runProducer := runQueueProducerIters(
+										queue, maxQueriersPerTenant, b.N, numProducers, numTenants, startSignalChan, nil,
+									)
+
+									for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
+										producerIdx := producerIdx
+										queueActorsErrGroup.Go(func() error {
+											return runProducer(producerIdx)
+										})
+									}
+
+									runConsumer := runQueueConsumerIters(ctx, queue, b.N, numConsumers, startSignalChan, nil)
+
+									for consumerIdx := 0; consumerIdx < numConsumers; consumerIdx++ {
+										consumerIdx := consumerIdx
+										queueActorsErrGroup.Go(func() error {
+											return runConsumer(consumerIdx)
+										})
+									}
+
+									b.ResetTimer()
+									close(startSignalChan)
+									err = queueActorsErrGroup.Wait()
+									if err != nil {
+										require.NoError(b, err)
+									}
+								})
+							}
+						})
+					}
+				})
+			}
+
+		})
+	}
+}
 func queueActorIterationCount(totalIters int, numActors int, actorIdx int) int {
 	actorIters := totalIters / numActors
 	remainderIters := totalIters % numActors
@@ -391,13 +391,12 @@ func runQueueConsumerIters(
 		consumerIters := queueActorIterationCount(totalIters, numConsumers, consumerIdx)
 		lastTenantIndex := FirstTenant()
 		querierID := fmt.Sprintf("consumer-%v", consumerIdx)
-		//queue.SubmitRegisterQuerierConnection(querierID)
 		querierWorkerConn := NewUnregisteredQuerierWorkerConn(QuerierID(querierID))
-		registeredQuerierWorkerConn, err := queue.AwaitRegisterQuerierWorkerConnection(ctx, querierWorkerConn)
+		registeredQuerierWorkerConn, err := queue.AwaitRegisterQuerierWorkerConn(ctx, querierWorkerConn)
 		if err != nil {
 			return err
 		}
-		defer queue.AwaitUnregisterQuerierConnection(ctx, registeredQuerierWorkerConn)
+		defer queue.SubmitUnregisterQuerierWorkerConn(ctx, registeredQuerierWorkerConn)
 
 		<-start
 
@@ -454,17 +453,22 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 			// Start the queue service.
 			ctx := context.Background()
 			require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
+
+			// Two queriers connect.
+			querier1Conn := NewUnregisteredQuerierWorkerConn("querier-1")
+			querier1Conn, err = queue.AwaitRegisterQuerierWorkerConn(ctx, querier1Conn)
+			require.NoError(t, err)
+			querier2Conn := NewUnregisteredQuerierWorkerConn("querier-2")
+			querier2Conn, err = queue.AwaitRegisterQuerierWorkerConn(ctx, querier2Conn)
+			require.NoError(t, err)
+
 			t.Cleanup(func() {
 				// if the test has failed and the queue does not get cleared,
 				// we must send a shutdown signal for the remaining connected querier
 				// or else StopAndAwaitTerminated will never complete.
-				queue.SubmitUnregisterQuerierworkerConn("querier-2")
+				queue.SubmitUnregisterQuerierWorkerConn(ctx, querier2Conn)
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
 			})
-
-			// Two queriers connect.
-			queue.SubmitRegisterQuerierConnection("querier-1")
-			queue.SubmitRegisterQuerierConnection("querier-2")
 
 			// Querier-2 waits for a new request.
 			querier2wg := sync.WaitGroup{}
@@ -476,7 +480,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 			}()
 
 			// Querier-1 crashes (no graceful shutdown notification).
-			queue.SubmitUnregisterQuerierworkerConn("querier-1")
+			queue.SubmitUnregisterQuerierWorkerConn(ctx, querier1Conn)
 
 			// Enqueue a request from an user which would be assigned to querier-1.
 			// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
@@ -530,13 +534,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 			// Start the queue service.
 			ctx := context.Background()
 			require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
-			t.Cleanup(func() {
-				// if the test has failed and the queue does not get cleared,
-				// we must send a shutdown signal for the remaining connected querier
-				// or else StopAndAwaitTerminated will never complete.
-				queue.SubmitUnregisterQuerierworkerConn("querier-2")
-				require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
-			})
 
 			// Three queriers connect.
 			// We will submit the enqueue request with maxQueriers: 2.
@@ -551,9 +548,24 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 			//
 			// We are testing that the occurrence of a reshard is reported correctly
 			// when not all querier forget operations in a single run of forgetDisconnectedQueriers caused a reshard.
-			queue.SubmitRegisterQuerierConnection("querier-1")
-			queue.SubmitRegisterQuerierConnection("querier-2")
-			queue.SubmitRegisterQuerierConnection("querier-3")
+			// Two queriers connect.
+			querier1Conn := NewUnregisteredQuerierWorkerConn("querier-1")
+			querier1Conn, err = queue.AwaitRegisterQuerierWorkerConn(ctx, querier1Conn)
+			require.NoError(t, err)
+			querier2Conn := NewUnregisteredQuerierWorkerConn("querier-2")
+			querier2Conn, err = queue.AwaitRegisterQuerierWorkerConn(ctx, querier2Conn)
+			require.NoError(t, err)
+			querier3Conn := NewUnregisteredQuerierWorkerConn("querier-3")
+			querier3Conn, err = queue.AwaitRegisterQuerierWorkerConn(ctx, querier3Conn)
+			require.NoError(t, err)
+
+			t.Cleanup(func() {
+				// if the test has failed and the queue does not get cleared,
+				// we must send a shutdown signal for the remaining connected querier
+				// or else StopAndAwaitTerminated will never complete.
+				queue.SubmitUnregisterQuerierWorkerConn(ctx, querier2Conn)
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
+			})
 
 			// querier-2 waits for a new request.
 			querier2wg := sync.WaitGroup{}
@@ -565,8 +577,8 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 			}()
 
 			// querier-1 and querier-3 crash (no graceful shutdown notification).
-			queue.SubmitUnregisterQuerierworkerConn("querier-1")
-			queue.SubmitUnregisterQuerierworkerConn("querier-3")
+			queue.SubmitUnregisterQuerierWorkerConn(ctx, querier1Conn)
+			queue.SubmitUnregisterQuerierWorkerConn(ctx, querier3Conn)
 
 			// Enqueue a request from a tenant which would be assigned to querier-1.
 			// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
@@ -623,7 +635,9 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), queue))
 			})
 
-			queue.SubmitRegisterQuerierConnection(querierID)
+			querier1Conn := NewUnregisteredQuerierWorkerConn(querierID)
+			querier1Conn, err = queue.AwaitRegisterQuerierWorkerConn(context.Background(), querier1Conn)
+			require.NoError(t, err)
 
 			// Calling WaitForRequestForQuerier with a context that is already cancelled should fail immediately.
 			deadCtx, cancel := context.WithCancel(context.Background())
@@ -684,8 +698,11 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
 			})
 
-			queue.SubmitRegisterQuerierConnection(querierID)
-			queue.SubmitNotifyQuerierShutdown(querierID)
+			querierConn := NewUnregisteredQuerierWorkerConn(querierID)
+			querierConn, err = queue.AwaitRegisterQuerierWorkerConn(ctx, querierConn)
+			require.NoError(t, err)
+
+			queue.SubmitNotifyQuerierShutdown(ctx, querierID)
 
 			_, _, err = queue.WaitForRequestForQuerier(context.Background(), FirstTenant(), querierID)
 			require.EqualError(t, err, "querier has informed the scheduler it is shutting down")
@@ -717,7 +734,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 			// bypassing queue dispatcher loop for direct usage of the queueBroker and
 			// passing a waitingQuerierConn for a canceled querier connection
 			queueBroker := newQueueBroker(queue.maxOutstandingPerTenant, queue.additionalQueueDimensionsEnabled, false, queue.forgetDelay)
-			queueBroker.addQuerierConnection(querierID)
+			queueBroker.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(querierID))
 
 			tenantMaxQueriers := 0 // no sharding
 			req := &SchedulerRequest{

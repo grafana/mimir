@@ -394,7 +394,6 @@ func TestQueues_QuerierDistribution(t *testing.T) {
 			for ix := 0; ix < queriers; ix++ {
 				qid := QuerierID(fmt.Sprintf("querier-%d", ix))
 				qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(qid))
-				//qb.addQuerierConnection(qid)
 
 				// No querier has any queues yet.
 				req, tenant, _, err := qb.dequeueRequestForQuerier(-1, QuerierID(qid))
@@ -544,15 +543,6 @@ func TestQueues_ForgetDelay(t *testing.T) {
 			querier3Conn2 := NewUnregisteredQuerierWorkerConn("querier-3")
 			qb.addQuerierWorkerConn(querier3Conn2)
 
-			//for i := 1; i <= 3; i++ {
-			//	qb.addQuerierWorkerConn()
-			//	qb.addQuerierWorkerConn(
-			//		NewUnregisteredQuerierWorkerConn(fmt.Sprintf("querier-%d", i)),
-			//	)
-			//	//qb.addQuerierConnection(QuerierID(fmt.Sprintf("querier-%d", i)))
-			//	//qb.addQuerierConnection(QuerierID(fmt.Sprintf("querier-%d", i)))
-			//}
-
 			// Add tenant queues.
 			for i := 0; i < numTenants; i++ {
 				tenantID := TenantID(fmt.Sprintf("tenant-%d", i))
@@ -585,8 +575,6 @@ func TestQueues_ForgetDelay(t *testing.T) {
 			}
 
 			// Querier-1 reconnects.
-			//qb.addQuerierConnection("querier-1")
-			//qb.addQuerierConnection("querier-1")
 			qb.addQuerierWorkerConn(querier1Conn1)
 			qb.addQuerierWorkerConn(querier1Conn2)
 
