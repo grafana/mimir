@@ -69,8 +69,9 @@ func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
 
 		// Ensure the ruler manager has been stopped for all users.
 		assertManagerMockStopped(t, initialUser1Manager)
-		// assertUserRemovedFromConcurrencyController(t, concurrencyController, user1)
+		assertUserRemovedFromConcurrencyController(t, concurrencyController, user1)
 		assertManagerMockStopped(t, initialUser2Manager)
+		assertUserRemovedFromConcurrencyController(t, concurrencyController, user2)
 		assertManagerMockNotRunningForUser(t, m, user1)
 		assertManagerMockNotRunningForUser(t, m, user2)
 
@@ -135,7 +136,8 @@ func TestDefaultMultiTenantManager_SyncPartialRuleGroups(t *testing.T) {
 		user2Group1 = createRuleGroup("group-1", user2, createRecordingRule("sum:metric_1", "sum(metric_1)"))
 	)
 
-	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, nil)
+	concurrencyController := &controllerMock{}
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, concurrencyController)
 	require.NoError(t, err)
 	t.Cleanup(m.Stop)
 
@@ -197,6 +199,7 @@ func TestDefaultMultiTenantManager_SyncPartialRuleGroups(t *testing.T) {
 		// Ensure the ruler manager has been stopped for the user with no rule groups.
 		assertManagerMockStopped(t, initialUser1Manager)
 		assertManagerMockNotRunningForUser(t, m, user1)
+		assertUserRemovedFromConcurrencyController(t, concurrencyController, user1)
 
 		// Ensure the ruler manager is still running for other users.
 		currUser2Manager := assertManagerMockRunningForUser(t, m, user2)
