@@ -39,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
+	"github.com/grafana/mimir/pkg/scheduler/queue"
 )
 
 const (
@@ -143,7 +144,9 @@ func TestFrontendCheckReady(t *testing.T) {
 			}()
 
 			for i := 0; i < tt.connectedClients; i++ {
-				f.requestQueue.SubmitRegisterQuerierConnection("test")
+				querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn("test")
+				querierWorkerConn, err := f.requestQueue.AwaitRegisterQuerierWorkerConn(context.Background(), querierWorkerConn)
+				require.NoError(t, err)
 			}
 			err = f.CheckReady(context.Background())
 			errMsg := ""
