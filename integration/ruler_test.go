@@ -1502,8 +1502,15 @@ func TestRulerPerRuleConcurrency(t *testing.T) {
 		"-ruler.poll-interval":                                                   "2s",
 		"-ruler.max-independent-rule-evaluation-concurrency":                     "4",
 		"-ruler.max-independent-rule-evaluation-concurrency-per-tenant":          "2",
-		`-ruler.independent-rule-evaluation-concurrency-min-duration-percentage`: "0", // This makes sure no matter the ratio, we will attempt concurrency.
+		"-ruler.independent-rule-evaluation-concurrency-min-duration-percentage": "0", // This makes sure no matter the ratio, we will attempt concurrency.
 	})
+
+	// Test with an invalid -ruler.independent-rule-evaluation-concurrency-min-duration-percentage.
+	invalidRulerFlags := e2e.MergeFlags(rulerFlags, map[string]string{
+		"-ruler.independent-rule-evaluation-concurrency-min-duration-percentage": "-10",
+	})
+	invalidRuler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), invalidRulerFlags)
+	require.Error(t, s.Start(invalidRuler))
 
 	// Start Mimir components.
 	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags)
