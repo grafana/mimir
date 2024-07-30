@@ -1483,6 +1483,77 @@ func TestRulerProtectedNamespaces(t *testing.T) {
 	})
 }
 
+func TestRulerPerRuleConcurrency(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, mimirBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	// Configure the ruler.
+	rulerFlags := mergeFlags(CommonStorageBackendFlags(), RulerFlags(), BlocksStorageFlags(), map[string]string{
+		// Evaluate rules often.
+		"-ruler.evaluation-interval": "5s",
+		// No delay
+		"-ruler.evaluation-delay-duration":                                       "0",
+		"-ruler.poll-interval":                                                   "2s",
+		"-ruler.max-independent-rule-evaluation-concurrency":                     "4",
+		"-ruler.max-independent-rule-evaluation-concurrency-per-tenant":          "2",
+		"-ruler.independent-rule-evaluation-concurrency-min-duration-percentage": "0", // This makes sure no matter the ratio, we will attempt concurrency.
+	})
+
+	// Test with an invalid -ruler.independent-rule-evaluation-concurrency-min-duration-percentage.
+	invalidRulerFlags := e2e.MergeFlags(rulerFlags, map[string]string{
+		"-ruler.independent-rule-evaluation-concurrency-min-duration-percentage": "-10",
+	})
+	invalidRuler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), invalidRulerFlags)
+	require.Error(t, s.Start(invalidRuler))
+
+	// Start Mimir components.
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags)
+	require.NoError(t, s.StartAndWaitReady(ruler))
+
+	// Upload rule groups to one of the rulers for two users.
+	c, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), "user-1")
+	require.NoError(t, err)
+	c2, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), "user-2")
+	require.NoError(t, err)
+
+	rg := rulefmt.RuleGroup{
+		Name:     "nameX",
+		Interval: 5,
+		Rules: []rulefmt.RuleNode{
+			recordingRule("tenant_vector_one", "count(series_1)"),
+			recordingRule("tenant_vector_two", "count(series_1)"),
+			recordingRule("tenant_vector_three", "count(series_1)"),
+			recordingRule("tenant_vector_four", "count(series_1)"),
+			recordingRule("tenant_vector_five", "count(series_1)"),
+			recordingRule("tenant_vector_six", "count(series_1)"),
+			recordingRule("tenant_vector_seven", "count(series_1)"),
+			recordingRule("tenant_vector_eight", "count(series_1)"),
+			recordingRule("tenant_vector_nine", "count(series_1)"),
+			recordingRule("tenant_vector_ten", "count(series_1)"),
+		},
+	}
+
+	require.NoError(t, c.SetRuleGroup(rg, "fileY"))
+	require.NoError(t, c2.SetRuleGroup(rg, "fileY"))
+
+	// Wait until rulers have loaded all rules.
+	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(20), []string{"cortex_prometheus_rule_group_rules"}, e2e.WaitMissingMetrics))
+
+	// We should have 20 attempts and 20 or less for failed or successful attempts to acquire the lock.
+	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(20), []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total"}, e2e.WaitMissingMetrics))
+	// The magic number here is because we have a maximum per tenant concurrency of 2. So we expect at least 4 (2 slots * 2 tenants) to complete successfully.
+	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(4), []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total"}, e2e.WaitMissingMetrics))
+	require.NoError(t, ruler.WaitSumMetricsWithOptions(func(sums ...float64) bool {
+		return e2e.SumValues(sums) == 20
+	}, []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total", "cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total"}, e2e.WaitMissingMetrics))
+}
+
 func TestRulerEnableAPIs(t *testing.T) {
 	testCases := []struct {
 		name                        string
