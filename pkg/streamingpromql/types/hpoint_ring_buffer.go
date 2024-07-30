@@ -206,7 +206,6 @@ func (b *HPointRingBuffer) Reset() {
 
 // Close releases any resources associated with this buffer.
 func (b *HPointRingBuffer) Close() {
-	b.Reset()
 	b.pool.PutHPointSlice(b.points)
 	b.points = nil
 }
