@@ -13,6 +13,8 @@ keywords:
   - metrics storage
   - metrics datastore
   - observability
+cascade:
+  ALLOY_VERSION: "latest"
 menuTitle: Grafana Mimir
 title: Grafana Mimir documentation
 hero:
