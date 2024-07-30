@@ -400,7 +400,7 @@ templates:
 	require.Len(t, am.alertmanagers, 4)
 
 	// The Mimir configuration was empty, so the Grafana configuration should be chosen for user 4.
-	amCfg, err := createUsableGrafanaConfig(userGrafanaCfg, nil)
+	amCfg, err := createUsableGrafanaConfig(userGrafanaCfg, am.fallbackConfig)
 	require.NoError(t, err)
 	grafanaAlertConfigDesc := amCfg.AlertConfigDesc
 	require.Equal(t, grafanaAlertConfigDesc, am.cfgs["user4"])
