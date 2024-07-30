@@ -2,14 +2,14 @@
 1. change this line
     
     ```go
-    func downloadRules(destiantion string) {
+    func downloadRules(destination string) {
         namespaces := map[string]string{}
     }
     ```
     into something like
     
     ```go
-    func downloadRules(destiantion string) {
+    func downloadRules(destination string) {
         namespaces := map[string]string{
             "cortex-dev-01": "dev-us-central-0",
         }
