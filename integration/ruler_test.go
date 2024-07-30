@@ -1502,7 +1502,7 @@ func TestRulerPerRuleConcurrency(t *testing.T) {
 		"-ruler.poll-interval":                                                   "2s",
 		"-ruler.max-independent-rule-evaluation-concurrency":                     "4",
 		"-ruler.max-independent-rule-evaluation-concurrency-per-tenant":          "2",
-		`-ruler.independent-rule-evaluation-concurrency-min-duration-percentage`: "-50", // This makes sure no matter the ratio, we will attempt concurrency.
+		`-ruler.independent-rule-evaluation-concurrency-min-duration-percentage`: "0", // This makes sure no matter the ratio, we will attempt concurrency.
 	})
 
 	// Start Mimir components.
@@ -1540,11 +1540,16 @@ func TestRulerPerRuleConcurrency(t *testing.T) {
 
 	// We should have 20 attempts and 20 or less for failed or successful attempts to acquire the lock.
 	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(20), []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total"}, e2e.WaitMissingMetrics))
-	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Less(21), []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total"}, e2e.WaitMissingMetrics))
-	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Less(21), []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total"}, e2e.WaitMissingMetrics))
+	// The magic number here is because we have a maximum per tenant concurrency of 2. So we expect at least 4 (2 slots * 2 tenants) to complete successfully.
+	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(4), []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total"}, e2e.WaitMissingMetrics))
+	require.NoError(t, ruler.WaitSumMetricsWithOptions(func(sums ...float64) bool {
+		var total float64
+		for _, sum := range sums {
+			total += sum
+		}
 
-	// We should never have more than the allowed concurrency slots at the same time.
-	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Less(4), []string{"cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use"}, e2e.WaitMissingMetrics))
+		return total == 20
+	}, []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total", "cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total"}, e2e.WaitMissingMetrics))
 }
 
 func TestRulerEnableAPIs(t *testing.T) {
