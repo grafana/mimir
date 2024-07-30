@@ -182,7 +182,7 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 	return &b.points[nextIndex], nil
 }
 
-// Remove the last point that was allocated.
+// RemoveLastPoint removes the last point that was allocated.
 // This is used for when NextPoint allocates a point that is then unused and
 // needs to be returned to the ring buffer.
 // This occurs when a histogram point has a stale marker.
