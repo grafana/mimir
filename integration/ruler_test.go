@@ -1538,10 +1538,10 @@ func TestRulerPerRuleConcurrency(t *testing.T) {
 	// Wait until rulers have loaded all rules.
 	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(20), []string{"cortex_prometheus_rule_group_rules"}, e2e.WaitMissingMetrics))
 
-	// We should have at least 10 attempts.
+	// We should have 20 attempts and 20 or less for failed or successful attempts to acquire the lock
 	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(20), []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total"}, e2e.WaitMissingMetrics))
-	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Less(20), []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total"}, e2e.WaitMissingMetrics))
-	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Less(20), []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total"}, e2e.WaitMissingMetrics))
+	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Less(21), []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total"}, e2e.WaitMissingMetrics))
+	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Less(21), []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total"}, e2e.WaitMissingMetrics))
 
 	// We should never have more than the allowed concurrency slots at the same time.
 	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Less(4), []string{"cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use"}, e2e.WaitMissingMetrics))
