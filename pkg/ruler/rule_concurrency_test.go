@@ -188,8 +188,17 @@ cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use 0
 cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total 4
 `)))
 
-	// Remove both tenants.
+	// Make the rule independent again.
+	rule1.SetNoDependencyRules(true)
+
+	// Let's test removing a user in the middle of the lock acquisition.
+	require.True(t, controller.Allow(user1Ctx, rg, rule1))
 	controller.RemoveTenant("user1")
+	require.NotPanics(t, func() {
+		controller.Done(user1Ctx)
+	})
+
+	// Remove both tenants.
 	controller.RemoveTenant("user2")
 	controller.tenantConcurrencyMtx.Lock()
 	require.Len(t, controller.tenantConcurrency, 0)
