@@ -1509,7 +1509,7 @@ func TestRulerPerRuleConcurrency(t *testing.T) {
 	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags)
 	require.NoError(t, s.StartAndWaitReady(ruler))
 
-	// Upload rule groups to one of the rulers for two users
+	// Upload rule groups to one of the rulers for two users.
 	c, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), "user-1")
 	require.NoError(t, err)
 	c2, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), "user-2")
