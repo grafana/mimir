@@ -50,7 +50,8 @@ func (b *HPointRingBuffer) DiscardPointsBefore(t int64) {
 // Callers must not modify the values in the returned slices or return them to a pool.
 // Calling UnsafePoints is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
 // points into the slice, whereas UnsafePoints returns a view into the internal state of this buffer.
-// The returned slices are no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
+// The returned slices, and the FloatHistogram instances in the returned slices, are no longer valid if this buffer is modified
+// (eg. a point is added, or the buffer is reset or closed).
 //
 // FIXME: the fact we have to expose this is a bit gross, but the overhead of calling a function with ForEach is terrible.
 // Perhaps we can use range-over function iterators (https://go.dev/wiki/RangefuncExperiment) once this is not experimental?
@@ -79,7 +80,7 @@ func (b *HPointRingBuffer) UnsafePoints(maxT int64) (head []promql.HPoint, tail 
 // Calling UnsafePoints is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
 // points into the slice, whereas UnsafePoints returns a view into the internal state of this buffer.
 // In addition to copying the points, CopyPoints will also duplicate the FloatHistogram values
-// so that they are also safe to modify.
+// so that they are also safe to modify and use after calling Close.
 func (b *HPointRingBuffer) CopyPoints(maxT int64) ([]promql.HPoint, error) {
 	if b.size == 0 {
 		return nil, nil
@@ -171,6 +172,11 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 		pointsAtEnd := b.size - b.firstIndex
 		copy(newSlice, b.points[b.firstIndex:])
 		copy(newSlice[pointsAtEnd:], b.points[:b.firstIndex])
+
+		// We must clear b.points before returning it to the pool, as the current query could continue using the
+		// FloatHistogram instances it contains a reference to, but a later user of b.points may otherwise reuse
+		// those instances instead of creating new FloatHistograms.
+		clear(b.points)
 
 		b.pool.PutHPointSlice(b.points)
 		b.points = newSlice
