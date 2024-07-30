@@ -10,6 +10,7 @@ keywords:
 cascade:
   MIMIR_VERSION: "v2.13.x"
   GEM_VERSION: "v2.13.x"
+  ALLOY_VERSION: "latest"
 ---
 
 # Grafana mimir-distributed Helm chart documentation

@@ -46,7 +46,8 @@ import (
 )
 
 var (
-	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to 0")
+	errInvalidTenantShardSize                                 = errors.New("invalid tenant shard size, the value must be greater or equal to 0")
+	errInnvalidRuleEvaluationConcurrencyMinDurationPercentage = errors.New("invalid tenant minimum duration percentage for rule evaluation concurrency, the value must be greater or equal to 0")
 )
 
 const (
@@ -137,8 +138,8 @@ type Config struct {
 	RingCheckPeriod             time.Duration `yaml:"-"`
 	rulerSyncQueuePollFrequency time.Duration `yaml:"-"`
 
-	MaxIndependentRuleEvaluationConcurrency                    int64   `yaml:"max_independent_rule_evaluation_concurrency" category:"experimental"`
-	IndependentRuleEvaluationConcurrencyMinDurationPercentange float64 `yaml:"threshold_independent_rule_evaluation_concurrency" category:"experimental"`
+	MaxIndependentRuleEvaluationConcurrency                   int64   `yaml:"max_independent_rule_evaluation_concurrency" category:"experimental"`
+	IndependentRuleEvaluationConcurrencyMinDurationPercentage float64 `yaml:"independent_rule_evaluation_concurrency_min_duration_percentage" category:"experimental"`
 }
 
 // Validate config and returns error on failure
@@ -153,6 +154,10 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 
 	if err := cfg.QueryFrontend.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ruler query-frontend config")
+	}
+
+	if cfg.IndependentRuleEvaluationConcurrencyMinDurationPercentage < 0 {
+		return errInnvalidRuleEvaluationConcurrencyMinDurationPercentage
 	}
 
 	return nil
@@ -193,7 +198,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.EnableQueryStats, "ruler.query-stats-enabled", false, "Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.")
 
 	f.Int64Var(&cfg.MaxIndependentRuleEvaluationConcurrency, "ruler.max-independent-rule-evaluation-concurrency", 0, "Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.")
-	f.Float64Var(&cfg.IndependentRuleEvaluationConcurrencyMinDurationPercentange, "ruler.independent-rule-evaluation-concurrency-min-duration-percentage", 50.0, "Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval.")
+	f.Float64Var(&cfg.IndependentRuleEvaluationConcurrencyMinDurationPercentage, "ruler.independent-rule-evaluation-concurrency-min-duration-percentage", 50.0, "Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval.")
 
 	cfg.RingCheckPeriod = 5 * time.Second
 }
