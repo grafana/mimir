@@ -400,7 +400,7 @@ templates:
 	require.Len(t, am.alertmanagers, 4)
 
 	// The Mimir configuration was empty, so the Grafana configuration should be chosen for user 4.
-	amCfg, err := createUsableGrafanaConfig(userGrafanaCfg, nil)
+	amCfg, err := createUsableGrafanaConfig(userGrafanaCfg, am.fallbackConfig)
 	require.NoError(t, err)
 	grafanaAlertConfigDesc := amCfg.AlertConfigDesc
 	require.Equal(t, grafanaAlertConfigDesc, am.cfgs["user4"])
@@ -2452,9 +2452,6 @@ func TestComputeConfig(t *testing.T) {
 	var grafanaCfg GrafanaAlertmanagerConfig
 	require.NoError(t, json.Unmarshal([]byte(grafanaConfig), &grafanaCfg))
 
-	rawGrafanaCfg, err := json.Marshal(grafanaCfg.AlertmanagerConfig)
-	require.NoError(t, err)
-
 	grafanaExternalURL := "https://grafana.com"
 
 	fallbackCfg, err := definition.LoadCompat([]byte(am.fallbackConfig))
@@ -2567,7 +2564,7 @@ func TestComputeConfig(t *testing.T) {
 			},
 			expCfg: alertspb.AlertConfigDesc{
 				User:      "user",
-				RawConfig: string(rawGrafanaCfg),
+				RawConfig: string(combinedCfg),
 				Templates: []*alertspb.TemplateDesc{},
 			},
 			expURL:     grafanaExternalURL,
@@ -2591,7 +2588,7 @@ func TestComputeConfig(t *testing.T) {
 			},
 			expCfg: alertspb.AlertConfigDesc{
 				User:      "user",
-				RawConfig: string(rawGrafanaCfg),
+				RawConfig: string(combinedCfg),
 				Templates: []*alertspb.TemplateDesc{},
 			},
 			expURL:     grafanaExternalURL,
