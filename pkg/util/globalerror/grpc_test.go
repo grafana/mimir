@@ -6,11 +6,8 @@ import (
 	"context"
 	"io"
 	"net"
-	"os"
 	"testing"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/golang/protobuf/ptypes/empty"
 
@@ -24,7 +21,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
@@ -369,48 +365,4 @@ type mockServer struct {
 
 func (s *mockServer) Succeed(_ context.Context, _ *empty.Empty) (*empty.Empty, error) {
 	return nil, nil
-}
-
-type mockClient struct {
-	dskitserver.FakeServerClient
-	cc                *grpc.ClientConn
-	numExecutions     *atomic.Int64
-	waitExecution     chan string
-	continueExecution chan string
-	log               log.Logger
-}
-
-func newMockClient(cc *grpc.ClientConn, waitExecution chan string, continueExecution chan string) mockClient {
-	return mockClient{
-		FakeServerClient:  dskitserver.NewFakeServerClient(cc),
-		cc:                cc,
-		numExecutions:     atomic.NewInt64(0),
-		waitExecution:     waitExecution,
-		continueExecution: continueExecution,
-		log:               log.NewLogfmtLogger(os.Stdout),
-	}
-}
-
-func (c *mockClient) Succeed(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*empty.Empty, error) {
-	level.Info(c.log).Log("client", "mockClient", "method", "Succeed", "phase", "start")
-	res, err := c.FakeServerClient.Succeed(ctx, in, opts...)
-	if c.numExecutions.Inc() == 1 {
-		close(c.waitExecution)
-		<-c.continueExecution
-	}
-	if err != nil {
-		err = WrapGRPCErrorWithContextError(err)
-		level.Error(c.log).Log("client", "mockClient", "method", "Succeed", "phase", "end", "err", err)
-		return nil, err
-	}
-
-	level.Info(c.log).Log("client", "mockClient", "method", "Succeed", "phase", "end")
-	return res, nil
-}
-
-func (c *mockClient) Close() error {
-	level.Info(c.log).Log("client", "mockClient", "method", "Close", "phase", "start")
-	err := c.cc.Close()
-	level.Info(c.log).Log("client", "mockClient", "method", "Close", "phase", "end")
-	return err
 }
