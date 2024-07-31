@@ -7,8 +7,6 @@ import (
 	"sync"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/rules"
@@ -16,7 +14,8 @@ import (
 )
 
 type MultiTenantRuleConcurrencyController interface {
-	rules.RuleConcurrencyController
+	// NewTenantConcurrencyController returns a new rules.RuleConcurrencyController to use for the input tenantID.
+	NewTenantConcurrencyController(tenantID string) rules.RuleConcurrencyController
 }
 
 // DynamicSemaphore is a semaphore that can dynamically change its max concurrency.
@@ -42,6 +41,7 @@ func (ds *DynamicSemaphore) TryAcquire() bool {
 
 	ds.acquiredMtx.Lock()
 	defer ds.acquiredMtx.Unlock()
+
 	if ds.acquired < maxTokens {
 		ds.acquired++
 		return true
@@ -90,16 +90,14 @@ func newMultiTenantConcurrencyControllerMetrics(reg prometheus.Registerer) *Mult
 }
 
 // MultiTenantConcurrencyController is a concurrency controller that limits the number of concurrent rule evaluations both global and per tenant.
+// TODO update doc
 type MultiTenantConcurrencyController struct {
 	logger                   log.Logger
 	limits                   RulesLimits
-	maxGlobalConcurrency     int64
 	thresholdRuleConcurrency float64 // Percentage of the rule interval at which we consider the rule group at risk of missing its evaluation.
 	metrics                  *MultiTenantConcurrencyControllerMetrics
 
-	globalConcurrency    semaphore.Weighted
-	tenantConcurrencyMtx sync.Mutex
-	tenantConcurrency    map[string]*DynamicSemaphore
+	globalConcurrency *semaphore.Weighted
 }
 
 // NewMultiTenantConcurrencyController creates a new MultiTenantConcurrencyController.
@@ -107,39 +105,43 @@ func NewMultiTenantConcurrencyController(logger log.Logger, maxGlobalConcurrency
 	return &MultiTenantConcurrencyController{
 		metrics:                  newMultiTenantConcurrencyControllerMetrics(reg),
 		logger:                   log.With(logger, "component", "concurrency-controller"),
-		maxGlobalConcurrency:     maxGlobalConcurrency,
 		thresholdRuleConcurrency: ThresholdRuleConcurrency,
 		limits:                   limits,
-		globalConcurrency:        *semaphore.NewWeighted(maxGlobalConcurrency),
-		tenantConcurrency:        make(map[string]*DynamicSemaphore),
+		globalConcurrency:        semaphore.NewWeighted(maxGlobalConcurrency),
 	}
 }
 
+func (c *MultiTenantConcurrencyController) NewTenantConcurrencyController(tenantID string) rules.RuleConcurrencyController {
+	return &TenantConcurrencyController{
+		thresholdRuleConcurrency: c.thresholdRuleConcurrency,
+		metrics:                  c.metrics,
+		globalConcurrency:        c.globalConcurrency,
+		tenantConcurrency: NewDynamicSemaphore(func() int64 {
+			return c.limits.RulerMaxIndependentRuleEvaluationConcurrencyPerTenant(tenantID)
+		}),
+	}
+}
+
+// TODO document what this is
+type TenantConcurrencyController struct {
+	thresholdRuleConcurrency float64 // Percentage of the rule interval at which we consider the rule group at risk of missing its evaluation.
+	metrics                  *MultiTenantConcurrencyControllerMetrics
+
+	globalConcurrency *semaphore.Weighted
+	tenantConcurrency *DynamicSemaphore
+}
+
 // Done releases a slot from the concurrency controller.
-func (c *MultiTenantConcurrencyController) Done(ctx context.Context) {
+func (c *TenantConcurrencyController) Done(_ context.Context) {
 	c.globalConcurrency.Release(1)
 	c.metrics.CurrentConcurrency.Dec()
 	c.metrics.ReleaseTotal.Inc()
 
-	userID, err := tenant.TenantID(ctx)
-	if err != nil {
-		level.Error(c.logger).Log("msg", "error extracting org id from context while releasing a slot", "err", err)
-		return
-	}
-
-	c.tenantConcurrencyMtx.Lock()
-	tc, ok := c.tenantConcurrency[userID]
-	c.tenantConcurrencyMtx.Unlock()
-
-	if ok {
-		tc.Release()
-	} else {
-		level.Error(c.logger).Log("msg", "tenant concurrency controller: tenant not found", "tenant", userID)
-	}
+	c.tenantConcurrency.Release()
 }
 
 // Allow tries to acquire a slot from the concurrency controller.
-func (c *MultiTenantConcurrencyController) Allow(ctx context.Context, group *rules.Group, rule rules.Rule) bool {
+func (c *TenantConcurrencyController) Allow(_ context.Context, group *rules.Group, rule rules.Rule) bool {
 	// To allow a rule to be executed concurrently, we need 3 conditions:
 	// 1. The rule group must be at risk of missing its evaluation.
 	// 2. The rule must not have any rules that depend on it.
@@ -160,26 +162,7 @@ func (c *MultiTenantConcurrencyController) Allow(ctx context.Context, group *rul
 	}
 	c.metrics.CurrentConcurrency.Inc()
 
-	userID, err := tenant.TenantID(ctx)
-	if err != nil {
-		level.Error(c.logger).Log("msg", "error extracting org id from context while acquiring a slot", "err", err)
-		c.globalConcurrency.Release(1)
-		c.metrics.CurrentConcurrency.Dec()
-		c.metrics.AcquireFailedTotal.Inc()
-		return false
-	}
-
-	c.tenantConcurrencyMtx.Lock()
-	tc, ok := c.tenantConcurrency[userID]
-	if !ok {
-		tc = NewDynamicSemaphore(func() int64 {
-			return c.limits.RulerMaxIndependentRuleEvaluationConcurrencyPerTenant(userID)
-		})
-		c.tenantConcurrency[userID] = tc
-	}
-	c.tenantConcurrencyMtx.Unlock()
-
-	if tc.TryAcquire() {
+	if c.tenantConcurrency.TryAcquire() {
 		return true
 	}
 
@@ -191,7 +174,7 @@ func (c *MultiTenantConcurrencyController) Allow(ctx context.Context, group *rul
 }
 
 // isGroupAtRisk checks if the rule group's last evaluation time is within the risk threshold.
-func (c *MultiTenantConcurrencyController) isGroupAtRisk(group *rules.Group) bool {
+func (c *TenantConcurrencyController) isGroupAtRisk(group *rules.Group) bool {
 	interval := group.Interval().Seconds()
 	lastEvaluation := group.GetEvaluationTime().Seconds()
 
@@ -203,10 +186,17 @@ func isRuleIndependent(rule rules.Rule) bool {
 	return rule.NoDependentRules() && rule.NoDependencyRules()
 }
 
-// NoopConcurrencyController is a concurrency controller that does not allow for concurrency.
-type NoopConcurrencyController struct{}
+// NoopMultiTenantConcurrencyController is a concurrency controller that does not allow for concurrency.
+type NoopMultiTenantConcurrencyController struct{}
 
-func (n *NoopConcurrencyController) Done(_ context.Context) {}
-func (n *NoopConcurrencyController) Allow(_ context.Context, _ *rules.Group, _ rules.Rule) bool {
+func (n *NoopMultiTenantConcurrencyController) NewTenantConcurrencyController(_ string) rules.RuleConcurrencyController {
+	return &NoopTenantConcurrencyController{}
+}
+
+// TODO doc
+type NoopTenantConcurrencyController struct{}
+
+func (n *NoopTenantConcurrencyController) Done(_ context.Context) {}
+func (n *NoopTenantConcurrencyController) Allow(_ context.Context, _ *rules.Group, _ rules.Rule) bool {
 	return false
 }
