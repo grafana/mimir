@@ -85,16 +85,24 @@ func TestWrapContextError(t *testing.T) {
 				expectedGrpcCode:   codes.DeadlineExceeded,
 				expectedContextErr: context.DeadlineExceeded,
 			},
+			"grpc.ErrClientConnClosing": {
+				origErr:            grpc.ErrClientConnClosing,
+				expectedGrpcCode:   codes.Canceled,
+				expectedContextErr: nil,
+			},
 		}
 
 		for testName, testData := range tests {
 			t.Run(testName, func(t *testing.T) {
 				wrapped := WrapGRPCErrorWithContextError(testData.origErr)
-
-				assert.NotEqual(t, testData.origErr, wrapped)
 				assert.ErrorIs(t, wrapped, testData.origErr)
 
-				assert.True(t, errors.Is(wrapped, testData.expectedContextErr))
+				if testData.expectedContextErr != nil {
+					assert.ErrorIs(t, wrapped, testData.expectedContextErr)
+					assert.NotEqual(t, testData.origErr, wrapped)
+				} else {
+					assert.Equal(t, testData.origErr, wrapped)
+				}
 				assert.Equal(t, testData.expectedGrpcCode, grpcutil.ErrorToStatusCode(wrapped))
 
 				//lint:ignore faillint We want to explicitly assert on status.FromError()
@@ -356,7 +364,7 @@ func checkGRPCConnectionIsClosingError(t *testing.T, err error) {
 	require.True(t, ok)
 	require.Equal(t, codes.Canceled, stat.Code())
 	require.Equal(t, "grpc: the client connection is closing", stat.Message())
-	require.ErrorIs(t, errWithCtx, context.Canceled)
+	require.NotErrorIs(t, errWithCtx, context.Canceled)
 }
 
 type mockServer struct {
