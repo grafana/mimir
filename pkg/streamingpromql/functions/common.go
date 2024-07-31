@@ -76,3 +76,5 @@ type RangeVectorStepFunction func(
 
 type EmitAnnotationFunc func(generator AnnotationGenerator)
 type AnnotationGenerator func(metricName string, expressionPosition posrange.PositionRange) error
+
+type RangeVectorSeriesValidationFunction func(seriesData types.InstantVectorSeriesData, metricName string, emitAnnotation EmitAnnotationFunc)

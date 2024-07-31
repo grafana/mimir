@@ -6,6 +6,8 @@
 package functions
 
 import (
+	"strings"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -187,4 +189,18 @@ func calculateFloatRate(rangeStart, rangeEnd int64, rangeSeconds float64, firstP
 	factor := extrapolateToInterval / sampledInterval
 	factor /= rangeSeconds
 	return delta * factor
+}
+
+func RateSeriesValidator(data types.InstantVectorSeriesData, metricName string, emitAnnotation EmitAnnotationFunc) {
+	if len(data.Floats) == 0 {
+		return
+	}
+
+	if metricName == "" {
+		return
+	}
+
+	if !strings.HasSuffix(metricName, "_total") && !strings.HasSuffix(metricName, "_count") && !strings.HasSuffix(metricName, "_sum") && !strings.HasSuffix(metricName, "_bucket") {
+		emitAnnotation(annotations.NewPossibleNonCounterInfo)
+	}
 }
