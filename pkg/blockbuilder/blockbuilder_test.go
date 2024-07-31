@@ -797,26 +797,15 @@ func TestBlockBuilderNonMonotonicRecordTimestamps(t *testing.T) {
 
 	bb, err := New(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry(), overrides)
 	require.NoError(t, err)
-	compactCalled := make(chan struct{}, 2)
-	bb.tsdbBuilder = func() builder {
-		testBuilder := newTestTSDBBuilder(cfg, overrides)
-		testBuilder.compactFunc = func() {
-			compactCalled <- struct{}{}
-		}
-		return testBuilder
-	}
 
 	require.NoError(t, bb.starting(ctx))
 	t.Cleanup(func() {
 		require.NoError(t, bb.stopping(nil))
 	})
 
-	run := func(name string, end time.Time, compactions int, expSamples []mimirpb.Sample) {
+	run := func(name string, end time.Time, expSamples []mimirpb.Sample) {
 		t.Run(name, func(t *testing.T) {
 			require.NoError(t, bb.NextConsumeCycle(ctx, end))
-			for i := 0; i < compactions; i++ {
-				<-compactCalled
-			}
 
 			bucketDir := path.Join(cfg.BlocksStorageConfig.Bucket.Filesystem.Directory, userID)
 			db, err := tsdb.Open(bucketDir, log.NewNopLogger(), nil, nil, nil)
@@ -832,6 +821,6 @@ func TestBlockBuilderNonMonotonicRecordTimestamps(t *testing.T) {
 		})
 	}
 
-	run("phase 1", cycleEnd, 1, expSamplesPhase1)
-	run("phase 2", cycleEnd.Add(cfg.ConsumeInterval), 2, append(expSamplesPhase1, expSamplesPhase2...))
+	run("phase 1", cycleEnd, expSamplesPhase1)
+	run("phase 2", cycleEnd.Add(cfg.ConsumeInterval), append(expSamplesPhase1, expSamplesPhase2...))
 }

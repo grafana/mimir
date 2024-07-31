@@ -891,8 +891,7 @@ func (b *BlockBuilder) consumePartition(
 		LastBlockEnd:   commitBlockEnd,
 	}
 
-	err = commitRecord(ctx, b.logger, client, b.cfg.Kafka.ConsumerGroup, pl.Commit)
-	return pl, err
+	return pl, commitRecord(ctx, b.logger, client, b.cfg.Kafka.ConsumerGroup, pl.Commit)
 }
 
 func (b *BlockBuilder) seekPartition(client *kgo.Client, part int32, rec kgo.EpochOffset) {
