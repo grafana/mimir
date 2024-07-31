@@ -161,7 +161,6 @@ func (b *FPointRingBuffer) Reset() {
 
 // Close releases any resources associated with this buffer.
 func (b *FPointRingBuffer) Close() {
-	b.Reset()
 	b.pool.PutFPointSlice(b.points)
 	b.points = nil
 }
