@@ -145,8 +145,7 @@ func TestFrontendCheckReady(t *testing.T) {
 
 			for i := 0; i < tt.connectedClients; i++ {
 				querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn("test")
-				querierWorkerConn, err = f.requestQueue.AwaitRegisterQuerierWorkerConn(context.Background(), querierWorkerConn)
-				require.NoError(t, err)
+				require.NoError(t, f.requestQueue.AwaitRegisterQuerierWorkerConn(context.Background(), querierWorkerConn))
 			}
 			err = f.CheckReady(context.Background())
 			errMsg := ""

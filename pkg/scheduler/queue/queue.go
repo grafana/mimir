@@ -188,18 +188,18 @@ func (qwo *querierWorkerOperation) IsAwaitable() bool {
 	return qwo.recvQuerierWorkerConn != nil
 }
 
-func (qwo *querierWorkerOperation) AwaitQuerierWorkerConnUpdate() (*QuerierWorkerConn, error) {
+func (qwo *querierWorkerOperation) AwaitQuerierWorkerConnUpdate() error {
 	if !qwo.IsAwaitable() {
 		// if the operation was not created with a receiver channel, the request queue will
 		// process it asynchronously and the caller will not be able to wait for the result.
-		return nil, errors.New("cannot await update for non-awaitable querier-worker operation")
+		return errors.New("cannot await update for non-awaitable querier-worker operation")
 	}
 
 	select {
 	case <-qwo.ctx.Done():
-		return nil, qwo.ctx.Err()
-	case updatedQuerierWorkerConn := <-qwo.recvQuerierWorkerConn:
-		return updatedQuerierWorkerConn, nil
+		return qwo.ctx.Err()
+	case <-qwo.recvQuerierWorkerConn:
+		return nil
 	}
 }
 
@@ -503,15 +503,13 @@ func (q *RequestQueue) GetConnectedQuerierWorkersMetric() float64 {
 	return float64(q.connectedQuerierWorkers.Load())
 }
 
-func (q *RequestQueue) AwaitRegisterQuerierWorkerConn(
-	ctx context.Context, conn *QuerierWorkerConn,
-) (*QuerierWorkerConn, error) {
+func (q *RequestQueue) AwaitRegisterQuerierWorkerConn(ctx context.Context, conn *QuerierWorkerConn) error {
 	return q.awaitQuerierWorkerOperation(ctx, conn, registerConnection)
 }
 
 func (q *RequestQueue) awaitQuerierWorkerOperation(
 	ctx context.Context, conn *QuerierWorkerConn, opType QuerierOperationType,
-) (*QuerierWorkerConn, error) {
+) error {
 	op := newAwaitableQuerierWorkerOperation(
 		ctx, conn, opType,
 	)
@@ -524,7 +522,7 @@ func (q *RequestQueue) awaitQuerierWorkerOperation(
 		// client context cancels will be checked for in AwaitQuerierWorkerConnUpdate
 		return op.AwaitQuerierWorkerConnUpdate()
 	case <-q.stopCompleted:
-		return nil, ErrStopped
+		return ErrStopped
 	}
 }
 

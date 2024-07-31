@@ -392,11 +392,11 @@ func runQueueConsumerIters(
 		lastTenantIndex := FirstTenant()
 		querierID := fmt.Sprintf("consumer-%v", consumerIdx)
 		querierWorkerConn := NewUnregisteredQuerierWorkerConn(QuerierID(querierID))
-		registeredQuerierWorkerConn, err := queue.AwaitRegisterQuerierWorkerConn(ctx, querierWorkerConn)
+		err := queue.AwaitRegisterQuerierWorkerConn(ctx, querierWorkerConn)
 		if err != nil {
 			return err
 		}
-		defer queue.SubmitUnregisterQuerierWorkerConn(ctx, registeredQuerierWorkerConn)
+		defer queue.SubmitUnregisterQuerierWorkerConn(ctx, querierWorkerConn)
 
 		<-start
 
@@ -456,11 +456,9 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 
 			// Two queriers connect.
 			querier1Conn := NewUnregisteredQuerierWorkerConn("querier-1")
-			querier1Conn, err = queue.AwaitRegisterQuerierWorkerConn(ctx, querier1Conn)
-			require.NoError(t, err)
+			require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(ctx, querier1Conn))
 			querier2Conn := NewUnregisteredQuerierWorkerConn("querier-2")
-			querier2Conn, err = queue.AwaitRegisterQuerierWorkerConn(ctx, querier2Conn)
-			require.NoError(t, err)
+			require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(ctx, querier2Conn))
 
 			t.Cleanup(func() {
 				// if the test has failed and the queue does not get cleared,
@@ -550,14 +548,11 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 			// when not all querier forget operations in a single run of forgetDisconnectedQueriers caused a reshard.
 			// Two queriers connect.
 			querier1Conn := NewUnregisteredQuerierWorkerConn("querier-1")
-			querier1Conn, err = queue.AwaitRegisterQuerierWorkerConn(ctx, querier1Conn)
-			require.NoError(t, err)
+			require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(ctx, querier1Conn))
 			querier2Conn := NewUnregisteredQuerierWorkerConn("querier-2")
-			querier2Conn, err = queue.AwaitRegisterQuerierWorkerConn(ctx, querier2Conn)
-			require.NoError(t, err)
+			require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(ctx, querier2Conn))
 			querier3Conn := NewUnregisteredQuerierWorkerConn("querier-3")
-			querier3Conn, err = queue.AwaitRegisterQuerierWorkerConn(ctx, querier3Conn)
-			require.NoError(t, err)
+			require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(ctx, querier3Conn))
 
 			t.Cleanup(func() {
 				// if the test has failed and the queue does not get cleared,
@@ -636,8 +631,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 			})
 
 			querier1Conn := NewUnregisteredQuerierWorkerConn(querierID)
-			_, err = queue.AwaitRegisterQuerierWorkerConn(context.Background(), querier1Conn)
-			require.NoError(t, err)
+			require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(context.Background(), querier1Conn))
 
 			// Calling WaitForRequestForQuerier with a context that is already cancelled should fail immediately.
 			deadCtx, cancel := context.WithCancel(context.Background())
@@ -699,8 +693,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 			})
 
 			querierConn := NewUnregisteredQuerierWorkerConn(querierID)
-			_, err = queue.AwaitRegisterQuerierWorkerConn(ctx, querierConn)
-			require.NoError(t, err)
+			require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(ctx, querierConn))
 
 			queue.SubmitNotifyQuerierShutdown(ctx, querierID)
 

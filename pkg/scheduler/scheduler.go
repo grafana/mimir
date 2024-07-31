@@ -426,11 +426,11 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 
 	querierID := resp.GetQuerierID()
 	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(queue.QuerierID(querierID))
-	registeredQuerierWorkerConn, err := s.requestQueue.AwaitRegisterQuerierWorkerConn(querier.Context(), querierWorkerConn)
+	err = s.requestQueue.AwaitRegisterQuerierWorkerConn(querier.Context(), querierWorkerConn)
 	if err != nil {
 		return s.transformRequestQueueError(err)
 	}
-	defer s.requestQueue.SubmitUnregisterQuerierWorkerConn(querier.Context(), registeredQuerierWorkerConn)
+	defer s.requestQueue.SubmitUnregisterQuerierWorkerConn(querier.Context(), querierWorkerConn)
 
 	lastUserIndex := queue.FirstTenant()
 
