@@ -852,6 +852,7 @@ func (b *binaryOperationSeriesBuffer) close() {
 
 type binaryOperationFunc func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error)
 
+// FIXME(jhesketh): Investigate avoiding copying histograms for binary ops.
 var arithmeticOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 	parser.ADD: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
 		if hlhs != nil && hrhs != nil {
