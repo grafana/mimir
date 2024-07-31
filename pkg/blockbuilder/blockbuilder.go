@@ -390,7 +390,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, pl partitionInfo, c
 	if !lagging {
 		// Either we did not find a commit offset or we are not lagging behind by
 		// more than 1.5 times the consume interval.
-		// When there is no kafka commit, we play safe and assume seenTillTs and
+		// When there is no kafka commit, we play safe and assume seenTillOffset and
 		// lastBlockEnd was 0 to not discard any samples unnecessarily.
 		_, err := b.consumePartition(ctx, pl, cycleEnd)
 		if err != nil {
@@ -426,9 +426,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, pl partitionInfo, c
 // If the partition is lagging behind, the caller of consumePartition needs to take care of
 // calling consumePartition in parts.
 // consumePartition returns
-// * retLag: updated lag after consuming the partition.
-// * retSeenTillTs: timestamp of the last record processed (part of commit metadata).
-// * retBlockMax: timestamp of the block end in this cycle (part of commit metadata).
+// * retPl: updated partitionInfo after consuming the partition.
 func (b *BlockBuilder) consumePartition(
 	ctx context.Context,
 	pl partitionInfo,
@@ -471,7 +469,7 @@ func (b *BlockBuilder) consumePartition(
 		level.Info(b.logger).Log("msg", "done consuming partition", "part", part, "dur", dur,
 			"start_lag", startingLag, "cycle_end", cycleEnd,
 			"last_block_end", time.UnixMilli(lastBlockEnd), "curr_block_end", time.UnixMilli(retPl.LastBlockEnd),
-			"last_seen_till", seenTillOffset, "curr_seen_till", time.UnixMilli(retPl.SeenTillOffset),
+			"last_seen_till", seenTillOffset, "curr_seen_till", retPl.SeenTillOffset,
 			"num_blocks", numBlocks, "compact_and_upload_dur", compactionDur)
 	}(time.Now(), lag)
 
@@ -481,7 +479,7 @@ func (b *BlockBuilder) consumePartition(
 	level.Info(b.logger).Log(
 		"msg", "consuming partition", "part", part, "lag", lag,
 		"cycle_end", cycleEnd, "last_block_end", time.UnixMilli(lastBlockEnd), "curr_block_end", blockEndAt,
-		"last_seen_till", time.UnixMilli(seenTillOffset))
+		"last_seen_till", seenTillOffset)
 
 	var (
 		done                         bool
@@ -609,7 +607,7 @@ func (b *BlockBuilder) consumePartition(
 		b.seekPartition(part, rec)
 	}()
 
-	// We should take the max of "seen till" timestamp. If the partition was lagging
+	// We should take the max of "seen till" offset. If the partition was lagging
 	// due to some record not being processed because of a future sample, we might be
 	// coming back to the same consume cycle again.
 	commitSeenTillOffset := seenTillOffset
@@ -710,14 +708,14 @@ const (
 )
 
 // commitRecTs: timestamp of the record which was committed (and not the commit time).
-// lastRecTs: timestamp of the last record processed (which will be >= commitRecTs).
+// lastRecOffset: offset of the last record processed (which will be >= commit record offset).
 // blockEnd: timestamp of the block end in this cycle.
 func marshallCommitMeta(commitRecTs, lastRecOffset, blockEnd int64) string {
 	return fmt.Sprintf("%d,%d,%d,%d", kafkaCommitMetaV1, commitRecTs, lastRecOffset, blockEnd)
 }
 
 // commitRecTs: timestamp of the record which was committed (and not the commit time).
-// lastRecTs: timestamp of the last record processed (which will be >= commitRecTs).
+// lastRecOffset: offset of the last record processed (which will be >= commit record offset).
 // blockEnd: timestamp of the block end in this cycle.
 func unmarshallCommitMeta(meta string) (commitRecTs, lastRecOffset, blockEnd int64, err error) {
 	if meta == "" {
