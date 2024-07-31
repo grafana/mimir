@@ -8,10 +8,8 @@ package operators
 
 import (
 	"context"
-	"strings"
 
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -33,10 +31,6 @@ type FunctionOverRangeVector struct {
 	histogramBuffer *types.HPointRingBuffer
 
 	expressionPosition posrange.PositionRange
-
-	// Used to check for possible non-counter metrics for rate() and increase().
-	metricNames           []string
-	lastCheckedMetricName string
 }
 
 var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
@@ -65,8 +59,6 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 		return nil, err
 	}
 
-	m.captureMetricNames(metadata) // FIXME: only relevant for rate() and increase()
-
 	for i := range metadata {
 		metadata[i].Labels = metadata[i].Labels.DropMetricName()
 	}
@@ -75,32 +67,6 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 	m.rangeSeconds = m.Inner.Range().Seconds()
 
 	return metadata, nil
-}
-
-func (m *FunctionOverRangeVector) captureMetricNames(metadata []types.SeriesMetadata) {
-	m.metricNames = make([]string, len(metadata))
-
-	for i, series := range metadata {
-		m.metricNames[i] = series.Labels.Get(labels.MetricName)
-	}
-}
-
-func (m *FunctionOverRangeVector) checkForPossibleNonCounterMetricName(metricName string) {
-	if metricName == "" || metricName == m.lastCheckedMetricName {
-		return
-	}
-
-	if !strings.HasSuffix(metricName, "_total") && !strings.HasSuffix(metricName, "_count") && !strings.HasSuffix(metricName, "_sum") && !strings.HasSuffix(metricName, "_bucket") {
-		m.Annotations.Add(annotations.NewPossibleNonCounterInfo(metricName, m.Inner.ExpressionPosition()))
-	}
-
-	// Most of the time, rate() is called over series with the same metric name.
-	// So rather than tracking all metric names we've checked so far, just remember the last one we've seen.
-	// This allows us to avoid most of the suffix checks in the common case without the cost of keeping track of all metric
-	// names we've seen.
-	// Annotations.Add() does deduplication of the annotations added, so there's no risk of generating many annotations for
-	// the same metric if multiple metric names are present.
-	m.lastCheckedMetricName = metricName
 }
 
 func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
@@ -121,10 +87,6 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 
 	data := types.InstantVectorSeriesData{}
 
-	checkedMetricName := false
-	metricName := m.metricNames[0]
-	m.metricNames = m.metricNames[1:]
-
 	for {
 		step, err := m.Inner.NextStepSamples(m.floatBuffer, m.histogramBuffer)
 
@@ -135,20 +97,15 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		haveFloats, err := m.computeNextStep(&data, step)
+		err = m.computeNextStep(&data, step)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
-		}
-
-		if haveFloats && !checkedMetricName {
-			m.checkForPossibleNonCounterMetricName(metricName)
-
-			checkedMetricName = true
 		}
 	}
 }
 
-func (m *FunctionOverRangeVector) computeNextStep(data *types.InstantVectorSeriesData, step types.RangeVectorStepData) (haveFloats bool, err error) {
+func (m *FunctionOverRangeVector) computeNextStep(data *types.InstantVectorSeriesData, step types.RangeVectorStepData) error {
+	var err error
 	// Floats
 	fHead, fTail := m.floatBuffer.UnsafePoints(step.RangeEnd)
 	fCount := len(fHead) + len(fTail)
@@ -161,7 +118,7 @@ func (m *FunctionOverRangeVector) computeNextStep(data *types.InstantVectorSerie
 		// We need either at least two Histograms and no Floats, or at least two
 		// Floats and no Histograms to calculate a rate. Otherwise, drop this
 		// Vector element.
-		return false, nil
+		return nil
 	}
 
 	if fCount >= 2 {
@@ -191,7 +148,7 @@ func (m *FunctionOverRangeVector) computeNextStep(data *types.InstantVectorSerie
 			// but this is expected to be rare.
 			data.Floats, err = m.Pool.GetFPointSlice(m.numSteps)
 			if err != nil {
-				return false, err
+				return err
 			}
 		}
 		data.Floats = append(data.Floats, promql.FPoint{T: step.StepT, F: val})
@@ -209,7 +166,7 @@ func (m *FunctionOverRangeVector) computeNextStep(data *types.InstantVectorSerie
 		delta := lastPoint.H.CopyToSchema(currentSchema)
 		_, err = delta.Sub(firstPoint.H)
 		if err != nil {
-			return false, err
+			return err
 		}
 		previousValue := firstPoint.H
 
@@ -233,11 +190,11 @@ func (m *FunctionOverRangeVector) computeNextStep(data *types.InstantVectorSerie
 
 		err = accumulate(hHead)
 		if err != nil {
-			return false, err
+			return err
 		}
 		err = accumulate(hTail)
 		if err != nil {
-			return false, err
+			return err
 		}
 
 		val := m.calculateHistogramRate(step.RangeStart, step.RangeEnd, firstPoint, lastPoint, delta, hCount)
@@ -247,14 +204,13 @@ func (m *FunctionOverRangeVector) computeNextStep(data *types.InstantVectorSerie
 			// but this is expected to be rare.
 			data.Histograms, err = m.Pool.GetHPointSlice(m.numSteps)
 			if err != nil {
-				return false, err
+				return err
 			}
 		}
 
 		data.Histograms = append(data.Histograms, promql.HPoint{T: step.StepT, H: val})
 	}
-
-	return fCount >= 2, nil
+	return nil
 }
 
 // This is based on extrapolatedRate from promql/functions.go.

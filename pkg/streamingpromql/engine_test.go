@@ -1251,47 +1251,6 @@ func TestAnnotations(t *testing.T) {
 			data: mixedFloatHistogramData,
 			expr: `sum(metric{type="histogram"})`,
 		},
-
-		"rate() over suspected non-counter": {
-			data: `
-				some_metric{env="test"} 0+1x3
-				some_metric{env="prod"} 1+1x3
-			`,
-			expr:                    `rate(some_metric[1m])`,
-			expectedInfoAnnotations: []string{`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "some_metric" (1:6)`},
-		},
-		"rate() over metric ending in _total": {
-			data: `some_metric_total 0+1x3`,
-			expr: `rate(some_metric_total[1m])`,
-		},
-		"rate() over metric ending in _sum": {
-			data: `some_metric_sum 0+1x3`,
-			expr: `rate(some_metric_sum[1m])`,
-		},
-		"rate() over metric ending in _count": {
-			data: `some_metric_count 0+1x3`,
-			expr: `rate(some_metric_count[1m])`,
-		},
-		"rate() over metric ending in _bucket": {
-			data: `some_metric_bucket 0+1x3`,
-			expr: `rate(some_metric_bucket[1m])`,
-		},
-		"rate() over multiple metric names": {
-			data: `
-				not_a_counter{env="prod", series="1"}      0+1x3
-				a_total{series="2"}                        1+1x3
-				a_sum{series="3"}                          2+1x3
-				a_count{series="4"}                        3+1x3
-				a_bucket{series="5"}                       4+1x3
-				not_a_counter{env="test", series="6"}      5+1x3
-				also_not_a_counter{env="test", series="7"} 6+1x3
-			`,
-			expr: `rate({__name__!=""}[1m])`,
-			expectedInfoAnnotations: []string{
-				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "not_a_counter" (1:6)`,
-				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "also_not_a_counter" (1:6)`,
-			},
-		},
 	}
 
 	opts := NewTestEngineOpts()
