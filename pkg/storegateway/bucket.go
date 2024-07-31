@@ -746,7 +746,7 @@ func (s *BucketStore) limitConcurrentQueries(ctx context.Context, stats *safeQue
 	waited := time.Since(waitStart)
 
 	stats.update(func(stats *queryStats) { stats.streamingSeriesConcurrencyLimitWaitDuration = waited })
-	level.Info(spanlogger.FromContext(ctx, s.logger)).Log("msg", "waited for turn", "duration", waited)
+	level.Info(spanlogger.FromContext(ctx, s.logger)).Log("msg", "waited for turn on query concurrency gate", "duration", waited)
 
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to wait for turn")
