@@ -46,11 +46,6 @@ type BlockBuilder struct {
 
 	// for testing
 	tsdbBuilder func() builder
-
-	// mu protects the following fields
-	//mu               sync.Mutex
-	//parts            partitions
-	//cancelActivePart context.CancelCauseFunc
 }
 
 func New(
@@ -65,7 +60,6 @@ func New(
 		register: reg,
 		limits:   limits,
 		metrics:  newBlockBuilderMetrics(reg),
-		//kafkaClients: make(map[int32]*kgo.Client),
 	}
 
 	if cfg.TotalBlockBuilders <= 0 || cfg.TotalPartitions <= 0 {
@@ -108,9 +102,6 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 			if b.kafkaClient != nil {
 				b.kafkaClient.Close()
 			}
-			//for _, cl := range b.kafkaClients {
-			//	cl.Close()
-			//}
 		}
 	}()
 
