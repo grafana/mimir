@@ -199,25 +199,25 @@ It is possible to keep the custom bucket definition of a classic histogram and a
 
    ```go
    histogram := prometheus.NewHistogram(
-     prometheus.HistogramOpts{
-         Name: "request_latency_seconds",
-         Help: "Histogram of request latency in seconds",
-         Buckets: prometheus.DefBuckets,  // If buckets weren't already defined.
-         NativeHistogramBucketFactor: 1.1,
-         NativeHistogramMaxBucketNumber: 100,
-         NativeHistogramMinResetDuration: 1*time.Hour,
+      prometheus.HistogramOpts{
+          Name: "request_latency_seconds",
+          Help: "Histogram of request latency in seconds",
+          Buckets: prometheus.DefBuckets,  // If buckets weren't already defined.
+          NativeHistogramBucketFactor: 1.1,
+          NativeHistogramMaxBucketNumber: 100,
+          NativeHistogramMinResetDuration: 1*time.Hour,
    })
    ```
 
    ```java
    static final Histogram requestLatency = Histogram.build()
-       .name("requests_latency_seconds")
-       .help("Histogram of request latency in seconds")
-       .classicUpperBounds(Histogram.Builder.DEFAULT_CLASSIC_UPPER_BOUNDS)  // If upper bounds weren't already defined.
-       .nativeInitialSchema(3)
-       .nativeMaxNumberOfBuckets(100)
-       .nativeResetDuration(1, TimeUnit.HOURS)
-       .register();
+      .name("requests_latency_seconds")
+      .help("Histogram of request latency in seconds")
+      .classicUpperBounds(Histogram.Builder.DEFAULT_CLASSIC_UPPER_BOUNDS)  // If upper bounds weren't already defined.
+      .nativeInitialSchema(3)
+      .nativeMaxNumberOfBuckets(100)
+      .nativeResetDuration(1, TimeUnit.HOURS)
+      .register();
    ```
 
    {{< /code >}}
@@ -228,8 +228,9 @@ It is possible to keep the custom bucket definition of a classic histogram and a
 
    There are different strategies to updating the dashboards:
 
-   1. Replace the queries of histograms in an existing dashboard or add a new dashboard with the new native histogram queries. This is the cleanest and recommended solution, but does require looking at different dashboards for data before and after the migration, while the retention time of the data runs out. Thus it is recommended to publish the new dashboard when sufficient time has passed to serve users with the new data.
+   1. Add new dashboards with the new native histogram queries. This is the cleanest and recommended solution, but does require looking at different dashboards for data before and after the migration, while the retention time of the data runs out. Thus it is recommended to publish the new dashboard when sufficient time has passed to serve users with the new data.
    1. Add a dashboard variable on top of your dashboard to be able to switch between classic histograms and native histograms. Currently there's no direct support for selectively enabling and disabling queries in Grafana ([issue 79848](https://github.com/grafana/grafana/issues/79848)), however there's a relatively easy workaround. Let the variable take the values -1 or 1 and call it for example `latency_metrics`. Add the following two queries to the panel:
+
       ```
       <classic_query> < ($latency_metrics * +Inf)
       ```
@@ -239,9 +240,11 @@ It is possible to keep the custom bucket definition of a classic histogram and a
       ```
       <native_query> < ($latency_metrics * -Inf)
       ```
+
       Where `classic_query` is the original query and `native_query` is the same but using native histogram query syntax. This technique is employed for Mimir's own dashboards, see for example the [Overview dashboard](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-compiled/dashboards/mimir-overview.json).
 
       This solution allows users to switch between the classic histogram and the native histogram without going to a different dashboard.
+
    1. Replace the existing classic queries with a modified query:
 
       ```
@@ -255,10 +258,10 @@ It is possible to keep the custom bucket definition of a classic histogram and a
       ```
 
       Where `classic_query` is the original query and `native_query` is the same but using native histogram query syntax.
-{{% admonition type="note" %}}
-<!-- Issue: https://github.com/grafana/grafana/issues/79848 -->
-Using the PromQL operator `or` can lead to unexpected results. For example if the query uses a range of 7 days, such as `sum(rate(http_request_duration_seconds[7d]))` then this query will return a value as soon as there are two native histograms samples present before the end time of the query, thus the 7 day rate will be calculated from a couple of minutes worth of data and not 7 days. This means that the result will be very inaccurate around the time when native histograms were started to be scraped and this inaccuracy will always be there when looking at the graph for that time.
-{{% /admonition %}}
+
+      {{% admonition type="warning" %}}
+      Using the PromQL operator `or` can lead to unexpected results. For example if the query uses a range of 7 days, such as `sum(rate(http_request_duration_seconds[7d]))` then this query will return a value as soon as there are two native histograms samples present before the end time of the query, thus the 7 day rate will be calculated from a couple of minutes worth of data and not 7 days. This means that the result will be very inaccurate around the time when native histograms were started to be scraped and this inaccuracy will always be there when looking at the graph for that time.
+      {{% /admonition %}}
 
 1. Start adding _new_ recording rules and alerts to use native histograms. Do not remove the old recording rules and alerts at this time.
 1. It is important to keep scraping both classic and native histograms for as long as the longest range in the recording rules and alerts, plus a day. This is the minimum, but it is recommended to keep scraping both until the new rules and alerts can be verified.
@@ -273,7 +276,6 @@ Using the PromQL operator `or` can lead to unexpected results. For example if th
 
 1. Clean up recording rules and alerts by deleting the classic histogram version of the rule or alert.
 
-
 ## Bucket boundary calculation
 
 This section assumes that you are familiar with basic algebra. Native histogram bucket boundaries are calculated from an exponential formula with a base of 2.
@@ -282,46 +284,46 @@ Native histogram samples have three different kind of buckets, for any observed 
 
 - A zero bucket, which contains the count of observations whose absolute value is smaller or equal to the zero threshold.
 
-  <!--- LaTeX equation source: -threshold \leq v \leq threshold -->
+<!--- LaTeX equation source: -threshold \leq v \leq threshold -->
 
-  ![Zero threshold definition](zero-threshold-def.svg)
+![Zero threshold definition](zero-threshold-def.svg)
 
 - Positive buckets, which contain the count of observations with a positive value that is greater than the lower bound and less or equal to the upper bound of a bucket.
 
-  <!--- LaTeX equation source: {\left( 2^{2^{-schema}} \right)}^{index-1} < v \leq {\left( 2^{2^{-schema}}\right)}^{index} -->
+<!--- LaTeX equation source: {\left( 2^{2^{-schema}} \right)}^{index-1} < v \leq {\left( 2^{2^{-schema}}\right)}^{index} -->
 
-  ![Positive bucket definition](pos-bucket-def.svg)
+![Positive bucket definition](pos-bucket-def.svg)
 
-  where the _index_ can be a positive or negative integer resulting in boundaries above 1 and fractions below 1. The _schema_ either directly specified out of `[-4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8]` at instrumentation time or it is the largest number chosen from the list in such way that
+where the _index_ can be a positive or negative integer resulting in boundaries above 1 and fractions below 1. The _schema_ either directly specified out of `[-4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8]` at instrumentation time or it is the largest number chosen from the list in such way that
 
-  <!--- LaTeX equation source: 2^{2^{-schema}} <= factor -->
+<!--- LaTeX equation source: 2^{2^{-schema}} <= factor -->
 
-  ![Factor equation](factor-equation.svg)
+![Factor equation](factor-equation.svg)
 
-  for example for factor `1.1`:
+for example for factor `1.1`:
 
-  <!--- Latex equation source: 2^{2^{-3}}\simeq1.09<=1.1 -->
+<!--- Latex equation source: 2^{2^{-3}}\simeq1.09<=1.1 -->
 
-  ![Factor 1.1 equation](factor-1.1-equation.svg)
+![Factor 1.1 equation](factor-1.1-equation.svg)
 
-  Table of schema to factor:
-  | _schema_ | _factor_ | | _schema_ | _factor_ |
-  |----------|----------|--|----------|----------|
-  | -4 | 65536 | | 3 | 1.0905 |
-  | -3 | 256 | | 4 | 1.0443 |
-  | -2 | 16 | | 5 | 1.0219 |
-  | -1 | 4 | | 6 | 1.0109 |
-  | 0 | 2 | | 7 | 1.0054 |
-  | 1 | 1.4142 | | 8 | 1.0027 |
-  | 2 | 1.1892 |
+Table of schema to factor:
+| _schema_ | _factor_ | | _schema_ | _factor_ |
+|----------|----------|--|----------|----------|
+| -4 | 65536 | | 3 | 1.0905 |
+| -3 | 256 | | 4 | 1.0443 |
+| -2 | 16 | | 5 | 1.0219 |
+| -1 | 4 | | 6 | 1.0109 |
+| 0 | 2 | | 7 | 1.0054 |
+| 1 | 1.4142 | | 8 | 1.0027 |
+| 2 | 1.1892 |
 
 - Negative buckets, which contain the count of observations with a negative value that is smaller than the upper bound and greater than or equal to the lower bound of a bucket.
 
-  <!--- LaTeX equation source: -{\left( 2^{2^{-schema}} \right)}^{index} \leq v < -{\left( 2^{2^{-schema}}\right)}^{index-1} -->
+<!--- LaTeX equation source: -{\left( 2^{2^{-schema}} \right)}^{index} \leq v < -{\left( 2^{2^{-schema}}\right)}^{index-1} -->
 
-  ![Negative bucket definition](neg-bucket-def.svg)
+![Negative bucket definition](neg-bucket-def.svg)
 
-  where the `schema` is chosen as above.
+where the `schema` is chosen as above.
 
 ## Limit the number of buckets
 
@@ -338,3 +340,7 @@ After the set maximum is exceeded, the following strategy is enacted:
 1. After that, if the number of buckets still exceeds maximum bucket number, the resolution of the histogram is reduced by doubling the width of all the buckets (up to a growth factor between one bucket to the next of 2^(2^4) = 65536, refer to [Bucket boundary calculation](#bucket-boundary-calculation)).
 
 1. Any increased zero threshold or reduced resolution is reset back to their original values once the minimum reset duration has passed (since the last reset or the creation of the histogram).
+
+```
+
+```
