@@ -39,7 +39,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 		labels := createAttributes(
 			resource,
 			pt.Attributes(),
-			settings.ExternalLabels,
+			settings,
 			nil,
 			true,
 			model.MetricNameLabel,
@@ -75,7 +75,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		lbls := createAttributes(
 			resource,
 			pt.Attributes(),
-			settings.ExternalLabels,
+			settings,
 			nil,
 			true,
 			model.MetricNameLabel,

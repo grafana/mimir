@@ -16,8 +16,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
-
-	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 const (
@@ -174,27 +172,14 @@ func (cb *circuitBreaker) tryRecordFailure(err error) bool {
 		return false
 	}
 
-	// We only consider timeouts or ingester hitting a per-instance limit
-	// to be errors worthy of tripping the circuit breaker since these
-	// are specific to a particular ingester, not a user or request.
-
-	isFailure := false
+	// We only consider timeouts to be errors worthy of tripping the circuit breaker
+	// since these are specific to a particular ingester, not a user or request.
 	if isDeadlineExceeded(err) {
 		cb.metrics.circuitBreakerRequestTimeouts.Inc()
-		isFailure = true
-	} else {
-		var ingesterErr ingesterError
-		if errors.As(err, &ingesterErr) {
-			isFailure = ingesterErr.errorCause() == mimirpb.INSTANCE_LIMIT
-		}
-	}
-
-	if isFailure {
-		cb.cb.RecordFailure()
 		cb.metrics.circuitBreakerResults.WithLabelValues(circuitBreakerResultError).Inc()
+		cb.cb.RecordFailure()
 		return true
 	}
-
 	return false
 }
 

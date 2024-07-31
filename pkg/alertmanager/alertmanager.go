@@ -63,6 +63,7 @@ import (
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -78,6 +79,9 @@ const (
 	notificationLogSnapshot = "notifications"
 	silencesSnapshot        = "silences"
 	templatesDir            = "templates"
+
+	nflogStateKeyPrefix    = "nfl:"
+	silencesStateKeyPrefix = "sil:"
 )
 
 // Config configures an Alertmanager.
@@ -125,6 +129,9 @@ type Alertmanager struct {
 	receivers       []*nfstatus.Receiver
 	templatesMtx    sync.RWMutex
 	templates       []alertingTemplates.TemplateDefinition
+
+	// usingGrafanaState indicates if the Grafana Alertmanager state is being used.
+	usingGrafanaState atomic.Bool
 
 	// Pipeline created during last ApplyConfig call. Used for testing only.
 	lastPipeline notify.Stage
@@ -226,7 +233,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		am.wg.Done()
 	}()
 
-	c := am.state.AddState("nfl:"+cfg.UserID, am.nflog, am.registry)
+	c := am.state.AddState(nflogStateKeyPrefix+cfg.UserID, am.nflog, am.registry)
 	am.nflog.SetBroadcast(c.Broadcast)
 
 	am.marker = types.NewMarker(am.registry)
@@ -246,7 +253,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		return nil, fmt.Errorf("failed to create silences: %v", err)
 	}
 
-	c = am.state.AddState("sil:"+cfg.UserID, am.silences, am.registry)
+	c = am.state.AddState(silencesStateKeyPrefix+cfg.UserID, am.silences, am.registry)
 	am.silences.SetBroadcast(c.Broadcast)
 
 	// State replication needs to be started after the state keys are defined.
@@ -517,6 +524,10 @@ func (am *Alertmanager) StopAndWait() {
 
 func (am *Alertmanager) mergePartialExternalState(part *clusterpb.Part) error {
 	return am.state.MergePartialState(part)
+}
+
+func (am *Alertmanager) mergeFullExternalState(fs *clusterpb.FullState) error {
+	return am.state.MergeFullStates([]*clusterpb.FullState{fs})
 }
 
 func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {

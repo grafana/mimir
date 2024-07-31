@@ -261,11 +261,12 @@ func NewBucketStore(
 }
 
 func (s *BucketStore) subservices() []services.Service {
-	return []services.Service{s.snapshotter}
+	return []services.Service{s.snapshotter, s.indexReaderPool}
 }
 
 func (s *BucketStore) start(context.Context) error {
-	return nil
+	// Use context.Background() so that we stop the index reader pool ourselves and do it after closing all blocks.
+	return services.StartAndAwaitRunning(context.Background(), s.indexReaderPool)
 }
 
 func (s *BucketStore) stop(err error) error {
@@ -278,7 +279,6 @@ func (s *BucketStore) stop(err error) error {
 		}
 	}
 
-	s.indexReaderPool.Close()
 	return errs.Err()
 }
 
@@ -1567,7 +1567,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 
 		// This index reader shouldn't be used for ExpandedPostings, since it doesn't have the correct strategy.
 		// It's here only to make sure the block is held open inside the goroutine below.
-		indexr := b.indexReader(selectAllStrategy{})
+		indexr := b.indexReader(nil)
 
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(b.logger, indexr, "close block index reader")

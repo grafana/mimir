@@ -664,11 +664,11 @@ type cancellationQuerier struct {
 	onQueried func()
 }
 
-func (w cancellationQuerier) LabelValues(ctx context.Context, _ string, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (w cancellationQuerier) LabelValues(ctx context.Context, _ string, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, w.waitForCancellation(ctx)
 }
 
-func (w cancellationQuerier) LabelNames(ctx context.Context, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (w cancellationQuerier) LabelNames(ctx context.Context, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, w.waitForCancellation(ctx)
 }
 
@@ -742,14 +742,14 @@ type contextCapturingQuerier struct {
 	inner     storage.Querier
 }
 
-func (q *contextCapturingQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *contextCapturingQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	q.queryable.capturedContext = ctx
-	return q.inner.LabelValues(ctx, name, matchers...)
+	return q.inner.LabelValues(ctx, name, hints, matchers...)
 }
 
-func (q *contextCapturingQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *contextCapturingQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	q.queryable.capturedContext = ctx
-	return q.inner.LabelNames(ctx, matchers...)
+	return q.inner.LabelNames(ctx, hints, matchers...)
 }
 
 func (q *contextCapturingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {

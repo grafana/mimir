@@ -195,11 +195,11 @@ func (p *partitionOffsetClient) fetchPartitionOffset(ctx context.Context, partit
 	return listRes.Topics[0].Partitions[0].Offset, nil
 }
 
-// FetchLastProducedOffsets fetches and returns the last produced offsets for all topic partitions. The offset is
+// FetchTopicLastProducedOffsets fetches and returns the last produced offsets for all topic partitions. The offset is
 // -1 if a partition has been created but no record has been produced yet.
 //
 // The Kafka client used under the hood may retry a failed request until the retry timeout is hit.
-func (p *partitionOffsetClient) FetchLastProducedOffsets(ctx context.Context) (_ map[int32]int64, returnErr error) {
+func (p *partitionOffsetClient) FetchTopicLastProducedOffsets(ctx context.Context) (_ map[int32]int64, returnErr error) {
 	var (
 		startTime = time.Now()
 

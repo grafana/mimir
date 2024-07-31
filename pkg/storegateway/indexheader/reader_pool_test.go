@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/gate"
+	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
@@ -60,7 +61,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 				LazyLoadingIdleTimeout: testData.lazyReaderIdleTimeout,
 			}
 			pool := NewReaderPool(log.NewNopLogger(), indexHeaderConfig, gate.NewNoop(), metrics)
-			defer pool.Close()
+			t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, pool)) })
 
 			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, indexHeaderConfig)
 			require.NoError(t, err)
@@ -91,7 +92,6 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 		LazyLoadingIdleTimeout:     idleTimeout,
 		EagerLoadingStartupEnabled: false,
 	}, gate.NewNoop(), metrics)
-	defer pool.Close()
 
 	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
 	require.NoError(t, err)
@@ -106,7 +106,7 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 
 	// Wait enough time before checking it.
 	time.Sleep(idleTimeout * 2)
-	pool.closeIdleReaders()
+	require.NoError(t, pool.closeIdleReaders(context.Background()), "closing idle readers shouldn't ever fail because it will abort periodically checking for idle readers")
 
 	// We expect the reader has been closed, but not released from the pool.
 	require.True(t, pool.isTracking(r.(*LazyBinaryReader)))

@@ -630,6 +630,10 @@
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'ruler-querier',
       },
+      store_gateway: {
+        enabled: false,
+        hpa_name: $._config.autoscaling_hpa_prefix + 'store-gateway-zone-a',
+      },
       distributor: {
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'distributor',
@@ -646,6 +650,10 @@
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'ingester-zone-a',
       },
+      compactor: {
+        enabled: false,
+        hpa_name: $._config.autoscaling_hpa_prefix + 'compactor',
+      },
     },
 
 
@@ -656,6 +664,9 @@
 
     // All query methods from IngesterServer interface. Basically everything except Push.
     ingester_read_path_routes_regex: '/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)',
+
+    // All query methods from StoregatewayServer interface.
+    store_gateway_read_path_routes_regex: '/gatewaypb.StoreGateway/.*',
 
     // The default datasource used for dashboards.
     dashboard_datasource: 'default',

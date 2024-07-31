@@ -136,6 +136,40 @@ Using a custom namespace solves problems later on because you do not have to ove
 
 1. Wait until all of the pods have a status of `Running` or `Completed`, which might take a few minutes.
 
+## Generate some test metrics
+
+{{< docs/shared source="alloy" lookup="agent-deprecation.md" version="next" >}}
+
+The Grafana Mimir Helm chart can collect metrics, logs, or both, about Grafana Mimir itself. This is called _metamonitoring_.
+In the example that follows, metamonitoring scrapes metrics about Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir instance.
+
+1. Deploy the Grafana Agent Operator Custom Resource Definitions (CRDs). For more information, refer to [Deploy the Agent Operator Custom Resource Definitions (CRDs)](https://grafana.com/docs/agent/latest/operator/getting-started/#deploy-the-agent-operator-custom-resource-definitions-crds) in the Grafana Agent documentation.
+
+1. Create a YAML file called `custom.yaml` for your Helm values overrides.
+   Add the following YAML snippet to `custom.yaml` to enable metamonitoring in Mimir:
+
+   ```yaml
+   metaMonitoring:
+     serviceMonitor:
+       enabled: true
+     grafanaAgent:
+       enabled: true
+       installOperator: true
+       metrics:
+         additionalRemoteWriteConfigs:
+           - url: "http://mimir-nginx.mimir-test.svc:80/api/v1/push"
+   ```
+
+   {{< admonition type="note" >}}
+   In a production environment the `url` above would point to an external system, independent of your Grafana Mimir instance, such as an instance of Grafana Cloud Metrics.
+   {{< /admonition >}}
+
+1. Upgrade Grafana Mimir by using the `helm` command:
+
+   ```bash
+   helm -n mimir-test upgrade mimir grafana/mimir-distributed -f custom.yaml
+   ```
+
 ## Start Grafana in Kubernetes and query metrics
 
 1. Install Grafana in the same Kubernetes cluster.
@@ -263,19 +297,51 @@ Make a choice based on whether or not you already have a Prometheus server set u
 
 You can either configure Grafana Alloy to write to Grafana Mimir or [configure Prometheus to write to Mimir](#configure-prometheus-to-write-to-grafana-mimir). Although you can configure both, you don't need to.
 
-To configure Grafana Alloy to write to Mimir, use the `prometheus.remote_write` component. For example:
+Make a choice based on whether you already have Alloy set up:
 
-```
-prometheus.remote_write "LABEL" {
-  endpoint {
-    url = http://<ingress-host>/api/v1/push
+- For an existing Alloy:
 
-    ...
-  }
+  1. Add the following configuration snippet for the `prometheus.remote_write` component to your Alloy configuration file:
 
-  ...
-}
-```
+     ```
+     prometheus.remote_write "LABEL" {
+       endpoint {
+         url = http://<ingress-host>/api/v1/push
+       }
+     }
+     ```
+
+  1. Add `forward_to = [prometheus.remote_write.LABEL.receiver]` to an existing pipeline.
+
+  1. Restart Alloy.
+
+- For a new Alloy:
+
+  1. Write the following configuration to a `config.alloy` file:
+
+     ```
+     prometheus.exporter.self "self_metrics" {
+     }
+
+     prometheus.scrape "self_scrape" {
+       targets    = prometheus.exporter.self.self_metrics.targets
+       forward_to = [prometheus.remote_write.mimir.receiver]
+     }
+
+     prometheus.remote_write "mimir" {
+       endpoint {
+         url = "http://<ingress-host>/api/v1/push"
+       }
+     }
+     ```
+
+  1. Start Alloy by using Docker:
+
+     ```bash
+     docker run -v <absolute-path-to>/config.alloy:/etc/alloy/config.alloy -p 12345:12345 grafana/alloy:latest run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+     ```
+
+     > **Note:** On Linux systems, if \<ingress-host\> cannot be resolved by Alloy, use the additional command-line flag `--add-host=<ingress-host>:<kubernetes-cluster-external-address>` to set it up.
 
 For more information about the `prometheus.remote_write` component, refer to [prometheus.remote_write](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.remote_write) in the Grafana Alloy documentation.
 

@@ -246,9 +246,6 @@ func (c *Config) Validate(log log.Logger) error {
 		return errors.Wrap(err, "invalid ingest storage config")
 	}
 	if c.isAnyModuleEnabled(Ingester, Write, All) {
-		if c.IngestStorage.Enabled && !c.Ingester.DeprecatedReturnOnlyGRPCErrors {
-			return errors.New("to use ingest storage (-ingest-storage.enabled) also enable -ingester.return-only-grpc-errors")
-		}
 		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
 			return errors.New("cannot disable Push gRPC method in ingester, while ingest storage (-ingest-storage.enabled) is not enabled")
 		}
@@ -266,7 +263,7 @@ func (c *Config) Validate(log log.Logger) error {
 		return fmt.Errorf("querier timeout (%s) must be lower than or equal to HTTP server write timeout (%s)",
 			c.Querier.EngineConfig.Timeout, c.Server.HTTPServerWriteTimeout)
 	}
-	if err := c.IngesterClient.Validate(log); err != nil {
+	if err := c.IngesterClient.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
 	if err := c.Ingester.Validate(log); err != nil {
@@ -702,38 +699,39 @@ type Mimir struct {
 	ServiceMap    map[string]services.Service
 	ModuleManager *modules.Manager
 
-	API                           *api.API
-	Server                        *server.Server
-	IngesterRing                  *ring.Ring
-	IngesterPartitionRingWatcher  *ring.PartitionRingWatcher
-	IngesterPartitionInstanceRing *ring.PartitionInstanceRing
-	TenantLimits                  validation.TenantLimits
-	Overrides                     *validation.Overrides
-	ActiveGroupsCleanup           *util.ActiveGroupsCleanupService
-	Distributor                   *distributor.Distributor
-	Ingester                      *ingester.Ingester
-	Flusher                       *flusher.Flusher
-	FrontendV1                    *frontendv1.Frontend
-	RuntimeConfig                 *runtimeconfig.Manager
-	QuerierQueryable              prom_storage.SampleAndChunkQueryable
-	ExemplarQueryable             prom_storage.ExemplarQueryable
-	MetadataSupplier              querier.MetadataSupplier
-	QuerierEngine                 promql.QueryEngine
-	QueryFrontendTripperware      querymiddleware.Tripperware
-	QueryFrontendCodec            querymiddleware.Codec
-	Ruler                         *ruler.Ruler
-	RulerDirectStorage            rulestore.RuleStore
-	RulerCachedStorage            rulestore.RuleStore
-	Alertmanager                  *alertmanager.MultitenantAlertmanager
-	Compactor                     *compactor.MultitenantCompactor
-	StoreGateway                  *storegateway.StoreGateway
-	StoreQueryable                prom_storage.Queryable
-	MemberlistKV                  *memberlist.KVInitService
-	ActivityTracker               *activitytracker.ActivityTracker
-	Vault                         *vault.Vault
-	UsageStatsReporter            *usagestats.Reporter
-	ContinuousTestManager         *continuoustest.Manager
-	BuildInfoHandler              http.Handler
+	API                             *api.API
+	Server                          *server.Server
+	IngesterRing                    *ring.Ring
+	IngesterPartitionRingWatcher    *ring.PartitionRingWatcher
+	IngesterPartitionInstanceRing   *ring.PartitionInstanceRing
+	TenantLimits                    validation.TenantLimits
+	Overrides                       *validation.Overrides
+	ActiveGroupsCleanup             *util.ActiveGroupsCleanupService
+	Distributor                     *distributor.Distributor
+	Ingester                        *ingester.Ingester
+	Flusher                         *flusher.Flusher
+	FrontendV1                      *frontendv1.Frontend
+	RuntimeConfig                   *runtimeconfig.Manager
+	QuerierQueryable                prom_storage.SampleAndChunkQueryable
+	ExemplarQueryable               prom_storage.ExemplarQueryable
+	MetadataSupplier                querier.MetadataSupplier
+	QuerierEngine                   promql.QueryEngine
+	QueryFrontendTripperware        querymiddleware.Tripperware
+	QueryFrontendTopicOffsetsReader *ingest.TopicOffsetsReader
+	QueryFrontendCodec              querymiddleware.Codec
+	Ruler                           *ruler.Ruler
+	RulerDirectStorage              rulestore.RuleStore
+	RulerCachedStorage              rulestore.RuleStore
+	Alertmanager                    *alertmanager.MultitenantAlertmanager
+	Compactor                       *compactor.MultitenantCompactor
+	StoreGateway                    *storegateway.StoreGateway
+	StoreQueryable                  prom_storage.Queryable
+	MemberlistKV                    *memberlist.KVInitService
+	ActivityTracker                 *activitytracker.ActivityTracker
+	Vault                           *vault.Vault
+	UsageStatsReporter              *usagestats.Reporter
+	ContinuousTestManager           *continuoustest.Manager
+	BuildInfoHandler                http.Handler
 }
 
 // New makes a new Mimir.

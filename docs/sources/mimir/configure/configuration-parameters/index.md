@@ -1265,10 +1265,6 @@ instance_limits:
 # CLI flag: -ingester.error-sample-rate
 [error_sample_rate: <int> | default = 10]
 
-# (deprecated) When enabled only gRPC errors will be returned by the ingester.
-# CLI flag: -ingester.return-only-grpc-errors
-[return_only_grpc_errors: <boolean> | default = true]
-
 # (experimental) When enabled, only series currently owned by ingester according
 # to the ring are used when checking user per-tenant series limit.
 # CLI flag: -ingester.use-ingester-owned-series-for-limits
@@ -1451,12 +1447,6 @@ store_gateway_client:
 # (ingesters shuffle sharding on read path is disabled).
 # CLI flag: -querier.shuffle-sharding-ingesters-enabled
 [shuffle_sharding_ingesters_enabled: <boolean> | default = true]
-
-# (experimental) Request store-gateways stream chunks. Store-gateways will only
-# respond with a stream of chunks if the target store-gateway supports this, and
-# this preference will be ignored by store-gateways that do not support this.
-# CLI flag: -querier.prefer-streaming-chunks-from-store-gateways
-[prefer_streaming_chunks_from_store_gateways: <boolean> | default = true]
 
 # (advanced) Number of series to buffer per ingester when streaming chunks from
 # ingesters.
@@ -2091,6 +2081,17 @@ tenant_federation:
   # then these rules groups will be skipped during evaluations.
   # CLI flag: -ruler.tenant-federation.enabled
   [enabled: <boolean> | default = false]
+
+# (experimental) Number of rules rules that don't have dependencies that we
+# allow to be evaluated concurrently across all tenants. 0 to disable.
+# CLI flag: -ruler.max-independent-rule-evaluation-concurrency
+[max_independent_rule_evaluation_concurrency: <int> | default = 0]
+
+# (experimental) Minimum threshold of the interval to last rule group runtime
+# duration to allow a rule to be evaluated concurrency. By default, the rule
+# group runtime duration must exceed 50.0% of the evaluation interval.
+# CLI flag: -ruler.independent-rule-evaluation-concurrency-min-duration-percentage
+[independent_rule_evaluation_concurrency_min_duration_percentage: <float> | default = 50]
 ```
 
 ### ruler_storage
@@ -2536,37 +2537,6 @@ The `ingester_client` block configures how the distributors connect to the inges
 # distributors, queriers and rulers.
 # The CLI flags prefix for this block configuration is: ingester.client
 [grpc_client_config: <grpc_client>]
-
-circuit_breaker:
-  # (experimental) Enable circuit breaking when making requests to ingesters
-  # CLI flag: -ingester.client.circuit-breaker.enabled
-  [enabled: <boolean> | default = false]
-
-  # (experimental) Max percentage of requests that can fail over period before
-  # the circuit breaker opens
-  # CLI flag: -ingester.client.circuit-breaker.failure-threshold
-  [failure_threshold: <int> | default = 10]
-
-  # (experimental) How many requests must have been executed in period for the
-  # circuit breaker to be eligible to open for the rate of failures
-  # CLI flag: -ingester.client.circuit-breaker.failure-execution-threshold
-  [failure_execution_threshold: <int> | default = 100]
-
-  # (experimental) Moving window of time that the percentage of failed requests
-  # is computed over
-  # CLI flag: -ingester.client.circuit-breaker.thresholding-period
-  [thresholding_period: <duration> | default = 1m]
-
-  # (experimental) How long the circuit breaker will stay in the open state
-  # before allowing some requests
-  # CLI flag: -ingester.client.circuit-breaker.cooldown-period
-  [cooldown_period: <duration> | default = 10s]
-
-# (deprecated) If set to true, gRPC status codes will be reported in
-# "status_code" label of "cortex_ingester_client_request_duration_seconds"
-# metric. Otherwise, they will be reported as "error"
-# CLI flag: -ingester.client.report-grpc-codes-in-instrumentation-label-enabled
-[report_grpc_codes_in_instrumentation_label_enabled: <boolean> | default = true]
 ```
 
 ### grpc_client
@@ -3029,6 +2999,14 @@ The `memberlist` block configures the Gossip memberlist.
 # (advanced) Timeout for leaving memberlist cluster.
 # CLI flag: -memberlist.leave-timeout
 [leave_timeout: <duration> | default = 20s]
+
+# (advanced) Timeout for broadcasting all remaining locally-generated updates to
+# other nodes when shutting down. Only used if there are nodes left in the
+# memberlist cluster, and only applies to locally-generated updates, not to
+# broadcast messages that are result of incoming gossip updates. 0 = no timeout,
+# wait until all locally-generated updates are sent.
+# CLI flag: -memberlist.broadcast-timeout-for-local-updates-on-shutdown
+[broadcast_timeout_for_local_updates_on_shutdown: <duration> | default = 10s]
 
 # (advanced) How much space to use for keeping received and sent messages in
 # memory for troubleshooting (two buffers). 0 to disable.
@@ -3555,6 +3533,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ruler.protected-namespaces
 [ruler_protected_namespaces: <string> | default = ""]
 
+# (experimental) Maximum number of independent rules that can run concurrently
+# for each tenant. Depends on ruler.max-independent-rule-evaluation-concurrency
+# being greater than 0. Ideally this flag should be a lower value. 0 to disable.
+# CLI flag: -ruler.max-independent-rule-evaluation-concurrency-per-tenant
+[ruler_max_independent_rule_evaluation_concurrency_per_tenant: <int> | default = 4]
+
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
 # sharded across all store-gateway replicas.
@@ -3819,7 +3803,7 @@ kafka:
 
   # The maximum size of (uncompressed) buffered and unacknowledged produced
   # records sent to Kafka. The produce request fails once this limit is reached.
-  # 0 to disable the limit.
+  # This limit is per Kafka client. 0 to disable the limit.
   # CLI flag: -ingest-storage.kafka.producer-max-buffered-bytes
   [producer_max_buffered_bytes: <int> | default = 1073741824]
 
@@ -3894,7 +3878,7 @@ bucket_store:
   # (advanced) Max number of concurrent queries to execute against the long-term
   # storage. The limit is shared across all tenants.
   # CLI flag: -blocks-storage.bucket-store.max-concurrent
-  [max_concurrent: <int> | default = 100]
+  [max_concurrent: <int> | default = 200]
 
   # (advanced) Timeout for the queue of queries waiting for execution. If the
   # queue is full and the timeout is reached, the query will be retried on
@@ -4143,22 +4127,15 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.batch-series-size
   [streaming_series_batch_size: <int> | default = 5000]
 
-  # (experimental) This option controls the strategy to selection of series and
-  # deferring application of matchers. A more aggressive strategy will fetch
-  # less posting lists at the cost of more series. This is useful when querying
-  # large blocks in which many series share the same label name and value.
-  # Supported values (most aggressive to least aggressive): speculative,
-  # worst-case, worst-case-small-posting-lists, all.
-  # CLI flag: -blocks-storage.bucket-store.series-selection-strategy
-  [series_selection_strategy: <string> | default = "worst-case"]
-
-  series_selection_strategies:
-    # (experimental) This option is only used when
-    # blocks-storage.bucket-store.series-selection-strategy=worst-case.
-    # Increasing the series preference results in fetching more series than
-    # postings. Must be a positive floating point number.
-    # CLI flag: -blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference
-    [worst_case_series_preference: <float> | default = 0.75]
+  # (advanced) This parameter controls the trade-off in fetching series versus
+  # fetching postings to fulfill a series request. Increasing the series
+  # preference results in fetching more series and reducing the volume of
+  # postings fetched. Reducing the series preference results in the opposite.
+  # Increase this parameter to reduce the rate of fetched series bytes (see
+  # "Mimir / Queries" dashboard) or API calls to the object store. Must be a
+  # positive floating point number.
+  # CLI flag: -blocks-storage.bucket-store.series-fetch-preference
+  [series_fetch_preference: <float> | default = 0.75]
 
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
