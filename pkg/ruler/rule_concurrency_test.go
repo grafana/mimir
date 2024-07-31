@@ -191,18 +191,35 @@ cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total 4
 	// Make the rule independent again.
 	rule1.SetNoDependencyRules(true)
 
-	// Let's test removing a user in the middle of the lock acquisition.
+	// Let's test marking an user for removal.
+	done := make(chan struct{})
+
+	// first acquire a slot.
 	require.True(t, controller.Allow(user1Ctx, rg, rule1))
-	controller.RemoveTenant("user1")
+
+	// Now, mark the tenant for removal whilst the slot is still acquired.
+	controller.MarkTenantForRemoval("user1", done)
+
+	// If the user was marked for removal and tries to acquire a new slot, it should fail.
+	require.False(t, controller.Allow(user1Ctx, rg, rule1))
+
+	// finish using the previous slot.
 	require.NotPanics(t, func() {
 		controller.Done(user1Ctx)
 	})
 
+	close(done)
+
 	// Remove both tenants.
-	controller.RemoveTenant("user2")
-	controller.tenantConcurrencyMtx.Lock()
-	require.Len(t, controller.tenantConcurrency, 0)
-	controller.tenantConcurrencyMtx.Unlock()
+	done = make(chan struct{})
+	controller.MarkTenantForRemoval("user2", done)
+	close(done)
+
+	require.Eventually(t, func() bool {
+		controller.tenantConcurrencyMtx.Lock()
+		defer controller.tenantConcurrencyMtx.Unlock()
+		return len(controller.tenantConcurrency) == 0 && len(controller.tenantConcurrencyMarkedForRemoval) == 0
+	}, 2*time.Second, 100*time.Millisecond)
 }
 
 func TestIsRuleIndependent(t *testing.T) {

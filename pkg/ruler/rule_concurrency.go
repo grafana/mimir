@@ -17,7 +17,11 @@ import (
 
 type MultiTenantRuleConcurrencyController interface {
 	rules.RuleConcurrencyController
-	RemoveTenant(userID string)
+
+	// MarkTenantForRemoval marks a tenant for removal from the concurrency controller. The tenant is first marked for removal
+	// where all of its slots are blocked until the tenant is removed.
+	// The tenant is only removed when the ready channel is closed. This method does not block and is safe to be called concurrently.
+	MarkTenantForRemoval(userID string, ready chan struct{})
 }
 
 // DynamicSemaphore is a semaphore that can dynamically change its max concurrency.
@@ -98,28 +102,24 @@ type MultiTenantConcurrencyController struct {
 	thresholdRuleConcurrency float64 // Percentage of the rule interval at which we consider the rule group at risk of missing its evaluation.
 	metrics                  *MultiTenantConcurrencyControllerMetrics
 
-	globalConcurrency    semaphore.Weighted
-	tenantConcurrencyMtx sync.Mutex
-	tenantConcurrency    map[string]*DynamicSemaphore
-}
+	globalConcurrency semaphore.Weighted
 
-// RemoveTenant removes a tenant from the concurrency controller.
-func (c *MultiTenantConcurrencyController) RemoveTenant(userID string) {
-	c.tenantConcurrencyMtx.Lock()
-	defer c.tenantConcurrencyMtx.Unlock()
-	delete(c.tenantConcurrency, userID)
+	tenantConcurrencyMtx              sync.Mutex // This Mutex protects both tenantConcurrency and tenantConcurrencyMarkedForRemoval maps.
+	tenantConcurrency                 map[string]*DynamicSemaphore
+	tenantConcurrencyMarkedForRemoval map[string]chan struct{}
 }
 
 // NewMultiTenantConcurrencyController creates a new MultiTenantConcurrencyController.
 func NewMultiTenantConcurrencyController(logger log.Logger, maxGlobalConcurrency int64, ThresholdRuleConcurrency float64, reg prometheus.Registerer, limits RulesLimits) *MultiTenantConcurrencyController {
 	return &MultiTenantConcurrencyController{
-		metrics:                  newMultiTenantConcurrencyControllerMetrics(reg),
-		logger:                   log.With(logger, "component", "concurrency-controller"),
-		maxGlobalConcurrency:     maxGlobalConcurrency,
-		thresholdRuleConcurrency: ThresholdRuleConcurrency,
-		limits:                   limits,
-		globalConcurrency:        *semaphore.NewWeighted(maxGlobalConcurrency),
-		tenantConcurrency:        make(map[string]*DynamicSemaphore),
+		metrics:                           newMultiTenantConcurrencyControllerMetrics(reg),
+		logger:                            log.With(logger, "component", "concurrency-controller"),
+		maxGlobalConcurrency:              maxGlobalConcurrency,
+		thresholdRuleConcurrency:          ThresholdRuleConcurrency,
+		limits:                            limits,
+		globalConcurrency:                 *semaphore.NewWeighted(maxGlobalConcurrency),
+		tenantConcurrency:                 make(map[string]*DynamicSemaphore),
+		tenantConcurrencyMarkedForRemoval: make(map[string]chan struct{}),
 	}
 }
 
@@ -178,6 +178,18 @@ func (c *MultiTenantConcurrencyController) Allow(ctx context.Context, group *rul
 	}
 
 	c.tenantConcurrencyMtx.Lock()
+
+	// If the tenant is marked for removal, and we've tried to acquire a slot that means that the tenant has been reassigned to this ruler.
+	// We block any concurrent evaluation until the current running manager is stopped and the tenant is removed from the concurrency controller.
+	// Then, on the next rule evaluation for the group, the dynamicSemaphore will be created for the new tenant.
+	if _, marked := c.tenantConcurrencyMarkedForRemoval[userID]; marked {
+		c.tenantConcurrencyMtx.Unlock()
+		c.globalConcurrency.Release(1)
+		c.metrics.CurrentConcurrency.Dec()
+		c.metrics.AcquireFailedTotal.Inc()
+		return false
+	}
+
 	tc, ok := c.tenantConcurrency[userID]
 	if !ok {
 		tc = NewDynamicSemaphore(func() int64 {
@@ -198,6 +210,20 @@ func (c *MultiTenantConcurrencyController) Allow(ctx context.Context, group *rul
 	return false
 }
 
+func (c *MultiTenantConcurrencyController) MarkTenantForRemoval(userID string, ready chan struct{}) {
+	c.tenantConcurrencyMtx.Lock()
+	c.tenantConcurrencyMarkedForRemoval[userID] = ready
+	c.tenantConcurrencyMtx.Unlock()
+
+	go func(userID string, ready chan struct{}) {
+		<-ready
+		c.tenantConcurrencyMtx.Lock()
+		delete(c.tenantConcurrency, userID)
+		delete(c.tenantConcurrencyMarkedForRemoval, userID)
+		c.tenantConcurrencyMtx.Unlock()
+	}(userID, ready)
+}
+
 // isGroupAtRisk checks if the rule group's last evaluation time is within the risk threshold.
 func (c *MultiTenantConcurrencyController) isGroupAtRisk(group *rules.Group) bool {
 	interval := group.Interval().Seconds()
@@ -214,8 +240,8 @@ func isRuleIndependent(rule rules.Rule) bool {
 // NoopConcurrencyController is a concurrency controller that does not allow for concurrency.
 type NoopConcurrencyController struct{}
 
-func (n *NoopConcurrencyController) RemoveTenant(_ string)  {}
-func (n *NoopConcurrencyController) Done(_ context.Context) {}
+func (n *NoopConcurrencyController) MarkTenantForRemoval(_ string, _ chan struct{}) {}
+func (n *NoopConcurrencyController) Done(_ context.Context)                         {}
 func (n *NoopConcurrencyController) Allow(_ context.Context, _ *rules.Group, _ rules.Rule) bool {
 	return false
 }

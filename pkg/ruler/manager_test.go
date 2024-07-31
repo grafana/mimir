@@ -489,10 +489,10 @@ func (cm *controllerMock) Allow(_ context.Context, _ *promRules.Group, _ promRul
 func (cm *controllerMock) Done(_ context.Context) {
 }
 
-func (cm *controllerMock) RemoveTenant(UserID string) {
+func (cm *controllerMock) MarkTenantForRemoval(userID string, _ chan struct{}) {
 	cm.mtx.Lock()
 	defer cm.mtx.Unlock()
-	cm.removed = append(cm.removed, UserID)
+	cm.removed = append(cm.removed, userID)
 }
 
 func (cm *controllerMock) Removed() []string {
