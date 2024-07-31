@@ -347,7 +347,7 @@ func (a *Aggregation) reconcileAndCountFloatPoints(g *group) int {
 			if present {
 				if g.histogramSums[idx] != nil {
 					// If a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely
-					// and a warning is emitted.
+					// and a warning annotation is emitted.
 					g.floatPresent[idx] = false
 					g.histogramSums[idx] = nil
 					g.histogramPointCount--
