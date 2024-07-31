@@ -5,8 +5,9 @@ import (
 	"testing"
 
 	"github.com/grafana/alerting/definition"
-	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
 
 func TestCreateUsableGrafanaConfig(t *testing.T) {
