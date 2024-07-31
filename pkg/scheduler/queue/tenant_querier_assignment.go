@@ -249,6 +249,10 @@ func (tqa *tenantQuerierAssignments) createOrUpdateTenant(tenantID TenantID, max
 }
 
 func (tqa *tenantQuerierAssignments) addQuerierWorkerConn(conn *QuerierWorkerConn) (resharded bool) {
+	if conn.IsRegistered() {
+		panic("received request to register a querier-worker which was already registered")
+	}
+
 	querier := tqa.queriersByID[conn.QuerierID]
 	if querier != nil {
 		querier.AddWorkerConn(conn)
@@ -258,10 +262,6 @@ func (tqa *tenantQuerierAssignments) addQuerierWorkerConn(conn *QuerierWorkerCon
 		querier.disconnectedAt = time.Time{}
 
 		return false
-	}
-
-	if conn.WorkerID != unregisteredWorkerID {
-		panic("received request to register a querier-worker which was already registered")
 	}
 
 	// First connection from this querier.
@@ -304,10 +304,13 @@ func (tqa *tenantQuerierAssignments) removeTenant(tenantID TenantID) {
 
 func (tqa *tenantQuerierAssignments) removeQuerierWorkerConn(conn *QuerierWorkerConn, now time.Time) (resharded bool) {
 	querier := tqa.queriersByID[conn.QuerierID]
-	if querier == nil || len(querier.workerConns) == 0 {
+	if querier == nil || !querier.IsActive() {
 		panic("unexpected number of connections for querier")
 	}
 
+	if !conn.IsRegistered() {
+		panic("received request to deregister a querier-worker which was not already registered")
+	}
 	querier.RemoveWorkerConn(conn)
 	if querier.IsActive() {
 		// Querier still has active connections; it will not be removed, so no reshard occurs.
