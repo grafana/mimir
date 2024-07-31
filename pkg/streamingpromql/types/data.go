@@ -3,6 +3,7 @@
 package types
 
 import (
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 )
@@ -25,6 +26,47 @@ type InstantVectorSeriesData struct {
 	// It is therefore important to check for references to the same FloatHistogram in
 	// subsequent points before mutating it.
 	Histograms []promql.HPoint
+}
+
+type InstantVectorSeriesDataIterator struct {
+	data   *InstantVectorSeriesData
+	fIndex int
+	hIndex int
+}
+
+func NewInstantVectorSeriesDataIterator(data *InstantVectorSeriesData) *InstantVectorSeriesDataIterator {
+	return &InstantVectorSeriesDataIterator{
+		data: data,
+	}
+}
+
+// Next returns either a float or histogram iterating through both sets of points.
+// It returns the next point with the lowest timestamp.
+// If h is not nil, the value is a histogram, otherwise it is a float.
+// If no more values exist ok is false.
+func (i *InstantVectorSeriesDataIterator) Next() (t int64, f float64, h *histogram.FloatHistogram, ok bool) {
+	if i.fIndex >= len(i.data.Floats) && i.hIndex >= len(i.data.Histograms) {
+		return 0, 0, nil, false
+	}
+
+	if i.fIndex >= len(i.data.Floats) {
+		i.hIndex++
+		return i.data.Histograms[i.hIndex-1].T, 0, i.data.Histograms[i.hIndex-1].H, true
+	}
+
+	if i.hIndex >= len(i.data.Histograms) {
+		i.fIndex++
+		return i.data.Floats[i.fIndex-1].T, i.data.Floats[i.fIndex-1].F, nil, true
+	}
+
+	// NOTE: Floats and Histograms should never exist at the same timestamp, T.
+	if i.data.Floats[i.fIndex].T < i.data.Histograms[i.hIndex].T {
+		i.fIndex++
+		return i.data.Floats[i.fIndex-1].T, i.data.Floats[i.fIndex-1].F, nil, true
+	} else {
+		i.hIndex++
+		return i.data.Histograms[i.hIndex-1].T, 0, i.data.Histograms[i.hIndex-1].H, true
+	}
 }
 
 // RangeVectorStepData contains the timestamps associated with a single time step produced by a
