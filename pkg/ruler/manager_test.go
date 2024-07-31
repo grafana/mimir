@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"sort"
 	"sync"
 	"testing"
@@ -416,8 +417,9 @@ func assertManagerMockStopped(t *testing.T, m *managerMock) {
 
 func assertUserRemovedFromConcurrencyController(t *testing.T, c *controllerMock, userID string) {
 	t.Helper()
-
-	require.Contains(t, c.Removed(), userID)
+	require.Eventually(t, func() bool {
+		return slices.Contains(c.removed, userID)
+	}, 2*time.Second, 100*time.Millisecond)
 }
 
 func assertRuleGroupsMappedOnDisk(t *testing.T, m *DefaultMultiTenantManager, userID string, expectedRuleGroups rulespb.RuleGroupList) {
@@ -489,10 +491,13 @@ func (cm *controllerMock) Allow(_ context.Context, _ *promRules.Group, _ promRul
 func (cm *controllerMock) Done(_ context.Context) {
 }
 
-func (cm *controllerMock) MarkTenantForRemoval(userID string, _ chan struct{}) {
-	cm.mtx.Lock()
-	defer cm.mtx.Unlock()
-	cm.removed = append(cm.removed, userID)
+func (cm *controllerMock) MarkTenantForRemoval(userID string, done chan struct{}) {
+	go func(userID string) {
+		<-done
+		cm.mtx.Lock()
+		defer cm.mtx.Unlock()
+		cm.removed = append(cm.removed, userID)
+	}(userID)
 }
 
 func (cm *controllerMock) Removed() []string {
