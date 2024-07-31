@@ -55,7 +55,7 @@ func main() {
 		level.Info(logger).Log("msg", "using minTime for samples", "minTime", formatTime(time.Time(minTime)))
 	}
 	if !time.Time(maxTime).IsZero() {
-		level.Info(logger).Log("msg", "using maxTime for samples", "minTime", formatTime(time.Time(maxTime)))
+		level.Info(logger).Log("msg", "using maxTime for samples", "maxTime", formatTime(time.Time(maxTime)))
 	}
 
 	var matchers []*labels.Matcher
