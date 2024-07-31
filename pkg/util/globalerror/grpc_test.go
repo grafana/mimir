@@ -363,7 +363,7 @@ func checkGRPCConnectionIsClosingError(t *testing.T, err error) {
 	stat, ok := grpcstatus.FromError(errWithCtx)
 	require.True(t, ok)
 	require.Equal(t, codes.Canceled, stat.Code())
-	require.Equal(t, "grpc: the client connection is closing", stat.Message())
+	require.Equal(t, grpcClientConnectionIsClosingErr, stat.Message())
 	require.NotErrorIs(t, errWithCtx, context.Canceled)
 }
 
