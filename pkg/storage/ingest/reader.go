@@ -184,12 +184,13 @@ func (r *PartitionReader) processNextFetches(ctx context.Context, delayObserver 
 	r.logFetchErrors(fetches)
 	fetches = filterOutErrFetches(fetches)
 
-	// TODO consumeFetches() may get interrupted in the middle because of ctx canceled due to PartitionReader stopped.
-	// 		We should improve it, but we shouldn't just pass a context.Background() because if consumption is stuck
-	// 		then PartitionReader will never stop.
-	r.consumeFetches(ctx, fetches)
-	r.enqueueCommit(fetches)
-	r.notifyLastConsumedOffset(fetches)
+	err := r.consumeFetches(ctx, fetches)
+	if err != nil {
+		level.Error(r.logger).Log("msg", "error while consuming fetches", "err", err, "num_records", fetches.NumRecords())
+	} else {
+		r.enqueueCommit(fetches)
+		r.notifyLastConsumedOffset(fetches)
+	}
 }
 
 // processNextFetchesUntilTargetOrMaxLagHonored process records from Kafka until at least the maxLag is honored.
@@ -380,9 +381,9 @@ func (r *PartitionReader) enqueueCommit(fetches kgo.Fetches) {
 	r.committer.enqueueOffset(lastOffset)
 }
 
-func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetches) {
+func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetches) error {
 	if fetches.NumRecords() == 0 {
-		return
+		return nil
 	}
 	records := make([]record, 0, fetches.NumRecords())
 
@@ -407,13 +408,18 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		MaxBackoff: 2 * time.Second,
 		MaxRetries: 0, // retry forever
 	})
-
 	for boff.Ongoing() {
+		// If the PartitionReader is stopping and the ctx was cancelled, we don't want to interrupt the in-flight
+		// processing midway. Instead, we let it finish, assuming it'll succeed.
+		// If the processing fails while stopping, we log the error and let the backoff stop and bail out.
+		// There is an edge-case when the processing gets stuck and doesn't let the stopping process. In such a case,
+		// we expect the infrastructure (e.g. k8s) to eventually kill the process.
+		consumeCtx := context.WithoutCancel(ctx)
 		consumeStart := time.Now()
-		err := r.consumer.consume(ctx, records)
+		err := r.consumer.consume(consumeCtx, records)
 		r.metrics.consumeLatency.Observe(time.Since(consumeStart).Seconds())
 		if err == nil {
-			break
+			return nil
 		}
 		level.Error(r.logger).Log(
 			"msg", "encountered error while ingesting data from Kafka; will retry",
@@ -424,6 +430,8 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		)
 		boff.Wait()
 	}
+	// Because boff is set to retry forever, the only error here is when the context is cancelled.
+	return boff.ErrCause()
 }
 
 func (r *PartitionReader) notifyLastConsumedOffset(fetches kgo.Fetches) {
