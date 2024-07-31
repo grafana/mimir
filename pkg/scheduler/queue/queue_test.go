@@ -636,7 +636,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 			})
 
 			querier1Conn := NewUnregisteredQuerierWorkerConn(querierID)
-			querier1Conn, err = queue.AwaitRegisterQuerierWorkerConn(context.Background(), querier1Conn)
+			_, err = queue.AwaitRegisterQuerierWorkerConn(context.Background(), querier1Conn)
 			require.NoError(t, err)
 
 			// Calling WaitForRequestForQuerier with a context that is already cancelled should fail immediately.
@@ -699,7 +699,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 			})
 
 			querierConn := NewUnregisteredQuerierWorkerConn(querierID)
-			querierConn, err = queue.AwaitRegisterQuerierWorkerConn(ctx, querierConn)
+			_, err = queue.AwaitRegisterQuerierWorkerConn(ctx, querierConn)
 			require.NoError(t, err)
 
 			queue.SubmitNotifyQuerierShutdown(ctx, querierID)

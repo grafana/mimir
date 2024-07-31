@@ -146,11 +146,6 @@ type RequestQueue struct {
 	queueBroker *queueBroker
 }
 
-type querierOperation struct {
-	querierID QuerierID
-	operation QuerierOperationType
-}
-
 type QuerierOperationType int
 
 const (
