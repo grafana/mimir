@@ -636,12 +636,16 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 	leftFIndex, rightFIndex := 0, 0
 	leftHIndex, rightHIndex := 0, 0
 
-	// Iterate through both float and histogram points
+	// Iterate through both float and histogram points until the index pointers reach the end of each slice.
 	// InstantVectorSeriesData.Floats and InstantVectorSeriesData.Histograms are always in time order.
 	// A Float and Histogram in InstantVectorSeriesData can never have the same timestamp.
 	// So a point, T, can exist as either a Float or Histogram. We move an index pointer across both ranges
 	// to find the matching point regardless of type.
-	for (leftFIndex < len(left.Floats) && rightFIndex < len(right.Floats)) || (leftHIndex < len(left.Histograms) && rightHIndex < len(right.Histograms)) {
+	for !(leftFIndex == len(left.Floats) &&
+		rightFIndex == len(right.Floats) &&
+		leftHIndex == len(left.Histograms) &&
+		rightHIndex == len(right.Histograms)) {
+
 		leftT, rightT := int64(math.MaxInt64), int64(math.MaxInt64)
 		leftIsFloat, rightIsFloat := false, false
 		var leftFloat promql.FPoint
