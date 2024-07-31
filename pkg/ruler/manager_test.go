@@ -418,8 +418,9 @@ func assertManagerMockStopped(t *testing.T, m *managerMock) {
 func assertUserRemovedFromConcurrencyController(t *testing.T, c *controllerMock, userID string) {
 	t.Helper()
 	require.Eventually(t, func() bool {
-		return slices.Contains(c.removed, userID)
+		return slices.Contains(c.Removed(), userID)
 	}, 2*time.Second, 100*time.Millisecond)
+
 }
 
 func assertRuleGroupsMappedOnDisk(t *testing.T, m *DefaultMultiTenantManager, userID string, expectedRuleGroups rulespb.RuleGroupList) {
