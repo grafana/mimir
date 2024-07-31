@@ -1520,7 +1520,7 @@ func (c *Client) TestReceiversExperimental(ctx context.Context, trConf alertingN
 
 	data, err := json.Marshal(trConf)
 	if err != nil {
-		return nil, fmt.Errorf("error mashing testreceivers config: %s", err)
+		return nil, fmt.Errorf("error marshalling test receivers config: %s", err)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
