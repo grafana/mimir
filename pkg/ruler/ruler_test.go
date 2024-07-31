@@ -236,7 +236,7 @@ func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *Defau
 	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 
 	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, &NoopConcurrencyController{}, options.limits, options.registerer)
-	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil, &NoopConcurrencyController{})
+	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil)
 	require.NoError(t, err)
 
 	return manager
