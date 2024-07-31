@@ -5,15 +5,25 @@ package globalerror
 import (
 	"context"
 	"io"
+	"net"
+	"os"
 	"testing"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
+	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
+	dskitserver "github.com/grafana/dskit/server"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 
@@ -283,4 +293,127 @@ func checkErrorWithStatusDetails(t *testing.T, details []any, expected *mimirpb.
 		require.True(t, ok)
 		require.Equal(t, expected, errDetails)
 	}
+}
+
+func TestGRPCClientClosingConnectionError(t *testing.T) {
+	var (
+		ctx               = context.Background()
+		waitExecution     = make(chan string)
+		continueExecution = make(chan string)
+	)
+
+	_, client := prepareGRPCTest(t, waitExecution, continueExecution)
+
+	go func() {
+		<-waitExecution
+		err := client.cc.Close()
+		require.NoError(t, err)
+		close(continueExecution)
+	}()
+
+	// the first call to Succeed should be successful"
+	_, err := client.Succeed(ctx, nil)
+	require.NoError(t, err)
+
+	// the second call to Succeed should fail with "grpc: the client connection is closing"
+	_, err = client.Succeed(ctx, nil)
+	require.Error(t, err)
+	stat, ok := grpcstatus.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.Canceled, stat.Code())
+	require.Equal(t, "grpc: the client connection is closing", stat.Message())
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func prepareGRPCTest(t *testing.T, waitExecution chan string, continueExecution chan string) (*mockServer, mockClient) {
+	grpcServer := grpc.NewServer()
+	t.Cleanup(grpcServer.GracefulStop)
+
+	mServer := &mockServer{}
+	dskitserver.RegisterFakeServerServer(grpcServer, mServer)
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	go func() {
+		require.NoError(t, grpcServer.Serve(listener))
+	}()
+
+	// Create a real gRPC client connecting to the gRPC server we control in this test.
+	clientCfg := grpcclient.Config{}
+	flagext.DefaultValues(&clientCfg)
+
+	opts, err := clientCfg.DialOption(nil, nil)
+	require.NoError(t, err)
+
+	cc, err := grpc.NewClient(listener.Addr().String(), opts...)
+	require.NoError(t, err)
+
+	client := newMockClient(cc, waitExecution, continueExecution)
+
+	// NOTE: this is another source of "grpc: the client connection is closing",
+	//because at this point the connection is already closed
+	t.Cleanup(func() {
+		err := client.Close()
+		require.Error(t, err)
+		stat, ok := grpcstatus.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.Canceled, stat.Code())
+		require.Equal(t, "grpc: the client connection is closing", stat.Message())
+		require.NotErrorIs(t, err, context.Canceled)
+	})
+
+	return mServer, client
+}
+
+type mockServer struct {
+	dskitserver.UnimplementedFakeServerServer
+}
+
+func (s *mockServer) Succeed(_ context.Context, _ *empty.Empty) (*empty.Empty, error) {
+	return nil, nil
+}
+
+type mockClient struct {
+	dskitserver.FakeServerClient
+	cc                *grpc.ClientConn
+	numExecutions     *atomic.Int64
+	waitExecution     chan string
+	continueExecution chan string
+	log               log.Logger
+}
+
+func newMockClient(cc *grpc.ClientConn, waitExecution chan string, continueExecution chan string) mockClient {
+	return mockClient{
+		FakeServerClient:  dskitserver.NewFakeServerClient(cc),
+		cc:                cc,
+		numExecutions:     atomic.NewInt64(0),
+		waitExecution:     waitExecution,
+		continueExecution: continueExecution,
+		log:               log.NewLogfmtLogger(os.Stdout),
+	}
+}
+
+func (c *mockClient) Succeed(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*empty.Empty, error) {
+	level.Info(c.log).Log("client", "mockClient", "method", "Succeed", "phase", "start")
+	res, err := c.FakeServerClient.Succeed(ctx, in, opts...)
+	if c.numExecutions.Inc() == 1 {
+		close(c.waitExecution)
+		<-c.continueExecution
+	}
+	if err != nil {
+		err = WrapGRPCErrorWithContextError(err)
+		level.Error(c.log).Log("client", "mockClient", "method", "Succeed", "phase", "end", "err", err)
+		return nil, err
+	}
+
+	level.Info(c.log).Log("client", "mockClient", "method", "Succeed", "phase", "end")
+	return res, nil
+}
+
+func (c *mockClient) Close() error {
+	level.Info(c.log).Log("client", "mockClient", "method", "Close", "phase", "start")
+	err := c.cc.Close()
+	level.Info(c.log).Log("client", "mockClient", "method", "Close", "phase", "end")
+	return err
 }
