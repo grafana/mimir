@@ -296,41 +296,29 @@ func checkErrorWithStatusDetails(t *testing.T, details []any, expected *mimirpb.
 }
 
 func TestGRPCClientClosingConnectionError(t *testing.T) {
-	var (
-		ctx               = context.Background()
-		waitExecution     = make(chan string)
-		continueExecution = make(chan string)
-	)
+	ctx := context.Background()
 
-	_, client := prepareGRPCTest(t, waitExecution, continueExecution)
+	_, client, cc := prepareTest(t)
 
-	go func() {
-		<-waitExecution
-		err := client.cc.Close()
-		require.NoError(t, err)
-		close(continueExecution)
-	}()
-
-	// the first call to Succeed should be successful"
+	// Calls to Succeed() should be successful when cc is open.
 	_, err := client.Succeed(ctx, nil)
 	require.NoError(t, err)
 
-	// the second call to Succeed should fail with "grpc: the client connection is closing"
+	// We close cc.
+	err = cc.Close()
+	require.NoError(t, err)
+
+	// Calls to Succeed() should fail with "grpc: the client connection is closing" when cc is closed.
 	_, err = client.Succeed(ctx, nil)
-	require.Error(t, err)
-	stat, ok := grpcstatus.FromError(err)
-	require.True(t, ok)
-	require.Equal(t, codes.Canceled, stat.Code())
-	require.Equal(t, "grpc: the client connection is closing", stat.Message())
-	require.ErrorIs(t, err, context.Canceled)
+	checkGRPCConnectionIsClosingError(t, err)
 }
 
-func prepareGRPCTest(t *testing.T, waitExecution chan string, continueExecution chan string) (*mockServer, mockClient) {
+func prepareTest(t *testing.T) (dskitserver.FakeServerServer, dskitserver.FakeServerClient, *grpc.ClientConn) {
 	grpcServer := grpc.NewServer()
 	t.Cleanup(grpcServer.GracefulStop)
 
-	mServer := &mockServer{}
-	dskitserver.RegisterFakeServerServer(grpcServer, mServer)
+	server := &mockServer{}
+	dskitserver.RegisterFakeServerServer(grpcServer, server)
 
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
@@ -349,21 +337,28 @@ func prepareGRPCTest(t *testing.T, waitExecution chan string, continueExecution 
 	cc, err := grpc.NewClient(listener.Addr().String(), opts...)
 	require.NoError(t, err)
 
-	client := newMockClient(cc, waitExecution, continueExecution)
+	client := dskitserver.NewFakeServerClient(cc)
 
-	// NOTE: this is another source of "grpc: the client connection is closing",
-	//because at this point the connection is already closed
+	// This is another source of "grpc: the client connection is closing",
+	// because at this point the connection is already closed.
 	t.Cleanup(func() {
-		err := client.Close()
-		require.Error(t, err)
-		stat, ok := grpcstatus.FromError(err)
-		require.True(t, ok)
-		require.Equal(t, codes.Canceled, stat.Code())
-		require.Equal(t, "grpc: the client connection is closing", stat.Message())
-		require.NotErrorIs(t, err, context.Canceled)
+		err := cc.Close()
+		checkGRPCConnectionIsClosingError(t, err)
 	})
 
-	return mServer, client
+	return server, client, cc
+}
+
+func checkGRPCConnectionIsClosingError(t *testing.T, err error) {
+	require.Error(t, err)
+	require.NotErrorIs(t, err, context.Canceled)
+
+	errWithCtx := WrapGRPCErrorWithContextError(err)
+	stat, ok := grpcstatus.FromError(errWithCtx)
+	require.True(t, ok)
+	require.Equal(t, codes.Canceled, stat.Code())
+	require.Equal(t, "grpc: the client connection is closing", stat.Message())
+	require.ErrorIs(t, errWithCtx, context.Canceled)
 }
 
 type mockServer struct {
