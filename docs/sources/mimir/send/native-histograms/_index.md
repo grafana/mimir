@@ -21,7 +21,7 @@ Native histograms are different from classic Prometheus histograms in a number o
 - Native histogram bucket boundaries might change (widen) dynamically if the observations result in too many buckets. For details, refer to [Limit the number of buckets](#limit-the-number-of-buckets).
 - Native histogram bucket counters only count observations inside the bucket boundaries, whereas the classic histogram buckets only have an upper bound called `le` and count all observations in the bucket and all lower buckets (cumulative).
 - An instance of a native histogram metric only requires a single time series, because the buckets, sum of observations, and the count of observations are stored in a single data type called `native histogram` rather than in separate time series using the `float` data type. Thus, there are no `<metric>_bucket`, `<metric>_sum`, and `<metric>_count` series. There is only `<metric>` time series.
-- Querying native histograms via the Prometheus query language (PromQL) uses a different syntax. For details, refer to [functions](https://prometheus.io/docs/prometheus/latest/querying/functions/).
+- Querying native histograms via the Prometheus query language (PromQL) uses a different syntax. For details, refer to [Visualize native histograms](https://grafana.com/docs/mimir/<MIMIR_VERSION>/visualize/native-histograms/) and [functions](https://prometheus.io/docs/prometheus/latest/querying/functions/).
 
 For an introduction to native histograms, watch the [Native Histograms in Prometheus](https://www.youtube.com/watch?v=AcmABV6NCYk) presentation.
 
@@ -34,9 +34,9 @@ There are advantages and disadvantages of using native histograms compared to th
 - Simpler instrumentation: you do not need to think about bucket boundaries because they are created automatically.
 - Better resolution in practice: custom bucket layouts are usually not high resolution.
 - Native histograms are compatible with each other: they have an automatic layout, which makes them easy to combine.
-  {{% admonition type="note" %}}
+  {{< admonition type="note" >}}
   The operation might scale down an operand to lower resolution to match the other operand.
-  {{% /admonition %}}
+  {{< /admonition >}}
 
 ### Disadvantages
 
@@ -50,9 +50,9 @@ The preceding problems are mitigated by high resolution, which native histograms
 
 The following examples have some reasonable defaults to define a new native histogram metric. The examples use the [Go client library](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus#Histogram) version 1.16 and the [Java client library](https://prometheus.github.io/client_java/api/io/prometheus/metrics/core/metrics/Histogram.Builder.html) 1.0.
 
-{{% admonition type="note" %}}
+{{< admonition type="note" >}}
 Native histogram options can be added to existing classic histograms to get both the classic and native histogram at the same time. Refer to [Migrate from classic histograms](#migrate-from-classic-histograms).
-{{% /admonition %}}
+{{< /admonition >}}
 
 {{< code >}}
 
@@ -116,13 +116,13 @@ Use the latest version of Prometheus or at least version 2.47.
 
    in your scrape jobs, to get both histogram version.
 
-   {{% admonition type="note" %}}
+   {{< admonition type="note" >}}
    <!-- Issue: https://github.com/prometheus/prometheus/issues/11265 -->
 
    Native histograms don't have a textual presentation at the moment on the application's `/metrics` endpoint, thus Prometheus negotiates a Protobuf protocol transfer in this case.
-   {{% /admonition %}}
+   {{< /admonition >}}
 
-   {{% admonition type="note" %}}
+   {{< admonition type="note" >}}
    In certain situations, the protobuf parsing changes the number formatting of
    the `le` labels of conventional histograms and the `quantile` labels of
    summaries. Typically, this happens if the scraped target is instrumented with
@@ -136,7 +136,7 @@ Use the latest version of Prometheus or at least version 2.47.
    what was ingested before via the text format.
 
    For more information please visit [Feature Flags Native Histograms](https://prometheus.io/docs/prometheus/latest/feature_flags/#native-histograms) in the Prometheus documentation.
-   {{% /admonition %}}
+   {{< /admonition >}}
 
 1. To be able to send native histograms to a Prometheus remote write compatible receiver, for example Grafana Cloud Metrics, Mimir, etc, set `send_native_histograms` to `true` in the remote write configuration, for example:
 
@@ -159,7 +159,7 @@ Use the latest version of [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_
 
    For more information, refer to [prometheus.scrape](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.scrape/) in the Grafana Alloy documentation.
 
-   {{% admonition type="note" %}}
+   {{< admonition type="note" >}}
    In certain situations, the protobuf parsing changes the number formatting of
    the `le` labels of conventional histograms and the `quantile` labels of
    summaries. Typically, this happens if the scraped target is instrumented with
@@ -173,7 +173,7 @@ Use the latest version of [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_
    what was ingested before via the text format.
 
    For more information please visit [Feature Flags Native Histograms](https://prometheus.io/docs/prometheus/latest/feature_flags/#native-histograms) in the Prometheus documentation.
-   {{% /admonition %}}
+   {{< /admonition >}}
 
 1. To send native histograms to a Prometheus remote write compatible receiver, such as Grafana Cloud Metrics or Mimir, set the `send_native_histograms` argument to `true` in the `prometheus.remote_write` component. For example:
 
@@ -259,9 +259,9 @@ It is possible to keep the custom bucket definition of a classic histogram and a
 
       Where `classic_query` is the original query and `native_query` is the same but using native histogram query syntax.
 
-      {{% admonition type="warning" %}}
+      {{< admonition type="warning" >}}
       Using the PromQL operator `or` can lead to unexpected results. For example if the query uses a range of 7 days, such as `sum(rate(http_request_duration_seconds[7d]))` then this query will return a value as soon as there are two native histograms samples present before the end time of the query, thus the 7 day rate will be calculated from a couple of minutes worth of data and not 7 days. This means that the result will be very inaccurate around the time when native histograms were started to be scraped and this inaccuracy will always be there when looking at the graph for that time.
-      {{% /admonition %}}
+      {{< /admonition >}}
 
 1. Start adding _new_ recording rules and alerts to use native histograms. Do not remove the old recording rules and alerts at this time.
 1. It is important to keep scraping both classic and native histograms for as long as the longest range in the recording rules and alerts, plus a day. This is the minimum, but it is recommended to keep scraping both until the new rules and alerts can be verified.
@@ -340,7 +340,3 @@ After the set maximum is exceeded, the following strategy is enacted:
 1. After that, if the number of buckets still exceeds maximum bucket number, the resolution of the histogram is reduced by doubling the width of all the buckets (up to a growth factor between one bucket to the next of 2^(2^4) = 65536, refer to [Bucket boundary calculation](#bucket-boundary-calculation)).
 
 1. Any increased zero threshold or reduced resolution is reset back to their original values once the minimum reset duration has passed (since the last reset or the creation of the histogram).
-
-```
-
-```
