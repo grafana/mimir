@@ -28,6 +28,9 @@ type FunctionOverRangeVector struct {
 
 	Annotations *annotations.Annotations
 
+	metricNames        *MetricNames
+	currentSeriesIndex int
+
 	numSteps        int
 	rangeSeconds    float64
 	floatBuffer     *types.FPointRingBuffer
@@ -43,10 +46,11 @@ func NewFunctionOverRangeVector(
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	metadataFunc functions.SeriesMetadataFunction,
 	stepFunc functions.RangeVectorStepFunction,
+	needMetricNames bool,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) *FunctionOverRangeVector {
-	return &FunctionOverRangeVector{
+	o := &FunctionOverRangeVector{
 		Inner:                    inner,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		MetadataFunc:             metadataFunc,
@@ -54,6 +58,12 @@ func NewFunctionOverRangeVector(
 		Annotations:              annotations,
 		expressionPosition:       expressionPosition,
 	}
+
+	if needMetricNames {
+		o.metricNames = &MetricNames{}
+	}
+
+	return o
 }
 
 func (m *FunctionOverRangeVector) ExpressionPosition() posrange.PositionRange {
@@ -66,6 +76,10 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 		return nil, err
 	}
 
+	if m.metricNames != nil {
+		m.metricNames.CaptureMetricNames(metadata)
+	}
+
 	m.numSteps = m.Inner.StepCount()
 	m.rangeSeconds = m.Inner.Range().Seconds()
 
@@ -76,6 +90,10 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 	if err := m.Inner.NextSeries(ctx); err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
+
+	defer func() {
+		m.currentSeriesIndex++
+	}()
 
 	if m.floatBuffer == nil {
 		m.floatBuffer = types.NewFPointRingBuffer(m.MemoryConsumptionTracker)
@@ -100,7 +118,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		f, hasFloat, h, err := m.StepFunc(step, m.rangeSeconds, m.floatBuffer, m.histogramBuffer)
+		f, hasFloat, h, err := m.StepFunc(step, m.rangeSeconds, m.floatBuffer, m.histogramBuffer, m.emitAnnotation)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
@@ -129,6 +147,11 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			data.Histograms = append(data.Histograms, promql.HPoint{T: step.StepT, H: h})
 		}
 	}
+}
+
+func (m *FunctionOverRangeVector) emitAnnotation(generator functions.AnnotationGenerator) {
+	metricName := m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex)
+	m.Annotations.Add(generator(metricName, m.Inner.ExpressionPosition()))
 }
 
 func (m *FunctionOverRangeVector) Close() {

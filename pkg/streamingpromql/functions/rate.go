@@ -8,11 +8,12 @@ package functions
 import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer) (float64, bool, *histogram.FloatHistogram, error) {
+func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer, emitAnnotation EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	fHead, fTail := floatBuffer.UnsafePoints(step.RangeEnd)
 	fCount := len(fHead) + len(fTail)
 
@@ -20,9 +21,9 @@ func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *typ
 	hCount := len(hHead) + len(hTail)
 
 	if fCount > 0 && hCount > 0 {
-		// We need either at least two Histograms and no Floats, or at least two
-		// Floats and no Histograms to calculate a rate. Otherwise, drop this
-		// Vector element.
+		// We need either at least two histograms and no floats, or at least two floats and no histograms to calculate a rate.
+		// Otherwise, emit a warning and drop this sample.
+		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 		return 0, false, nil, nil
 	}
 
@@ -38,6 +39,7 @@ func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *typ
 		}
 		return 0, false, val, nil
 	}
+
 	return 0, false, nil, nil
 }
 

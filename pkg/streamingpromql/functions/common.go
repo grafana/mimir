@@ -4,6 +4,7 @@ package functions
 
 import (
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -58,10 +59,20 @@ func Passthrough(seriesData types.InstantVectorSeriesData, _ *limiting.MemoryCon
 //   - rangeSeconds: the duration of the range in seconds.
 //   - floatBuffer: a ring buffer containing float values for the step range.
 //   - histogramBuffer: a ring buffer containing histogram values for the step range.
+//   - emitAnnotation: a callback function to emit an annotation for the current series.
 //
 // Returns:
 //   - hasFloat bool: a boolean indicating if a float value is present.
 //   - f float64: the float value.
 //   - h *histogram.FloatHistogram: nil if no histogram is present.
 //   - err error.
-type RangeVectorStepFunction func(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error)
+type RangeVectorStepFunction func(
+	step types.RangeVectorStepData,
+	rangeSeconds float64,
+	floatBuffer *types.FPointRingBuffer,
+	histogramBuffer *types.HPointRingBuffer,
+	emitAnnotation EmitAnnotationFunc,
+) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error)
+
+type EmitAnnotationFunc func(generator AnnotationGenerator)
+type AnnotationGenerator func(metricName string, expressionPosition posrange.PositionRange) error
