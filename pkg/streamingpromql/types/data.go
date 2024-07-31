@@ -29,15 +29,15 @@ type InstantVectorSeriesData struct {
 }
 
 type InstantVectorSeriesDataIterator struct {
-	data   *InstantVectorSeriesData
+	data   InstantVectorSeriesData
 	fIndex int
 	hIndex int
 }
 
-func NewInstantVectorSeriesDataIterator(data *InstantVectorSeriesData) *InstantVectorSeriesDataIterator {
-	return &InstantVectorSeriesDataIterator{
-		data: data,
-	}
+func (i *InstantVectorSeriesDataIterator) Reset(data InstantVectorSeriesData) {
+	i.fIndex = 0
+	i.hIndex = 0
+	i.data = data
 }
 
 // Next returns either a float or histogram iterating through both sets of points.
@@ -50,22 +50,26 @@ func (i *InstantVectorSeriesDataIterator) Next() (t int64, f float64, h *histogr
 	}
 
 	if i.fIndex >= len(i.data.Floats) {
+		point := i.data.Histograms[i.hIndex]
 		i.hIndex++
-		return i.data.Histograms[i.hIndex-1].T, 0, i.data.Histograms[i.hIndex-1].H, true
+		return point.T, 0, point.H, true
 	}
 
 	if i.hIndex >= len(i.data.Histograms) {
+		point := i.data.Floats[i.fIndex]
 		i.fIndex++
-		return i.data.Floats[i.fIndex-1].T, i.data.Floats[i.fIndex-1].F, nil, true
+		return point.T, point.F, nil, true
 	}
 
 	// NOTE: Floats and Histograms should never exist at the same timestamp, T.
 	if i.data.Floats[i.fIndex].T < i.data.Histograms[i.hIndex].T {
+		point := i.data.Floats[i.fIndex]
 		i.fIndex++
-		return i.data.Floats[i.fIndex-1].T, i.data.Floats[i.fIndex-1].F, nil, true
+		return point.T, point.F, nil, true
 	} else {
+		point := i.data.Histograms[i.hIndex]
 		i.hIndex++
-		return i.data.Histograms[i.hIndex-1].T, 0, i.data.Histograms[i.hIndex-1].H, true
+		return point.T, 0, point.H, true
 	}
 }
 

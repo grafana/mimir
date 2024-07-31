@@ -19,14 +19,14 @@ func TestInstantVectorSeriesDataIterator(t *testing.T) {
 	}
 	type testCase struct {
 		name     string
-		data     *InstantVectorSeriesData
+		data     InstantVectorSeriesData
 		expected []expected
 	}
 
 	testCases := []testCase{
 		{
 			name: "floats only",
-			data: &InstantVectorSeriesData{
+			data: InstantVectorSeriesData{
 				Floats: []promql.FPoint{
 					{T: 1000, F: 1.1},
 					{T: 2000, F: 2.2},
@@ -42,7 +42,7 @@ func TestInstantVectorSeriesDataIterator(t *testing.T) {
 		},
 		{
 			name: "histograms only",
-			data: &InstantVectorSeriesData{
+			data: InstantVectorSeriesData{
 				Histograms: []promql.HPoint{
 					{T: 1500, H: &histogram.FloatHistogram{}},
 					{T: 2500, H: &histogram.FloatHistogram{}},
@@ -56,7 +56,7 @@ func TestInstantVectorSeriesDataIterator(t *testing.T) {
 		},
 		{
 			name: "mixed data",
-			data: &InstantVectorSeriesData{
+			data: InstantVectorSeriesData{
 				Floats: []promql.FPoint{
 					{T: 1000, F: 1.1},
 					{T: 2000, F: 2.2},
@@ -84,14 +84,14 @@ func TestInstantVectorSeriesDataIterator(t *testing.T) {
 		},
 		{
 			name: "empty data",
-			data: &InstantVectorSeriesData{},
+			data: InstantVectorSeriesData{},
 			expected: []expected{
 				{0, 0, nil, false},
 			},
 		},
 		{
 			name: "multiple next calls after exhaustion",
-			data: &InstantVectorSeriesData{
+			data: InstantVectorSeriesData{
 				Floats: []promql.FPoint{
 					{T: 1000, F: 1.1},
 				},
@@ -105,9 +105,10 @@ func TestInstantVectorSeriesDataIterator(t *testing.T) {
 		},
 	}
 
+	iter := InstantVectorSeriesDataIterator{}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			iter := NewInstantVectorSeriesDataIterator(tc.data)
+			iter.Reset(tc.data)
 
 			for _, exp := range tc.expected {
 				timestamp, floatVal, hist, hasNext := iter.Next()
