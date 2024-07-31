@@ -45,6 +45,7 @@ func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Override
 			PollTimeout:   500 * time.Millisecond,
 			ConsumerGroup: testGroup,
 		},
+		LookbackOnNoCommit: 12 * time.Hour,
 	}
 
 	cfg.BlocksStorageConfig.TSDB.Dir = t.TempDir()
@@ -144,6 +145,7 @@ func TestBlockBuilder(t *testing.T) {
 		counts := 0
 		done := false
 		for !done {
+			<-time.After(200 * time.Millisecond)
 			select {
 			case <-compactCalled:
 				counts++
@@ -226,6 +228,12 @@ func TestBlockBuilder(t *testing.T) {
 	}
 
 	t.Run("starting fresh with existing data but no kafka commit", func(t *testing.T) {
+		// LookbackOnNoCommit is 12h, so this sample should be skipped.
+		oldTime := time.Now().Truncate(cfg.ConsumeInterval).Add(-13 * time.Hour)
+		createAndProduceSample(t, oldTime.Add(-time.Minute), oldTime)
+		kafkaSamples = kafkaSamples[:len(kafkaSamples)-1]
+		kafkaHSamples = kafkaHSamples[:len(kafkaHSamples)-1]
+
 		for i := int64(0); i < 12; i++ {
 			kafkaTime = kafkaTime.Add(cfg.ConsumeInterval / 2)
 			createAndProduceSample(t, kafkaTime.Add(-time.Minute), kafkaTime)
@@ -236,16 +244,17 @@ func TestBlockBuilder(t *testing.T) {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
 		})
 
-		// Since there was no commit record, the first consume cycle will consume everything
-		// in one go. So each partition will have one compact call (although they will produce
-		// more than one block).
-		for want := 2; want > 0; want-- {
+		// Since there was no commit record, with LookbackOnNoCommit as 12h, we will have
+		// 12 compact calls per partition. One per 1h.
+		for want := 22; want > 0; want-- {
 			select {
 			case <-compactCalled:
 			case <-ctx.Done():
 				t.Fatal(ctx.Err())
 			}
 		}
+		compacts := collectCompacts()
+		require.True(t, compacts <= 2)
 
 		compareQuery(t,
 			dbOnBucketDir(t),
@@ -256,7 +265,7 @@ func TestBlockBuilder(t *testing.T) {
 	})
 
 	var cycleEnd time.Time
-	t.Run("when there is some lag after startup", func(t *testing.T) {
+	t.Run("when there is some lag", func(t *testing.T) {
 		// Add samples worth at least 3 cycles.
 		for i := int64(0); i < 6; i++ {
 			kafkaTime = kafkaTime.Add(cfg.ConsumeInterval / 2)
