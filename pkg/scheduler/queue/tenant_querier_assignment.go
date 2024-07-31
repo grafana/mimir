@@ -37,6 +37,10 @@ type querierConns struct {
 	disconnectedAt time.Time
 }
 
+func (qc *querierConns) IsActive() bool {
+	return qc.activeWorkerConns > 0
+}
+
 func (qc *querierConns) AddWorkerConn(conn *QuerierWorkerConn) {
 	// first look for a previously de-registered connection placeholder in the list
 	for i, workerConn := range qc.workerConns {
@@ -45,6 +49,7 @@ func (qc *querierConns) AddWorkerConn(conn *QuerierWorkerConn) {
 			conn.WorkerID = i
 			qc.workerConns[i] = conn
 			qc.activeWorkerConns++
+			return
 		}
 	}
 	// no de-registered placeholders to replace; we append the new worker ID
@@ -130,6 +135,20 @@ type tenantQuerierAssignments struct {
 	// Tenant querier ID is set to nil if sharding is off or available queriers <= tenant's maxQueriers.
 	tenantQuerierIDs map[TenantID]map[QuerierID]struct{}
 	currentQuerier   QuerierID
+}
+
+func newTenantQuerierAssignments(forgetDelay time.Duration) *tenantQuerierAssignments {
+	return &tenantQuerierAssignments{
+		queriersByID:       map[QuerierID]*querierConns{},
+		querierIDsSorted:   nil,
+		querierForgetDelay: forgetDelay,
+		tenantIDOrder:      nil,
+		tenantsByID:        map[TenantID]*queueTenant{},
+		tenantQuerierIDs:   map[TenantID]map[QuerierID]struct{}{},
+		tenantNodes:        map[string][]*Node{},
+		currentQuerier:     "",
+		tenantOrderIndex:   localQueueIndex,
+	}
 }
 
 // getNextTenantForQuerier gets the next tenant in the tenant order assigned to a given querier.
@@ -290,7 +309,7 @@ func (tqa *tenantQuerierAssignments) removeQuerierWorkerConn(conn *QuerierWorker
 	}
 
 	querier.RemoveWorkerConn(conn)
-	if querier.activeWorkerConns > 0 {
+	if querier.IsActive() {
 		// Querier still has active connections; it will not be removed, so no reshard occurs.
 		return false
 	}
@@ -334,7 +353,7 @@ func (tqa *tenantQuerierAssignments) notifyQuerierShutdown(querierID QuerierID) 
 
 	// If there are no more connections, we should remove the querier - Shutdown signals ignore forgetDelay.
 	// forgetDelay is only for queriers which have deregistered all connections but have not sent a shutdown signal
-	if querier.activeWorkerConns == 0 {
+	if !querier.IsActive() {
 		tqa.removeQuerier(querierID)
 		return
 	}

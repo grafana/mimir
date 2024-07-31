@@ -98,6 +98,10 @@ func NewUnregisteredQuerierWorkerConn(querierID QuerierID) *QuerierWorkerConn {
 	}
 }
 
+func (qwc *QuerierWorkerConn) IsRegistered() bool {
+	return qwc.WorkerID != unregisteredWorkerID
+}
+
 // RequestQueue holds incoming requests in queues, split by multiple dimensions based on properties of the request.
 // Dequeuing selects the next request from an appropriate queue given the state of the system.
 // Two separate system states are managed by the RequestQueue and used to select the next request:

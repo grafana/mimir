@@ -100,3 +100,57 @@ func TestShuffleQueriersCorrectness(t *testing.T) {
 		}
 	}
 }
+
+func TestQueues_QuerierWorkerIDAssignment(t *testing.T) {
+	treeTypes := buildTreeTestsStruct()
+	for _, tt := range treeTypes {
+		t.Run(tt.name, func(t *testing.T) {
+			tqas := newTenantQuerierAssignments(0)
+
+			// 2 queriers open 3 connections each.
+			// Each querier's worker IDs should be assigned in order,
+			// assuming no disconnects between registering connections
+			querier1Conn1 := NewUnregisteredQuerierWorkerConn("querier-1")
+			tqas.addQuerierWorkerConn(querier1Conn1)
+			require.Equal(t, 0, querier1Conn1.WorkerID)
+			querier1Conn2 := NewUnregisteredQuerierWorkerConn("querier-1")
+			tqas.addQuerierWorkerConn(querier1Conn2)
+			require.Equal(t, 1, querier1Conn2.WorkerID)
+			querier1Conn3 := NewUnregisteredQuerierWorkerConn("querier-1")
+			tqas.addQuerierWorkerConn(querier1Conn3)
+			require.Equal(t, 2, querier1Conn3.WorkerID)
+
+			// The second querier's worker IDs again start at 0 and are independent of any other queriers
+			querier2Conn1 := NewUnregisteredQuerierWorkerConn("querier-2")
+			tqas.addQuerierWorkerConn(querier2Conn1)
+			require.Equal(t, 0, querier2Conn1.WorkerID)
+			querier2Conn2 := NewUnregisteredQuerierWorkerConn("querier-2")
+			tqas.addQuerierWorkerConn(querier2Conn2)
+			require.Equal(t, 1, querier2Conn2.WorkerID)
+			querier2Conn3 := NewUnregisteredQuerierWorkerConn("querier-2")
+			tqas.addQuerierWorkerConn(querier2Conn3)
+			require.Equal(t, 2, querier2Conn3.WorkerID)
+
+			// Unregister two of querier-1's connection
+			tqas.removeQuerierWorkerConn(querier1Conn2, time.Now())
+			require.False(t, querier1Conn2.IsRegistered())
+			tqas.removeQuerierWorkerConn(querier1Conn1, time.Now())
+			require.False(t, querier1Conn1.IsRegistered())
+			// Remaining connections should keep their worker IDs
+			require.Equal(t, 2, querier1Conn3.WorkerID)
+
+			// The next connection should get the next available worker ID;
+			// since worker ID 1 was deregistered, the next connection will get worker ID 1.
+			querier1Conn4 := NewUnregisteredQuerierWorkerConn("querier-1")
+			tqas.addQuerierWorkerConn(querier1Conn4)
+			require.Equal(t, 0, querier1Conn4.WorkerID)
+
+			// A previous connection can re-register and get a different worker ID
+			// This does not happen in practice, as the de-registration only happens
+			// when a QuerierLoop exits, after which the querierWorkerConn falls out of scope.
+			// Regardless, once the connection is deregistered it acts as a new unregistered connection.
+			tqas.addQuerierWorkerConn(querier1Conn1)
+			require.Equal(t, 1, querier1Conn1.WorkerID)
+		})
+	}
+}

@@ -38,19 +38,7 @@ func newQueueBroker(
 	useMultiAlgoTreeQueue bool,
 	forgetDelay time.Duration,
 ) *queueBroker {
-	currentQuerier := QuerierID("")
-	tqas := &tenantQuerierAssignments{
-		queriersByID:       map[QuerierID]*querierConns{},
-		querierIDsSorted:   nil,
-		querierForgetDelay: forgetDelay,
-		tenantIDOrder:      nil,
-		tenantsByID:        map[TenantID]*queueTenant{},
-		tenantQuerierIDs:   map[TenantID]map[QuerierID]struct{}{},
-		tenantNodes:        map[string][]*Node{},
-		currentQuerier:     currentQuerier,
-		tenantOrderIndex:   localQueueIndex,
-	}
-
+	tqas := newTenantQuerierAssignments(forgetDelay)
 	var tree Tree
 	var err error
 	if useMultiAlgoTreeQueue {

@@ -561,8 +561,6 @@ func TestQueues_ForgetDelay(t *testing.T) {
 			// Gracefully shutdown querier-1.
 			qb.removeQuerierWorkerConn(querier1Conn1, now.Add(20*time.Second))
 			qb.removeQuerierWorkerConn(querier1Conn2, now.Add(21*time.Second))
-			//qb.removeQuerierConnection("querier-1", now.Add(20*time.Second))
-			//qb.removeQuerierConnection("querier-1", now.Add(21*time.Second))
 			qb.notifyQuerierShutdown("querier-1")
 
 			// We expect querier-1 has been removed.
@@ -586,8 +584,6 @@ func TestQueues_ForgetDelay(t *testing.T) {
 			}
 
 			// Querier-1 abruptly terminates (no shutdown notification received).
-			//qb.removeQuerierConnection("querier-1", now.Add(40*time.Second))
-			//qb.removeQuerierConnection("querier-1", now.Add(41*time.Second))
 			qb.removeQuerierWorkerConn(querier1Conn1, now.Add(40*time.Second))
 			qb.removeQuerierWorkerConn(querier1Conn2, now.Add(41*time.Second))
 

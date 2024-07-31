@@ -17,13 +17,6 @@ type enqueueObj struct {
 	path QueuePath
 }
 
-func newTenantQuerierAssignments() *tenantQuerierAssignments {
-	return &tenantQuerierAssignments{
-		tenantQuerierIDs: make(map[TenantID]map[QuerierID]struct{}),
-		tenantNodes:      make(map[string][]*Node),
-	}
-}
-
 func Test_NewTree(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -78,7 +71,7 @@ func Test_EnqueueBackByPath(t *testing.T) {
 		{
 			name: "enqueue round-robin node to tenant-querier node",
 			treeAlgosByDepth: []QueuingAlgorithm{
-				newTenantQuerierAssignments(),
+				newTenantQuerierAssignments(0),
 				&roundRobinState{},
 			},
 			childPathsToEnqueue: []QueuePath{{"child-1"}, {"child-2"}},
@@ -86,17 +79,17 @@ func Test_EnqueueBackByPath(t *testing.T) {
 		{
 			name: "enqueue tenant-querier node to tenant-querier node",
 			treeAlgosByDepth: []QueuingAlgorithm{
-				newTenantQuerierAssignments(),
-				newTenantQuerierAssignments(),
+				newTenantQuerierAssignments(0),
+				newTenantQuerierAssignments(0),
 			},
 			childPathsToEnqueue: []QueuePath{{"child-1"}},
 		},
 		{
 			name: "fail to enqueue to a node at depth 1 in tree with max-depth of 2",
 			treeAlgosByDepth: []QueuingAlgorithm{
-				newTenantQuerierAssignments(),
+				newTenantQuerierAssignments(0),
 				&roundRobinState{},
-				newTenantQuerierAssignments(),
+				newTenantQuerierAssignments(0),
 			},
 			childPathsToEnqueue: []QueuePath{{"child"}},
 			expectErr:           true,
@@ -187,7 +180,7 @@ func Test_Dequeue_RootNode(t *testing.T) {
 		},
 		{
 			name:     "dequeue from empty tenant-querier root node",
-			rootAlgo: newTenantQuerierAssignments(),
+			rootAlgo: newTenantQuerierAssignments(0),
 		},
 		{
 			name:          "dequeue from non-empty round-robin root node",
@@ -196,7 +189,7 @@ func Test_Dequeue_RootNode(t *testing.T) {
 		},
 		{
 			name:          "dequeue from non-empty tenant-querier root node",
-			rootAlgo:      newTenantQuerierAssignments(),
+			rootAlgo:      newTenantQuerierAssignments(0),
 			enqueueToRoot: []any{"something-else-in-root"},
 		},
 	}
