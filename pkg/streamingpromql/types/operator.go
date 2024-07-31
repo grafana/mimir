@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
 // Operator represents all operators.
@@ -15,6 +17,9 @@ type Operator interface {
 	// SeriesMetadata may return series in any order, but the same order must be used by both SeriesMetadata and NextSeries.
 	// SeriesMetadata should be called no more than once.
 	SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error)
+
+	// ExpressionPosition returns the position of the PromQL expression that this operator represents.
+	ExpressionPosition() posrange.PositionRange
 
 	// Close frees all resources associated with this operator.
 	// Calling SeriesMetadata or NextSeries after calling Close may result in unpredictable behaviour, corruption or crashes.

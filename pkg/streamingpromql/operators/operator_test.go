@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -14,6 +15,12 @@ import (
 type testOperator struct {
 	series []labels.Labels
 	data   []types.InstantVectorSeriesData
+}
+
+var _ types.InstantVectorOperator = &testOperator{}
+
+func (t *testOperator) ExpressionPosition() posrange.PositionRange {
+	return posrange.PositionRange{}
 }
 
 func (t *testOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {

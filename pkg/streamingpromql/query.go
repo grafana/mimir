@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
 	"golang.org/x/exp/slices"
 
@@ -33,14 +34,15 @@ var errQueryClosed = cancellation.NewErrorf("Query.Close() called")
 var errQueryFinished = cancellation.NewErrorf("query execution finished")
 
 type Query struct {
-	queryable storage.Queryable
-	opts      promql.QueryOpts
-	statement *parser.EvalStmt
-	root      types.Operator
-	engine    *Engine
-	qs        string
-	cancel    context.CancelCauseFunc
-	pool      *pooling.LimitingPool
+	queryable   storage.Queryable
+	opts        promql.QueryOpts
+	statement   *parser.EvalStmt
+	root        types.Operator
+	engine      *Engine
+	qs          string
+	cancel      context.CancelCauseFunc
+	pool        *pooling.LimitingPool
+	annotations *annotations.Annotations
 
 	result *promql.Result
 }
@@ -63,11 +65,13 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 	expr = promql.PreprocessExpr(expr, start, end)
 
 	q := &Query{
-		queryable: queryable,
-		opts:      opts,
-		engine:    engine,
-		qs:        qs,
-		pool:      pooling.NewLimitingPool(maxInMemorySamples, engine.queriesRejectedDueToPeakMemoryConsumption),
+		queryable:   queryable,
+		opts:        opts,
+		engine:      engine,
+		qs:          qs,
+		pool:        pooling.NewLimitingPool(maxInMemorySamples, engine.queriesRejectedDueToPeakMemoryConsumption),
+		annotations: annotations.New(),
+
 		statement: &parser.EvalStmt{
 			Expr:          expr,
 			Start:         start,
@@ -133,6 +137,8 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 				Interval:      interval.Milliseconds(),
 				LookbackDelta: lookbackDelta,
 				Matchers:      e.LabelMatchers,
+
+				ExpressionPosition: e.PositionRange(),
 			},
 		}, nil
 	case *parser.AggregateExpr:
@@ -158,6 +164,8 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			e.Grouping,
 			e.Without,
 			q.pool,
+			q.annotations,
+			e.PosRange,
 		), nil
 	case *parser.Call:
 		return q.convertFunctionCallToOperator(e)
@@ -180,7 +188,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, err
 		}
 
-		return operators.NewBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, q.pool)
+		return operators.NewBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, q.pool, e.PositionRange())
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
 		return q.convertToInstantVectorOperator(e.Expr)
@@ -206,7 +214,7 @@ func (q *Query) convertFunctionCallToOperator(e *parser.Call) (types.InstantVect
 		args[i] = a
 	}
 
-	return factory(args, q.pool)
+	return factory(args, q.pool, q.annotations, e.PosRange)
 }
 
 func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (types.RangeVectorOperator, error) {
@@ -237,6 +245,8 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (types.RangeVecto
 				Interval:  interval.Milliseconds(),
 				Range:     e.Range,
 				Matchers:  vectorSelector.LabelMatchers,
+
+				ExpressionPosition: e.PositionRange(),
 			},
 		}, nil
 	case *parser.StepInvariantExpr:
@@ -319,6 +329,8 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		// This should be caught in newQuery above.
 		return &promql.Result{Err: compat.NewNotSupportedError(fmt.Sprintf("unsupported result type %s", parser.DocumentedType(q.statement.Expr.Type())))}
 	}
+
+	q.result.Warnings = *q.annotations
 
 	return q.result
 }

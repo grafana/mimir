@@ -10,6 +10,8 @@ import (
 	"context"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
@@ -21,16 +23,42 @@ type FunctionOverRangeVector struct {
 	Inner types.RangeVectorOperator
 	Pool  *pooling.LimitingPool
 
+	MetadataFunc functions.SeriesMetadataFunction
+	StepFunc     functions.RangeVectorStepFunction
+
+	Annotations *annotations.Annotations
+
 	numSteps        int
 	rangeSeconds    float64
 	floatBuffer     *types.FPointRingBuffer
 	histogramBuffer *types.HPointRingBuffer
 
-	MetadataFunc        functions.SeriesMetadataFunction
-	RangeVectorStepFunc functions.RangeVectorStepFunction
+	expressionPosition posrange.PositionRange
 }
 
 var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
+
+func NewFunctionOverRangeVector(
+	inner types.RangeVectorOperator,
+	pool *pooling.LimitingPool,
+	metadataFunc functions.SeriesMetadataFunction,
+	stepFunc functions.RangeVectorStepFunction,
+	annotations *annotations.Annotations,
+	expressionPosition posrange.PositionRange,
+) *FunctionOverRangeVector {
+	return &FunctionOverRangeVector{
+		Inner:              inner,
+		Pool:               pool,
+		MetadataFunc:       metadataFunc,
+		StepFunc:           stepFunc,
+		Annotations:        annotations,
+		expressionPosition: expressionPosition,
+	}
+}
+
+func (m *FunctionOverRangeVector) ExpressionPosition() posrange.PositionRange {
+	return m.expressionPosition
+}
 
 func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	metadata, err := m.Inner.SeriesMetadata(ctx)
@@ -72,7 +100,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		f, hasFloat, h, err := m.RangeVectorStepFunc(step, m.rangeSeconds, m.floatBuffer, m.histogramBuffer)
+		f, hasFloat, h, err := m.StepFunc(step, m.rangeSeconds, m.floatBuffer, m.histogramBuffer)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}

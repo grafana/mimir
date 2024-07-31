@@ -17,6 +17,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/zeropool"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
@@ -33,8 +35,14 @@ type Aggregation struct {
 	Without  bool
 	Pool     *pooling.LimitingPool
 
+	Annotations *annotations.Annotations
+
+	expressionPosition posrange.PositionRange
+
 	remainingInnerSeriesToGroup []*group // One entry per series produced by Inner, value is the group for that series
 	remainingGroups             []*group // One entry per group, in the order we want to return them
+
+	haveEmittedMixedFloatsAndHistogramsWarning bool
 }
 
 func NewAggregation(
@@ -45,6 +53,8 @@ func NewAggregation(
 	grouping []string,
 	without bool,
 	pool *pooling.LimitingPool,
+	annotations *annotations.Annotations,
+	expressionPosition posrange.PositionRange,
 ) *Aggregation {
 	s, e, i := timestamp.FromTime(start), timestamp.FromTime(end), interval.Milliseconds()
 
@@ -58,14 +68,16 @@ func NewAggregation(
 	slices.Sort(grouping)
 
 	return &Aggregation{
-		Inner:    inner,
-		Start:    s,
-		End:      e,
-		Interval: i,
-		Steps:    stepCount(s, e, i),
-		Grouping: grouping,
-		Without:  without,
-		Pool:     pool,
+		Inner:              inner,
+		Start:              s,
+		End:                e,
+		Interval:           i,
+		Steps:              stepCount(s, e, i),
+		Grouping:           grouping,
+		Without:            without,
+		Pool:               pool,
+		Annotations:        annotations,
+		expressionPosition: expressionPosition,
 	}
 }
 
@@ -94,6 +106,10 @@ var _ types.InstantVectorOperator = &Aggregation{}
 var groupPool = zeropool.New(func() *group {
 	return &group{}
 })
+
+func (a *Aggregation) ExpressionPosition() posrange.PositionRange {
+	return a.expressionPosition
+}
 
 func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	// Fetch the source series
@@ -269,7 +285,7 @@ func (a *Aggregation) accumulateUntilGroupComplete(ctx context.Context, g *group
 }
 
 func (a *Aggregation) constructSeriesData(thisGroup *group, start int64, interval int64) (types.InstantVectorSeriesData, error) {
-	floatPointCount := thisGroup.reconcileAndCountFloatPoints()
+	floatPointCount := a.reconcileAndCountFloatPoints(thisGroup)
 	var floatPoints []promql.FPoint
 	var err error
 	if floatPointCount > 0 {
@@ -316,7 +332,7 @@ func (a *Aggregation) constructSeriesData(thisGroup *group, start int64, interva
 // It also takes the opportunity whilst looping through the floats to check if there
 // is a conflicting Histogram present. If both are present, an empty vector should
 // be returned. So this method removes the float+histogram where they conflict.
-func (g *group) reconcileAndCountFloatPoints() int {
+func (a *Aggregation) reconcileAndCountFloatPoints(g *group) int {
 	// It would be possible to calculate the number of points when constructing
 	// the series groups. However, it requires checking each point at each input
 	// series which is more costly than looping again here and just checking each
@@ -330,10 +346,19 @@ func (g *group) reconcileAndCountFloatPoints() int {
 		for idx, present := range g.floatPresent {
 			if present {
 				if g.histogramSums[idx] != nil {
-					// If a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely.
+					// If a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely
+					// and a warning annotation is emitted.
 					g.floatPresent[idx] = false
 					g.histogramSums[idx] = nil
 					g.histogramPointCount--
+
+					if !a.haveEmittedMixedFloatsAndHistogramsWarning {
+						a.Annotations.Add(annotations.NewMixedFloatsHistogramsAggWarning(a.Inner.ExpressionPosition()))
+
+						// The warning description only varies based on the position of the expression this operator represents, so only emit it
+						// once, to avoid unnecessary work if there are many instances of floats and histograms conflicting.
+						a.haveEmittedMixedFloatsAndHistogramsWarning = true
+					}
 				} else {
 					floatPointCount++
 				}
