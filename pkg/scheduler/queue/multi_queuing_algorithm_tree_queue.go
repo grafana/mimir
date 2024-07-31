@@ -43,7 +43,7 @@ func NewTree(queuingAlgorithms ...QueuingAlgorithm) (*MultiQueuingAlgorithmTreeQ
 	if len(queuingAlgorithms) == 0 {
 		return nil, fmt.Errorf("cannot create a tree without defined QueuingAlgorithm")
 	}
-	root, err := newNode("root", 0, queuingAlgorithms[0])
+	root, err := newNode("root", 0, queuingAlgorithms[0], len(queuingAlgorithms) == 1)
 	if err != nil {
 		return nil, err
 	}
@@ -85,6 +85,9 @@ func (t *MultiQueuingAlgorithmTreeQueue) Dequeue() (QueuePath, any) {
 // path is relative to the root node; providing a QueuePath beginning with "root"
 // will create a child node of the root node which is also named "root."
 func (t *MultiQueuingAlgorithmTreeQueue) EnqueueBackByPath(path QueuePath, v any) error {
+	if len(path) != len(t.algosByDepth)-1 {
+		return fmt.Errorf("can't enqueue object to non-child node")
+	}
 	return t.rootNode.enqueueBackByPath(t, path, v)
 }
 
@@ -126,19 +129,24 @@ type Node struct {
 	childrenChecked  int
 }
 
-func newNode(name string, depth int, da QueuingAlgorithm) (*Node, error) {
+func newNode(name string, depth int, da QueuingAlgorithm, isLeaf bool) (*Node, error) {
 	if da == nil {
 		return nil, fmt.Errorf("cannot create a node without a defined QueuingAlgorithm")
 	}
-	return &Node{
+	n := &Node{
 		name:             name,
-		localQueue:       list.New(),
+		localQueue:       nil,
 		queuePosition:    localQueueIndex,
 		queueOrder:       make([]string, 0),
 		queueMap:         make(map[string]*Node, 1),
 		depth:            depth,
 		queuingAlgorithm: da,
-	}, nil
+	}
+	if isLeaf {
+		n.localQueue = list.New()
+		n.queueMap = nil
+	}
+	return n, nil
 }
 
 func (n *Node) IsEmpty() bool {
@@ -146,17 +154,31 @@ func (n *Node) IsEmpty() bool {
 	//
 	// Because we dereference empty child nodes during dequeuing,
 	// we assume that emptiness means there are no child nodes
-	// and nothing in this tree node's local queue.
+	// and nothing in this node's local queue.
+	//
+	// We also assume that leaf nodes have no child nodes, since leaf nodes sit at
+	// the tree's max-depth, and that non-leaf nodes have no local queues
 	//
 	// In reality a package member could attach empty child queues with getOrAddNode
 	// in order to get a functionally-empty tree that would report false for IsEmpty.
 	// We assume this does not occur or is not relevant during normal operation.
-	return n.localQueue.Len() == 0 && len(n.queueMap) == 0
+	if n.isLeaf() {
+		return n.localQueue.Len() == 0
+	}
+
+	return len(n.queueMap) == 0
+}
+
+func (n *Node) isLeaf() bool {
+	return n.localQueue != nil
 }
 
 // ItemCount counts the queue items in the Node and in all its children, recursively.
 func (n *Node) ItemCount() int {
-	items := n.localQueue.Len()
+	if n.isLeaf() {
+		return n.localQueue.Len()
+	}
+	items := 0
 	for _, child := range n.queueMap {
 		items += child.ItemCount()
 	}
@@ -205,13 +227,14 @@ func (n *Node) dequeue() (QueuePath, any) {
 	for v == nil && !checkedAllNodes {
 		dequeueNode, checkedAllNodes = n.queuingAlgorithm.dequeueSelectNode(n)
 		switch dequeueNode {
-		// dequeuing from local queue
 		case n:
-			if n.localQueue.Len() > 0 {
-				// dequeueNode is self, local queue non-empty
-				if elt := n.localQueue.Front(); elt != nil {
-					n.localQueue.Remove(elt)
-					v = elt.Value
+			if n.isLeaf() {
+				// dequeue node is self, and is a leaf node; dequeue from local queue
+				if n.localQueue.Len() > 0 {
+					if elt := n.localQueue.Front(); elt != nil {
+						n.localQueue.Remove(elt)
+						v = elt.Value
+					}
 				}
 			}
 		// no dequeue-able child found; break out of the loop,
@@ -271,7 +294,8 @@ func (n *Node) getOrAddNode(pathFromNode QueuePath, tree *MultiQueuingAlgorithmT
 		if n.depth+1 >= len(tree.algosByDepth) {
 			return nil, fmt.Errorf("cannot add a node beyond max tree depth: %v", len(tree.algosByDepth))
 		}
-		childNode, err = newNode(pathFromNode[0], n.depth+1, tree.algosByDepth[n.depth+1])
+		childDepth := n.depth + 1
+		childNode, err = newNode(pathFromNode[0], n.depth+1, tree.algosByDepth[childDepth], len(tree.algosByDepth)-1 == childDepth)
 		if err != nil {
 			return nil, err
 		}

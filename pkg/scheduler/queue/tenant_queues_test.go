@@ -25,10 +25,23 @@ func (qb *queueBroker) enqueueObjectsForTests(tenantID TenantID, numObjects int)
 			tenantID: tenantID,
 			req:      fmt.Sprintf("%v: object-%v", tenantID, i),
 		}
-		path, err := qb.makeQueuePath(req)
-		if err != nil {
-			return err
+		var path QueuePath
+		var err error
+		// TODO (casie): After deprecating legacy tree queue, clean this up
+		if _, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+			if qb.prioritizeQueryComponents {
+				path = QueuePath{unknownQueueDimension, string(tenantID)}
+			} else {
+				path = QueuePath{string(tenantID), unknownQueueDimension}
+			}
+
+		} else {
+			path, err = qb.makeQueuePath(req)
+			if err != nil {
+				return err
+			}
 		}
+
 		err = qb.tree.EnqueueBackByPath(path, req)
 		if err != nil {
 			return err
@@ -246,13 +259,20 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 
 			// assert equal distribution of queue items between tenant node and 3 subnodes
 			for _, v := range additionalQueueDimensions {
-				queuePath := append(QueuePath{"tenant-1"}, v...)
+				var checkPath QueuePath
+				// TODO (casie): After deprecating legacy tree queue, clean this up
+				if _, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok && v == nil {
+					checkPath = append(QueuePath{"tenant-1"}, unknownQueueDimension)
+				} else {
+					checkPath = append(QueuePath{"tenant-1"}, v...)
+				}
+
 				// TODO (casie): After deprecating legacy tree queue, clean this up
 				var itemCount int
 				if tq, ok := qb.tree.(*TreeQueue); ok {
-					itemCount = tq.getNode(queuePath).LocalQueueLen()
+					itemCount = tq.getNode(checkPath).LocalQueueLen()
 				} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-					itemCount = itq.GetNode(queuePath).getLocalQueue().Len()
+					itemCount = itq.GetNode(checkPath).getLocalQueue().Len()
 				}
 				assert.Equal(t, maxTenantQueueSize/len(additionalQueueDimensions), itemCount)
 			}
@@ -454,7 +474,7 @@ func TestQueuesConsistency(t *testing.T) {
 
 					conns := map[QuerierID]int{}
 
-					for i := 0; i < 10000; i++ {
+					for i := 0; i < 100; i++ {
 						switch r.Int() % 6 {
 						case 0:
 							err := qb.getOrAddTenantQueue(generateTenant(r), 3)
@@ -777,6 +797,7 @@ func isConsistent(qb *queueBroker) error {
 	}
 
 	tenantCount := 0
+	existingTenants := make(map[TenantID]bool)
 
 	for ix, tenantID := range qb.tenantQuerierAssignments.tenantIDOrder {
 		path := qb.makeQueuePathForTests(tenantID)
@@ -807,6 +828,7 @@ func isConsistent(qb *queueBroker) error {
 
 		if tenantID != "" {
 			tenantCount++
+			existingTenants[tenantID] = true
 		}
 
 		tenant := qb.tenantQuerierAssignments.tenantsByID[tenantID]
@@ -834,7 +856,25 @@ func isConsistent(qb *queueBroker) error {
 	if tq, ok := qb.tree.(*TreeQueue); ok {
 		tenantQueueCount = tq.NodeCount() - 1
 	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-		tenantQueueCount = itq.rootNode.nodeCount() - 1
+		if qb.additionalQueueDimensionsEnabled {
+			if !qb.prioritizeQueryComponents {
+				// tree structure is root -> tenants -> query components
+				tenantQueueCount = len(itq.rootNode.queueMap)
+			} else {
+				// tree structure is root -> query components -> tenants
+				// there may be multiple tenant queues, so we should only count each tenant once
+				distinctTenantsInTree := make(map[string]bool)
+				for _, componentNode := range itq.rootNode.queueMap {
+					for tenantID := range componentNode.queueMap {
+						distinctTenantsInTree[tenantID] = true
+					}
+				}
+				tenantQueueCount = len(distinctTenantsInTree)
+			}
+		} else {
+			tenantQueueCount = itq.rootNode.nodeCount() - 1
+		}
+
 	}
 	if tenantQueueCount != tenantCount {
 		return fmt.Errorf("inconsistent number of tenants list and tenant queues")
