@@ -6,6 +6,7 @@
 package queue
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"slices"
@@ -107,24 +108,24 @@ func TestQueues_QuerierWorkerIDAssignment(t *testing.T) {
 	// 2 queriers open 3 connections each.
 	// Each querier's worker IDs should be assigned in order,
 	// assuming no disconnects between registering connections
-	querier1Conn1 := NewUnregisteredQuerierWorkerConn("querier-1")
+	querier1Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
 	tqa.addQuerierWorkerConn(querier1Conn1)
 	require.Equal(t, 0, querier1Conn1.WorkerID)
-	querier1Conn2 := NewUnregisteredQuerierWorkerConn("querier-1")
+	querier1Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
 	tqa.addQuerierWorkerConn(querier1Conn2)
 	require.Equal(t, 1, querier1Conn2.WorkerID)
-	querier1Conn3 := NewUnregisteredQuerierWorkerConn("querier-1")
+	querier1Conn3 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
 	tqa.addQuerierWorkerConn(querier1Conn3)
 	require.Equal(t, 2, querier1Conn3.WorkerID)
 
 	// The second querier's worker IDs again start at 0 and are independent of any other queriers
-	querier2Conn1 := NewUnregisteredQuerierWorkerConn("querier-2")
+	querier2Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
 	tqa.addQuerierWorkerConn(querier2Conn1)
 	require.Equal(t, 0, querier2Conn1.WorkerID)
-	querier2Conn2 := NewUnregisteredQuerierWorkerConn("querier-2")
+	querier2Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
 	tqa.addQuerierWorkerConn(querier2Conn2)
 	require.Equal(t, 1, querier2Conn2.WorkerID)
-	querier2Conn3 := NewUnregisteredQuerierWorkerConn("querier-2")
+	querier2Conn3 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
 	tqa.addQuerierWorkerConn(querier2Conn3)
 	require.Equal(t, 2, querier2Conn3.WorkerID)
 
@@ -138,13 +139,13 @@ func TestQueues_QuerierWorkerIDAssignment(t *testing.T) {
 
 	// The next connection should get the next available worker ID;
 	// since worker ID 1 was deregistered, the next connection will get worker ID 1.
-	querier1Conn4 := NewUnregisteredQuerierWorkerConn("querier-1")
+	querier1Conn4 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
 	tqa.addQuerierWorkerConn(querier1Conn4)
 	require.Equal(t, 0, querier1Conn4.WorkerID)
 
 	// A previous connection can re-register and get a different worker ID
 	// This does not happen in practice, as the de-registration only happens
-	// when a QuerierLoop exits, after which the querierWorkerConn falls out of scope.
+	// when a QuerierLoop exits, after which the conn falls out of scope.
 	// Regardless, once the connection is deregistered it acts as a new unregistered connection.
 	tqa.addQuerierWorkerConn(querier1Conn1)
 	require.Equal(t, 1, querier1Conn1.WorkerID)
@@ -155,7 +156,7 @@ func TestQueues_QuerierWorkerIDAssignment_Panics(t *testing.T) {
 	// a registered querier with no registered connections allows the test to reach some panic cases
 	tqa := newTenantQuerierAssignments(10 * time.Second)
 
-	querierConn := NewUnregisteredQuerierWorkerConn("")
+	querierConn := NewUnregisteredQuerierWorkerConn(context.Background(), "")
 
 	// the querier has never had any connections registered, so it is not tracked by TenantQuerierAssignments
 	// de-registering any querier connection should panic with a message about the querier
@@ -176,6 +177,10 @@ func TestQueues_QuerierWorkerIDAssignment_Panics(t *testing.T) {
 	// de-registering any unregistered querier connection should panic with a message about the querier-worker
 	require.PanicsWithValue(
 		t, "received request to deregister a querier-worker which was not already registered",
-		func() { tqa.removeQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(""), time.Now()) },
+		func() {
+			tqa.removeQuerierWorkerConn(
+				NewUnregisteredQuerierWorkerConn(context.Background(), ""), time.Now(),
+			)
+		},
 	)
 }

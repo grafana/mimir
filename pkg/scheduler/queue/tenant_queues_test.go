@@ -86,8 +86,8 @@ func TestQueues_NoShuffleSharding(t *testing.T) {
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
-			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn("querier-1"))
-			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn("querier-2"))
+			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1"))
+			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2"))
 
 			req, tenant, lastTenantIndexQuerierOne, err := qb.dequeueRequestForQuerier(-1, "querier-1")
 			assert.Nil(t, req)
@@ -287,7 +287,7 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 			}
 
 			// dequeue a request
-			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn("querier-1"))
+			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1"))
 			dequeuedTenantReq, _, _, err := qb.dequeueRequestForQuerier(-1, "querier-1")
 			assert.NoError(t, err)
 			assert.NotNil(t, dequeuedTenantReq)
@@ -312,8 +312,8 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
-			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn("querier-1"))
-			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn("querier-2"))
+			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1"))
+			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2"))
 
 			// Add queues: [one two]
 			err := qb.tenantQuerierAssignments.createOrUpdateTenant("one", 0)
@@ -393,7 +393,7 @@ func TestQueues_QuerierDistribution(t *testing.T) {
 			// Add some queriers.
 			for ix := 0; ix < queriers; ix++ {
 				qid := QuerierID(fmt.Sprintf("querier-%d", ix))
-				qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(qid))
+				qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), qid))
 
 				// No querier has any queues yet.
 				req, tenant, _, err := qb.dequeueRequestForQuerier(-1, QuerierID(qid))
@@ -486,7 +486,7 @@ func TestQueuesConsistency(t *testing.T) {
 							qb.removeTenantQueue(generateTenant(r))
 						case 3:
 							querierID := generateQuerier(r)
-							conn := NewUnregisteredQuerierWorkerConn(querierID)
+							conn := NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
 							qb.addQuerierWorkerConn(conn)
 							conns[querierID] = append(conns[querierID], conn)
 						case 4:
@@ -528,19 +528,19 @@ func TestQueues_ForgetDelay(t *testing.T) {
 			assert.NoError(t, isConsistent(qb))
 
 			// 3 queriers open 2 connections each.
-			querier1Conn1 := NewUnregisteredQuerierWorkerConn("querier-1")
+			querier1Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
 			qb.addQuerierWorkerConn(querier1Conn1)
-			querier1Conn2 := NewUnregisteredQuerierWorkerConn("querier-1")
+			querier1Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
 			qb.addQuerierWorkerConn(querier1Conn2)
 
-			querier2Conn1 := NewUnregisteredQuerierWorkerConn("querier-2")
+			querier2Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
 			qb.addQuerierWorkerConn(querier2Conn1)
-			querier2Conn2 := NewUnregisteredQuerierWorkerConn("querier-2")
+			querier2Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
 			qb.addQuerierWorkerConn(querier2Conn2)
 
-			querier3Conn1 := NewUnregisteredQuerierWorkerConn("querier-3")
+			querier3Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-3")
 			qb.addQuerierWorkerConn(querier3Conn1)
-			querier3Conn2 := NewUnregisteredQuerierWorkerConn("querier-3")
+			querier3Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-3")
 			qb.addQuerierWorkerConn(querier3Conn2)
 
 			// Add tenant queues.
@@ -641,19 +641,19 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 			assert.NoError(t, isConsistent(qb))
 
 			// 3 queriers open 2 connections each.
-			querier1Conn1 := NewUnregisteredQuerierWorkerConn("querier-1")
+			querier1Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
 			qb.addQuerierWorkerConn(querier1Conn1)
-			querier1Conn2 := NewUnregisteredQuerierWorkerConn("querier-1")
+			querier1Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
 			qb.addQuerierWorkerConn(querier1Conn2)
 
-			querier2Conn1 := NewUnregisteredQuerierWorkerConn("querier-2")
+			querier2Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
 			qb.addQuerierWorkerConn(querier2Conn1)
-			querier2Conn2 := NewUnregisteredQuerierWorkerConn("querier-2")
+			querier2Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
 			qb.addQuerierWorkerConn(querier2Conn2)
 
-			querier3Conn1 := NewUnregisteredQuerierWorkerConn("querier-3")
+			querier3Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-3")
 			qb.addQuerierWorkerConn(querier3Conn1)
-			querier3Conn2 := NewUnregisteredQuerierWorkerConn("querier-3")
+			querier3Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-3")
 			qb.addQuerierWorkerConn(querier3Conn2)
 
 			// Add tenant queues.

@@ -231,12 +231,12 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 		return err
 	}
 
-	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(queue.QuerierID(querierID))
-	err = f.requestQueue.AwaitRegisterQuerierWorkerConn(server.Context(), querierWorkerConn)
+	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(server.Context(), queue.QuerierID(querierID))
+	err = f.requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn)
 	if err != nil {
 		return err
 	}
-	defer f.requestQueue.SubmitUnregisterQuerierWorkerConn(server.Context(), querierWorkerConn)
+	defer f.requestQueue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
 
 	lastTenantIndex := queue.FirstTenant()
 

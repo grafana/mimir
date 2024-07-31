@@ -85,14 +85,16 @@ type Request interface{}
 // WorkerID is unique only per querier; querier-1 and querier-2 will both have a WorkerID=0.
 // WorkerID is derived internally in order to distribute worker connections across queue dimensions
 type QuerierWorkerConn struct {
+	ctx       context.Context
 	QuerierID QuerierID
 	WorkerID  int
 }
 
 const unregisteredWorkerID = -1
 
-func NewUnregisteredQuerierWorkerConn(querierID QuerierID) *QuerierWorkerConn {
+func NewUnregisteredQuerierWorkerConn(ctx context.Context, querierID QuerierID) *QuerierWorkerConn {
 	return &QuerierWorkerConn{
+		ctx:       ctx,
 		QuerierID: querierID,
 		WorkerID:  unregisteredWorkerID,
 	}
@@ -150,46 +152,44 @@ type RequestQueue struct {
 	queueBroker *queueBroker
 }
 
-type QuerierOperationType int
+type querierOperationType int
 
 const (
-	registerConnection QuerierOperationType = iota
+	registerConnection querierOperationType = iota
 	unregisterConnection
 	notifyShutdown
 	forgetDisconnected
 )
 
 type querierWorkerOperation struct {
-	ctx                   context.Context
-	querierWorkerConn     *QuerierWorkerConn
-	operation             QuerierOperationType
-	recvQuerierWorkerConn chan *QuerierWorkerConn
+	//ctx                   context.Context
+	conn      *QuerierWorkerConn
+	operation querierOperationType
+	recvChan  chan struct{}
 }
 
 func newQuerierWorkerOperation(
-	ctx context.Context, querierWorkerConn *QuerierWorkerConn, opType QuerierOperationType,
+	querierWorkerConn *QuerierWorkerConn, opType querierOperationType,
 ) *querierWorkerOperation {
 	return &querierWorkerOperation{
-		ctx:                   ctx,
-		querierWorkerConn:     querierWorkerConn,
-		operation:             opType,
-		recvQuerierWorkerConn: nil,
+		conn:      querierWorkerConn,
+		operation: opType,
+		recvChan:  nil,
 	}
 }
 
 func newAwaitableQuerierWorkerOperation(
-	ctx context.Context, querierWorkerConn *QuerierWorkerConn, opType QuerierOperationType,
+	querierWorkerConn *QuerierWorkerConn, opType querierOperationType,
 ) *querierWorkerOperation {
 	return &querierWorkerOperation{
-		ctx:                   ctx,
-		querierWorkerConn:     querierWorkerConn,
-		operation:             opType,
-		recvQuerierWorkerConn: make(chan *QuerierWorkerConn),
+		conn:      querierWorkerConn,
+		operation: opType,
+		recvChan:  make(chan struct{}),
 	}
 }
 
 func (qwo *querierWorkerOperation) IsAwaitable() bool {
-	return qwo.recvQuerierWorkerConn != nil
+	return qwo.recvChan != nil
 }
 
 func (qwo *querierWorkerOperation) AwaitQuerierWorkerConnUpdate() error {
@@ -200,9 +200,9 @@ func (qwo *querierWorkerOperation) AwaitQuerierWorkerConnUpdate() error {
 	}
 
 	select {
-	case <-qwo.ctx.Done():
-		return qwo.ctx.Err()
-	case <-qwo.recvQuerierWorkerConn:
+	case <-qwo.conn.ctx.Done():
+		return qwo.conn.ctx.Err()
+	case <-qwo.recvChan:
 		return nil
 	}
 }
@@ -507,16 +507,14 @@ func (q *RequestQueue) GetConnectedQuerierWorkersMetric() float64 {
 	return float64(q.connectedQuerierWorkers.Load())
 }
 
-func (q *RequestQueue) AwaitRegisterQuerierWorkerConn(ctx context.Context, conn *QuerierWorkerConn) error {
-	return q.awaitQuerierWorkerOperation(ctx, conn, registerConnection)
+func (q *RequestQueue) AwaitRegisterQuerierWorkerConn(conn *QuerierWorkerConn) error {
+	return q.awaitQuerierWorkerOperation(conn, registerConnection)
 }
 
 func (q *RequestQueue) awaitQuerierWorkerOperation(
-	ctx context.Context, conn *QuerierWorkerConn, opType QuerierOperationType,
+	conn *QuerierWorkerConn, opType querierOperationType,
 ) error {
-	op := newAwaitableQuerierWorkerOperation(
-		ctx, conn, opType,
-	)
+	op := newAwaitableQuerierWorkerOperation(conn, opType)
 
 	// we do not check for a context cancel here;
 	// if the caller's context is canceled, we still want the dispatcherLoop to process the operation
@@ -530,27 +528,30 @@ func (q *RequestQueue) awaitQuerierWorkerOperation(
 	}
 }
 
-func (q *RequestQueue) SubmitUnregisterQuerierWorkerConn(ctx context.Context, conn *QuerierWorkerConn) {
-	q.submitQuerierWorkerOperation(ctx, conn, unregisterConnection)
+func (q *RequestQueue) SubmitUnregisterQuerierWorkerConn(conn *QuerierWorkerConn) {
+	q.submitQuerierWorkerOperation(conn, unregisterConnection)
 }
 
+// submitForgetDisconnectedQueriers is called in a ticker from the RequestQueue's `running` goroutine.
+// The operation is not specific to any one querier and this method can stay private.
 func (q *RequestQueue) submitForgetDisconnectedQueriers(ctx context.Context) {
-	querierWorkerOp := NewUnregisteredQuerierWorkerConn("")
-	q.submitQuerierWorkerOperation(ctx, querierWorkerOp, forgetDisconnected)
+	// Create a generic querier-worker connection to submit the operation.
+	querierWorkerOp := NewUnregisteredQuerierWorkerConn(ctx, "")
+	q.submitQuerierWorkerOperation(querierWorkerOp, forgetDisconnected)
 }
 
+// SubmitNotifyQuerierShutdown is called by the v1 frontend or scheduler when NotifyQuerierShutdown requests
+// are submitted from the querier to an endpoint, separate from any specific querier-worker connection.
 func (q *RequestQueue) SubmitNotifyQuerierShutdown(ctx context.Context, querierID QuerierID) {
-	// NotifyQuerierShutdown requests are submitted from the querier to a separate endpoint;
-	// this connection is outside the QuerierLoop and is not associated with a querier-worker.
 	// Create a generic querier-worker connection to submit the operation.
-	conn := NewUnregisteredQuerierWorkerConn(querierID)
-	q.submitQuerierWorkerOperation(ctx, conn, notifyShutdown)
+	conn := NewUnregisteredQuerierWorkerConn(ctx, querierID)
+	q.submitQuerierWorkerOperation(conn, notifyShutdown)
 }
 
 func (q *RequestQueue) submitQuerierWorkerOperation(
-	ctx context.Context, conn *QuerierWorkerConn, opType QuerierOperationType,
+	conn *QuerierWorkerConn, opType querierOperationType,
 ) {
-	op := newQuerierWorkerOperation(ctx, conn, opType)
+	op := newQuerierWorkerOperation(conn, opType)
 
 	// we do not check for a context cancel here;
 	// if the caller's context is canceled, we still want the dispatcherLoop to process the operation
@@ -566,28 +567,28 @@ func (q *RequestQueue) submitQuerierWorkerOperation(
 func (q *RequestQueue) processQuerierWorkerOperation(querierWorkerOp *querierWorkerOperation) (resharded bool) {
 	switch querierWorkerOp.operation {
 	case registerConnection:
-		resharded = q.processRegisterQuerierWorkerConn(querierWorkerOp.querierWorkerConn)
+		resharded = q.processRegisterQuerierWorkerConn(querierWorkerOp.conn)
 	case unregisterConnection:
-		resharded = q.processUnregisterQuerierWorkerConn(querierWorkerOp.querierWorkerConn)
+		resharded = q.processUnregisterQuerierWorkerConn(querierWorkerOp.conn)
 	case notifyShutdown:
 		// No cleanup needed here in response to a graceful shutdown; just set querier state to shutting down.
 		// All subsequent waitingQuerierConns for the querier will receive an ErrQuerierShuttingDown.
 		// The querier-worker's end of the QuerierLoop will exit once it has received enough errors,
 		// and the Querier connection counts will be decremented as the workers disconnect.
-		resharded = q.queueBroker.notifyQuerierShutdown(querierWorkerOp.querierWorkerConn.QuerierID)
+		resharded = q.queueBroker.notifyQuerierShutdown(querierWorkerOp.conn.QuerierID)
 	case forgetDisconnected:
 		resharded = q.processForgetDisconnectedQueriers()
 	default:
 		msg := fmt.Sprintf(
 			"received unknown querier-worker event %v for querier ID %v",
-			querierWorkerOp.operation, querierWorkerOp.querierWorkerConn.QuerierID,
+			querierWorkerOp.operation, querierWorkerOp.conn.QuerierID,
 		)
 		panic(msg)
 	}
 	if querierWorkerOp.IsAwaitable() {
 		select {
-		case querierWorkerOp.recvQuerierWorkerConn <- querierWorkerOp.querierWorkerConn:
-		case <-querierWorkerOp.ctx.Done():
+		case querierWorkerOp.recvChan <- struct{}{}:
+		case <-querierWorkerOp.conn.ctx.Done():
 		case <-q.stopCompleted:
 		}
 	}
