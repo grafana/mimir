@@ -189,7 +189,7 @@ func TestBenchmarkSetup(t *testing.T) {
 
 // Why do we do this rather than require.Equal(t, expected, actual)?
 // It's possible that floating point values are slightly different due to imprecision, but require.Equal doesn't allow us to set an allowable difference.
-func requireEqualResults(t testing.TB, expr string, expected, actual *promql.Result) {
+func requireEqualResults(t testing.TB, expr string, expected, actual *promql.Result) { //nolint:revive // We'll begin using 'expr' again soon.
 	require.Equal(t, expected.Err, actual.Err)
 	require.Equal(t, expected.Value.Type(), actual.Value.Type())
 
