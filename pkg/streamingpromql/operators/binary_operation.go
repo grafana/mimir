@@ -612,128 +612,128 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 	var fPoints []promql.FPoint
 	var hPoints []promql.HPoint
 
-	// For one-to-one matching for arithmetic operators, reuse one of the input slices to avoid allocating another slice.
-	// We'll never produce more points than the smaller input side, so use that as our output slice.
+	// For one-to-one matching for arithmetic operators, We'll never produce more points than the smaller input side.
+	// Because histograms and floats can be multiplied together, we use the sum of both the histogram and float points.
+	// We also don't know if the output will be exclusively floats or histograms, so we'll use the same size slice for both.
+	// We only assign the slices once we see the associated point type so it shouldn't be common that we allocate both.
 	//
 	// FIXME: this is not safe to do for one-to-many, many-to-one or many-to-many matching, as we may need the input series for later output series.
-	// FIXME: This is likely wrong when multiplying different types (eg histogram * float)
-	if len(left.Floats) < len(right.Floats) {
-		fPoints = left.Floats[:0]
-		defer b.Pool.PutFPointSlice(right.Floats)
+	var leftPutFPointSlice, leftPutHPointSlice, rightPutFPointSlice, rightPutHPointSlice bool
+	leftPoints := len(left.Floats) + len(left.Histograms)
+	rightPoints := len(right.Floats) + len(right.Histograms)
+	leftSmaller := leftPoints < rightPoints
+	var maxPoints int
+	if leftSmaller {
+		maxPoints = leftPoints
 	} else {
-		fPoints = right.Floats[:0]
-		defer b.Pool.PutFPointSlice(left.Floats)
+		maxPoints = rightPoints
 	}
 
-	if len(left.Histograms) < len(right.Histograms) {
-		hPoints = left.Histograms[:0]
-		defer b.Pool.PutHPointSlice(right.Histograms)
-	} else {
-		hPoints = right.Histograms[:0]
-		defer b.Pool.PutHPointSlice(left.Histograms)
+	getFSlice := func() error {
+		if maxPoints <= len(left.Floats) && (leftSmaller || maxPoints > len(right.Floats)) {
+			// Reuse the left slice if we fit and either:
+			// 1. The left side is smaller and therefore more optimal, or
+			// 2. We can't fit into the (smaller) right side.
+			fPoints = left.Floats[:0]
+			rightPutFPointSlice = true
+		} else if maxPoints <= len(right.Floats) {
+			// Reuse the right slice if we fit, and we have already determined that we can't fit into a smaller left side
+			fPoints = right.Floats[:0]
+			leftPutHPointSlice = true
+		} else {
+			// We can't fit in either left or right side, so create a new slice
+			var err error
+			if fPoints, err = b.Pool.GetFPointSlice(maxPoints); err != nil {
+				return err
+			}
+			leftPutHPointSlice = true
+			rightPutFPointSlice = true
+		}
+		return nil
 	}
 
-	leftFIndex, rightFIndex := 0, 0
-	leftHIndex, rightHIndex := 0, 0
-
-	// Iterate through both float and histogram points until the index pointers reach the end of each slice.
-	// InstantVectorSeriesData.Floats and InstantVectorSeriesData.Histograms are always in time order.
-	// A Float and Histogram in InstantVectorSeriesData can never have the same timestamp.
-	// So a point, T, can exist as either a Float or Histogram. We move an index pointer across both ranges
-	// to find the matching point regardless of type.
-	for !(leftFIndex == len(left.Floats) &&
-		rightFIndex == len(right.Floats) &&
-		leftHIndex == len(left.Histograms) &&
-		rightHIndex == len(right.Histograms)) {
-
-		leftT, rightT := int64(math.MaxInt64), int64(math.MaxInt64)
-		leftIsFloat, rightIsFloat := false, false
-		var leftFloat promql.FPoint
-		var rightFloat promql.FPoint
-		var leftHist promql.HPoint
-		var rightHist promql.HPoint
-
-		// Determine current left timestamp and type
-		if leftFIndex < len(left.Floats) {
-			leftT = left.Floats[leftFIndex].T
-			leftIsFloat = true
-			leftFloat = left.Floats[leftFIndex]
+	getHSlice := func() error {
+		if maxPoints <= len(left.Histograms) && (leftSmaller || maxPoints > len(right.Histograms)) {
+			// Reuse the left slice if we fit and either:
+			// 1. The left side is smaller and therefore more optimal, or
+			// 2. We can't fit into the (smaller) right side.
+			hPoints = left.Histograms[:0]
+			rightPutHPointSlice = true
+		} else if maxPoints <= len(right.Histograms) {
+			// Reuse the right slice if we fit, and we have already determined that we can't fit into a smaller left side
+			hPoints = right.Histograms[:0]
+			leftPutHPointSlice = true
+		} else {
+			// We can't fit in either left or right side, so create a new slice
+			var err error
+			if hPoints, err = b.Pool.GetHPointSlice(maxPoints); err != nil {
+				return err
+			}
+			leftPutHPointSlice = true
+			rightPutHPointSlice = true
 		}
-		if leftHIndex < len(left.Histograms) && (!leftIsFloat || left.Histograms[leftHIndex].T < leftT) {
-			leftT = left.Histograms[leftHIndex].T
-			leftIsFloat = false
-			leftHist = left.Histograms[leftHIndex]
-		}
+		return nil
+	}
 
-		// Determine current right timestamp and type
-		if rightFIndex < len(right.Floats) {
-			rightT = right.Floats[rightFIndex].T
-			rightIsFloat = true
-			rightFloat = right.Floats[rightFIndex]
-		}
-		if rightHIndex < len(right.Histograms) && (!rightIsFloat || right.Histograms[rightHIndex].T < rightT) {
-			rightT = right.Histograms[rightHIndex].T
-			rightIsFloat = false
-			rightHist = right.Histograms[rightHIndex]
-		}
+	// InstantVectorSeriesDataIterator returns either the next float or histogram
+	leftIterator := types.NewInstantVectorSeriesDataIterator(&left)
+	rightIterator := types.NewInstantVectorSeriesDataIterator(&right)
 
-		if leftT == rightT {
+	// Continue iterating until we exhaust either the LHS or RHS
+	// looking for matches on the timestamp
+	for {
+		lT, lF, lH, ok := leftIterator.Next()
+		if !ok {
+			break
+		}
+		rT, rF, rH, ok := rightIterator.Next()
+		if !ok {
+			break
+		}
+		if lT == rT {
 			// Points match at this step
-			lhs := 0.0
-			rhs := 0.0
-			var hlhs, hrhs *histogram.FloatHistogram
-			if leftIsFloat {
-				lhs = leftFloat.F
-			} else {
-				hlhs = leftHist.H
-			}
-			if rightIsFloat {
-				rhs = rightFloat.F
-			} else {
-				hrhs = rightHist.H
-			}
-
-			resultFloat, resultHist, ok, err := b.opFunc(lhs, rhs, hlhs, hrhs)
+			resultFloat, resultHist, ok, err := b.opFunc(lF, rF, lH, rH)
 			if err != nil {
 				return types.InstantVectorSeriesData{}, err
 			}
 			if ok {
 				if resultHist != nil {
+					if len(hPoints) == 0 {
+						if err = getHSlice(); err != nil {
+							return types.InstantVectorSeriesData{}, err
+						}
+					}
 					hPoints = append(hPoints, promql.HPoint{
 						H: resultHist,
-						T: leftT,
+						T: lT,
 					})
 				} else {
+					if len(fPoints) == 0 {
+						if err = getFSlice(); err != nil {
+							return types.InstantVectorSeriesData{}, err
+						}
+					}
 					fPoints = append(fPoints, promql.FPoint{
 						F: resultFloat,
-						T: leftT,
+						T: lT,
 					})
 				}
 			}
-
-			if leftIsFloat {
-				leftFIndex++
-			} else {
-				leftHIndex++
-			}
-			if rightIsFloat {
-				rightFIndex++
-			} else {
-				rightHIndex++
-			}
-		} else if leftT < rightT {
-			if leftIsFloat {
-				leftFIndex++
-			} else {
-				leftHIndex++
-			}
-		} else {
-			if rightIsFloat {
-				rightFIndex++
-			} else {
-				rightHIndex++
-			}
 		}
+	}
+
+	// Cleanup the unused slices.
+	if leftPutFPointSlice {
+		defer b.Pool.PutFPointSlice(left.Floats)
+	}
+	if leftPutHPointSlice {
+		defer b.Pool.PutHPointSlice(left.Histograms)
+	}
+	if rightPutFPointSlice {
+		defer b.Pool.PutFPointSlice(right.Floats)
+	}
+	if rightPutHPointSlice {
+		defer b.Pool.PutHPointSlice(left.Histograms)
 	}
 
 	return types.InstantVectorSeriesData{
