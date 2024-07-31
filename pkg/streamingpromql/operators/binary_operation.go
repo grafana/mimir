@@ -899,24 +899,6 @@ var arithmeticOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 	parser.MOD: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
 		return math.Mod(lhs, rhs), nil, true, nil
 	},
-	parser.EQLC: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
-		return lhs, nil, lhs == rhs, nil
-	},
-	parser.NEQ: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
-		return lhs, nil, lhs != rhs, nil
-	},
-	parser.GTR: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
-		return lhs, nil, lhs > rhs, nil
-	},
-	parser.LSS: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
-		return lhs, nil, lhs < rhs, nil
-	},
-	parser.GTE: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
-		return lhs, nil, lhs >= rhs, nil
-	},
-	parser.LTE: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
-		return lhs, nil, lhs <= rhs, nil
-	},
 	parser.ATAN2: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
 		return math.Atan2(lhs, rhs), nil, true, nil
 	},
