@@ -48,6 +48,14 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 
    - Merge the PR upon approval.
 
+1. Notify open PRs about the cut change log.
+
+   - From the root directory of the repository run
+
+     ```bash
+     ./tools/release/notify-changelog-cut.sh operations/helm/charts/mimir-distributed/CHANGELOG.md
+     ```
+
 1. Create a release branch.
 
    - Create (if the branch is not created yet), switch to and push a branch starting from the commit created by the prepare changelog PR and name it `mimir-distributed-release-x.y`.
@@ -55,6 +63,13 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
      For example, `mimir-distributed-release-4.5` for any `4.5.x` release.
 
    - Push the branch to origin without any commit added.
+
+     ```bash
+     git fetch
+     git checkout origin/main
+     git checkout -b mimir-distributed-release-<version>
+     git push -u origin mimir-distributed-release-<version>
+     ```
 
    - Once the branch is pushed, all changes to `mimir-distributed-release-x.y` branch must be done through PR.
 
@@ -166,7 +181,7 @@ The [release process](https://github.com/grafana/mimir/blob/main/.github/workflo
 
      You might have to wait a few minutes.
 
-   - In a browser, go to [https://grafana.com/docs/helm-charts/mimir-distributed](https://grafana.com/docs/helm-charts/mimir-distributed) and refresh the page.
+   - For stable releases (i.e. excluding release candidates): In a browser, go to the [helm chart docs versions](https://grafana.com/docs/versions/?project=/docs/helm-charts/mimir-distributed/) and verify that the new version is selectable. This might take up to 15 minutes.
 
 1. After the release tag in Git is created, merge the branch back into `main` by following the same procedure as for Mimir releases: [Merging release branch into main](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main).
 

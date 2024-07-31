@@ -1214,3 +1214,88 @@ func (t *timeoutTestingQueryTracker) Insert(ctx context.Context, _ string) (int,
 func (t *timeoutTestingQueryTracker) Delete(_ int) {
 	panic("should not be called")
 }
+
+func TestAnnotations(t *testing.T) {
+	startT := timestamp.Time(0).Add(time.Minute)
+	step := time.Minute
+	endT := startT.Add(2 * step)
+
+	mixedFloatHistogramData := `
+		metric{type="float", series="1"} 0+1x3
+		metric{type="float", series="2"} 1+1x3
+		metric{type="histogram", series="1"} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
+		metric{type="histogram", series="2"} {{schema:0 sum:1 count:1 buckets:[1]}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
+	`
+
+	testCases := map[string]struct {
+		data                       string
+		expr                       string
+		expectedWarningAnnotations []string
+		expectedInfoAnnotations    []string
+	}{
+		"sum() with float and native histogram at same step": {
+			data:                       mixedFloatHistogramData,
+			expr:                       "sum by (series) (metric)",
+			expectedWarningAnnotations: []string{"PromQL warning: encountered a mix of histograms and floats for aggregation (1:18)"},
+		},
+		"sum() with floats and native histograms for different output series at the same step": {
+			data: mixedFloatHistogramData,
+			expr: "sum by (type) (metric)",
+		},
+		"sum() with only floats": {
+			data: mixedFloatHistogramData,
+			expr: `sum(metric{type="float"})`,
+		},
+		"sum() with only native histograms": {
+			data: mixedFloatHistogramData,
+			expr: `sum(metric{type="histogram"})`,
+		},
+	}
+
+	opts := NewTestEngineOpts()
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	require.NoError(t, err)
+	prometheusEngine := promql.NewEngine(opts)
+
+	engines := map[string]promql.QueryEngine{
+		"Mimir's engine": mimirEngine,
+
+		// Compare against Prometheus' engine to verify our test cases are valid.
+		"Prometheus' engine": prometheusEngine,
+	}
+
+	queryTypes := map[string]func(expr string, engine promql.QueryEngine, storage storage.Queryable) (promql.Query, error){
+		"range": func(expr string, engine promql.QueryEngine, storage storage.Queryable) (promql.Query, error) {
+			return engine.NewRangeQuery(context.Background(), storage, nil, expr, startT, endT, step)
+		},
+		"instant": func(expr string, engine promql.QueryEngine, storage storage.Queryable) (promql.Query, error) {
+			return engine.NewInstantQuery(context.Background(), storage, nil, expr, startT)
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			store := promqltest.LoadedStorage(t, "load 1m\n"+strings.TrimSpace(testCase.data))
+			t.Cleanup(func() { _ = store.Close() })
+
+			for engineName, engine := range engines {
+				t.Run(engineName, func(t *testing.T) {
+					for queryType, generator := range queryTypes {
+						t.Run(queryType, func(t *testing.T) {
+							query, err := generator(testCase.expr, engine, store)
+							require.NoError(t, err)
+							t.Cleanup(query.Close)
+
+							res := query.Exec(context.Background())
+							require.NoError(t, res.Err)
+
+							warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
+							require.ElementsMatch(t, testCase.expectedWarningAnnotations, warnings)
+							require.ElementsMatch(t, testCase.expectedInfoAnnotations, infos)
+						})
+					}
+				})
+			}
+		})
+	}
+}

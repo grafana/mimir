@@ -9,6 +9,8 @@ package operators
 import (
 	"context"
 
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -24,9 +26,33 @@ type FunctionOverInstantVector struct {
 
 	MetadataFunc   functions.SeriesMetadataFunction
 	SeriesDataFunc functions.InstantVectorFunction
+
+	expressionPosition posrange.PositionRange
 }
 
 var _ types.InstantVectorOperator = &FunctionOverInstantVector{}
+
+func NewFunctionOverInstantVector(
+	inner types.InstantVectorOperator,
+	pool *pooling.LimitingPool,
+	metadataFunc functions.SeriesMetadataFunction,
+	seriesDataFunc functions.InstantVectorFunction,
+	expressionPosition posrange.PositionRange,
+) *FunctionOverInstantVector {
+	return &FunctionOverInstantVector{
+		Inner: inner,
+		Pool:  pool,
+
+		MetadataFunc:   metadataFunc,
+		SeriesDataFunc: seriesDataFunc,
+
+		expressionPosition: expressionPosition,
+	}
+}
+
+func (m *FunctionOverInstantVector) ExpressionPosition() posrange.PositionRange {
+	return m.expressionPosition
+}
 
 func (m *FunctionOverInstantVector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	metadata, err := m.Inner.SeriesMetadata(ctx)

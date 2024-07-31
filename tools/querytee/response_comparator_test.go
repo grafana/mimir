@@ -1620,6 +1620,168 @@ func TestCompareSamplesResponse(t *testing.T) {
 			skipRecentSamples: time.Hour,
 			err:               errors.New("expected 1 metrics but got 2"),
 		},
+		{
+			name: "should not fail if both results have an empty set of warnings",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": []
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": []
+						}`),
+		},
+		{
+			name: "should not fail if both results have the same warnings in the same order",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["warning #1", "warning #2"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["warning #1", "warning #2"]
+						}`),
+		},
+		{
+			name: "should not fail if both results have the same warnings in a different order",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["warning #1", "warning #2"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["warning #2", "warning #1"]
+						}`),
+		},
+		{
+			name: "should fail if both results do not have the same warnings",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["warning #1"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["warning #1", "warning #2"]
+						}`),
+			err: errors.New(`expected warning annotations ["warning #1"] but got ["warning #1", "warning #2"]`),
+		},
+		{
+			name: "should fail if both results have the same warnings but one is duplicated",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["warning #1"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["warning #1", "warning #1"]
+						}`),
+			err: errors.New(`expected warning annotations ["warning #1"] but got ["warning #1", "warning #1"]`),
+		},
+		{
+			name: "should fail with a correctly escaped message if warnings differ and contain double quotes",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["\"warning\" #1"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"warnings": ["\"warning\" #2"]
+						}`),
+			err: errors.New(`expected warning annotations ["\"warning\" #1"] but got ["\"warning\" #2"]`),
+		},
+		{
+			name: "should not fail if both results have an empty set of info annotations",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": []
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": []
+						}`),
+		},
+		{
+			name: "should not fail if both results have the same info annotations in the same order",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1", "info #2"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1", "info #2"]
+						}`),
+		},
+		{
+			name: "should not fail if both results have the same info annotations in a different order",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1", "info #2"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #2", "info #1"]
+						}`),
+		},
+		{
+			name: "should fail if both results do not have the same info annotations",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1", "info #2"]
+						}`),
+			err: errors.New(`expected info annotations ["info #1"] but got ["info #1", "info #2"]`),
+		},
+		{
+			name: "should fail if both results have the same info annotations but one is duplicated",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["info #1", "info #1"]
+						}`),
+			err: errors.New(`expected info annotations ["info #1"] but got ["info #1", "info #1"]`),
+		},
+		{
+			name: "should fail with a correctly escaped message if info annotations differ and contain double quotes",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["\"info\" #1"]
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"scalar","result":[1,"1"]},
+							"infos": ["\"info\" #2"]
+						}`),
+			err: errors.New(`expected info annotations ["\"info\" #1"] but got ["\"info\" #2"]`),
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			samplesComparator := NewSamplesComparator(SampleComparisonOptions{

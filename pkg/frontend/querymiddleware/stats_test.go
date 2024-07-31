@@ -63,7 +63,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 		},
 		"explicit consistency range query": {
 			args: args{
-				ctx: querierapi.ContextWithReadConsistency(context.Background(), querierapi.ReadConsistencyStrong),
+				ctx: querierapi.ContextWithReadConsistencyLevel(context.Background(), querierapi.ReadConsistencyStrong),
 				req: []MetricsQueryRequest{&PrometheusRangeQueryRequest{
 					path:      "/query_range",
 					start:     util.TimeToMillis(start),

@@ -88,7 +88,7 @@ func TestRemoteQuerier_Read(t *testing.T) {
 
 		q := NewRemoteQuerier(client, time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
 
-		ctx := api.ContextWithReadConsistency(context.Background(), api.ReadConsistencyStrong)
+		ctx := api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyStrong)
 		_, err := q.Read(ctx, &prompb.Query{})
 		require.NoError(t, err)
 
@@ -177,7 +177,7 @@ func TestRemoteQuerier_Query(t *testing.T) {
 
 		q := NewRemoteQuerier(client, time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
 
-		ctx := api.ContextWithReadConsistency(context.Background(), api.ReadConsistencyStrong)
+		ctx := api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyStrong)
 		_, err := q.Query(ctx, "qs", tm)
 		require.NoError(t, err)
 

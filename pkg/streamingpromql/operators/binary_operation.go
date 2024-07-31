@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
@@ -44,6 +45,8 @@ type BinaryOperation struct {
 	leftBuffer      *binaryOperationSeriesBuffer
 	rightBuffer     *binaryOperationSeriesBuffer
 	opFunc          binaryOperationFunc
+
+	expressionPosition posrange.PositionRange
 }
 
 var _ types.InstantVectorOperator = &BinaryOperation{}
@@ -67,7 +70,14 @@ func (s binaryOperationOutputSeries) latestRightSeries() int {
 	return s.rightSeriesIndices[len(s.rightSeriesIndices)-1]
 }
 
-func NewBinaryOperation(left types.InstantVectorOperator, right types.InstantVectorOperator, vectorMatching parser.VectorMatching, op parser.ItemType, pool *pooling.LimitingPool) (*BinaryOperation, error) {
+func NewBinaryOperation(
+	left types.InstantVectorOperator,
+	right types.InstantVectorOperator,
+	vectorMatching parser.VectorMatching,
+	op parser.ItemType,
+	pool *pooling.LimitingPool,
+	expressionPosition posrange.PositionRange,
+) (*BinaryOperation, error) {
 	opFunc := arithmeticOperationFuncs[op]
 	if opFunc == nil {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
@@ -80,8 +90,13 @@ func NewBinaryOperation(left types.InstantVectorOperator, right types.InstantVec
 		Op:             op,
 		Pool:           pool,
 
-		opFunc: opFunc,
+		opFunc:             opFunc,
+		expressionPosition: expressionPosition,
 	}, nil
+}
+
+func (b *BinaryOperation) ExpressionPosition() posrange.PositionRange {
+	return b.expressionPosition
 }
 
 // SeriesMetadata returns the series expected to be produced by this operator.

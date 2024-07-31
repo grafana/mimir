@@ -939,7 +939,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 					// Send an HTTP request through the roundtripper.
 					req := testData.makeRequest()
 					req = req.WithContext(user.InjectOrgID(req.Context(), tenantID))
-					req = req.WithContext(querierapi.ContextWithReadConsistency(req.Context(), consistencyLevel))
+					req = req.WithContext(querierapi.ContextWithReadConsistencyLevel(req.Context(), consistencyLevel))
 
 					res, err := tripper.RoundTrip(req)
 					require.NoError(t, err)
