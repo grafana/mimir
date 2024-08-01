@@ -1514,6 +1514,12 @@ store_gateway_client:
 # be set on query-frontend too when query sharding is enabled.
 # CLI flag: -querier.promql-experimental-functions-enabled
 [promql_experimental_functions_enabled: <boolean> | default = false]
+
+mimir_query_engine:
+  # (experimental) Enable support for binary operations in Mimir's query engine.
+  # Only applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-binary-operations
+  [enable_binary_operations: <boolean> | default = false]
 ```
 
 ### frontend

@@ -51,15 +51,13 @@ services:
     ports:
       - 9091:9091
 
-  grafana-agent-flow:
+  grafana-alloy:
     profiles:
-      - grafana-agent-flow
-    image: grafana/agent:v0.41.1
-    environment:
-      - AGENT_MODE=flow
-    command: ["run", "--server.http.listen-addr=0.0.0.0:9092", "/etc/agent/config.river"]
+      - grafana-alloy
+    image: grafana/alloy:v1.2.1
+    command: ["run", "--server.http.listen-addr=0.0.0.0:9092", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
     volumes:
-      - ./config/grafana-agent.river:/etc/agent/config.river
+      - ./config/config.alloy:/etc/alloy/config.alloy
     ports:
       - 9092:9092
 

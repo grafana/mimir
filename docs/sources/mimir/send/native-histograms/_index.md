@@ -103,7 +103,7 @@ Use the latest version of Prometheus or at least version 2.47.
 1. To enable scraping native histograms from the application, you need to enable native histograms feature via a feature flag on the command line:
 
    ```bash
-   prometheus --enabled-feature native-histograms
+   prometheus --enable-feature=native-histograms
    ```
 
 1. The above flag will make Prometheus detect and scrape native histograms, but ignores classic histogram version of those metrics that have native histogram defined as well. Classic histograms without native histogram definitions are not effected. To keep scraping the classic histogram version of native histogram metrics you need to set `scrape_classic_histograms` to `true` in your scrape jobs, for example:

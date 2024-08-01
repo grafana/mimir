@@ -741,14 +741,13 @@ func (s *BucketStore) recordRequestAmbientTime(stats *safeQueryStats, requestSta
 }
 
 func (s *BucketStore) limitConcurrentQueries(ctx context.Context, stats *safeQueryStats) (done func(), err error) {
-	span, spanCtx := opentracing.StartSpanFromContext(ctx, "store_query_gate_ismyturn")
-	defer span.Finish()
-
 	waitStart := time.Now()
-	err = s.queryGate.Start(spanCtx)
-	stats.update(func(stats *queryStats) {
-		stats.streamingSeriesConcurrencyLimitWaitDuration = time.Since(waitStart)
-	})
+	err = s.queryGate.Start(ctx)
+	waited := time.Since(waitStart)
+
+	stats.update(func(stats *queryStats) { stats.streamingSeriesConcurrencyLimitWaitDuration = waited })
+	level.Info(spanlogger.FromContext(ctx, s.logger)).Log("msg", "waited for turn on query concurrency gate", "duration", waited)
+
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to wait for turn")
 	}
