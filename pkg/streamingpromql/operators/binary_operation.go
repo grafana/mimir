@@ -400,19 +400,27 @@ func (b *BinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSe
 	return b.computeResult(mergedLeftSide, mergedRightSide)
 }
 
-// separateDataOnType returns a subset of the input data whether it has any floats and/or histograms
-func separateDataOnType(data []types.InstantVectorSeriesData) ([]types.InstantVectorSeriesData, []types.InstantVectorSeriesData) {
-	var dataWithFloats []types.InstantVectorSeriesData
-	var dataWithHistograms []types.InstantVectorSeriesData
-	for _, entry := range data {
+type filteredData struct {
+	// dataWithFloatsOriginalIndex holds the position the data was originally at before it was filtered
+	dataWithFloatsOriginalIndex []int
+	dataWithFloats              []types.InstantVectorSeriesData
+
+	// dataWithFloatsOriginalIndex holds the position the data was originally at before it was filtered
+	dataWithHistogramsOriginalIndex []int
+	dataWithHistograms              []types.InstantVectorSeriesData
+}
+
+func (f *filteredData) filter(data []types.InstantVectorSeriesData) {
+	for i, entry := range data {
 		if len(entry.Floats) > 0 {
-			dataWithFloats = append(dataWithFloats, entry)
+			f.dataWithFloatsOriginalIndex = append(f.dataWithFloatsOriginalIndex, i)
+			f.dataWithFloats = append(f.dataWithFloats, entry)
 		}
 		if len(entry.Histograms) > 0 {
-			dataWithHistograms = append(dataWithHistograms, entry)
+			f.dataWithFloatsOriginalIndex = append(f.dataWithFloatsOriginalIndex, i)
+			f.dataWithHistograms = append(f.dataWithHistograms, entry)
 		}
 	}
-	return dataWithFloats, dataWithHistograms
 }
 
 // mergeOneSide exists to handle the case where one side of an output series has different source series at different time steps.
@@ -440,13 +448,14 @@ func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sou
 
 	// Merge floats and histograms individually.
 	// After which we check if there are any duplicate points in either the floats or histograms.
-	dataWithFloats, dataWithHisograms := separateDataOnType(data)
+	filteredData := filteredData{}
+	filteredData.filter(data)
 
-	floats, err := b.mergeOneSideFloats(dataWithFloats, sourceSeriesIndices, sourceSeriesMetadata, side)
+	floats, err := b.mergeOneSideFloats(filteredData, sourceSeriesIndices, sourceSeriesMetadata, side)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
-	histograms, err := b.mergeOneSideHistograms(dataWithHisograms, sourceSeriesIndices, sourceSeriesMetadata, side)
+	histograms, err := b.mergeOneSideHistograms(filteredData, sourceSeriesIndices, sourceSeriesMetadata, side)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -456,7 +465,7 @@ func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sou
 	for i < len(floats) && j < len(histograms) {
 		if floats[i].T == histograms[j].T {
 			// Conflict found
-			return types.InstantVectorSeriesData{}, fmt.Errorf("Duplicate points FIXME")
+			return types.InstantVectorSeriesData{}, fmt.Errorf("found both float and histogram samples for the match group FIXME on the %s side of the operation at timestamp %s", side, timestamp.Time(floats[i].T))
 		}
 		if floats[i].T < histograms[j].T {
 			i++
@@ -468,7 +477,8 @@ func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sou
 	return types.InstantVectorSeriesData{Floats: floats, Histograms: histograms}, nil
 }
 
-func (b *BinaryOperation) mergeOneSideFloats(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []types.SeriesMetadata, side string) ([]promql.FPoint, error) {
+func (b *BinaryOperation) mergeOneSideFloats(filteredData filteredData, sourceSeriesIndices []int, sourceSeriesMetadata []types.SeriesMetadata, side string) ([]promql.FPoint, error) {
+	data := filteredData.dataWithFloats
 	if len(data) == 0 {
 		return nil, nil
 	}
@@ -534,9 +544,9 @@ func (b *BinaryOperation) mergeOneSideFloats(data []types.InstantVectorSeriesDat
 		}
 
 		nextT := int64(math.MaxInt64)
-		sourceSeriesIndexInData := -1
+		sourceSeriesIndexInFilteredData := -1
 
-		for seriesIndexInData, d := range data {
+		for seriesIndexInFilteredData, d := range data {
 			if len(d.Floats) == 0 {
 				continue
 			}
@@ -544,8 +554,8 @@ func (b *BinaryOperation) mergeOneSideFloats(data []types.InstantVectorSeriesDat
 			nextPointInSeries := d.Floats[0]
 			if nextPointInSeries.T == nextT {
 				// Another series has a point with the same timestamp. We have a conflict.
-				firstConflictingSeriesLabels := sourceSeriesMetadata[sourceSeriesIndices[sourceSeriesIndexInData]].Labels
-				secondConflictingSeriesLabels := sourceSeriesMetadata[sourceSeriesIndices[seriesIndexInData]].Labels
+				firstConflictingSeriesLabels := sourceSeriesMetadata[sourceSeriesIndices[filteredData.dataWithFloatsOriginalIndex[sourceSeriesIndexInFilteredData]]].Labels
+				secondConflictingSeriesLabels := sourceSeriesMetadata[sourceSeriesIndices[filteredData.dataWithFloatsOriginalIndex[seriesIndexInFilteredData]]].Labels
 				groupLabels := b.labelsFunc()(firstConflictingSeriesLabels)
 
 				return nil, fmt.Errorf("found duplicate series for the match group %s on the %s side of the operation at timestamp %s: %s and %s", groupLabels, side, timestamp.Time(nextT).Format(time.RFC3339Nano), firstConflictingSeriesLabels, secondConflictingSeriesLabels)
@@ -553,20 +563,21 @@ func (b *BinaryOperation) mergeOneSideFloats(data []types.InstantVectorSeriesDat
 
 			if d.Floats[0].T < nextT {
 				nextT = d.Floats[0].T
-				sourceSeriesIndexInData = seriesIndexInData
+				sourceSeriesIndexInFilteredData = seriesIndexInFilteredData
 			}
 		}
 
-		output = append(output, data[sourceSeriesIndexInData].Floats[0])
-		data[sourceSeriesIndexInData].Floats = data[sourceSeriesIndexInData].Floats[1:]
+		output = append(output, data[sourceSeriesIndexInFilteredData].Floats[0])
+		data[sourceSeriesIndexInFilteredData].Floats = data[sourceSeriesIndexInFilteredData].Floats[1:]
 
-		if len(data[sourceSeriesIndexInData].Floats) == 0 {
+		if len(data[sourceSeriesIndexInFilteredData].Floats) == 0 {
 			remainingSeries--
 		}
 	}
 }
 
-func (b *BinaryOperation) mergeOneSideHistograms(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []types.SeriesMetadata, side string) ([]promql.HPoint, error) {
+func (b *BinaryOperation) mergeOneSideHistograms(filteredData filteredData, sourceSeriesIndices []int, sourceSeriesMetadata []types.SeriesMetadata, side string) ([]promql.HPoint, error) {
+	data := filteredData.dataWithHistograms
 	if len(data) == 0 {
 		return nil, nil
 	}
@@ -632,9 +643,9 @@ func (b *BinaryOperation) mergeOneSideHistograms(data []types.InstantVectorSerie
 		}
 
 		nextT := int64(math.MaxInt64)
-		sourceSeriesIndexInData := -1
+		sourceSeriesIndexInFilteredData := -1
 
-		for seriesIndexInData, d := range data {
+		for seriesIndexInFilteredData, d := range data {
 			if len(d.Histograms) == 0 {
 				continue
 			}
@@ -642,8 +653,8 @@ func (b *BinaryOperation) mergeOneSideHistograms(data []types.InstantVectorSerie
 			nextPointInSeries := d.Histograms[0]
 			if nextPointInSeries.T == nextT {
 				// Another series has a point with the same timestamp. We have a conflict.
-				firstConflictingSeriesLabels := sourceSeriesMetadata[sourceSeriesIndices[sourceSeriesIndexInData]].Labels
-				secondConflictingSeriesLabels := sourceSeriesMetadata[sourceSeriesIndices[seriesIndexInData]].Labels
+				firstConflictingSeriesLabels := sourceSeriesMetadata[sourceSeriesIndices[filteredData.dataWithHistogramsOriginalIndex[sourceSeriesIndexInFilteredData]]].Labels
+				secondConflictingSeriesLabels := sourceSeriesMetadata[sourceSeriesIndices[filteredData.dataWithHistogramsOriginalIndex[seriesIndexInFilteredData]]].Labels
 				groupLabels := b.labelsFunc()(firstConflictingSeriesLabels)
 
 				return nil, fmt.Errorf("found duplicate series for the match group %s on the %s side of the operation at timestamp %s: %s and %s", groupLabels, side, timestamp.Time(nextT).Format(time.RFC3339Nano), firstConflictingSeriesLabels, secondConflictingSeriesLabels)
@@ -651,14 +662,14 @@ func (b *BinaryOperation) mergeOneSideHistograms(data []types.InstantVectorSerie
 
 			if d.Histograms[0].T < nextT {
 				nextT = d.Histograms[0].T
-				sourceSeriesIndexInData = seriesIndexInData
+				sourceSeriesIndexInFilteredData = seriesIndexInFilteredData
 			}
 		}
 
-		output = append(output, data[sourceSeriesIndexInData].Histograms[0])
-		data[sourceSeriesIndexInData].Histograms = data[sourceSeriesIndexInData].Histograms[1:]
+		output = append(output, data[sourceSeriesIndexInFilteredData].Histograms[0])
+		data[sourceSeriesIndexInFilteredData].Histograms = data[sourceSeriesIndexInFilteredData].Histograms[1:]
 
-		if len(data[sourceSeriesIndexInData].Histograms) == 0 {
+		if len(data[sourceSeriesIndexInFilteredData].Histograms) == 0 {
 			remainingSeries--
 		}
 	}
