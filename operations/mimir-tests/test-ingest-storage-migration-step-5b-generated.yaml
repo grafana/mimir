@@ -1815,7 +1815,7 @@ metadata:
     grafana.com/prepare-downscale-http-port: "80"
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 0s
+    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
   name: ingester-zone-a
@@ -2096,7 +2096,7 @@ metadata:
     grafana.com/rollout-downscale-leader: ingester-zone-a
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 0s
+    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
   name: ingester-zone-b
@@ -2364,7 +2364,7 @@ metadata:
     grafana.com/rollout-downscale-leader: ingester-zone-b
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 0s
+    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
   name: ingester-zone-c
