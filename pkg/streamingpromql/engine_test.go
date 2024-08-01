@@ -48,6 +48,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		"1 + 2":                      "scalar value as top-level expression",
 		"1 + metric{}":               "binary expression with scalars",
 		"metric{} + 1":               "binary expression with scalars",
+		"metric{} < other_metric{}":  "binary expression with '<'",
 		"metric{} or other_metric{}": "binary expression with many-to-many matching",
 		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
 		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
