@@ -447,7 +447,7 @@ func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sou
 	for i < len(floats) && j < len(histograms) {
 		if floats[i].T == histograms[j].T {
 			// Conflict found
-			return types.InstantVectorSeriesData{}, fmt.Errorf("found both float and histogram samples for the match group FIXME on the %s side of the operation at timestamp %s", side, timestamp.Time(floats[i].T))
+			return types.InstantVectorSeriesData{}, fmt.Errorf("found both float and histogram samples for the match group FIXME on the %s side of the operation at timestamp %s", side, timestamp.Time(floats[i].T).Format(time.RFC3339Nano))
 		}
 		if floats[i].T < histograms[j].T {
 			i++
