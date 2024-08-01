@@ -16,5 +16,6 @@ mimir {
 
     enable_pvc_auto_deletion_for_compactors: true,
     enable_pvc_auto_deletion_for_store_gateways: true,
+    enable_pvc_auto_deletion_for_ingesters: true,
   },
 }
