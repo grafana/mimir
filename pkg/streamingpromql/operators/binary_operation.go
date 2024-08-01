@@ -679,7 +679,7 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 	rightPoints := len(right.Floats) + len(right.Histograms)
 	maxPoints := max(leftPoints, rightPoints)
 
-	getFSlice := func() error {
+	prepareFSlice := func() error {
 		if maxPoints <= len(left.Floats) && len(left.Floats) < len(right.Floats) {
 			// Can fit output in left side, and the left side is smaller than the right
 			canReturnLeftFPointSlice = false
@@ -698,7 +698,7 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 		return nil
 	}
 
-	getHSlice := func() error {
+	prepareHSlice := func() error {
 		if maxPoints <= len(left.Histograms) && len(left.Histograms) < len(right.Histograms) {
 			// Can fit output in left side, and the left side is smaller than the right
 			canReturnLeftHPointSlice = false
@@ -735,7 +735,7 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 			if ok {
 				if resultHist != nil {
 					if len(hPoints) == 0 {
-						if err = getHSlice(); err != nil {
+						if err = prepareHSlice(); err != nil {
 							return types.InstantVectorSeriesData{}, err
 						}
 					}
@@ -745,7 +745,7 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 					})
 				} else {
 					if len(fPoints) == 0 {
-						if err = getFSlice(); err != nil {
+						if err = prepareFSlice(); err != nil {
 							return types.InstantVectorSeriesData{}, err
 						}
 					}
