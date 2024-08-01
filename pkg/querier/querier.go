@@ -151,7 +151,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 		return lazyquery.NewLazyQuerier(querier), nil
 	})
 
-	opts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
+	opts, mqeOpts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
 
 	// Experimental functions can only be enabled globally, and not on a per-engine basis.
 	parser.EnableExperimentalFunctions = engineExperimentalFunctionsEnabled
@@ -163,7 +163,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 		eng = promql.NewEngine(opts)
 	case mimirEngine:
 		limitsProvider := &tenantQueryLimitsProvider{limits: limits}
-		streamingEngine, err := streamingpromql.NewEngine(opts, limitsProvider, queryMetrics, logger)
+		streamingEngine, err := streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, logger)
 		if err != nil {
 			return nil, nil, nil, err
 		}
