@@ -37,7 +37,6 @@ type WebhookEndpoint struct {
 //
 // You can also leave the Listen field empty. In this case it is up to the caller to
 // add the Webhook to a http-mux.
-//
 type Webhook struct {
 	Listen         string   `json:"url"`
 	MaxConnections int      `json:"max_connections"`

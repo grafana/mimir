@@ -60,11 +60,11 @@ const (
 //
 // For reference some common AuthUrls looks like this:
 //
-//  Rackspace US        https://auth.api.rackspacecloud.com/v1.0
-//  Rackspace UK        https://lon.auth.api.rackspacecloud.com/v1.0
-//  Rackspace v2        https://identity.api.rackspacecloud.com/v2.0
-//  Memset Memstore UK  https://auth.storage.memset.com/v1.0
-//  Memstore v2         https://auth.storage.memset.com/v2.0
+//	Rackspace US        https://auth.api.rackspacecloud.com/v1.0
+//	Rackspace UK        https://lon.auth.api.rackspacecloud.com/v1.0
+//	Rackspace v2        https://identity.api.rackspacecloud.com/v2.0
+//	Memset Memstore UK  https://auth.storage.memset.com/v1.0
+//	Memstore v2         https://auth.storage.memset.com/v2.0
 //
 // When using Google Appengine you must provide the Connection with an
 // appengine-specific Transport:
@@ -173,56 +173,62 @@ func setFromEnv(param interface{}, name string) (err error) {
 // To make a new Connection object entirely from the environment you
 // would do:
 //
-//    c := new(Connection)
-//    err := c.ApplyEnvironment()
-//    if err != nil { log.Fatal(err) }
+//	c := new(Connection)
+//	err := c.ApplyEnvironment()
+//	if err != nil { log.Fatal(err) }
 //
 // The naming of these variables follows the official Openstack naming
 // scheme so it should be compatible with OpenStack rc files.
 //
 // For v1 authentication (obsolete)
-//     ST_AUTH - Auth URL
-//     ST_USER - UserName for api
-//     ST_KEY - Key for api access
+//
+//	ST_AUTH - Auth URL
+//	ST_USER - UserName for api
+//	ST_KEY - Key for api access
 //
 // For v2 authentication
-//     OS_AUTH_URL - Auth URL
-//     OS_USERNAME - UserName for api
-//     OS_PASSWORD - Key for api access
-//     OS_TENANT_NAME - Name of the tenant
-//     OS_TENANT_ID   - Id of the tenant
-//     OS_REGION_NAME - Region to use - default is use first region
+//
+//	OS_AUTH_URL - Auth URL
+//	OS_USERNAME - UserName for api
+//	OS_PASSWORD - Key for api access
+//	OS_TENANT_NAME - Name of the tenant
+//	OS_TENANT_ID   - Id of the tenant
+//	OS_REGION_NAME - Region to use - default is use first region
 //
 // For v3 authentication
-//     OS_AUTH_URL - Auth URL
-//     OS_USERNAME - UserName for api
-//     OS_USER_ID - User Id
-//     OS_PASSWORD - Key for api access
-//     OS_APPLICATION_CREDENTIAL_ID - Application Credential ID
-//     OS_APPLICATION_CREDENTIAL_NAME - Application Credential Name
-//     OS_APPLICATION_CREDENTIAL_SECRET - Application Credential Secret
-//     OS_USER_DOMAIN_NAME - User's domain name
-//     OS_USER_DOMAIN_ID - User's domain Id
-//     OS_PROJECT_NAME - Name of the project
-//     OS_PROJECT_DOMAIN_NAME - Name of the tenant's domain, only needed if it differs from the user domain
-//     OS_PROJECT_DOMAIN_ID - Id of the tenant's domain, only needed if it differs the from user domain
-//     OS_TRUST_ID - If of the trust
-//     OS_REGION_NAME - Region to use - default is use first region
+//
+//	OS_AUTH_URL - Auth URL
+//	OS_USERNAME - UserName for api
+//	OS_USER_ID - User Id
+//	OS_PASSWORD - Key for api access
+//	OS_APPLICATION_CREDENTIAL_ID - Application Credential ID
+//	OS_APPLICATION_CREDENTIAL_NAME - Application Credential Name
+//	OS_APPLICATION_CREDENTIAL_SECRET - Application Credential Secret
+//	OS_USER_DOMAIN_NAME - User's domain name
+//	OS_USER_DOMAIN_ID - User's domain Id
+//	OS_PROJECT_NAME - Name of the project
+//	OS_PROJECT_DOMAIN_NAME - Name of the tenant's domain, only needed if it differs from the user domain
+//	OS_PROJECT_DOMAIN_ID - Id of the tenant's domain, only needed if it differs the from user domain
+//	OS_TRUST_ID - If of the trust
+//	OS_REGION_NAME - Region to use - default is use first region
 //
 // Other
-//     OS_ENDPOINT_TYPE - Endpoint type public, internal or admin
-//     ST_AUTH_VERSION - Choose auth version - 1, 2 or 3 or leave at 0 for autodetect
+//
+//	OS_ENDPOINT_TYPE - Endpoint type public, internal or admin
+//	ST_AUTH_VERSION - Choose auth version - 1, 2 or 3 or leave at 0 for autodetect
 //
 // For manual authentication
-//     OS_STORAGE_URL - storage URL from alternate authentication
-//     OS_AUTH_TOKEN - Auth Token from alternate authentication
+//
+//	OS_STORAGE_URL - storage URL from alternate authentication
+//	OS_AUTH_TOKEN - Auth Token from alternate authentication
 //
 // Library specific
-//     GOSWIFT_RETRIES - Retries on error (default is 3)
-//     GOSWIFT_USER_AGENT - HTTP User agent (default goswift/1.0)
-//     GOSWIFT_CONNECT_TIMEOUT - Connect channel timeout with unit, eg "10s", "100ms" (default "10s")
-//     GOSWIFT_TIMEOUT - Data channel timeout with unit, eg "10s", "100ms" (default "60s")
-//     GOSWIFT_INTERNAL - Set this to "true" to use the the internal network (obsolete - use OS_ENDPOINT_TYPE)
+//
+//	GOSWIFT_RETRIES - Retries on error (default is 3)
+//	GOSWIFT_USER_AGENT - HTTP User agent (default goswift/1.0)
+//	GOSWIFT_CONNECT_TIMEOUT - Connect channel timeout with unit, eg "10s", "100ms" (default "10s")
+//	GOSWIFT_TIMEOUT - Data channel timeout with unit, eg "10s", "100ms" (default "60s")
+//	GOSWIFT_INTERNAL - Set this to "true" to use the the internal network (obsolete - use OS_ENDPOINT_TYPE)
 func (c *Connection) ApplyEnvironment() (err error) {
 	for _, item := range []struct {
 		result interface{}
@@ -944,7 +950,7 @@ func containersAllOpts(opts *ContainersOpts) *ContainersOpts {
 
 // ContainersAll is like Containers but it returns all the Containers
 //
-// It calls Containers multiple times using the Marker parameter
+// # It calls Containers multiple times using the Marker parameter
 //
 // It has a default Limit parameter but you may pass in your own
 func (c *Connection) ContainersAll(opts *ContainersOpts) ([]Container, error) {
@@ -966,7 +972,7 @@ func (c *Connection) ContainersAll(opts *ContainersOpts) ([]Container, error) {
 
 // ContainerNamesAll is like ContainerNames but it returns all the Containers
 //
-// It calls ContainerNames multiple times using the Marker parameter
+// # It calls ContainerNames multiple times using the Marker parameter
 //
 // It has a default Limit parameter but you may pass in your own
 func (c *Connection) ContainerNamesAll(opts *ContainersOpts) ([]string, error) {
@@ -1142,7 +1148,7 @@ type ObjectsWalkFn func(*ObjectsOpts) (interface{}, error)
 // Pass in a closure `walkFn` which calls Objects or ObjectNames with
 // the *ObjectsOpts passed to it and does something with the results.
 //
-// Errors will be returned from this function
+// # Errors will be returned from this function
 //
 // It has a default Limit parameter but you may pass in your own
 func (c *Connection) ObjectsWalk(container string, opts *ObjectsOpts, walkFn ObjectsWalkFn) error {
@@ -1786,7 +1792,7 @@ func (c *Connection) objectOpen(container string, objectName string, checkHash b
 // the object.  This satisfies the io.ReadCloser and the io.Seeker
 // interfaces.
 //
-// You must call Close() on contents when finished
+// # You must call Close() on contents when finished
 //
 // Returns the headers of the response.
 //
@@ -2207,7 +2213,7 @@ func (c *Connection) ObjectCopy(srcContainer string, srcObjectName string, dstCo
 
 // ObjectMove does a server side move of an object to a new position
 //
-// This is a convenience method which calls ObjectCopy then ObjectDelete
+// # This is a convenience method which calls ObjectCopy then ObjectDelete
 //
 // All metadata is preserved.
 //
@@ -2222,7 +2228,7 @@ func (c *Connection) ObjectMove(srcContainer string, srcObjectName string, dstCo
 
 // ObjectUpdateContentType updates the content type of an object
 //
-// This is a convenience method which calls ObjectCopy
+// # This is a convenience method which calls ObjectCopy
 //
 // All other metadata is preserved.
 func (c *Connection) ObjectUpdateContentType(container string, objectName string, contentType string) (err error) {

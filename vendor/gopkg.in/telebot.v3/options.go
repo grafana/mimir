@@ -83,7 +83,6 @@ type SendOptions struct {
 
 	// HasSpoiler marks the message as containing a spoiler.
 	HasSpoiler bool
-
 }
 
 func (og *SendOptions) copy() *SendOptions {
@@ -198,7 +197,7 @@ func (b *Bot) embedSendOptions(params map[string]string, opt *SendOptions) {
 	if opt.ThreadID != 0 {
 		params["message_thread_id"] = strconv.Itoa(opt.ThreadID)
 	}
-  
+
 	if opt.HasSpoiler {
 		params["spoiler"] = "true"
 	}

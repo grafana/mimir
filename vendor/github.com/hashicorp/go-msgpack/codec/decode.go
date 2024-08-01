@@ -2445,14 +2445,15 @@ func (d *Decoder) naked() *decNaked {
 // We will decode and store a value in that nil interface.
 //
 // Sample usages:
-//   // Decoding into a non-nil typed value
-//   var f float32
-//   err = codec.NewDecoder(r, handle).Decode(&f)
 //
-//   // Decoding into nil interface
-//   var v interface{}
-//   dec := codec.NewDecoder(r, handle)
-//   err = dec.Decode(&v)
+//	// Decoding into a non-nil typed value
+//	var f float32
+//	err = codec.NewDecoder(r, handle).Decode(&f)
+//
+//	// Decoding into nil interface
+//	var v interface{}
+//	dec := codec.NewDecoder(r, handle)
+//	err = dec.Decode(&v)
 //
 // When decoding into a nil interface{}, we will decode into an appropriate value based
 // on the contents of the stream:
@@ -2460,6 +2461,7 @@ func (d *Decoder) naked() *decNaked {
 //   - Other values are decoded appropriately depending on the type:
 //     bool, string, []byte, time.Time, etc
 //   - Extensions are decoded as RawExt (if no ext function registered for the tag)
+//
 // Configurations exist on the Handle to override defaults
 // (e.g. for MapType, SliceType and how to decode raw bytes).
 //
@@ -3017,10 +3019,10 @@ func detachZeroCopyBytes(isBytesReader bool, dest []byte, in []byte) (out []byte
 }
 
 // decInferLen will infer a sensible length, given the following:
-//    - clen: length wanted.
-//    - maxlen: max length to be returned.
-//      if <= 0, it is unset, and we infer it based on the unit size
-//    - unit: number of bytes for each element of the collection
+//   - clen: length wanted.
+//   - maxlen: max length to be returned.
+//     if <= 0, it is unset, and we infer it based on the unit size
+//   - unit: number of bytes for each element of the collection
 func decInferLen(clen, maxlen, unit int) (rvlen int) {
 	// handle when maxlen is not set i.e. <= 0
 	if clen <= 0 {

@@ -118,8 +118,9 @@ type LargeObjectFile interface {
 // largeObjectCreate creates a large object at opts.Container, opts.ObjectName.
 //
 // opts.Flags can have the following bits set
-//   os.TRUNC  - remove the contents of the large object if it exists
-//   os.APPEND - write at the end of the large object
+//
+//	os.TRUNC  - remove the contents of the large object if it exists
+//	os.APPEND - write at the end of the large object
 func (c *Connection) largeObjectCreate(opts *LargeObjectOpts) (*largeObjectCreateFile, error) {
 	var (
 		segmentPath      string

@@ -21,7 +21,7 @@ import (
 
 // RateLimiter is a filter used to check if a message that is worth itemCost units is within the rate limits.
 //
-// TODO (breaking change) remove this interface in favor of public struct below
+// # TODO (breaking change) remove this interface in favor of public struct below
 //
 // Deprecated, use ReconfigurableRateLimiter.
 type RateLimiter interface {

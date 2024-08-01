@@ -43,8 +43,8 @@ package xid
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql/driver"
 	"encoding/binary"
 	"fmt"

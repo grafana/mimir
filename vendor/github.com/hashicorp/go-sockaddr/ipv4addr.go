@@ -165,10 +165,10 @@ func (ipv4 IPv4Addr) BroadcastAddress() IPv4Network {
 
 // CmpAddress follows the Cmp() standard protocol and returns:
 //
-// - -1 If the receiver should sort first because its address is lower than arg
-// - 0 if the SockAddr arg is equal to the receiving IPv4Addr or the argument is
-//   of a different type.
-// - 1 If the argument should sort first.
+//   - -1 If the receiver should sort first because its address is lower than arg
+//   - 0 if the SockAddr arg is equal to the receiving IPv4Addr or the argument is
+//     of a different type.
+//   - 1 If the argument should sort first.
 func (ipv4 IPv4Addr) CmpAddress(sa SockAddr) int {
 	ipv4b, ok := sa.(IPv4Addr)
 	if !ok {
@@ -187,10 +187,10 @@ func (ipv4 IPv4Addr) CmpAddress(sa SockAddr) int {
 
 // CmpPort follows the Cmp() standard protocol and returns:
 //
-// - -1 If the receiver should sort first because its port is lower than arg
-// - 0 if the SockAddr arg's port number is equal to the receiving IPv4Addr,
-//   regardless of type.
-// - 1 If the argument should sort first.
+//   - -1 If the receiver should sort first because its port is lower than arg
+//   - 0 if the SockAddr arg's port number is equal to the receiving IPv4Addr,
+//     regardless of type.
+//   - 1 If the argument should sort first.
 func (ipv4 IPv4Addr) CmpPort(sa SockAddr) int {
 	var saPort IPPort
 	switch v := sa.(type) {
@@ -214,10 +214,10 @@ func (ipv4 IPv4Addr) CmpPort(sa SockAddr) int {
 
 // CmpRFC follows the Cmp() standard protocol and returns:
 //
-// - -1 If the receiver should sort first because it belongs to the RFC and its
-//   arg does not
-// - 0 if the receiver and arg both belong to the same RFC or neither do.
-// - 1 If the arg belongs to the RFC but receiver does not.
+//   - -1 If the receiver should sort first because it belongs to the RFC and its
+//     arg does not
+//   - 0 if the receiver and arg both belong to the same RFC or neither do.
+//   - 1 If the arg belongs to the RFC but receiver does not.
 func (ipv4 IPv4Addr) CmpRFC(rfcNum uint, sa SockAddr) int {
 	recvInRFC := IsRFC(rfcNum, ipv4)
 	ipv4b, ok := sa.(IPv4Addr)

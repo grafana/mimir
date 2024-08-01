@@ -1,3 +1,4 @@
+//go:build !go1.7 || safe || appengine
 // +build !go1.7 safe appengine
 
 // Copyright (c) 2012-2018 Ugorji Nwoke. All rights reserved.
@@ -18,7 +19,8 @@ const safeMode = true
 // In regular safe mode, it is an allocation and copy.
 //
 // Usage: Always maintain a reference to v while result of this call is in use,
-//        and call keepAlive4BytesView(v) at point where done with view.
+//
+//	and call keepAlive4BytesView(v) at point where done with view.
 func stringView(v []byte) string {
 	return string(v)
 }
@@ -28,7 +30,8 @@ func stringView(v []byte) string {
 // In regular safe mode, it is an allocation and copy.
 //
 // Usage: Always maintain a reference to v while result of this call is in use,
-//        and call keepAlive4BytesView(v) at point where done with view.
+//
+//	and call keepAlive4BytesView(v) at point where done with view.
 func bytesView(v string) []byte {
 	return []byte(v)
 }

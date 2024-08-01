@@ -450,9 +450,10 @@ var immutableKindsSet = [32]bool{
 // By definition, it is not allowed for a Selfer to directly call Encode or Decode on itself.
 // If that is done, Encode/Decode will rightfully fail with a Stack Overflow style error.
 // For example, the snippet below will cause such an error.
-//     type testSelferRecur struct{}
-//     func (s *testSelferRecur) CodecEncodeSelf(e *Encoder) { e.MustEncode(s) }
-//     func (s *testSelferRecur) CodecDecodeSelf(d *Decoder) { d.MustDecode(s) }
+//
+//	type testSelferRecur struct{}
+//	func (s *testSelferRecur) CodecEncodeSelf(e *Encoder) { e.MustEncode(s) }
+//	func (s *testSelferRecur) CodecDecodeSelf(d *Decoder) { d.MustDecode(s) }
 //
 // Note: *the first set of bytes of any value MUST NOT represent nil in the format*.
 // This is because, during each decode, we first check the the next set of bytes
@@ -486,13 +487,14 @@ type MissingFielder interface {
 // This affords storing a map in a specific sequence in the stream.
 //
 // Example usage:
-//    type T1 []string         // or []int or []Point or any other "slice" type
-//    func (_ T1) MapBySlice{} // T1 now implements MapBySlice, and will be encoded as a map
-//    type T2 struct { KeyValues T1 }
 //
-//    var kvs = []string{"one", "1", "two", "2", "three", "3"}
-//    var v2 = T2{ KeyValues: T1(kvs) }
-//    // v2 will be encoded like the map: {"KeyValues": {"one": "1", "two": "2", "three": "3"} }
+//	type T1 []string         // or []int or []Point or any other "slice" type
+//	func (_ T1) MapBySlice{} // T1 now implements MapBySlice, and will be encoded as a map
+//	type T2 struct { KeyValues T1 }
+//
+//	var kvs = []string{"one", "1", "two", "2", "three", "3"}
+//	var v2 = T2{ KeyValues: T1(kvs) }
+//	// v2 will be encoded like the map: {"KeyValues": {"one": "1", "two": "2", "three": "3"} }
 //
 // The support of MapBySlice affords the following:
 //   - A slice type which implements MapBySlice will be encoded as a map
@@ -1925,10 +1927,10 @@ func implIntf(rt, iTyp reflect.Type) (base bool, indir bool) {
 }
 
 // isEmptyStruct is only called from isEmptyValue, and checks if a struct is empty:
-//    - does it implement IsZero() bool
-//    - is it comparable, and can i compare directly using ==
-//    - if checkStruct, then walk through the encodable fields
-//      and check if they are empty or not.
+//   - does it implement IsZero() bool
+//   - is it comparable, and can i compare directly using ==
+//   - if checkStruct, then walk through the encodable fields
+//     and check if they are empty or not.
 func isEmptyStruct(v reflect.Value, tinfos *TypeInfos, deref, checkStruct bool) bool {
 	// v is a struct kind - no need to check again.
 	// We only check isZero on a struct kind, to reduce the amount of times

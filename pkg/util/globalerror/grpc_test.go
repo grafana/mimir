@@ -10,14 +10,12 @@ import (
 
 	"github.com/gogo/status"
 	"github.com/golang/protobuf/ptypes/empty"
-
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	dskitserver "github.com/grafana/dskit/server"
-
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -316,6 +314,12 @@ func TestGRPCClientClosingConnectionError(t *testing.T) {
 
 	// Calls to Succeed() should fail with "grpc: the client connection is closing" when cc is closed.
 	_, err = client.Succeed(ctx, nil)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, context.Canceled)
+
+	wrapErr := WrapGRPCErrorWithContextError(err)
+	require.Error(t, wrapErr)
+	require.NotErrorIs(t, wrapErr, context.Canceled)
 	checkGRPCConnectionIsClosingError(t, err)
 }
 
@@ -349,6 +353,8 @@ func prepareTest(t *testing.T) (dskitserver.FakeServerServer, dskitserver.FakeSe
 	// because at this point the connection is already closed.
 	t.Cleanup(func() {
 		err := cc.Close()
+		require.Error(t, err)
+		require.NotErrorIs(t, err, context.Canceled)
 		checkGRPCConnectionIsClosingError(t, err)
 	})
 
@@ -356,15 +362,10 @@ func prepareTest(t *testing.T) (dskitserver.FakeServerServer, dskitserver.FakeSe
 }
 
 func checkGRPCConnectionIsClosingError(t *testing.T, err error) {
-	require.Error(t, err)
-	require.NotErrorIs(t, err, context.Canceled)
-
-	errWithCtx := WrapGRPCErrorWithContextError(err)
-	stat, ok := grpcstatus.FromError(errWithCtx)
+	stat, ok := grpcutil.ErrorToStatus(err)
 	require.True(t, ok)
 	require.Equal(t, codes.Canceled, stat.Code())
 	require.Equal(t, grpcClientConnectionIsClosingErr, stat.Message())
-	require.NotErrorIs(t, errWithCtx, context.Canceled)
 }
 
 type mockServer struct {

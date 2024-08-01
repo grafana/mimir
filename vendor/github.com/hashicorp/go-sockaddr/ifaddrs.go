@@ -303,7 +303,7 @@ func GetDefaultInterfaces() (IfAddrs, error) {
 //
 // ```
 // $ sockaddr eval -r '{{GetAllInterfaces | include "type" "ip" | include "flags" "forwardable" | include "flags" "up" | sort "default,type,size" | include "RFC" "6890" }}'
-/// ```
+// / ```
 func GetPrivateInterfaces() (IfAddrs, error) {
 	privateIfs, err := GetAllInterfaces()
 	if err != nil {
@@ -351,7 +351,7 @@ func GetPrivateInterfaces() (IfAddrs, error) {
 //
 // ```
 // $ sockaddr eval -r '{{GetAllInterfaces | include "type" "ip" | include "flags" "forwardable" | include "flags" "up" | sort "default,type,size" | exclude "RFC" "6890" }}'
-/// ```
+// / ```
 func GetPublicInterfaces() (IfAddrs, error) {
 	publicIfs, err := GetAllInterfaces()
 	if err != nil {
