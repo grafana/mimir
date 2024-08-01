@@ -172,13 +172,17 @@ func (r *PartitionReader) stopDependencies() error {
 
 func (r *PartitionReader) run(ctx context.Context) error {
 	for ctx.Err() == nil {
-		r.processNextFetches(ctx, r.metrics.receiveDelayWhenRunning)
+		err := r.processNextFetches(ctx, r.metrics.receiveDelayWhenRunning)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			// Fail the whole service in case of a non-recoverable error.
+			return err
+		}
 	}
 
 	return nil
 }
 
-func (r *PartitionReader) processNextFetches(ctx context.Context, delayObserver prometheus.Observer) {
+func (r *PartitionReader) processNextFetches(ctx context.Context, delayObserver prometheus.Observer) error {
 	fetches := r.pollFetches(ctx)
 	r.recordFetchesMetrics(fetches, delayObserver)
 	r.logFetchErrors(fetches)
@@ -186,11 +190,11 @@ func (r *PartitionReader) processNextFetches(ctx context.Context, delayObserver 
 
 	err := r.consumeFetches(ctx, fetches)
 	if err != nil {
-		level.Error(r.logger).Log("msg", "error while consuming fetches", "err", err, "num_records", fetches.NumRecords())
-	} else {
-		r.enqueueCommit(fetches)
-		r.notifyLastConsumedOffset(fetches)
+		return fmt.Errorf("consume %d records: %w", fetches.NumRecords(), err)
 	}
+	r.enqueueCommit(fetches)
+	r.notifyLastConsumedOffset(fetches)
+	return nil
 }
 
 // processNextFetchesUntilTargetOrMaxLagHonored process records from Kafka until at least the maxLag is honored.
@@ -301,9 +305,11 @@ func (r *PartitionReader) processNextFetchesUntilLagHonored(ctx context.Context,
 				break
 			}
 
-			r.processNextFetches(ctx, r.metrics.receiveDelayWhenStarting)
+			err := r.processNextFetches(ctx, r.metrics.receiveDelayWhenStarting)
+			if err != nil {
+				return 0, err
+			}
 		}
-
 		if boff.Err() != nil {
 			return 0, boff.ErrCause()
 		}
