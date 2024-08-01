@@ -162,10 +162,15 @@ const (
 )
 
 type querierWorkerOperation struct {
-	//ctx                   context.Context
 	conn      *QuerierWorkerConn
 	operation querierOperationType
-	recvChan  chan struct{}
+	// Initializing recvChan as nil indicates that the operation is not awaitable,
+	// indicating the caller does not care to wait for the result to be written
+	// and the processor will not bother to write the result.
+	//
+	// If the operation is awaitable, recvChan is written to when the operation is processed.
+	// Updates are reflected on the referenced QuerierWorkerConn.
+	recvChan chan struct{}
 }
 
 func newQuerierWorkerOperation(
