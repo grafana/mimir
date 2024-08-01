@@ -37,10 +37,7 @@ import (
 )
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
-	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
-	require.NoError(t, err)
-	ctx := context.Background()
+	featureToggles := EnableAllFeatures
 
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
@@ -63,17 +60,8 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 
 	for expression, expectedError := range unsupportedExpressions {
 		t.Run(expression, func(t *testing.T) {
-			qry, err := engine.NewRangeQuery(ctx, nil, nil, expression, time.Now().Add(-time.Hour), time.Now(), time.Minute)
-			require.Error(t, err)
-			require.ErrorIs(t, err, compat.NotSupportedError{})
-			require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
-			require.Nil(t, qry)
-
-			qry, err = engine.NewInstantQuery(ctx, nil, nil, expression, time.Now())
-			require.Error(t, err)
-			require.ErrorIs(t, err, compat.NotSupportedError{})
-			require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
-			require.Nil(t, qry)
+			requireRangeQueryIsUnsupported(t, featureToggles, expression, expectedError)
+			requireInstantQueryIsUnsupported(t, featureToggles, expression, expectedError)
 		})
 	}
 
@@ -86,13 +74,45 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 
 	for expression, expectedError := range unsupportedInstantQueryExpressions {
 		t.Run(expression, func(t *testing.T) {
-			qry, err := engine.NewInstantQuery(ctx, nil, nil, expression, time.Now())
-			require.Error(t, err)
-			require.ErrorIs(t, err, compat.NotSupportedError{})
-			require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
-			require.Nil(t, qry)
+			requireInstantQueryIsUnsupported(t, featureToggles, expression, expectedError)
 		})
 	}
+}
+
+func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
+	t.Run("binary expressions", func(t *testing.T) {
+		featureToggles := EnableAllFeatures
+		featureToggles.EnableBinaryOperations = false
+
+		requireRangeQueryIsUnsupported(t, featureToggles, "metric{} + other_metric{}", "binary expressions")
+		requireInstantQueryIsUnsupported(t, featureToggles, "metric{} + other_metric{}", "binary expressions")
+	})
+}
+
+func requireRangeQueryIsUnsupported(t *testing.T, featureToggles FeatureToggles, expression string, expectedError string) {
+	opts := NewTestEngineOpts()
+	opts.FeatureToggles = featureToggles
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	require.NoError(t, err)
+
+	qry, err := engine.NewRangeQuery(context.Background(), nil, nil, expression, time.Now().Add(-time.Hour), time.Now(), time.Minute)
+	require.Error(t, err)
+	require.ErrorIs(t, err, compat.NotSupportedError{})
+	require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
+	require.Nil(t, qry)
+}
+
+func requireInstantQueryIsUnsupported(t *testing.T, featureToggles FeatureToggles, expression string, expectedError string) {
+	opts := NewTestEngineOpts()
+	opts.FeatureToggles = featureToggles
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	require.NoError(t, err)
+
+	qry, err := engine.NewInstantQuery(context.Background(), nil, nil, expression, time.Now())
+	require.Error(t, err)
+	require.ErrorIs(t, err, compat.NotSupportedError{})
+	require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
+	require.Nil(t, qry)
 }
 
 func TestNewRangeQuery_InvalidQueryTime(t *testing.T) {
@@ -153,7 +173,7 @@ func TestOurTestCases(t *testing.T) {
 	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
-	prometheusEngine := promql.NewEngine(opts)
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
 	testdataFS := os.DirFS("./testdata")
 	testFiles, err := fs.Glob(testdataFS, "ours/*.test")
@@ -191,7 +211,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
-	prometheusEngine := promql.NewEngine(opts)
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
 	baseT := timestamp.Time(0)
 	storage := promqltest.LoadedStorage(t, `
@@ -626,7 +646,7 @@ func TestQueryCancellation(t *testing.T) {
 
 func TestQueryTimeout(t *testing.T) {
 	opts := NewTestEngineOpts()
-	opts.Timeout = 20 * time.Millisecond
+	opts.CommonOpts.Timeout = 20 * time.Millisecond
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -636,7 +656,7 @@ func TestQueryTimeout(t *testing.T) {
 	// we don't explicitly check for context cancellation in the query engine.
 	var q promql.Query
 	queryable := cancellationQueryable{func() {
-		time.Sleep(opts.Timeout * 10)
+		time.Sleep(opts.CommonOpts.Timeout * 10)
 	}}
 
 	q, err = engine.NewInstantQuery(context.Background(), queryable, nil, "some_metric", timestamp.Time(0))
@@ -903,7 +923,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 	createEngine := func(t *testing.T, limit uint64) (promql.QueryEngine, *prometheus.Registry, opentracing.Span, context.Context) {
 		reg := prometheus.NewPedanticRegistry()
 		opts := NewTestEngineOpts()
-		opts.Reg = reg
+		opts.CommonOpts.Reg = reg
 
 		engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(limit), stats.NewQueryMetrics(reg), log.NewNopLogger())
 		require.NoError(t, err)
@@ -985,7 +1005,7 @@ func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 	opts := NewTestEngineOpts()
-	opts.Reg = reg
+	opts.CommonOpts.Reg = reg
 
 	limit := 3 * 8 * pooling.FPointSize // Allow up to three series with five points (which will be rounded up to 8, the nearest power of 2)
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(limit), stats.NewQueryMetrics(reg), log.NewNopLogger())
@@ -1054,7 +1074,7 @@ func TestActiveQueryTracker(t *testing.T) {
 		t.Run(fmt.Sprintf("successful query = %v", shouldSucceed), func(t *testing.T) {
 			opts := NewTestEngineOpts()
 			tracker := &testQueryTracker{}
-			opts.ActiveQueryTracker = tracker
+			opts.CommonOpts.ActiveQueryTracker = tracker
 			engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 			require.NoError(t, err)
 
@@ -1160,8 +1180,8 @@ func (a *activeQueryTrackerQueryable) Querier(mint, maxt int64) (storage.Querier
 func TestActiveQueryTracker_WaitingForTrackerIncludesQueryTimeout(t *testing.T) {
 	tracker := &timeoutTestingQueryTracker{}
 	opts := NewTestEngineOpts()
-	opts.Timeout = 10 * time.Millisecond
-	opts.ActiveQueryTracker = tracker
+	opts.CommonOpts.Timeout = 10 * time.Millisecond
+	opts.CommonOpts.ActiveQueryTracker = tracker
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -1256,7 +1276,7 @@ func TestAnnotations(t *testing.T) {
 	opts := NewTestEngineOpts()
 	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
-	prometheusEngine := promql.NewEngine(opts)
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
 	engines := map[string]promql.QueryEngine{
 		"Mimir's engine": mimirEngine,

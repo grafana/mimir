@@ -22,32 +22,33 @@ import (
 
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
-func NewEngine(opts promql.EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, logger log.Logger) (promql.QueryEngine, error) {
-	lookbackDelta := opts.LookbackDelta
+func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, logger log.Logger) (promql.QueryEngine, error) {
+	lookbackDelta := opts.CommonOpts.LookbackDelta
 	if lookbackDelta == 0 {
 		lookbackDelta = defaultLookbackDelta
 	}
 
-	if !opts.EnableAtModifier {
+	if !opts.CommonOpts.EnableAtModifier {
 		return nil, errors.New("disabling @ modifier not supported by streaming engine")
 	}
 
-	if !opts.EnableNegativeOffset {
+	if !opts.CommonOpts.EnableNegativeOffset {
 		return nil, errors.New("disabling negative offsets not supported by streaming engine")
 	}
 
-	if opts.EnablePerStepStats {
+	if opts.CommonOpts.EnablePerStepStats {
 		return nil, errors.New("enabling per-step stats not supported by streaming engine")
 	}
 
 	return &Engine{
 		lookbackDelta:      lookbackDelta,
-		timeout:            opts.Timeout,
+		timeout:            opts.CommonOpts.Timeout,
 		limitsProvider:     limitsProvider,
-		activeQueryTracker: opts.ActiveQueryTracker,
+		activeQueryTracker: opts.CommonOpts.ActiveQueryTracker,
+		featureToggles:     opts.FeatureToggles,
 
 		logger: logger,
-		estimatedPeakMemoryConsumption: promauto.With(opts.Reg).NewHistogram(prometheus.HistogramOpts{
+		estimatedPeakMemoryConsumption: promauto.With(opts.CommonOpts.Reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                        "cortex_mimir_query_engine_estimated_query_peak_memory_consumption",
 			Help:                        "Estimated peak memory consumption of each query (in bytes)",
 			NativeHistogramBucketFactor: 1.1,
@@ -61,6 +62,7 @@ type Engine struct {
 	timeout            time.Duration
 	limitsProvider     QueryLimitsProvider
 	activeQueryTracker promql.QueryTracker
+	featureToggles     FeatureToggles
 
 	logger                                    log.Logger
 	estimatedPeakMemoryConsumption            prometheus.Histogram

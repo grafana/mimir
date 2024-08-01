@@ -18,7 +18,7 @@ import (
 // createUsableGrafanaConfig creates an amConfig from a GrafanaAlertConfigDesc.
 // If provided, it assigns the global section from the Mimir config to the Grafana config.
 // The SMTP and HTTP settings in this section can be used to configure Grafana receivers.
-func createUsableGrafanaConfig(gCfg alertspb.GrafanaAlertConfigDesc, mCfg *alertspb.AlertConfigDesc) (amConfig, error) {
+func createUsableGrafanaConfig(gCfg alertspb.GrafanaAlertConfigDesc, rawMimirConfig string) (amConfig, error) {
 	externalURL, err := url.Parse(gCfg.ExternalUrl)
 	if err != nil {
 		return amConfig{}, err
@@ -26,11 +26,11 @@ func createUsableGrafanaConfig(gCfg alertspb.GrafanaAlertConfigDesc, mCfg *alert
 
 	var amCfg GrafanaAlertmanagerConfig
 	if err := json.Unmarshal([]byte(gCfg.RawConfig), &amCfg); err != nil {
-		return amConfig{}, fmt.Errorf("failed to unmarshal Grafana Alertmanager configuration %w", err)
+		return amConfig{}, fmt.Errorf("failed to unmarshal Grafana Alertmanager configuration: %w", err)
 	}
 
-	if mCfg != nil {
-		cfg, err := definition.LoadCompat([]byte(mCfg.RawConfig))
+	if rawMimirConfig != "" {
+		cfg, err := definition.LoadCompat([]byte(rawMimirConfig))
 		if err != nil {
 			return amConfig{}, fmt.Errorf("failed to unmarshal Mimir Alertmanager configuration: %w", err)
 		}
