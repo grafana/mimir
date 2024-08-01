@@ -411,6 +411,8 @@ func (b *BinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSe
 //
 // mergeOneSide is optimised for the case where there is only one source series, or the source series do not overlap, as in the example above.
 //
+// NOTE: mergeOneSide has the side-effect of re-ordering both data and sourceSeriesIndices.
+//
 // FIXME: for many-to-one / one-to-many matching, we could avoid re-merging each time for the side used multiple times
 func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []types.SeriesMetadata, side string) (types.InstantVectorSeriesData, error) {
 	if len(data) == 1 {
