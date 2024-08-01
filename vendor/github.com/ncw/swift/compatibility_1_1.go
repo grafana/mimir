@@ -1,6 +1,5 @@
 // Go 1.1 and later compatibility functions
 //
-//go:build go1.1
 // +build go1.1
 
 package swift

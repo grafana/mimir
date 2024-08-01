@@ -1,4 +1,3 @@
-//go:build windows && arm
 // +build windows,arm
 
 package ole

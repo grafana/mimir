@@ -32,10 +32,10 @@ import (
 // Reflects GET /api/teams/search API call.
 func (r *Client) SearchTeams(ctx context.Context, params ...SearchTeamParams) (PageTeams, error) {
 	var (
-		raw           []byte
-		pageTeams     PageTeams
-		code          int
-		err           error
+		raw       []byte
+		pageTeams PageTeams
+		code      int
+		err       error
 		requestParams = make(url.Values)
 	)
 
@@ -280,14 +280,14 @@ func WithQuery(query string) SearchTeamParams {
 // WithPagesize adds a page size query parameter
 func WithPagesize(size uint) SearchTeamParams {
 	return func(v url.Values) {
-		v.Set("perpage", strconv.FormatUint(uint64(size), 10))
+		v.Set("perpage", strconv.FormatUint(uint64(size),10))
 	}
 }
 
 // WithPage adds a page number query parameter
 func WithPage(page uint) SearchTeamParams {
 	return func(v url.Values) {
-		v.Set("page", strconv.FormatUint(uint64(page), 10))
+		v.Set("page", strconv.FormatUint(uint64(page),10))
 	}
 }
 

@@ -1,5 +1,6 @@
-//go:build !safe && !appengine && go1.7
-// +build !safe,!appengine,go1.7
+// +build !safe
+// +build !appengine
+// +build go1.7
 
 // Copyright (c) 2012-2018 Ugorji Nwoke. All rights reserved.
 // Use of this source code is governed by a MIT license found in the LICENSE file.

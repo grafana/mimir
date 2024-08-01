@@ -6,9 +6,8 @@ import (
 )
 
 // Match is a single regex result match that contains groups and repeated captures
-//
-//		-Groups
-//	   -Capture
+// 	-Groups
+//    -Capture
 type Match struct {
 	Group //embeded group 0
 
@@ -188,8 +187,7 @@ func (m *Match) addMatch(c, start, l int) {
 }
 
 // Nonpublic builder: Add a capture to balance the specified group.  This is used by the
-//
-//	balanced match construct. (?<foo-foo2>...)
+//                     balanced match construct. (?<foo-foo2>...)
 //
 // If there were no such thing as backtracking, this would be as simple as calling RemoveMatch(c).
 // However, since we have backtracking, we need to keep track of everything.

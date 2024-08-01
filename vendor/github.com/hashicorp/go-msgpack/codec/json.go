@@ -1282,13 +1282,13 @@ func (d *jsonDecDriver) DecodeNaked() {
 // JsonHandle is a handle for JSON encoding format.
 //
 // Json is comprehensively supported:
-//   - decodes numbers into interface{} as int, uint or float64
-//     based on how the number looks and some config parameters e.g. PreferFloat, SignedInt, etc.
-//   - decode integers from float formatted numbers e.g. 1.27e+8
-//   - decode any json value (numbers, bool, etc) from quoted strings
-//   - configurable way to encode/decode []byte .
-//     by default, encodes and decodes []byte using base64 Std Encoding
-//   - UTF-8 support for encoding and decoding
+//    - decodes numbers into interface{} as int, uint or float64
+//      based on how the number looks and some config parameters e.g. PreferFloat, SignedInt, etc.
+//    - decode integers from float formatted numbers e.g. 1.27e+8
+//    - decode any json value (numbers, bool, etc) from quoted strings
+//    - configurable way to encode/decode []byte .
+//      by default, encodes and decodes []byte using base64 Std Encoding
+//    - UTF-8 support for encoding and decoding
 //
 // It has better performance than the json library in the standard library,
 // by leveraging the performance improvements of the codec library.

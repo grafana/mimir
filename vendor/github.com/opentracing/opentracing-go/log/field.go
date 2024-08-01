@@ -170,14 +170,15 @@ func Lazy(ll LazyLogger) Field {
 // It can be used to capture optional fields, for example those that should
 // only be logged in non-production environment:
 //
-//	func customerField(order *Order) log.Field {
-//	     if os.Getenv("ENVIRONMENT") == "dev" {
-//	         return log.String("customer", order.Customer.ID)
-//	     }
-//	     return log.Noop()
-//	}
+//     func customerField(order *Order) log.Field {
+//          if os.Getenv("ENVIRONMENT") == "dev" {
+//              return log.String("customer", order.Customer.ID)
+//          }
+//          return log.Noop()
+//     }
 //
-//	span.LogFields(log.String("event", "purchase"), customerField(order))
+//     span.LogFields(log.String("event", "purchase"), customerField(order))
+//
 func Noop() Field {
 	return Field{
 		fieldType: noopType,
