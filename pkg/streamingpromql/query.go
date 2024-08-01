@@ -170,6 +170,10 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 	case *parser.Call:
 		return q.convertFunctionCallToOperator(e)
 	case *parser.BinaryExpr:
+		if !q.engine.featureToggles.EnableBinaryOperations {
+			return nil, compat.NewNotSupportedError("binary expressions")
+		}
+
 		if e.LHS.Type() != parser.ValueTypeVector || e.RHS.Type() != parser.ValueTypeVector {
 			return nil, compat.NewNotSupportedError("binary expression with scalars")
 		}

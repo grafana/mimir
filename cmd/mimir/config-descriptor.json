@@ -1993,6 +1993,27 @@
           "fieldFlag": "querier.promql-experimental-functions-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "block",
+          "name": "mimir_query_engine",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enable_binary_operations",
+              "required": false,
+              "desc": "Enable support for binary operations in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.mimir-query-engine.enable-binary-operations",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,

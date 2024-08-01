@@ -148,7 +148,7 @@ The following features are currently experimental:
   - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
   - Enable PromQL experimental functions (`-querier.promql-experimental-functions-enabled`)
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
-  - Mimir query engine (`-querier.query-engine=mimir` and `-querier.enable-query-engine-fallback`)
+  - Mimir query engine (`-querier.query-engine=mimir` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
