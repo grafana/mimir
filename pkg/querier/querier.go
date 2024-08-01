@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -143,7 +144,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 	queryable := newQueryable(distributorQueryable, storeQueryable, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
-	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
+	lazyQueryable := storage.QueryableFunc(func(minT, maxT int64) (storage.Querier, error) {
 		querier, err := queryable.Querier(minT, maxT)
 		if err != nil {
 			return nil, err
@@ -157,6 +158,20 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 	parser.EnableExperimentalFunctions = engineExperimentalFunctionsEnabled
 
 	var eng promql.QueryEngine
+
+	// TODO: Make configurable.
+	opts.IncludeInfoMetricLabels = promql.IncludeInfoMetricLabelsOpts{
+		AutomaticInclusionEnabled: true,
+		InfoMetrics: map[string][]string{
+			"target_info": {"instance", "job"},
+		},
+		DataLabelMatchers: map[string][]*labels.Matcher{
+			"telemetry_sdk_version": {
+				labels.MustNewMatcher(labels.MatchRegexp, "telemetry_sdk_version", ".+"),
+			},
+		},
+		IgnoreMetrics: []*regexp.Regexp{regexp.MustCompile("^.+_info$")},
+	}
 
 	switch cfg.QueryEngine {
 	case prometheusEngine:
@@ -227,7 +242,6 @@ func newQueryable(
 			limits:             limits,
 			logger:             logger,
 		}, nil
-
 	})
 }
 
@@ -574,7 +588,7 @@ func validateQueryTimeRange(userID string, startMs, endMs, now int64, limits *va
 //     and may need to be clamped further into the past
 //   - max-query-into-future: refT is now(), limitDelta is positive. maxT is now or in the future,
 //     and may need to be clamped to be less far into the future
-func clampMaxTime(spanLog *spanlogger.SpanLogger, maxT int64, refT int64, limitDelta time.Duration, limitName string) int64 {
+func clampMaxTime(spanLog *spanlogger.SpanLogger, maxT, refT int64, limitDelta time.Duration, limitName string) int64 {
 	if limitDelta == 0 {
 		// limits equal to 0 are considered to not be enabled
 		return maxT
@@ -597,7 +611,7 @@ func clampMaxTime(spanLog *spanlogger.SpanLogger, maxT int64, refT int64, limitD
 //
 // limitDelta should be negative for all existing use cases for clamping minT,
 // as we look backwards from the reference time to apply the limit.
-func clampMinTime(spanLog *spanlogger.SpanLogger, minT int64, refT int64, limitDelta time.Duration, limitName string) int64 {
+func clampMinTime(spanLog *spanlogger.SpanLogger, minT, refT int64, limitDelta time.Duration, limitName string) int64 {
 	if limitDelta == 0 {
 		// limits equal to 0 are considered to not be enabled
 		return minT
