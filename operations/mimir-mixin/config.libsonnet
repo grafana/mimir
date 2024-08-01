@@ -88,6 +88,10 @@
       alertmanager: ['alertmanager', 'cortex', 'mimir', 'mimir-backend.*'],
       overrides_exporter: ['overrides-exporter', 'mimir-backend.*'],
 
+      // The following arejob matchers used to select all components in the read path.
+      standard_read_path: std.uniq(std.sort(self.query_frontend + self.query_scheduler + self.querier)),
+      ruler_read_path: std.uniq(std.sort(self.ruler_query_frontend + self.ruler_query_scheduler + self.ruler_querier)),
+
       // The following are job matchers used to select all components in a given "path".
       write: ['distributor.*', 'ingester.*', 'mimir-write.*'],
       read: ['query-frontend.*', 'querier.*', 'ruler-query-frontend.*', 'ruler-querier.*', 'mimir-read.*'],

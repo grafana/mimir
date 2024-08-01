@@ -21,7 +21,13 @@ local filename = 'mimir-top-tenants.json';
     assert std.md5(filename) == 'bc6e12d4fe540e4a1785b9d3ca0ffdd9' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Top tenants') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
-    .addCustomTemplate('limit', ['10', '50', '100'])
+    .addCustomTemplate(
+      'limit', 'limit', [
+        { label: '10', value: '10' },
+        { label: '50', value: '50' },
+        { label: '100', value: '100' },
+      ]
+    )
     .addRowIf(
       $._config.show_dashboard_descriptions.top_tenants,
       ($.row('Top tenants dashboard description') { height: '25px', showTitle: false })
