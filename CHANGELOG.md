@@ -104,6 +104,9 @@
 
 ### Jsonnet
 
+* [CHANGE] Changed the following config options when the experimental ingest storage is enabled: #8874
+  * `ingest_storage_ingester_autoscaling_min_replicas` changed to `ingest_storage_ingester_autoscaling_min_replicas_per_zone`
+  * `ingest_storage_ingester_autoscaling_max_replicas` changed to `ingest_storage_ingester_autoscaling_max_replicas_per_zone`
 * [FEATURE] Add support for automatically deleting compactor, store-gateway and read-write mode backend PVCs when the corresponding StatefulSet is scaled down. #8382
 * [ENHANCEMENT] Added the following config options to set the number of partition ingester replicas when migrating to experimental ingest storage. #8517
   * `ingest_storage_migration_partition_ingester_zone_a_replicas`
