@@ -320,6 +320,12 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 	}
 	now := time.Now()
 
+	includeInfoMetricDataLabels := sp.IncludeInfoMetricDataLabels
+	sp.IncludeInfoMetricDataLabels = false
+	if includeInfoMetricDataLabels {
+		fmt.Printf("multiQuerier.Select: Wrapping series sets w/ SeriesSetWithInfoLabels\n")
+	}
+
 	level.Debug(spanLog).Log("hint.func", sp.Func, "start", util.TimeFromMillis(sp.Start).UTC().String(), "end",
 		util.TimeFromMillis(sp.End).UTC().String(), "step", sp.Step, "matchers", util.MatchersStringer(matchers))
 
@@ -356,13 +362,32 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 	}
 
 	if len(queriers) == 1 {
-		return queriers[0].Select(ctx, true, sp, matchers...)
+		q := queriers[0]
+		ss := q.Select(ctx, true, sp, matchers...)
+		if !includeInfoMetricDataLabels {
+			return ss
+		}
+		return &storage.SeriesSetWithInfoLabels{
+			Base:  ss,
+			Hints: sp,
+			Q:     q,
+			Ctx:   ctx,
+		}
 	}
 
 	sets := make(chan storage.SeriesSet, len(queriers))
 	for _, querier := range queriers {
 		go func(querier storage.Querier) {
-			sets <- querier.Select(ctx, true, sp, matchers...)
+			ss := querier.Select(ctx, true, sp, matchers...)
+			if !includeInfoMetricDataLabels {
+				sets <- ss
+			} else {
+				sets <- &storage.SeriesSetWithInfoLabels{
+					Base:  ss,
+					Hints: sp,
+					Q:     querier,
+				}
+			}
 		}(querier)
 	}
 
