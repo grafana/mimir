@@ -45,6 +45,10 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					},
 				},
 			},
+			sourceSeriesIndices: []int{0},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+			},
 			expectedOutput: types.InstantVectorSeriesData{
 				Floats: []promql.FPoint{
 					{T: 1, F: 10},
@@ -69,6 +73,11 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 						{T: 6, F: 60},
 					},
 				},
+			},
+			sourceSeriesIndices: []int{0, 1},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
 			},
 			expectedOutput: types.InstantVectorSeriesData{
 				Floats: []promql.FPoint{
@@ -97,6 +106,11 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 						{T: 3, F: 30},
 					},
 				},
+			},
+			sourceSeriesIndices: []int{0, 1},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
 			},
 			expectedOutput: types.InstantVectorSeriesData{
 				Floats: []promql.FPoint{
@@ -133,6 +147,12 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					},
 				},
 			},
+			sourceSeriesIndices: []int{0, 1, 2},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "c")},
+			},
 			expectedOutput: types.InstantVectorSeriesData{
 				Floats: []promql.FPoint{
 					{T: 1, F: 10},
@@ -163,6 +183,11 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 						{T: 6, F: 60},
 					},
 				},
+			},
+			sourceSeriesIndices: []int{0, 1},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
 			},
 			expectedOutput: types.InstantVectorSeriesData{
 				Floats: []promql.FPoint{
@@ -196,6 +221,12 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					},
 				},
 			},
+			sourceSeriesIndices: []int{0, 1, 2},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "c")},
+			},
 			expectedOutput: types.InstantVectorSeriesData{
 				Floats: []promql.FPoint{
 					{T: 1, F: 10},
@@ -208,6 +239,30 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 			},
 		},
 		"input series with conflict": {
+			input: []types.InstantVectorSeriesData{
+				{
+					Floats: []promql.FPoint{
+						{T: 2, F: 20},
+					},
+				},
+				{
+					Floats: []promql.FPoint{
+						{T: 2, F: 20},
+						{T: 3, F: 30},
+						{T: 5, F: 50},
+					},
+				},
+			},
+			sourceSeriesIndices: []int{3, 2},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "c")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "d")},
+			},
+			expectedError: `found duplicate series for the match group {env="test"} on the right side of the operation at timestamp 1970-01-01T00:00:00.002Z: {__name__="right_side", env="test", pod="d"} and {__name__="right_side", env="test", pod="c"}`,
+		},
+		"input series with conflict after resorting": {
 			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
@@ -241,7 +296,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "i")},
 				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "j")},
 			},
-			expectedError: `found duplicate series for the match group {env="test"} on the right side of the operation at timestamp 1970-01-01T00:00:00.002Z: {__name__="right_side", env="test", pod="g"} and {__name__="right_side", env="test", pod="j"}`,
+			expectedError: `found duplicate series for the match group {env="test"} on the right side of the operation at timestamp 1970-01-01T00:00:00.002Z: {__name__="right_side", env="test", pod="g"} and {__name__="right_side", env="test", pod="e"}`,
 		},
 	}
 
