@@ -126,14 +126,13 @@ Use the latest version of Prometheus or at least version 2.47.
    In certain situations, the protobuf parsing changes the number formatting of
    the `le` labels of conventional histograms and the `quantile` labels of
    summaries. Typically, this happens if the scraped target is instrumented with
-   [client_golang](https://github.com/prometheus/client_golang) provided that
+   [client_golang](https://github.com/prometheus/client_golang), provided that
    [promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
-   is set to `false`. In such a case, integer label values are represented in the
-   text format as such, e.g. `quantile="1"` or `le="2"`. However, the protobuf parsing
-   changes the representation to float-like (following the OpenMetrics
+   is set to `false`. In such cases, integer label values are represented
+   as `quantile="1"` or `le="2"` omitting the zero fractional.
+   However, the protobuf parsing changes the representation to always include a fractional (following the OpenMetrics
    specification), so the examples above become `quantile="1.0"` and `le="2.0"` after
-   ingestion into Prometheus, which changes the identity of the metric compared to
-   what was ingested before via the text format.
+   ingestion into Prometheus, which changes the identity of the metric from what was originally ingested.
 
    For more information, refer to [Feature Flags Native Histograms](https://prometheus.io/docs/prometheus/latest/feature_flags/#native-histograms) in the Prometheus documentation.
    {{< /admonition >}}
@@ -166,11 +165,10 @@ Use the latest version of [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_
    [client_golang](https://github.com/prometheus/client_golang), provided that
    [promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
    is set to `false`. In such cases, integer label values are represented
-   text format as such, e.g. `quantile="1"` or `le="2"`. However, the protobuf parsing
-   changes the representation to float-like (following the OpenMetrics
+   as `quantile="1"` or `le="2"` omitting the zero fractional.
+   However, the protobuf parsing changes the representation to always include a fractional (following the OpenMetrics
    specification), so the examples above become `quantile="1.0"` and `le="2.0"` after
-   ingestion into Prometheus, which changes the identity of the metric compared to
-   what was ingested before via the text format.
+   ingestion into Prometheus, which changes the identity of the metric from what was originally ingested.
 
    For more information, refer to [Feature Flags Native Histograms](https://prometheus.io/docs/prometheus/latest/feature_flags/#native-histograms) in the Prometheus documentation.
    {{< /admonition >}}
@@ -226,42 +224,40 @@ To ease the migration process, you can keep the custom bucket definition of a cl
 1. Send native histograms to remote write, along with the existing classic histograms.
 1. Modify dashboards to use the native histogram metrics. Refer to [Visualize native histograms](https://grafana.com/docs/mimir/<MIMIR_VERSION>/visualize/native-histograms/) for more information.
 
-   There are different strategies to updating the dashboards:
+   Use one of the following strategies to update dashbaords.
 
-   1. Add new dashboards with the new native histogram queries. This is the cleanest and recommended solution, but does require looking at different dashboards for data before and after the migration, while the retention time of the data runs out. Thus it is recommended to publish the new dashboard when sufficient time has passed to serve users with the new data.
-   1. Add a dashboard variable on top of your dashboard to be able to switch between classic histograms and native histograms. Currently there's no direct support for selectively enabling and disabling queries in Grafana ([issue 79848](https://github.com/grafana/grafana/issues/79848)), however there's a relatively easy workaround. Let the variable take the values -1 or 1 and call it for example `latency_metrics`. Add the following two queries to the panel:
+   - (Recommended) Add new dashboards with the new native histogram queries. This solution requires looking at different dashboards for data before and after the migration, until data before the migration is removed due to passing its retention time. Thus it is recommended to publish the new dashboard when sufficient time has passed to serve users with the new data.
+   - Add a dashboard variable to your dashboard to enable switching between classic histograms and native histograms. There isn't support for selectively enabling and disabling queries in Grafana yet ([issue 79848](https://github.com/grafana/grafana/issues/79848)). As a workaround, add the dashboard variable `latency_metrics`, for example, and assign it a value of either `-1` or `1`. Then, add the following two queries to the panel:
 
-      ```
-      <classic_query> < ($latency_metrics * +Inf)
-      ```
+     ```
+     <classic_query> < ($latency_metrics * +Inf)
+     ```
 
-      and separately
+     ```
+     <native_query> < ($latency_metrics * -Inf)
+     ```
 
-      ```
-      <native_query> < ($latency_metrics * -Inf)
-      ```
+     Where `classic_query` is the original query and `native_query` is the same query using native histogram query syntax. This technique is employed in Mimir's dashboards. For an example, refer to the [Overview dashboard](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-compiled/dashboards/mimir-overview.json) in the Mimir repository.
 
-      Where `classic_query` is the original query and `native_query` is the same query using native histogram query syntax. This technique is employed in Mimir's dashboards. For an example, refer to the [Overview dashboard](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-compiled/dashboards/mimir-overview.json) in the Mimir repository.
+     This solution allows users to switch between the classic histogram and the native histogram without going to a different dashboard.
 
-      This solution allows users to switch between the classic histogram and the native histogram without going to a different dashboard.
+   - Replace the existing classic queries with modified queries. For example, replace:
 
-   1. Replace the existing classic queries with modified queries. For example, replace:
-
-      ```
-      <classic_query>
-      ```
+     ```
+     <classic_query>
+     ```
 
      with
 
-      ```
-      <native_query> or <classic_query>
-      ```
+     ```
+     <native_query> or <classic_query>
+     ```
 
-      Where `classic_query` is the original query and `native_query` is the same query using native histogram query syntax.
+     Where `classic_query` is the original query and `native_query` is the same query using native histogram query syntax.
 
-      {{< admonition type="warning" >}}
-      Using the PromQL operator `or` can lead to unexpected results. For example, if a query uses a range of seven days, such as `sum(rate(http_request_duration_seconds[7d]))`, then this query returns a value as soon as there are two native histograms samples present before the end time specified in the query. In this case, the seven day rate is calculated from a couple of minutes, rather than seven days, worth of data. This results in an inaccuracy in the graph around the time you started scraping native histograms.
-      {{< /admonition >}}
+     {{< admonition type="warning" >}}
+     Using the PromQL operator `or` can lead to unexpected results. For example, if a query uses a range of seven days, such as `sum(rate(http_request_duration_seconds[7d]))`, then this query returns a value as soon as there are two native histograms samples present before the end time specified in the query. In this case, the seven day rate is calculated from a couple of minutes, rather than seven days, worth of data. This results in an inaccuracy in the graph around the time you started scraping native histograms.
+     {{< /admonition >}}
 
 1. Start adding _new_ recording rules and alerts to use native histograms. Do not remove the old recording rules and alerts at this time.
 1. It is important to keep scraping both classic and native histograms for at least the period of the longest range in your recording rules and alerts, plus one day. This is the minimum amount of time, but it's recommended to keep scraping both data types until the new rules and alerts can be verified.
