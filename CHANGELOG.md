@@ -151,6 +151,7 @@
 ### Documentation
 
 * [ENHANCEMENT] Specify in which component the configuration flags `-compactor.blocks-retention-period`, `-querier.max-query-lookback`, `-query-frontend.max-total-query-length`, `-query-frontend.max-query-expression-size-bytes` are applied and that they are applied to remote read as well. #8433
+* [ENHANCEMENT] Provide more detailed recommendations on how to migrate from classic to native histograms. #8864
 
 ### Tools
 
