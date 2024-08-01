@@ -8,6 +8,7 @@ package distributor
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -135,7 +136,7 @@ func TestHATrackerConfig_Validate(t *testing.T) {
 }
 
 // Test that values are set in the HATracker after WatchPrefix has found it in the KVStore.
-func TestWatchPrefixAssignment(t *testing.T) {
+func TestHATrackerWatchPrefixAssignment(t *testing.T) {
 	cluster := "c1"
 	replica := "r1"
 
@@ -165,7 +166,7 @@ func TestWatchPrefixAssignment(t *testing.T) {
 	checkReplicaTimestamp(t, time.Second, c, "user", cluster, replica, now)
 }
 
-func TestCheckReplicaOverwriteTimeout(t *testing.T) {
+func TestHATrackerCheckReplicaOverwriteTimeout(t *testing.T) {
 	replica1 := "replica1"
 	replica2 := "replica2"
 
@@ -211,7 +212,7 @@ func TestCheckReplicaOverwriteTimeout(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestCheckReplicaMultiCluster(t *testing.T) {
+func TestHATrackerCheckReplicaMultiCluster(t *testing.T) {
 	replica1 := "replica1"
 	replica2 := "replica2"
 
@@ -261,7 +262,7 @@ func TestCheckReplicaMultiCluster(t *testing.T) {
 	}), uint64(0))
 }
 
-func TestCheckReplicaMultiClusterTimeout(t *testing.T) {
+func TestHATrackerCheckReplicaMultiClusterTimeout(t *testing.T) {
 	replica1 := "replica1"
 	replica2 := "replica2"
 
@@ -336,7 +337,7 @@ func TestCheckReplicaMultiClusterTimeout(t *testing.T) {
 }
 
 // Test that writes only happen every update timeout.
-func TestCheckReplicaUpdateTimeout(t *testing.T) {
+func TestHATrackerCheckReplicaUpdateTimeout(t *testing.T) {
 	replica := "r1"
 	cluster := "c1"
 	user := "user"
@@ -378,17 +379,21 @@ func TestCheckReplicaUpdateTimeout(t *testing.T) {
 	assert.NoError(t, err)
 	checkReplicaTimestamp(t, time.Second, c, user, cluster, replica, startTime)
 
+	receivedAt := updateTime
+
 	// Now we've waited > 1s, so the timestamp should update.
 	updateTime = time.Unix(0, startTime.UnixNano()).Add(1100 * time.Millisecond)
 	c.updateKVStoreAll(context.Background(), updateTime)
 
+	// Timestamp stored in KV should be time when we have received a request (called "checkReplica"), not current time (updateTime).
+	checkReplicaTimestamp(t, time.Second, c, user, cluster, replica, receivedAt)
+
 	err = c.checkReplica(context.Background(), user, cluster, replica, updateTime)
 	assert.NoError(t, err)
-	checkReplicaTimestamp(t, time.Second, c, user, cluster, replica, updateTime)
 }
 
 // Test that writes only happen every write timeout.
-func TestCheckReplicaMultiUser(t *testing.T) {
+func TestHATrackerCheckReplicaMultiUser(t *testing.T) {
 	replica := "r1"
 	cluster := "c1"
 
@@ -431,7 +436,7 @@ func TestCheckReplicaMultiUser(t *testing.T) {
 	checkReplicaTimestamp(t, time.Second, c, "user2", cluster, replica, now)
 }
 
-func TestCheckReplicaUpdateTimeoutJitter(t *testing.T) {
+func TestHATrackerCheckReplicaUpdateTimeoutJitter(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
@@ -514,7 +519,7 @@ func TestCheckReplicaUpdateTimeoutJitter(t *testing.T) {
 	}
 }
 
-func TestFindHALabels(t *testing.T) {
+func TestHATrackerFindHALabels(t *testing.T) {
 	replicaLabel, clusterLabel := "replica", "cluster"
 	type expectedOutput struct {
 		cluster string
@@ -571,7 +576,7 @@ func TestHATrackerConfig_ShouldCustomizePrefixDefaultValue(t *testing.T) {
 	assert.NotEqual(t, haConfig.KVStore.Prefix, ringConfig.KVStore.Prefix)
 }
 
-func TestHAClustersLimit(t *testing.T) {
+func TestHATrackerClustersLimit(t *testing.T) {
 	const userID = "user"
 
 	codec := GetReplicaDescCodec()
@@ -717,7 +722,7 @@ func TestHATracker_MetricsCleanup(t *testing.T) {
 	`), metrics...))
 }
 
-func TestCheckReplicaCleanup(t *testing.T) {
+func TestHATrackerCheckReplicaCleanup(t *testing.T) {
 	replica := "r1"
 	cluster := "c1"
 	userID := "user"
@@ -870,4 +875,97 @@ func getSumOfHistogramSampleCount(families []*dto.MetricFamily, metricName strin
 	}
 
 	return sum
+}
+
+func TestHATrackerChangeInElectedReplicaClearsLastSeenTimestamp(t *testing.T) {
+	const userID = "user"
+
+	codec := GetReplicaDescCodec()
+	kvStore, closer := consul.NewInMemoryClient(codec, log.NewLogfmtLogger(os.Stdout), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	mock := kv.PrefixClient(kvStore, "prefix")
+
+	// Start two trackers.
+	t1, err := newHATracker(HATrackerConfig{
+		EnableHATracker:        true,
+		KVStore:                kv.Config{Mock: mock},
+		UpdateTimeout:          5 * time.Second,
+		UpdateTimeoutJitterMax: 0,
+		FailoverTimeout:        5 * time.Second,
+	}, trackerLimits{maxClusters: 2}, nil, log.NewNopLogger())
+	require.NoError(t, err)
+
+	t2, err := newHATracker(HATrackerConfig{
+		EnableHATracker:        true,
+		KVStore:                kv.Config{Mock: mock},
+		UpdateTimeout:          5 * time.Second,
+		UpdateTimeoutJitterMax: 0,
+		FailoverTimeout:        5 * time.Second,
+	}, trackerLimits{maxClusters: 2}, nil, log.NewNopLogger())
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), t1))
+	defer services.StopAndAwaitTerminated(context.Background(), t1) //nolint:errcheck
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), t2))
+	defer services.StopAndAwaitTerminated(context.Background(), t2) //nolint:errcheck
+
+	now := time.Now()
+
+	const cluster = "cluster"
+	const firstReplica = "first"
+	const secondReplica = "second"
+
+	assert.NoError(t, t1.checkReplica(context.Background(), userID, cluster, firstReplica, now))
+	// Both trackers will see "first" replica as current.
+	checkReplicaTimestamp(t, time.Second, t1, userID, cluster, firstReplica, now)
+	checkReplicaTimestamp(t, time.Second, t2, userID, cluster, firstReplica, now)
+
+	// Ten seconds later, t1 receives request from first replica again
+	now = now.Add(10 * time.Second)
+	assert.NoError(t, t1.checkReplica(context.Background(), userID, cluster, firstReplica, now))
+
+	// And t2 receives request from second replica.
+	assert.Error(t, t2.checkReplica(context.Background(), userID, cluster, secondReplica, now))
+	secondReplicaReceivedAtT2 := now
+
+	// Now t2 updates the KV store... and overwrite elected replica.
+	t2.updateKVStoreAll(context.Background(), now)
+
+	// t1 is reading updates from KV store, and should see second replica being the elected one.
+	checkReplicaTimestamp(t, time.Second, t1, userID, cluster, secondReplica, secondReplicaReceivedAtT2)
+
+	// Furthermore, t1 has never seen "second" replica, so it should not have "electedLastSeenTimestamp" set.
+	{
+		t1.electedLock.RLock()
+		info := t1.clusters[userID][cluster]
+		t1.electedLock.RUnlock()
+
+		require.Zero(t, info.electedLastSeenTimestamp)
+	}
+
+	// Continuing the test, say both t1 and t2 receive request from "first" replica now.
+	// They both reject it.
+	now = now.Add(9 * time.Second)
+	firstReceivedAtT1 := now
+	assert.Error(t, t1.checkReplica(context.Background(), userID, cluster, firstReplica, now))
+	now = now.Add(1 * time.Second)
+	firstReceivedAtT2 := now
+	assert.Error(t, t2.checkReplica(context.Background(), userID, cluster, firstReplica, now))
+
+	// Now t1 updates the KV Store.
+	t1.updateKVStoreAll(context.Background(), now)
+
+	// t2 is reading updates from KV store, and should see "second" replica being the elected one.
+	checkReplicaTimestamp(t, time.Second, t2, userID, cluster, firstReplica, firstReceivedAtT1)
+
+	// Since t2 has seen new elected replica too, we should have non-zero "electedLastSeenTimestamp".
+	{
+		t2.electedLock.RLock()
+		info := t2.clusters[userID][cluster]
+		t2.electedLock.RUnlock()
+
+		require.Equal(t, firstReceivedAtT2.UnixMilli(), info.electedLastSeenTimestamp)
+	}
 }
