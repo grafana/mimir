@@ -135,7 +135,7 @@ Use the latest version of Prometheus or at least version 2.47.
    ingestion into Prometheus, which changes the identity of the metric compared to
    what was ingested before via the text format.
 
-   For more information please visit [Feature Flags Native Histograms](https://prometheus.io/docs/prometheus/latest/feature_flags/#native-histograms) in the Prometheus documentation.
+   For more information, refer to [Feature Flags Native Histograms](https://prometheus.io/docs/prometheus/latest/feature_flags/#native-histograms) in the Prometheus documentation.
    {{< /admonition >}}
 
 1. To be able to send native histograms to a Prometheus remote write compatible receiver, for example Grafana Cloud Metrics, Mimir, etc, set `send_native_histograms` to `true` in the remote write configuration, for example:
@@ -163,16 +163,16 @@ Use the latest version of [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_
    In certain situations, the protobuf parsing changes the number formatting of
    the `le` labels of conventional histograms and the `quantile` labels of
    summaries. Typically, this happens if the scraped target is instrumented with
-   [client_golang](https://github.com/prometheus/client_golang) provided that
+   [client_golang](https://github.com/prometheus/client_golang), provided that
    [promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
-   is set to `false`. In such a case, integer label values are represented in the
+   is set to `false`. In such cases, integer label values are represented
    text format as such, e.g. `quantile="1"` or `le="2"`. However, the protobuf parsing
    changes the representation to float-like (following the OpenMetrics
    specification), so the examples above become `quantile="1.0"` and `le="2.0"` after
    ingestion into Prometheus, which changes the identity of the metric compared to
    what was ingested before via the text format.
 
-   For more information please visit [Feature Flags Native Histograms](https://prometheus.io/docs/prometheus/latest/feature_flags/#native-histograms) in the Prometheus documentation.
+   For more information, refer to [Feature Flags Native Histograms](https://prometheus.io/docs/prometheus/latest/feature_flags/#native-histograms) in the Prometheus documentation.
    {{< /admonition >}}
 
 1. To send native histograms to a Prometheus remote write compatible receiver, such as Grafana Cloud Metrics or Mimir, set the `send_native_histograms` argument to `true` in the `prometheus.remote_write` component. For example:
@@ -188,10 +188,10 @@ Use the latest version of [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_
 
 ## Migrate from classic histograms
 
-It is possible to keep the custom bucket definition of a classic histogram and add native histogram buckets at the same time. This can ease the migration process, which can look like this in general:
+To ease the migration process, you can keep the custom bucket definition of a classic histogram and add native histogram buckets at the same time.
 
 1. Add the native histogram definition to an existing histogram in the instrumentation.
-1. If the existing histogram did not have buckets defined, add the default buckets to keep the classic histogram.
+1. If the existing histogram doesn't have buckets defined, add the default buckets to keep the classic histogram.
 
    Code examples with both classic and native histogram defined for the same metric:
 
@@ -223,8 +223,8 @@ It is possible to keep the custom bucket definition of a classic histogram and a
    {{< /code >}}
 
 1. Let Prometheus or Grafana Alloy scrape both classic and native histograms for metrics that have both defined.
-1. Send native histograms to remote write, along the existing classic histograms.
-1. You can now start modifying dashboards to use the new native histogram metrics and get familiar with the new query syntax, see [Visualize native histograms](https://grafana.com/docs/mimir/<MIMIR_VERSION>/visualize/native-histograms/).
+1. Send native histograms to remote write, along with the existing classic histograms.
+1. Modify dashboards to use the native histogram metrics. Refer to [Visualize native histograms](https://grafana.com/docs/mimir/<MIMIR_VERSION>/visualize/native-histograms/) for more information.
 
    There are different strategies to updating the dashboards:
 
@@ -241,36 +241,36 @@ It is possible to keep the custom bucket definition of a classic histogram and a
       <native_query> < ($latency_metrics * -Inf)
       ```
 
-      Where `classic_query` is the original query and `native_query` is the same but using native histogram query syntax. This technique is employed for Mimir's own dashboards, see for example the [Overview dashboard](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-compiled/dashboards/mimir-overview.json).
+      Where `classic_query` is the original query and `native_query` is the same query using native histogram query syntax. This technique is employed in Mimir's dashboards. For an example, refer to the [Overview dashboard](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-compiled/dashboards/mimir-overview.json) in the Mimir repository.
 
       This solution allows users to switch between the classic histogram and the native histogram without going to a different dashboard.
 
-   1. Replace the existing classic queries with a modified query:
+   1. Replace the existing classic queries with modified queries. For example, replace:
 
       ```
       <classic_query>
       ```
 
-      replaced with
+     with
 
       ```
       <native_query> or <classic_query>
       ```
 
-      Where `classic_query` is the original query and `native_query` is the same but using native histogram query syntax.
+      Where `classic_query` is the original query and `native_query` is the same query using native histogram query syntax.
 
       {{< admonition type="warning" >}}
-      Using the PromQL operator `or` can lead to unexpected results. For example if the query uses a range of 7 days, such as `sum(rate(http_request_duration_seconds[7d]))` then this query will return a value as soon as there are two native histograms samples present before the end time of the query, thus the 7 day rate will be calculated from a couple of minutes worth of data and not 7 days. This means that the result will be very inaccurate around the time when native histograms were started to be scraped and this inaccuracy will always be there when looking at the graph for that time.
+      Using the PromQL operator `or` can lead to unexpected results. For example, if a query uses a range of seven days, such as `sum(rate(http_request_duration_seconds[7d]))`, then this query returns a value as soon as there are two native histograms samples present before the end time specified in the query. In this case, the seven day rate is calculated from a couple of minutes, rather than seven days, worth of data. This results in an inaccuracy in the graph around the time you started scraping native histograms.
       {{< /admonition >}}
 
 1. Start adding _new_ recording rules and alerts to use native histograms. Do not remove the old recording rules and alerts at this time.
-1. It is important to keep scraping both classic and native histograms for as long as the longest range in the recording rules and alerts, plus a day. This is the minimum, but it is recommended to keep scraping both until the new rules and alerts can be verified.
+1. It is important to keep scraping both classic and native histograms for at least the period of the longest range in your recording rules and alerts, plus one day. This is the minimum amount of time, but it's recommended to keep scraping both data types until the new rules and alerts can be verified.
 
-   Here's an example why: if you have an alert that calculates the rate of requests, for example `sum(rate(http_request_duration_seconds[7d]))`, this query will look at the data from the last 7 days plus the Prometheus [lookback period](https://prometheus.io/docs/prometheus/latest/querying/basics/#staleness). When you start sending native histograms, the data will not be there for the whole 7 days, thus the results maybe unreliable for alerting.
+   For example, if you have an alert that calculates the rate of requests, such as `sum(rate(http_request_duration_seconds[7d]))`, this query looks at the data from the last seven days plus the Prometheus [lookback period](https://prometheus.io/docs/prometheus/latest/querying/basics/#staleness). When you start sending native histograms, the data isn't there for the entire seven days, and therefore, the results might be unreliable for alerting.
 
 1. After configuring native histogram collection, choose one of the following ways to stop collecting classic histograms.
 
-   - Remove the custom bucket definition, `Buckets`/`classicUpperBounds`, from the instrumentation. In case of Java, also use the option `nativeOnly()`. See the examples in [Instrument application with Prometheus client libraries](#instrument-application-with-prometheus-client-libraries) above.
+   - Remove the custom bucket definition, `Buckets`/`classicUpperBounds`, from the instrumentation. In Java, also use the `nativeOnly()` option. Refer to the examples in [Instrument application with Prometheus client libraries](#instrument-application-with-prometheus-client-libraries).
    - Drop the classic histogram series with [Prometheus relabeling](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) or [Grafana Alloy prometheus.relabel](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.relabel) at the time of scraping.
    - Stop scraping the classic histogram version of metrics. This option applies to all metrics of a scrape target.
 
