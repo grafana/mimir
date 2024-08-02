@@ -1352,6 +1352,24 @@ func TestAnnotations(t *testing.T) {
 			expr:                       `rate(some_metric[2m] @ 2m)`,
 			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:6)`},
 		},
+
+		"multiple annotations from different operators": {
+			data: `
+				mixed_metric_count       10 {{schema:0 sum:1 count:1 buckets:[1]}}
+				other_mixed_metric_count 10 {{schema:0 sum:1 count:1 buckets:[1]}}
+				float_metric             10 20
+				other_float_metric       10 20
+			`,
+			expr: "rate(mixed_metric_count[1m]) + rate(other_mixed_metric_count[1m]) + rate(float_metric[1m]) + rate(other_float_metric[1m])",
+			expectedWarningAnnotations: []string{
+				`PromQL warning: encountered a mix of histograms and floats for metric name "mixed_metric_count" (1:6)`,
+				`PromQL warning: encountered a mix of histograms and floats for metric name "other_mixed_metric_count" (1:37)`,
+			},
+			expectedInfoAnnotations: []string{
+				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "float_metric" (1:74)`,
+				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "other_float_metric" (1:99)`,
+			},
+		},
 	}
 
 	opts := NewTestEngineOpts()
