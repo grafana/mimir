@@ -107,8 +107,8 @@ func TestMultiTenantConcurrencyController(t *testing.T) {
 	rule1.SetNoDependentRules(true)
 
 	globalController := NewMultiTenantConcurrencyController(logger, 3, 50.0, reg, limits)
-	user1Controller := globalController.NewTenantConcurrencyController("user1")
-	user2Controller := globalController.NewTenantConcurrencyController("user2")
+	user1Controller := globalController.NewTenantConcurrencyControllerFor("user1")
+	user2Controller := globalController.NewTenantConcurrencyControllerFor("user2")
 	ctx := context.Background()
 
 	require.True(t, user1Controller.Allow(ctx, rg, rule1))
@@ -186,6 +186,18 @@ cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use 0
 # TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total counter
 cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total 4
 `)))
+
+	// Make the rule independent again.
+	rule1.SetNoDependencyRules(true)
+
+	// Now let's test having a controller two times for the same tenant.
+	user3Controller := globalController.NewTenantConcurrencyControllerFor("user3")
+	user3ControllerTwo := globalController.NewTenantConcurrencyControllerFor("user3")
+
+	// They should not interfere with each other.
+	require.True(t, user3Controller.Allow(ctx, rg, rule1))
+	require.True(t, user3Controller.Allow(ctx, rg, rule1))
+	require.True(t, user3ControllerTwo.Allow(ctx, rg, rule1))
 }
 
 func TestIsRuleIndependent(t *testing.T) {

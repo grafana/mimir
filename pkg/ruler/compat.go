@@ -338,7 +338,7 @@ func DefaultTenantManagerFactory(
 				// to metric that haven't been forwarded to Mimir yet.
 				return overrides.EvaluationDelay(userID)
 			},
-			RuleConcurrencyController: concurrencyController.NewTenantConcurrencyController(userID),
+			RuleConcurrencyController: concurrencyController.NewTenantConcurrencyControllerFor(userID),
 		})
 	}
 }

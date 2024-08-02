@@ -14,12 +14,12 @@ import (
 )
 
 type MultiTenantRuleConcurrencyController interface {
-	// NewTenantConcurrencyController returns a new rules.RuleConcurrencyController to use for the input tenantID.
-	NewTenantConcurrencyController(tenantID string) rules.RuleConcurrencyController
+	// NewTenantConcurrencyControllerFor returns a new rules.RuleConcurrencyController to use for the input tenantID.
+	NewTenantConcurrencyControllerFor(tenantID string) rules.RuleConcurrencyController
 }
 
 // DynamicSemaphore is a semaphore that can dynamically change its max concurrency.
-// It is necessary as the max concurrency is defined by the user limits which can be changed at runtime.
+// It is necessary as the max concurrency is defined by the tenant limits which can be changed at runtime.
 type DynamicSemaphore struct {
 	maxConcurrency func() int64
 
@@ -90,7 +90,6 @@ func newMultiTenantConcurrencyControllerMetrics(reg prometheus.Registerer) *Mult
 }
 
 // MultiTenantConcurrencyController is a concurrency controller that limits the number of concurrent rule evaluations both global and per tenant.
-// TODO update doc
 type MultiTenantConcurrencyController struct {
 	logger                   log.Logger
 	limits                   RulesLimits
@@ -111,7 +110,8 @@ func NewMultiTenantConcurrencyController(logger log.Logger, maxGlobalConcurrency
 	}
 }
 
-func (c *MultiTenantConcurrencyController) NewTenantConcurrencyController(tenantID string) rules.RuleConcurrencyController {
+// NewTenantConcurrencyControllerFor returns a new rules.RuleConcurrencyController to use for the input tenantID.
+func (c *MultiTenantConcurrencyController) NewTenantConcurrencyControllerFor(tenantID string) rules.RuleConcurrencyController {
 	return &TenantConcurrencyController{
 		thresholdRuleConcurrency: c.thresholdRuleConcurrency,
 		metrics:                  c.metrics,
@@ -122,7 +122,8 @@ func (c *MultiTenantConcurrencyController) NewTenantConcurrencyController(tenant
 	}
 }
 
-// TODO document what this is
+// TenantConcurrencyController is a concurrency controller that limits the number of concurrent rule evaluations per tenant.
+// It also takes into account the global concurrency limit.
 type TenantConcurrencyController struct {
 	thresholdRuleConcurrency float64 // Percentage of the rule interval at which we consider the rule group at risk of missing its evaluation.
 	metrics                  *MultiTenantConcurrencyControllerMetrics
@@ -189,11 +190,11 @@ func isRuleIndependent(rule rules.Rule) bool {
 // NoopMultiTenantConcurrencyController is a concurrency controller that does not allow for concurrency.
 type NoopMultiTenantConcurrencyController struct{}
 
-func (n *NoopMultiTenantConcurrencyController) NewTenantConcurrencyController(_ string) rules.RuleConcurrencyController {
+func (n *NoopMultiTenantConcurrencyController) NewTenantConcurrencyControllerFor(_ string) rules.RuleConcurrencyController {
 	return &NoopTenantConcurrencyController{}
 }
 
-// TODO doc
+// NoopTenantConcurrencyController is a concurrency controller that does not allow for concurrency.
 type NoopTenantConcurrencyController struct{}
 
 func (n *NoopTenantConcurrencyController) Done(_ context.Context) {}
