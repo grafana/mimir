@@ -479,26 +479,24 @@ func (b *BinaryOperation) mergeOneSideFloats(ds seriesForOneGroupSide, side stri
 	remainingSeriesWithFloats := 1
 	haveOverlaps := false
 
-	// We're going to create a new slice, so return this one to the pool.
-	// We'll return the other slices in the for loop below.
-	// We must defer here, rather than at the end, as the merge loop below reslices Floats.
-	// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
-	defer b.Pool.PutFPointSlice(ds.data[0].Floats)
-
 	for i := 0; i < len(ds.data)-1; i++ {
 		first := ds.data[i]
 		second := ds.data[i+1]
-		if len(second.Floats) == 0 {
-			// We've reached the end of all series with floats
-			break
-		}
-		mergedSize += len(second.Floats)
-		remainingSeriesWithFloats++
 
 		// We're going to create a new slice, so return this one to the pool.
 		// We must defer here, rather than at the end, as the merge loop below reslices Floats.
 		// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
 		defer b.Pool.PutFPointSlice(second.Floats)
+
+		if len(second.Floats) == 0 {
+			// We've reached the end of all series with floats.
+			// However, continue iterating so we can return all of the slices.
+			// (As they may have length 0, but a non-zero capacity).
+			continue
+		}
+
+		mergedSize += len(second.Floats)
+		remainingSeriesWithFloats++
 
 		// Check if first overlaps with second.
 		// InstantVectorSeriesData.Floats is required to be sorted in timestamp order, so if the last point
@@ -507,6 +505,17 @@ func (b *BinaryOperation) mergeOneSideFloats(ds seriesForOneGroupSide, side stri
 			haveOverlaps = true
 		}
 	}
+
+	if remainingSeriesWithFloats == 1 {
+		// No other series had any floats
+		return ds.data[0].Floats, nil
+	}
+
+	// We're going to create a new slice, so return this one to the pool.
+	// We'll return the other slices in the for loop below.
+	// We must defer here, rather than at the end, as the merge loop below reslices Floats.
+	// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
+	defer b.Pool.PutFPointSlice(ds.data[0].Floats)
 
 	// Re-slice the ds.data with just the series with floats to make the rest of our job easier
 	// Because we aren't re-sorting here it doesn't matter that ds.sourceSeriesIndices remains longer.
