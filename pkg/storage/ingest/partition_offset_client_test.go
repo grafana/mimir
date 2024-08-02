@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
 
@@ -468,4 +469,252 @@ func TestPartitionOffsetClient_FetchTopicLastProducedOffsets(t *testing.T) {
 		// Ensure the request was retried.
 		assert.Greater(t, actualTries.Load(), int64(1))
 	})
+
+	t.Run("should return error if response contains an unexpected number of topics", func(t *testing.T) {
+		t.Parallel()
+
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+
+		// Configure a short retry timeout.
+		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
+		kafkaCfg.LastProducedOffsetRetryTimeout = time.Second
+
+		client := createTestKafkaClient(t, kafkaCfg)
+		reg := prometheus.NewPedanticRegistry()
+		reader := newPartitionOffsetClient(client, topicName, reg, logger)
+
+		cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
+			req := kreq.(*kmsg.ListOffsetsRequest)
+			res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+			res.Default()
+			res.Topics = []kmsg.ListOffsetsResponseTopic{
+				{Topic: topicName},
+				{Topic: "another-unknown-topic"},
+			}
+
+			return res, nil, true
+		})
+
+		_, err := reader.FetchTopicLastProducedOffsets(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "unexpected number of topics in the response")
+	})
+
+	t.Run("should return error if response contains a 1 topic but it's not the expected one", func(t *testing.T) {
+		t.Parallel()
+
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+
+		// Configure a short retry timeout.
+		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
+		kafkaCfg.LastProducedOffsetRetryTimeout = time.Second
+
+		client := createTestKafkaClient(t, kafkaCfg)
+		reg := prometheus.NewPedanticRegistry()
+		reader := newPartitionOffsetClient(client, topicName, reg, logger)
+
+		cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
+			req := kreq.(*kmsg.ListOffsetsRequest)
+			res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+			res.Default()
+			res.Topics = []kmsg.ListOffsetsResponseTopic{
+				{Topic: "another-unknown-topic"},
+			}
+
+			return res, nil, true
+		})
+
+		_, err := reader.FetchTopicLastProducedOffsets(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "unexpected topic in the response")
+	})
+
+	t.Run("should return error if response contains an error for a partition", func(t *testing.T) {
+		t.Parallel()
+
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+
+		// Configure a short retry timeout.
+		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
+		kafkaCfg.LastProducedOffsetRetryTimeout = time.Second
+
+		client := createTestKafkaClient(t, kafkaCfg)
+		reg := prometheus.NewPedanticRegistry()
+		reader := newPartitionOffsetClient(client, topicName, reg, logger)
+
+		cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
+			req := kreq.(*kmsg.ListOffsetsRequest)
+			res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+			res.Default()
+			res.Topics = []kmsg.ListOffsetsResponseTopic{
+				{
+					Topic: topicName,
+					Partitions: []kmsg.ListOffsetsResponseTopicPartition{
+						{
+							Partition: 0,
+							Offset:    1,
+						}, {
+							Partition: 0,
+							ErrorCode: kerr.NotLeaderForPartition.Code,
+						},
+					},
+				},
+			}
+
+			return res, nil, true
+		})
+
+		_, err := reader.FetchTopicLastProducedOffsets(ctx)
+		require.ErrorIs(t, err, kerr.NotLeaderForPartition)
+	})
+}
+
+func TestPartitionOffsetClient_ListTopicPartitionIDs(t *testing.T) {
+	const (
+		numPartitions = 3
+		topicName     = "test"
+	)
+
+	var (
+		ctx    = context.Background()
+		logger = log.NewNopLogger()
+	)
+
+	runWithAndWithoutCache := func(t *testing.T, client *partitionOffsetClient, assert func(_ *testing.T, _ []int32, _ error)) {
+		t.Run("without cache", func(t *testing.T) {
+			ids, err := client.listTopicPartitionIDs(ctx)
+			assert(t, ids, err)
+		})
+
+		t.Run("with cache", func(t *testing.T) {
+			ids, err := client.listTopicPartitionIDsWithCache(ctx, time.Minute)
+			assert(t, ids, err)
+		})
+	}
+
+	t.Run("should return a list of partition IDs", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			_, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
+			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
+			client         = createTestKafkaClient(t, kafkaCfg)
+			reader         = newPartitionOffsetClient(client, topicName, nil, logger)
+		)
+
+		runWithAndWithoutCache(t, reader, func(t *testing.T, actualIDs []int32, actualErr error) {
+			require.NoError(t, actualErr)
+			assert.Equal(t, []int32{0, 1, 2}, actualIDs)
+		})
+	})
+
+	t.Run("should return an error if Kafka request succeeds but the response contains an error for the topic", func(t *testing.T) {
+		t.Parallel()
+
+		const numPartitions = 3
+
+		var (
+			cluster, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
+			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
+			client               = createTestKafkaClient(t, kafkaCfg)
+			reader               = newPartitionOffsetClient(client, topicName, nil, logger)
+		)
+
+		cluster.ControlKey(int16(kmsg.Metadata), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
+			req := kreq.(*kmsg.MetadataRequest)
+			res := req.ResponseKind().(*kmsg.MetadataResponse)
+			res.Default()
+			res.Topics = []kmsg.MetadataResponseTopic{
+				{
+					ErrorCode: kerr.UnknownServerError.Code,
+					Topic:     pointerOf[string](topicName),
+				},
+			}
+
+			return res, nil, true
+		})
+
+		runWithAndWithoutCache(t, reader, func(t *testing.T, actualIDs []int32, actualErr error) {
+			require.ErrorIs(t, actualErr, kerr.UnknownServerError)
+		})
+	})
+}
+
+func TestPartitionOffsetClient_ListTopicPartitionIDsWithCache(t *testing.T) {
+	const (
+		initialNumPartitions = 3
+		topicName            = "test"
+	)
+
+	var (
+		ctx                  = context.Background()
+		logger               = log.NewNopLogger()
+		cluster, clusterAddr = testkafka.CreateCluster(t, initialNumPartitions, topicName)
+		kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
+		client               = createTestKafkaClient(t, kafkaCfg)
+		reader               = newPartitionOffsetClient(client, topicName, nil, logger)
+		metadataRequests     = atomic.NewInt64(0)
+	)
+
+	cluster.ControlKey(int16(kmsg.Metadata), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.KeepControl()
+		metadataRequests.Inc()
+
+		return nil, nil, false
+	})
+
+	// 1st request with cache should hit Kafka.
+	actualIDs, actualErr := reader.listTopicPartitionIDsWithCache(ctx, time.Minute)
+	require.NoError(t, actualErr)
+	assert.Equal(t, []int32{0, 1, 2}, actualIDs)
+	assert.Equal(t, int64(1), metadataRequests.Load())
+
+	// 2nd request with cache should look up the cache.
+	actualIDs, actualErr = reader.listTopicPartitionIDsWithCache(ctx, time.Minute)
+	require.NoError(t, actualErr)
+	assert.Equal(t, []int32{0, 1, 2}, actualIDs)
+	assert.Equal(t, int64(1), metadataRequests.Load())
+
+	// Passing a TTL shorter than the current cached item age should hit Kafka.
+	actualIDs, actualErr = reader.listTopicPartitionIDsWithCache(ctx, 0)
+	require.NoError(t, actualErr)
+	assert.Equal(t, []int32{0, 1, 2}, actualIDs)
+	assert.Equal(t, int64(2), metadataRequests.Load())
+
+	// Increase the number of partitions. This command will issue 1 Metadata request.
+	adm := kadm.NewClient(client)
+	res, err := adm.CreatePartitions(ctx, 2, topicName)
+	require.NoError(t, err)
+	require.NoError(t, res.Error())
+	assert.Equal(t, int64(3), metadataRequests.Load())
+
+	// Ensure the number of partitions increased issuing a request that skips the cache.
+	actualIDs, actualErr = reader.listTopicPartitionIDs(ctx)
+	require.NoError(t, actualErr)
+	assert.Equal(t, []int32{0, 1, 2, 3, 4}, actualIDs)
+	assert.Equal(t, int64(4), metadataRequests.Load())
+
+	// Listing partitions via cache will return the stale list of partition IDs.
+	actualIDs, actualErr = reader.listTopicPartitionIDsWithCache(ctx, time.Minute)
+	require.NoError(t, actualErr)
+	assert.Equal(t, []int32{0, 1, 2}, actualIDs)
+	assert.Equal(t, int64(4), metadataRequests.Load())
+
+	// Passing a TTL shorter than the current cached item age should hit Kafka and get the updated list.
+	actualIDs, actualErr = reader.listTopicPartitionIDsWithCache(ctx, 0)
+	require.NoError(t, actualErr)
+	assert.Equal(t, []int32{0, 1, 2, 3, 4}, actualIDs)
+	assert.Equal(t, int64(5), metadataRequests.Load())
+}
+
+func pointerOf[T any](v T) *T {
+	return &v
 }
