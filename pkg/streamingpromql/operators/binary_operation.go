@@ -428,16 +428,15 @@ func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sou
 	// After which we check if there are any duplicate points in either the floats or histograms.
 
 	ds := seriesForOneGroupSide{
-		data:                 data,
-		sourceSeriesIndices:  sourceSeriesIndices,
-		sourceSeriesMetadata: sourceSeriesMetadata,
+		data:                data,
+		sourceSeriesIndices: sourceSeriesIndices,
 	}
 
-	floats, err := b.mergeOneSideFloats(ds, side)
+	floats, err := b.mergeOneSideFloats(ds, sourceSeriesMetadata, side)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
-	histograms, err := b.mergeOneSideHistograms(ds, side)
+	histograms, err := b.mergeOneSideHistograms(ds, sourceSeriesMetadata, side)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -459,7 +458,7 @@ func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sou
 	return types.InstantVectorSeriesData{Floats: floats, Histograms: histograms}, nil
 }
 
-func (b *BinaryOperation) mergeOneSideFloats(ds seriesForOneGroupSide, side string) ([]promql.FPoint, error) {
+func (b *BinaryOperation) mergeOneSideFloats(ds seriesForOneGroupSide, sourceSeriesMetadata []types.SeriesMetadata, side string) ([]promql.FPoint, error) {
 	if len(ds.data) == 0 {
 		return nil, nil
 	}
@@ -560,8 +559,8 @@ func (b *BinaryOperation) mergeOneSideFloats(ds seriesForOneGroupSide, side stri
 			nextPointInSeries := d.Floats[0]
 			if nextPointInSeries.T == nextT {
 				// Another series has a point with the same timestamp. We have a conflict.
-				firstConflictingSeriesLabels := ds.sourceSeriesMetadata[ds.sourceSeriesIndices[sourceSeriesIndexInData]].Labels
-				secondConflictingSeriesLabels := ds.sourceSeriesMetadata[ds.sourceSeriesIndices[seriesIndexInData]].Labels
+				firstConflictingSeriesLabels := sourceSeriesMetadata[ds.sourceSeriesIndices[sourceSeriesIndexInData]].Labels
+				secondConflictingSeriesLabels := sourceSeriesMetadata[ds.sourceSeriesIndices[seriesIndexInData]].Labels
 				groupLabels := b.labelsFunc()(firstConflictingSeriesLabels)
 
 				return nil, fmt.Errorf("found duplicate series for the match group %s on the %s side of the operation at timestamp %s: %s and %s", groupLabels, side, timestamp.Time(nextT).Format(time.RFC3339Nano), firstConflictingSeriesLabels, secondConflictingSeriesLabels)
@@ -582,7 +581,7 @@ func (b *BinaryOperation) mergeOneSideFloats(ds seriesForOneGroupSide, side stri
 	}
 }
 
-func (b *BinaryOperation) mergeOneSideHistograms(ds seriesForOneGroupSide, side string) ([]promql.HPoint, error) {
+func (b *BinaryOperation) mergeOneSideHistograms(ds seriesForOneGroupSide, sourceSeriesMetadata []types.SeriesMetadata, side string) ([]promql.HPoint, error) {
 	if len(ds.data) == 0 {
 		return nil, nil
 	}
@@ -674,8 +673,8 @@ func (b *BinaryOperation) mergeOneSideHistograms(ds seriesForOneGroupSide, side 
 			nextPointInSeries := d.Histograms[0]
 			if nextPointInSeries.T == nextT {
 				// Another series has a point with the same timestamp. We have a conflict.
-				firstConflictingSeriesLabels := ds.sourceSeriesMetadata[ds.sourceSeriesIndices[sourceSeriesIndexInData]].Labels
-				secondConflictingSeriesLabels := ds.sourceSeriesMetadata[ds.sourceSeriesIndices[seriesIndexInData]].Labels
+				firstConflictingSeriesLabels := sourceSeriesMetadata[ds.sourceSeriesIndices[sourceSeriesIndexInData]].Labels
+				secondConflictingSeriesLabels := sourceSeriesMetadata[ds.sourceSeriesIndices[seriesIndexInData]].Labels
 				groupLabels := b.labelsFunc()(firstConflictingSeriesLabels)
 
 				return nil, fmt.Errorf("found duplicate series for the match group %s on the %s side of the operation at timestamp %s: %s and %s", groupLabels, side, timestamp.Time(nextT).Format(time.RFC3339Nano), firstConflictingSeriesLabels, secondConflictingSeriesLabels)
@@ -978,13 +977,12 @@ var arithmeticOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 	},
 }
 
-// seriesForOneGroupSide couples data, sourceSeriesIndices, and sourceSeriesMetadata for use by mergeOneSide
+// seriesForOneGroupSide couples data and sourceSeriesIndices for use by mergeOneSide
 // Specifically it implements sort.Interface which will sort both data and sourceSeriesIndices at the same
 // time to retain a mapping of their indexes on either the present float timestamps or histograms as determined by sortByFloat.
 type seriesForOneGroupSide struct {
-	data                 []types.InstantVectorSeriesData
-	sourceSeriesIndices  []int
-	sourceSeriesMetadata []types.SeriesMetadata
+	data                []types.InstantVectorSeriesData
+	sourceSeriesIndices []int
 
 	sortByFloat bool
 }
