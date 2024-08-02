@@ -642,7 +642,7 @@ func TestPartitionOffsetClient_ListTopicPartitionIDs(t *testing.T) {
 			return res, nil, true
 		})
 
-		runWithAndWithoutCache(t, reader, func(t *testing.T, actualIDs []int32, actualErr error) {
+		runWithAndWithoutCache(t, reader, func(t *testing.T, _ []int32, actualErr error) {
 			require.ErrorIs(t, actualErr, kerr.UnknownServerError)
 		})
 	})
@@ -664,10 +664,9 @@ func TestPartitionOffsetClient_ListTopicPartitionIDsWithCache(t *testing.T) {
 		metadataRequests     = atomic.NewInt64(0)
 	)
 
-	cluster.ControlKey(int16(kmsg.Metadata), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+	cluster.ControlKey(int16(kmsg.Metadata), func(_ kmsg.Request) (kmsg.Response, error, bool) {
 		cluster.KeepControl()
 		metadataRequests.Inc()
-
 		return nil, nil, false
 	})
 
