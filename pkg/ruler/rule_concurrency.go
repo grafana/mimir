@@ -62,31 +62,33 @@ func (ds *DynamicSemaphore) Release() {
 }
 
 type MultiTenantConcurrencyControllerMetrics struct {
-	CurrentConcurrency prometheus.Gauge
-	AcquireTotal       prometheus.Counter
-	AcquireFailedTotal prometheus.Counter
-	ReleaseTotal       prometheus.Counter
+	SlotsInUser             *prometheus.GaugeVec
+	AttemptsStartedTotal    *prometheus.CounterVec
+	AttemptsIncompleteTotal *prometheus.CounterVec
+	AttemptsCompletedTotal  *prometheus.CounterVec
 }
 
 func newMultiTenantConcurrencyControllerMetrics(reg prometheus.Registerer) *MultiTenantConcurrencyControllerMetrics {
-	return &MultiTenantConcurrencyControllerMetrics{
-		CurrentConcurrency: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+	m := &MultiTenantConcurrencyControllerMetrics{
+		SlotsInUser: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use",
 			Help: "Current number of concurrency slots currently in use across all tenants",
-		}),
-		AcquireTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		}, []string{"user"}),
+		AttemptsStartedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total",
 			Help: "Total number of started attempts to acquire concurrency slots across all tenants",
-		}),
-		AcquireFailedTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		}, []string{"user"}),
+		AttemptsIncompleteTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total",
 			Help: "Total number of incomplete attempts to acquire concurrency slots across all tenants",
-		}),
-		ReleaseTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		}, []string{"user"}),
+		AttemptsCompletedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total",
 			Help: "Total number of concurrency slots we're done using across all tenants",
-		}),
+		}, []string{"user"}),
 	}
+
+	return m
 }
 
 // MultiTenantConcurrencyController instantiates concurrency controllers per tenant that limits the number of concurrent rule evaluations both global and per tenant.
@@ -113,6 +115,7 @@ func NewMultiTenantConcurrencyController(logger log.Logger, maxGlobalConcurrency
 // NewTenantConcurrencyControllerFor returns a new rules.RuleConcurrencyController to use for the input tenantID.
 func (c *MultiTenantConcurrencyController) NewTenantConcurrencyControllerFor(tenantID string) rules.RuleConcurrencyController {
 	return &TenantConcurrencyController{
+		tenantID:                 tenantID,
 		thresholdRuleConcurrency: c.thresholdRuleConcurrency,
 		metrics:                  c.metrics,
 		globalConcurrency:        c.globalConcurrency,
@@ -125,6 +128,7 @@ func (c *MultiTenantConcurrencyController) NewTenantConcurrencyControllerFor(ten
 // TenantConcurrencyController is a concurrency controller that limits the number of concurrent rule evaluations per tenant.
 // It also takes into account the global concurrency limit.
 type TenantConcurrencyController struct {
+	tenantID                 string
 	thresholdRuleConcurrency float64 // Percentage of the rule interval at which we consider the rule group at risk of missing its evaluation.
 	metrics                  *MultiTenantConcurrencyControllerMetrics
 
@@ -135,8 +139,8 @@ type TenantConcurrencyController struct {
 // Done releases a slot from the concurrency controller.
 func (c *TenantConcurrencyController) Done(_ context.Context) {
 	c.globalConcurrency.Release(1)
-	c.metrics.CurrentConcurrency.Dec()
-	c.metrics.ReleaseTotal.Inc()
+	c.metrics.SlotsInUser.WithLabelValues(c.tenantID).Dec()
+	c.metrics.AttemptsCompletedTotal.WithLabelValues(c.tenantID).Inc()
 
 	c.tenantConcurrency.Release()
 }
@@ -156,12 +160,12 @@ func (c *TenantConcurrencyController) Allow(_ context.Context, group *rules.Grou
 	}
 
 	// Next, try to acquire a global concurrency slot.
-	c.metrics.AcquireTotal.Inc()
+	c.metrics.AttemptsStartedTotal.WithLabelValues(c.tenantID).Inc()
 	if !c.globalConcurrency.TryAcquire(1) {
-		c.metrics.AcquireFailedTotal.Inc()
+		c.metrics.AttemptsIncompleteTotal.WithLabelValues(c.tenantID).Inc()
 		return false
 	}
-	c.metrics.CurrentConcurrency.Inc()
+	c.metrics.SlotsInUser.WithLabelValues(c.tenantID).Inc()
 
 	if c.tenantConcurrency.TryAcquire() {
 		return true
@@ -169,8 +173,8 @@ func (c *TenantConcurrencyController) Allow(_ context.Context, group *rules.Grou
 
 	// If we can't acquire a tenant slot, release the global slot.
 	c.globalConcurrency.Release(1)
-	c.metrics.CurrentConcurrency.Dec()
-	c.metrics.AcquireFailedTotal.Inc()
+	c.metrics.SlotsInUser.WithLabelValues(c.tenantID).Dec()
+	c.metrics.AttemptsIncompleteTotal.WithLabelValues(c.tenantID).Inc()
 	return false
 }
 
