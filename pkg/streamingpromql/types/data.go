@@ -66,11 +66,10 @@ func (i *InstantVectorSeriesDataIterator) Next() (t int64, f float64, h *histogr
 		point := i.data.Floats[i.fIndex]
 		i.fIndex++
 		return point.T, point.F, nil, true
-	} else {
-		point := i.data.Histograms[i.hIndex]
-		i.hIndex++
-		return point.T, 0, point.H, true
 	}
+	point := i.data.Histograms[i.hIndex]
+	i.hIndex++
+	return point.T, 0, point.H, true
 }
 
 // RangeVectorStepData contains the timestamps associated with a single time step produced by a

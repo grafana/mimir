@@ -958,13 +958,13 @@ var arithmeticOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 		}
 		return lhs / rhs, nil, true, nil
 	},
-	parser.POW: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+	parser.POW: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
 		return math.Pow(lhs, rhs), nil, true, nil
 	},
-	parser.MOD: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+	parser.MOD: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
 		return math.Mod(lhs, rhs), nil, true, nil
 	},
-	parser.ATAN2: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+	parser.ATAN2: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
 		return math.Atan2(lhs, rhs), nil, true, nil
 	},
 }
