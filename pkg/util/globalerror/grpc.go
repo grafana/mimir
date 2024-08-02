@@ -17,7 +17,8 @@ import (
 var grpcClientConnectionIsClosingErr string
 
 func init() {
-	//lint:ignore faillint We want to explicitly compare errors with the deprecated grpc.ErrClientConnClosing
+	// Ignore deprecation warning for now
+	//nolint:staticcheck
 	if stat, ok := grpcutil.ErrorToStatus(grpc.ErrClientConnClosing); ok && stat.Code() == codes.Canceled {
 		grpcClientConnectionIsClosingErr = stat.Message()
 	}
