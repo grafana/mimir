@@ -3320,7 +3320,7 @@ func TestShouldStopQueryFunc(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			assert.Equal(t, testData.expected, shouldStopQueryFunc(testData.err))
+			assert.Equal(t, testData.expected, shouldRetry(testData.err))
 		})
 	}
 }
