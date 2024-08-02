@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
@@ -17,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -106,17 +106,17 @@ func TestMultiTenantConcurrencyController(t *testing.T) {
 	rule1.SetNoDependencyRules(true)
 	rule1.SetNoDependentRules(true)
 
-	user1Ctx := user.InjectOrgID(context.Background(), "user1")
-	user2Ctx := user.InjectOrgID(context.Background(), "user2")
+	globalController := NewMultiTenantConcurrencyController(logger, 3, 50.0, reg, limits)
+	user1Controller := globalController.NewTenantConcurrencyControllerFor("user1")
+	user2Controller := globalController.NewTenantConcurrencyControllerFor("user2")
+	ctx := context.Background()
 
-	controller := NewMultiTenantConcurrencyController(logger, 3, 50.0, reg, limits)
+	require.True(t, user1Controller.Allow(ctx, rg, rule1))
+	require.True(t, user1Controller.Allow(ctx, rg, rule1))
 
-	require.True(t, controller.Allow(user1Ctx, rg, rule1))
-	require.True(t, controller.Allow(user1Ctx, rg, rule1))
-
-	require.False(t, controller.Allow(user1Ctx, rg, rule1)) // Should fail, tenant limit reached.
-	require.True(t, controller.Allow(user2Ctx, rg, rule1))  // Should succeed for another tenant as we have global slots available.
-	require.False(t, controller.Allow(user2Ctx, rg, rule1)) // Should fail for another tenant as we do not have global slots available even though the tenant has slots available.
+	require.False(t, user1Controller.Allow(ctx, rg, rule1)) // Should fail, tenant limit reached.
+	require.True(t, user2Controller.Allow(ctx, rg, rule1))  // Should succeed for another tenant as we have global slots available.
+	require.False(t, user2Controller.Allow(ctx, rg, rule1)) // Should fail for another tenant as we do not have global slots available even though the tenant has slots available.
 
 	// Let's check the metrics up until this point.
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
@@ -135,9 +135,9 @@ cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total 0
 `)))
 
 	// Now let's release some slots and acquire one for tenant 2 which previously failed.
-	controller.Done(user1Ctx)
-	require.True(t, controller.Allow(user2Ctx, rg, rule1))
-	require.False(t, controller.Allow(user1Ctx, rg, rule1))
+	user1Controller.Done(ctx)
+	require.True(t, user2Controller.Allow(ctx, rg, rule1))
+	require.False(t, user1Controller.Allow(ctx, rg, rule1))
 
 	// Let's look at the metrics again.
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
@@ -156,9 +156,9 @@ cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total 1
 `)))
 
 	// Release all slots, to make sure there is room for the next set of edge cases.
-	controller.Done(user1Ctx)
-	controller.Done(user2Ctx)
-	controller.Done(user2Ctx)
+	user1Controller.Done(ctx)
+	user2Controller.Done(ctx)
+	user2Controller.Done(ctx)
 
 	// Finally, let's try a few edge cases.
 	rg2 := rules.NewGroup(rules.GroupOptions{
@@ -167,10 +167,9 @@ cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total 1
 		Interval: 1 * time.Minute, // group not at risk.
 		Opts:     &rules.ManagerOptions{},
 	})
-	require.False(t, controller.Allow(user1Ctx, rg2, rule1)) // Should not be allowed with a group that is not at risk.
+	require.False(t, user1Controller.Allow(ctx, rg2, rule1)) // Should not be allowed with a group that is not at risk.
 	rule1.SetNoDependencyRules(false)
-	require.False(t, controller.Allow(user1Ctx, rg, rule1))             // Should not be allowed as the rule is no longer independent.
-	require.False(t, controller.Allow(context.Background(), rg, rule1)) // Should fail with a context that holds no userID.
+	require.False(t, user1Controller.Allow(ctx, rg, rule1)) // Should not be allowed as the rule is no longer independent.
 
 	// Check the metrics one final time to ensure there are no active slots in use.
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
@@ -187,6 +186,18 @@ cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use 0
 # TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total counter
 cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total 4
 `)))
+
+	// Make the rule independent again.
+	rule1.SetNoDependencyRules(true)
+
+	// Now let's test having a controller two times for the same tenant.
+	user3Controller := globalController.NewTenantConcurrencyControllerFor("user3")
+	user3ControllerTwo := globalController.NewTenantConcurrencyControllerFor("user3")
+
+	// They should not interfere with each other.
+	require.True(t, user3Controller.Allow(ctx, rg, rule1))
+	require.True(t, user3Controller.Allow(ctx, rg, rule1))
+	require.True(t, user3ControllerTwo.Allow(ctx, rg, rule1))
 }
 
 func TestIsRuleIndependent(t *testing.T) {
@@ -241,22 +252,20 @@ func TestIsRuleIndependent(t *testing.T) {
 }
 
 func TestGroupAtRisk(t *testing.T) {
-	logger := log.NewNopLogger()
-	reg := prometheus.NewPedanticRegistry()
-	limits := validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
-		tenantLimits["user1"] = validation.MockDefaultLimits()
-		tenantLimits["user1"].RulerMaxIndependentRuleEvaluationConcurrencyPerTenant = 2
-		tenantLimits["user2"] = validation.MockDefaultLimits()
-		tenantLimits["user2"].RulerMaxIndependentRuleEvaluationConcurrencyPerTenant = 2
-	})
-
 	exp, err := parser.ParseExpr("vector(1)")
 	require.NoError(t, err)
 	rule1 := rules.NewRecordingRule("test", exp, labels.Labels{})
 	rule1.SetNoDependencyRules(true)
 	rule1.SetNoDependentRules(true)
 
-	controller := NewMultiTenantConcurrencyController(logger, 3, 50.0, reg, limits)
+	controller := &TenantConcurrencyController{
+		thresholdRuleConcurrency: 50.0,
+		metrics:                  newMultiTenantConcurrencyControllerMetrics(prometheus.NewPedanticRegistry()),
+		globalConcurrency:        semaphore.NewWeighted(3),
+		tenantConcurrency: NewDynamicSemaphore(func() int64 {
+			return 2
+		}),
+	}
 
 	tc := map[string]struct {
 		group    *rules.Group

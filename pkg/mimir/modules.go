@@ -893,7 +893,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	}
 
 	var concurrencyController ruler.MultiTenantRuleConcurrencyController
-	concurrencyController = &ruler.NoopConcurrencyController{}
+	concurrencyController = &ruler.NoopMultiTenantConcurrencyController{}
 	if t.Cfg.Ruler.MaxIndependentRuleEvaluationConcurrency > 0 {
 		concurrencyController = ruler.NewMultiTenantConcurrencyController(
 			util_log.Logger,
@@ -924,7 +924,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	)
 
 	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
-	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver, concurrencyController)
+	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver)
 	if err != nil {
 		return nil, err
 	}

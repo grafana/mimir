@@ -33,10 +33,9 @@ import (
 )
 
 type DefaultMultiTenantManager struct {
-	cfg                   Config
-	notifierCfg           *config.Config
-	managerFactory        ManagerFactory
-	concurrencyController MultiTenantRuleConcurrencyController
+	cfg            Config
+	notifierCfg    *config.Config
+	managerFactory ManagerFactory
 
 	mapper *mapper
 
@@ -61,7 +60,7 @@ type DefaultMultiTenantManager struct {
 	rulerIsRunning atomic.Bool
 }
 
-func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver cache.AddressProvider, concurrencyController MultiTenantRuleConcurrencyController) (*DefaultMultiTenantManager, error) {
+func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver cache.AddressProvider) (*DefaultMultiTenantManager, error) {
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
 	ncfg, err := buildNotifierConfig(&cfg, dnsResolver, refreshMetrics)
 	if err != nil {
@@ -74,14 +73,13 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 	}
 
 	return &DefaultMultiTenantManager{
-		cfg:                   cfg,
-		notifierCfg:           ncfg,
-		managerFactory:        managerFactory,
-		concurrencyController: concurrencyController,
-		notifiers:             map[string]*rulerNotifier{},
-		mapper:                newMapper(cfg.RulePath, logger),
-		userManagers:          map[string]RulesManager{},
-		userManagerMetrics:    userManagerMetrics,
+		cfg:                cfg,
+		notifierCfg:        ncfg,
+		managerFactory:     managerFactory,
+		notifiers:          map[string]*rulerNotifier{},
+		mapper:             newMapper(cfg.RulePath, logger),
+		userManagers:       map[string]RulesManager{},
+		userManagerMetrics: userManagerMetrics,
 		managersTotal: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Namespace: "cortex",
 			Name:      "ruler_managers_total",
