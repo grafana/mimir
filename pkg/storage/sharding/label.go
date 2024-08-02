@@ -12,11 +12,8 @@ import (
 )
 
 const (
-	// ShardLabel is a reserved label referencing a shard on read path used for query sharding.
+	// ShardLabel is a reserved label referencing a shard on read path.
 	ShardLabel = "__query_shard__"
-
-	// ClusterLabel is a reserved label referencing a cluster for cross-cluster query federation.
-	ClusterLabel = "__cluster__"
 )
 
 // ShardSelector holds information about the configured query shard.

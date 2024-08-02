@@ -19,7 +19,7 @@ import (
 
 // NewSharding creates a new query sharding mapper.
 func NewSharding(ctx context.Context, shards int, logger log.Logger, stats *MapperStats) (ASTMapper, error) {
-	shardSummer, err := newShardSummer(ctx, shards, vectorSquasher, logger, stats, nil)
+	shardSummer, err := newShardSummer(ctx, shards, vectorSquasher, logger, stats)
 	if err != nil {
 		return nil, err
 	}
@@ -41,26 +41,13 @@ type shardSummer struct {
 	logger       log.Logger
 	stats        *MapperStats
 
-	splitLabel string
-	clusters   []string
-
 	canShardAllVectorSelectorsCache map[string]bool
 }
 
-// newShardSummer instantiates an ASTMapper which will fan out sum queries by shard. If clusters is defined,
-// the mapper will be used to rewrite the queries for cross-cluster query federation. Otherwise, it will
-// rewrite the queries for query sharding.
-func newShardSummer(ctx context.Context, shards int, squasher squasher, logger log.Logger, stats *MapperStats, clusters []string) (ASTMapper, error) {
+// newShardSummer instantiates an ASTMapper which will fan out sum queries by shard
+func newShardSummer(ctx context.Context, shards int, squasher squasher, logger log.Logger, stats *MapperStats) (ASTMapper, error) {
 	if squasher == nil {
 		return nil, errors.Errorf("squasher required and not passed")
-	}
-
-	var splitLabel string
-	if len(clusters) > 0 {
-		shards = len(clusters)
-		splitLabel = sharding.ClusterLabel
-	} else {
-		splitLabel = sharding.ShardLabel
 	}
 
 	return NewASTExprMapper(&shardSummer{
@@ -71,9 +58,6 @@ func newShardSummer(ctx context.Context, shards int, squasher squasher, logger l
 		currentShard: nil,
 		logger:       logger,
 		stats:        stats,
-
-		splitLabel: splitLabel,
-		clusters:   clusters,
 
 		canShardAllVectorSelectorsCache: make(map[string]bool),
 	}), nil
@@ -114,7 +98,7 @@ func (summer *shardSummer) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 
 	case *parser.VectorSelector:
 		if summer.currentShard != nil {
-			mapped, err := summer.shardVectorSelector(e)
+			mapped, err := shardVectorSelector(*summer.currentShard, summer.shards, e)
 			return mapped, true, err
 		}
 		return e, true, nil
@@ -538,14 +522,8 @@ func (summer *shardSummer) shardAndSquashBinOp(expr *parser.BinaryExpr) (parser.
 	return summer.squash(children...)
 }
 
-func (summer *shardSummer) shardVectorSelector(selector *parser.VectorSelector) (parser.Expr, error) {
-	var splitLabelValue string
-	if len(summer.clusters) > 0 {
-		splitLabelValue = summer.clusters[*summer.currentShard]
-	} else {
-		splitLabelValue = sharding.ShardSelector{ShardIndex: uint64(*summer.currentShard), ShardCount: uint64(summer.shards)}.LabelValue()
-	}
-	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, summer.splitLabel, splitLabelValue)
+func shardVectorSelector(curshard, shards int, selector *parser.VectorSelector) (parser.Expr, error) {
+	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, sharding.ShardLabel, sharding.ShardSelector{ShardIndex: uint64(curshard), ShardCount: uint64(shards)}.LabelValue())
 	if err != nil {
 		return nil, err
 	}
