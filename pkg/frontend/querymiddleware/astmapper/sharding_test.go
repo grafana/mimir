@@ -577,7 +577,7 @@ func TestShardSummerWithEncoding(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
 			stats := NewMapperStats()
-			summer, err := newShardSummer(context.Background(), c.shards, vectorSquasher, log.NewNopLogger(), stats)
+			summer, err := newShardSummer(context.Background(), c.shards, vectorSquasher, log.NewNopLogger(), stats, nil)
 			require.Nil(t, err)
 			expr, err := parser.ParseExpr(c.input)
 			require.Nil(t, err)
@@ -585,6 +585,41 @@ func TestShardSummerWithEncoding(t *testing.T) {
 			res, err := summer.Map(expr)
 			require.Nil(t, err)
 			assert.Equal(t, c.shards, stats.GetShardedQueries())
+			expected, err := parser.ParseExpr(c.expected)
+			require.Nil(t, err)
+
+			require.Equal(t, expected.String(), res.String())
+		})
+	}
+}
+
+func TestShardSummerWithClusters(t *testing.T) {
+	clusters := []string{
+		"cluster-a",
+		"cluster-b",
+		"cluster-c",
+		"cluster-d",
+	}
+	clustersSize := len(clusters)
+	for i, c := range []struct {
+		input    string
+		expected string
+	}{
+		{
+			input:    `sum(rate(bar1{baz="blip"}[1m]))`,
+			expected: `sum(__embedded_queries__{__queries__="{\"Concat\":[\"sum(rate(bar1{__cluster__=\\\"cluster-a\\\",baz=\\\"blip\\\"}[1m]))\",\"sum(rate(bar1{__cluster__=\\\"cluster-b\\\",baz=\\\"blip\\\"}[1m]))\",\"sum(rate(bar1{__cluster__=\\\"cluster-c\\\",baz=\\\"blip\\\"}[1m]))\",\"sum(rate(bar1{__cluster__=\\\"cluster-d\\\",baz=\\\"blip\\\"}[1m]))\"]}"})`,
+		},
+	} {
+		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
+			stats := NewMapperStats()
+			summer, err := newShardSummer(context.Background(), 0, vectorSquasher, log.NewNopLogger(), stats, clusters)
+			require.Nil(t, err)
+			expr, err := parser.ParseExpr(c.input)
+			require.Nil(t, err)
+
+			res, err := summer.Map(expr)
+			require.Nil(t, err)
+			assert.Equal(t, clustersSize, stats.GetShardedQueries())
 			expected, err := parser.ParseExpr(c.expected)
 			require.Nil(t, err)
 
