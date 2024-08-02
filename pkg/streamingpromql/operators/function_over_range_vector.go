@@ -23,7 +23,7 @@ type FunctionOverRangeVector struct {
 	Inner                    types.RangeVectorOperator
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 
-	MetadataFunc         functions.SeriesMetadataFunction
+	SeriesMetadataFunc   functions.SeriesMetadataFunction
 	StepFunc             functions.RangeVectorStepFunction
 	SeriesValidationFunc functions.RangeVectorSeriesValidationFunction
 
@@ -55,9 +55,9 @@ func NewFunctionOverRangeVector(
 	o := &FunctionOverRangeVector{
 		Inner:                    inner,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
-		MetadataFunc:             metadataFunc,
-		SeriesValidationFunc:     seriesValidationFunc,
+		SeriesMetadataFunc:       metadataFunc,
 		StepFunc:                 stepFunc,
+		SeriesValidationFunc:     seriesValidationFunc,
 		Annotations:              annotations,
 		expressionPosition:       expressionPosition,
 	}
@@ -86,7 +86,7 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 	m.numSteps = m.Inner.StepCount()
 	m.rangeSeconds = m.Inner.Range().Seconds()
 
-	return m.MetadataFunc(metadata, m.MemoryConsumptionTracker)
+	return m.SeriesMetadataFunc(metadata, m.MemoryConsumptionTracker)
 }
 
 func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {

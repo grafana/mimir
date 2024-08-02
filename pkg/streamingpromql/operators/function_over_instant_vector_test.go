@@ -45,8 +45,8 @@ func TestFunctionOverInstantVector(t *testing.T) {
 		Inner:                    inner,
 		MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
 
-		MetadataFunc:   mustBeCalledMetadata,
-		SeriesDataFunc: mustBeCalledSeriesData,
+		SeriesMetadataFunc: mustBeCalledMetadata,
+		SeriesDataFunc:     mustBeCalledSeriesData,
 	}
 
 	ctx := context.TODO()
