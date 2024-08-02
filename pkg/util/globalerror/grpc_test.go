@@ -5,15 +5,21 @@ package globalerror
 import (
 	"context"
 	"io"
+	"net"
 	"testing"
 
 	"github.com/gogo/status"
+	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
+	dskitserver "github.com/grafana/dskit/server"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 
@@ -77,16 +83,24 @@ func TestWrapContextError(t *testing.T) {
 				expectedGrpcCode:   codes.DeadlineExceeded,
 				expectedContextErr: context.DeadlineExceeded,
 			},
+			"grpc.ErrClientConnClosing": {
+				origErr:            status.Error(codes.Canceled, "grpc: the client connection is closing"),
+				expectedGrpcCode:   codes.Canceled,
+				expectedContextErr: nil,
+			},
 		}
 
 		for testName, testData := range tests {
 			t.Run(testName, func(t *testing.T) {
 				wrapped := WrapGRPCErrorWithContextError(testData.origErr)
-
-				assert.NotEqual(t, testData.origErr, wrapped)
 				assert.ErrorIs(t, wrapped, testData.origErr)
 
-				assert.True(t, errors.Is(wrapped, testData.expectedContextErr))
+				if testData.expectedContextErr != nil {
+					assert.ErrorIs(t, wrapped, testData.expectedContextErr)
+					assert.NotEqual(t, testData.origErr, wrapped)
+				} else {
+					assert.Equal(t, testData.origErr, wrapped)
+				}
 				assert.Equal(t, testData.expectedGrpcCode, grpcutil.ErrorToStatusCode(wrapped))
 
 				//lint:ignore faillint We want to explicitly assert on status.FromError()
@@ -283,4 +297,81 @@ func checkErrorWithStatusDetails(t *testing.T, details []any, expected *mimirpb.
 		require.True(t, ok)
 		require.Equal(t, expected, errDetails)
 	}
+}
+
+func TestGRPCClientClosingConnectionError_IsNotContextCanceled(t *testing.T) {
+	ctx := context.Background()
+
+	_, client, cc := prepareTest(t)
+
+	// Calls to Succeed() should be successful when cc is open.
+	_, err := client.Succeed(ctx, nil)
+	require.NoError(t, err)
+
+	// We close cc.
+	err = cc.Close()
+	require.NoError(t, err)
+
+	// Calls to Succeed() should fail with "grpc: the client connection is closing" when cc is closed.
+	_, err = client.Succeed(ctx, nil)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, context.Canceled)
+
+	wrapErr := WrapGRPCErrorWithContextError(err)
+	require.Error(t, wrapErr)
+	require.NotErrorIs(t, wrapErr, context.Canceled)
+	checkGRPCConnectionIsClosingError(t, err)
+}
+
+func prepareTest(t *testing.T) (dskitserver.FakeServerServer, dskitserver.FakeServerClient, *grpc.ClientConn) {
+	grpcServer := grpc.NewServer()
+	t.Cleanup(grpcServer.GracefulStop)
+
+	server := &mockServer{}
+	dskitserver.RegisterFakeServerServer(grpcServer, server)
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	go func() {
+		require.NoError(t, grpcServer.Serve(listener))
+	}()
+
+	// Create a real gRPC client connecting to the gRPC server we control in this test.
+	clientCfg := grpcclient.Config{}
+	flagext.DefaultValues(&clientCfg)
+
+	opts, err := clientCfg.DialOption(nil, nil)
+	require.NoError(t, err)
+
+	cc, err := grpc.NewClient(listener.Addr().String(), opts...)
+	require.NoError(t, err)
+
+	client := dskitserver.NewFakeServerClient(cc)
+
+	// This is another source of "grpc: the client connection is closing",
+	// because at this point the connection is already closed.
+	t.Cleanup(func() {
+		err := cc.Close()
+		require.Error(t, err)
+		require.NotErrorIs(t, err, context.Canceled)
+		checkGRPCConnectionIsClosingError(t, err)
+	})
+
+	return server, client, cc
+}
+
+func checkGRPCConnectionIsClosingError(t *testing.T, err error) {
+	stat, ok := grpcutil.ErrorToStatus(err)
+	require.True(t, ok)
+	require.Equal(t, codes.Canceled, stat.Code())
+	require.Equal(t, "grpc: the client connection is closing", stat.Message())
+}
+
+type mockServer struct {
+	dskitserver.UnimplementedFakeServerServer
+}
+
+func (s *mockServer) Succeed(_ context.Context, _ *empty.Empty) (*empty.Empty, error) {
+	return nil, nil
 }
