@@ -84,7 +84,7 @@ func TestWrapContextError(t *testing.T) {
 				expectedContextErr: context.DeadlineExceeded,
 			},
 			"grpc.ErrClientConnClosing": {
-				origErr:            status.Error(codes.Canceled, grpcClientConnectionIsClosingErr),
+				origErr:            status.Error(codes.Canceled, "grpc: the client connection is closing"),
 				expectedGrpcCode:   codes.Canceled,
 				expectedContextErr: nil,
 			},
@@ -365,7 +365,7 @@ func checkGRPCConnectionIsClosingError(t *testing.T, err error) {
 	stat, ok := grpcutil.ErrorToStatus(err)
 	require.True(t, ok)
 	require.Equal(t, codes.Canceled, stat.Code())
-	require.Equal(t, grpcClientConnectionIsClosingErr, stat.Message())
+	require.Equal(t, "grpc: the client connection is closing", stat.Message())
 }
 
 type mockServer struct {
