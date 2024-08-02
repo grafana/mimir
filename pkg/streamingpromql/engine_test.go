@@ -1337,13 +1337,21 @@ func TestAnnotations(t *testing.T) {
 			expr:                       `rate(some_metric_count[1m])`,
 			expectedWarningAnnotations: []string{`PromQL warning: encountered a mix of histograms and floats for metric name "some_metric_count" (1:6)`},
 		},
-
-		// Blocked until https://github.com/prometheus/prometheus/pull/14537 is merged
-		// "rate() over series with histograms that are not counters": {
-		// 	data:                       `some_metric {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}}`,
-		// 	expr:                       `rate(some_metric[1m])`,
-		// 	expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a counter: some_metric (1:6)`},
-		// },
+		"rate() over series with first histogram that is not a counter": {
+			data:                       `some_metric {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2]}}`,
+			expr:                       `rate(some_metric[1m])`,
+			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:6)`},
+		},
+		"rate() over series with last histogram that is not a counter": {
+			data:                       `some_metric {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}}`,
+			expr:                       `rate(some_metric[1m])`,
+			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:6)`},
+		},
+		"rate() over series with a histogram that is not a counter that is neither the first or last in the range": {
+			data:                       `some_metric {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}} {{schema:0 sum:3 count:3 buckets:[3]}}`,
+			expr:                       `rate(some_metric[2m] @ 2m)`,
+			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:6)`},
+		},
 	}
 
 	opts := NewTestEngineOpts()

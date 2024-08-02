@@ -35,7 +35,7 @@ func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *typ
 	}
 
 	if hCount >= 2 {
-		val, err := histogramRate(histogramBuffer, step, hHead, hTail, rangeSeconds, hCount)
+		val, err := histogramRate(histogramBuffer, step, hHead, hTail, rangeSeconds, hCount, emitAnnotation)
 		if err != nil {
 			return 0, false, nil, err
 		}
@@ -45,9 +45,13 @@ func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *typ
 	return 0, false, nil, nil
 }
 
-func histogramRate(histogramBuffer *types.HPointRingBuffer, step types.RangeVectorStepData, hHead []promql.HPoint, hTail []promql.HPoint, rangeSeconds float64, hCount int) (*histogram.FloatHistogram, error) {
+func histogramRate(histogramBuffer *types.HPointRingBuffer, step types.RangeVectorStepData, hHead []promql.HPoint, hTail []promql.HPoint, rangeSeconds float64, hCount int, emitAnnotation EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
 	firstPoint := histogramBuffer.First()
 	lastPoint, _ := histogramBuffer.LastAtOrBefore(step.RangeEnd) // We already know there is a point at or before this time, no need to check.
+
+	if firstPoint.H.CounterResetHint == histogram.GaugeType || lastPoint.H.CounterResetHint == histogram.GaugeType {
+		emitAnnotation(annotations.NewNativeHistogramNotCounterWarning)
+	}
 
 	currentSchema := firstPoint.H.Schema
 	if lastPoint.H.Schema < currentSchema {
@@ -72,6 +76,10 @@ func histogramRate(histogramBuffer *types.HPointRingBuffer, step types.RangeVect
 			}
 			if p.H.Schema < currentSchema {
 				delta = delta.CopyToSchema(p.H.Schema)
+			}
+
+			if p.H.CounterResetHint == histogram.GaugeType {
+				emitAnnotation(annotations.NewNativeHistogramNotCounterWarning)
 			}
 
 			previousValue = p.H
