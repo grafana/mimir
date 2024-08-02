@@ -82,6 +82,7 @@ func (q *queryBoosterMiddleware) isQueryBoosted(ctx context.Context, query strin
 		Method: http.MethodGet,
 		URL:    &url.URL{Path: "/api/v1/label/" + boostedQueryLabelName + "/values"},
 		Form:   boostedQueryResultsMetricMatcher,
+		Header: make(http.Header),
 	}
 
 	for _, header := range headers {
