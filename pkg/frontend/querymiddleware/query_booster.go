@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/user"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -78,17 +79,21 @@ func (q *queryBoosterMiddleware) isQueryBoosted(ctx context.Context, query strin
 	boostedQueryResultsMetricMatcher.Add("match[]", "__name__=\""+queryBoosterMetric+"\"")
 	boostedQueryResultsMetricMatcher.Add("match[]", boostedQueryLabelName+"=\""+query+"\"")
 
-	req := &http.Request{
-		Method: http.MethodGet,
-		URL:    &url.URL{Path: "/api/v1/label/" + boostedQueryLabelName + "/values"},
-		Form:   boostedQueryResultsMetricMatcher,
-		Header: make(http.Header),
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		"/api/v1/label/"+boostedQueryLabelName+"/values",
+		http.NoBody,
+	)
+	if err != nil {
+		return false, errors.Wrap(err, "failed to create isQueryBoosted request")
 	}
 
-	for _, header := range headers {
-		for _, value := range header.Values {
-			req.Header.Add(header.Name, value)
-		}
+	req.URL.RawQuery = boostedQueryResultsMetricMatcher.Encode()
+	req.RequestURI = req.URL.String()
+
+	if err := user.InjectOrgIDIntoHTTPRequest(ctx, req); err != nil {
+		return false, errors.Wrap(err, "failed to inject org ID into isQueryBoosted request")
 	}
 
 	respEncoded, err := q.downstream.RoundTrip(req)
