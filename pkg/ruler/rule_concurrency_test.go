@@ -120,6 +120,10 @@ func TestMultiTenantConcurrencyController(t *testing.T) {
 
 	// Let's check the metrics up until this point.
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+# HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total Total number of concurrency slots we're done using across all tenants
+# TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total counter
+cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total{user="user1"} 0
+cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total{user="user2"} 0
 # HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total Total number of incomplete attempts to acquire concurrency slots across all tenants
 # TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total counter
 cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total{user="user1"} 1
@@ -156,6 +160,7 @@ cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use{user="user2"} 
 # HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total Total number of concurrency slots we're done using across all tenants
 # TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total counter
 cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total{user="user1"} 1
+cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total{user="user2"} 0
 `)))
 
 	// Release all slots, to make sure there is room for the next set of edge cases.
@@ -265,9 +270,13 @@ func TestGroupAtRisk(t *testing.T) {
 	rule1.SetNoDependencyRules(true)
 	rule1.SetNoDependentRules(true)
 
+	m := newMultiTenantConcurrencyControllerMetrics(prometheus.NewPedanticRegistry())
 	controller := &TenantConcurrencyController{
+		slotsInUse:               m.SlotsInUse.WithLabelValues("user1"),
+		attemptsStartedTotal:     m.AttemptsStartedTotal.WithLabelValues("user1"),
+		attemptsIncompleteTotal:  m.AttemptsIncompleteTotal.WithLabelValues("user1"),
+		attemptsCompletedTotal:   m.AttemptsCompletedTotal.WithLabelValues("user1"),
 		thresholdRuleConcurrency: 50.0,
-		metrics:                  newMultiTenantConcurrencyControllerMetrics(prometheus.NewPedanticRegistry()),
 		globalConcurrency:        semaphore.NewWeighted(3),
 		tenantConcurrency: NewDynamicSemaphore(func() int64 {
 			return 2

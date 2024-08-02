@@ -62,7 +62,7 @@ func (ds *DynamicSemaphore) Release() {
 }
 
 type MultiTenantConcurrencyControllerMetrics struct {
-	SlotsInUser             *prometheus.GaugeVec
+	SlotsInUse              *prometheus.GaugeVec
 	AttemptsStartedTotal    *prometheus.CounterVec
 	AttemptsIncompleteTotal *prometheus.CounterVec
 	AttemptsCompletedTotal  *prometheus.CounterVec
@@ -70,7 +70,7 @@ type MultiTenantConcurrencyControllerMetrics struct {
 
 func newMultiTenantConcurrencyControllerMetrics(reg prometheus.Registerer) *MultiTenantConcurrencyControllerMetrics {
 	m := &MultiTenantConcurrencyControllerMetrics{
-		SlotsInUser: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		SlotsInUse: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use",
 			Help: "Current number of concurrency slots currently in use across all tenants",
 		}, []string{"user"}),
@@ -115,9 +115,13 @@ func NewMultiTenantConcurrencyController(logger log.Logger, maxGlobalConcurrency
 // NewTenantConcurrencyControllerFor returns a new rules.RuleConcurrencyController to use for the input tenantID.
 func (c *MultiTenantConcurrencyController) NewTenantConcurrencyControllerFor(tenantID string) rules.RuleConcurrencyController {
 	return &TenantConcurrencyController{
+		slotsInUse:              c.metrics.SlotsInUse.WithLabelValues(tenantID),
+		attemptsStartedTotal:    c.metrics.AttemptsStartedTotal.WithLabelValues(tenantID),
+		attemptsIncompleteTotal: c.metrics.AttemptsIncompleteTotal.WithLabelValues(tenantID),
+		attemptsCompletedTotal:  c.metrics.AttemptsCompletedTotal.WithLabelValues(tenantID),
+
 		tenantID:                 tenantID,
 		thresholdRuleConcurrency: c.thresholdRuleConcurrency,
-		metrics:                  c.metrics,
 		globalConcurrency:        c.globalConcurrency,
 		tenantConcurrency: NewDynamicSemaphore(func() int64 {
 			return c.limits.RulerMaxIndependentRuleEvaluationConcurrencyPerTenant(tenantID)
@@ -130,7 +134,12 @@ func (c *MultiTenantConcurrencyController) NewTenantConcurrencyControllerFor(ten
 type TenantConcurrencyController struct {
 	tenantID                 string
 	thresholdRuleConcurrency float64 // Percentage of the rule interval at which we consider the rule group at risk of missing its evaluation.
-	metrics                  *MultiTenantConcurrencyControllerMetrics
+
+	// Metrics with the tenant label already in them. This avoids having to call WithLabelValues on every metric change.
+	slotsInUse              prometheus.Gauge
+	attemptsStartedTotal    prometheus.Counter
+	attemptsIncompleteTotal prometheus.Counter
+	attemptsCompletedTotal  prometheus.Counter
 
 	globalConcurrency *semaphore.Weighted
 	tenantConcurrency *DynamicSemaphore
@@ -139,8 +148,8 @@ type TenantConcurrencyController struct {
 // Done releases a slot from the concurrency controller.
 func (c *TenantConcurrencyController) Done(_ context.Context) {
 	c.globalConcurrency.Release(1)
-	c.metrics.SlotsInUser.WithLabelValues(c.tenantID).Dec()
-	c.metrics.AttemptsCompletedTotal.WithLabelValues(c.tenantID).Inc()
+	c.slotsInUse.Dec()
+	c.attemptsCompletedTotal.Inc()
 
 	c.tenantConcurrency.Release()
 }
@@ -160,12 +169,12 @@ func (c *TenantConcurrencyController) Allow(_ context.Context, group *rules.Grou
 	}
 
 	// Next, try to acquire a global concurrency slot.
-	c.metrics.AttemptsStartedTotal.WithLabelValues(c.tenantID).Inc()
+	c.attemptsStartedTotal.Inc()
 	if !c.globalConcurrency.TryAcquire(1) {
-		c.metrics.AttemptsIncompleteTotal.WithLabelValues(c.tenantID).Inc()
+		c.attemptsIncompleteTotal.Inc()
 		return false
 	}
-	c.metrics.SlotsInUser.WithLabelValues(c.tenantID).Inc()
+	c.slotsInUse.Inc()
 
 	if c.tenantConcurrency.TryAcquire() {
 		return true
@@ -173,8 +182,8 @@ func (c *TenantConcurrencyController) Allow(_ context.Context, group *rules.Grou
 
 	// If we can't acquire a tenant slot, release the global slot.
 	c.globalConcurrency.Release(1)
-	c.metrics.SlotsInUser.WithLabelValues(c.tenantID).Dec()
-	c.metrics.AttemptsIncompleteTotal.WithLabelValues(c.tenantID).Inc()
+	c.slotsInUse.Dec()
+	c.attemptsIncompleteTotal.Inc()
 	return false
 }
 
