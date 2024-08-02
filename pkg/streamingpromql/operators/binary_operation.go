@@ -723,7 +723,7 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 			fPoints = left.Floats[:0]
 		} else if maxPoints <= cap(right.Floats) {
 			// Can otherwise fit in the right side
-			canReturnRightHPointSlice = false
+			canReturnRightFPointSlice = false
 			fPoints = right.Floats[:0]
 		} else {
 			// We can't fit in either left or right side, so create a new slice
