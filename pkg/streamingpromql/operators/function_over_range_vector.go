@@ -34,8 +34,9 @@ type FunctionOverRangeVector struct {
 	floatBuffer     *types.FPointRingBuffer
 	histogramBuffer *types.HPointRingBuffer
 
-	expressionPosition posrange.PositionRange
-	emitAnnotationFunc functions.EmitAnnotationFunc
+	expressionPosition   posrange.PositionRange
+	emitAnnotationFunc   functions.EmitAnnotationFunc
+	seriesValidationFunc functions.RangeVectorSeriesValidationFunction
 }
 
 var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
@@ -55,7 +56,11 @@ func NewFunctionOverRangeVector(
 		expressionPosition:       expressionPosition,
 	}
 
-	if f.NeedsSeriesNamesForAnnotations || f.SeriesValidationFunc != nil {
+	if f.SeriesValidationFuncFactory != nil {
+		o.seriesValidationFunc = f.SeriesValidationFuncFactory()
+	}
+
+	if f.NeedsSeriesNamesForAnnotations || o.seriesValidationFunc != nil {
 		o.metricNames = &MetricNames{}
 	}
 
@@ -111,8 +116,8 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 
 		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
 		if err == types.EOS {
-			if m.Func.SeriesValidationFunc != nil {
-				m.Func.SeriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex), m.emitAnnotationFunc)
+			if m.seriesValidationFunc != nil {
+				m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex), m.emitAnnotationFunc)
 			}
 
 			return data, nil

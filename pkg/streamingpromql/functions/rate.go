@@ -17,7 +17,7 @@ import (
 
 var Rate = FunctionOverRangeVector{
 	StepFunc:                       rate,
-	SeriesValidationFunc:           rateSeriesValidator,
+	SeriesValidationFuncFactory:    rateSeriesValidator,
 	SeriesMetadataFunc:             DropSeriesName,
 	NeedsSeriesNamesForAnnotations: true,
 }
@@ -206,16 +206,24 @@ func calculateFloatRate(rangeStart, rangeEnd int64, rangeSeconds float64, firstP
 	return delta * factor
 }
 
-func rateSeriesValidator(data types.InstantVectorSeriesData, metricName string, emitAnnotation EmitAnnotationFunc) {
-	if len(data.Floats) == 0 {
-		return
-	}
+func rateSeriesValidator() RangeVectorSeriesValidationFunction {
+	// Most of the time, rate() is performed over many series with the same metric name, so we can save some time
+	// by only checking a name we haven't already checked.
+	lastCheckedMetricName := ""
 
-	if metricName == "" {
-		return
-	}
+	return func(data types.InstantVectorSeriesData, metricName string, emitAnnotation EmitAnnotationFunc) {
+		if len(data.Floats) == 0 {
+			return
+		}
 
-	if !strings.HasSuffix(metricName, "_total") && !strings.HasSuffix(metricName, "_count") && !strings.HasSuffix(metricName, "_sum") && !strings.HasSuffix(metricName, "_bucket") {
-		emitAnnotation(annotations.NewPossibleNonCounterInfo)
+		if metricName == "" || metricName == lastCheckedMetricName {
+			return
+		}
+
+		if !strings.HasSuffix(metricName, "_total") && !strings.HasSuffix(metricName, "_count") && !strings.HasSuffix(metricName, "_sum") && !strings.HasSuffix(metricName, "_bucket") {
+			emitAnnotation(annotations.NewPossibleNonCounterInfo)
+		}
+
+		lastCheckedMetricName = metricName
 	}
 }

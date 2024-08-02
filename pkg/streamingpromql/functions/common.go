@@ -83,14 +83,23 @@ type AnnotationGenerator func(metricName string, expressionPosition posrange.Pos
 // RangeVectorSeriesValidationFunction is a function that is called after a series is completed for a function over a range vector.
 type RangeVectorSeriesValidationFunction func(seriesData types.InstantVectorSeriesData, metricName string, emitAnnotation EmitAnnotationFunc)
 
+// RangeVectorSeriesValidationFunctionFactory is a factory function that returns a RangeVectorSeriesValidationFunction
+type RangeVectorSeriesValidationFunctionFactory func() RangeVectorSeriesValidationFunction
+
 type FunctionOverRangeVector struct {
 	// StepFunc is the function that computes an output sample for a single step.
 	StepFunc RangeVectorStepFunction
 
-	// SeriesValidationFunc is the function that validates a complete series, emitting any annotations for that series.
+	// SeriesValidationFuncFactory is the function that creates a validator for a complete series, emitting any annotations
+	// for that series.
 	//
-	// SeriesValidationFunc can be nil, in which case no validation is performed.
-	SeriesValidationFunc RangeVectorSeriesValidationFunction
+	// A new validator instance is created for each instance of this range vector function (ie. a validator is not shared
+	// between queries or between different invocations of the same range vector function in a single query). A single
+	// instance of a range vector function can then implement optimisations such as skipping checks for repeated metric
+	// names.
+	//
+	// SeriesValidationFuncFactory can be nil, in which case no validation is performed.
+	SeriesValidationFuncFactory RangeVectorSeriesValidationFunctionFactory
 
 	// SeriesMetadataFunc is the function that computes the output series for this function based on the given input series.
 	SeriesMetadataFunc SeriesMetadataFunction
