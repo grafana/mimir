@@ -2,23 +2,24 @@ package querymiddleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-const boostedQueryResultsMetricName = "boosted_query_results"
-const boostedQueryLabel = "__boosted_query__"
+const (
+	queryBoosterMetric    = "QUERY_BOOSTER"
+	boostedQueryLabelName = "__boosted_query__"
+)
 
 type queryBoosterMiddleware struct {
 	downstream http.RoundTripper
-	mapper     astmapper.ASTMapper
 	logger     log.Logger
 
 	next MetricsQueryHandler
@@ -59,18 +60,12 @@ func (q *queryBoosterMiddleware) Do(ctx context.Context, req MetricsQueryRequest
 	}
 	level.Info(log).Log("msg", "query is boosted", "query", queryCleaned)
 
-	rewrittenExpr, err := q.mapper.Map(expr)
-	if err != nil {
-		return nil, err
-	}
-
-	queryRewritten := rewrittenExpr.String()
-	level.Debug(log).Log("msg", "rewrote boosted query", "original", queryOriginal, "rewritten", queryRewritten)
-
+	queryRewritten := q.queryBoostedMetric(queryCleaned)
 	req, err = req.WithQuery(queryRewritten)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to rewrite boosted query")
 	}
+	level.Debug(log).Log("msg", "rewrote boosted query", "original", queryOriginal, "rewritten", queryRewritten)
 
 	return q.next.Do(ctx, req)
 }
@@ -80,12 +75,12 @@ func (q *queryBoosterMiddleware) isQueryBoosted(ctx context.Context, query strin
 	defer log.Span.Finish()
 
 	boostedQueryResultsMetricMatcher := make(url.Values)
-	boostedQueryResultsMetricMatcher.Add("match[]", "__name__=\""+boostedQueryResultsMetricName+"\"")
-	boostedQueryResultsMetricMatcher.Add("match[]", boostedQueryLabel+"=\""+query+"\"")
+	boostedQueryResultsMetricMatcher.Add("match[]", "__name__=\""+queryBoosterMetric+"\"")
+	boostedQueryResultsMetricMatcher.Add("match[]", boostedQueryLabelName+"=\""+query+"\"")
 
 	req := &http.Request{
 		Method: http.MethodGet,
-		URL:    &url.URL{Path: "/api/v1/label/" + boostedQueryLabel + "/values"},
+		URL:    &url.URL{Path: "/api/v1/label/" + boostedQueryLabelName + "/values"},
 		Form:   boostedQueryResultsMetricMatcher,
 	}
 
@@ -124,3 +119,23 @@ type IsQueryBoostedResponse struct {
 	Warnings  []string `json:"warnings,omitempty"`
 	Infos     []string `json:"infos,omitempty"`
 }
+
+func (q *queryBoosterMiddleware) queryBoostedMetric(query string) string {
+	return fmt.Sprintf(boostedQueryInternalQuery, queryBoosterMetric, boostedQueryLabelName, query, boostedQueryLabelName)
+}
+
+const boostedQueryInternalQuery = `
+label_replace(
+  label_replace(
+    %s{%s="%s"},
+    "__name__",
+    "",
+    "",
+    "",
+  ),
+  "%s",
+  "",
+  "",
+  "",
+)
+`
