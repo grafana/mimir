@@ -712,11 +712,11 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 	maxPoints := max(leftPoints, rightPoints)
 
 	prepareFSlice := func() error {
-		if maxPoints <= len(left.Floats) && len(left.Floats) < len(right.Floats) {
+		if maxPoints <= cap(left.Floats) && cap(left.Floats) < cap(right.Floats) {
 			// Can fit output in left side, and the left side is smaller than the right
 			canReturnLeftFPointSlice = false
 			fPoints = left.Floats[:0]
-		} else if maxPoints <= len(right.Floats) {
+		} else if maxPoints <= cap(right.Floats) {
 			// Can otherwise fit in the right side
 			canReturnRightHPointSlice = false
 			fPoints = right.Floats[:0]
@@ -731,11 +731,11 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 	}
 
 	prepareHSlice := func() error {
-		if maxPoints <= len(left.Histograms) && len(left.Histograms) < len(right.Histograms) {
+		if maxPoints <= cap(left.Histograms) && cap(left.Histograms) < cap(right.Histograms) {
 			// Can fit output in left side, and the left side is smaller than the right
 			canReturnLeftHPointSlice = false
 			hPoints = left.Histograms[:0]
-		} else if maxPoints <= len(right.Histograms) {
+		} else if maxPoints <= cap(right.Histograms) {
 			// Can otherwise fit in the right side
 			canReturnRightHPointSlice = false
 			hPoints = right.Histograms[:0]
