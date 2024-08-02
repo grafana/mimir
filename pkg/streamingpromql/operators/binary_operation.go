@@ -601,26 +601,23 @@ func (b *BinaryOperation) mergeOneSideHistograms(ds seriesForOneGroupSide, sourc
 	remainingSeriesWithHistograms := 1
 	haveOverlaps := false
 
-	// We're going to create a new slice, so return this one to the pool.
-	// We'll return the other slices in the for loop below.
-	// We must defer here, rather than at the end, as the merge loop below reslices Histograms.
-	// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
-	defer b.Pool.PutHPointSlice(ds.data[0].Histograms)
-
 	for i := 0; i < len(ds.data)-1; i++ {
 		first := ds.data[i]
 		second := ds.data[i+1]
-		if len(second.Histograms) == 0 {
-			// We've reached the end of all series with histograms
-			break
-		}
-		mergedSize += len(second.Histograms)
-		remainingSeriesWithHistograms++
 
 		// We're going to create a new slice, so return this one to the pool.
 		// We must defer here, rather than at the end, as the merge loop below reslices Histograms.
 		// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
 		defer b.Pool.PutHPointSlice(second.Histograms)
+
+		if len(second.Histograms) == 0 {
+			// We've reached the end of all series with histograms.
+			// However, continue iterating so we can return all of the slices.
+			// (As they may have length 0, but a non-zero capacity).
+			continue
+		}
+		mergedSize += len(second.Histograms)
+		remainingSeriesWithHistograms++
 
 		// Check if first overlaps with second.
 		// InstantVectorSeriesData.Histograms is required to be sorted in timestamp order, so if the last point
@@ -629,6 +626,17 @@ func (b *BinaryOperation) mergeOneSideHistograms(ds seriesForOneGroupSide, sourc
 			haveOverlaps = true
 		}
 	}
+
+	if remainingSeriesWithHistograms == 1 {
+		// No other series had any floats
+		return ds.data[0].Histograms, nil
+	}
+
+	// We're going to create a new slice, so return this one to the pool.
+	// We'll return the other slices in the for loop below.
+	// We must defer here, rather than at the end, as the merge loop below reslices Histograms.
+	// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
+	defer b.Pool.PutHPointSlice(ds.data[0].Histograms)
 
 	// Re-slice data with just the series with histograms to make the rest of our job easier
 	// Because we aren't re-sorting here it doesn't matter that ds.sourceSeriesIndices remains longer.
