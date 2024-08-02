@@ -1149,8 +1149,8 @@ github.com/twmb/franz-go/pkg/kgo
 github.com/twmb/franz-go/pkg/kgo/internal/sticky
 github.com/twmb/franz-go/pkg/kversion
 github.com/twmb/franz-go/pkg/sasl
-# github.com/twmb/franz-go/pkg/kadm v1.12.0 => github.com/pracucci/franz-go/pkg/kadm v0.0.0-20240711165048-831cca07c9a4
-## explicit; go 1.21
+# github.com/twmb/franz-go/pkg/kadm v1.12.0 => github.com/pracucci/franz-go/pkg/kadm v0.0.0-20240509060506-c77d58eb5693
+## explicit; go 1.19
 github.com/twmb/franz-go/pkg/kadm
 # github.com/twmb/franz-go/pkg/kfake v0.0.0-20240721000510-c5c735757b6b
 ## explicit; go 1.21
@@ -1656,4 +1656,4 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240625192351-66ec17e3aa45
-# github.com/twmb/franz-go/pkg/kadm => github.com/pracucci/franz-go/pkg/kadm v0.0.0-20240711165048-831cca07c9a4
+# github.com/twmb/franz-go/pkg/kadm => github.com/pracucci/franz-go/pkg/kadm v0.0.0-20240509060506-c77d58eb5693
