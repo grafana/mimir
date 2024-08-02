@@ -7,22 +7,15 @@ import (
 
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/grpcutil"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-var grpcClientConnectionIsClosingErr string
-
-func init() {
-	// Ignore deprecation warning for now
-	//nolint:staticcheck
-	if stat, ok := grpcutil.ErrorToStatus(grpc.ErrClientConnClosing); ok && stat.Code() == codes.Canceled {
-		grpcClientConnectionIsClosingErr = stat.Message()
-	}
-}
+var (
+	grpcClientConnectionIsClosingErr = "grpc: the client connection is closing"
+)
 
 // WrapGRPCErrorWithContextError checks if the given error is a gRPC error corresponding
 // to a standard golang context error, and if it is, wraps the former with the latter.

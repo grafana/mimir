@@ -75,7 +75,7 @@
 * [BUGFIX] Query-frontend: Ensure that internal errors result in an HTTP 500 response code instead of 422. #8595 #8666
 * [BUGFIX] Configuration: Multi line envs variables are flatten during injection to be compatible with YAML syntax
 * [BUGFIX] Querier: fix issue where queries can return incorrect results if a single store-gateway returns overlapping chunks for a series. #8827
-* [BUGFIX] Querier: do not return `grpc: the client connection is closing` errors as HTTP `499`. #8865
+* [BUGFIX] Querier: do not return `grpc: the client connection is closing` errors as HTTP `499`. #8865 #8888
 
 ### Mixin
 
