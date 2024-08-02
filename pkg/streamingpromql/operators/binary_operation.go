@@ -427,7 +427,7 @@ func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sou
 	// Merge floats and histograms individually.
 	// After which we check if there are any duplicate points in either the floats or histograms.
 
-	ds := dataSeries{
+	ds := seriesForOneGroupSide{
 		data:                 data,
 		sourceSeriesIndices:  sourceSeriesIndices,
 		sourceSeriesMetadata: sourceSeriesMetadata,
@@ -443,23 +443,23 @@ func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sou
 	}
 
 	// Check for any conflicts between floats and histograms
-	i, j := 0, 0
-	for i < len(floats) && j < len(histograms) {
-		if floats[i].T == histograms[j].T {
+	idxFloats, idxHistograms := 0, 0
+	for idxFloats < len(floats) && idxHistograms < len(histograms) {
+		if floats[idxFloats].T == histograms[idxHistograms].T {
 			// Conflict found
-			return types.InstantVectorSeriesData{}, fmt.Errorf("found both float and histogram samples for the match group FIXME on the %s side of the operation at timestamp %s", side, timestamp.Time(floats[i].T).Format(time.RFC3339Nano))
+			return types.InstantVectorSeriesData{}, fmt.Errorf("found both float and histogram samples for the match group FIXME on the %s side of the operation at timestamp %s", side, timestamp.Time(floats[idxFloats].T).Format(time.RFC3339Nano))
 		}
-		if floats[i].T < histograms[j].T {
-			i++
+		if floats[idxFloats].T < histograms[idxHistograms].T {
+			idxFloats++
 		} else {
-			j++
+			idxHistograms++
 		}
 	}
 
 	return types.InstantVectorSeriesData{Floats: floats, Histograms: histograms}, nil
 }
 
-func (b *BinaryOperation) mergeOneSideFloats(ds dataSeries, side string) ([]promql.FPoint, error) {
+func (b *BinaryOperation) mergeOneSideFloats(ds seriesForOneGroupSide, side string) ([]promql.FPoint, error) {
 	if len(ds.data) == 0 {
 		return nil, nil
 	}
@@ -573,7 +573,7 @@ func (b *BinaryOperation) mergeOneSideFloats(ds dataSeries, side string) ([]prom
 	}
 }
 
-func (b *BinaryOperation) mergeOneSideHistograms(ds dataSeries, side string) ([]promql.HPoint, error) {
+func (b *BinaryOperation) mergeOneSideHistograms(ds seriesForOneGroupSide, side string) ([]promql.HPoint, error) {
 	if len(ds.data) == 0 {
 		return nil, nil
 	}
@@ -969,10 +969,10 @@ var arithmeticOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 	},
 }
 
-// dataSeries couples data, sourceSeriesIndices, and sourceSeriesMetadata for use by mergeOneSide
+// seriesForOneGroupSide couples data, sourceSeriesIndices, and sourceSeriesMetadata for use by mergeOneSide
 // Specifically it implements sort.Interface which will sort both data and sourceSeriesIndices at the same
 // time to retain a mapping of their indexes on either the present float timestamps or histograms as determined by sortByFloat.
-type dataSeries struct {
+type seriesForOneGroupSide struct {
 	data                 []types.InstantVectorSeriesData
 	sourceSeriesIndices  []int
 	sourceSeriesMetadata []types.SeriesMetadata
@@ -980,38 +980,38 @@ type dataSeries struct {
 	sortByFloat bool
 }
 
-func (d dataSeries) Len() int {
-	return len(d.data)
+func (s seriesForOneGroupSide) Len() int {
+	return len(s.data)
 }
 
-func (d dataSeries) Swap(i, j int) {
-	d.data[i], d.data[j] = d.data[j], d.data[i]
-	d.sourceSeriesIndices[i], d.sourceSeriesIndices[j] = d.sourceSeriesIndices[j], d.sourceSeriesIndices[i]
+func (s seriesForOneGroupSide) Swap(i, j int) {
+	s.data[i], s.data[j] = s.data[j], s.data[i]
+	s.sourceSeriesIndices[i], s.sourceSeriesIndices[j] = s.sourceSeriesIndices[j], s.sourceSeriesIndices[i]
 }
 
-func (d dataSeries) Less(i, j int) bool {
-	if d.sortByFloat {
-		return d.LessByFloat(i, j)
+func (s seriesForOneGroupSide) Less(i, j int) bool {
+	if s.sortByFloat {
+		return s.LessByFloat(i, j)
 	}
-	return d.LessByHistogram(i, j)
+	return s.LessByHistogram(i, j)
 }
 
-func (d dataSeries) LessByFloat(i, j int) bool {
-	if len(d.data[i].Floats) == 0 {
+func (s seriesForOneGroupSide) LessByFloat(i, j int) bool {
+	if len(s.data[i].Floats) == 0 {
 		return false
 	}
-	if len(d.data[j].Floats) == 0 {
+	if len(s.data[j].Floats) == 0 {
 		return true
 	}
-	return d.data[i].Floats[0].T < d.data[j].Floats[0].T
+	return s.data[i].Floats[0].T < s.data[j].Floats[0].T
 }
 
-func (d dataSeries) LessByHistogram(i, j int) bool {
-	if len(d.data[i].Histograms) == 0 {
+func (s seriesForOneGroupSide) LessByHistogram(i, j int) bool {
+	if len(s.data[i].Histograms) == 0 {
 		return false
 	}
-	if len(d.data[j].Histograms) == 0 {
+	if len(s.data[j].Histograms) == 0 {
 		return true
 	}
-	return d.data[i].Histograms[0].T < d.data[j].Histograms[0].T
+	return s.data[i].Histograms[0].T < s.data[j].Histograms[0].T
 }
