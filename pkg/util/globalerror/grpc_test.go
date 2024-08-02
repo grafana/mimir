@@ -299,7 +299,7 @@ func checkErrorWithStatusDetails(t *testing.T, details []any, expected *mimirpb.
 	}
 }
 
-func TestGRPCClientClosingConnectionError(t *testing.T) {
+func TestGRPCClientClosingConnectionError_IsNotContextCanceled(t *testing.T) {
 	ctx := context.Background()
 
 	_, client, cc := prepareTest(t)
