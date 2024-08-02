@@ -4,6 +4,7 @@ package blockbuilder
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -32,7 +33,7 @@ import (
 type BlockBuilder struct {
 	services.Service
 
-	id int
+	instanceID int
 
 	cfg         Config
 	logger      log.Logger
@@ -62,22 +63,19 @@ func New(
 		metrics:  newBlockBuilderMetrics(reg),
 	}
 
-	if cfg.TotalBlockBuilders <= 0 || cfg.TotalPartitions <= 0 {
-		return nil, fmt.Errorf("total block builders and total partitions must be greater than 0")
-	}
-
-	podName := os.Getenv("POD_NAME")
-	splits := strings.Split(podName, "-")
-	if len(splits) == 0 {
-		return nil, fmt.Errorf("pod id not found in the name %s", podName)
-	}
-	id, err := strconv.Atoi(splits[len(splits)-1])
+	id, err := parseIDFromInstance(b.cfg.InstanceID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse pod id from %s: %w", podName, err)
+		return nil, fmt.Errorf("failed to parse instance id: %w", err)
 	}
 
-	b.id = id
-	level.Info(b.logger).Log("msg", "initialising block builder", "id", id)
+	b.instanceID = id
+	level.Info(b.logger).Log("msg", "initialising block builder", "id", b.instanceID)
+
+	var ok bool
+	b.parts, ok = b.cfg.Kafka.PartitionAssignment[b.instanceID]
+	if !ok {
+		return nil, fmt.Errorf("instance id %d must be present in partition assignment", b.instanceID)
+	}
 
 	b.tsdbBuilder = func() builder {
 		return newTSDBBuilder(b.logger, b.limits, b.cfg.BlocksStorageConfig)
@@ -92,6 +90,20 @@ func New(
 	b.Service = services.NewBasicService(b.starting, b.running, b.stopping)
 
 	return b, nil
+}
+
+func parseIDFromInstance(instanceID string) (int, error) {
+	splits := strings.Split(instanceID, "-")
+	if len(splits) == 0 {
+		return 0, fmt.Errorf("malformed instance id %s", instanceID)
+	}
+
+	partID, err := strconv.Atoi(splits[len(splits)-1])
+	if err != nil {
+		return 0, fmt.Errorf("parse instance id %s, expect sequence number: %w", instanceID, err)
+	}
+
+	return partID, nil
 }
 
 func (b *BlockBuilder) starting(ctx context.Context) (err error) {
@@ -113,22 +125,14 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 		return fmt.Errorf("creating tsdb dir: %w", err)
 	}
 
-	var myParts []int32
-	startAtMap := map[int32]kgo.Offset{}
-	for part := 0; part < b.cfg.TotalPartitions; part++ {
-		if part%b.cfg.TotalBlockBuilders != b.id {
-			continue
-		}
-
-		myParts = append(myParts, int32(part))
-
-		startAt, err := b.findCommitToStartAt(ctx, int32(part), nil)
+	startAtMap := make(map[int32]kgo.Offset)
+	for _, part := range b.parts {
+		startAt, err := b.findOffsetToStartAt(ctx, part, nil)
 		if err != nil {
-			return fmt.Errorf("finding commit to start at: %w", err)
+			return fmt.Errorf("partition %d: finding offset to start at: %w", part, err)
 		}
 
-		startAtMap[int32(part)] = kgo.NewOffset().At(startAt)
-
+		startAtMap[part] = kgo.NewOffset().At(startAt)
 	}
 
 	opts := []kgo.Opt{
@@ -159,9 +163,8 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	if err != nil {
 		return fmt.Errorf("creating kafka client: %w", err)
 	}
-	b.parts = myParts
 
-	level.Info(b.logger).Log("msg", "waiting until kafka brokers are reachable", "parts", fmt.Sprintf("%v", myParts))
+	level.Info(b.logger).Log("msg", "waiting until kafka brokers are reachable", "parts", fmt.Sprintf("%v", b.parts))
 	err = b.waitKafka(ctx)
 	if err != nil {
 		return err
@@ -180,7 +183,7 @@ const (
 	//kafkaOffsetEnd = int64(-1)
 )
 
-func (b *BlockBuilder) findCommitToStartAt(ctx context.Context, part int32, metrics *kprom.Metrics) (int64, error) {
+func (b *BlockBuilder) findOffsetToStartAt(ctx context.Context, part int32, metrics *kprom.Metrics) (int64, error) {
 	// We use an ephemeral client to fetch the offset and then create a new client with this offset.
 	// The reason for this is that changing the offset of an existing client requires to have used this client for fetching at least once.
 	// We don't want to do noop fetches just to warm up the client, so we create a new client instead.
@@ -978,24 +981,28 @@ func unmarshallCommitMeta(meta string) (commitRecTs, lastRecOffset, blockEnd int
 }
 
 type Config struct {
+	InstanceID            string        `yaml:"instance_id" doc:"default=<hostname>" category:"advanced"`
 	ConsumeInterval       time.Duration `yaml:"consume_interval"`
 	ConsumeIntervalBuffer time.Duration `yaml:"consume_interval_buffer"`
 	LookbackOnNoCommit    time.Duration `yaml:"lookback_on_no_commit" category:"advanced"`
-	TotalBlockBuilders    int           `yaml:"total_block_builders"`
-	TotalPartitions       int           `yaml:"total_partitions"`
 
 	Kafka               KafkaConfig                    `yaml:"kafka"`
 	BlocksStorageConfig mimir_tsdb.BlocksStorageConfig `yaml:"-"` // TODO(codesome): check how this is passed. Copied over form ingester.
 }
 
-func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to get hostname", "err", err)
+		os.Exit(1)
+	}
+
 	cfg.Kafka.RegisterFlagsWithPrefix("block-builder.", f)
 
+	f.StringVar(&cfg.InstanceID, "block-builder.instance-id", hostname, "Instance id.")
 	f.DurationVar(&cfg.ConsumeInterval, "block-builder.consume-interval", time.Hour, "Interval between block consumption cycles.")
 	f.DurationVar(&cfg.ConsumeIntervalBuffer, "block-builder.consume-interval-buffer", 15*time.Minute, "Extra buffer between subsequent block consumption cycles to avoid small blocks.")
 	f.DurationVar(&cfg.LookbackOnNoCommit, "block-builder.lookback-on-no-commit", 12*time.Hour, "How much of the historical records to look back when there is no kafka commit for a partition.")
-	f.IntVar(&cfg.TotalPartitions, "block-builder.total-partitions", 0, "How many total kafka partitions exist.")
-	f.IntVar(&cfg.TotalBlockBuilders, "block-builder.total-block-builders", 0, "Total block builders deployed.")
 }
 
 func (cfg *Config) Validate() error {
@@ -1010,14 +1017,14 @@ func (cfg *Config) Validate() error {
 	return nil
 }
 
-// KafkaConfig holds the generic config for the Kafka backend.
 type KafkaConfig struct {
-	Address       string        `yaml:"address"`
-	Topic         string        `yaml:"topic"`
-	ClientID      string        `yaml:"client_id"`
-	DialTimeout   time.Duration `yaml:"dial_timeout"`
-	PollTimeout   time.Duration `yaml:"poll_timeout"`
-	ConsumerGroup string        `yaml:"consumer_group"`
+	Address             string          `yaml:"address"`
+	Topic               string          `yaml:"topic"`
+	ClientID            string          `yaml:"client_id"`
+	DialTimeout         time.Duration   `yaml:"dial_timeout"`
+	PollTimeout         time.Duration   `yaml:"poll_timeout"`
+	ConsumerGroup       string          `yaml:"consumer_group"`
+	PartitionAssignment map[int][]int32 `yaml:"partition_assignment" category:"experimental"`
 }
 
 func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
@@ -1027,11 +1034,37 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.DurationVar(&cfg.DialTimeout, prefix+"kafka.dial-timeout", 5*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
 	f.DurationVar(&cfg.PollTimeout, prefix+"kafka.poll-timeout", 5*time.Second, "The maximum time allowed to block if data is not available in the broker to consume.")
 	f.StringVar(&cfg.ConsumerGroup, prefix+"kafka.consumer-group", "", "The consumer group used by the consumer to track the last consumed offset.")
+	f.Var(newPartitionAssignmentVar(&cfg.PartitionAssignment), prefix+"kafka.partition-assignment", "Static partition assignment map.")
 }
 
 func (cfg *KafkaConfig) Validate() error {
-	// TODO(v): validate kafka config
+	if len(cfg.PartitionAssignment) == 0 {
+		return fmt.Errorf("partition assignment is required")
+	}
 	return nil
+}
+
+type partitionAssignmentVar map[int][]int32
+
+func newPartitionAssignmentVar(p *map[int][]int32) *partitionAssignmentVar {
+	return (*partitionAssignmentVar)(p)
+}
+
+func (v *partitionAssignmentVar) Set(s string) error {
+	if s == "" {
+		return nil
+	}
+	val := make(map[int][]int32)
+	err := json.Unmarshal([]byte(s), &val)
+	if err != nil {
+		return err
+	}
+	*v = val
+	return nil
+}
+
+func (v partitionAssignmentVar) String() string {
+	return fmt.Sprintf("%v", map[int][]int32(v))
 }
 
 type kafkaLogger struct {

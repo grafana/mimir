@@ -35,6 +35,7 @@ const (
 
 func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Overrides) {
 	cfg := Config{
+		InstanceID:            "block-builder-0",
 		ConsumeInterval:       time.Hour,
 		ConsumeIntervalBuffer: 15 * time.Minute,
 		Kafka: KafkaConfig{
@@ -67,33 +68,35 @@ func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Override
 // to partition 1. That way, managing and checking timestamps for each partition remains the same.
 func TestBlockBuilder(t *testing.T) {
 	const (
-		userID = "1"
+		userID        = "1"
+		numPartitions = 2
 	)
-
-	require.NoError(t, os.Setenv("POD_NAME", "block-builder-0"))
 
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
-	_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 2, testTopic)
+	_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
 
 	type kafkaRecInfo struct {
 		sampleTs, recTs time.Time
 		offset          int64
 	}
 	var (
-		kafkaSamples   []mimirpb.Sample
-		kafkaHSamples  []mimirpb.Histogram
-		kafkaRecords   []kafkaRecInfo
-		cfg, overrides = blockBuilderConfig(t, addr)
-		compactCalled  = make(chan struct{}, 10)
-		writeClient    = newKafkaProduceClient(t, addr)
-		bucketDir      = path.Join(cfg.BlocksStorageConfig.Bucket.Filesystem.Directory, userID)
-		kafkaTime      = time.Now().Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
-		parentT        = t
+		kafkaSamples  []mimirpb.Sample
+		kafkaHSamples []mimirpb.Histogram
+		kafkaRecords  []kafkaRecInfo
 	)
-	cfg.TotalBlockBuilders = 1
-	cfg.TotalPartitions = 2
+
+	cfg, overrides := blockBuilderConfig(t, addr)
+
+	cfg.Kafka.PartitionAssignment = map[int][]int32{
+		0: {0, 1}, // instance 0 -> partitions 0, 1
+	}
+
+	compactCalled := make(chan struct{}, 10)
+	writeClient := newKafkaProduceClient(t, addr)
+	bucketDir := path.Join(cfg.BlocksStorageConfig.Bucket.Filesystem.Directory, userID)
+	kafkaTime := time.Now().Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
 
 	bb, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides)
 	require.NoError(t, err)
@@ -233,6 +236,8 @@ func TestBlockBuilder(t *testing.T) {
 
 		checkCommit(t, cycleEnd)
 	}
+
+	parentT := t
 
 	t.Run("starting fresh with existing data but no kafka commit", func(t *testing.T) {
 		// LookbackOnNoCommit is 12h, so this sample should be skipped.
@@ -409,8 +414,6 @@ func TestBlockBuilder(t *testing.T) {
 
 // Testing block builder starting up with an existing kafka commit.
 func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
-	require.NoError(t, os.Setenv("POD_NAME", "block-builder-0"))
-
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
@@ -420,8 +423,11 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 	writeClient := newKafkaProduceClient(t, addr)
 
 	cfg, overrides := blockBuilderConfig(t, addr)
-	cfg.TotalPartitions = 1
-	cfg.TotalBlockBuilders = 1
+
+	cfg.Kafka.PartitionAssignment = map[int][]int32{
+		0: {0}, // instance 0 -> partition 0
+	}
+
 	// Producing some records
 	kafkaTime := time.Now().Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
 	ceStartup := cycleEndAtStartup(cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
@@ -596,8 +602,6 @@ func TestKafkaCommitMetaMarshalling(t *testing.T) {
 }
 
 func TestBlockBuilderMultiTenancy(t *testing.T) {
-	require.NoError(t, os.Setenv("POD_NAME", "block-builder-0"))
-
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
@@ -611,8 +615,11 @@ func TestBlockBuilderMultiTenancy(t *testing.T) {
 		expSamples     = map[string][]mimirpb.Sample{}
 		uids           = []string{"1", "2", "3"}
 	)
-	cfg.TotalPartitions = 1
-	cfg.TotalBlockBuilders = 1
+
+	cfg.Kafka.PartitionAssignment = map[int][]int32{
+		0: {0}, // instance 0 -> partition 0
+	}
+
 	// Producing some records for multiple tenants
 	for i := 0; i < 10; i++ {
 		sampleTs := kafkaTime
@@ -673,8 +680,6 @@ func TestBlockBuilderMultiTenancy(t *testing.T) {
 // since there is no record to consume here. Before the bug fix, a wrong lag was communicated
 // to the subsequent cycle without resetting the client's offset and it would get stuck.
 func TestBlockBuilder_LongCatchupWithNoRecordsProcessed(t *testing.T) {
-	require.NoError(t, os.Setenv("POD_NAME", "block-builder-0"))
-
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
@@ -684,9 +689,12 @@ func TestBlockBuilder_LongCatchupWithNoRecordsProcessed(t *testing.T) {
 	writeClient := newKafkaProduceClient(t, addr)
 
 	cfg, overrides := blockBuilderConfig(t, addr)
-	cfg.TotalPartitions = 1
-	cfg.TotalBlockBuilders = 1
+
+	cfg.Kafka.PartitionAssignment = map[int][]int32{
+		0: {0}, // instance 0 -> partition 0
+	}
 	cfg.LookbackOnNoCommit = 3 * time.Hour
+
 	// Producing some records
 	kafkaTime := time.Now().Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
 	for i := int64(0); i < 3; i++ {
@@ -728,7 +736,6 @@ func TestBlockBuilder_LongCatchupWithNoRecordsProcessed(t *testing.T) {
 }
 
 func TestBlockBuilderNonMonotonicRecordTimestamps(t *testing.T) {
-	require.NoError(t, os.Setenv("POD_NAME", "block-builder-0"))
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
@@ -741,8 +748,9 @@ func TestBlockBuilderNonMonotonicRecordTimestamps(t *testing.T) {
 		expSamplesPhase1, expSamplesPhase2 []mimirpb.Sample
 		userID                             = "1"
 	)
-	cfg.TotalPartitions = 1
-	cfg.TotalBlockBuilders = 1
+	cfg.Kafka.PartitionAssignment = map[int][]int32{
+		0: {0}, // instance 0 -> partition 0
+	}
 
 	produce := func(kafkaTime time.Time, sampleTs ...time.Time) {
 		samples := floatSample(sampleTs[0].UnixMilli())
