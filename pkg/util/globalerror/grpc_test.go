@@ -84,7 +84,9 @@ func TestWrapContextError(t *testing.T) {
 				expectedContextErr: context.DeadlineExceeded,
 			},
 			"grpc.ErrClientConnClosing": {
-				origErr:            status.Error(codes.Canceled, "grpc: the client connection is closing"),
+				// Ignore deprecation warning for now
+				// nolint:staticcheck
+				origErr:            grpc.ErrClientConnClosing,
 				expectedGrpcCode:   codes.Canceled,
 				expectedContextErr: nil,
 			},
