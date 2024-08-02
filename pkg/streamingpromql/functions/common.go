@@ -74,7 +74,29 @@ type RangeVectorStepFunction func(
 	emitAnnotation EmitAnnotationFunc,
 ) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error)
 
+// EmitAnnotationFunc is a function that emits the annotation created by generator.
 type EmitAnnotationFunc func(generator AnnotationGenerator)
+
+// AnnotationGenerator is a function that returns an annotation for the given metric name and expression position.
 type AnnotationGenerator func(metricName string, expressionPosition posrange.PositionRange) error
 
+// RangeVectorSeriesValidationFunction is a function that is called after a series is completed for a function over a range vector.
 type RangeVectorSeriesValidationFunction func(seriesData types.InstantVectorSeriesData, metricName string, emitAnnotation EmitAnnotationFunc)
+
+type FunctionOverRangeVector struct {
+	// StepFunc is the function that computes an output sample for a single step.
+	StepFunc RangeVectorStepFunction
+
+	// SeriesValidationFunc is the function that validates a complete series, emitting any annotations for that series.
+	//
+	// SeriesValidationFunc can be nil, in which case no validation is performed.
+	SeriesValidationFunc RangeVectorSeriesValidationFunction
+
+	// SeriesMetadataFunc is the function that computes the output series for this function based on the given input series.
+	SeriesMetadataFunc SeriesMetadataFunction
+
+	// NeedsSeriesNamesForAnnotations indicates that this function uses the names of input series when emitting annotations.
+	//
+	// NeedsSeriesNamesForAnnotations is implied if SeriesValidationFunc is non-nil.
+	NeedsSeriesNamesForAnnotations bool
+}

@@ -15,7 +15,14 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer, emitAnnotation EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+var Rate = FunctionOverRangeVector{
+	StepFunc:                       rate,
+	SeriesValidationFunc:           rateSeriesValidator,
+	SeriesMetadataFunc:             DropSeriesName,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer, emitAnnotation EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	fHead, fTail := floatBuffer.UnsafePoints(step.RangeEnd)
 	fCount := len(fHead) + len(fTail)
 
@@ -199,7 +206,7 @@ func calculateFloatRate(rangeStart, rangeEnd int64, rangeSeconds float64, firstP
 	return delta * factor
 }
 
-func RateSeriesValidator(data types.InstantVectorSeriesData, metricName string, emitAnnotation EmitAnnotationFunc) {
+func rateSeriesValidator(data types.InstantVectorSeriesData, metricName string, emitAnnotation EmitAnnotationFunc) {
 	if len(data.Floats) == 0 {
 		return
 	}

@@ -22,10 +22,7 @@ import (
 type FunctionOverRangeVector struct {
 	Inner                    types.RangeVectorOperator
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
-
-	SeriesMetadataFunc   functions.SeriesMetadataFunction
-	StepFunc             functions.RangeVectorStepFunction
-	SeriesValidationFunc functions.RangeVectorSeriesValidationFunction
+	Func                     functions.FunctionOverRangeVector
 
 	Annotations *annotations.Annotations
 
@@ -45,24 +42,19 @@ var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
 func NewFunctionOverRangeVector(
 	inner types.RangeVectorOperator,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
-	metadataFunc functions.SeriesMetadataFunction,
-	stepFunc functions.RangeVectorStepFunction,
-	seriesValidationFunc functions.RangeVectorSeriesValidationFunction,
-	needMetricNames bool,
+	f functions.FunctionOverRangeVector,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) *FunctionOverRangeVector {
 	o := &FunctionOverRangeVector{
 		Inner:                    inner,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
-		SeriesMetadataFunc:       metadataFunc,
-		StepFunc:                 stepFunc,
-		SeriesValidationFunc:     seriesValidationFunc,
+		Func:                     f,
 		Annotations:              annotations,
 		expressionPosition:       expressionPosition,
 	}
 
-	if needMetricNames {
+	if f.NeedsSeriesNamesForAnnotations || f.SeriesValidationFunc != nil {
 		o.metricNames = &MetricNames{}
 	}
 
@@ -86,7 +78,7 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 	m.numSteps = m.Inner.StepCount()
 	m.rangeSeconds = m.Inner.Range().Seconds()
 
-	return m.SeriesMetadataFunc(metadata, m.MemoryConsumptionTracker)
+	return m.Func.SeriesMetadataFunc(metadata, m.MemoryConsumptionTracker)
 }
 
 func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
@@ -116,8 +108,8 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 
 		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
 		if err == types.EOS {
-			if m.SeriesValidationFunc != nil {
-				m.SeriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex), m.emitAnnotation)
+			if m.Func.SeriesValidationFunc != nil {
+				m.Func.SeriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex), m.emitAnnotation)
 			}
 
 			return data, nil
@@ -125,7 +117,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		f, hasFloat, h, err := m.StepFunc(step, m.rangeSeconds, m.floatBuffer, m.histogramBuffer, m.emitAnnotation)
+		f, hasFloat, h, err := m.Func.StepFunc(step, m.rangeSeconds, m.floatBuffer, m.histogramBuffer, m.emitAnnotation)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
