@@ -89,7 +89,7 @@ func newMultiTenantConcurrencyControllerMetrics(reg prometheus.Registerer) *Mult
 	}
 }
 
-// MultiTenantConcurrencyController is a concurrency controller that limits the number of concurrent rule evaluations both global and per tenant.
+// MultiTenantConcurrencyController instantiates concurrency controllers per tenant that limits the number of concurrent rule evaluations both global and per tenant.
 type MultiTenantConcurrencyController struct {
 	logger                   log.Logger
 	limits                   RulesLimits
