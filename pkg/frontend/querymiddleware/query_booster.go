@@ -60,7 +60,7 @@ func (q *queryBoosterMiddleware) Do(ctx context.Context, req MetricsQueryRequest
 	}
 	level.Info(log).Log("msg", "query is boosted", "query", queryCleaned)
 
-	queryRewritten := q.queryBoostedMetric(queryCleaned)
+	queryRewritten := queryBoostedMetric(queryCleaned)
 	req, err = req.WithQuery(queryRewritten)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to rewrite boosted query")
@@ -124,7 +124,7 @@ type IsQueryBoostedResponse struct {
 	Infos     []string `json:"infos,omitempty"`
 }
 
-func (q *queryBoosterMiddleware) queryBoostedMetric(query string) string {
+func queryBoostedMetric(query string) string {
 	return fmt.Sprintf(boostedQueryInternalQuery, queryBoosterMetric, boostedQueryLabelName, query, boostedQueryLabelName)
 }
 
@@ -135,11 +135,11 @@ label_replace(
     "__name__",
     "",
     "",
-    "",
+    ""
   ),
   "%s",
   "",
   "",
-  "",
+  ""
 )
 `
