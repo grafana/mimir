@@ -86,7 +86,7 @@ func (q *queryBoosterMiddleware) isQueryBoosted(ctx context.Context, query strin
 	}
 
 	params := req.URL.Query()
-	params.Add("match[]", fmt.Sprintf(`{__name__="%s", %s="%s"}`, queryBoosterMetric, boostedQueryLabelName, query))
+	params.Add("match[]", fmt.Sprintf(`{__name__="%s", %s="%s"}`, queryBoosterMetric, boostedQueryLabelName, strings.ReplaceAll(query, `"`, `\"`)))
 	req.URL.RawQuery = params.Encode()
 
 	if err := user.InjectOrgIDIntoHTTPRequest(ctx, req); err != nil {
