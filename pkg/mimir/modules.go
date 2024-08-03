@@ -730,6 +730,8 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 
 	engineOpts, _, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
 
+	t.Cfg.Frontend.QueryMiddleware.QueryFrontendHttpListenPort = t.Cfg.Server.HTTPListenPort
+
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
 		util_log.Logger,
