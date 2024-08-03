@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -125,7 +126,7 @@ type IsQueryBoostedResponse struct {
 }
 
 func queryBoostedMetric(query string) string {
-	return fmt.Sprintf(boostedQueryInternalQuery, queryBoosterMetric, boostedQueryLabelName, query, boostedQueryLabelName)
+	return fmt.Sprintf(boostedQueryInternalQuery, queryBoosterMetric, boostedQueryLabelName, strings.ReplaceAll(query, `"`, `\"`), boostedQueryLabelName)
 }
 
 const boostedQueryInternalQuery = `
