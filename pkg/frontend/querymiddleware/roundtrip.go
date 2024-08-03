@@ -83,6 +83,9 @@ type Config struct {
 	ExtraRangeQueryMiddlewares   []MetricsQueryMiddleware `yaml:"-"`
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
+
+	// Used to make requests to self from middlewares.
+	QueryFrontendHttpListenPort int `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -246,9 +249,8 @@ func newQueryTripperware(
 		// IMPORTANT: roundtrippers are executed in *reverse* order because they are wrappers.
 		// It means that the first roundtrippers defined in this function will be the last to be
 		// executed.
-		queryBoosterMiddleware := newQueryBoosterMiddleware(next, log)
-		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, append(queryRangeMiddleware, queryBoosterMiddleware)...)
-		instant := newLimitedParallelismRoundTripper(next, codec, limits, append(queryInstantMiddleware, queryBoosterMiddleware)...)
+		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
+		instant := newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...)
 		remoteRead := newRemoteReadRoundTripper(next, remoteReadMiddleware...)
 
 		// Wrap next for cardinality, labels queries and all other queries.
@@ -339,6 +341,7 @@ func newQueryMiddlewares(
 		queryBlockerMiddleware,
 		newInstrumentMiddleware("step_align", metrics),
 		newStepAlignMiddleware(limits, log, registerer),
+		newQueryBoosterMiddleware(cfg, log),
 	)
 
 	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
@@ -364,6 +367,7 @@ func newQueryMiddlewares(
 		newLimitsMiddleware(limits, log),
 		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
 		queryBlockerMiddleware,
+		newQueryBoosterMiddleware(cfg, log),
 	)
 
 	// Inject the extra middlewares provided by the user before the query sharding middleware.

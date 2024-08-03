@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -20,18 +20,18 @@ const (
 )
 
 type queryBoosterMiddleware struct {
-	downstream http.RoundTripper
 	logger     log.Logger
+	qfeAddress string
 
 	next MetricsQueryHandler
 }
 
-func newQueryBoosterMiddleware(downstream http.RoundTripper, logger log.Logger) MetricsQueryMiddleware {
+func newQueryBoosterMiddleware(cfg Config, logger log.Logger) MetricsQueryMiddleware {
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &queryBoosterMiddleware{
-			downstream: downstream,
 			logger:     logger,
 			next:       next,
+			qfeAddress: fmt.Sprintf("%s:%d", "localhost", cfg.QueryFrontendHttpListenPort),
 		}
 	})
 }
@@ -49,7 +49,7 @@ func (q *queryBoosterMiddleware) Do(ctx context.Context, req MetricsQueryRequest
 	}
 
 	queryCleaned := expr.String()
-	isQueryBoosted, err := q.isQueryBoosted(ctx, queryCleaned, req.GetHeaders())
+	isQueryBoosted, err := q.isQueryBoosted(ctx, queryCleaned)
 	if err != nil {
 		level.Warn(log).Log("msg", "failed to check if query is boosted, running next middleware", "query", queryCleaned, "err", err)
 		return q.next.Do(ctx, req)
@@ -61,7 +61,7 @@ func (q *queryBoosterMiddleware) Do(ctx context.Context, req MetricsQueryRequest
 	}
 	level.Info(log).Log("msg", "query is boosted", "query", queryCleaned)
 
-	queryRewritten := q.queryBoostedMetric(queryCleaned)
+	queryRewritten := queryBoostedMetric(queryCleaned)
 	req, err = req.WithQuery(queryRewritten)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to rewrite boosted query")
@@ -71,32 +71,29 @@ func (q *queryBoosterMiddleware) Do(ctx context.Context, req MetricsQueryRequest
 	return q.next.Do(ctx, req)
 }
 
-func (q *queryBoosterMiddleware) isQueryBoosted(ctx context.Context, query string, headers []*PrometheusHeader) (bool, error) {
+func (q *queryBoosterMiddleware) isQueryBoosted(ctx context.Context, query string) (bool, error) {
 	log, _ := spanlogger.NewWithLogger(ctx, q.logger, "queryBoosterMiddleware.isQueryBoosted")
 	defer log.Span.Finish()
-
-	boostedQueryResultsMetricMatcher := make(url.Values)
-	boostedQueryResultsMetricMatcher.Add("match[]", "__name__=\""+queryBoosterMetric+"\"")
-	boostedQueryResultsMetricMatcher.Add("match[]", boostedQueryLabelName+"=\""+query+"\"")
 
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodGet,
-		"/prometheus/api/v1/label/"+boostedQueryLabelName+"/values",
+		fmt.Sprintf("http://%s/prometheus/api/v1/labels", q.qfeAddress),
 		http.NoBody,
 	)
 	if err != nil {
 		return false, errors.Wrap(err, "failed to create isQueryBoosted request")
 	}
 
-	req.URL.RawQuery = boostedQueryResultsMetricMatcher.Encode()
-	req.RequestURI = req.URL.String()
+	params := req.URL.Query()
+	params.Add("match[]", fmt.Sprintf(`{__name__="%s", %s="%s"}`, queryBoosterMetric, boostedQueryLabelName, strings.ReplaceAll(query, `"`, `\"`)))
+	req.URL.RawQuery = params.Encode()
 
 	if err := user.InjectOrgIDIntoHTTPRequest(ctx, req); err != nil {
 		return false, errors.Wrap(err, "failed to inject org ID into isQueryBoosted request")
 	}
 
-	respEncoded, err := q.downstream.RoundTrip(req)
+	respEncoded, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return false, err
 	}
@@ -110,7 +107,9 @@ func (q *queryBoosterMiddleware) isQueryBoosted(ctx context.Context, query strin
 		return false, errors.New("no success when querying whether isQueryBoosted")
 	}
 
-	if len(respDecoded.Data) > 0 && respDecoded.Data[0] == query {
+	// The matchers in the labels request already target the boosted series, so if we
+	// get a non-empty response we know the metric has a booster recording rule.
+	if len(respDecoded.Data) > 0 {
 		return true, nil
 	}
 
@@ -126,8 +125,8 @@ type IsQueryBoostedResponse struct {
 	Infos     []string `json:"infos,omitempty"`
 }
 
-func (q *queryBoosterMiddleware) queryBoostedMetric(query string) string {
-	return fmt.Sprintf(boostedQueryInternalQuery, queryBoosterMetric, boostedQueryLabelName, query, boostedQueryLabelName)
+func queryBoostedMetric(query string) string {
+	return fmt.Sprintf(boostedQueryInternalQuery, queryBoosterMetric, boostedQueryLabelName, strings.ReplaceAll(query, `"`, `\"`), boostedQueryLabelName)
 }
 
 const boostedQueryInternalQuery = `
@@ -137,11 +136,11 @@ label_replace(
     "__name__",
     "",
     "",
-    "",
+    ""
   ),
   "%s",
   "",
   "",
-  "",
+  ""
 )
 `
