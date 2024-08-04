@@ -60,7 +60,7 @@ func NewFunctionOverRangeVector(
 		o.seriesValidationFunc = f.SeriesValidationFuncFactory()
 	}
 
-	if f.NeedsSeriesNamesForAnnotations || o.seriesValidationFunc != nil {
+	if f.NeedsSeriesNamesForAnnotations {
 		o.metricNames = &MetricNames{}
 	}
 
