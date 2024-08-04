@@ -105,7 +105,5 @@ type FunctionOverRangeVector struct {
 	SeriesMetadataFunc SeriesMetadataFunction
 
 	// NeedsSeriesNamesForAnnotations indicates that this function uses the names of input series when emitting annotations.
-	//
-	// NeedsSeriesNamesForAnnotations is implied if SeriesValidationFunc is non-nil.
 	NeedsSeriesNamesForAnnotations bool
 }
