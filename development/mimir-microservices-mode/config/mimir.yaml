@@ -173,6 +173,7 @@ limits:
   native_histograms_ingestion_enabled: true
   cardinality_analysis_enabled: true
   query_ingesters_within: 20m
+  out_of_order_time_window: 2h
 
 runtime_config:
   file: ./config/runtime.yaml
