@@ -60,7 +60,7 @@ func NewReaderPool(logger log.Logger, indexHeaderConfig Config, lazyLoadingGate 
 	if !p.lazyReaderEnabled || p.lazyReaderIdleTimeout <= 0 {
 		p.Service = services.NewIdleService(nil, nil)
 	} else {
-		p.Service = services.NewTimerService(p.lazyReaderIdleTimeout/10, nil, p.closeIdleReaders, nil)
+		p.Service = services.NewTimerService(p.lazyReaderIdleTimeout/10, nil, p.unloadIdleReaders, nil)
 	}
 	return p
 }
@@ -109,7 +109,7 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 	return reader, err
 }
 
-func (p *ReaderPool) closeIdleReaders(context.Context) error {
+func (p *ReaderPool) unloadIdleReaders(context.Context) error {
 	idleTimeoutAgo := time.Now().Add(-p.lazyReaderIdleTimeout).UnixNano()
 
 	for _, r := range p.getIdleReadersSince(idleTimeoutAgo) {
