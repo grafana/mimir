@@ -226,8 +226,8 @@ To ease the migration process, you can keep the custom bucket definition of a cl
 
    Use one of the following strategies to update dashbaords.
 
-   - (Recommended) Add new dashboards with the new native histogram queries. This solution requires looking at different dashboards for data before and after the migration, until data before the migration is removed due to passing its retention time. Thus it is recommended to publish the new dashboard when sufficient time has passed to serve users with the new data.
-   - Add a dashboard variable to your dashboard to enable switching between classic histograms and native histograms. There isn't support for selectively enabling and disabling queries in Grafana yet ([issue 79848](https://github.com/grafana/grafana/issues/79848)). As a workaround, add the dashboard variable `latency_metrics`, for example, and assign it a value of either `-1` or `1`. Then, add the following two queries to the panel:
+   - (Recommended) Add new dashboards with the new native histogram queries. This solution requires looking at different dashboards for data before and after the migration, until data before the migration is removed due to passing its retention time. You can publish the new dashboard when sufficient time has passed to serve users with the new data.
+   - Add a dashboard variable to your dashboard to enable switching between classic histograms and native histograms. There isn't support for selectively enabling and disabling queries in Grafana ([issue 79848](https://github.com/grafana/grafana/issues/79848)). As a workaround, add the dashboard variable `latency_metrics`, for example, and assign it a value of either `-1` or `1`. Then, add the following two queries to the panel:
 
      ```
      <classic_query> < ($latency_metrics * +Inf)
