@@ -1281,7 +1281,7 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 
 	cleaner1BucketClient := &hookBucket{
 		Bucket: bucketClient,
-		preIterHook: func(_ context.Context, dir string, _ func(string) error, options ...objstore.IterOption) {
+		preIterHook: func(_ context.Context, dir string, _ func(string) error, _ ...objstore.IterOption) {
 			// When listing blocks, wait until the 2nd cleaner started to list markers.
 			if path.Base(dir) == tenantID {
 				<-cleaner2ListMarkersStarted
