@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -49,7 +50,7 @@ func (q *queryBoosterMiddleware) Do(ctx context.Context, req MetricsQueryRequest
 	}
 
 	queryCleaned := expr.String()
-	isQueryBoosted, err := q.isQueryBoosted(ctx, queryCleaned)
+	isQueryBoosted, err := q.isQueryBoosted(ctx, queryCleaned, req)
 	if err != nil {
 		level.Warn(log).Log("msg", "failed to check if query is boosted, running next middleware", "query", queryCleaned, "err", err)
 		return q.next.Do(ctx, req)
@@ -71,7 +72,7 @@ func (q *queryBoosterMiddleware) Do(ctx context.Context, req MetricsQueryRequest
 	return q.next.Do(ctx, req)
 }
 
-func (q *queryBoosterMiddleware) isQueryBoosted(ctx context.Context, query string) (bool, error) {
+func (q *queryBoosterMiddleware) isQueryBoosted(ctx context.Context, query string, origReq MetricsQueryRequest) (bool, error) {
 	log, _ := spanlogger.NewWithLogger(ctx, q.logger, "queryBoosterMiddleware.isQueryBoosted")
 	defer log.Span.Finish()
 
@@ -87,6 +88,9 @@ func (q *queryBoosterMiddleware) isQueryBoosted(ctx context.Context, query strin
 
 	params := req.URL.Query()
 	params.Add("match[]", fmt.Sprintf(`{__name__="%s", %s="%s"}`, queryBoosterMetric, boostedQueryLabelName, strings.ReplaceAll(query, `"`, `\"`)))
+	params.Add("start", time.UnixMilli(origReq.GetStart()).Format(time.RFC3339))
+	params.Add("end", time.UnixMilli(origReq.GetEnd()).Format(time.RFC3339))
+	params.Add("limit", "1")
 	req.URL.RawQuery = params.Encode()
 
 	if err := user.InjectOrgIDIntoHTTPRequest(ctx, req); err != nil {
