@@ -309,8 +309,8 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				},
 				{
 					Histograms: []promql.HPoint{
-						{T: 2, H: &histogram.FloatHistogram{}},
-						{T: 4, H: &histogram.FloatHistogram{}},
+						{T: 2, H: &histogram.FloatHistogram{Count: 2, Sum: 2}},
+						{T: 4, H: &histogram.FloatHistogram{Count: 4, Sum: 4}},
 					},
 				},
 			},
@@ -325,8 +325,8 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					{T: 3, F: 30},
 				},
 				Histograms: []promql.HPoint{
-					{T: 2, H: &histogram.FloatHistogram{}},
-					{T: 4, H: &histogram.FloatHistogram{}},
+					{T: 2, H: &histogram.FloatHistogram{Count: 2, Sum: 2}},
+					{T: 4, H: &histogram.FloatHistogram{Count: 4, Sum: 4}},
 				},
 			},
 		},
@@ -338,7 +338,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 						{T: 2, F: 20},
 					},
 					Histograms: []promql.HPoint{
-						{T: 3, H: &histogram.FloatHistogram{}},
+						{T: 3, H: &histogram.FloatHistogram{Count: 3, Sum: 3}},
 					},
 				},
 				{
@@ -347,7 +347,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 						{T: 5, F: 50},
 					},
 					Histograms: []promql.HPoint{
-						{T: 6, H: &histogram.FloatHistogram{}},
+						{T: 6, H: &histogram.FloatHistogram{Count: 6, Sum: 6}},
 					},
 				},
 			},
@@ -364,8 +364,8 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					{T: 5, F: 50},
 				},
 				Histograms: []promql.HPoint{
-					{T: 3, H: &histogram.FloatHistogram{}},
-					{T: 6, H: &histogram.FloatHistogram{}},
+					{T: 3, H: &histogram.FloatHistogram{Count: 3, Sum: 3}},
+					{T: 6, H: &histogram.FloatHistogram{Count: 6, Sum: 6}},
 				},
 			},
 		},
@@ -377,7 +377,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 						{T: 5, F: 50},
 					},
 					Histograms: []promql.HPoint{
-						{T: 6, H: &histogram.FloatHistogram{}},
+						{T: 6, H: &histogram.FloatHistogram{Count: 6, Sum: 6}},
 					},
 				},
 				{
@@ -386,7 +386,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 						{T: 2, F: 20},
 					},
 					Histograms: []promql.HPoint{
-						{T: 3, H: &histogram.FloatHistogram{}},
+						{T: 3, H: &histogram.FloatHistogram{Count: 3, Sum: 3}},
 					},
 				},
 			},
@@ -403,8 +403,8 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					{T: 5, F: 50},
 				},
 				Histograms: []promql.HPoint{
-					{T: 3, H: &histogram.FloatHistogram{}},
-					{T: 6, H: &histogram.FloatHistogram{}},
+					{T: 3, H: &histogram.FloatHistogram{Count: 3, Sum: 3}},
+					{T: 6, H: &histogram.FloatHistogram{Count: 6, Sum: 6}},
 				},
 			},
 		},
@@ -417,7 +417,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				},
 				{
 					Histograms: []promql.HPoint{
-						{T: 2, H: &histogram.FloatHistogram{}},
+						{T: 2, H: &histogram.FloatHistogram{Count: 2, Sum: 2}},
 					},
 				},
 			},
@@ -432,7 +432,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 			input: []types.InstantVectorSeriesData{
 				{
 					Histograms: []promql.HPoint{
-						{T: 3, H: &histogram.FloatHistogram{}},
+						{T: 3, H: &histogram.FloatHistogram{Count: 6, Sum: 6}},
 					},
 				},
 				{
@@ -477,7 +477,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 						{T: 3, F: 30},
 					},
 					Histograms: []promql.HPoint{
-						{T: 4, H: &histogram.FloatHistogram{}},
+						{T: 4, H: &histogram.FloatHistogram{Count: 4, Sum: 4}},
 					},
 				},
 				{
@@ -486,8 +486,8 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 						{T: 8, F: 80},
 					},
 					Histograms: []promql.HPoint{
-						{T: 9, H: &histogram.FloatHistogram{}},
-						{T: 10, H: &histogram.FloatHistogram{}},
+						{T: 9, H: &histogram.FloatHistogram{Count: 9, Sum: 9}},
+						{T: 10, H: &histogram.FloatHistogram{Count: 10, Sum: 10}},
 					},
 				},
 				{
@@ -496,8 +496,8 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 						{T: 5, F: 50},
 					},
 					Histograms: []promql.HPoint{
-						{T: 2, H: &histogram.FloatHistogram{}},
-						{T: 6, H: &histogram.FloatHistogram{}},
+						{T: 2, H: &histogram.FloatHistogram{Count: 2, Sum: 2}},
+						{T: 6, H: &histogram.FloatHistogram{Count: 6, Sum: 6}},
 					},
 				},
 			},
@@ -516,11 +516,71 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					{T: 8, F: 80},
 				},
 				Histograms: []promql.HPoint{
-					{T: 2, H: &histogram.FloatHistogram{}},
-					{T: 4, H: &histogram.FloatHistogram{}},
-					{T: 6, H: &histogram.FloatHistogram{}},
-					{T: 9, H: &histogram.FloatHistogram{}},
-					{T: 10, H: &histogram.FloatHistogram{}},
+					{T: 2, H: &histogram.FloatHistogram{Count: 2, Sum: 2}},
+					{T: 4, H: &histogram.FloatHistogram{Count: 4, Sum: 4}},
+					{T: 6, H: &histogram.FloatHistogram{Count: 6, Sum: 6}},
+					{T: 9, H: &histogram.FloatHistogram{Count: 9, Sum: 9}},
+					{T: 10, H: &histogram.FloatHistogram{Count: 10, Sum: 10}},
+				},
+			},
+		},
+		"input series exclusively with floats, histograms, or mixed, all overlap": {
+			input: []types.InstantVectorSeriesData{
+				{
+					Floats: []promql.FPoint{
+						{T: 8, F: 80},
+					},
+				},
+				{
+					Histograms: []promql.HPoint{
+						{T: 3, H: &histogram.FloatHistogram{Count: 3, Sum: 3}},
+						{T: 10, H: &histogram.FloatHistogram{Count: 10, Sum: 10}},
+					},
+				},
+				{
+					Floats: []promql.FPoint{
+						{T: 7, F: 70},
+						{T: 9, F: 90},
+					},
+				},
+				{
+					Histograms: []promql.HPoint{
+						{T: 2, H: &histogram.FloatHistogram{Count: 2, Sum: 2}},
+						{T: 6, H: &histogram.FloatHistogram{Count: 6, Sum: 6}},
+					},
+				},
+				{
+					Floats: []promql.FPoint{
+						{T: 1, F: 10},
+						{T: 5, F: 50},
+					},
+					Histograms: []promql.HPoint{
+						{T: 4, H: &histogram.FloatHistogram{Count: 4, Sum: 4}},
+					},
+				},
+			},
+			sourceSeriesIndices: []int{0, 1, 2, 3, 4},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "c")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "d")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "e")},
+			},
+			expectedOutput: types.InstantVectorSeriesData{
+				Floats: []promql.FPoint{
+					{T: 1, F: 10},
+					{T: 5, F: 50},
+					{T: 7, F: 70},
+					{T: 8, F: 80},
+					{T: 9, F: 90},
+				},
+				Histograms: []promql.HPoint{
+					{T: 2, H: &histogram.FloatHistogram{Count: 2, Sum: 2}},
+					{T: 3, H: &histogram.FloatHistogram{Count: 3, Sum: 3}},
+					{T: 4, H: &histogram.FloatHistogram{Count: 4, Sum: 4}},
+					{T: 6, H: &histogram.FloatHistogram{Count: 6, Sum: 6}},
+					{T: 10, H: &histogram.FloatHistogram{Count: 10, Sum: 10}},
 				},
 			},
 		},
