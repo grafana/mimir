@@ -1281,16 +1281,16 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 
 	cleaner1BucketClient := &hookBucket{
 		Bucket: bucketClient,
-		preIterHook: func(ctx context.Context, dir string, f func(string) error, options ...objstore.IterOption) {
+		preIterHook: func(_ context.Context, dir string, _ func(string) error, options ...objstore.IterOption) {
 			// When listing blocks, wait until the 2nd cleaner started to list markers.
 			if path.Base(dir) == tenantID {
 				<-cleaner2ListMarkersStarted
 			}
 		},
-		preDeleteHook: func() func(ctx context.Context, name string) {
+		preDeleteHook: func() func(context.Context, string) {
 			once := sync.Once{}
 
-			return func(ctx context.Context, name string) {
+			return func(_ context.Context, name string) {
 				// When deleting the deletion mark of a block (which is expected to be the last object deleted of a block)
 				// unblock the 2nd cleaner markers listing with some delay. The delay is used to make sure this deletion
 				// completes before the 2nd cleaner start listing markers.
@@ -1308,10 +1308,10 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 
 	cleaner2BucketClient := &hookBucket{
 		Bucket: bucketClient,
-		preIterHook: func() func(ctx context.Context, dir string, f func(string) error, options ...objstore.IterOption) {
+		preIterHook: func() func(context.Context, string, func(string) error, ...objstore.IterOption) {
 			once := sync.Once{}
 
-			return func(ctx context.Context, dir string, f func(string) error, options ...objstore.IterOption) {
+			return func(_ context.Context, dir string, _ func(string) error, _ ...objstore.IterOption) {
 				if path.Base(dir) == block.MarkersPathname {
 					// When listing markers, signal that the 2nd cleaner started to list markers and
 					// then wait until it should proceed.
