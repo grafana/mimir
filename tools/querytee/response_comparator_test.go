@@ -1328,6 +1328,64 @@ func TestCompareSamplesResponse(t *testing.T) {
 			skipRecentSamples: time.Hour,
 		},
 		{
+			name: "should not fail when there are different series in a vector, and all float samples are within the configured skip recent samples interval",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[` + now + `,"10"]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"other-bar"},"value":[` + now + `,"11"]}]}
+						}`),
+			skipRecentSamples: time.Hour,
+		},
+		{
+			name: "should not fail when there are different series in a vector, and all histogram samples are within the configured skip recent samples interval",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "vector",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histogram": [
+											` + now + `, 
+											{
+												"count": "2", 
+												"sum": "3", 
+												"buckets": [
+													[1,"0","2","2"]
+												]
+											}
+										]
+									}
+								]
+							}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "vector",
+								"result": [
+									{
+										"metric": {"foo":"other-bar"},
+										"histogram": [
+											` + now + `, 
+											{
+												"count": "5", 
+												"sum": "3", 
+												"buckets": [
+													[1,"0","2","5"]
+												]
+											}
+										]
+									}
+								]
+							}
+						}`),
+			skipRecentSamples: time.Hour,
+		},
+		{
 			name: "should fail when there are a different number of series in a vector, and some float samples are outside the configured skip recent samples interval",
 			expected: json.RawMessage(`{
 							"status": "success",
@@ -1526,6 +1584,64 @@ func TestCompareSamplesResponse(t *testing.T) {
 											{
 												"count": "5", 
 												"sum": "20", 
+												"buckets": [
+													[1,"0","2","5"]
+												]
+											}
+										]
+									}
+								]
+							}
+						}`),
+			skipRecentSamples: time.Hour,
+		},
+		{
+			name: "should not fail when there are different series in a matrix, and all float samples are within the configured skip recent samples interval",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[` + now + `,"10"]]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"other-bar"},"values":[[` + now + `,"11"]]}]}
+						}`),
+			skipRecentSamples: time.Hour,
+		},
+		{
+			name: "should not fail when there are different number series in a matrix, and all histogram samples are within the configured skip recent samples interval",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "matrix",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histograms": [[
+											` + now + `, 
+											{
+												"count": "2", 
+												"sum": "3", 
+												"buckets": [
+													[1,"0","2","2"]
+												]
+											}
+										]]
+									}
+								]
+							}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "matrix",
+								"result": [
+									{
+										"metric": {"foo":"other-bar"},
+										"histogram": [
+											` + now + `, 
+											{
+												"count": "5", 
+												"sum": "3", 
 												"buckets": [
 													[1,"0","2","5"]
 												]
