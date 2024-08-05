@@ -55,12 +55,35 @@ func (w *Updater) UpdateIndex(ctx context.Context, old *Index) (*Index, map[ulid
 		oldBlockDeletionMarks = old.BlockDeletionMarks
 	}
 
+	// Find all markers in the storage. It's important to list deletion marks *before* we list the
+	// blocks in the bucket in order to avoid a race condition in case there are 2 processes updating
+	// the bucket index at the same time.
+	//
+	// Listing markers before the blocks guarantees that, if another process is deleting a block while
+	// we do the markers or blocks listing, we end up in one of the following situations (which are
+	// all legit):
+	// 1. Both the block and deletion mark don't exist anymore
+	// 2. The marker exists but the block doesn't because it has been deleted between listing markers
+	//    and listing blocks
+	// 3. Both the block and the deletion mark still exist
+	//
+	// But it can't happen that we end up in a situation where the deletion mark doesn't exist and
+	// the block still exists, which is what we want to avoid, otherwise we may update the bucket
+	// index with a block that has been deleted, it is still referenced in the list of blocks in the
+	// index, but its deletion mark is not referenced anymore in the index.
+	discoveredBlockDeletionMarks, err := block.ListBlockDeletionMarks(ctx, w.bkt)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	level.Info(w.logger).Log("msg", "listed deletion markers", "count", len(discoveredBlockDeletionMarks))
+
 	blocks, partials, err := w.updateBlocks(ctx, oldBlocks)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	blockDeletionMarks, err := w.updateBlockDeletionMarks(ctx, oldBlockDeletionMarks)
+	blockDeletionMarks, err := w.updateBlockDeletionMarks(ctx, discoveredBlockDeletionMarks, oldBlockDeletionMarks)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -174,16 +197,8 @@ func (w *Updater) updateBlockIndexEntry(ctx context.Context, id ulid.ULID) (*Blo
 	return block, nil
 }
 
-func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDeletionMark) ([]*BlockDeletionMark, error) {
+func (w *Updater) updateBlockDeletionMarks(ctx context.Context, discovered map[ulid.ULID]struct{}, old []*BlockDeletionMark) ([]*BlockDeletionMark, error) {
 	out := make([]*BlockDeletionMark, 0, len(old))
-
-	// Find all markers in the storage.
-	discovered, err := block.ListBlockDeletionMarks(ctx, w.bkt)
-	if err != nil {
-		return nil, err
-	}
-
-	level.Info(w.logger).Log("msg", "listed deletion markers", "count", len(discovered))
 
 	// Since deletion marks are immutable, all markers already existing in the index can just be copied.
 	for _, m := range old {
