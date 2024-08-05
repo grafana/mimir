@@ -626,7 +626,7 @@ func (b *BinaryOperation) mergeOneSideHistograms(seriesGroupSide seriesForOneGro
 	}
 
 	if remainingSeriesWithHistograms == 1 {
-		// No other series had any floats
+		// No other series had any histograms
 		return seriesGroupSide.data[0].Histograms, nil
 	}
 
@@ -812,7 +812,7 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 		b.Pool.PutFPointSlice(right.Floats)
 	}
 	if canReturnRightHPointSlice {
-		b.Pool.PutHPointSlice(left.Histograms)
+		b.Pool.PutHPointSlice(right.Histograms)
 	}
 
 	return types.InstantVectorSeriesData{
