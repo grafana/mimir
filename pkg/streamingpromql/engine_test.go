@@ -33,7 +33,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/util/globalerror"
-	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
@@ -324,6 +323,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 									PositiveBuckets: []float64{
 										1, 3, 1,
 									},
+									CounterResetHint: histogram.NotCounterReset,
 								},
 							},
 							{
@@ -340,6 +340,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 									PositiveBuckets: []float64{
 										1, 4, 1,
 									},
+									CounterResetHint: histogram.NotCounterReset,
 								},
 							},
 						},
@@ -361,6 +362,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 									PositiveBuckets: []float64{
 										1, 3, 3,
 									},
+									CounterResetHint: histogram.NotCounterReset,
 								},
 							},
 							{
@@ -377,6 +379,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 									PositiveBuckets: []float64{
 										1, 4, 5,
 									},
+									CounterResetHint: histogram.NotCounterReset,
 								},
 							},
 						},
@@ -413,6 +416,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 									PositiveBuckets: []float64{
 										1, 1, 0,
 									},
+									CounterResetHint: histogram.NotCounterReset,
 								},
 							},
 						},
@@ -442,6 +446,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 									PositiveBuckets: []float64{
 										1, 0,
 									},
+									CounterResetHint: histogram.UnknownCounterReset,
 								},
 							},
 							{
@@ -458,6 +463,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 									PositiveBuckets: []float64{
 										1, 1,
 									},
+									CounterResetHint: histogram.NotCounterReset,
 								},
 							},
 							{
@@ -474,6 +480,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 									PositiveBuckets: []float64{
 										1, 1, 1, 1,
 									},
+									CounterResetHint: histogram.UnknownCounterReset,
 								},
 							},
 						},
@@ -589,17 +596,29 @@ func TestRangeVectorSelectors(t *testing.T) {
 				// Because Histograms are pointers, it is hard to use Equal for the whole result
 				// Instead, compare each point individually.
 				expectedMatrix := expected.Value.(promql.Matrix)
-				resMatrix := res.Value.(promql.Matrix)
-				require.Equal(t, expectedMatrix.Len(), resMatrix.Len(), "Right number of results")
-				for i := range expectedMatrix {
-					if expectedMatrix[i].Histograms == nil {
-						require.Equal(t, expectedMatrix[i], resMatrix[i], "Results match expectation exactly (Floats)")
+				actualMatrix := res.Value.(promql.Matrix)
+				require.Equal(t, expectedMatrix.Len(), actualMatrix.Len(), "Result has incorrect number of series")
+				for seriesIdx, expectedSeries := range expectedMatrix {
+					actualSeries := actualMatrix[seriesIdx]
+
+					if expectedSeries.Histograms == nil {
+						require.Equalf(t, expectedSeries, actualSeries, "Result for series does not match expected value")
 					} else {
-						require.Equal(t, expectedMatrix[i].Metric, resMatrix[i].Metric, "Metric name matches")
-						require.Equal(t, expectedMatrix[i].Floats, resMatrix[i].Floats, "Float points match")
-						require.Equal(t, len(expectedMatrix[i].Histograms), len(resMatrix[i].Histograms), "Same number of histograms")
-						for j := range expectedMatrix[i].Histograms {
-							test.RequireFloatHistogramEqual(t, expectedMatrix[i].Histograms[j].H, resMatrix[i].Histograms[j].H)
+						require.Equal(t, expectedSeries.Metric, actualSeries.Metric, "Metric does not match expected value")
+						require.Equal(t, expectedSeries.Floats, actualSeries.Floats, "Float samples do not match expected samples")
+						require.Lenf(t, actualSeries.Histograms, len(expectedSeries.Histograms), "Number of histogram samples does not match expected result (%v)", expectedSeries.Histograms)
+
+						for sampleIdx := range expectedSeries.Histograms {
+							require.EqualValuesf(
+								t,
+								expectedSeries.Histograms[sampleIdx].H,
+								actualSeries.Histograms[sampleIdx].H,
+								"Histogram samples for %v do not match expected result. First difference is at sample index %v. Expected: %v, actual: %v",
+								expectedSeries.Metric,
+								sampleIdx,
+								expectedSeries.Histograms,
+								actualSeries.Histograms,
+							)
 						}
 					}
 				}
