@@ -496,4 +496,3 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-"version": "3.4"
