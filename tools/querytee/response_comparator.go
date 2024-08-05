@@ -157,11 +157,11 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 		return err
 	}
 
-	if len(expected) != len(actual) {
-		if allMatrixSamplesWithinRecentSampleWindow(expected, opts) && allMatrixSamplesWithinRecentSampleWindow(actual, opts) {
-			return nil
-		}
+	if allMatrixSamplesWithinRecentSampleWindow(expected, opts) && allMatrixSamplesWithinRecentSampleWindow(actual, opts) {
+		return nil
+	}
 
+	if len(expected) != len(actual) {
 		return fmt.Errorf("expected %d metrics but got %d", len(expected), len(actual))
 	}
 
@@ -276,11 +276,11 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 		return err
 	}
 
-	if len(expected) != len(actual) {
-		if allVectorSamplesWithinRecentSampleWindow(expected, opts) && allVectorSamplesWithinRecentSampleWindow(actual, opts) {
-			return nil
-		}
+	if allVectorSamplesWithinRecentSampleWindow(expected, opts) && allVectorSamplesWithinRecentSampleWindow(actual, opts) {
+		return nil
+	}
 
+	if len(expected) != len(actual) {
 		return fmt.Errorf("expected %d metrics but got %d", len(expected), len(actual))
 	}
 
