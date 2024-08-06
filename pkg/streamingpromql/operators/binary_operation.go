@@ -709,8 +709,8 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 	var hPoints []promql.HPoint
 
 	// For one-to-one matching for arithmetic operators, we'll never produce more points than the smaller input side.
-	// Because histograms and histograms can be multiplied together, we use the sum of both the histogram and histogram points.
-	// We also don't know if the output will be exclusively histograms or histograms, so we'll use the same size slice for both.
+	// Because floats and histograms can be multiplied together, we use the sum of both the float and histogram points.
+	// We also don't know if the output will be exclusively floats or histograms, so we'll use the same size slice for both.
 	// We only assign the slices once we see the associated point type so it shouldn't be common that we allocate both.
 	//
 	// FIXME: this is not safe to do for one-to-many, many-to-one or many-to-many matching, as we may need the input series for later output series.
@@ -1007,6 +1007,8 @@ type seriesForOneGroupSide struct {
 	sourceSeriesIndices []int
 }
 
+// floatSideSorter sorts side by the timestamp of the first float point in each series.
+// It maintains the order of both data and sourceSeriesIndices.
 type floatSideSorter struct {
 	side seriesForOneGroupSide
 }
@@ -1030,6 +1032,8 @@ func (f floatSideSorter) Less(i, j int) bool {
 	return f.side.data[i].Floats[0].T < f.side.data[j].Floats[0].T
 }
 
+// histogramSideSorter sorts side by the timestamp of the first histogram point in each series.
+// It maintains the order of both data and sourceSeriesIndices.
 type histogramSideSorter struct {
 	side seriesForOneGroupSide
 }
