@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -1266,97 +1267,172 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 		}
 	)
 
-	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
+	tests := map[string]struct {
+		mockBucketClients func(bucket2 objstore.Bucket) (cleaner1BucketClient, cleaner2BucketClient objstore.Bucket)
+	}{
+		"the 2nd cleaner lists markers after the 1st cleaner has started deleting some blocks": {
+			mockBucketClients: func(bucketClient objstore.Bucket) (cleaner1BucketClient, cleaner2BucketClient objstore.Bucket) {
+				cleaner2ListMarkersStarted := make(chan struct{})
+				cleaner2ListMarkersUnblocked := make(chan struct{})
 
-	// Create two blocks and mark one of them for deletion at a time before the deletion delay.
-	block1 := createTSDBBlock(t, bucketClient, tenantID, 10, 20, 1, nil)
-	block2 := createTSDBBlock(t, bucketClient, tenantID, 20, 30, 1, nil)
-	createDeletionMark(t, bucketClient, tenantID, block1, time.Now().Add(-deletionDelay).Add(-time.Minute))
+				cleaner1BucketClient = &hookBucket{
+					Bucket: bucketClient,
+					preIterHook: func(_ context.Context, dir string, _ func(string) error, _ ...objstore.IterOption) {
+						// When listing blocks, wait until the 2nd cleaner started to list markers.
+						if path.Base(dir) == tenantID {
+							<-cleaner2ListMarkersStarted
+						}
+					},
+					preDeleteHook: func() func(context.Context, string) {
+						once := sync.Once{}
 
-	// Control the bucket clients in order to reproduce the following scenario:
-	// the 2nd cleaner lists markers after the 1st cleaner has started deleting some blocks.
-	cleaner2ListMarkersStarted := make(chan struct{})
-	cleaner2ListMarkersUnblocked := make(chan struct{})
+						return func(_ context.Context, name string) {
+							// When deleting the deletion mark of a block (which is expected to be the last object deleted of a block)
+							// unblock the 2nd cleaner markers listing with some delay. The delay is used to make sure this deletion
+							// completes before the 2nd cleaner start listing markers.
+							if path.Base(name) == block.DeletionMarkFilename {
+								once.Do(func() {
+									go func() {
+										time.Sleep(100 * time.Millisecond)
+										close(cleaner2ListMarkersUnblocked)
+									}()
+								})
+							}
+						}
+					}(),
+				}
 
-	cleaner1BucketClient := &hookBucket{
-		Bucket: bucketClient,
-		preIterHook: func(_ context.Context, dir string, _ func(string) error, _ ...objstore.IterOption) {
-			// When listing blocks, wait until the 2nd cleaner started to list markers.
-			if path.Base(dir) == tenantID {
-				<-cleaner2ListMarkersStarted
-			}
+				cleaner2BucketClient = &hookBucket{
+					Bucket: bucketClient,
+					preIterHook: func() func(context.Context, string, func(string) error, ...objstore.IterOption) {
+						once := sync.Once{}
+
+						return func(_ context.Context, dir string, _ func(string) error, _ ...objstore.IterOption) {
+							if path.Base(dir) == block.MarkersPathname {
+								// When listing markers, signal that the 2nd cleaner started to list markers and
+								// then wait until it should proceed.
+								once.Do(func() {
+									close(cleaner2ListMarkersStarted)
+									<-cleaner2ListMarkersUnblocked
+								})
+							}
+						}
+					}(),
+				}
+
+				return
+			},
 		},
-		preDeleteHook: func() func(context.Context, string) {
-			once := sync.Once{}
+		"the 2nd cleaner fetches new deletion marks after the 1st cleaner has started deleting blocks for the new deletion marks": {
+			mockBucketClients: func(bucketClient objstore.Bucket) (cleaner1BucketClient, cleaner2BucketClient objstore.Bucket) {
+				cleaner2ListMarkersStarted := make(chan struct{})
+				cleaner2GetDeletionMarkUnblocked := make(chan struct{})
 
-			return func(_ context.Context, name string) {
-				// When deleting the deletion mark of a block (which is expected to be the last object deleted of a block)
-				// unblock the 2nd cleaner markers listing with some delay. The delay is used to make sure this deletion
-				// completes before the 2nd cleaner start listing markers.
-				if path.Base(name) == block.DeletionMarkFilename {
-					once.Do(func() {
-						go func() {
-							time.Sleep(100 * time.Millisecond)
-							close(cleaner2ListMarkersUnblocked)
-						}()
-					})
+				// Mock the 1st cleaner to delete deletion marks when the 2nd cleaner is between the listing
+				// of deletion marks and fetching their content (for new markers).
+				cleaner1BucketClient = &hookBucket{
+					Bucket: bucketClient,
+					preDeleteHook: func() func(context.Context, string) {
+						once := sync.Once{}
+
+						return func(_ context.Context, name string) {
+							if path.Base(name) == block.DeletionMarkFilename {
+								// When deleting the deletion mark of a block, wait until cleaner2 has listed the deletion marks,
+								// because we want cleaner2 to discover the deletion mark before we delete it.
+								<-cleaner2ListMarkersStarted
+
+								// Then signal the deletion happened with some delay. The delay is used to make
+								// sure this deletion completes before the 2nd cleaner is unblocked.
+								once.Do(func() {
+									go func() {
+										time.Sleep(100 * time.Millisecond)
+										close(cleaner2GetDeletionMarkUnblocked)
+									}()
+								})
+							}
+						}
+					}(),
 				}
-			}
-		}(),
+
+				// Mock the 2nd cleaner to discover deletion marks *before* 1st cleaner deletes the blocks,
+				// and to fetch the deletion markers after the 1st cleaner has deleted the blocks.
+				cleaner2BucketClient = &hookBucket{
+					Bucket: bucketClient,
+					preIterHook: func() func(context.Context, string, func(string) error, ...objstore.IterOption) {
+						once := sync.Once{}
+
+						return func(_ context.Context, dir string, _ func(string) error, _ ...objstore.IterOption) {
+							// Signal when cleaner1 has listed markers with some delay. The delay is used to make
+							// sure this listing completes before the 1st cleaner is unblocked.
+							if path.Base(dir) == block.MarkersPathname {
+								once.Do(func() {
+									go func() {
+										time.Sleep(100 * time.Millisecond)
+										close(cleaner2ListMarkersStarted)
+									}()
+								})
+							}
+						}
+					}(),
+					preGetHook: func(ctx context.Context, name string) {
+						// When fetching the deletion mark of a block, wait until cleaner2 has deleted it.
+						if path.Base(name) == block.DeletionMarkFilename {
+							<-cleaner2GetDeletionMarkUnblocked
+						}
+					},
+				}
+
+				return
+			},
+		},
 	}
 
-	cleaner2BucketClient := &hookBucket{
-		Bucket: bucketClient,
-		preIterHook: func() func(context.Context, string, func(string) error, ...objstore.IterOption) {
-			once := sync.Once{}
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+			bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
-			return func(_ context.Context, dir string, _ func(string) error, _ ...objstore.IterOption) {
-				if path.Base(dir) == block.MarkersPathname {
-					// When listing markers, signal that the 2nd cleaner started to list markers and
-					// then wait until it should proceed.
-					once.Do(func() {
-						close(cleaner2ListMarkersStarted)
-						<-cleaner2ListMarkersUnblocked
-					})
-				}
+			// Create two blocks and mark one of them for deletion at a time before the deletion delay.
+			block1 := createTSDBBlock(t, bucketClient, tenantID, 10, 20, 1, nil)
+			block2 := createTSDBBlock(t, bucketClient, tenantID, 20, 30, 1, nil)
+			createDeletionMark(t, bucketClient, tenantID, block1, time.Now().Add(-deletionDelay).Add(-time.Minute))
+
+			cleaner1BucketClient, cleaner2BucketClient := testData.mockBucketClients(bucketClient)
+			cleaner1 := NewBlocksCleaner(cfg, cleaner1BucketClient, tsdb.AllUsers, cfgProvider, logger, nil)
+			cleaner2 := NewBlocksCleaner(cfg, cleaner2BucketClient, tsdb.AllUsers, cfgProvider, logger, nil)
+
+			// Run both cleaners concurrently.
+			wg := sync.WaitGroup{}
+			wg.Add(2)
+
+			go func() {
+				defer wg.Done()
+				require.NoError(t, cleaner1.cleanUser(ctx, tenantID, logger))
+			}()
+
+			go func() {
+				defer wg.Done()
+				require.NoError(t, cleaner2.cleanUser(ctx, tenantID, logger))
+			}()
+
+			// Wait until both cleaners have done.
+			wg.Wait()
+
+			// Check the updated bucket index.
+			idx, err := bucketindex.ReadIndex(ctx, bucketClient, tenantID, cfgProvider, logger)
+			require.NoError(t, err)
+
+			// The non-deleted block must be in the index.
+			assert.Contains(t, idx.Blocks.GetULIDs(), block2)
+
+			// The block marked for deletion should be deleted. Due to race, it could either be removed from the list of blocks
+			// or it could still be listed among the list of blocks but, if so, the deletion marker should still be in the index.
+			if slices.Contains(idx.Blocks.GetULIDs(), block1) {
+				assert.Contains(t, idx.BlockDeletionMarks.GetULIDs(), block1)
+			} else {
+				assert.NotContains(t, idx.BlockDeletionMarks.GetULIDs(), block1)
 			}
-		}(),
-	}
-
-	cleaner1 := NewBlocksCleaner(cfg, cleaner1BucketClient, tsdb.AllUsers, cfgProvider, logger, nil)
-	cleaner2 := NewBlocksCleaner(cfg, cleaner2BucketClient, tsdb.AllUsers, cfgProvider, logger, nil)
-
-	// Run both cleaners concurrently.
-	wg := sync.WaitGroup{}
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		require.NoError(t, cleaner1.cleanUser(ctx, tenantID, logger))
-	}()
-
-	go func() {
-		defer wg.Done()
-		require.NoError(t, cleaner2.cleanUser(ctx, tenantID, logger))
-	}()
-
-	// Wait until both cleaners have done.
-	wg.Wait()
-
-	// Check the updated bucket index.
-	idx, err := bucketindex.ReadIndex(ctx, bucketClient, tenantID, cfgProvider, logger)
-	require.NoError(t, err)
-
-	// The non-deleted block must be in the index.
-	assert.Contains(t, idx.Blocks.GetULIDs(), block2)
-
-	// The block marked for deletion should be deleted. Due to race, it could either be removed from the list of blocks
-	// or it could still be listed among the list of blocks but, if so, the deletion marker should still be in the index.
-	if slices.Contains(idx.Blocks.GetULIDs(), block1) {
-		assert.Contains(t, idx.BlockDeletionMarks.GetULIDs(), block1)
-	} else {
-		assert.NotContains(t, idx.BlockDeletionMarks.GetULIDs(), block1)
+		})
 	}
 }
 
@@ -1364,6 +1440,7 @@ type hookBucket struct {
 	objstore.Bucket
 
 	preIterHook   func(ctx context.Context, dir string, f func(string) error, options ...objstore.IterOption)
+	preGetHook    func(ctx context.Context, name string)
 	preDeleteHook func(ctx context.Context, name string)
 }
 
@@ -1373,6 +1450,14 @@ func (b *hookBucket) Iter(ctx context.Context, dir string, f func(string) error,
 	}
 
 	return b.Bucket.Iter(ctx, dir, f, options...)
+}
+
+func (b *hookBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	if b.preGetHook != nil {
+		b.preGetHook(ctx, name)
+	}
+
+	return b.Bucket.Get(ctx, name)
 }
 
 func (b *hookBucket) Delete(ctx context.Context, name string) error {
