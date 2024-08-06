@@ -57,7 +57,7 @@ type SamplesComparator struct {
 	sampleTypesComparator map[string]SamplesComparatorFunc
 }
 
-// RegisterSamplesComparator helps with registering custom sample types
+// RegisterSamplesType registers custom sample types.
 func (s *SamplesComparator) RegisterSamplesType(samplesType string, comparator SamplesComparatorFunc) {
 	s.sampleTypesComparator[samplesType] = comparator
 }
@@ -175,70 +175,112 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 		if !ok {
 			return fmt.Errorf("expected metric %s missing from actual response", expectedMetric.Metric)
 		}
-
 		actualMetric := actual[actualMetricIndex]
+
+		expectedSamplesTail, actualSamplesTail, err := comparePairs(expectedMetric.Values, actualMetric.Values, func(p1 model.SamplePair, p2 model.SamplePair) error {
+			err := compareSamplePair(p1, p2, opts)
+			if err != nil {
+				return fmt.Errorf("float sample pair does not match for metric %s: %w", expectedMetric.Metric, err)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
+		expectedHistogramSamplesTail, actualHistogramSamplesTail, err := comparePairs(expectedMetric.Histograms, actualMetric.Histograms, func(p1 model.SampleHistogramPair, p2 model.SampleHistogramPair) error {
+			err := compareSampleHistogramPair(p1, p2, opts)
+			if err != nil {
+				return fmt.Errorf("histogram sample pair does not match for metric %s: %w", expectedMetric.Metric, err)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
 		expectedFloatSamplesCount := len(expectedMetric.Values)
 		actualFloatSamplesCount := len(actualMetric.Values)
 		expectedHistogramSamplesCount := len(expectedMetric.Histograms)
 		actualHistogramSamplesCount := len(actualMetric.Histograms)
 
-		if expectedFloatSamplesCount != actualFloatSamplesCount || expectedHistogramSamplesCount != actualHistogramSamplesCount {
-			err := fmt.Errorf(
-				"expected %d float sample(s) and %d histogram sample(s) for metric %s but got %d float sample(s) and %d histogram sample(s)",
-				expectedFloatSamplesCount,
-				expectedHistogramSamplesCount,
-				expectedMetric.Metric,
-				actualFloatSamplesCount,
-				actualHistogramSamplesCount,
+		if expectedFloatSamplesCount == actualFloatSamplesCount && expectedHistogramSamplesCount == actualHistogramSamplesCount {
+			continue
+		}
+
+		skipAllRecentSamples := canSkipAllSamples(func(p model.SamplePair) bool {
+			return time.Since(p.Timestamp.Time())-opts.SkipRecentSamples < 0
+		}, expectedSamplesTail, actualSamplesTail)
+
+		skipAllRecentHistogramSamples := canSkipAllSamples(func(p model.SampleHistogramPair) bool {
+			return time.Since(p.Timestamp.Time())-opts.SkipRecentSamples < 0
+		}, expectedHistogramSamplesTail, actualHistogramSamplesTail)
+
+		if skipAllRecentSamples && skipAllRecentHistogramSamples {
+			continue
+		}
+
+		err = fmt.Errorf(
+			"expected %d float sample(s) and %d histogram sample(s) for metric %s but got %d float sample(s) and %d histogram sample(s)",
+			len(expectedMetric.Values),
+			len(expectedMetric.Histograms),
+			expectedMetric.Metric,
+			len(actualMetric.Values),
+			len(actualMetric.Histograms),
+		)
+
+		shouldLog := false
+		logger := util_log.Logger
+
+		if expectedFloatSamplesCount > 0 && actualFloatSamplesCount > 0 {
+			logger = log.With(logger,
+				"oldest-expected-float-ts", expectedMetric.Values[0].Timestamp,
+				"newest-expected-float-ts", expectedMetric.Values[expectedFloatSamplesCount-1].Timestamp,
+				"oldest-actual-float-ts", actualMetric.Values[0].Timestamp,
+				"newest-actual-float-ts", actualMetric.Values[actualFloatSamplesCount-1].Timestamp,
 			)
-
-			shouldLog := false
-			logger := util_log.Logger
-
-			if expectedFloatSamplesCount > 0 && actualFloatSamplesCount > 0 {
-				logger = log.With(logger,
-					"oldest-expected-float-ts", expectedMetric.Values[0].Timestamp,
-					"newest-expected-float-ts", expectedMetric.Values[expectedFloatSamplesCount-1].Timestamp,
-					"oldest-actual-float-ts", actualMetric.Values[0].Timestamp,
-					"newest-actual-float-ts", actualMetric.Values[actualFloatSamplesCount-1].Timestamp,
-				)
-				shouldLog = true
-			}
-
-			if expectedHistogramSamplesCount > 0 && actualHistogramSamplesCount > 0 {
-				logger = log.With(logger,
-					"oldest-expected-histogram-ts", expectedMetric.Histograms[0].Timestamp,
-					"newest-expected-histogram-ts", expectedMetric.Histograms[expectedHistogramSamplesCount-1].Timestamp,
-					"oldest-actual-histogram-ts", actualMetric.Histograms[0].Timestamp,
-					"newest-actual-histogram-ts", actualMetric.Histograms[actualHistogramSamplesCount-1].Timestamp,
-				)
-				shouldLog = true
-			}
-
-			if shouldLog {
-				level.Error(logger).Log("msg", err.Error())
-			}
-
-			return err
+			shouldLog = true
 		}
 
-		for i, expectedSamplePair := range expectedMetric.Values {
-			actualSamplePair := actualMetric.Values[i]
-			err := compareSamplePair(expectedSamplePair, actualSamplePair, opts)
-			if err != nil {
-				return fmt.Errorf("float sample pair does not match for metric %s: %w", expectedMetric.Metric, err)
-			}
+		if expectedHistogramSamplesCount > 0 && actualHistogramSamplesCount > 0 {
+			logger = log.With(logger,
+				"oldest-expected-histogram-ts", expectedMetric.Histograms[0].Timestamp,
+				"newest-expected-histogram-ts", expectedMetric.Histograms[expectedHistogramSamplesCount-1].Timestamp,
+				"oldest-actual-histogram-ts", actualMetric.Histograms[0].Timestamp,
+				"newest-actual-histogram-ts", actualMetric.Histograms[actualHistogramSamplesCount-1].Timestamp,
+			)
+			shouldLog = true
 		}
 
-		for i, expectedHistogramPair := range expectedMetric.Histograms {
-			actualHistogramPair := actualMetric.Histograms[i]
-			if err := compareSampleHistogramPair(expectedHistogramPair, actualHistogramPair, opts); err != nil {
-				return fmt.Errorf("histogram sample pair does not match for metric %s: %w", expectedMetric.Metric, err)
-			}
+		if shouldLog {
+			level.Error(logger).Log("msg", err.Error())
 		}
+		return err
 	}
 
 	return nil
+}
+
+func comparePairs[S ~[]M, M any](s1, s2 S, compare func(M, M) error) (S, S, error) {
+	var i int
+	for ; i < len(s1) && i < len(s2); i++ {
+		err := compare(s1[i], s2[i])
+		if err != nil {
+			return s1, s2, err
+		}
+	}
+	return s1[i:], s2[i:], nil
+}
+
+func canSkipAllSamples[S ~[]M, M any](skip func(M) bool, ss ...S) bool {
+	for _, s := range ss {
+		for _, p := range s {
+			if !skip(p) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func allMatrixSamplesWithinRecentSampleWindow(m model.Matrix, opts SampleComparisonOptions) bool {

@@ -76,7 +76,6 @@ func TestCompareMatrix(t *testing.T) {
 			actual: json.RawMessage(`[
 							{"metric":{"foo":"bar"},"values":[[1,"1"],[3,"2"]]}
 						]`),
-			// timestamps are parsed from seconds to ms which are then added to errors as is so adding 3 0s to expected error.
 			err: errors.New(`float sample pair does not match for metric {foo="bar"}: expected timestamp 2 but got 3`),
 		},
 		{
@@ -1735,6 +1734,19 @@ func TestCompareSamplesResponse(t *testing.T) {
 						}`),
 			skipRecentSamples: time.Hour,
 			err:               errors.New("expected 1 metrics but got 2"),
+		},
+		{
+			name: "should not fail when there is a different number of samples in a series in a matrix, where some float samples are more recent than the configured skip recent samples interval",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[` + overAnHourAgo + `,"10"],[` + now + `,"20"]]}]}
+						}`),
+
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[` + overAnHourAgo + `,"10"]]}]}
+						}`),
+			skipRecentSamples: time.Hour,
 		},
 		{
 			name: "should not fail if both results have an empty set of warnings",
