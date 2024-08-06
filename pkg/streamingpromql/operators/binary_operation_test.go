@@ -36,7 +36,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 			input:          []types.InstantVectorSeriesData{},
 			expectedOutput: types.InstantVectorSeriesData{},
 		},
-		"single input series": {
+		"single float only input series": {
 			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
@@ -58,7 +58,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				},
 			},
 		},
-		"two input series with no overlap, series in time order": {
+		"two float only input series with no overlap, series in time order": {
 			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
@@ -91,7 +91,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				},
 			},
 		},
-		"two input series with no overlap, series not in time order": {
+		"two float only input series with no overlap, series not in time order": {
 			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
@@ -124,7 +124,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				},
 			},
 		},
-		"three input series with no overlap": {
+		"three float only input series with no overlap": {
 			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
@@ -168,7 +168,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				},
 			},
 		},
-		"two input series with overlap": {
+		"two float only input series with overlap": {
 			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
@@ -201,7 +201,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				},
 			},
 		},
-		"three input series with overlap": {
+		"three float only input series with overlap": {
 			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
@@ -239,7 +239,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				},
 			},
 		},
-		"input series with conflict": {
+		"float only input series with conflict": {
 			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
@@ -263,7 +263,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 			},
 			expectedError: `found duplicate series for the match group {env="test"} on the right side of the operation at timestamp 1970-01-01T00:00:00.002Z: {__name__="right_side", env="test", pod="d"} and {__name__="right_side", env="test", pod="c"}`,
 		},
-		"input series with conflict after resorting": {
+		"float only input series with conflict after resorting": {
 			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
@@ -299,7 +299,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 			},
 			expectedError: `found duplicate series for the match group {env="test"} on the right side of the operation at timestamp 1970-01-01T00:00:00.002Z: {__name__="right_side", env="test", pod="g"} and {__name__="right_side", env="test", pod="e"}`,
 		},
-		"mixed float and histogram input series with no conflict": {
+		"float and histogram input series with no conflict": {
 			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
@@ -330,7 +330,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				},
 			},
 		},
-		"input series with both floats and histograms, series in time order": {
+		"mixed float and histogram input series, series in time order": {
 			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
@@ -369,7 +369,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				},
 			},
 		},
-		"input series with both floats and histograms, series not in time order": {
+		"mixed float and histogram input series, series not in time order": {
 			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
@@ -408,7 +408,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				},
 			},
 		},
-		"input series with both floats and histograms, series in conflict on different types": {
+		"mixed float and histogram input series, series in conflict on different types": {
 			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
@@ -428,7 +428,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 			},
 			expectedError: `found both float and histogram samples for the match group {env="test"} on the right side of the operation at timestamp 1970-01-01T00:00:00.002Z`,
 		},
-		"input series with both floats and histograms, series in conflict on different type and not in time order": {
+		"mixed float and histogram input series, series in conflict on different type and not in time order": {
 			input: []types.InstantVectorSeriesData{
 				{
 					Histograms: []promql.HPoint{
@@ -470,7 +470,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				Histograms: nil,
 			},
 		},
-		"input series overlap in different ways for floats and histograms": {
+		"mixed float and histogram input series overlap in different ways": {
 			input: []types.InstantVectorSeriesData{
 				{
 					Floats: []promql.FPoint{
