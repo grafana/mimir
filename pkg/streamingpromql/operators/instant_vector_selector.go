@@ -17,13 +17,13 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type InstantVectorSelector struct {
-	Selector *Selector
-	Pool     *pooling.LimitingPool
+	Selector                 *Selector
+	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 
 	numSteps int
 
@@ -138,7 +138,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				// Only create the slice once we know the series is a histogram or not.
 				// (It is possible to over-allocate in the case where we have both floats and histograms, but that won't be common).
 				var err error
-				if data.Histograms, err = v.Pool.GetHPointSlice(v.numSteps); err != nil {
+				if data.Histograms, err = types.HPointSlicePool.Get(v.numSteps, v.MemoryConsumptionTracker); err != nil {
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
@@ -147,7 +147,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			if len(data.Floats) == 0 {
 				// Only create the slice once we know the series is a histogram or not
 				var err error
-				if data.Floats, err = v.Pool.GetFPointSlice(v.numSteps); err != nil {
+				if data.Floats, err = types.FPointSlicePool.Get(v.numSteps, v.MemoryConsumptionTracker); err != nil {
 					return types.InstantVectorSeriesData{}, err
 				}
 			}

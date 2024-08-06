@@ -14,7 +14,7 @@ import (
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 )
 
 func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
@@ -189,7 +189,7 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 					},
 					LookbackDelta: 5 * time.Minute,
 				},
-				Pool: pooling.NewLimitingPool(0, nil),
+				MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
 			}
 
 			ctx := context.Background()

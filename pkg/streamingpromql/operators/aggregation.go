@@ -21,19 +21,19 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/zeropool"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type Aggregation struct {
-	Inner    types.InstantVectorOperator
-	Start    int64 // Milliseconds since Unix epoch
-	End      int64 // Milliseconds since Unix epoch
-	Interval int64 // In milliseconds
-	Steps    int
-	Grouping []string // If this is a 'without' aggregation, NewAggregation will ensure that this slice contains __name__.
-	Without  bool
-	Pool     *pooling.LimitingPool
+	Inner                    types.InstantVectorOperator
+	Start                    int64 // Milliseconds since Unix epoch
+	End                      int64 // Milliseconds since Unix epoch
+	Interval                 int64 // In milliseconds
+	Steps                    int
+	Grouping                 []string // If this is a 'without' aggregation, NewAggregation will ensure that this slice contains __name__.
+	Without                  bool
+	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 
 	Annotations *annotations.Annotations
 
@@ -52,7 +52,7 @@ func NewAggregation(
 	interval time.Duration,
 	grouping []string,
 	without bool,
-	pool *pooling.LimitingPool,
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) *Aggregation {
@@ -68,16 +68,16 @@ func NewAggregation(
 	slices.Sort(grouping)
 
 	return &Aggregation{
-		Inner:              inner,
-		Start:              s,
-		End:                e,
-		Interval:           i,
-		Steps:              stepCount(s, e, i),
-		Grouping:           grouping,
-		Without:            without,
-		Pool:               pool,
-		Annotations:        annotations,
-		expressionPosition: expressionPosition,
+		Inner:                    inner,
+		Start:                    s,
+		End:                      e,
+		Interval:                 i,
+		Steps:                    stepCount(s, e, i),
+		Grouping:                 grouping,
+		Without:                  without,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
+		Annotations:              annotations,
+		expressionPosition:       expressionPosition,
 	}
 }
 
@@ -118,7 +118,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		return nil, err
 	}
 
-	defer pooling.PutSeriesMetadataSlice(innerSeries)
+	defer types.PutSeriesMetadataSlice(innerSeries)
 
 	if len(innerSeries) == 0 {
 		// No input series == no output series.
@@ -150,7 +150,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	}
 
 	// Sort the list of series we'll return, and maintain the order of the corresponding groups at the same time
-	seriesMetadata := pooling.GetSeriesMetadataSlice(len(groups))
+	seriesMetadata := types.GetSeriesMetadataSlice(len(groups))
 	a.remainingGroups = make([]*group, 0, len(groups))
 
 	for _, g := range groups {
@@ -289,7 +289,7 @@ func (a *Aggregation) constructSeriesData(thisGroup *group, start int64, interva
 	var floatPoints []promql.FPoint
 	var err error
 	if floatPointCount > 0 {
-		floatPoints, err = a.Pool.GetFPointSlice(floatPointCount)
+		floatPoints, err = types.FPointSlicePool.Get(floatPointCount, a.MemoryConsumptionTracker)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
@@ -304,7 +304,7 @@ func (a *Aggregation) constructSeriesData(thisGroup *group, start int64, interva
 
 	var histogramPoints []promql.HPoint
 	if thisGroup.histogramPointCount > 0 {
-		histogramPoints, err = a.Pool.GetHPointSlice(thisGroup.histogramPointCount)
+		histogramPoints, err = types.HPointSlicePool.Get(thisGroup.histogramPointCount, a.MemoryConsumptionTracker)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
@@ -317,9 +317,9 @@ func (a *Aggregation) constructSeriesData(thisGroup *group, start int64, interva
 		}
 	}
 
-	a.Pool.PutFloatSlice(thisGroup.floatSums)
-	a.Pool.PutBoolSlice(thisGroup.floatPresent)
-	a.Pool.PutHistogramPointerSlice(thisGroup.histogramSums)
+	types.Float64SlicePool.Put(thisGroup.floatSums, a.MemoryConsumptionTracker)
+	types.BoolSlicePool.Put(thisGroup.floatPresent, a.MemoryConsumptionTracker)
+	types.HistogramSlicePool.Put(thisGroup.histogramSums, a.MemoryConsumptionTracker)
 	thisGroup.floatSums = nil
 	thisGroup.floatPresent = nil
 	thisGroup.histogramSums = nil
@@ -378,12 +378,12 @@ func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData,
 	var err error
 	if len(s.Floats) > 0 && seriesGroup.floatSums == nil {
 		// First series with float values for this group, populate it.
-		seriesGroup.floatSums, err = a.Pool.GetFloatSlice(steps)
+		seriesGroup.floatSums, err = types.Float64SlicePool.Get(steps, a.MemoryConsumptionTracker)
 		if err != nil {
 			return err
 		}
 
-		seriesGroup.floatPresent, err = a.Pool.GetBoolSlice(steps)
+		seriesGroup.floatPresent, err = types.BoolSlicePool.Get(steps, a.MemoryConsumptionTracker)
 		if err != nil {
 			return err
 		}
@@ -393,7 +393,7 @@ func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData,
 
 	if len(s.Histograms) > 0 && seriesGroup.histogramSums == nil {
 		// First series with histogram values for this group, populate it.
-		seriesGroup.histogramSums, err = a.Pool.GetHistogramPointerSlice(steps)
+		seriesGroup.histogramSums, err = types.HistogramSlicePool.Get(steps, a.MemoryConsumptionTracker)
 		if err != nil {
 			return err
 		}
@@ -430,7 +430,7 @@ func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData,
 		}
 	}
 
-	a.Pool.PutInstantVectorSeriesData(s)
+	types.PutInstantVectorSeriesData(s, a.MemoryConsumptionTracker)
 	seriesGroup.remainingSeriesCount--
 	return nil
 }

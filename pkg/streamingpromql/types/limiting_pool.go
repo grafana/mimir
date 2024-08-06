@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package pooling
+package types
 
 import (
 	"unsafe"
@@ -9,7 +9,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -137,7 +136,7 @@ func (p *LimitingBucketedPool[S, E]) Put(s S, tracker *limiting.MemoryConsumptio
 }
 
 // PutInstantVectorSeriesData is equivalent to calling FPointSlicePool.Put(d.Floats) and HPointSlicePool.Put(d.Histograms).
-func PutInstantVectorSeriesData(d types.InstantVectorSeriesData, tracker *limiting.MemoryConsumptionTracker) {
+func PutInstantVectorSeriesData(d InstantVectorSeriesData, tracker *limiting.MemoryConsumptionTracker) {
 	FPointSlicePool.Put(d.Floats, tracker)
 	HPointSlicePool.Put(d.Histograms, tracker)
 }

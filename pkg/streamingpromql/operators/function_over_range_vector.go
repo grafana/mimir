@@ -14,14 +14,14 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/functions"
-	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 // FunctionOverRangeVector performs a rate calculation over a range vector.
 type FunctionOverRangeVector struct {
-	Inner types.RangeVectorOperator
-	Pool  *pooling.LimitingPool
+	Inner                    types.RangeVectorOperator
+	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 
 	MetadataFunc functions.SeriesMetadataFunction
 	StepFunc     functions.RangeVectorStepFunction
@@ -40,19 +40,19 @@ var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
 
 func NewFunctionOverRangeVector(
 	inner types.RangeVectorOperator,
-	pool *pooling.LimitingPool,
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	metadataFunc functions.SeriesMetadataFunction,
 	stepFunc functions.RangeVectorStepFunction,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) *FunctionOverRangeVector {
 	return &FunctionOverRangeVector{
-		Inner:              inner,
-		Pool:               pool,
-		MetadataFunc:       metadataFunc,
-		StepFunc:           stepFunc,
-		Annotations:        annotations,
-		expressionPosition: expressionPosition,
+		Inner:                    inner,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
+		MetadataFunc:             metadataFunc,
+		StepFunc:                 stepFunc,
+		Annotations:              annotations,
+		expressionPosition:       expressionPosition,
 	}
 }
 
@@ -69,7 +69,7 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 	m.numSteps = m.Inner.StepCount()
 	m.rangeSeconds = m.Inner.Range().Seconds()
 
-	return m.MetadataFunc(metadata, m.Pool)
+	return m.MetadataFunc(metadata, m.MemoryConsumptionTracker)
 }
 
 func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
@@ -78,11 +78,11 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 	}
 
 	if m.floatBuffer == nil {
-		m.floatBuffer = types.NewFPointRingBuffer(m.Pool)
+		m.floatBuffer = types.NewFPointRingBuffer(m.MemoryConsumptionTracker)
 	}
 
 	if m.histogramBuffer == nil {
-		m.histogramBuffer = types.NewHPointRingBuffer(m.Pool)
+		m.histogramBuffer = types.NewHPointRingBuffer(m.MemoryConsumptionTracker)
 	}
 
 	m.floatBuffer.Reset()
@@ -109,7 +109,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 				// Only get fPoint slice once we are sure we have float points.
 				// This potentially over-allocates as some points in the steps may be histograms,
 				// but this is expected to be rare.
-				data.Floats, err = m.Pool.GetFPointSlice(m.numSteps)
+				data.Floats, err = types.FPointSlicePool.Get(m.numSteps, m.MemoryConsumptionTracker)
 				if err != nil {
 					return types.InstantVectorSeriesData{}, err
 				}
@@ -121,7 +121,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 				// Only get hPoint slice once we are sure we have histogram points.
 				// This potentially over-allocates as some points in the steps may be floats,
 				// but this is expected to be rare.
-				data.Histograms, err = m.Pool.GetHPointSlice(m.numSteps)
+				data.Histograms, err = types.HPointSlicePool.Get(m.numSteps, m.MemoryConsumptionTracker)
 				if err != nil {
 					return types.InstantVectorSeriesData{}, err
 				}
