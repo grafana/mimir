@@ -91,7 +91,9 @@ func TestOurUpstreamTestCasesAreInSyncWithUpstream(t *testing.T) {
 				// If the test case is disabled, then it should be identical to the upstream test case (apart from the license header).
 				require.Equalf(t, sourceString, ourString, "our test case %v is not in sync with the corresponding upstream test case %v", ourUpstreamTestCase, sourcePath)
 			} else {
-				// TODO: check test cases are equivalent, ignoring disabled test cases
+				// Check test cases are equivalent, after re-enabling disabled test cases.
+				ourString = restoreUnsupportedTestCases(ourString)
+				require.Equalf(t, sourceString, ourString, "our test case %v is not in sync with the corresponding upstream test case %v after unignoring unsupported test cases", ourUpstreamTestCase, sourcePath)
 			}
 		})
 	}
@@ -102,6 +104,29 @@ func stripLineTrailingWhitespace(s string) string {
 
 	for i := range lines {
 		lines[i] = strings.TrimRight(lines[i], " \t")
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func restoreUnsupportedTestCases(s string) string {
+	lines := strings.Split(s, "\n")
+	inUnsupportedTestCase := false
+
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+
+		if line == "# Unsupported by streaming engine." {
+			lines = slices.Delete(lines, i, i+1)
+			inUnsupportedTestCase = true
+			i--
+		} else if inUnsupportedTestCase && strings.HasPrefix(line, "# ") {
+			lines[i] = strings.TrimPrefix(line, "# ")
+		} else if inUnsupportedTestCase && strings.HasPrefix(line, "#\t") {
+			lines[i] = strings.TrimPrefix(line, "#")
+		} else {
+			inUnsupportedTestCase = false
+		}
 	}
 
 	return strings.Join(lines, "\n")
