@@ -8,7 +8,6 @@ package operators
 import (
 	"context"
 	"fmt"
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"math"
 	"sort"
 	"time"
@@ -21,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
