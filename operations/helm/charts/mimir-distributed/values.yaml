@@ -4464,4 +4464,13 @@ continuous_test:
 #     name: extra-cm-{{ .Release.Name }}
 #   data: |
 #     extra.yml: "does-my-install-need-extra-info: true"
+# alternatively, you can use strings, which lets you use the mimir defines:
+# extraObjects:
+# - |
+#   kind: ConfigMap
+#   apiVersion: v1
+#   metadata:
+#     name: extra-cm-{{ .Release.Name }}
+#   data: |
+#     extra.yml: "{{ include some-mimir-define }}"
 extraObjects: []
