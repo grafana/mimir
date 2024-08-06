@@ -41,6 +41,10 @@ eval instant at 331s metric
 # eval instant at 20s count_over_time(metric[10s])
 #   {} 1
 
+# Unsupported by streaming engine.
+# eval instant at 20s count_over_time(metric[10])
+#   {} 1
+
 
 clear
 
