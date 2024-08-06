@@ -4471,6 +4471,5 @@ continuous_test:
 #     name: extra-cm-{{ .Release.Name }}
 #   data: |
 #     extra.yml: "{{ include some-mimir-define }}"
-
 extraObjects: []
 
