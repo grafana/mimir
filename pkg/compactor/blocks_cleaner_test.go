@@ -1374,7 +1374,7 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 							}
 						}
 					}(),
-					preGetHook: func(ctx context.Context, name string) {
+					preGetHook: func(_ context.Context, name string) {
 						// When fetching the deletion mark of a block, wait until cleaner2 has deleted it.
 						if path.Base(name) == block.DeletionMarkFilename {
 							<-cleaner2GetDeletionMarkUnblocked
