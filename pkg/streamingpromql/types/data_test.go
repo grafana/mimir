@@ -55,7 +55,37 @@ func TestInstantVectorSeriesDataIterator(t *testing.T) {
 			},
 		},
 		{
-			name: "mixed data",
+			name: "mixed data ends with float",
+			data: InstantVectorSeriesData{
+				Floats: []promql.FPoint{
+					{T: 1000, F: 1.1},
+					{T: 2000, F: 2.2},
+					{T: 3000, F: 3.3},
+					{T: 4000, F: 4.4},
+					{T: 5000, F: 5.5},
+					{T: 6000, F: 6.5},
+				},
+				Histograms: []promql.HPoint{
+					{T: 1500, H: &histogram.FloatHistogram{Sum: 1500}},
+					{T: 2500, H: &histogram.FloatHistogram{Sum: 2500}},
+					{T: 5500, H: &histogram.FloatHistogram{Sum: 5500}},
+				},
+			},
+			expected: []expected{
+				{1000, 1.1, nil, true},
+				{1500, 0, &histogram.FloatHistogram{Sum: 1500}, true},
+				{2000, 2.2, nil, true},
+				{2500, 0, &histogram.FloatHistogram{Sum: 2500}, true},
+				{3000, 3.3, nil, true},
+				{4000, 4.4, nil, true},
+				{5000, 5.5, nil, true},
+				{5500, 0, &histogram.FloatHistogram{Sum: 5500}, true},
+				{6000, 6.5, nil, true},
+				{0, 0, nil, false},
+			},
+		},
+		{
+			name: "mixed data ends with histogram",
 			data: InstantVectorSeriesData{
 				Floats: []promql.FPoint{
 					{T: 1000, F: 1.1},
