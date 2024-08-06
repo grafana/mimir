@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/sha512"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -16,6 +17,25 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/pkg/kversion"
 )
+
+// ErrAndMessage is returned as the error from requests that were successfully
+// responded to, but the response indicates failure with a message.
+type ErrAndMessage struct {
+	Err        error  // Err is the response ErrorCode.
+	ErrMessage string // Message is the response ErrorMessage.
+}
+
+func (e *ErrAndMessage) Error() string {
+	var ke *kerr.Error
+	if errors.As(e.Err, &ke) && e.ErrMessage != "" {
+		return ke.Message + ": " + e.ErrMessage
+	}
+	return e.Err.Error()
+}
+
+func (e *ErrAndMessage) Unwrap() error {
+	return e.Err
+}
 
 // FindCoordinatorResponse contains information for the coordinator for a group
 // or transactional ID.
@@ -372,7 +392,7 @@ func (cl *Client) DescribeClientQuotas(ctx context.Context, strict bool, entityC
 		return nil, err
 	}
 	if err := kerr.ErrorForCode(resp.ErrorCode); err != nil {
-		return nil, err
+		return nil, &ErrAndMessage{err, unptrStr(resp.ErrorMessage)}
 	}
 	var qs DescribedClientQuotas
 	for _, entry := range resp.Entries {
