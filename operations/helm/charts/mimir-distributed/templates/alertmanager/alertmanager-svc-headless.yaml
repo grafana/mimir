@@ -22,10 +22,16 @@ spec:
       protocol: TCP
       name: http-metrics
       targetPort: http-metrics
+      {{- if .Values.alertmanager.service.appProtocol.grpc }}
+      appProtocol: {{ .Values.alertmanager.service.appProtocol.httpMetrics }}
+      {{- end }}
     - port: {{ include "mimir.serverGrpcListenPort" . }}
       protocol: TCP
       name: grpc
       targetPort: grpc
+      {{- if .Values.alertmanager.service.appProtocol.grpc }}
+      appProtocol: {{ .Values.alertmanager.service.appProtocol.grpc }}
+      {{- end }}
     - port: {{ $clusterPort }}
       protocol: TCP
       name: cluster
