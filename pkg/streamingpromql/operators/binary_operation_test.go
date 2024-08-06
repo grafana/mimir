@@ -58,6 +58,28 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				},
 			},
 		},
+		"single histogram only input series": {
+			input: []types.InstantVectorSeriesData{
+				{
+					Histograms: []promql.HPoint{
+						{T: 1, H: &histogram.FloatHistogram{Count: 10, Sum: 100}},
+						{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+						{T: 3, H: &histogram.FloatHistogram{Count: 30, Sum: 300}},
+					},
+				},
+			},
+			sourceSeriesIndices: []int{0},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+			},
+			expectedOutput: types.InstantVectorSeriesData{
+				Histograms: []promql.HPoint{
+					{T: 1, H: &histogram.FloatHistogram{Count: 10, Sum: 100}},
+					{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+					{T: 3, H: &histogram.FloatHistogram{Count: 30, Sum: 300}},
+				},
+			},
+		},
 		"two float only input series with no overlap, series in time order": {
 			input: []types.InstantVectorSeriesData{
 				{
@@ -91,6 +113,39 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				},
 			},
 		},
+		"two histogram only input series with no overlap, series in time order": {
+			input: []types.InstantVectorSeriesData{
+				{
+					Histograms: []promql.HPoint{
+						{T: 1, H: &histogram.FloatHistogram{Count: 10, Sum: 100}},
+						{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+						{T: 3, H: &histogram.FloatHistogram{Count: 30, Sum: 300}},
+					},
+				},
+				{
+					Histograms: []promql.HPoint{
+						{T: 4, H: &histogram.FloatHistogram{Count: 40, Sum: 400}},
+						{T: 5, H: &histogram.FloatHistogram{Count: 50, Sum: 500}},
+						{T: 6, H: &histogram.FloatHistogram{Count: 60, Sum: 600}},
+					},
+				},
+			},
+			sourceSeriesIndices: []int{0, 1},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
+			},
+			expectedOutput: types.InstantVectorSeriesData{
+				Histograms: []promql.HPoint{
+					{T: 1, H: &histogram.FloatHistogram{Count: 10, Sum: 100}},
+					{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+					{T: 3, H: &histogram.FloatHistogram{Count: 30, Sum: 300}},
+					{T: 4, H: &histogram.FloatHistogram{Count: 40, Sum: 400}},
+					{T: 5, H: &histogram.FloatHistogram{Count: 50, Sum: 500}},
+					{T: 6, H: &histogram.FloatHistogram{Count: 60, Sum: 600}},
+				},
+			},
+		},
 		"two float only input series with no overlap, series not in time order": {
 			input: []types.InstantVectorSeriesData{
 				{
@@ -121,6 +176,39 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					{T: 4, F: 40},
 					{T: 5, F: 50},
 					{T: 6, F: 60},
+				},
+			},
+		},
+		"two histogram only input series with no overlap, series not in time order": {
+			input: []types.InstantVectorSeriesData{
+				{
+					Histograms: []promql.HPoint{
+						{T: 4, H: &histogram.FloatHistogram{Count: 40, Sum: 400}},
+						{T: 5, H: &histogram.FloatHistogram{Count: 50, Sum: 500}},
+						{T: 6, H: &histogram.FloatHistogram{Count: 60, Sum: 600}},
+					},
+				},
+				{
+					Histograms: []promql.HPoint{
+						{T: 1, H: &histogram.FloatHistogram{Count: 10, Sum: 100}},
+						{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+						{T: 3, H: &histogram.FloatHistogram{Count: 30, Sum: 300}},
+					},
+				},
+			},
+			sourceSeriesIndices: []int{0, 1},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
+			},
+			expectedOutput: types.InstantVectorSeriesData{
+				Histograms: []promql.HPoint{
+					{T: 1, H: &histogram.FloatHistogram{Count: 10, Sum: 100}},
+					{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+					{T: 3, H: &histogram.FloatHistogram{Count: 30, Sum: 300}},
+					{T: 4, H: &histogram.FloatHistogram{Count: 40, Sum: 400}},
+					{T: 5, H: &histogram.FloatHistogram{Count: 50, Sum: 500}},
+					{T: 6, H: &histogram.FloatHistogram{Count: 60, Sum: 600}},
 				},
 			},
 		},
@@ -168,6 +256,50 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				},
 			},
 		},
+		"three histogram only input series with no overlap": {
+			input: []types.InstantVectorSeriesData{
+				{
+					Histograms: []promql.HPoint{
+						{T: 1, H: &histogram.FloatHistogram{Count: 10, Sum: 100}},
+						{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+						{T: 3, H: &histogram.FloatHistogram{Count: 30, Sum: 300}},
+					},
+				},
+				{
+					Histograms: []promql.HPoint{
+						{T: 4, H: &histogram.FloatHistogram{Count: 40, Sum: 400}},
+						{T: 5, H: &histogram.FloatHistogram{Count: 50, Sum: 500}},
+						{T: 6, H: &histogram.FloatHistogram{Count: 60, Sum: 600}},
+					},
+				},
+				{
+					Histograms: []promql.HPoint{
+						{T: 7, H: &histogram.FloatHistogram{Count: 70, Sum: 700}},
+						{T: 8, H: &histogram.FloatHistogram{Count: 80, Sum: 800}},
+						{T: 9, H: &histogram.FloatHistogram{Count: 90, Sum: 900}},
+					},
+				},
+			},
+			sourceSeriesIndices: []int{0, 1, 2},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "c")},
+			},
+			expectedOutput: types.InstantVectorSeriesData{
+				Histograms: []promql.HPoint{
+					{T: 1, H: &histogram.FloatHistogram{Count: 10, Sum: 100}},
+					{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+					{T: 3, H: &histogram.FloatHistogram{Count: 30, Sum: 300}},
+					{T: 4, H: &histogram.FloatHistogram{Count: 40, Sum: 400}},
+					{T: 5, H: &histogram.FloatHistogram{Count: 50, Sum: 500}},
+					{T: 6, H: &histogram.FloatHistogram{Count: 60, Sum: 600}},
+					{T: 7, H: &histogram.FloatHistogram{Count: 70, Sum: 700}},
+					{T: 8, H: &histogram.FloatHistogram{Count: 80, Sum: 800}},
+					{T: 9, H: &histogram.FloatHistogram{Count: 90, Sum: 900}},
+				},
+			},
+		},
 		"two float only input series with overlap": {
 			input: []types.InstantVectorSeriesData{
 				{
@@ -198,6 +330,39 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					{T: 4, F: 40},
 					{T: 5, F: 50},
 					{T: 6, F: 60},
+				},
+			},
+		},
+		"two histogram only input series with overlap": {
+			input: []types.InstantVectorSeriesData{
+				{
+					Histograms: []promql.HPoint{
+						{T: 1, H: &histogram.FloatHistogram{Count: 10, Sum: 100}},
+						{T: 3, H: &histogram.FloatHistogram{Count: 30, Sum: 300}},
+						{T: 5, H: &histogram.FloatHistogram{Count: 50, Sum: 500}},
+					},
+				},
+				{
+					Histograms: []promql.HPoint{
+						{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+						{T: 4, H: &histogram.FloatHistogram{Count: 40, Sum: 400}},
+						{T: 6, H: &histogram.FloatHistogram{Count: 60, Sum: 600}},
+					},
+				},
+			},
+			sourceSeriesIndices: []int{0, 1},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
+			},
+			expectedOutput: types.InstantVectorSeriesData{
+				Histograms: []promql.HPoint{
+					{T: 1, H: &histogram.FloatHistogram{Count: 10, Sum: 100}},
+					{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+					{T: 3, H: &histogram.FloatHistogram{Count: 30, Sum: 300}},
+					{T: 4, H: &histogram.FloatHistogram{Count: 40, Sum: 400}},
+					{T: 5, H: &histogram.FloatHistogram{Count: 50, Sum: 500}},
+					{T: 6, H: &histogram.FloatHistogram{Count: 60, Sum: 600}},
 				},
 			},
 		},
@@ -239,6 +404,44 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				},
 			},
 		},
+		"three histogram only input series with overlap": {
+			input: []types.InstantVectorSeriesData{
+				{
+					Histograms: []promql.HPoint{
+						{T: 1, H: &histogram.FloatHistogram{Count: 10, Sum: 100}},
+						{T: 4, H: &histogram.FloatHistogram{Count: 40, Sum: 400}},
+					},
+				},
+				{
+					Histograms: []promql.HPoint{
+						{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+						{T: 5, H: &histogram.FloatHistogram{Count: 50, Sum: 500}},
+					},
+				},
+				{
+					Histograms: []promql.HPoint{
+						{T: 3, H: &histogram.FloatHistogram{Count: 30, Sum: 300}},
+						{T: 6, H: &histogram.FloatHistogram{Count: 60, Sum: 600}},
+					},
+				},
+			},
+			sourceSeriesIndices: []int{0, 1, 2},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "c")},
+			},
+			expectedOutput: types.InstantVectorSeriesData{
+				Histograms: []promql.HPoint{
+					{T: 1, H: &histogram.FloatHistogram{Count: 10, Sum: 100}},
+					{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+					{T: 3, H: &histogram.FloatHistogram{Count: 30, Sum: 300}},
+					{T: 4, H: &histogram.FloatHistogram{Count: 40, Sum: 400}},
+					{T: 5, H: &histogram.FloatHistogram{Count: 50, Sum: 500}},
+					{T: 6, H: &histogram.FloatHistogram{Count: 60, Sum: 600}},
+				},
+			},
+		},
 		"float only input series with conflict": {
 			input: []types.InstantVectorSeriesData{
 				{
@@ -251,6 +454,30 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 						{T: 2, F: 20},
 						{T: 3, F: 30},
 						{T: 5, F: 50},
+					},
+				},
+			},
+			sourceSeriesIndices: []int{3, 2},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "c")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "d")},
+			},
+			expectedError: `found duplicate series for the match group {env="test"} on the right side of the operation at timestamp 1970-01-01T00:00:00.002Z: {__name__="right_side", env="test", pod="d"} and {__name__="right_side", env="test", pod="c"}`,
+		},
+		"histogram only input series with conflict": {
+			input: []types.InstantVectorSeriesData{
+				{
+					Histograms: []promql.HPoint{
+						{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+					},
+				},
+				{
+					Histograms: []promql.HPoint{
+						{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+						{T: 3, H: &histogram.FloatHistogram{Count: 30, Sum: 300}},
+						{T: 5, H: &histogram.FloatHistogram{Count: 50, Sum: 500}},
 					},
 				},
 			},
@@ -281,6 +508,42 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					Floats: []promql.FPoint{
 						{T: 2, F: 20},
 						{T: 4, F: 40},
+					},
+				},
+			},
+			sourceSeriesIndices: []int{6, 9, 4},
+			sourceSeriesMetadata: []types.SeriesMetadata{
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "c")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "d")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "e")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "f")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "g")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "h")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "i")},
+				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "j")},
+			},
+			expectedError: `found duplicate series for the match group {env="test"} on the right side of the operation at timestamp 1970-01-01T00:00:00.002Z: {__name__="right_side", env="test", pod="g"} and {__name__="right_side", env="test", pod="e"}`,
+		},
+		"histogram only input series with conflict after resorting": {
+			input: []types.InstantVectorSeriesData{
+				{
+					Histograms: []promql.HPoint{
+						{T: 1, H: &histogram.FloatHistogram{Count: 10, Sum: 100}},
+						{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+						{T: 5, H: &histogram.FloatHistogram{Count: 50, Sum: 500}},
+					},
+				},
+				{
+					Histograms: []promql.HPoint{
+						{T: 6, H: &histogram.FloatHistogram{Count: 60, Sum: 600}},
+					},
+				},
+				{
+					Histograms: []promql.HPoint{
+						{T: 2, H: &histogram.FloatHistogram{Count: 20, Sum: 200}},
+						{T: 4, H: &histogram.FloatHistogram{Count: 40, Sum: 400}},
 					},
 				},
 			},
