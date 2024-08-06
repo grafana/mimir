@@ -49,24 +49,16 @@ func (i *InstantVectorSeriesDataIterator) Next() (t int64, f float64, h *histogr
 		return 0, 0, nil, false
 	}
 
-	if i.fIndex >= len(i.data.Floats) {
-		point := i.data.Histograms[i.hIndex]
-		i.hIndex++
-		return point.T, 0, point.H, true
-	}
-
-	if i.hIndex >= len(i.data.Histograms) {
+	exhaustedFloats := i.fIndex >= len(i.data.Floats)
+	exhaustedHistograms := i.hIndex >= len(i.data.Histograms)
+	if !exhaustedFloats && (exhaustedHistograms || i.data.Floats[i.fIndex].T < i.data.Histograms[i.hIndex].T) {
+		// Return the next float
 		point := i.data.Floats[i.fIndex]
 		i.fIndex++
 		return point.T, point.F, nil, true
 	}
 
-	// NOTE: Floats and Histograms should never exist at the same timestamp, T.
-	if i.data.Floats[i.fIndex].T < i.data.Histograms[i.hIndex].T {
-		point := i.data.Floats[i.fIndex]
-		i.fIndex++
-		return point.T, point.F, nil, true
-	}
+	// Return the next histogram
 	point := i.data.Histograms[i.hIndex]
 	i.hIndex++
 	return point.T, 0, point.H, true
