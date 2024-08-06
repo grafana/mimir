@@ -446,7 +446,10 @@ func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sou
 	for idxFloats < len(floats) && idxHistograms < len(histograms) {
 		if floats[idxFloats].T == histograms[idxHistograms].T {
 			// Conflict found
-			return types.InstantVectorSeriesData{}, fmt.Errorf("found both float and histogram samples for the match group FIXME on the %s side of the operation at timestamp %s", side, timestamp.Time(floats[idxFloats].T).Format(time.RFC3339Nano))
+			firstConflictingSeriesLabels := sourceSeriesMetadata[0].Labels
+			groupLabels := b.labelsFunc()(firstConflictingSeriesLabels)
+
+			return types.InstantVectorSeriesData{}, fmt.Errorf("found both float and histogram samples for the match group %s on the %s side of the operation at timestamp %s", groupLabels, side, timestamp.Time(floats[idxFloats].T).Format(time.RFC3339Nano))
 		}
 		if floats[idxFloats].T < histograms[idxHistograms].T {
 			idxFloats++

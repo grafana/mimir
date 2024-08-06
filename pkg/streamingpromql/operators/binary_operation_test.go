@@ -426,7 +426,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
 				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
 			},
-			expectedError: `found both float and histogram samples for the match group FIXME on the right side of the operation at timestamp 1970-01-01T00:00:00.002Z`,
+			expectedError: `found both float and histogram samples for the match group {env="test"} on the right side of the operation at timestamp 1970-01-01T00:00:00.002Z`,
 		},
 		"input series with both floats and histograms, series in conflict on different type and not in time order": {
 			input: []types.InstantVectorSeriesData{
@@ -447,7 +447,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "a")},
 				{Labels: labels.FromStrings("__name__", "right_side", "env", "test", "pod", "b")},
 			},
-			expectedError: `found both float and histogram samples for the match group FIXME on the right side of the operation at timestamp 1970-01-01T00:00:00.003Z`,
+			expectedError: `found both float and histogram samples for the match group {env="test"} on the right side of the operation at timestamp 1970-01-01T00:00:00.003Z`,
 		},
 		"input series have no points": {
 			input: []types.InstantVectorSeriesData{
