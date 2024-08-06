@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -30,20 +30,20 @@ func TestFunctionOverInstantVector(t *testing.T) {
 	}
 
 	metadataFuncCalled := false
-	mustBeCalledMetadata := func(seriesMetadata []types.SeriesMetadata, _ *pooling.LimitingPool) ([]types.SeriesMetadata, error) {
+	mustBeCalledMetadata := func(seriesMetadata []types.SeriesMetadata, _ *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
 		require.Equal(t, len(inner.series), len(seriesMetadata))
 		metadataFuncCalled = true
 		return nil, nil
 	}
 
 	seriesDataFuncCalledTimes := 0
-	mustBeCalledSeriesData := func(types.InstantVectorSeriesData, *pooling.LimitingPool) (types.InstantVectorSeriesData, error) {
+	mustBeCalledSeriesData := func(types.InstantVectorSeriesData, *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		seriesDataFuncCalledTimes++
 		return types.InstantVectorSeriesData{}, nil
 	}
 	operator := &FunctionOverInstantVector{
-		Inner: inner,
-		Pool:  pooling.NewLimitingPool(0, nil),
+		Inner:                    inner,
+		MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
 
 		MetadataFunc:   mustBeCalledMetadata,
 		SeriesDataFunc: mustBeCalledSeriesData,

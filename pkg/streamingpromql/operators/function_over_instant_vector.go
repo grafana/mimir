@@ -9,8 +9,10 @@ package operators
 import (
 	"context"
 
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/functions"
-	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -19,14 +21,38 @@ type FunctionOverInstantVector struct {
 	// At the moment no instant-vector promql function takes more than one instant-vector
 	// as an argument. We can assume this will always be the Inner operator and therefore
 	// what we use for the SeriesMetadata.
-	Inner types.InstantVectorOperator
-	Pool  *pooling.LimitingPool
+	Inner                    types.InstantVectorOperator
+	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 
 	MetadataFunc   functions.SeriesMetadataFunction
 	SeriesDataFunc functions.InstantVectorFunction
+
+	expressionPosition posrange.PositionRange
 }
 
 var _ types.InstantVectorOperator = &FunctionOverInstantVector{}
+
+func NewFunctionOverInstantVector(
+	inner types.InstantVectorOperator,
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	metadataFunc functions.SeriesMetadataFunction,
+	seriesDataFunc functions.InstantVectorFunction,
+	expressionPosition posrange.PositionRange,
+) *FunctionOverInstantVector {
+	return &FunctionOverInstantVector{
+		Inner:                    inner,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
+
+		MetadataFunc:   metadataFunc,
+		SeriesDataFunc: seriesDataFunc,
+
+		expressionPosition: expressionPosition,
+	}
+}
+
+func (m *FunctionOverInstantVector) ExpressionPosition() posrange.PositionRange {
+	return m.expressionPosition
+}
 
 func (m *FunctionOverInstantVector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	metadata, err := m.Inner.SeriesMetadata(ctx)
@@ -34,7 +60,7 @@ func (m *FunctionOverInstantVector) SeriesMetadata(ctx context.Context) ([]types
 		return nil, err
 	}
 
-	return m.MetadataFunc(metadata, m.Pool)
+	return m.MetadataFunc(metadata, m.MemoryConsumptionTracker)
 }
 
 func (m *FunctionOverInstantVector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
@@ -43,7 +69,7 @@ func (m *FunctionOverInstantVector) NextSeries(ctx context.Context) (types.Insta
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	return m.SeriesDataFunc(series, m.Pool)
+	return m.SeriesDataFunc(series, m.MemoryConsumptionTracker)
 }
 
 func (m *FunctionOverInstantVector) Close() {

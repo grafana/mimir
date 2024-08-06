@@ -1515,6 +1515,41 @@ func (c *Client) TestTemplatesExperimental(ctx context.Context, ttConf alertingN
 	return &decoded, nil
 }
 
+func (c *Client) TestReceiversExperimental(ctx context.Context, trConf alertingNotify.TestReceiversConfigBodyParams) (*alertingNotify.TestReceiversResult, error) {
+	u := c.alertmanagerClient.URL("api/v1/grafana/receivers/test", nil)
+
+	data, err := json.Marshal(trConf)
+	if err != nil {
+		return nil, fmt.Errorf("error marshalling test receivers config: %s", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %s", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("testing receivers failed with status %d and error %s", resp.StatusCode, string(body))
+	}
+
+	decoded := alertingNotify.TestReceiversResult{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return nil, err
+	}
+
+	return &decoded, nil
+}
+
 // DoGet performs a HTTP GET request towards the supplied URL. The request
 // contains the X-Scope-OrgID header and the timeout configured by the client
 // object.

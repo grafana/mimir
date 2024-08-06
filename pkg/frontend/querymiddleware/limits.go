@@ -101,6 +101,9 @@ type Limits interface {
 
 	// QueryIngestersWithin returns the maximum lookback beyond which queries are not sent to ingester.
 	QueryIngestersWithin(userID string) time.Duration
+
+	// IngestStorageReadConsistency returns the default read consistency for the tenant.
+	IngestStorageReadConsistency(userID string) string
 }
 
 type limitsMiddleware struct {

@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r300-e243636
+  tag: r302-9354d26
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -3548,6 +3548,8 @@ metaMonitoring:
   dashboards:
     # -- If enabled, Grafana dashboards are deployed
     enabled: false
+    # -- Alternative namespace to create dashboards ConfigMaps in. They are created in the Helm release namespace by default.
+    namespace: null
     # -- Annotations to add to the Grafana dashboard ConfigMap
     annotations:
       k8s-sidecar-target-directory: /tmp/dashboards/Mimir Dashboards
@@ -3845,7 +3847,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r300-f8726ed0
+    tag: r302-2906d126
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics

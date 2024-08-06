@@ -63,6 +63,10 @@ The following features are currently experimental:
   - `-ruler.max-rule-groups-per-tenant-by-namespace`
   - Allow protecting rule groups from modification by namespace. Rule groups can always be read, and you can use the `X-Mimir-Ruler-Override-Namespace-Protection` header with namespace names as values to override protection from modification.
   - `-ruler.protected-namespaces`
+  - Allow control over independent rules to be evaluated concurrently as long as they exceed a certain threshold on their rule group last duration runtime against their interval. We have both a limit on the number of rules that can be executed per ruler and per tenant:
+  - `-ruler.max-independent-rule-evaluation-concurrency`
+  - `-ruler.max-independent-rule-evaluation-concurrency-per-tenant`
+  - `-ruler.independent-rule-evaluation-concurrency-min-duration-percentage`
 - Distributor
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`
@@ -144,7 +148,7 @@ The following features are currently experimental:
   - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
   - Enable PromQL experimental functions (`-querier.promql-experimental-functions-enabled`)
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
-  - Mimir query engine (`-querier.query-engine=mimir` and `-querier.enable-query-engine-fallback`)
+  - Mimir query engine (`-querier.query-engine=mimir` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`

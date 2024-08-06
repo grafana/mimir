@@ -18,12 +18,13 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
-	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -33,14 +34,15 @@ var errQueryClosed = cancellation.NewErrorf("Query.Close() called")
 var errQueryFinished = cancellation.NewErrorf("query execution finished")
 
 type Query struct {
-	queryable storage.Queryable
-	opts      promql.QueryOpts
-	statement *parser.EvalStmt
-	root      types.Operator
-	engine    *Engine
-	qs        string
-	cancel    context.CancelCauseFunc
-	pool      *pooling.LimitingPool
+	queryable                storage.Queryable
+	opts                     promql.QueryOpts
+	statement                *parser.EvalStmt
+	root                     types.Operator
+	engine                   *Engine
+	qs                       string
+	cancel                   context.CancelCauseFunc
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	annotations              *annotations.Annotations
 
 	result *promql.Result
 }
@@ -50,7 +52,7 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
 
-	maxInMemorySamples, err := engine.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
+	maxEstimatedMemoryConsumptionPerQuery, err := engine.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -63,11 +65,13 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 	expr = promql.PreprocessExpr(expr, start, end)
 
 	q := &Query{
-		queryable: queryable,
-		opts:      opts,
-		engine:    engine,
-		qs:        qs,
-		pool:      pooling.NewLimitingPool(maxInMemorySamples, engine.queriesRejectedDueToPeakMemoryConsumption),
+		queryable:                queryable,
+		opts:                     opts,
+		engine:                   engine,
+		qs:                       qs,
+		memoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, engine.queriesRejectedDueToPeakMemoryConsumption),
+		annotations:              annotations.New(),
+
 		statement: &parser.EvalStmt{
 			Expr:          expr,
 			Start:         start,
@@ -124,7 +128,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 		}
 
 		return &operators.InstantVectorSelector{
-			Pool: q.pool,
+			MemoryConsumptionTracker: q.memoryConsumptionTracker,
 			Selector: &operators.Selector{
 				Queryable:     q.queryable,
 				Start:         timestamp.FromTime(q.statement.Start),
@@ -133,6 +137,8 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 				Interval:      interval.Milliseconds(),
 				LookbackDelta: lookbackDelta,
 				Matchers:      e.LabelMatchers,
+
+				ExpressionPosition: e.PositionRange(),
 			},
 		}, nil
 	case *parser.AggregateExpr:
@@ -157,11 +163,17 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			interval,
 			e.Grouping,
 			e.Without,
-			q.pool,
+			q.memoryConsumptionTracker,
+			q.annotations,
+			e.PosRange,
 		), nil
 	case *parser.Call:
 		return q.convertFunctionCallToOperator(e)
 	case *parser.BinaryExpr:
+		if !q.engine.featureToggles.EnableBinaryOperations {
+			return nil, compat.NewNotSupportedError("binary expressions")
+		}
+
 		if e.LHS.Type() != parser.ValueTypeVector || e.RHS.Type() != parser.ValueTypeVector {
 			return nil, compat.NewNotSupportedError("binary expression with scalars")
 		}
@@ -180,7 +192,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, err
 		}
 
-		return operators.NewBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, q.pool)
+		return operators.NewBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, q.memoryConsumptionTracker, e.PositionRange())
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
 		return q.convertToInstantVectorOperator(e.Expr)
@@ -206,7 +218,7 @@ func (q *Query) convertFunctionCallToOperator(e *parser.Call) (types.InstantVect
 		args[i] = a
 	}
 
-	return factory(args, q.pool)
+	return factory(args, q.memoryConsumptionTracker, q.annotations, e.PosRange)
 }
 
 func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (types.RangeVectorOperator, error) {
@@ -237,6 +249,8 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (types.RangeVecto
 				Interval:  interval.Milliseconds(),
 				Range:     e.Range,
 				Matchers:  vectorSelector.LabelMatchers,
+
+				ExpressionPosition: e.PositionRange(),
 			},
 		}, nil
 	case *parser.StepInvariantExpr:
@@ -281,15 +295,15 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 
 	defer func() {
 		logger := spanlogger.FromContext(ctx, q.engine.logger)
-		level.Info(logger).Log("msg", "query stats", "estimatedPeakMemoryConsumption", q.pool.PeakEstimatedMemoryConsumptionBytes)
-		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.pool.PeakEstimatedMemoryConsumptionBytes))
+		level.Info(logger).Log("msg", "query stats", "estimatedPeakMemoryConsumption", q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes)
+		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes))
 	}()
 
 	series, err := q.root.SeriesMetadata(ctx)
 	if err != nil {
 		return &promql.Result{Err: err}
 	}
-	defer pooling.PutSeriesMetadataSlice(series)
+	defer types.PutSeriesMetadataSlice(series)
 
 	switch q.statement.Expr.Type() {
 	case parser.ValueTypeMatrix:
@@ -320,12 +334,14 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		return &promql.Result{Err: compat.NewNotSupportedError(fmt.Sprintf("unsupported result type %s", parser.DocumentedType(q.statement.Expr.Type())))}
 	}
 
+	q.result.Warnings = *q.annotations
+
 	return q.result
 }
 
 func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o types.InstantVectorOperator, series []types.SeriesMetadata) (promql.Vector, error) {
 	ts := timeMilliseconds(q.statement.Start)
-	v, err := q.pool.GetVector(len(series))
+	v, err := types.VectorPool.Get(len(series), q.memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -355,22 +371,24 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o t
 				H:      point.H,
 			})
 		} else {
-			q.pool.PutInstantVectorSeriesData(d)
+			types.PutInstantVectorSeriesData(d, q.memoryConsumptionTracker)
+
 			// A series may have no data points.
 			if len(d.Floats) == 0 && len(d.Histograms) == 0 {
 				continue
 			}
+
 			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v floats, %v histograms", s.Labels.String(), len(d.Floats), len(d.Histograms))
 		}
 
-		q.pool.PutInstantVectorSeriesData(d)
+		types.PutInstantVectorSeriesData(d, q.memoryConsumptionTracker)
 	}
 
 	return v, nil
 }
 
 func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o types.InstantVectorOperator, series []types.SeriesMetadata) (promql.Matrix, error) {
-	m := pooling.GetMatrix(len(series))
+	m := types.GetMatrix(len(series))
 
 	for i, s := range series {
 		d, err := o.NextSeries(ctx)
@@ -383,7 +401,7 @@ func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o t
 		}
 
 		if len(d.Floats) == 0 && len(d.Histograms) == 0 {
-			q.pool.PutInstantVectorSeriesData(d)
+			types.PutInstantVectorSeriesData(d, q.memoryConsumptionTracker)
 			continue
 		}
 
@@ -402,9 +420,9 @@ func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o t
 }
 
 func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o types.RangeVectorOperator, series []types.SeriesMetadata) (promql.Matrix, error) {
-	m := pooling.GetMatrix(len(series))
-	floatBuffer := types.NewFPointRingBuffer(q.pool)
-	histogramBuffer := types.NewHPointRingBuffer(q.pool)
+	m := types.GetMatrix(len(series))
+	floatBuffer := types.NewFPointRingBuffer(q.memoryConsumptionTracker)
+	histogramBuffer := types.NewHPointRingBuffer(q.memoryConsumptionTracker)
 	defer floatBuffer.Close()
 	defer histogramBuffer.Close()
 
@@ -461,13 +479,13 @@ func (q *Query) Close() {
 	switch v := q.result.Value.(type) {
 	case promql.Matrix:
 		for _, s := range v {
-			q.pool.PutFPointSlice(s.Floats)
-			q.pool.PutHPointSlice(s.Histograms)
+			types.FPointSlicePool.Put(s.Floats, q.memoryConsumptionTracker)
+			types.HPointSlicePool.Put(s.Histograms, q.memoryConsumptionTracker)
 		}
 
-		pooling.PutMatrix(v)
+		types.PutMatrix(v)
 	case promql.Vector:
-		q.pool.PutVector(v)
+		types.VectorPool.Put(v, q.memoryConsumptionTracker)
 	default:
 		panic(fmt.Sprintf("unknown result value type %T", q.result.Value))
 	}

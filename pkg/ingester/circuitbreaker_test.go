@@ -52,10 +52,10 @@ func TestCircuitBreaker_TryRecordFailure(t *testing.T) {
 		require.True(t, cb.tryRecordFailure(fmt.Errorf("%w", err)))
 	})
 
-	t.Run("gRPC unavailable with INSTANCE_LIMIT details", func(t *testing.T) {
-		err := newInstanceLimitReachedError("broken")
-		require.True(t, cb.tryRecordFailure(err))
-		require.True(t, cb.tryRecordFailure(fmt.Errorf("%w", err)))
+	t.Run("gRPC unavailable with INSTANCE_LIMIT details is not a failure", func(t *testing.T) {
+		err := newErrorWithStatus(newInstanceLimitReachedError("broken"), codes.Unavailable)
+		require.False(t, cb.tryRecordFailure(err))
+		require.False(t, cb.tryRecordFailure(fmt.Errorf("%w", err)))
 	})
 
 	t.Run("gRPC unavailable with SERVICE_UNAVAILABLE details is not a failure", func(t *testing.T) {
@@ -259,7 +259,6 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 		"cortex_ingester_circuit_breaker_results_total",
 		"cortex_ingester_circuit_breaker_request_timeouts_total",
 	}
-	instanceLimitReachedErr := newInstanceLimitReachedError("error")
 	maxRequestDuration := 2 * time.Second
 	testCases := map[string]struct {
 		requestDuration time.Duration
@@ -362,26 +361,10 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
 			`,
 		},
-		"with circuit breaker active, requestDuration higher than maxRequestDuration and an input error relevant for circuit breakers, finishRequest gives the input error": {
-			requestDuration: 3 * time.Second,
-			isActive:        true,
-			err:             instanceLimitReachedErr,
-			expectedErr:     instanceLimitReachedErr,
-			expectedMetrics: `
-				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
-				# TYPE cortex_ingester_circuit_breaker_results_total counter
-				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
-				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 1
-				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
-				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
-				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
-			`,
-		},
 		"with circuit breaker active, requestDuration higher than maxRequestDuration and an input error irrelevant for circuit breakers, finishRequest gives context deadline exceeded error": {
 			requestDuration: 3 * time.Second,
 			isActive:        true,
-			err:             context.Canceled,
+			err:             newInstanceLimitReachedError("error"),
 			expectedErr:     context.DeadlineExceeded,
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
@@ -446,30 +429,6 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
 				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
 				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 2
-			`,
-		},
-		"instance limit hit": {
-			expectedErrorWhenCircuitBreakerClosed: instanceLimitReachedError{},
-			limits:                                InstanceLimits{MaxInMemoryTenants: 1},
-			expectedMetrics: `
-				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
-				# TYPE cortex_ingester_circuit_breaker_results_total counter
-        	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 2
-        	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 2
-        	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 1
-				# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
-				# TYPE cortex_ingester_circuit_breaker_transitions_total counter
-        	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="closed"} 0
-        	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="half-open"} 0
-        	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="open"} 1
-				# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
-        	    # TYPE cortex_ingester_circuit_breaker_current_state gauge
-        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
-        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
-        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 1
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
-				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
-				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
 			`,
 		},
 	}
@@ -730,25 +689,10 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
 			`,
 		},
-		"with a permit acquired, pushRequestDuration higher than RequestTimeout and an input error relevant for the circuit breakers, FinishPushRequest records a failure": {
-			pushRequestDuration:          3 * time.Second,
-			acquiredCircuitBreakerPermit: true,
-			err:                          newInstanceLimitReachedError("error"),
-			expectedMetrics: `
-				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
-				# TYPE cortex_ingester_circuit_breaker_results_total counter
-        	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
-				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 1
-        	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
-				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
-				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
-			`,
-		},
 		"with a permit acquired, pushRequestDuration higher than RequestTimeout and an input error irrelevant for the circuit breakers, FinishPushRequest records a failure": {
 			pushRequestDuration:          3 * time.Second,
 			acquiredCircuitBreakerPermit: true,
-			err:                          context.Canceled,
+			err:                          newInstanceLimitReachedError("error"),
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter

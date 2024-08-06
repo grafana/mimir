@@ -235,7 +235,7 @@ func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *Defau
 	pusher := newPusherMock()
 	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 
-	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, options.limits, options.registerer)
+	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, &NoopMultiTenantConcurrencyController{}, options.limits, options.registerer)
 	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil)
 	require.NoError(t, err)
 
@@ -1963,4 +1963,42 @@ func createRuleGroup(name, user string, rules ...*rulespb.RuleDesc) *rulespb.Rul
 		Rules:     rules,
 		User:      user,
 	}
+}
+
+func TestConfig_Validate(t *testing.T) {
+	t.Run("invalid tenant shard size", func(t *testing.T) {
+		cfg := defaultRulerConfig(t)
+		limits := validation.MockDefaultLimits()
+		limits.RulerTenantShardSize = -1
+
+		err := cfg.Validate(*limits)
+		require.ErrorIs(t, err, errInvalidTenantShardSize)
+	})
+
+	t.Run("invalid client TLS config", func(t *testing.T) {
+		cfg := defaultRulerConfig(t)
+		cfg.ClientTLSConfig.GRPCCompression = "bogus"
+		limits := validation.MockDefaultLimits()
+
+		err := cfg.Validate(*limits)
+		require.Error(t, err)
+	})
+
+	t.Run("invalid query frontend config", func(t *testing.T) {
+		cfg := defaultRulerConfig(t)
+		cfg.QueryFrontend.QueryResultResponseFormat = "bogus"
+		limits := validation.MockDefaultLimits()
+
+		err := cfg.Validate(*limits)
+		require.Error(t, err)
+	})
+
+	t.Run("invalid concurrency evaluation percentage", func(t *testing.T) {
+		cfg := defaultRulerConfig(t)
+		cfg.IndependentRuleEvaluationConcurrencyMinDurationPercentage = -1.0
+		limits := validation.MockDefaultLimits()
+
+		err := cfg.Validate(*limits)
+		require.ErrorIs(t, err, errInnvalidRuleEvaluationConcurrencyMinDurationPercentage)
+	})
 }

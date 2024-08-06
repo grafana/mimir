@@ -435,10 +435,15 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	}
 
 	// When the ingest storage is used, we expect that each query issued by this test was processed
-	// with strong read consistency by the ingester.
+	// with strong read consistency.
 	if flags["-ingest-storage.enabled"] == "true" {
-		require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(expectedIngesterQueriesCount), "cortex_ingest_storage_strong_consistency_requests_total"))
+		require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(expectedQueriesCount), "cortex_ingest_storage_strong_consistency_requests_total"))
+
+		// We expect the offsets to be fetched by query-frontend and then propagated to ingesters.
+		require.NoError(t, ingester.WaitSumMetricsWithOptions(e2e.Equals(expectedIngesterQueriesCount), []string{"cortex_ingest_storage_strong_consistency_requests_total"}, e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "with_offset", "true"))))
+		require.NoError(t, ingester.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_ingest_storage_strong_consistency_requests_total"}, e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "with_offset", "false"))))
 	} else {
+		require.NoError(t, queryFrontend.WaitRemovedMetric("cortex_ingest_storage_strong_consistency_requests_total"))
 		require.NoError(t, ingester.WaitRemovedMetric("cortex_ingest_storage_strong_consistency_requests_total"))
 	}
 

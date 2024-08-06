@@ -43,7 +43,7 @@ func BenchmarkQuery(b *testing.B) {
 	cases := TestCases(MetricSizes)
 
 	opts := streamingpromql.NewTestEngineOpts()
-	prometheusEngine := promql.NewEngine(opts)
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(b, err)
 
@@ -68,7 +68,7 @@ func BenchmarkQuery(b *testing.B) {
 				prometheusResult, prometheusClose := c.Run(ctx, b, start, end, interval, prometheusEngine, q)
 				mimirResult, mimirClose := c.Run(ctx, b, start, end, interval, mimirEngine, q)
 
-				requireEqualResults(b, prometheusResult, mimirResult)
+				requireEqualResults(b, c.Expr, prometheusResult, mimirResult)
 
 				prometheusClose()
 				mimirClose()
@@ -95,7 +95,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 	cases := TestCases(metricSizes)
 
 	opts := streamingpromql.NewTestEngineOpts()
-	prometheusEngine := promql.NewEngine(opts)
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -109,7 +109,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 			prometheusResult, prometheusClose := c.Run(ctx, t, start, end, interval, prometheusEngine, q)
 			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, q)
 
-			requireEqualResults(t, prometheusResult, mimirResult)
+			requireEqualResults(t, c.Expr, prometheusResult, mimirResult)
 
 			prometheusClose()
 			mimirClose()
@@ -189,13 +189,15 @@ func TestBenchmarkSetup(t *testing.T) {
 
 // Why do we do this rather than require.Equal(t, expected, actual)?
 // It's possible that floating point values are slightly different due to imprecision, but require.Equal doesn't allow us to set an allowable difference.
-func requireEqualResults(t testing.TB, expected, actual *promql.Result) {
+func requireEqualResults(t testing.TB, expr string, expected, actual *promql.Result) { //nolint:revive // We'll begin using 'expr' again soon.
 	require.Equal(t, expected.Err, actual.Err)
-
-	// Ignore warnings until they're supported by the streaming engine.
-	// require.Equal(t, expected.Warnings, actual.Warnings)
-
 	require.Equal(t, expected.Value.Type(), actual.Value.Type())
+
+	// FIXME: re-enable this once we've added support for warnings in rate()
+	// expectedWarnings, expectedInfos := expected.Warnings.AsStrings(expr, 0, 0)
+	// actualWarnings, actualInfos := actual.Warnings.AsStrings(expr, 0, 0)
+	// require.ElementsMatch(t, expectedWarnings, actualWarnings)
+	// require.ElementsMatch(t, expectedInfos, actualInfos)
 
 	switch expected.Value.Type() {
 	case parser.ValueTypeVector:

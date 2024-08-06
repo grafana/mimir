@@ -1893,6 +1893,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers. (default 14)
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
+  -querier.mimir-query-engine.enable-binary-operations
+    	[experimental] Enable support for binary operations in Mimir's query engine. Only applies if the Mimir query engine is in use.
   -querier.minimize-ingester-requests
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
@@ -2623,6 +2625,12 @@ Usage of ./cmd/mimir/mimir:
     	This grace period controls which alerts the ruler restores after a restart. Alerts with "for" duration lower than this grace period are not restored after a ruler restart. This means that if the alerts have been firing before the ruler restarted, they will now go to pending state and then to firing again after their "for" duration expires. Alerts with "for" duration greater than or equal to this grace period that have been pending before the ruler restart will remain in pending state for at least this grace period. Alerts with "for" duration greater than or equal to this grace period that have been firing before the ruler restart will continue to be firing after the restart. (default 2m0s)
   -ruler.for-outage-tolerance duration
     	Max time to tolerate outage for restoring "for" state of alert. (default 1h0m0s)
+  -ruler.independent-rule-evaluation-concurrency-min-duration-percentage float
+    	[experimental] Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval. (default 50)
+  -ruler.max-independent-rule-evaluation-concurrency int
+    	[experimental] Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.
+  -ruler.max-independent-rule-evaluation-concurrency-per-tenant int
+    	[experimental] Maximum number of independent rules that can run concurrently for each tenant. Depends on ruler.max-independent-rule-evaluation-concurrency being greater than 0. Ideally this flag should be a lower value. 0 to disable. (default 4)
   -ruler.max-rule-groups-per-tenant int
     	Maximum number of rule groups per-tenant. 0 to disable. (default 70)
   -ruler.max-rule-groups-per-tenant-by-namespace value

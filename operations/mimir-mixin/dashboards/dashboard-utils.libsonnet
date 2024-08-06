@@ -100,10 +100,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
         if multi then
           if $._config.singleBinary
-          then d.addMultiTemplate('job', $._config.dashboard_variables.job_query, $._config.per_job_label, sort=sortAscending)
+          then d.addMultiTemplate('job', $._config.dashboard_variables.job_query, $._config.per_job_label, sort=sortAscending, includeAll=false)
           else d
                .addMultiTemplate('cluster', $._config.dashboard_variables.cluster_query, '%s' % $._config.per_cluster_label, sort=sortAscending)
-               .addMultiTemplate('namespace', $._config.dashboard_variables.namespace_query, '%s' % $._config.per_namespace_label, sort=sortAscending)
+               .addMultiTemplate('namespace', $._config.dashboard_variables.namespace_query, '%s' % $._config.per_namespace_label, sort=sortAscending, includeAll=false)
         else
           if $._config.singleBinary
           then d.addTemplate('job', $._config.dashboard_variables.job_query, $._config.per_job_label, sort=sortAscending)
@@ -774,7 +774,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       title,
       |||
         The rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom
-        metrics server is unable to query the scaling metric from Prometheus so the autoscaler woudln't work properly.
+        metrics server is unable to query the scaling metric from Prometheus so the autoscaler wouldn't work properly.
       |||
     ),
 
@@ -1824,6 +1824,123 @@ local utils = import 'mixin-utils/utils.libsonnet';
         'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
         'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
         'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+      ],
+      [
+        'avg',
+        '99th percentile',
+        '99.9th percentile',
+        '100th percentile',
+      ],
+    ) + {
+      fieldConfig+: {
+        defaults+: { unit: 's' },
+      },
+    },
+
+  ingestStorageFetchLastProducedOffsetRequestsPanel(jobName)::
+    $.timeseriesPanel('Fetch last produced offset requests / sec') +
+    $.panelDescription(
+      'Fetch last produced offset requests / sec',
+      'Shows rate of successful and failed requests to fetch last produced offset(s).',
+    ) +
+    $.queryPanel(
+      [
+        |||
+          sum(rate(cortex_ingest_storage_reader_last_produced_offset_requests_total{%s}[$__rate_interval]))
+          -
+          sum(rate(cortex_ingest_storage_reader_last_produced_offset_failures_total{%s}[$__rate_interval]))
+        ||| % [$.jobMatcher($._config.job_names[jobName]), $.jobMatcher($._config.job_names[jobName])],
+        |||
+          sum(rate(cortex_ingest_storage_reader_last_produced_offset_failures_total{%s}[$__rate_interval]))
+        ||| % [$.jobMatcher($._config.job_names[jobName])],
+      ],
+      [
+        'successful',
+        'failed',
+      ],
+    ) + {
+      fieldConfig+: {
+        defaults+: { unit: 'reqps' },
+      },
+    } +
+    $.aliasColors({ successful: $._colors.success, failed: $._colors.failed }) +
+    $.stack,
+
+  ingestStorageFetchLastProducedOffsetLatencyPanel(jobName)::
+    $.timeseriesPanel('Fetch last produced offset latency') +
+    $.panelDescription(
+      'Fetch last produced offset latency',
+      |||
+        How long does it take to fetch "last produced offset" of partition(s).
+      |||
+    ) +
+    $.queryPanel(
+      [
+        'histogram_avg(sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+      ],
+      [
+        'avg',
+        '99th percentile',
+        '99.9th percentile',
+        '100th percentile',
+      ],
+    ) + {
+      fieldConfig+: {
+        defaults+: { unit: 's' },
+      },
+    },
+
+  ingestStorageStrongConsistencyRequestsPanel(jobName)::
+    // The unit changes whether the metric is exposed from ingesters or other components. In the ingesters it's the
+    // requests issued by queriers to ingesters, while in other components it's the actual query.
+    local unit = if jobName == 'ingester' then 'requests' else 'queries';
+    local title = '%s with strong read consistency / sec' % (std.asciiUpper(std.substr(unit, 0, 1)) + std.substr(unit, 1, std.length(unit) - 1));
+
+    $.timeseriesPanel(title) +
+    $.panelDescription(
+      title,
+      'Shows rate of %(unit)s with strong read consistency, and rate of failed %(unit)s with strong read consistency.' % {
+        unit: unit,
+      },
+    ) +
+    $.queryPanel(
+      [
+        |||
+          sum(rate(cortex_ingest_storage_strong_consistency_requests_total{%s}[$__rate_interval]))
+          -
+          sum(rate(cortex_ingest_storage_strong_consistency_failures_total{%s}[$__rate_interval]))
+        ||| % [$.jobMatcher($._config.job_names[jobName]), $.jobMatcher($._config.job_names[jobName])],
+        |||
+          sum(rate(cortex_ingest_storage_strong_consistency_failures_total{%s}[$__rate_interval]))
+        ||| % [$.jobMatcher($._config.job_names[jobName])],
+      ],
+      [
+        'successful',
+        'failed',
+      ],
+    ) + {
+      fieldConfig+: {
+        defaults+: { unit: 'reqps' },
+      },
+    } +
+    $.aliasColors({ successful: $._colors.success, failed: $._colors.failed }) +
+    $.stack,
+
+  ingestStorageStrongConsistencyWaitLatencyPanel(jobName)::
+    $.timeseriesPanel('Strong read consistency queries — wait latency') +
+    $.panelDescription(
+      'Strong read consistency queries — wait latency',
+      'How long does the request wait to guarantee strong read consistency.',
+    ) +
+    $.queryPanel(
+      [
+        'histogram_avg(sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
       ],
       [
         'avg',

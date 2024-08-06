@@ -1993,6 +1993,27 @@
           "fieldFlag": "querier.promql-experimental-functions-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "block",
+          "name": "mimir_query_engine",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enable_binary_operations",
+              "required": false,
+              "desc": "Enable support for binary operations in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.mimir-query-engine.enable-binary-operations",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -4373,6 +4394,17 @@
           "fieldDefaultValue": "",
           "fieldFlag": "ruler.protected-namespaces",
           "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "ruler_max_independent_rule_evaluation_concurrency_per_tenant",
+          "required": false,
+          "desc": "Maximum number of independent rules that can run concurrently for each tenant. Depends on ruler.max-independent-rule-evaluation-concurrency being greater than 0. Ideally this flag should be a lower value. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 4,
+          "fieldFlag": "ruler.max-independent-rule-evaluation-concurrency-per-tenant",
+          "fieldType": "int",
           "fieldCategory": "experimental"
         },
         {
@@ -12556,6 +12588,28 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "max_independent_rule_evaluation_concurrency",
+          "required": false,
+          "desc": "Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ruler.max-independent-rule-evaluation-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "independent_rule_evaluation_concurrency_min_duration_percentage",
+          "required": false,
+          "desc": "Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval.",
+          "fieldValue": null,
+          "fieldDefaultValue": 50,
+          "fieldFlag": "ruler.independent-rule-evaluation-concurrency-min-duration-percentage",
+          "fieldType": "float",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

@@ -1514,6 +1514,12 @@ store_gateway_client:
 # be set on query-frontend too when query sharding is enabled.
 # CLI flag: -querier.promql-experimental-functions-enabled
 [promql_experimental_functions_enabled: <boolean> | default = false]
+
+mimir_query_engine:
+  # (experimental) Enable support for binary operations in Mimir's query engine.
+  # Only applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-binary-operations
+  [enable_binary_operations: <boolean> | default = false]
 ```
 
 ### frontend
@@ -2081,6 +2087,17 @@ tenant_federation:
   # then these rules groups will be skipped during evaluations.
   # CLI flag: -ruler.tenant-federation.enabled
   [enabled: <boolean> | default = false]
+
+# (experimental) Number of rules rules that don't have dependencies that we
+# allow to be evaluated concurrently across all tenants. 0 to disable.
+# CLI flag: -ruler.max-independent-rule-evaluation-concurrency
+[max_independent_rule_evaluation_concurrency: <int> | default = 0]
+
+# (experimental) Minimum threshold of the interval to last rule group runtime
+# duration to allow a rule to be evaluated concurrency. By default, the rule
+# group runtime duration must exceed 50.0% of the evaluation interval.
+# CLI flag: -ruler.independent-rule-evaluation-concurrency-min-duration-percentage
+[independent_rule_evaluation_concurrency_min_duration_percentage: <float> | default = 50]
 ```
 
 ### ruler_storage
@@ -3521,6 +3538,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # is given as a comma-separated list.
 # CLI flag: -ruler.protected-namespaces
 [ruler_protected_namespaces: <string> | default = ""]
+
+# (experimental) Maximum number of independent rules that can run concurrently
+# for each tenant. Depends on ruler.max-independent-rule-evaluation-concurrency
+# being greater than 0. Ideally this flag should be a lower value. 0 to disable.
+# CLI flag: -ruler.max-independent-rule-evaluation-concurrency-per-tenant
+[ruler_max_independent_rule_evaluation_concurrency_per_tenant: <int> | default = 4]
 
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are

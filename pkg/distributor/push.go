@@ -179,9 +179,8 @@ func handler(
 				msg  string
 			)
 			if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
-				// TODO: This code is needed for backwards compatibility,
-				// and can be removed once -ingester.return-only-grpc-errors
-				// is removed.
+				// This code is needed for a correct handling of errors returned by the supplier function.
+				// These errors are created by using the httpgrpc package.
 				code, msg = int(resp.Code), string(resp.Body)
 			} else {
 				code = toHTTPStatus(ctx, err, limits)
