@@ -716,40 +716,52 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 	rightPoints := len(right.Floats) + len(right.Histograms)
 	maxPoints := max(leftPoints, rightPoints)
 
+	// We cannot re-use any slices when the series contain a mix of floats and histograms.
+	// Consider the following, where f is a float at a particular step, and h is a histogram.
+	// load 5m
+	//   series1 f f f h h
+	//   series2 h h f f h
+	// eval range from 0 to 25m step 5m series1 * series2
+	//   {}      h h f h f
+	// We can fit the resulting 3 histograms into series2 existing slice. However, the second
+	// last step (index 3) produces a histogram which would be stored over the existing histogram
+	// at the end of series2 (also index 3).
+	// It should be pretty uncommon that metric contains both histograms and floats, so we will
+	// accept the cost of a new slice.
+	mixedPoints := len(left.Floats) > 0 && len(left.Histograms) > 0 || len(right.Floats) > 0 && len(right.Histograms) > 0
+
 	prepareFSlice := func() error {
-		if maxPoints <= cap(left.Floats) && cap(left.Floats) < cap(right.Floats) {
+		if !mixedPoints && maxPoints <= cap(left.Floats) && cap(left.Floats) < cap(right.Floats) {
 			// Can fit output in left side, and the left side is smaller than the right
 			canReturnLeftFPointSlice = false
 			fPoints = left.Floats[:0]
-		} else if maxPoints <= cap(right.Floats) {
+		} else if !mixedPoints && maxPoints <= cap(right.Floats) {
 			// Can otherwise fit in the right side
 			canReturnRightFPointSlice = false
 			fPoints = right.Floats[:0]
-		} else {
-			// We can't fit in either left or right side, so create a new slice
-			var err error
-			if fPoints, err = b.Pool.GetFPointSlice(maxPoints); err != nil {
-				return err
-			}
+		}
+		// Either we have mixed points or we can't fit in either left or right side, so create a new slice
+		var err error
+		if fPoints, err = b.Pool.GetFPointSlice(maxPoints); err != nil {
+			return err
 		}
 		return nil
 	}
 
 	prepareHSlice := func() error {
-		if maxPoints <= cap(left.Histograms) && cap(left.Histograms) < cap(right.Histograms) {
+		if !mixedPoints && maxPoints <= cap(left.Histograms) && cap(left.Histograms) < cap(right.Histograms) {
 			// Can fit output in left side, and the left side is smaller than the right
 			canReturnLeftHPointSlice = false
 			hPoints = left.Histograms[:0]
-		} else if maxPoints <= cap(right.Histograms) {
+		} else if !mixedPoints && maxPoints <= cap(right.Histograms) {
 			// Can otherwise fit in the right side
 			canReturnRightHPointSlice = false
 			hPoints = right.Histograms[:0]
-		} else {
-			// We can't fit in either left or right side, so create a new slice
-			var err error
-			if hPoints, err = b.Pool.GetHPointSlice(maxPoints); err != nil {
-				return err
-			}
+		}
+		// Either we have mixed points or we can't fit in either left or right side, so create a new slice
+		var err error
+		if hPoints, err = b.Pool.GetHPointSlice(maxPoints); err != nil {
+			return err
 		}
 		return nil
 	}

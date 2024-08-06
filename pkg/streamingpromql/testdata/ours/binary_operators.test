@@ -259,12 +259,9 @@ eval range from 0 to 25m step 5m mixed_metric + another_mixed
 eval range from 0 to 25m step 5m mixed_metric - another_mixed
   {job="test"}              0  -9                                          _                                           -1                                           -5                                         {{schema:0 sum:0 count:0}} 
 
-# FIXME: This currently fails in MQE because @20min we re-use the RHS Histogram slice and assign a new value into there.
-# That value is then incorrectly used as the next point.
 eval range from 0 to 25m step 5m mixed_metric * another_mixed
   {job="test"}              100 10                                         _                                           12                                           {{schema:0 sum:30 count:15 buckets:[5 10 15]}} 0
 
-# FIXME: Same problem here
 eval range from 0 to 25m step 5m mixed_metric / another_mixed
   {job="test"}              1  0.1                                         _                                           0.75                                         {{schema:0 sum:1.2 count:0.6 buckets:[0.2 0.4 0.6]}} NAN
 
