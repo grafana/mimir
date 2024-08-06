@@ -192,25 +192,45 @@ eval instant at 5m metric * first_histogram
 eval instant at 5m first_histogram / metric
   {job="test"} {{schema:0 count:2 sum:2.5 buckets:[0.5 1 0.5]}}
 
-# Cannot divide a float by a histogram
+# Float divided by histogram is equivalent to "float / 0"
 eval instant at 5m metric / first_histogram
   {job="test"} +Inf
 
-# Histogram to the power of a histogram returns 1
+# Histogram + float is equivalent to "0 + float"
+eval instant at 5m first_histogram + metric
+  {job="test"} 2
+
+# Histogram - float is equivalent to "0 - float"
+eval instant at 5m first_histogram - metric
+  {job="test"} -2
+
+# Histogram atan2 float is equivalent to "0 atan2 float"
+eval instant at 5m first_histogram atan2 metric
+  {job="test"} 0
+
+# Histogram to the power of a histogram is equivalent to "0 ^ 0"
 eval instant at 5m first_histogram ^ second_histogram
   {job="test"} 1
 
-# Histogram to power of a float returns 0
+# Histogram to power of a float is equivalent to "0 ^ float"
 eval instant at 5m first_histogram ^ metric
   {job="test"} 0
 
-# Histogram mod histogram is NaN
+# Float to power of histogram is equivalent to "float ^ 0"
+eval instant at 5m metric ^ first_histogram
+  {job="test"} 1
+
+# Histogram mod histogram is equivalent to "0 % 0"
 eval instant at 5m first_histogram % second_histogram
   {job="test"} NaN
 
-# Histogram mod float is 0
+# Histogram mod float is equivalent to "0 % float"
 eval instant at 5m first_histogram % metric
   {job="test"} 0
+
+# Float mod histogram is equivalent to "float % 0"
+eval instant at 5m metric % first_histogram
+  {job="test"} NaN
 
 
 clear
