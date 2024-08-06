@@ -998,9 +998,10 @@ var arithmeticOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 	},
 }
 
-// seriesForOneGroupSide couples data and sourceSeriesIndices for use by mergeOneSide
-// Specifically it implements sort.Interface which will sort both data and sourceSeriesIndices at the same
-// time to retain a mapping of their indexes on either the present float timestamps or histograms as determined by sortByFloat.
+// seriesForOneGroupSide couples data and sourceSeriesIndices for use by mergeOneSide.
+// Specifically it is used for histogramSideSorter and floatSideSorter which providing a sorting interface
+// (sort.Interface) which will sort both data and sourceSeriesIndices at the same time to retain a mapping
+// of their indexes on either the present float timestamps or histogram timestamps.
 type seriesForOneGroupSide struct {
 	data                []types.InstantVectorSeriesData
 	sourceSeriesIndices []int
