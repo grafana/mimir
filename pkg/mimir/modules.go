@@ -728,7 +728,7 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReader() (services.Service, error) 
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
 
-	engineOpts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
+	engineOpts, _, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
 
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
@@ -893,7 +893,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	}
 
 	var concurrencyController ruler.MultiTenantRuleConcurrencyController
-	concurrencyController = &ruler.NoopConcurrencyController{}
+	concurrencyController = &ruler.NoopMultiTenantConcurrencyController{}
 	if t.Cfg.Ruler.MaxIndependentRuleEvaluationConcurrency > 0 {
 		concurrencyController = ruler.NewMultiTenantConcurrencyController(
 			util_log.Logger,
@@ -924,7 +924,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	)
 
 	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
-	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver, concurrencyController)
+	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver)
 	if err != nil {
 		return nil, err
 	}

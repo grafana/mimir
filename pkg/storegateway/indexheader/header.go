@@ -8,7 +8,6 @@ package indexheader
 import (
 	"context"
 	"flag"
-	"io"
 	"time"
 
 	"github.com/pkg/errors"
@@ -31,7 +30,9 @@ var (
 
 // Reader is an interface allowing to read essential, minimal number of index fields from the small portion of index file called header.
 type Reader interface {
-	io.Closer
+	// Close should be called when this instance of Reader will no longer be used.
+	// It is illegal to call Close multiple times.
+	Close() error
 
 	// IndexVersion returns version of index.
 	IndexVersion(context.Context) (int, error)

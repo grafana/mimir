@@ -309,4 +309,3 @@
       - "8080:8080"
     "volumes":
       - "../common/config:/etc/nginx/templates"
-"version": "3.4"

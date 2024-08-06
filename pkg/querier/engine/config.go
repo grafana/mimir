@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql"
 
+	"github.com/grafana/mimir/pkg/streamingpromql"      //lint:ignore faillint streamingpromql is fine
 	"github.com/grafana/mimir/pkg/util/activitytracker" //lint:ignore faillint activitytracker is fine
 )
 
@@ -30,6 +31,8 @@ type Config struct {
 	LookbackDelta time.Duration `yaml:"lookback_delta" category:"advanced"`
 
 	PromQLExperimentalFunctionsEnabled bool `yaml:"promql_experimental_functions_enabled" category:"experimental"`
+
+	MimirQueryEngine streamingpromql.FeatureToggles `yaml:"mimir_query_engine" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -47,12 +50,14 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.DefaultEvaluationInterval, "querier.default-evaluation-interval", time.Minute, sharedWithQueryFrontend("The default evaluation interval or step size for subqueries."))
 	f.DurationVar(&cfg.LookbackDelta, "querier.lookback-delta", 5*time.Minute, sharedWithQueryFrontend("Time since the last sample after which a time series is considered stale and ignored by expression evaluations."))
 	f.BoolVar(&cfg.PromQLExperimentalFunctionsEnabled, "querier.promql-experimental-functions-enabled", false, sharedWithQueryFrontend("Enable experimental PromQL functions."))
+
+	cfg.MimirQueryEngine.RegisterFlags(f)
 }
 
 // NewPromQLEngineOptions returns the PromQL engine options based on the provided config and a boolean
 // to indicate whether the experimental PromQL functions should be enabled.
-func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.ActivityTracker, logger log.Logger, reg prometheus.Registerer) (promql.EngineOpts, bool) {
-	return promql.EngineOpts{
+func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.ActivityTracker, logger log.Logger, reg prometheus.Registerer) (promql.EngineOpts, streamingpromql.EngineOpts, bool) {
+	commonOpts := promql.EngineOpts{
 		Logger:               logger,
 		Reg:                  reg,
 		ActiveQueryTracker:   newQueryTracker(activityTracker),
@@ -64,5 +69,11 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 		NoStepSubqueryIntervalFn: func(int64) int64 {
 			return cfg.DefaultEvaluationInterval.Milliseconds()
 		},
-	}, cfg.PromQLExperimentalFunctionsEnabled
+	}
+
+	mqeOpts := streamingpromql.EngineOpts{
+		CommonOpts: commonOpts,
+	}
+
+	return commonOpts, mqeOpts, cfg.PromQLExperimentalFunctionsEnabled
 }

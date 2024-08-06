@@ -764,7 +764,7 @@ func TestBucketStore_EagerLoading(t *testing.T) {
 
 			if testData.createLoadedBlocksSnapshotFn != nil {
 				// Create the snapshot manually so that we don't rely on the periodic snapshotting.
-				loadedBlocks := store.store.blockSet.blockULIDs()
+				loadedBlocks := store.store.blockSet.openBlocksULIDs()
 				staticLoader := staticLoadedBlocks(testData.createLoadedBlocksSnapshotFn(loadedBlocks))
 				snapshotter := indexheader.NewSnapshotter(cfg.logger, indexheader.SnapshotterConfig{
 					PersistInterval: time.Hour,

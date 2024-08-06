@@ -24,8 +24,6 @@ func goLeakOptions() []goleak.Option {
 		// Ignore opencensus default worker because it's started in a init() function.
 		goleak.IgnoreTopFunction("go.opencensus.io/stats/view.(*worker).start"),
 
-		goleak.IgnoreTopFunction("github.com/grafana/mimir/pkg/storegateway/indexheader.(*LazyBinaryReader).controlLoop"),
-
 		// The FastRegexMatcher uses a global instance of ristretto.Cache which is never stopped,
 		// so we ignore its gouroutines and then ones from glog which is a ristretto dependency.
 		goleak.IgnoreTopFunction("github.com/dgraph-io/ristretto.(*defaultPolicy).processItems"),
