@@ -147,21 +147,14 @@ func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQuer
 
 func (qb *queueBroker) makeQueuePath(request *tenantRequest) (QueuePath, error) {
 	if qb.additionalQueueDimensionsEnabled {
-		dimensions := QueuePath{}
+		var queryComponent string
 		if schedulerRequest, ok := request.req.(*SchedulerRequest); ok {
-			// TODO (casie): Clean this up when deprecating old TreeQueue
-			if _, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok && len(schedulerRequest.AdditionalQueueDimensions) == 0 {
-				// if using new MultiQueueingAlgorithmTreeQueue and AdditionalQueueDimensions is empty,
-				// enqueue request to a node "unknown" to keep all requests enqueued on leaf nodes.
-				dimensions = append(dimensions, unknownQueueDimension)
-			} else {
-				dimensions = schedulerRequest.AdditionalQueueDimensions
-			}
-			if qb.prioritizeQueryComponents {
-				return append(dimensions, string(request.tenantID)), nil
-			}
-			return append(QueuePath{string(request.tenantID)}, dimensions...), nil
+			queryComponent = schedulerRequest.ExpectedQueryComponentName()
 		}
+		if qb.prioritizeQueryComponents {
+			return append([]string{queryComponent}, string(request.tenantID)), nil
+		}
+		return append(QueuePath{string(request.tenantID)}, queryComponent), nil
 	}
 
 	// else request.req is a frontend/v1.request, or additional queue dimensions are disabled

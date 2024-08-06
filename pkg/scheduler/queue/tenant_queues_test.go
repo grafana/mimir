@@ -260,13 +260,11 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 			// assert equal distribution of queue items between tenant node and 3 subnodes
 			for _, v := range additionalQueueDimensions {
 				var checkPath QueuePath
-				// TODO (casie): After deprecating legacy tree queue, clean this up
-				if _, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok && v == nil {
+				if v == nil {
 					checkPath = append(QueuePath{"tenant-1"}, unknownQueueDimension)
 				} else {
 					checkPath = append(QueuePath{"tenant-1"}, v...)
 				}
-
 				// TODO (casie): After deprecating legacy tree queue, clean this up
 				var itemCount int
 				if tq, ok := qb.tree.(*TreeQueue); ok {
@@ -854,7 +852,8 @@ func isConsistent(qb *queueBroker) error {
 	var tenantQueueCount int
 	// TODO (casie): After deprecating legacy tree queue, clean this up
 	if tq, ok := qb.tree.(*TreeQueue); ok {
-		tenantQueueCount = tq.NodeCount() - 1
+		// tenants may have child nodes, only count the tenant queue
+		tenantQueueCount = len(tq.childQueueMap)
 	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 		if qb.additionalQueueDimensionsEnabled {
 			if !qb.prioritizeQueryComponents {
