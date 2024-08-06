@@ -119,7 +119,7 @@
 * [ENHANCEMENT] Do not deploy ingester-zone-c when experimental ingest storage is enabled and `ingest_storage_ingester_zones` is configured to `2`. #8776
 * [ENHANCEMENT] Added the config option `ingest_storage_migration_classic_ingesters_no_scale_down_delay` to disable the downscale delay on classic ingesters when migrating to experimental ingest storage. #8775 #8873
 * [ENHANCEMENT] Configure experimental ingest storage on query-frontend too when enabled. #8843
-* [BUGFIX] Added missing node affinity matchers to write component.
+* [BUGFIX] Added missing node affinity matchers to write component. #8910
 
 ### Mimirtool
 
