@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package pooling
+package types
 
 import (
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -19,8 +18,8 @@ var (
 		return make(promql.Matrix, 0, size)
 	})
 
-	seriesMetadataSlicePool = pool.NewBucketedPool(1, maxExpectedSeriesPerResult, seriesPerResultBucketFactor, func(size int) []types.SeriesMetadata {
-		return make([]types.SeriesMetadata, 0, size)
+	seriesMetadataSlicePool = pool.NewBucketedPool(1, maxExpectedSeriesPerResult, seriesPerResultBucketFactor, func(size int) []SeriesMetadata {
+		return make([]SeriesMetadata, 0, size)
 	})
 )
 
@@ -32,10 +31,10 @@ func PutMatrix(m promql.Matrix) {
 	matrixPool.Put(m)
 }
 
-func GetSeriesMetadataSlice(size int) []types.SeriesMetadata {
+func GetSeriesMetadataSlice(size int) []SeriesMetadata {
 	return seriesMetadataSlicePool.Get(size)
 }
 
-func PutSeriesMetadataSlice(s []types.SeriesMetadata) {
+func PutSeriesMetadataSlice(s []SeriesMetadata) {
 	seriesMetadataSlicePool.Put(s)
 }

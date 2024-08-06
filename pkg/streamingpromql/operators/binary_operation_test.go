@@ -15,7 +15,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -858,7 +858,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					On:             true,
 					MatchingLabels: []string{"env"},
 				},
-				Pool: pooling.NewLimitingPool(0, nil),
+				MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
 			}
 
 			result, err := o.mergeOneSide(testCase.input, testCase.sourceSeriesIndices, testCase.sourceSeriesMetadata, "right")
@@ -1130,7 +1130,7 @@ func TestBinaryOperationSeriesBuffer(t *testing.T) {
 	}
 
 	seriesUsed := []bool{true, false, true, true, true}
-	buffer := newBinaryOperationSeriesBuffer(inner, seriesUsed, pooling.NewLimitingPool(0, nil))
+	buffer := newBinaryOperationSeriesBuffer(inner, seriesUsed, limiting.NewMemoryConsumptionTracker(0, nil))
 	ctx := context.Background()
 
 	// Read first series.

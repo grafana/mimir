@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -162,7 +161,7 @@ func (l *seriesList) Len() int {
 //
 // Calling ToSeriesMetadata after calling Pop may return an incomplete list.
 func (l *seriesList) ToSeriesMetadata() []types.SeriesMetadata {
-	metadata := pooling.GetSeriesMetadataSlice(l.length)
+	metadata := types.GetSeriesMetadataSlice(l.length)
 	batch := l.currentSeriesBatch
 
 	for batch != nil {

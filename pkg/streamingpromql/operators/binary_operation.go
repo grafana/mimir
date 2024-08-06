@@ -20,16 +20,16 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 // BinaryOperation represents a binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
 type BinaryOperation struct {
-	Left  types.InstantVectorOperator
-	Right types.InstantVectorOperator
-	Op    parser.ItemType
-	Pool  *pooling.LimitingPool
+	Left                     types.InstantVectorOperator
+	Right                    types.InstantVectorOperator
+	Op                       parser.ItemType
+	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 
 	VectorMatching parser.VectorMatching
 
@@ -76,7 +76,7 @@ func NewBinaryOperation(
 	right types.InstantVectorOperator,
 	vectorMatching parser.VectorMatching,
 	op parser.ItemType,
-	pool *pooling.LimitingPool,
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) (*BinaryOperation, error) {
 	opFunc := arithmeticOperationFuncs[op]
@@ -85,13 +85,13 @@ func NewBinaryOperation(
 	}
 
 	return &BinaryOperation{
-		Left:           left,
-		Right:          right,
-		leftIterator:   types.InstantVectorSeriesDataIterator{},
-		rightIterator:  types.InstantVectorSeriesDataIterator{},
-		VectorMatching: vectorMatching,
-		Op:             op,
-		Pool:           pool,
+		Left:                     left,
+		Right:                    right,
+		leftIterator:             types.InstantVectorSeriesDataIterator{},
+		rightIterator:            types.InstantVectorSeriesDataIterator{},
+		VectorMatching:           vectorMatching,
+		Op:                       op,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
 
 		opFunc:             opFunc,
 		expressionPosition: expressionPosition,
@@ -132,8 +132,8 @@ func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMet
 	b.sortSeries(allMetadata, allSeries)
 	b.remainingSeries = allSeries
 
-	b.leftBuffer = newBinaryOperationSeriesBuffer(b.Left, leftSeriesUsed, b.Pool)
-	b.rightBuffer = newBinaryOperationSeriesBuffer(b.Right, rightSeriesUsed, b.Pool)
+	b.leftBuffer = newBinaryOperationSeriesBuffer(b.Left, leftSeriesUsed, b.MemoryConsumptionTracker)
+	b.rightBuffer = newBinaryOperationSeriesBuffer(b.Right, rightSeriesUsed, b.MemoryConsumptionTracker)
 
 	return allMetadata, nil
 }
@@ -239,12 +239,12 @@ func (b *BinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*bina
 	allMetadata := make([]types.SeriesMetadata, 0, len(outputSeriesMap))
 	allSeries := make([]*binaryOperationOutputSeries, 0, len(outputSeriesMap))
 
-	leftSeriesUsed, err := b.Pool.GetBoolSlice(len(b.leftMetadata))
+	leftSeriesUsed, err := types.BoolSlicePool.Get(len(b.leftMetadata), b.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 
-	rightSeriesUsed, err := b.Pool.GetBoolSlice(len(b.rightMetadata))
+	rightSeriesUsed, err := types.BoolSlicePool.Get(len(b.rightMetadata), b.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -487,7 +487,7 @@ func (b *BinaryOperation) mergeOneSideFloats(seriesGroupSide seriesForOneGroupSi
 		// We're going to create a new slice, so return this one to the pool.
 		// We must defer here, rather than at the end, as the merge loop below reslices Floats.
 		// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
-		defer b.Pool.PutFPointSlice(second.Floats)
+		defer types.FPointSlicePool.Put(second.Floats, b.MemoryConsumptionTracker)
 
 		if len(second.Floats) == 0 {
 			// We've reached the end of all series with floats.
@@ -516,13 +516,13 @@ func (b *BinaryOperation) mergeOneSideFloats(seriesGroupSide seriesForOneGroupSi
 	// We'll return the other slices in the for loop below.
 	// We must defer here, rather than at the end, as the merge loop below reslices Floats.
 	// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
-	defer b.Pool.PutFPointSlice(seriesGroupSide.data[0].Floats)
+	defer types.FPointSlicePool.Put(seriesGroupSide.data[0].Floats, b.MemoryConsumptionTracker)
 
 	// Re-slice the ds.data with just the series with floats to make the rest of our job easier
 	// Because we aren't re-sorting here it doesn't matter that ds.sourceSeriesIndices remains longer.
 	data := seriesGroupSide.data[:remainingSeriesWithFloats]
 
-	output, err := b.Pool.GetFPointSlice(mergedSize)
+	output, err := types.FPointSlicePool.Get(mergedSize, b.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -609,7 +609,7 @@ func (b *BinaryOperation) mergeOneSideHistograms(seriesGroupSide seriesForOneGro
 		// We're going to create a new slice, so return this one to the pool.
 		// We must defer here, rather than at the end, as the merge loop below reslices Histograms.
 		// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
-		defer b.Pool.PutHPointSlice(second.Histograms)
+		defer types.HPointSlicePool.Put(second.Histograms, b.MemoryConsumptionTracker)
 
 		if len(second.Histograms) == 0 {
 			// We've reached the end of all series with histograms.
@@ -637,13 +637,13 @@ func (b *BinaryOperation) mergeOneSideHistograms(seriesGroupSide seriesForOneGro
 	// We'll return the other slices in the for loop below.
 	// We must defer here, rather than at the end, as the merge loop below reslices Histograms.
 	// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
-	defer b.Pool.PutHPointSlice(seriesGroupSide.data[0].Histograms)
+	defer types.HPointSlicePool.Put(seriesGroupSide.data[0].Histograms, b.MemoryConsumptionTracker)
 
 	// Re-slice data with just the series with histograms to make the rest of our job easier
 	// Because we aren't re-sorting here it doesn't matter that ds.sourceSeriesIndices remains longer.
 	data := seriesGroupSide.data[:remainingSeriesWithHistograms]
 
-	output, err := b.Pool.GetHPointSlice(mergedSize)
+	output, err := types.HPointSlicePool.Get(mergedSize, b.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -745,7 +745,7 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 		}
 		// Either we have mixed points or we can't fit in either left or right side, so create a new slice
 		var err error
-		if fPoints, err = b.Pool.GetFPointSlice(maxPoints); err != nil {
+		if fPoints, err = types.FPointSlicePool.Get(maxPoints, b.MemoryConsumptionTracker); err != nil {
 			return err
 		}
 		return nil
@@ -763,7 +763,7 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 		}
 		// Either we have mixed points or we can't fit in either left or right side, so create a new slice
 		var err error
-		if hPoints, err = b.Pool.GetHPointSlice(maxPoints); err != nil {
+		if hPoints, err = types.HPointSlicePool.Get(maxPoints, b.MemoryConsumptionTracker); err != nil {
 			return err
 		}
 		return nil
@@ -821,16 +821,16 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 
 	// Cleanup the unused slices.
 	if canReturnLeftFPointSlice {
-		b.Pool.PutFPointSlice(left.Floats)
+		types.FPointSlicePool.Put(left.Floats, b.MemoryConsumptionTracker)
 	}
 	if canReturnLeftHPointSlice {
-		b.Pool.PutHPointSlice(left.Histograms)
+		types.HPointSlicePool.Put(left.Histograms, b.MemoryConsumptionTracker)
 	}
 	if canReturnRightFPointSlice {
-		b.Pool.PutFPointSlice(right.Floats)
+		types.FPointSlicePool.Put(right.Floats, b.MemoryConsumptionTracker)
 	}
 	if canReturnRightHPointSlice {
-		b.Pool.PutHPointSlice(right.Histograms)
+		types.HPointSlicePool.Put(right.Histograms, b.MemoryConsumptionTracker)
 	}
 
 	return types.InstantVectorSeriesData{
@@ -844,11 +844,11 @@ func (b *BinaryOperation) Close() {
 	b.Right.Close()
 
 	if b.leftMetadata != nil {
-		pooling.PutSeriesMetadataSlice(b.leftMetadata)
+		types.PutSeriesMetadataSlice(b.leftMetadata)
 	}
 
 	if b.rightMetadata != nil {
-		pooling.PutSeriesMetadataSlice(b.rightMetadata)
+		types.PutSeriesMetadataSlice(b.rightMetadata)
 	}
 
 	if b.leftBuffer != nil {
@@ -874,7 +874,7 @@ type binaryOperationSeriesBuffer struct {
 	// FIXME: could use a bitmap here to save some memory
 	seriesUsed []bool
 
-	pool *pooling.LimitingPool
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 
 	// Stores series read but required for later series.
 	buffer map[int]types.InstantVectorSeriesData
@@ -883,12 +883,12 @@ type binaryOperationSeriesBuffer struct {
 	output []types.InstantVectorSeriesData
 }
 
-func newBinaryOperationSeriesBuffer(source types.InstantVectorOperator, seriesUsed []bool, pool *pooling.LimitingPool) *binaryOperationSeriesBuffer {
+func newBinaryOperationSeriesBuffer(source types.InstantVectorOperator, seriesUsed []bool, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *binaryOperationSeriesBuffer {
 	return &binaryOperationSeriesBuffer{
-		source:     source,
-		seriesUsed: seriesUsed,
-		pool:       pool,
-		buffer:     map[int]types.InstantVectorSeriesData{},
+		source:                   source,
+		seriesUsed:               seriesUsed,
+		memoryConsumptionTracker: memoryConsumptionTracker,
+		buffer:                   map[int]types.InstantVectorSeriesData{},
 	}
 }
 
@@ -927,7 +927,7 @@ func (b *binaryOperationSeriesBuffer) getSingleSeries(ctx context.Context, serie
 			b.buffer[b.nextIndexToRead] = d
 		} else {
 			// We don't need this series at all, return the slice to the pool now.
-			b.pool.PutFPointSlice(d.Floats)
+			types.PutInstantVectorSeriesData(d, b.memoryConsumptionTracker)
 		}
 
 		b.nextIndexToRead++
@@ -947,7 +947,7 @@ func (b *binaryOperationSeriesBuffer) getSingleSeries(ctx context.Context, serie
 
 func (b *binaryOperationSeriesBuffer) close() {
 	if b.seriesUsed != nil {
-		b.pool.PutBoolSlice(b.seriesUsed)
+		types.BoolSlicePool.Put(b.seriesUsed, b.memoryConsumptionTracker)
 	}
 }
 
