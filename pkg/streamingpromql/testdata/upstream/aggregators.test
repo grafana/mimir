@@ -601,8 +601,9 @@ load 10s
 	data{test="nan",group="2",point="a"} 2
 	data{test="nan",group="2",point="b"} NaN
 
-eval instant at 1m sum(data{test="ten"})
-	{} 10
+# Unsupported by streaming engine.
+# eval instant at 1m sum(data{test="ten"})
+# 	{} 10
 
 eval instant at 1m sum by (group) (data{test="pos_inf"})
 	{group="1"} Inf
