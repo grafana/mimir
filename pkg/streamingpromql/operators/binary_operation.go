@@ -9,10 +9,10 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"slices"
 	"sort"
 	"time"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -43,6 +43,8 @@ type BinaryOperation struct {
 	remainingSeries []*binaryOperationOutputSeries
 	leftBuffer      *binaryOperationSeriesBuffer
 	rightBuffer     *binaryOperationSeriesBuffer
+	leftIterator    types.InstantVectorSeriesDataIterator
+	rightIterator   types.InstantVectorSeriesDataIterator
 	opFunc          binaryOperationFunc
 
 	expressionPosition posrange.PositionRange
@@ -85,6 +87,8 @@ func NewBinaryOperation(
 	return &BinaryOperation{
 		Left:           left,
 		Right:          right,
+		leftIterator:   types.InstantVectorSeriesDataIterator{},
+		rightIterator:  types.InstantVectorSeriesDataIterator{},
 		VectorMatching: vectorMatching,
 		Op:             op,
 		Pool:           pool,
@@ -392,7 +396,7 @@ func (b *BinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSe
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	return b.computeResult(mergedLeftSide, mergedRightSide), nil
+	return b.computeResult(mergedLeftSide, mergedRightSide)
 }
 
 // mergeOneSide exists to handle the case where one side of an output series has different source series at different time steps.
@@ -407,6 +411,8 @@ func (b *BinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSe
 //
 // mergeOneSide is optimised for the case where there is only one source series, or the source series do not overlap, as in the example above.
 //
+// NOTE: mergeOneSide has the side-effect of re-ordering both data and sourceSeriesIndices.
+//
 // FIXME: for many-to-one / one-to-many matching, we could avoid re-merging each time for the side used multiple times
 func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []types.SeriesMetadata, side string) (types.InstantVectorSeriesData, error) {
 	if len(data) == 1 {
@@ -418,28 +424,80 @@ func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sou
 		return types.InstantVectorSeriesData{}, nil
 	}
 
-	slices.SortFunc(data, func(a, b types.InstantVectorSeriesData) int {
-		return int(a.Floats[0].T - b.Floats[0].T)
-	})
+	// Merge floats and histograms individually.
+	// After which we check if there are any duplicate points in either the floats or histograms.
 
-	mergedSize := len(data[0].Floats)
+	ds := seriesForOneGroupSide{
+		data:                data,
+		sourceSeriesIndices: sourceSeriesIndices,
+	}
+
+	floats, err := b.mergeOneSideFloats(ds, sourceSeriesMetadata, side)
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+	histograms, err := b.mergeOneSideHistograms(ds, sourceSeriesMetadata, side)
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	// Check for any conflicts between floats and histograms
+	idxFloats, idxHistograms := 0, 0
+	for idxFloats < len(floats) && idxHistograms < len(histograms) {
+		if floats[idxFloats].T == histograms[idxHistograms].T {
+			// Conflict found
+			firstConflictingSeriesLabels := sourceSeriesMetadata[0].Labels
+			groupLabels := b.labelsFunc()(firstConflictingSeriesLabels)
+
+			return types.InstantVectorSeriesData{}, fmt.Errorf("found both float and histogram samples for the match group %s on the %s side of the operation at timestamp %s", groupLabels, side, timestamp.Time(floats[idxFloats].T).Format(time.RFC3339Nano))
+		}
+		if floats[idxFloats].T < histograms[idxHistograms].T {
+			idxFloats++
+		} else {
+			idxHistograms++
+		}
+	}
+
+	return types.InstantVectorSeriesData{Floats: floats, Histograms: histograms}, nil
+}
+
+func (b *BinaryOperation) mergeOneSideFloats(seriesGroupSide seriesForOneGroupSide, sourceSeriesMetadata []types.SeriesMetadata, side string) ([]promql.FPoint, error) {
+	if len(seriesGroupSide.data) == 0 {
+		return nil, nil
+	}
+	if len(seriesGroupSide.data) == 1 {
+		return seriesGroupSide.data[0].Floats, nil
+	}
+
+	sort.Sort(floatSideSorter{side: seriesGroupSide})
+
+	// After sorting, if the first series has no floats, we're done, as that means there are no floats in any series
+	if len(seriesGroupSide.data[0].Floats) == 0 {
+		return nil, nil
+	}
+
+	mergedSize := len(seriesGroupSide.data[0].Floats)
+	remainingSeriesWithFloats := 1
 	haveOverlaps := false
 
-	// We're going to create a new slice, so return this one to the pool.
-	// We'll return the other slices in the for loop below.
-	// We must defer here, rather than at the end, as the merge loop below reslices Floats.
-	// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
-	defer b.Pool.PutFPointSlice(data[0].Floats)
-
-	for i := 0; i < len(data)-1; i++ {
-		first := data[i]
-		second := data[i+1]
-		mergedSize += len(second.Floats)
+	for i := 0; i < len(seriesGroupSide.data)-1; i++ {
+		first := seriesGroupSide.data[i]
+		second := seriesGroupSide.data[i+1]
 
 		// We're going to create a new slice, so return this one to the pool.
 		// We must defer here, rather than at the end, as the merge loop below reslices Floats.
 		// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
 		defer b.Pool.PutFPointSlice(second.Floats)
+
+		if len(second.Floats) == 0 {
+			// We've reached the end of all series with floats.
+			// However, continue iterating so we can return all of the slices.
+			// (As they may have length 0, but a non-zero capacity).
+			continue
+		}
+
+		mergedSize += len(second.Floats)
+		remainingSeriesWithFloats++
 
 		// Check if first overlaps with second.
 		// InstantVectorSeriesData.Floats is required to be sorted in timestamp order, so if the last point
@@ -449,9 +507,24 @@ func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sou
 		}
 	}
 
+	if remainingSeriesWithFloats == 1 {
+		// No other series had any floats
+		return seriesGroupSide.data[0].Floats, nil
+	}
+
+	// We're going to create a new slice, so return this one to the pool.
+	// We'll return the other slices in the for loop below.
+	// We must defer here, rather than at the end, as the merge loop below reslices Floats.
+	// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
+	defer b.Pool.PutFPointSlice(seriesGroupSide.data[0].Floats)
+
+	// Re-slice the ds.data with just the series with floats to make the rest of our job easier
+	// Because we aren't re-sorting here it doesn't matter that ds.sourceSeriesIndices remains longer.
+	data := seriesGroupSide.data[:remainingSeriesWithFloats]
+
 	output, err := b.Pool.GetFPointSlice(mergedSize)
 	if err != nil {
-		return types.InstantVectorSeriesData{}, err
+		return nil, err
 	}
 
 	if !haveOverlaps {
@@ -461,20 +534,18 @@ func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sou
 			output = append(output, d.Floats...)
 		}
 
-		return types.InstantVectorSeriesData{Floats: output}, nil
+		return output, nil
 	}
 
 	// Slow path: there are overlaps, so we need to merge slices together and check for conflicts as we go.
 	// We don't expect to have many series here, so something like a loser tree is likely unnecessary.
-	remainingSeries := len(data)
-
 	for {
-		if remainingSeries == 1 {
+		if remainingSeriesWithFloats == 1 {
 			// Only one series left, just copy remaining points.
 			for _, d := range data {
 				if len(d.Floats) > 0 {
 					output = append(output, d.Floats...)
-					return types.InstantVectorSeriesData{Floats: output}, nil
+					return output, nil
 				}
 			}
 		}
@@ -490,11 +561,11 @@ func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sou
 			nextPointInSeries := d.Floats[0]
 			if nextPointInSeries.T == nextT {
 				// Another series has a point with the same timestamp. We have a conflict.
-				firstConflictingSeriesLabels := sourceSeriesMetadata[sourceSeriesIndices[sourceSeriesIndexInData]].Labels
-				secondConflictingSeriesLabels := sourceSeriesMetadata[sourceSeriesIndices[seriesIndexInData]].Labels
+				firstConflictingSeriesLabels := sourceSeriesMetadata[seriesGroupSide.sourceSeriesIndices[sourceSeriesIndexInData]].Labels
+				secondConflictingSeriesLabels := sourceSeriesMetadata[seriesGroupSide.sourceSeriesIndices[seriesIndexInData]].Labels
 				groupLabels := b.labelsFunc()(firstConflictingSeriesLabels)
 
-				return types.InstantVectorSeriesData{}, fmt.Errorf("found duplicate series for the match group %s on the %s side of the operation at timestamp %s: %s and %s", groupLabels, side, timestamp.Time(nextT).Format(time.RFC3339Nano), firstConflictingSeriesLabels, secondConflictingSeriesLabels)
+				return nil, fmt.Errorf("found duplicate series for the match group %s on the %s side of the operation at timestamp %s: %s and %s", groupLabels, side, timestamp.Time(nextT).Format(time.RFC3339Nano), firstConflictingSeriesLabels, secondConflictingSeriesLabels)
 			}
 
 			if d.Floats[0].T < nextT {
@@ -507,50 +578,265 @@ func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sou
 		data[sourceSeriesIndexInData].Floats = data[sourceSeriesIndexInData].Floats[1:]
 
 		if len(data[sourceSeriesIndexInData].Floats) == 0 {
-			remainingSeries--
+			remainingSeriesWithFloats--
 		}
 	}
 }
 
-func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, right types.InstantVectorSeriesData) types.InstantVectorSeriesData {
-	var output []promql.FPoint
-
-	// For one-to-one matching for arithmetic operators, reuse one of the input slices to avoid allocating another slice.
-	// We'll never produce more points than the smaller input side, so use that as our output slice.
-	//
-	// FIXME: this is not safe to do for one-to-many, many-to-one or many-to-many matching, as we may need the input series for later output series.
-	if len(left.Floats) < len(right.Floats) {
-		output = left.Floats[:0]
-		defer b.Pool.PutFPointSlice(right.Floats)
-	} else {
-		output = right.Floats[:0]
-		defer b.Pool.PutFPointSlice(left.Floats)
+func (b *BinaryOperation) mergeOneSideHistograms(seriesGroupSide seriesForOneGroupSide, sourceSeriesMetadata []types.SeriesMetadata, side string) ([]promql.HPoint, error) {
+	if len(seriesGroupSide.data) == 0 {
+		return nil, nil
+	}
+	if len(seriesGroupSide.data) == 1 {
+		return seriesGroupSide.data[0].Histograms, nil
 	}
 
-	nextRightIndex := 0
+	sort.Sort(histogramSideSorter{side: seriesGroupSide})
 
-	for _, leftPoint := range left.Floats {
-		for nextRightIndex < len(right.Floats) && right.Floats[nextRightIndex].T < leftPoint.T {
-			nextRightIndex++
+	// After sorting, if the first series has no histograms, we're done, as that means there are no histograms in any series
+	if len(seriesGroupSide.data[0].Histograms) == 0 {
+		return nil, nil
+	}
+
+	mergedSize := len(seriesGroupSide.data[0].Histograms)
+	remainingSeriesWithHistograms := 1
+	haveOverlaps := false
+
+	for i := 0; i < len(seriesGroupSide.data)-1; i++ {
+		first := seriesGroupSide.data[i]
+		second := seriesGroupSide.data[i+1]
+
+		// We're going to create a new slice, so return this one to the pool.
+		// We must defer here, rather than at the end, as the merge loop below reslices Histograms.
+		// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
+		defer b.Pool.PutHPointSlice(second.Histograms)
+
+		if len(second.Histograms) == 0 {
+			// We've reached the end of all series with histograms.
+			// However, continue iterating so we can return all of the slices.
+			// (As they may have length 0, but a non-zero capacity).
+			continue
+		}
+		mergedSize += len(second.Histograms)
+		remainingSeriesWithHistograms++
+
+		// Check if first overlaps with second.
+		// InstantVectorSeriesData.Histograms is required to be sorted in timestamp order, so if the last point
+		// of the first series is before the first point of the second series, it cannot overlap.
+		if first.Histograms[len(first.Histograms)-1].T >= second.Histograms[0].T {
+			haveOverlaps = true
+		}
+	}
+
+	if remainingSeriesWithHistograms == 1 {
+		// No other series had any histograms
+		return seriesGroupSide.data[0].Histograms, nil
+	}
+
+	// We're going to create a new slice, so return this one to the pool.
+	// We'll return the other slices in the for loop below.
+	// We must defer here, rather than at the end, as the merge loop below reslices Histograms.
+	// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
+	defer b.Pool.PutHPointSlice(seriesGroupSide.data[0].Histograms)
+
+	// Re-slice data with just the series with histograms to make the rest of our job easier
+	// Because we aren't re-sorting here it doesn't matter that ds.sourceSeriesIndices remains longer.
+	data := seriesGroupSide.data[:remainingSeriesWithHistograms]
+
+	output, err := b.Pool.GetHPointSlice(mergedSize)
+	if err != nil {
+		return nil, err
+	}
+
+	if !haveOverlaps {
+		// Fast path: no overlaps, so we can just concatenate the slices together, and there's no
+		// need to check for conflicts either.
+		for _, d := range data {
+			output = append(output, d.Histograms...)
 		}
 
-		if nextRightIndex == len(right.Floats) {
-			// No more points on right side. We are done.
-			break
+		return output, nil
+	}
+
+	// Slow path: there are overlaps, so we need to merge slices together and check for conflicts as we go.
+	// We don't expect to have many series here, so something like a loser tree is likely unnecessary.
+	for {
+		if remainingSeriesWithHistograms == 1 {
+			// Only one series left, just copy remaining points.
+			for _, d := range data {
+				if len(d.Histograms) > 0 {
+					output = append(output, d.Histograms...)
+					return output, nil
+				}
+			}
 		}
 
-		if leftPoint.T == right.Floats[nextRightIndex].T {
-			// We have matching points on both sides, compute the result.
-			output = append(output, promql.FPoint{
-				F: b.opFunc(leftPoint.F, right.Floats[nextRightIndex].F),
-				T: leftPoint.T,
-			})
+		nextT := int64(math.MaxInt64)
+		sourceSeriesIndexInData := -1
+
+		for seriesIndexInData, d := range data {
+			if len(d.Histograms) == 0 {
+				continue
+			}
+
+			nextPointInSeries := d.Histograms[0]
+			if nextPointInSeries.T == nextT {
+				// Another series has a point with the same timestamp. We have a conflict.
+				firstConflictingSeriesLabels := sourceSeriesMetadata[seriesGroupSide.sourceSeriesIndices[sourceSeriesIndexInData]].Labels
+				secondConflictingSeriesLabels := sourceSeriesMetadata[seriesGroupSide.sourceSeriesIndices[seriesIndexInData]].Labels
+				groupLabels := b.labelsFunc()(firstConflictingSeriesLabels)
+
+				return nil, fmt.Errorf("found duplicate series for the match group %s on the %s side of the operation at timestamp %s: %s and %s", groupLabels, side, timestamp.Time(nextT).Format(time.RFC3339Nano), firstConflictingSeriesLabels, secondConflictingSeriesLabels)
+			}
+
+			if d.Histograms[0].T < nextT {
+				nextT = d.Histograms[0].T
+				sourceSeriesIndexInData = seriesIndexInData
+			}
 		}
+
+		output = append(output, data[sourceSeriesIndexInData].Histograms[0])
+		data[sourceSeriesIndexInData].Histograms = data[sourceSeriesIndexInData].Histograms[1:]
+
+		if len(data[sourceSeriesIndexInData].Histograms) == 0 {
+			remainingSeriesWithHistograms--
+		}
+	}
+}
+
+func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, right types.InstantVectorSeriesData) (types.InstantVectorSeriesData, error) {
+	var fPoints []promql.FPoint
+	var hPoints []promql.HPoint
+
+	// For one-to-one matching for arithmetic operators, we'll never produce more points than the smaller input side.
+	// Because floats and histograms can be multiplied together, we use the sum of both the float and histogram points.
+	// We also don't know if the output will be exclusively floats or histograms, so we'll use the same size slice for both.
+	// We only assign the slices once we see the associated point type so it shouldn't be common that we allocate both.
+	//
+	// FIXME: this is not safe to do for one-to-many, many-to-one or many-to-many matching, as we may need the input series for later output series.
+	canReturnLeftFPointSlice, canReturnLeftHPointSlice, canReturnRightFPointSlice, canReturnRightHPointSlice := true, true, true, true
+	leftPoints := len(left.Floats) + len(left.Histograms)
+	rightPoints := len(right.Floats) + len(right.Histograms)
+	maxPoints := max(leftPoints, rightPoints)
+
+	// We cannot re-use any slices when the series contain a mix of floats and histograms.
+	// Consider the following, where f is a float at a particular step, and h is a histogram.
+	// load 5m
+	//   series1 f f f h h
+	//   series2 h h f f h
+	// eval range from 0 to 25m step 5m series1 * series2
+	//   {}      h h f h f
+	// We can fit the resulting 3 histograms into series2 existing slice. However, the second
+	// last step (index 3) produces a histogram which would be stored over the existing histogram
+	// at the end of series2 (also index 3).
+	// It should be pretty uncommon that metric contains both histograms and floats, so we will
+	// accept the cost of a new slice.
+	mixedPoints := len(left.Floats) > 0 && len(left.Histograms) > 0 || len(right.Floats) > 0 && len(right.Histograms) > 0
+
+	prepareFSlice := func() error {
+		if !mixedPoints && maxPoints <= cap(left.Floats) && cap(left.Floats) < cap(right.Floats) {
+			// Can fit output in left side, and the left side is smaller than the right
+			canReturnLeftFPointSlice = false
+			fPoints = left.Floats[:0]
+		} else if !mixedPoints && maxPoints <= cap(right.Floats) {
+			// Can otherwise fit in the right side
+			canReturnRightFPointSlice = false
+			fPoints = right.Floats[:0]
+		}
+		// Either we have mixed points or we can't fit in either left or right side, so create a new slice
+		var err error
+		if fPoints, err = b.Pool.GetFPointSlice(maxPoints); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	prepareHSlice := func() error {
+		if !mixedPoints && maxPoints <= cap(left.Histograms) && cap(left.Histograms) < cap(right.Histograms) {
+			// Can fit output in left side, and the left side is smaller than the right
+			canReturnLeftHPointSlice = false
+			hPoints = left.Histograms[:0]
+		} else if !mixedPoints && maxPoints <= cap(right.Histograms) {
+			// Can otherwise fit in the right side
+			canReturnRightHPointSlice = false
+			hPoints = right.Histograms[:0]
+		}
+		// Either we have mixed points or we can't fit in either left or right side, so create a new slice
+		var err error
+		if hPoints, err = b.Pool.GetHPointSlice(maxPoints); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	b.leftIterator.Reset(left)
+	b.rightIterator.Reset(right)
+
+	// Get first sample from left and right
+	lT, lF, lH, lOk := b.leftIterator.Next()
+	rT, rF, rH, rOk := b.rightIterator.Next()
+	// Continue iterating until we exhaust either the LHS or RHS
+	// denoted by lOk or rOk being false.
+	for lOk && rOk {
+		if lT == rT {
+			// Timestamps match at this step
+			resultFloat, resultHist, ok, err := b.opFunc(lF, rF, lH, rH)
+			if err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+			if ok {
+				if resultHist != nil {
+					if hPoints == nil {
+						if err = prepareHSlice(); err != nil {
+							return types.InstantVectorSeriesData{}, err
+						}
+					}
+					hPoints = append(hPoints, promql.HPoint{
+						H: resultHist,
+						T: lT,
+					})
+				} else {
+					if fPoints == nil {
+						if err = prepareFSlice(); err != nil {
+							return types.InstantVectorSeriesData{}, err
+						}
+					}
+					fPoints = append(fPoints, promql.FPoint{
+						F: resultFloat,
+						T: lT,
+					})
+				}
+			}
+		}
+		// Move the iterator with the lower timestamp, or both if equal
+		if lT == rT {
+			lT, lF, lH, lOk = b.leftIterator.Next()
+			rT, rF, rH, rOk = b.rightIterator.Next()
+		} else if lT < rT {
+			lT, lF, lH, lOk = b.leftIterator.Next()
+		} else {
+			rT, rF, rH, rOk = b.rightIterator.Next()
+		}
+	}
+
+	// Cleanup the unused slices.
+	if canReturnLeftFPointSlice {
+		b.Pool.PutFPointSlice(left.Floats)
+	}
+	if canReturnLeftHPointSlice {
+		b.Pool.PutHPointSlice(left.Histograms)
+	}
+	if canReturnRightFPointSlice {
+		b.Pool.PutFPointSlice(right.Floats)
+	}
+	if canReturnRightHPointSlice {
+		b.Pool.PutHPointSlice(right.Histograms)
 	}
 
 	return types.InstantVectorSeriesData{
-		Floats: output,
-	}
+		Floats:     fPoints,
+		Histograms: hPoints,
+	}, nil
 }
 
 func (b *BinaryOperation) Close() {
@@ -665,22 +951,111 @@ func (b *binaryOperationSeriesBuffer) close() {
 	}
 }
 
-type binaryOperationFunc func(left, right float64) float64
+type binaryOperationFunc func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error)
 
+// FIXME(jhesketh): Investigate avoiding copying histograms for binary ops.
 var arithmeticOperationFuncs = map[parser.ItemType]binaryOperationFunc{
-	parser.ADD: func(left, right float64) float64 {
-		return left + right
+	parser.ADD: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if hlhs != nil && hrhs != nil {
+			res, err := hlhs.Copy().Add(hrhs)
+			if err != nil {
+				return 0, nil, false, err
+			}
+			return 0, res.Compact(0), true, nil
+		}
+		return lhs + rhs, nil, true, nil
 	},
-	parser.SUB: func(left, right float64) float64 {
-		return left - right
+	parser.SUB: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if hlhs != nil && hrhs != nil {
+			res, err := hlhs.Copy().Sub(hrhs)
+			if err != nil {
+				return 0, nil, false, err
+			}
+			return 0, res.Compact(0), true, nil
+		}
+		return lhs - rhs, nil, true, nil
 	},
-	parser.MUL: func(left, right float64) float64 {
-		return left * right
+	parser.MUL: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if hlhs != nil && hrhs == nil {
+			return 0, hlhs.Copy().Mul(rhs), true, nil
+		}
+		if hlhs == nil && hrhs != nil {
+			return 0, hrhs.Copy().Mul(lhs), true, nil
+		}
+		return lhs * rhs, nil, true, nil
 	},
-	parser.DIV: func(left, right float64) float64 {
-		return left / right
+	parser.DIV: func(lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		if hlhs != nil && hrhs == nil {
+			return 0, hlhs.Copy().Div(rhs), true, nil
+		}
+		return lhs / rhs, nil, true, nil
 	},
-	parser.MOD:   math.Mod,
-	parser.POW:   math.Pow,
-	parser.ATAN2: math.Atan2,
+	parser.POW: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		return math.Pow(lhs, rhs), nil, true, nil
+	},
+	parser.MOD: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		return math.Mod(lhs, rhs), nil, true, nil
+	},
+	parser.ATAN2: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+		return math.Atan2(lhs, rhs), nil, true, nil
+	},
+}
+
+// seriesForOneGroupSide couples data and sourceSeriesIndices for use by mergeOneSide.
+// Specifically it is used for histogramSideSorter and floatSideSorter which providing a sorting interface
+// (sort.Interface) which will sort both data and sourceSeriesIndices at the same time to retain a mapping
+// of their indexes on either the present float timestamps or histogram timestamps.
+type seriesForOneGroupSide struct {
+	data                []types.InstantVectorSeriesData
+	sourceSeriesIndices []int
+}
+
+// floatSideSorter sorts side by the timestamp of the first float point in each series.
+// It maintains the order of both data and sourceSeriesIndices.
+type floatSideSorter struct {
+	side seriesForOneGroupSide
+}
+
+func (f floatSideSorter) Len() int {
+	return len(f.side.data)
+}
+
+func (f floatSideSorter) Swap(i, j int) {
+	f.side.data[i], f.side.data[j] = f.side.data[j], f.side.data[i]
+	f.side.sourceSeriesIndices[i], f.side.sourceSeriesIndices[j] = f.side.sourceSeriesIndices[j], f.side.sourceSeriesIndices[i]
+}
+
+func (f floatSideSorter) Less(i, j int) bool {
+	if len(f.side.data[i].Floats) == 0 {
+		return false
+	}
+	if len(f.side.data[j].Floats) == 0 {
+		return true
+	}
+	return f.side.data[i].Floats[0].T < f.side.data[j].Floats[0].T
+}
+
+// histogramSideSorter sorts side by the timestamp of the first histogram point in each series.
+// It maintains the order of both data and sourceSeriesIndices.
+type histogramSideSorter struct {
+	side seriesForOneGroupSide
+}
+
+func (h histogramSideSorter) Len() int {
+	return len(h.side.data)
+}
+
+func (h histogramSideSorter) Swap(i, j int) {
+	h.side.data[i], h.side.data[j] = h.side.data[j], h.side.data[i]
+	h.side.sourceSeriesIndices[i], h.side.sourceSeriesIndices[j] = h.side.sourceSeriesIndices[j], h.side.sourceSeriesIndices[i]
+}
+
+func (h histogramSideSorter) Less(i, j int) bool {
+	if len(h.side.data[i].Histograms) == 0 {
+		return false
+	}
+	if len(h.side.data[j].Histograms) == 0 {
+		return true
+	}
+	return h.side.data[i].Histograms[0].T < h.side.data[j].Histograms[0].T
 }
