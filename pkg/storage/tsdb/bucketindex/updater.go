@@ -192,6 +192,7 @@ func (w *Updater) updateBlockIndexEntry(ctx context.Context, id ulid.ULID) (*Blo
 func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDeletionMark) ([]*BlockDeletionMark, error) {
 	out := make([]*BlockDeletionMark, 0, len(old))
 
+	// Find all markers in the storage.
 	discovered, err := block.ListBlockDeletionMarks(ctx, w.bkt)
 	if err != nil {
 		return nil, err
