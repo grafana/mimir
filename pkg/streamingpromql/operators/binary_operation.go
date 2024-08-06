@@ -26,12 +26,10 @@ import (
 
 // BinaryOperation represents a binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
 type BinaryOperation struct {
-	Left          types.InstantVectorOperator
-	Right         types.InstantVectorOperator
-	LeftIterator  types.InstantVectorSeriesDataIterator
-	RightIterator types.InstantVectorSeriesDataIterator
-	Op            parser.ItemType
-	Pool          *pooling.LimitingPool
+	Left  types.InstantVectorOperator
+	Right types.InstantVectorOperator
+	Op    parser.ItemType
+	Pool  *pooling.LimitingPool
 
 	VectorMatching parser.VectorMatching
 
@@ -45,6 +43,8 @@ type BinaryOperation struct {
 	remainingSeries []*binaryOperationOutputSeries
 	leftBuffer      *binaryOperationSeriesBuffer
 	rightBuffer     *binaryOperationSeriesBuffer
+	leftIterator    types.InstantVectorSeriesDataIterator
+	rightIterator   types.InstantVectorSeriesDataIterator
 	opFunc          binaryOperationFunc
 
 	expressionPosition posrange.PositionRange
@@ -87,8 +87,8 @@ func NewBinaryOperation(
 	return &BinaryOperation{
 		Left:           left,
 		Right:          right,
-		LeftIterator:   types.InstantVectorSeriesDataIterator{},
-		RightIterator:  types.InstantVectorSeriesDataIterator{},
+		leftIterator:   types.InstantVectorSeriesDataIterator{},
+		rightIterator:  types.InstantVectorSeriesDataIterator{},
 		VectorMatching: vectorMatching,
 		Op:             op,
 		Pool:           pool,
@@ -769,12 +769,12 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 		return nil
 	}
 
-	b.LeftIterator.Reset(left)
-	b.RightIterator.Reset(right)
+	b.leftIterator.Reset(left)
+	b.rightIterator.Reset(right)
 
 	// Get first sample from left and right
-	lT, lF, lH, lOk := b.LeftIterator.Next()
-	rT, rF, rH, rOk := b.RightIterator.Next()
+	lT, lF, lH, lOk := b.leftIterator.Next()
+	rT, rF, rH, rOk := b.rightIterator.Next()
 	// Continue iterating until we exhaust either the LHS or RHS
 	// denoted by lOk or rOk being false.
 	for lOk && rOk {
@@ -786,7 +786,7 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 			}
 			if ok {
 				if resultHist != nil {
-					if len(hPoints) == 0 {
+					if hPoints == nil {
 						if err = prepareHSlice(); err != nil {
 							return types.InstantVectorSeriesData{}, err
 						}
@@ -796,7 +796,7 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 						T: lT,
 					})
 				} else {
-					if len(fPoints) == 0 {
+					if fPoints == nil {
 						if err = prepareFSlice(); err != nil {
 							return types.InstantVectorSeriesData{}, err
 						}
@@ -808,11 +808,14 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 				}
 			}
 		}
-		// Move the iterator with the lower timestamp
-		if lT < rT {
-			lT, lF, lH, lOk = b.LeftIterator.Next()
+		// Move the iterator with the lower timestamp, or both if equal
+		if lT == rT {
+			lT, lF, lH, lOk = b.leftIterator.Next()
+			rT, rF, rH, rOk = b.rightIterator.Next()
+		} else if lT < rT {
+			lT, lF, lH, lOk = b.leftIterator.Next()
 		} else {
-			rT, rF, rH, rOk = b.RightIterator.Next()
+			rT, rF, rH, rOk = b.rightIterator.Next()
 		}
 	}
 
