@@ -1277,25 +1277,21 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 
 				cleaner1BucketClient = &hookBucket{
 					Bucket: bucketClient,
-					preIterHook: func(_ context.Context, dir string, _ func(string) error, _ ...objstore.IterOption) {
+					preIterHook: func(_ context.Context, dir string, _ ...objstore.IterOption) {
 						// When listing blocks, wait until the 2nd cleaner started to list markers.
 						if path.Base(dir) == tenantID {
 							<-cleaner2ListMarkersStarted
 						}
 					},
-					preDeleteHook: func() func(context.Context, string) {
+					postDeleteHook: func() func(context.Context, string) {
 						once := sync.Once{}
 
 						return func(_ context.Context, name string) {
-							// When deleting the deletion mark of a block (which is expected to be the last object deleted of a block)
-							// unblock the 2nd cleaner markers listing with some delay. The delay is used to make sure this deletion
-							// completes before the 2nd cleaner start listing markers.
+							// After deleting the deletion mark of a block (which is expected to be the last object deleted of a block)
+							// unblock the 2nd cleaner markers listing.
 							if path.Base(name) == block.DeletionMarkFilename {
 								once.Do(func() {
-									go func() {
-										time.Sleep(100 * time.Millisecond)
-										close(cleaner2ListMarkersUnblocked)
-									}()
+									close(cleaner2ListMarkersUnblocked)
 								})
 							}
 						}
@@ -1304,12 +1300,12 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 
 				cleaner2BucketClient = &hookBucket{
 					Bucket: bucketClient,
-					preIterHook: func() func(context.Context, string, func(string) error, ...objstore.IterOption) {
+					preIterHook: func() func(context.Context, string, ...objstore.IterOption) {
 						once := sync.Once{}
 
-						return func(_ context.Context, dir string, _ func(string) error, _ ...objstore.IterOption) {
+						return func(_ context.Context, dir string, _ ...objstore.IterOption) {
 							if path.Base(dir) == block.MarkersPathname {
-								// When listing markers, signal that the 2nd cleaner started to list markers and
+								// Before listing markers, signal that the 2nd cleaner started to list markers and
 								// then wait until it should proceed.
 								once.Do(func() {
 									close(cleaner2ListMarkersStarted)
@@ -1332,20 +1328,21 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 				// of deletion marks and fetching their content (for new markers).
 				cleaner1BucketClient = &hookBucket{
 					Bucket: bucketClient,
-					preDeleteHook: func() func(context.Context, string) {
+					preDeleteHook: func(_ context.Context, name string) {
+						if path.Base(name) == block.DeletionMarkFilename {
+							// Before deleting the deletion mark of a block, wait until cleaner2 has listed the deletion marks,
+							// because we want cleaner2 to discover the deletion mark before we delete it.
+							<-cleaner2ListMarkersStarted
+						}
+					},
+					postDeleteHook: func() func(context.Context, string) {
 						once := sync.Once{}
 
 						return func(_ context.Context, name string) {
 							if path.Base(name) == block.DeletionMarkFilename {
-								// When deleting the deletion mark of a block, wait until cleaner2 has listed the deletion marks,
-								// because we want cleaner2 to discover the deletion mark before we delete it.
-								<-cleaner2ListMarkersStarted
-
-								// Then signal the deletion happened with some delay. The delay is used to make
-								// sure this deletion completes before the 2nd cleaner is unblocked.
+								// After deleting the deletion mark of a block, signal it to the 2nd cleaner.
 								once.Do(func() {
 									go func() {
-										time.Sleep(100 * time.Millisecond)
 										close(cleaner2GetDeletionMarkUnblocked)
 									}()
 								})
@@ -1358,16 +1355,14 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 				// and to fetch the deletion markers after the 1st cleaner has deleted the blocks.
 				cleaner2BucketClient = &hookBucket{
 					Bucket: bucketClient,
-					preIterHook: func() func(context.Context, string, func(string) error, ...objstore.IterOption) {
+					postIterHook: func() func(context.Context, string, ...objstore.IterOption) {
 						once := sync.Once{}
 
-						return func(_ context.Context, dir string, _ func(string) error, _ ...objstore.IterOption) {
-							// Signal when cleaner1 has listed markers with some delay. The delay is used to make
-							// sure this listing completes before the 1st cleaner is unblocked.
+						return func(_ context.Context, dir string, _ ...objstore.IterOption) {
+							// Signal when cleaner1 has listed markers.
 							if path.Base(dir) == block.MarkersPathname {
 								once.Do(func() {
 									go func() {
-										time.Sleep(100 * time.Millisecond)
 										close(cleaner2ListMarkersStarted)
 									}()
 								})
@@ -1439,20 +1434,31 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 type hookBucket struct {
 	objstore.Bucket
 
-	preIterHook   func(ctx context.Context, dir string, f func(string) error, options ...objstore.IterOption)
-	preGetHook    func(ctx context.Context, name string)
-	preDeleteHook func(ctx context.Context, name string)
+	preIterHook    func(ctx context.Context, dir string, options ...objstore.IterOption)
+	postIterHook   func(ctx context.Context, dir string, options ...objstore.IterOption)
+	preGetHook     func(ctx context.Context, name string)
+	postGetHook    func(ctx context.Context, name string)
+	preDeleteHook  func(ctx context.Context, name string)
+	postDeleteHook func(ctx context.Context, name string)
 }
 
 func (b *hookBucket) Iter(ctx context.Context, dir string, f func(string) error, options ...objstore.IterOption) error {
+	if b.postIterHook != nil {
+		defer b.postIterHook(ctx, dir, options...)
+	}
+
 	if b.preIterHook != nil {
-		b.preIterHook(ctx, dir, f, options...)
+		b.preIterHook(ctx, dir, options...)
 	}
 
 	return b.Bucket.Iter(ctx, dir, f, options...)
 }
 
 func (b *hookBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	if b.postGetHook != nil {
+		defer b.postGetHook(ctx, name)
+	}
+
 	if b.preGetHook != nil {
 		b.preGetHook(ctx, name)
 	}
@@ -1461,6 +1467,10 @@ func (b *hookBucket) Get(ctx context.Context, name string) (io.ReadCloser, error
 }
 
 func (b *hookBucket) Delete(ctx context.Context, name string) error {
+	if b.postDeleteHook != nil {
+		defer b.postDeleteHook(ctx, name)
+	}
+
 	if b.preDeleteHook != nil {
 		b.preDeleteHook(ctx, name)
 	}
