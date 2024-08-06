@@ -7,6 +7,9 @@
 topologySpreadConstraints:
 {{- range $constraint := $constraints }}
 - maxSkew: {{ $constraint.maxSkew }}
+{{- if $constraint.minDomains }}
+  minDomains: {{ $constraint.minDomains  }}
+{{- end }}
   topologyKey: {{ $constraint.topologyKey }}
   whenUnsatisfiable: {{ $constraint.whenUnsatisfiable }}
   labelSelector:
