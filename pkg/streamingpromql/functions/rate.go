@@ -92,16 +92,17 @@ func histogramRate(histogramBuffer *types.HPointRingBuffer, step types.RangeVect
 					return err
 				}
 			}
+
+			if p.H.UsesCustomBuckets() != usingCustomBuckets {
+				return histogram.ErrHistogramsIncompatibleSchema
+			}
+
 			if p.H.Schema < currentSchema {
 				delta = delta.CopyToSchema(p.H.Schema)
 			}
 
 			if p.H.CounterResetHint == histogram.GaugeType {
 				emitAnnotation(annotations.NewNativeHistogramNotCounterWarning)
-			}
-
-			if p.H.UsesCustomBuckets() != usingCustomBuckets {
-				return histogram.ErrHistogramsIncompatibleSchema
 			}
 
 			previousValue = p.H
