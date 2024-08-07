@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
+	"github.com/prometheus/prometheus/storage/remote/googleiam"
 )
 
 var (
@@ -180,6 +181,7 @@ var (
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
 		RemoteTimeout:    model.Duration(30 * time.Second),
+		ProtobufMessage:  RemoteWriteProtoMsgV1,
 		QueueConfig:      DefaultQueueConfig,
 		MetadataConfig:   DefaultMetadataConfig,
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
@@ -226,6 +228,9 @@ var (
 	DefaultExemplarsConfig = ExemplarsConfig{
 		MaxExemplars: 100000,
 	}
+
+	// DefaultOTLPConfig is the default OTLP configuration.
+	DefaultOTLPConfig = OTLPConfig{}
 )
 
 // Config is the top-level configuration for Prometheus's config files.
@@ -241,6 +246,7 @@ type Config struct {
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
+	OTLPConfig         OTLPConfig           `yaml:"otlp,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -279,7 +285,7 @@ func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 
 	jobNames := map[string]string{}
 	for i, scfg := range c.ScrapeConfigs {
-		// We do these checks for library users that would not call Validate in
+		// We do these checks for library users that would not call validate in
 		// Unmarshal.
 		if err := scfg.Validate(c.GlobalConfig); err != nil {
 			return nil, err
@@ -1055,6 +1061,50 @@ func CheckTargetAddress(address model.LabelValue) error {
 	return nil
 }
 
+// RemoteWriteProtoMsg represents the known protobuf message for the remote write
+// 1.0 and 2.0 specs.
+type RemoteWriteProtoMsg string
+
+// Validate returns error if the given reference for the protobuf message is not supported.
+func (s RemoteWriteProtoMsg) Validate() error {
+	switch s {
+	case RemoteWriteProtoMsgV1, RemoteWriteProtoMsgV2:
+		return nil
+	default:
+		return fmt.Errorf("unknown remote write protobuf message %v, supported: %v", s, RemoteWriteProtoMsgs{RemoteWriteProtoMsgV1, RemoteWriteProtoMsgV2}.String())
+	}
+}
+
+type RemoteWriteProtoMsgs []RemoteWriteProtoMsg
+
+func (m RemoteWriteProtoMsgs) Strings() []string {
+	ret := make([]string, 0, len(m))
+	for _, typ := range m {
+		ret = append(ret, string(typ))
+	}
+	return ret
+}
+
+func (m RemoteWriteProtoMsgs) String() string {
+	return strings.Join(m.Strings(), ", ")
+}
+
+var (
+	// RemoteWriteProtoMsgV1 represents the `prometheus.WriteRequest` protobuf
+	// message introduced in the https://prometheus.io/docs/specs/remote_write_spec/,
+	// which will eventually be deprecated.
+	//
+	// NOTE: This string is used for both HTTP header values and config value, so don't change
+	// this reference.
+	RemoteWriteProtoMsgV1 RemoteWriteProtoMsg = "prometheus.WriteRequest"
+	// RemoteWriteProtoMsgV2 represents the `io.prometheus.write.v2.Request` protobuf
+	// message introduced in https://prometheus.io/docs/specs/remote_write_spec_2_0/
+	//
+	// NOTE: This string is used for both HTTP header values and config value, so don't change
+	// this reference.
+	RemoteWriteProtoMsgV2 RemoteWriteProtoMsg = "io.prometheus.write.v2.Request"
+)
+
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
 	URL                  *config.URL       `yaml:"url"`
@@ -1064,6 +1114,9 @@ type RemoteWriteConfig struct {
 	Name                 string            `yaml:"name,omitempty"`
 	SendExemplars        bool              `yaml:"send_exemplars,omitempty"`
 	SendNativeHistograms bool              `yaml:"send_native_histograms,omitempty"`
+	// ProtobufMessage specifies the protobuf message to use against the remote
+	// receiver as specified in https://prometheus.io/docs/specs/remote_write_spec_2_0/
+	ProtobufMessage RemoteWriteProtoMsg `yaml:"protobuf_message,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -1072,6 +1125,7 @@ type RemoteWriteConfig struct {
 	MetadataConfig   MetadataConfig          `yaml:"metadata_config,omitempty"`
 	SigV4Config      *sigv4.SigV4Config      `yaml:"sigv4,omitempty"`
 	AzureADConfig    *azuread.AzureADConfig  `yaml:"azuread,omitempty"`
+	GoogleIAMConfig  *googleiam.Config       `yaml:"google_iam,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -1098,6 +1152,10 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		return err
 	}
 
+	if err := c.ProtobufMessage.Validate(); err != nil {
+		return fmt.Errorf("invalid protobuf_message value: %w", err)
+	}
+
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
@@ -1105,17 +1163,33 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		return err
 	}
 
-	httpClientConfigAuthEnabled := c.HTTPClientConfig.BasicAuth != nil ||
-		c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil
+	return validateAuthConfigs(c)
+}
 
-	if httpClientConfigAuthEnabled && (c.SigV4Config != nil || c.AzureADConfig != nil) {
-		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, & azuread must be configured")
+// validateAuthConfigs validates that at most one of basic_auth, authorization, oauth2, sigv4, azuread or google_iam must be configured.
+func validateAuthConfigs(c *RemoteWriteConfig) error {
+	var authConfigured []string
+	if c.HTTPClientConfig.BasicAuth != nil {
+		authConfigured = append(authConfigured, "basic_auth")
 	}
-
-	if c.SigV4Config != nil && c.AzureADConfig != nil {
-		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, & azuread must be configured")
+	if c.HTTPClientConfig.Authorization != nil {
+		authConfigured = append(authConfigured, "authorization")
 	}
-
+	if c.HTTPClientConfig.OAuth2 != nil {
+		authConfigured = append(authConfigured, "oauth2")
+	}
+	if c.SigV4Config != nil {
+		authConfigured = append(authConfigured, "sigv4")
+	}
+	if c.AzureADConfig != nil {
+		authConfigured = append(authConfigured, "azuread")
+	}
+	if c.GoogleIAMConfig != nil {
+		authConfigured = append(authConfigured, "google_iam")
+	}
+	if len(authConfigured) > 1 {
+		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, azuread or google_iam must be configured. Currently configured: %v", authConfigured)
+	}
 	return nil
 }
 
@@ -1134,7 +1208,7 @@ func validateHeadersForTracing(headers map[string]string) error {
 func validateHeaders(headers map[string]string) error {
 	for header := range headers {
 		if strings.ToLower(header) == "authorization" {
-			return errors.New("authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, or azuread parameter")
+			return errors.New("authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, azuread or google_iam parameter")
 		}
 		if _, ok := reservedHeaders[strings.ToLower(header)]; ok {
 			return fmt.Errorf("%s is a reserved header. It must not be changed", header)
@@ -1252,4 +1326,36 @@ func getGoGCEnv() int {
 		}
 	}
 	return DefaultRuntimeConfig.GoGC
+}
+
+// OTLPConfig is the configuration for writing to the OTLP endpoint.
+type OTLPConfig struct {
+	PromoteResourceAttributes []string `yaml:"promote_resource_attributes,omitempty"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *OTLPConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultOTLPConfig
+	type plain OTLPConfig
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+
+	seen := map[string]struct{}{}
+	var err error
+	for i, attr := range c.PromoteResourceAttributes {
+		attr = strings.TrimSpace(attr)
+		if attr == "" {
+			err = errors.Join(err, fmt.Errorf("empty promoted OTel resource attribute"))
+			continue
+		}
+		if _, exists := seen[attr]; exists {
+			err = errors.Join(err, fmt.Errorf("duplicated promoted OTel resource attribute %q", attr))
+			continue
+		}
+
+		seen[attr] = struct{}{}
+		c.PromoteResourceAttributes[i] = attr
+	}
+	return err
 }

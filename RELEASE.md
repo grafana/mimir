@@ -71,7 +71,7 @@ If something is not clear, you can get back to this document to learn more about
   - [ ] Run `./tools/release/check-changelog.sh LAST-RELEASE-TAG...main` and add missing PRs to CHANGELOG
   - [ ] Ensure CHANGELOG entries are [sorted by type](https://github.com/grafana/mimir/blob/main/docs/internal/contributing/README.md#changelog)
   - [ ] Add a new section for the new release so that `## main / unreleased` is blank and at the top. The new section should say `## x.y.0-rc.0`.
-- [ ] Run `./tools/release/notify-changelog-cut.sh`
+- [ ] Run `./tools/release/notify-changelog-cut.sh CHANGELOG.md`
 - [ ] Run `make mixin-screenshots`
   - Before opening the PR, review all updated screenshots and ensure no sensitive data is disclosed
 - [ ] Create new release branch
@@ -143,7 +143,7 @@ If something is not clear, you can get back to this document to learn more about
         For instance, if versions 3.1, 3.0 and 2.10 are configured in `renovate.json`, `renovate.json` should keep updated the following branches:
         `main`, `release-3.1` and `release-3.0`.
   - [ ] Announce the release on socials
-  - [ ] Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
+  - [ ] Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility.go`)
     - Keep the last 3 minor releases
   - [ ] Open a PR to update the mixin in ["Self-hosted Grafana Mimir" integration](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-mimir/)
     - _This is addressed by Grafana Labs_
@@ -172,7 +172,7 @@ This helps ongoing PRs to get their changes in the right place, and to consider 
    - Add a new section for the new release so that `## main / unreleased` is blank and at the top.
    - The new section should say `## x.y.0-rc.0`.
 1. Get this PR reviewed and merged.
-1. Run `./tools/release/notify-changelog-cut.sh` to comment on open PRs with a CHANGELOG entry to rebase on `main` and move the CHANGELOG entry to the top under `## main / unreleased`
+1. Run `./tools/release/notify-changelog-cut.sh CHANGELOG.md` to comment on open PRs with a CHANGELOG entry to rebase on `main` and move the CHANGELOG entry to the top under `## main / unreleased`
 
 ### Prepare your release
 

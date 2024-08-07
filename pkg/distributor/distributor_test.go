@@ -12,7 +12,6 @@ import (
 	"io"
 	"math"
 	"math/rand"
-	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -42,6 +41,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/scrape"
+	promtestutil "github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kfake"
@@ -116,7 +116,6 @@ func TestConfig_Validate(t *testing.T) {
 func TestDistributor_Push(t *testing.T) {
 	// Metrics to assert on.
 	lastSeenTimestamp := "cortex_distributor_latest_seen_sample_timestamp_seconds"
-	distributorSampleDelay := "cortex_distributor_sample_delay_seconds"
 	ctx := user.InjectOrgID(context.Background(), "user")
 
 	now := time.Now()
@@ -204,122 +203,6 @@ func TestDistributor_Push(t *testing.T) {
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
 				cortex_distributor_latest_seen_sample_timestamp_seconds{user="user"} 123456789.024
-			`,
-		},
-		"A push to ingesters with an old sample should report the correct metrics with no metadata": {
-			numIngesters:   3,
-			happyIngesters: 2,
-			samples:        samplesIn{num: 1, startTimestampMs: now.UnixMilli() - 80000*1000}, // 80k seconds old
-			metadata:       0,
-			metricNames:    []string{distributorSampleDelay},
-			expectedMetrics: `
-				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
-				# TYPE cortex_distributor_sample_delay_seconds histogram
-				cortex_distributor_sample_delay_seconds_bucket{le="-60"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="-15"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="-5"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="30"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="60"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="120"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="240"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="480"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="600"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="1800"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="3600"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="7200"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="10800"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="21600"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="86400"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 2
-				cortex_distributor_sample_delay_seconds_sum 160000
-				cortex_distributor_sample_delay_seconds_count 2
-			`,
-		},
-		"A push to ingesters with a current sample should report the correct metrics with no metadata": {
-			numIngesters:   3,
-			happyIngesters: 2,
-			samples:        samplesIn{num: 1, startTimestampMs: now.UnixMilli() - 1000}, // 1 second old
-			metadata:       0,
-			metricNames:    []string{distributorSampleDelay},
-			expectedMetrics: `
-				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
-				# TYPE cortex_distributor_sample_delay_seconds histogram
-				cortex_distributor_sample_delay_seconds_bucket{le="-60"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="-15"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="-5"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="30"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="60"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="120"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="240"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="480"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="600"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="1800"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="3600"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="7200"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="10800"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="21600"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="86400"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 2
-				cortex_distributor_sample_delay_seconds_sum 2.000
-				cortex_distributor_sample_delay_seconds_count 2
-			`,
-		},
-		"A push to ingesters without samples should report the correct metrics": {
-			numIngesters:   3,
-			happyIngesters: 2,
-			samples:        samplesIn{num: 0, startTimestampMs: 123456789000},
-			metadata:       1,
-			metricNames:    []string{distributorSampleDelay},
-			expectedMetrics: `
-				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
-				# TYPE cortex_distributor_sample_delay_seconds histogram
-				cortex_distributor_sample_delay_seconds_bucket{le="-60"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="-15"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="-5"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="30"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="60"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="120"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="240"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="480"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="600"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="1800"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="3600"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="7200"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="10800"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="21600"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="86400"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 0
-				cortex_distributor_sample_delay_seconds_sum 0
-				cortex_distributor_sample_delay_seconds_count 0
-			`,
-		},
-		"A push to ingesters with samples that have timestamps which are in the future relative to wall clock time should be tracked correctly": {
-			numIngesters:   3,
-			happyIngesters: 2,
-			samples:        samplesIn{num: 1, startTimestampMs: now.UnixMilli() + 17*1000},
-			metadata:       1,
-			metricNames:    []string{distributorSampleDelay},
-			expectedMetrics: `
-				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
-				# TYPE cortex_distributor_sample_delay_seconds histogram
-				cortex_distributor_sample_delay_seconds_bucket{le="-60"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="-15"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="-5"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="30"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="60"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="120"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="240"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="480"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="600"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="1800"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="3600"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="7200"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="10800"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="21600"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="86400"} 2
-				cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 2
-				cortex_distributor_sample_delay_seconds_sum -34
-				cortex_distributor_sample_delay_seconds_count 2
 			`,
 		},
 		"A timed out push should fail": {
@@ -1041,20 +924,6 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 	}
 }
 
-func TestDistributor_PushWithCircuitBreakers(t *testing.T) {
-	ds, _, _, _ := prepare(t, prepConfig{
-		numIngesters:       3,
-		happyIngesters:     3,
-		numDistributors:    1,
-		circuitBreakerOpen: true,
-	})
-
-	ctx := user.InjectOrgID(context.Background(), "user")
-	err := ds[0].push(ctx, NewParsedRequest(makeWriteRequest(123456789000, 10, 0, false, true, "foo")))
-	require.Error(t, err)
-	require.ErrorAs(t, err, &circuitBreakerOpenError{})
-}
-
 func TestDistributor_PushQuery(t *testing.T) {
 	const metricName = "foo"
 	ctx := user.InjectOrgID(context.Background(), "user")
@@ -1291,7 +1160,7 @@ func TestDistributor_Push_LabelRemoval(t *testing.T) {
 			timeseries := ingesters[i].series()
 			assert.Equal(t, 1, len(timeseries))
 			for _, v := range timeseries {
-				assert.Equal(t, tc.expectedSeries, mimirpb.FromLabelAdaptersToLabels(v.Labels))
+				promtestutil.RequireEqual(t, tc.expectedSeries, mimirpb.FromLabelAdaptersToLabels(v.Labels))
 			}
 		}
 	}
@@ -2334,7 +2203,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Push fixtures
 					for _, series := range fixtures {
@@ -2483,7 +2352,7 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Push test data.
 					for _, series := range pushedData {
@@ -2503,7 +2372,8 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 					}
 
 					require.NoError(t, err)
-					assert.ElementsMatch(t, testData.expectedSeries, series)
+					slices.SortFunc(series, labels.Compare)
+					promtestutil.RequireEqual(t, testData.expectedSeries, series)
 
 					// Check that query stats are set correctly.
 					assert.Equal(t, uint64(len(testData.expectedSeries)), qStats.GetFetchedSeriesCount())
@@ -2640,7 +2510,7 @@ func TestDistributor_ActiveNativeHistogramSeries(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Push test data.
 					for _, series := range pushedData {
@@ -3186,7 +3056,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Push fixtures
 					for _, series := range fixtures {
@@ -3265,7 +3135,7 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Push metadata
 					req := makeWriteRequest(0, 0, 10, false, true, "foo")
@@ -3343,7 +3213,7 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "label-names-values")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Create distributor
 					limits := validation.Limits{}
@@ -3423,7 +3293,7 @@ func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "label-names-values")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Create distributor
 					ds, _, _, _ := prepare(t, prepConfig{
@@ -3484,7 +3354,7 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 
 				// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 				ctx := user.InjectOrgID(context.Background(), "label-names-values")
-				ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+				ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 				// Create distributor
 				ds, _, _, _ := prepare(t, prepConfig{
@@ -5114,8 +4984,7 @@ type prepConfig struct {
 
 	configure func(*Config)
 
-	timeOut            bool
-	circuitBreakerOpen bool
+	timeOut bool
 
 	// Ingest storage specific configuration.
 	ingestStorageEnabled          bool
@@ -5274,7 +5143,6 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			zone:                          zone,
 			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
 			timeOut:                       cfg.timeOut,
-			circuitBreakerOpen:            cfg.circuitBreakerOpen,
 			disableStreamingResponse:      cfg.disableStreamingResponse,
 		}
 
@@ -5874,7 +5742,6 @@ type mockIngester struct {
 	timeOut                       bool
 	tokens                        []uint32
 	id                            int
-	circuitBreakerOpen            bool
 	disableStreamingResponse      bool
 
 	// partitionReader is responsible to consume a partition from Kafka when the
@@ -5979,10 +5846,6 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ..
 
 	if i.timeOut {
 		return nil, context.DeadlineExceeded
-	}
-
-	if i.circuitBreakerOpen {
-		return nil, client.ErrCircuitBreakerOpen{}
 	}
 
 	if len(req.Timeseries) > 0 && i.timeseries == nil {
@@ -6631,12 +6494,12 @@ func (i *mockIngester) enforceReadConsistency(ctx context.Context) error {
 		return nil
 	}
 
-	level, ok := api.ReadConsistencyFromContext(ctx)
+	level, ok := api.ReadConsistencyLevelFromContext(ctx)
 	if !ok || level != api.ReadConsistencyStrong {
 		return nil
 	}
 
-	return i.partitionReader.WaitReadConsistency(ctx)
+	return i.partitionReader.WaitReadConsistencyUntilLastProducedOffset(ctx)
 }
 
 func (i *mockIngester) enforceQueryDelay(ctx context.Context) error {
@@ -7529,8 +7392,6 @@ func TestHandlePushError(t *testing.T) {
 	testErrorMsg := "this is a test error message"
 	userID := "test"
 	errWithUserID := fmt.Errorf("user=%s: %s", userID, testErrorMsg)
-	httpGrpc4xxErr := httpgrpc.Errorf(http.StatusBadRequest, testErrorMsg)
-	httpGrpc5xxErr := httpgrpc.Errorf(http.StatusServiceUnavailable, testErrorMsg)
 	test := map[string]struct {
 		pushError          error
 		expectedGRPCError  *status.Status
@@ -7543,14 +7404,6 @@ func TestHandlePushError(t *testing.T) {
 		"a context.DeadlineExceeded error gives context.DeadlineExceeded": {
 			pushError:          context.DeadlineExceeded,
 			expectedOtherError: context.DeadlineExceeded,
-		},
-		"a 4xx HTTP gRPC error gives the same 4xx HTTP gRPC error": {
-			pushError:          httpGrpc4xxErr,
-			expectedOtherError: httpGrpc4xxErr,
-		},
-		"a 5xx HTTP gRPC error gives the same 5xx HTTP gRPC error": {
-			pushError:          httpGrpc5xxErr,
-			expectedOtherError: httpGrpc5xxErr,
 		},
 		"an Error gives the error returned by toErrorWithGRPCStatus()": {
 			pushError:         mockDistributorErr(testErrorMsg),

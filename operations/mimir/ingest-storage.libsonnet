@@ -8,10 +8,13 @@
     ingest_storage_ingester_instance_ring_dedicated_prefix_enabled: false,
     ingest_storage_ingester_instance_ring_dedicated_prefix: 'partition-ingesters/',
 
+    // How many zones ingesters should be deployed to.
+    ingest_storage_ingester_zones: 3,
+
     commonConfig+:: if !$._config.ingest_storage_enabled then {} else
       $.ingest_storage_args +
 
-      // The following should only be configured on distributors and ingesters, but it's currently required to pass
+      // The following should only be configured on distributors, ingesters and query-frontends, but it's currently required to pass
       // config validation when ingest storage is enabled.
       // TODO remove once we've improved the config validation.
       $.ingest_storage_kafka_consumer_args,
@@ -75,6 +78,12 @@
     $.ingest_storage_kafka_producer_args +
     $.ingest_storage_ruler_args,
 
+  ingester_args+:: if !$._config.ingest_storage_enabled then {} else
+    $.ingest_storage_ingester_args,
+
+  query_frontend_args+:: if !$._config.ingest_storage_enabled then {} else
+    $.ingest_storage_query_frontend_args,
+
   ingest_storage_distributor_args+:: {
     // Increase the default remote write timeout (applied to writing to Kafka too) because writing
     // to Kafka-compatible backend may be slower than writing to ingesters.
@@ -107,5 +116,24 @@
     }
   ),
 
-  ingester_args+:: if !$._config.ingest_storage_enabled then {} else $.ingest_storage_ingester_args,
+  ingest_storage_query_frontend_args+:: {
+    // Reduce the LPO polling interval to improve latency of strong consistency reads.
+    'ingest-storage.kafka.last-produced-offset-poll-interval': '500ms',
+  },
+
+  //
+  // Enforce the configured ingester zones.
+  //
+
+  assert !$._config.ingest_storage_enabled || ($._config.ingest_storage_ingester_zones >= 2 && $._config.ingest_storage_ingester_zones <= 3) : 'ingest storage requires either 2 or 3 ingester zones',
+
+  ingester_zone_c_statefulset:
+    if $._config.ingest_storage_enabled && $._config.ingest_storage_ingester_zones < 3
+    then null
+    else super.ingester_zone_c_statefulset,
+
+  ingester_zone_c_service:
+    if $._config.ingest_storage_enabled && $._config.ingest_storage_ingester_zones < 3
+    then null
+    else super.ingester_zone_c_service,
 }

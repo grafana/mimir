@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/pprof"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,11 +36,14 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
+	"github.com/matttproud/golang_protobuf_extensions/pbutil"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	amconfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
+	pb "github.com/prometheus/alertmanager/nflog/nflogpb"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/pkg/labels"
+	"github.com/prometheus/alertmanager/silence/silencepb"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -396,9 +400,10 @@ templates:
 	require.Len(t, am.alertmanagers, 4)
 
 	// The Mimir configuration was empty, so the Grafana configuration should be chosen for user 4.
-	parsed, err := createUsableGrafanaConfig(userGrafanaCfg, nil)
+	amCfg, err := createUsableGrafanaConfig(userGrafanaCfg, am.fallbackConfig)
 	require.NoError(t, err)
-	require.Equal(t, parsed, am.cfgs["user4"])
+	grafanaAlertConfigDesc := amCfg.AlertConfigDesc
+	require.Equal(t, grafanaAlertConfigDesc, am.cfgs["user4"])
 
 	dirs = am.getPerUserDirectories()
 	user4Dir := dirs["user4"]
@@ -428,7 +433,7 @@ templates:
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, parsed, am.cfgs["user4"])
+	require.Equal(t, grafanaAlertConfigDesc, am.cfgs["user4"])
 
 	// Add a Mimir fallback config for the same user.
 	defaultConfig := alertspb.AlertConfigDesc{
@@ -2447,9 +2452,6 @@ func TestComputeConfig(t *testing.T) {
 	var grafanaCfg GrafanaAlertmanagerConfig
 	require.NoError(t, json.Unmarshal([]byte(grafanaConfig), &grafanaCfg))
 
-	rawGrafanaCfg, err := json.Marshal(grafanaCfg.AlertmanagerConfig)
-	require.NoError(t, err)
-
 	grafanaExternalURL := "https://grafana.com"
 
 	fallbackCfg, err := definition.LoadCompat([]byte(am.fallbackConfig))
@@ -2462,11 +2464,12 @@ func TestComputeConfig(t *testing.T) {
 	mimirExternalURL := am.cfg.ExternalURL.String()
 
 	tests := []struct {
-		name   string
-		cfg    alertspb.AlertConfigDescs
-		expErr string
-		expCfg alertspb.AlertConfigDesc
-		expURL string
+		name       string
+		cfg        alertspb.AlertConfigDescs
+		expErr     string
+		expCfg     alertspb.AlertConfigDesc
+		expURL     string
+		expHeaders map[string]string
 	}{
 		{
 			name: "no grafana configuration",
@@ -2490,11 +2493,12 @@ func TestComputeConfig(t *testing.T) {
 					RawConfig: simpleConfigOne,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:        "user",
-					RawConfig:   "",
-					Default:     false,
-					Promoted:    true,
-					ExternalUrl: grafanaExternalURL,
+					User:          "user",
+					RawConfig:     "",
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
 				},
 			},
 			expCfg: alertspb.AlertConfigDesc{
@@ -2511,10 +2515,11 @@ func TestComputeConfig(t *testing.T) {
 					RawConfig: simpleConfigOne,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:        "user",
-					RawConfig:   grafanaConfig,
-					Promoted:    false,
-					ExternalUrl: grafanaExternalURL,
+					User:          "user",
+					RawConfig:     grafanaConfig,
+					Promoted:      false,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
 				},
 			},
 			expCfg: alertspb.AlertConfigDesc{
@@ -2531,11 +2536,12 @@ func TestComputeConfig(t *testing.T) {
 					RawConfig: simpleConfigOne,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:        "user",
-					RawConfig:   grafanaConfig,
-					Default:     true,
-					Promoted:    true,
-					ExternalUrl: grafanaExternalURL,
+					User:          "user",
+					RawConfig:     grafanaConfig,
+					Default:       true,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
 				},
 			},
 			expCfg: alertspb.AlertConfigDesc{
@@ -2548,19 +2554,21 @@ func TestComputeConfig(t *testing.T) {
 			name: "no mimir configuration",
 			cfg: alertspb.AlertConfigDescs{
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:        "user",
-					RawConfig:   grafanaConfig,
-					Default:     false,
-					Promoted:    true,
-					ExternalUrl: grafanaExternalURL,
+					User:          "user",
+					RawConfig:     grafanaConfig,
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
 				},
 			},
 			expCfg: alertspb.AlertConfigDesc{
 				User:      "user",
-				RawConfig: string(rawGrafanaCfg),
+				RawConfig: string(combinedCfg),
 				Templates: []*alertspb.TemplateDesc{},
 			},
-			expURL: grafanaExternalURL,
+			expURL:     grafanaExternalURL,
+			expHeaders: map[string]string{"Test-Header": "test-value"},
 		},
 		{
 			name: "empty mimir configuration",
@@ -2570,19 +2578,21 @@ func TestComputeConfig(t *testing.T) {
 					RawConfig: "",
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:        "user",
-					RawConfig:   grafanaConfig,
-					Default:     false,
-					Promoted:    true,
-					ExternalUrl: grafanaExternalURL,
+					User:          "user",
+					RawConfig:     grafanaConfig,
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
 				},
 			},
 			expCfg: alertspb.AlertConfigDesc{
 				User:      "user",
-				RawConfig: string(rawGrafanaCfg),
+				RawConfig: string(combinedCfg),
 				Templates: []*alertspb.TemplateDesc{},
 			},
-			expURL: grafanaExternalURL,
+			expURL:     grafanaExternalURL,
+			expHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
 		},
 		{
 			name: "default mimir configuration",
@@ -2592,11 +2602,12 @@ func TestComputeConfig(t *testing.T) {
 					RawConfig: am.fallbackConfig,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:        "user",
-					RawConfig:   grafanaConfig,
-					Default:     false,
-					Promoted:    true,
-					ExternalUrl: grafanaExternalURL,
+					User:          "user",
+					RawConfig:     grafanaConfig,
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
 				},
 			},
 			expCfg: alertspb.AlertConfigDesc{
@@ -2604,7 +2615,8 @@ func TestComputeConfig(t *testing.T) {
 				RawConfig: string(combinedCfg),
 				Templates: []*alertspb.TemplateDesc{},
 			},
-			expURL: grafanaExternalURL,
+			expURL:     grafanaExternalURL,
+			expHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
 		},
 		{
 			// TODO: change once merging configs is implemented.
@@ -2615,11 +2627,12 @@ func TestComputeConfig(t *testing.T) {
 					RawConfig: simpleConfigOne,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:        "user",
-					RawConfig:   grafanaConfig,
-					Default:     false,
-					Promoted:    true,
-					ExternalUrl: grafanaExternalURL,
+					User:          "user",
+					RawConfig:     grafanaConfig,
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
 				},
 			},
 			expCfg: alertspb.AlertConfigDesc{
@@ -2632,15 +2645,16 @@ func TestComputeConfig(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			cfg, url, err := am.computeConfig(test.cfg)
+			cfg, err := am.computeConfig(test.cfg)
 			if test.expErr != "" {
 				require.EqualError(t, err, test.expErr)
 				return
 			}
 
 			require.NoError(t, err)
-			require.Equal(t, test.expCfg, cfg)
-			require.Equal(t, test.expURL, url.String())
+			require.Equal(t, test.expCfg, cfg.AlertConfigDesc)
+			require.Equal(t, test.expURL, cfg.tmplExternalURL.String())
+			require.Equal(t, test.expHeaders, cfg.staticHeaders)
 		})
 	}
 }
@@ -2844,6 +2858,325 @@ func Test_configChanged(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			r := configChanged(c.left, c.right)
 			assert.Equal(t, c.changed, r)
+		})
+	}
+}
+
+func TestSyncStates(t *testing.T) {
+	user := "test-user"
+	externalURL, err := url.Parse("http://test.com")
+	require.NoError(t, err)
+
+	// Create test Grafana state.
+	var buf bytes.Buffer
+	_, err = pbutil.WriteDelimited(&buf, &pb.MeshEntry{
+		Entry: &pb.Entry{
+			Receiver:     &pb.Receiver{GroupName: `Grafana`, Integration: "grafanaIntegration", Idx: 0},
+			GroupKey:     []byte(`{}/{grafana="true"}/{receiver="grafana webhook"}:{alertname="grafana test"}`),
+			Timestamp:    time.Now(),
+			FiringAlerts: []uint64{14588439739663070854},
+		},
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	require.NoError(t, err)
+	grafanaNflog := make([]byte, buf.Len())
+	copy(grafanaNflog, buf.Bytes())
+	buf.Reset()
+
+	_, err = pbutil.WriteDelimited(&buf, &silencepb.MeshSilence{
+		Silence: &silencepb.Silence{
+			Id: "grafana silence",
+		},
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	require.NoError(t, err)
+	grafanaSilences := make([]byte, buf.Len())
+	copy(grafanaSilences, buf.Bytes())
+	buf.Reset()
+
+	// Create test Mimir state.
+	_, err = pbutil.WriteDelimited(&buf, &pb.MeshEntry{
+		Entry: &pb.Entry{
+			Receiver:     &pb.Receiver{GroupName: `Mimir`, Integration: "mimirIntegration", Idx: 0},
+			GroupKey:     []byte(`{}/{mimir="true"}/{receiver="mimir webhook"}:{alertname="mimir test"}`),
+			Timestamp:    time.Now(),
+			FiringAlerts: []uint64{14588439739663070854},
+		},
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	require.NoError(t, err)
+	mimirNflog := make([]byte, buf.Len())
+	copy(mimirNflog, buf.Bytes())
+	buf.Reset()
+
+	_, err = pbutil.WriteDelimited(&buf, &silencepb.MeshSilence{
+		Silence: &silencepb.Silence{
+			Id: "mimir silence",
+		},
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	require.NoError(t, err)
+	mimirSilences := make([]byte, buf.Len())
+	copy(mimirSilences, buf.Bytes())
+	buf.Reset()
+
+	testMimirState := alertspb.FullStateDesc{
+		State: &clusterpb.FullState{
+			Parts: []clusterpb.Part{
+				{
+					Key:  nflogStateKeyPrefix + user,
+					Data: mimirNflog,
+				},
+				{
+					Key:  silencesStateKeyPrefix + user,
+					Data: mimirSilences,
+				},
+			},
+		},
+	}
+
+	ctx := context.Background()
+	tests := []struct {
+		name                 string
+		cfg                  amConfig
+		mimirState           *alertspb.FullStateDesc
+		parts                map[string][]byte
+		expNoNewAlertmanager bool
+		expErr               string
+	}{
+		{
+			name: "not using grafana config should be a no-op",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User: user,
+				},
+			},
+			expNoNewAlertmanager: true,
+		},
+		{
+			name: "no grafana state should be a no-op",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User: user,
+				},
+				usingGrafanaConfig: true,
+			},
+			expNoNewAlertmanager: true,
+		},
+		{
+			name: "invalid alertmanager configuration should cause an error",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: "invalid",
+				},
+				tmplExternalURL:    externalURL,
+				usingGrafanaConfig: true,
+			},
+			parts:  map[string][]byte{"notifications": grafanaNflog},
+			expErr: fmt.Sprintf("error creating new Alertmanager for user %[1]s: no usable Alertmanager configuration for %[1]s", user),
+		},
+		{
+			name: "invalid part key",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL:    externalURL,
+				usingGrafanaConfig: true,
+			},
+			parts:  map[string][]byte{"invalid": []byte("invalid")},
+			expErr: "unknown part key \"invalid\"",
+		},
+		{
+			name: "valid alertmanager configuration should cause alertmanager creation and state promotion",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL:    externalURL,
+				usingGrafanaConfig: true,
+			},
+			parts: map[string][]byte{"notifications": grafanaNflog},
+		},
+		{
+			name: "starting with existing mimir state should merge states",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL:    externalURL,
+				usingGrafanaConfig: true,
+			},
+			mimirState: &testMimirState,
+			parts:      map[string][]byte{"notifications": grafanaNflog, "silences": grafanaSilences},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := prepareInMemoryAlertStore()
+			am := setupSingleMultitenantAlertmanager(t,
+				mockAlertmanagerConfig(t),
+				store,
+				nil,
+				featurecontrol.NoopFlags{},
+				log.NewNopLogger(),
+				prometheus.NewPedanticRegistry(),
+			)
+
+			if test.mimirState != nil {
+				require.NoError(t, store.SetFullState(ctx, user, *test.mimirState))
+				require.NoError(t, am.setConfig(test.cfg))
+				require.NotNil(t, am.alertmanagers[user])
+				require.NoError(t, am.alertmanagers[user].WaitInitialStateSync(ctx))
+				// Make broadcast a no-op for tests, otherwise it will block indefinitely.
+				am.alertmanagers[user].silences.SetBroadcast(func(_ []byte) {})
+			}
+			if test.parts != nil {
+				var s clusterpb.FullState
+				for k, v := range test.parts {
+					s.Parts = append(s.Parts, clusterpb.Part{
+						Key:  k,
+						Data: v,
+					})
+				}
+				require.NoError(t, store.SetFullGrafanaState(ctx, user, alertspb.FullStateDesc{State: &s}))
+			}
+
+			if test.expErr != "" {
+				err := am.syncStates(ctx, test.cfg)
+				require.Error(t, err)
+				require.Equal(t, test.expErr, err.Error())
+				require.Nil(t, am.alertmanagers[user])
+				return
+			}
+
+			// Make broadcast a no-op for tests.
+			if am, ok := am.alertmanagers[user]; ok {
+				am.silences.SetBroadcast(func(_ []byte) {})
+			}
+
+			require.NoError(t, am.syncStates(ctx, test.cfg))
+			if test.expNoNewAlertmanager {
+				require.Nil(t, am.alertmanagers[user])
+				return
+			}
+			require.NotNil(t, am.alertmanagers[user])
+			require.True(t, am.alertmanagers[user].usingGrafanaState.Load())
+
+			// Grafana state should be deleted after merging.
+			_, err = store.GetFullGrafanaState(ctx, user)
+			require.Error(t, err)
+			require.Equal(t, "alertmanager storage object not found", err.Error())
+
+			// States should be merged.
+			require.NotNil(t, am.alertmanagers[user])
+			s, err := am.alertmanagers[user].getFullState()
+			require.NoError(t, err)
+
+			// One part for notification log, another one for silences.
+			require.Len(t, s.Parts, 2)
+			require.True(t, s.Parts[0].Key == nflogStateKeyPrefix+user || s.Parts[1].Key == nflogStateKeyPrefix+user)
+			require.True(t, s.Parts[0].Key == silencesStateKeyPrefix+user || s.Parts[1].Key == silencesStateKeyPrefix+user)
+
+			var silencesPart, nflogPart string
+			for _, p := range s.Parts {
+				require.True(t, p.Key == silencesStateKeyPrefix+user || p.Key == nflogStateKeyPrefix+user)
+				if p.Key == silencesStateKeyPrefix+user {
+					silencesPart = p.String()
+				} else {
+					nflogPart = p.String()
+				}
+			}
+
+			// We don't need to check the exact content of the state, the merging logic is tested in the state replication tests.
+			if _, ok := test.parts["notifications"]; ok {
+				require.True(t, strings.Contains(nflogPart, "grafana webhook"))
+			}
+			if _, ok := test.parts["silences"]; ok {
+				require.True(t, strings.Contains(silencesPart, "grafana silence"))
+			}
+			if test.mimirState != nil {
+				require.True(t, strings.Contains(nflogPart, "mimir webhook"))
+				require.True(t, strings.Contains(silencesPart, "mimir silence"))
+			}
+		})
+	}
+
+	preExistingAlertmanagerTests := []struct {
+		name            string
+		cfg             amConfig
+		initialPromoted bool
+		expPromoted     bool
+	}{
+		{
+			name: "not using grafana config should toggle the promoted flag off",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL: externalURL,
+			},
+			initialPromoted: true,
+			expPromoted:     false,
+		},
+		{
+			name: "not using grafana config should be a no-op if the alertmanager is not promoted",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL: externalURL,
+			},
+			initialPromoted: false,
+			expPromoted:     false,
+		},
+		{
+			name: "attempting to promote an already promoted alertmanager should not change the flag",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL:    externalURL,
+				usingGrafanaConfig: true,
+			},
+			initialPromoted: true,
+			expPromoted:     true,
+		},
+	}
+
+	for _, test := range preExistingAlertmanagerTests {
+		t.Run(test.name, func(t *testing.T) {
+			store := prepareInMemoryAlertStore()
+			am := setupSingleMultitenantAlertmanager(t,
+				mockAlertmanagerConfig(t),
+				store,
+				nil,
+				featurecontrol.NoopFlags{},
+				log.NewNopLogger(),
+				prometheus.NewPedanticRegistry(),
+			)
+
+			require.NoError(t, am.setConfig(amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      test.cfg.User,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL: externalURL,
+			}))
+			require.NotNil(t, am.alertmanagers[test.cfg.User])
+			am.alertmanagers[test.cfg.User].usingGrafanaState.Store(test.initialPromoted)
+
+			require.NoError(t, am.syncStates(ctx, test.cfg))
+			require.NotNil(t, am.alertmanagers[test.cfg.User])
+			require.Equal(t, test.expPromoted, am.alertmanagers[test.cfg.User].usingGrafanaState.Load())
 		})
 	}
 }

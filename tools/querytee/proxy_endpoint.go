@@ -69,7 +69,7 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go p.executeBackendRequests(r, backends, resCh)
 
 	// Wait for the first response that's feasible to be sent back to the client.
-	downstreamRes := p.waitBackendResponseForDownstream(backends, resCh)
+	downstreamRes := p.waitBackendResponseForDownstream(resCh)
 
 	if downstreamRes.err != nil {
 		http.Error(w, downstreamRes.err.Error(), http.StatusInternalServerError)
@@ -296,39 +296,24 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 	}
 }
 
-func (p *ProxyEndpoint) waitBackendResponseForDownstream(backends []ProxyBackendInterface, resCh chan *backendResponse) *backendResponse {
-	var (
-		responses                 = make([]*backendResponse, 0, len(backends))
-		preferredResponseReceived = false
-	)
+func (p *ProxyEndpoint) waitBackendResponseForDownstream(resCh chan *backendResponse) *backendResponse {
+	var firstResponse *backendResponse
 
 	for res := range resCh {
-		// If the response is successful we can immediately return it if:
-		// - There's no preferred backend configured
-		// - Or this response is from the preferred backend
-		// - Or the preferred backend response has already been received and wasn't successful
-		if res.succeeded() && (p.preferredBackend == nil || res.backend.Preferred() || preferredResponseReceived) {
+		// If the response came from the preferred backend, return it immediately.
+		// If there is no preferred backend configured, return the response if it was successful.
+		if res.backend.Preferred() || (p.preferredBackend == nil && res.succeeded()) {
 			return res
 		}
 
-		// If we received a non-successful response from the preferred backend, then we can
-		// return the first successful response received so far (if any).
-		if res.backend.Preferred() && !res.succeeded() {
-			preferredResponseReceived = true
-
-			for _, prevRes := range responses {
-				if prevRes.succeeded() {
-					return prevRes
-				}
-			}
+		// Otherwise if this was the first response, keep track of it for later.
+		if firstResponse == nil {
+			firstResponse = res
 		}
-
-		// Otherwise we keep track of it for later.
-		responses = append(responses, res)
 	}
 
 	// No successful response, so let's pick the first one.
-	return responses[0]
+	return firstResponse
 }
 
 func (p *ProxyEndpoint) compareResponses(expectedResponse, actualResponse *backendResponse) (ComparisonResult, error) {

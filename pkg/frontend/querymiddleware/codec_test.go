@@ -34,6 +34,9 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	testutil "github.com/grafana/mimir/pkg/util/test"
 )
 
 var (
@@ -67,7 +70,7 @@ func requireEqualMetricsQueryRequest(t *testing.T, expected, actual MetricsQuery
 	require.Equal(t, expected.GetHints(), actual.GetHints())
 }
 
-func TestMetricsQueryRequest(t *testing.T) {
+func TestPrometheusCodec_EncodeMetricsQueryRequest(t *testing.T) {
 	codec := newTestPrometheusCodec()
 
 	for i, tc := range []struct {
@@ -471,7 +474,7 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 	}
 }
 
-func TestLabelsQueryRequest(t *testing.T) {
+func TestPrometheusCodec_EncodeLabelsQueryRequest(t *testing.T) {
 	codec := newTestPrometheusCodec()
 
 	for _, testCase := range []struct {
@@ -686,7 +689,7 @@ func TestLabelsQueryRequest(t *testing.T) {
 	}
 }
 
-func TestPrometheusCodec_EncodeRequest_AcceptHeader(t *testing.T) {
+func TestPrometheusCodec_EncodeMetricsQueryRequest_AcceptHeader(t *testing.T) {
 	for _, queryResultPayloadFormat := range allFormats {
 		t.Run(queryResultPayloadFormat, func(t *testing.T) {
 			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, queryResultPayloadFormat)
@@ -706,15 +709,48 @@ func TestPrometheusCodec_EncodeRequest_AcceptHeader(t *testing.T) {
 	}
 }
 
-func TestPrometheusCodec_EncodeRequest_ReadConsistency(t *testing.T) {
+func TestPrometheusCodec_EncodeMetricsQueryRequest_ReadConsistency(t *testing.T) {
 	for _, consistencyLevel := range api.ReadConsistencies {
 		t.Run(consistencyLevel, func(t *testing.T) {
 			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf)
-			ctx := api.ContextWithReadConsistency(context.Background(), consistencyLevel)
+			ctx := api.ContextWithReadConsistencyLevel(context.Background(), consistencyLevel)
 			encodedRequest, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusInstantQueryRequest{})
 			require.NoError(t, err)
 			require.Equal(t, consistencyLevel, encodedRequest.Header.Get(api.ReadConsistencyHeader))
 		})
+	}
+}
+
+func TestPrometheusCodec_EncodeMetricsQueryRequest_ShouldPropagateHeadersInAllowList(t *testing.T) {
+	const notAllowedHeader = "X-Some-Name"
+
+	codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatProtobuf)
+	expectedOffsets := map[int32]int64{0: 1, 1: 2}
+
+	req, err := codec.EncodeMetricsQueryRequest(context.Background(), &PrometheusInstantQueryRequest{
+		headers: []*PrometheusHeader{
+			// Allowed.
+			{Name: compat.ForceFallbackHeaderName, Values: []string{"true"}},
+			{Name: chunkinfologger.ChunkInfoLoggingHeader, Values: []string{"label"}},
+			{Name: api.ReadConsistencyOffsetsHeader, Values: []string{string(api.EncodeOffsets(expectedOffsets))}},
+
+			// Not allowed.
+			{Name: notAllowedHeader, Values: []string{"some-value"}},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"true"}, req.Header.Values(compat.ForceFallbackHeaderName))
+	require.Equal(t, []string{"label"}, req.Header.Values(chunkinfologger.ChunkInfoLoggingHeader))
+	require.Empty(t, req.Header.Values(notAllowedHeader))
+
+	// Ensure strong read consistency offsets are propagated.
+	require.Len(t, req.Header.Values(api.ReadConsistencyOffsetsHeader), 1)
+	actualOffsets := api.EncodedOffsets(req.Header.Values(api.ReadConsistencyOffsetsHeader)[0])
+	for partitionID, expectedOffset := range expectedOffsets {
+		actualOffset, ok := actualOffsets.Lookup(partitionID)
+		require.True(t, ok)
+		require.Equal(t, expectedOffset, actualOffset)
 	}
 }
 
@@ -808,60 +844,89 @@ type prometheusResponseData struct {
 	Result model.Value     `json:"result"`
 }
 
-func TestDecodeFailedResponse(t *testing.T) {
-	codec := newTestPrometheusCodec()
+func stringErrorResponse(statusCode int, message string) *http.Response {
+	return &http.Response{
+		StatusCode: statusCode,
+		Body:       io.NopCloser(strings.NewReader(message)),
+	}
+}
 
-	t.Run("internal error", func(t *testing.T) {
-		_, err := codec.DecodeResponse(context.Background(), &http.Response{
-			StatusCode: http.StatusInternalServerError,
-			Body:       io.NopCloser(strings.NewReader("something failed")),
-		}, nil, log.NewNopLogger())
-		require.Error(t, err)
+func jsonErrorResponse(t *testing.T, errType apierror.Type, message string) *http.Response {
+	apiErr := apierror.New(errType, message)
+	b, err := apiErr.EncodeJSON()
+	if err != nil {
+		t.Fatalf("unexpected serialization error: %s", err)
+	}
 
-		require.True(t, apierror.IsAPIError(err))
-		resp, ok := apierror.HTTPResponseFromError(err)
-		require.True(t, ok, "Error should have an HTTPResponse encoded")
-		require.Equal(t, int32(http.StatusInternalServerError), resp.Code)
-	})
+	return &http.Response{
+		StatusCode: apiErr.StatusCode(),
+		Header: http.Header{
+			http.CanonicalHeaderKey("Content-Type"): []string{jsonMimeType},
+		},
+		Body: io.NopCloser(bytes.NewReader(b)),
+	}
+}
 
-	t.Run("too many requests", func(t *testing.T) {
-		_, err := codec.DecodeResponse(context.Background(), &http.Response{
-			StatusCode: http.StatusTooManyRequests,
-			Body:       io.NopCloser(strings.NewReader("something failed")),
-		}, nil, log.NewNopLogger())
-		require.Error(t, err)
+func TestPrometheusCodec_DecodeResponse_Errors(t *testing.T) {
+	scenarios := map[string]struct {
+		response                    *http.Response
+		expectedResponseContentType string
+		expectedResponseStatusCode  int
+	}{
+		"internal error - no content type": {
+			response:                    stringErrorResponse(http.StatusInternalServerError, "something failed"),
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseStatusCode:  http.StatusInternalServerError,
+		},
+		"too many requests - no content type": {
+			response:                    stringErrorResponse(http.StatusTooManyRequests, "something failed"),
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseStatusCode:  http.StatusTooManyRequests,
+		},
+		"too larger entity - no content type": {
+			response:                    stringErrorResponse(http.StatusRequestEntityTooLarge, "something failed"),
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseStatusCode:  http.StatusRequestEntityTooLarge,
+		},
+		"service unavailable - no content type": {
+			response:                    stringErrorResponse(http.StatusServiceUnavailable, "something failed"),
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseStatusCode:  http.StatusServiceUnavailable,
+		},
+		"internal error - JSON content type": {
+			response:                    jsonErrorResponse(t, apierror.TypeInternal, "something failed"),
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseStatusCode:  http.StatusInternalServerError,
+		},
+		"too many requests - JSON content type": {
+			response:                    jsonErrorResponse(t, apierror.TypeTooManyRequests, "something failed"),
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseStatusCode:  http.StatusTooManyRequests,
+		},
+		"too larger entity - JSON content type": {
+			response:                    jsonErrorResponse(t, apierror.TypeTooLargeEntry, "something failed"),
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseStatusCode:  http.StatusRequestEntityTooLarge,
+		},
+		"service unavailable - JSON content type": {
+			response:                    jsonErrorResponse(t, apierror.TypeUnavailable, "something failed"),
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseStatusCode:  http.StatusServiceUnavailable,
+		},
+	}
 
-		require.True(t, apierror.IsAPIError(err))
-		resp, ok := apierror.HTTPResponseFromError(err)
-		require.True(t, ok, "Error should have an HTTPResponse encoded")
-		require.Equal(t, int32(http.StatusTooManyRequests), resp.Code)
-	})
+	for name, testCase := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			codec := newTestPrometheusCodec()
 
-	t.Run("too large entry", func(t *testing.T) {
-		_, err := codec.DecodeResponse(context.Background(), &http.Response{
-			StatusCode: http.StatusRequestEntityTooLarge,
-			Body:       io.NopCloser(strings.NewReader("something failed")),
-		}, nil, log.NewNopLogger())
-		require.Error(t, err)
-
-		require.True(t, apierror.IsAPIError(err))
-		resp, ok := apierror.HTTPResponseFromError(err)
-		require.True(t, ok, "Error should have an HTTPResponse encoded")
-		require.Equal(t, int32(http.StatusRequestEntityTooLarge), resp.Code)
-	})
-
-	t.Run("service unavailable", func(t *testing.T) {
-		_, err := codec.DecodeResponse(context.Background(), &http.Response{
-			StatusCode: http.StatusServiceUnavailable,
-			Body:       io.NopCloser(strings.NewReader("something failed")),
-		}, nil, log.NewNopLogger())
-		require.Error(t, err)
-
-		require.True(t, apierror.IsAPIError(err))
-		resp, ok := apierror.HTTPResponseFromError(err)
-		require.True(t, ok, "Error should have an HTTPResponse encoded")
-		require.Equal(t, int32(http.StatusServiceUnavailable), resp.Code)
-	})
+			_, err := codec.DecodeResponse(context.Background(), testCase.response, nil, testutil.NewTestingLogger(t))
+			require.Error(t, err)
+			require.True(t, apierror.IsAPIError(err))
+			resp, ok := apierror.HTTPResponseFromError(err)
+			require.True(t, ok, "Error should be able to represent HTTPResponse")
+			require.Equal(t, int32(testCase.expectedResponseStatusCode), resp.Code)
+		})
+	}
 }
 
 func TestPrometheusCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
@@ -1240,6 +1305,63 @@ func TestMergeAPIResponses(t *testing.T) {
 						},
 					},
 				},
+			},
+		},
+
+		{
+			name: "Merging annotations",
+			input: []Response{
+				&PrometheusResponse{
+					Status: statusSuccess,
+					Data: &PrometheusData{
+						ResultType: matrix,
+						Result: []SampleStream{
+							{
+								Labels: []mimirpb.LabelAdapter{},
+								Samples: []mimirpb.Sample{
+									{Value: 0, TimestampMs: 0},
+									{Value: 1, TimestampMs: 1},
+								},
+							},
+						},
+					},
+					Warnings: []string{"dummy warning"},
+				},
+				&PrometheusResponse{
+					Status: statusSuccess,
+					Data: &PrometheusData{
+						ResultType: matrix,
+						Result: []SampleStream{
+							{
+								Labels: []mimirpb.LabelAdapter{},
+								Samples: []mimirpb.Sample{
+									{Value: 2, TimestampMs: 2},
+									{Value: 3, TimestampMs: 3},
+								},
+							},
+						},
+					},
+					Infos: []string{"dummy info"},
+				},
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: matrix,
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{},
+							Samples: []mimirpb.Sample{
+								{Value: 0, TimestampMs: 0},
+								{Value: 1, TimestampMs: 1},
+								{Value: 2, TimestampMs: 2},
+								{Value: 3, TimestampMs: 3},
+							},
+						},
+					},
+				},
+				Warnings: []string{"dummy warning"},
+				Infos:    []string{"dummy info"},
 			},
 		},
 	} {

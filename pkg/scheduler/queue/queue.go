@@ -174,6 +174,7 @@ func NewRequestQueue(
 	log log.Logger,
 	maxOutstandingPerTenant int,
 	additionalQueueDimensionsEnabled bool,
+	useMultiAlgoQueue bool,
 	forgetDelay time.Duration,
 	queueLength *prometheus.GaugeVec,
 	discardedRequests *prometheus.CounterVec,
@@ -210,7 +211,7 @@ func NewRequestQueue(
 		waitingQuerierConnsToDispatch: list.New(),
 
 		QueryComponentUtilization: queryComponentCapacity,
-		queueBroker:               newQueueBroker(maxOutstandingPerTenant, additionalQueueDimensionsEnabled, forgetDelay),
+		queueBroker:               newQueueBroker(maxOutstandingPerTenant, additionalQueueDimensionsEnabled, useMultiAlgoQueue, forgetDelay),
 	}
 
 	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")
@@ -361,28 +362,6 @@ func (q *RequestQueue) trySendNextRequestForQuerier(waitingConn *waitingQuerierC
 	if req == nil {
 		// Nothing available for this querier, try again next time.
 		return false
-	}
-
-	{
-		// temporary observation of query component load balancing behavior before full implementation
-		schedulerRequest, ok := req.req.(*SchedulerRequest)
-		if ok {
-			queryComponentName := schedulerRequest.ExpectedQueryComponentName()
-			exceedsThreshold, queryComponent := q.QueryComponentUtilization.ExceedsThresholdForComponentName(
-				queryComponentName,
-				int(q.connectedQuerierWorkers.Load()),
-				q.queueBroker.tenantQueuesTree.ItemCount(),
-				q.waitingQuerierConnsToDispatch.Len(),
-			)
-
-			if exceedsThreshold {
-				level.Info(q.log).Log(
-					"msg", "experimental: querier worker connections in use by query component exceed utilization threshold. no action taken",
-					"query_component_name", queryComponentName,
-					"overloaded_query_component", queryComponent,
-				)
-			}
-		}
 	}
 
 	reqForQuerier := requestForQuerier{

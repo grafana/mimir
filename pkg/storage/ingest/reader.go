@@ -172,24 +172,29 @@ func (r *PartitionReader) stopDependencies() error {
 
 func (r *PartitionReader) run(ctx context.Context) error {
 	for ctx.Err() == nil {
-		r.processNextFetches(ctx, r.metrics.receiveDelayWhenRunning)
+		err := r.processNextFetches(ctx, r.metrics.receiveDelayWhenRunning)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			// Fail the whole service in case of a non-recoverable error.
+			return err
+		}
 	}
 
 	return nil
 }
 
-func (r *PartitionReader) processNextFetches(ctx context.Context, delayObserver prometheus.Observer) {
+func (r *PartitionReader) processNextFetches(ctx context.Context, delayObserver prometheus.Observer) error {
 	fetches := r.pollFetches(ctx)
 	r.recordFetchesMetrics(fetches, delayObserver)
 	r.logFetchErrors(fetches)
 	fetches = filterOutErrFetches(fetches)
 
-	// TODO consumeFetches() may get interrupted in the middle because of ctx canceled due to PartitionReader stopped.
-	// 		We should improve it, but we shouldn't just pass a context.Background() because if consumption is stuck
-	// 		then PartitionReader will never stop.
-	r.consumeFetches(ctx, fetches)
+	err := r.consumeFetches(ctx, fetches)
+	if err != nil {
+		return fmt.Errorf("consume %d records: %w", fetches.NumRecords(), err)
+	}
 	r.enqueueCommit(fetches)
 	r.notifyLastConsumedOffset(fetches)
+	return nil
 }
 
 // processNextFetchesUntilTargetOrMaxLagHonored process records from Kafka until at least the maxLag is honored.
@@ -300,16 +305,13 @@ func (r *PartitionReader) processNextFetchesUntilLagHonored(ctx context.Context,
 				break
 			}
 
-			r.processNextFetches(ctx, r.metrics.receiveDelayWhenStarting)
-		}
-
-		if boff.Err() != nil {
-			// TODO should be moved to dskit's backoff
-			if ctx.Err() != nil {
-				return 0, context.Cause(ctx)
+			err := r.processNextFetches(ctx, r.metrics.receiveDelayWhenStarting)
+			if err != nil {
+				return 0, err
 			}
-
-			return 0, boff.Err()
+		}
+		if boff.Err() != nil {
+			return 0, boff.ErrCause()
 		}
 
 		// If it took less than the max desired lag to replay the partition
@@ -319,12 +321,7 @@ func (r *PartitionReader) processNextFetchesUntilLagHonored(ctx context.Context,
 		}
 	}
 
-	// TODO should be moved to dskit's backoff
-	if ctx.Err() != nil {
-		return 0, context.Cause(ctx)
-	}
-
-	return 0, boff.Err()
+	return 0, boff.ErrCause()
 }
 
 func filterOutErrFetches(fetches kgo.Fetches) kgo.Fetches {
@@ -390,9 +387,9 @@ func (r *PartitionReader) enqueueCommit(fetches kgo.Fetches) {
 	r.committer.enqueueOffset(lastOffset)
 }
 
-func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetches) {
+func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetches) error {
 	if fetches.NumRecords() == 0 {
-		return
+		return nil
 	}
 	records := make([]record, 0, fetches.NumRecords())
 
@@ -417,16 +414,21 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		MaxBackoff: 2 * time.Second,
 		MaxRetries: 0, // retry forever
 	})
-
 	for boff.Ongoing() {
+		// If the PartitionReader is stopping and the ctx was cancelled, we don't want to interrupt the in-flight
+		// processing midway. Instead, we let it finish, assuming it'll succeed.
+		// If the processing fails while stopping, we log the error and let the backoff stop and bail out.
+		// There is an edge-case when the processing gets stuck and doesn't let the stopping process. In such a case,
+		// we expect the infrastructure (e.g. k8s) to eventually kill the process.
+		consumeCtx := context.WithoutCancel(ctx)
 		consumeStart := time.Now()
-		err := r.consumer.consume(ctx, records)
+		err := r.consumer.consume(consumeCtx, records)
 		r.metrics.consumeLatency.Observe(time.Since(consumeStart).Seconds())
 		if err == nil {
-			break
+			return nil
 		}
 		level.Error(r.logger).Log(
-			"msg", "encountered error while ingesting data from Kafka; will retry",
+			"msg", "encountered error while ingesting data from Kafka; should retry",
 			"err", err,
 			"record_min_offset", minOffset,
 			"record_max_offset", maxOffset,
@@ -434,6 +436,8 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		)
 		boff.Wait()
 	}
+	// Because boff is set to retry forever, the only error here is when the context is cancelled.
+	return boff.ErrCause()
 }
 
 func (r *PartitionReader) notifyLastConsumedOffset(fetches kgo.Fetches) {
@@ -472,29 +476,11 @@ func (r *PartitionReader) recordFetchesMetrics(fetches kgo.Fetches, delayObserve
 }
 
 func (r *PartitionReader) newKafkaReader(at kgo.Offset) (*kgo.Client, error) {
-	const fetchMaxBytes = 100_000_000
-
-	opts := append(
-		commonKafkaClientOptions(r.kafkaCfg, r.metrics.kprom, r.logger),
+	return NewKafkaReaderClient(r.kafkaCfg, r.metrics.kprom, r.logger,
 		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
 			r.kafkaCfg.Topic: {r.partitionID: at},
 		}),
-		kgo.FetchMinBytes(1),
-		kgo.FetchMaxBytes(fetchMaxBytes),
-		kgo.FetchMaxWait(5*time.Second),
-		kgo.FetchMaxPartitionBytes(50_000_000),
-
-		// BrokerMaxReadBytes sets the maximum response size that can be read from
-		// Kafka. This is a safety measure to avoid OOMing on invalid responses.
-		// franz-go recommendation is to set it 2x FetchMaxBytes.
-		kgo.BrokerMaxReadBytes(2*fetchMaxBytes),
 	)
-	client, err := kgo.NewClient(opts...)
-	if err != nil {
-		return nil, errors.Wrap(err, "creating kafka client")
-	}
-
-	return client, nil
 }
 
 func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, lastConsumedOffset int64, err error) {
@@ -616,51 +602,50 @@ func (r *PartitionReader) fetchFirstOffsetAfterTime(ctx context.Context, cl *kgo
 	return offsetRes.Offset, true, nil
 }
 
-// WaitReadConsistency waits until all data produced up until now has been consumed by the reader.
-func (r *PartitionReader) WaitReadConsistency(ctx context.Context) (returnErr error) {
-	startTime := time.Now()
-	r.metrics.strongConsistencyRequests.Inc()
+// WaitReadConsistencyUntilLastProducedOffset waits until all data produced up until now has been consumed by the reader.
+func (r *PartitionReader) WaitReadConsistencyUntilLastProducedOffset(ctx context.Context) (returnErr error) {
+	return r.waitReadConsistency(ctx, false, func(ctx context.Context) (int64, error) {
+		return r.offsetReader.WaitNextFetchLastProducedOffset(ctx)
+	})
+}
 
-	spanLog := spanlogger.FromContext(ctx, r.logger)
-	spanLog.DebugLog("msg", "waiting for read consistency")
+// WaitReadConsistencyUntilOffset waits until all data up until input offset has been consumed by the reader.
+func (r *PartitionReader) WaitReadConsistencyUntilOffset(ctx context.Context, offset int64) (returnErr error) {
+	return r.waitReadConsistency(ctx, true, func(_ context.Context) (int64, error) {
+		return offset, nil
+	})
+}
 
-	// Honor the configured wait timeout.
-	if r.kafkaCfg.WaitStrongReadConsistencyTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeoutCause(ctx, r.kafkaCfg.WaitStrongReadConsistencyTimeout, errWaitStrongReadConsistencyTimeoutExceeded)
-		defer cancel()
-	}
+func (r *PartitionReader) waitReadConsistency(ctx context.Context, withOffset bool, getOffset func(context.Context) (int64, error)) error {
+	_, err := r.metrics.strongConsistencyInstrumentation.Observe(withOffset, func() (struct{}, error) {
+		spanLog := spanlogger.FromContext(ctx, r.logger)
+		spanLog.DebugLog("msg", "waiting for read consistency")
 
-	defer func() {
-		// Do not track failure or latency if the request was canceled (because the tracking would be incorrect).
-		if errors.Is(returnErr, context.Canceled) {
-			return
+		// Honor the configured wait timeout.
+		if r.kafkaCfg.WaitStrongReadConsistencyTimeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeoutCause(ctx, r.kafkaCfg.WaitStrongReadConsistencyTimeout, errWaitStrongReadConsistencyTimeoutExceeded)
+			defer cancel()
 		}
 
-		// Track latency for failures too, so that we have a better measurement of latency if
-		// backend latency is high and requests fail because of timeouts.
-		r.metrics.strongConsistencyLatency.Observe(time.Since(startTime).Seconds())
-
-		if returnErr != nil {
-			r.metrics.strongConsistencyFailures.Inc()
+		// Ensure the service is running. Some subservices used below are created when starting
+		// so they're not available before that.
+		if state := r.Service.State(); state != services.Running {
+			return struct{}{}, fmt.Errorf("partition reader service is not running (state: %s)", state.String())
 		}
-	}()
 
-	// Ensure the service is running. Some subservices used below are created when starting
-	// so they're not available before that.
-	if state := r.Service.State(); state != services.Running {
-		return fmt.Errorf("partition reader service is not running (state: %s)", state.String())
-	}
+		// Get the offset to wait for.
+		offset, err := getOffset(ctx)
+		if err != nil {
+			return struct{}{}, err
+		}
 
-	// Get the last produced offset.
-	lastProducedOffset, err := r.offsetReader.WaitNextFetchLastProducedOffset(ctx)
-	if err != nil {
-		return err
-	}
+		spanLog.DebugLog("msg", "catching up with offset", "offset", offset)
 
-	spanLog.DebugLog("msg", "catching up with last produced offset", "offset", lastProducedOffset)
+		return struct{}{}, r.consumedOffsetWatcher.Wait(ctx, offset)
+	})
 
-	return r.consumedOffsetWatcher.Wait(ctx, lastProducedOffset)
+	return err
 }
 
 func (r *PartitionReader) pollFetches(ctx context.Context) kgo.Fetches {
@@ -801,21 +786,21 @@ func (r *partitionCommitter) stop(error) error {
 }
 
 type readerMetrics struct {
-	receiveDelayWhenStarting  prometheus.Observer
-	receiveDelayWhenRunning   prometheus.Observer
-	recordsPerFetch           prometheus.Histogram
-	fetchesErrors             prometheus.Counter
-	fetchesTotal              prometheus.Counter
-	fetchWaitDuration         prometheus.Histogram
-	strongConsistencyRequests prometheus.Counter
-	strongConsistencyFailures prometheus.Counter
-	strongConsistencyLatency  prometheus.Histogram
-	lastConsumedOffset        prometheus.Gauge
-	consumeLatency            prometheus.Histogram
-	kprom                     *kprom.Metrics
+	receiveDelayWhenStarting         prometheus.Observer
+	receiveDelayWhenRunning          prometheus.Observer
+	recordsPerFetch                  prometheus.Histogram
+	fetchesErrors                    prometheus.Counter
+	fetchesTotal                     prometheus.Counter
+	fetchWaitDuration                prometheus.Histogram
+	strongConsistencyInstrumentation *StrongReadConsistencyInstrumentation[struct{}]
+	lastConsumedOffset               prometheus.Gauge
+	consumeLatency                   prometheus.Histogram
+	kprom                            *kprom.Metrics
 }
 
 func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetrics {
+	const component = "partition-reader"
+
 	receiveDelay := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:                            "cortex_ingest_storage_reader_receive_delay_seconds",
 		Help:                            "Delay between producing a record and receiving it in the consumer.",
@@ -861,26 +846,67 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetric
 			Help:                        "How long a consumer spent processing a batch of records from Kafka.",
 			NativeHistogramBucketFactor: 1.1,
 		}),
-		strongConsistencyRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingest_storage_strong_consistency_requests_total",
-			Help: "Total number of requests for which strong consistency has been requested.",
+		strongConsistencyInstrumentation: NewStrongReadConsistencyInstrumentation[struct{}](component, reg),
+		lastConsumedOffset:               lastConsumedOffset,
+		kprom:                            NewKafkaReaderClientMetrics(component, reg),
+	}
+}
+
+type StrongReadConsistencyInstrumentation[T any] struct {
+	requests *prometheus.CounterVec
+	failures prometheus.Counter
+	latency  prometheus.Histogram
+}
+
+func NewStrongReadConsistencyInstrumentation[T any](component string, reg prometheus.Registerer) *StrongReadConsistencyInstrumentation[T] {
+	i := &StrongReadConsistencyInstrumentation[T]{
+		requests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name:        "cortex_ingest_storage_strong_consistency_requests_total",
+			Help:        "Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.",
+			ConstLabels: map[string]string{"component": component},
+		}, []string{"with_offset"}),
+		failures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_ingest_storage_strong_consistency_failures_total",
+			Help:        "Total number of failures while waiting for strong consistency to be enforced.",
+			ConstLabels: map[string]string{"component": component},
 		}),
-		strongConsistencyFailures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingest_storage_strong_consistency_failures_total",
-			Help: "Total number of failures while waiting for strong consistency to be enforced.",
-		}),
-		strongConsistencyLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		latency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                            "cortex_ingest_storage_strong_consistency_wait_duration_seconds",
 			Help:                            "How long a request spent waiting for strong consistency to be guaranteed.",
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			Buckets:                         prometheus.DefBuckets,
+			ConstLabels:                     map[string]string{"component": component},
 		}),
-		lastConsumedOffset: lastConsumedOffset,
-		kprom: kprom.NewMetrics("cortex_ingest_storage_reader",
-			kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"partition": strconv.Itoa(int(partitionID))}, reg)),
-			// Do not export the client ID, because we use it to specify options to the backend.
-			kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes)),
 	}
+
+	// Init metrics.
+	for _, value := range []bool{true, false} {
+		i.requests.WithLabelValues(strconv.FormatBool(value))
+	}
+
+	return i
+}
+
+func (i *StrongReadConsistencyInstrumentation[T]) Observe(withOffset bool, f func() (T, error)) (_ T, returnErr error) {
+	startTime := time.Now()
+	i.requests.WithLabelValues(strconv.FormatBool(withOffset)).Inc()
+
+	defer func() {
+		// Do not track failure or latency if the request was canceled (because the tracking would be incorrect).
+		if errors.Is(returnErr, context.Canceled) {
+			return
+		}
+
+		// Track latency for failures too, so that we have a better measurement of latency if
+		// backend latency is high and requests fail because of timeouts.
+		i.latency.Observe(time.Since(startTime).Seconds())
+
+		if returnErr != nil {
+			i.failures.Inc()
+		}
+	}()
+
+	return f()
 }

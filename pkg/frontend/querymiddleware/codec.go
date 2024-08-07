@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -45,6 +46,9 @@ var (
 	errNegativeStep   = apierror.New(apierror.TypeBadData, `invalid parameter "step": zero or negative query resolution step widths are not accepted. Try a positive integer`)
 	errStepTooSmall   = apierror.New(apierror.TypeBadData, "exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
 	allFormats        = []string{formatJSON, formatProtobuf}
+
+	// List of HTTP headers to propagate when a Prometheus request is encoded into a HTTP request.
+	prometheusCodecPropagateHeaders = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader, api.ReadConsistencyOffsetsHeader}
 )
 
 const (
@@ -237,6 +241,7 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 
 	promResponses := make([]*PrometheusResponse, 0, len(responses))
 	promWarningsMap := make(map[string]struct{}, 0)
+	promInfosMap := make(map[string]struct{}, 0)
 	var present struct{}
 
 	for _, res := range responses {
@@ -253,11 +258,19 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 		for _, warning := range pr.Warnings {
 			promWarningsMap[warning] = present
 		}
+		for _, info := range pr.Infos {
+			promInfosMap[info] = present
+		}
 	}
 
 	var promWarnings []string
 	for warning := range promWarningsMap {
 		promWarnings = append(promWarnings, warning)
+	}
+
+	var promInfos []string
+	for info := range promInfosMap {
+		promInfos = append(promInfos, info)
 	}
 
 	// Merge the responses.
@@ -270,6 +283,7 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 			Result:     matrixMerge(promResponses),
 		},
 		Warnings: promWarnings,
+		Infos:    promInfos,
 	}, nil
 }
 
@@ -577,16 +591,19 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
-	if consistency, ok := api.ReadConsistencyFromContext(ctx); ok {
-		req.Header.Add(api.ReadConsistencyHeader, consistency)
+	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
+		req.Header.Add(api.ReadConsistencyHeader, level)
 	}
 
+	// Propagate allowed HTTP headers.
 	for _, h := range r.GetHeaders() {
-		if h.Name == compat.ForceFallbackHeaderName {
-			for _, v := range h.Values {
-				// There should only be one value, but add all of them for completeness.
-				req.Header.Add(compat.ForceFallbackHeaderName, v)
-			}
+		if !slices.Contains(prometheusCodecPropagateHeaders, h.Name) {
+			continue
+		}
+
+		for _, v := range h.Values {
+			// There should only be one value, but add all of them for completeness.
+			req.Header.Add(h.Name, v)
 		}
 	}
 
@@ -656,8 +673,8 @@ func (c prometheusCodec) EncodeLabelsQueryRequest(ctx context.Context, req Label
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
-	if consistency, ok := api.ReadConsistencyFromContext(ctx); ok {
-		r.Header.Add(api.ReadConsistencyHeader, consistency)
+	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
+		r.Header.Add(api.ReadConsistencyHeader, level)
 	}
 
 	return r.WithContext(ctx), nil
@@ -682,31 +699,37 @@ func encodeOptions(req *http.Request, o Options) {
 }
 
 func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ MetricsQueryRequest, logger log.Logger) (Response, error) {
-	switch r.StatusCode {
-	case http.StatusServiceUnavailable:
-		return nil, apierror.New(apierror.TypeUnavailable, string(mustReadResponseBody(r)))
-	case http.StatusTooManyRequests:
-		return nil, apierror.New(apierror.TypeTooManyRequests, string(mustReadResponseBody(r)))
-	case http.StatusRequestEntityTooLarge:
-		return nil, apierror.New(apierror.TypeTooLargeEntry, string(mustReadResponseBody(r)))
-	default:
-		if r.StatusCode/100 == 5 {
-			return nil, apierror.New(apierror.TypeInternal, string(mustReadResponseBody(r)))
-		}
-	}
-
-	log := spanlogger.FromContext(ctx, logger)
-
+	spanlog := spanlogger.FromContext(ctx, logger)
 	buf, err := readResponseBody(r)
 	if err != nil {
-		log.Error(err)
-		return nil, err
+		return nil, spanlog.Error(err)
 	}
-	log.LogFields(otlog.String("message", "ParseQueryRangeResponse"),
+
+	spanlog.LogFields(otlog.String("message", "ParseQueryRangeResponse"),
 		otlog.Int("status_code", r.StatusCode),
 		otlog.Int("bytes", len(buf)))
 
+	// Before attempting to decode a response based on the content type, check if the
+	// Content-Type header was even set. When the scheduler returns gRPC errors, they
+	// are encoded as httpgrpc.HTTPResponse objects with an HTTP status code and the
+	// error message as the body of the response with no content type. We need to handle
+	// that case here before we decode well-formed success or error responses.
 	contentType := r.Header.Get("Content-Type")
+	if contentType == "" {
+		switch r.StatusCode {
+		case http.StatusServiceUnavailable:
+			return nil, apierror.New(apierror.TypeUnavailable, string(buf))
+		case http.StatusTooManyRequests:
+			return nil, apierror.New(apierror.TypeTooManyRequests, string(buf))
+		case http.StatusRequestEntityTooLarge:
+			return nil, apierror.New(apierror.TypeTooLargeEntry, string(buf))
+		default:
+			if r.StatusCode/100 == 5 {
+				return nil, apierror.New(apierror.TypeInternal, string(buf))
+			}
+		}
+	}
+
 	formatter := findFormatter(contentType)
 	if formatter == nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "unknown response content type '%v'", contentType)
@@ -914,11 +937,6 @@ func readResponseBody(res *http.Response) ([]byte, error) {
 		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response with status %d: %v", res.StatusCode, err)
 	}
 	return buf.Bytes(), nil
-}
-
-func mustReadResponseBody(r *http.Response) []byte {
-	body, _ := readResponseBody(r)
-	return body
 }
 
 func parseDurationMs(s string) (int64, error) {

@@ -28,6 +28,8 @@ var NonParallelFuncs = []string{
 	"absent",
 	"absent_over_time",
 	"histogram_quantile",
+	"limitk",
+	"limit_ratio",
 	"sort_desc",
 	"sort_by_label",
 	"sort_by_label_desc",

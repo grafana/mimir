@@ -55,6 +55,7 @@ import (
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
@@ -68,40 +69,41 @@ import (
 
 // The various modules that make up Mimir.
 const (
-	ActivityTracker            string = "activity-tracker"
-	API                        string = "api"
-	SanityCheck                string = "sanity-check"
-	IngesterRing               string = "ingester-ring"
-	IngesterPartitionRing      string = "ingester-partitions-ring"
-	RuntimeConfig              string = "runtime-config"
-	Overrides                  string = "overrides"
-	OverridesExporter          string = "overrides-exporter"
-	Server                     string = "server"
-	ActiveGroupsCleanupService string = "active-groups-cleanup-service"
-	Distributor                string = "distributor"
-	DistributorService         string = "distributor-service"
-	Ingester                   string = "ingester"
-	IngesterService            string = "ingester-service"
-	Flusher                    string = "flusher"
-	Querier                    string = "querier"
-	Queryable                  string = "queryable"
-	StoreQueryable             string = "store-queryable"
-	QueryFrontend              string = "query-frontend"
-	QueryFrontendCodec         string = "query-frontend-codec"
-	QueryFrontendTripperware   string = "query-frontend-tripperware"
-	RulerStorage               string = "ruler-storage"
-	Ruler                      string = "ruler"
-	AlertManager               string = "alertmanager"
-	Compactor                  string = "compactor"
-	StoreGateway               string = "store-gateway"
-	MemberlistKV               string = "memberlist-kv"
-	QueryScheduler             string = "query-scheduler"
-	Vault                      string = "vault"
-	TenantFederation           string = "tenant-federation"
-	UsageStats                 string = "usage-stats"
-	BlockBuilder               string = "block-builder"
-	ContinuousTest             string = "continuous-test"
-	All                        string = "all"
+	ActivityTracker                 string = "activity-tracker"
+	API                             string = "api"
+	SanityCheck                     string = "sanity-check"
+	IngesterRing                    string = "ingester-ring"
+	IngesterPartitionRing           string = "ingester-partitions-ring"
+	RuntimeConfig                   string = "runtime-config"
+	Overrides                       string = "overrides"
+	OverridesExporter               string = "overrides-exporter"
+	Server                          string = "server"
+	ActiveGroupsCleanupService      string = "active-groups-cleanup-service"
+	Distributor                     string = "distributor"
+	DistributorService              string = "distributor-service"
+	Ingester                        string = "ingester"
+	IngesterService                 string = "ingester-service"
+	Flusher                         string = "flusher"
+	Querier                         string = "querier"
+	Queryable                       string = "queryable"
+	StoreQueryable                  string = "store-queryable"
+	QueryFrontend                   string = "query-frontend"
+	QueryFrontendCodec              string = "query-frontend-codec"
+	QueryFrontendTripperware        string = "query-frontend-tripperware"
+	QueryFrontendTopicOffsetsReader string = "query-frontend-topic-offsets-reader"
+	RulerStorage                    string = "ruler-storage"
+	Ruler                           string = "ruler"
+	AlertManager                    string = "alertmanager"
+	Compactor                       string = "compactor"
+	StoreGateway                    string = "store-gateway"
+	MemberlistKV                    string = "memberlist-kv"
+	QueryScheduler                  string = "query-scheduler"
+	Vault                           string = "vault"
+	TenantFederation                string = "tenant-federation"
+	UsageStats                      string = "usage-stats"
+	BlockBuilder                    string = "block-builder"
+	ContinuousTest                  string = "continuous-test"
+	All                             string = "all"
 
 	// Write Read and Backend are the targets used when using the read-write deployment mode.
 	Write   string = "write"
@@ -704,12 +706,31 @@ func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
 	return nil, nil
 }
 
+// initQueryFrontendTopicOffsetsReader instantiates the topic offsets reader used by the query-frontend
+// when the ingest storage is enabled.
+func (t *Mimir) initQueryFrontendTopicOffsetsReader() (services.Service, error) {
+	if !t.Cfg.IngestStorage.Enabled {
+		return nil, nil
+	}
+
+	var err error
+
+	kafkaMetrics := ingest.NewKafkaReaderClientMetrics("query-frontend", t.Registerer)
+	kafkaClient, err := ingest.NewKafkaReaderClient(t.Cfg.IngestStorage.KafkaConfig, kafkaMetrics, util_log.Logger)
+	if err != nil {
+		return nil, err
+	}
+
+	t.QueryFrontendTopicOffsetsReader = ingest.NewTopicOffsetsReader(kafkaClient, t.Cfg.IngestStorage.KafkaConfig.Topic, t.Cfg.IngestStorage.KafkaConfig.LastProducedOffsetPollInterval, t.Registerer, util_log.Logger)
+	return t.QueryFrontendTopicOffsetsReader, nil
+}
+
 // initQueryFrontendTripperware instantiates the tripperware used by the query frontend
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
 
-	engineOpts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
+	engineOpts, _, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
 
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
@@ -719,6 +740,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		querymiddleware.PrometheusResponseExtractor{},
 		engineOpts,
 		engineExperimentalFunctionsEnabled,
+		t.QueryFrontendTopicOffsetsReader,
 		t.Registerer,
 	)
 	if err != nil {
@@ -871,11 +893,24 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			queryFunc = rules.EngineQueryFunc(eng, queryable)
 		}
 	}
+
+	var concurrencyController ruler.MultiTenantRuleConcurrencyController
+	concurrencyController = &ruler.NoopMultiTenantConcurrencyController{}
+	if t.Cfg.Ruler.MaxIndependentRuleEvaluationConcurrency > 0 {
+		concurrencyController = ruler.NewMultiTenantConcurrencyController(
+			util_log.Logger,
+			t.Cfg.Ruler.MaxIndependentRuleEvaluationConcurrency,
+			t.Cfg.Ruler.IndependentRuleEvaluationConcurrencyMinDurationPercentage,
+			t.Registerer,
+			t.Overrides,
+		)
+	}
 	managerFactory := ruler.DefaultTenantManagerFactory(
 		t.Cfg.Ruler,
 		t.Distributor,
 		embeddedQueryable,
 		queryFunc,
+		concurrencyController,
 		t.Overrides,
 		t.Registerer,
 	)
@@ -1092,6 +1127,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(StoreQueryable, t.initStoreQueryable, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendCodec, t.initQueryFrontendCodec, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTripperware, t.initQueryFrontendTripperware, modules.UserInvisibleModule)
+	mm.RegisterModule(QueryFrontendTopicOffsetsReader, t.initQueryFrontendTopicOffsetsReader, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
 	mm.RegisterModule(RulerStorage, t.initRulerStorage, modules.UserInvisibleModule)
 	mm.RegisterModule(Ruler, t.initRuler)
@@ -1127,7 +1163,7 @@ func (t *Mimir) setupModuleManager() error {
 		Queryable:                {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV},
 		Querier:                  {TenantFederation, Vault},
 		StoreQueryable:           {Overrides, MemberlistKV},
-		QueryFrontendTripperware: {API, Overrides, QueryFrontendCodec},
+		QueryFrontendTripperware: {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReader},
 		QueryFrontend:            {QueryFrontendTripperware, MemberlistKV, Vault},
 		QueryScheduler:           {API, Overrides, MemberlistKV, Vault},
 		Ruler:                    {DistributorService, StoreQueryable, RulerStorage, Vault},

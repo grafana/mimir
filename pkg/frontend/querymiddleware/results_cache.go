@@ -159,6 +159,7 @@ func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Resp
 		Data:     data,
 		Headers:  promRes.Headers,
 		Warnings: promRes.Warnings,
+		Infos:    promRes.Infos,
 	}
 }
 
@@ -177,6 +178,7 @@ func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Respons
 		Status:   promRes.Status,
 		Data:     data,
 		Warnings: promRes.Warnings,
+		Infos:    promRes.Infos,
 	}
 }
 
@@ -234,6 +236,12 @@ type shouldCacheFn func(r MetricsQueryRequest) bool
 
 // resultsCacheAlwaysEnabled is a shouldCacheFn function always returning true.
 var resultsCacheAlwaysEnabled = func(_ MetricsQueryRequest) bool { return true }
+
+var resultsCacheAlwaysDisabled = func(_ MetricsQueryRequest) bool { return false }
+
+var resultsCacheEnabledByOption = func(r MetricsQueryRequest) bool {
+	return !r.GetOptions().CacheDisabled
+}
 
 // isRequestCachable says whether the request is eligible for caching.
 func isRequestCachable(req MetricsQueryRequest, maxCacheTime int64, cacheUnalignedRequests bool, logger log.Logger) (cachable bool, reason string) {

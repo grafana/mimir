@@ -7,14 +7,11 @@
     ingest_storage_ingester_autoscaling_primary_zone: 'ingester-zone-a',
 
     // Total number of min/max replicas across all zones.
-    ingest_storage_ingester_autoscaling_min_replicas: error 'you must set ingest_storage_ingester_autoscaling_min_replicas in the _config in namespace %s' % $._config.namespace,
-    ingest_storage_ingester_autoscaling_max_replicas: error 'you must set ingest_storage_ingester_autoscaling_max_replicas in the _config in namespace %s' % $._config.namespace,
+    ingest_storage_ingester_autoscaling_min_replicas_per_zone: error 'you must set ingest_storage_ingester_autoscaling_min_replicas_per_zone in the _config in namespace %s' % $._config.namespace,
+    ingest_storage_ingester_autoscaling_max_replicas_per_zone: error 'you must set ingest_storage_ingester_autoscaling_max_replicas_per_zone in the _config in namespace %s' % $._config.namespace,
 
     // The target number of active series per ingester.
     ingest_storage_ingester_autoscaling_active_series_threshold: 1500000,
-
-    // How many zones ingesters have been deployed to.
-    ingest_storage_ingester_zones: 3,
 
     // How long to wait before terminating an ingester after it has been notified about the scale down.
     ingest_storage_ingester_downscale_delay: if 'querier.query-ingesters-within' in $.querier_args then
@@ -175,8 +172,8 @@
   ingest_storage_ingester_primary_zone_scaling: if !$._config.ingest_storage_ingester_autoscaling_enabled then null else
     $.newPartitionsPrimaryIngesterZoneScaledObject(
       $._config.ingest_storage_ingester_autoscaling_primary_zone,
-      std.ceil($._config.ingest_storage_ingester_autoscaling_min_replicas / $._config.ingest_storage_ingester_zones),
-      std.ceil($._config.ingest_storage_ingester_autoscaling_max_replicas / $._config.ingest_storage_ingester_zones),
+      $._config.ingest_storage_ingester_autoscaling_min_replicas_per_zone,
+      $._config.ingest_storage_ingester_autoscaling_max_replicas_per_zone,
       $._config.ingest_storage_ingester_autoscaling_active_series_threshold,
       $.ingester_primary_zone_replica_template
     ),

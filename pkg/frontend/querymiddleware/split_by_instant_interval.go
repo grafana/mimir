@@ -193,6 +193,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 		level.Warn(spanLog).Log("msg", "failed to execute split instant query", "err", err)
 		return nil, mapEngineError(err)
 	}
+	warn, info := res.Warnings.AsStrings("", 0, 0)
 	return &PrometheusResponse{
 		Status: statusSuccess,
 		Data: &PrometheusData{
@@ -203,7 +204,8 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 		// Note that the positions based on the original query may be wrong as the rewritten
 		// query which is actually used is different, but the user does not see the rewritten
 		// query, so we pass in an empty string as the query so the positions will be hidden.
-		Warnings: res.Warnings.AsStrings("", 0),
+		Warnings: warn,
+		Infos:    info,
 	}, nil
 }
 

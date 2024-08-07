@@ -1,12 +1,15 @@
 package notify
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	tmplhtml "html/template"
 	"sort"
 	"strings"
 	"sync"
+	tmpltext "text/template"
 	"time"
 
 	"github.com/go-kit/log"
@@ -485,6 +488,75 @@ func TestReceivers(
 	}
 
 	return newTestReceiversResult(testAlert, append(invalid, results...), c.Receivers, now), nil
+}
+
+func TestTemplate(ctx context.Context, c TestTemplatesConfigBodyParams, tmpls []templates.TemplateDefinition, externalURL string, logger log.Logger) (*TestTemplatesResults, error) {
+	definitions, err := parseTestTemplate(c.Name, c.Template)
+	if err != nil {
+		return &TestTemplatesResults{
+			Errors: []TestTemplatesErrorResult{{
+				Kind:  InvalidTemplate,
+				Error: err,
+			}},
+		}, nil
+	}
+
+	// Recreate the current template replacing the definition blocks that are being tested. This is so that any blocks that were removed don't get defined.
+	var found bool
+	templateContents := make([]string, 0, len(tmpls)+1)
+	for _, td := range tmpls {
+		if td.Name == c.Name {
+			// Template already exists, test with the new definition replacing the old one.
+			templateContents = append(templateContents, c.Template)
+			found = true
+			continue
+		}
+		templateContents = append(templateContents, td.Template)
+	}
+
+	if !found {
+		// Template is a new one, add it to the list.
+		templateContents = append(templateContents, c.Template)
+	}
+
+	// Capture the underlying text template so we can use ExecuteTemplate.
+	var newTextTmpl *tmpltext.Template
+	var captureTemplate template.Option = func(text *tmpltext.Template, _ *tmplhtml.Template) {
+		newTextTmpl = text
+	}
+	newTmpl, err := templateFromContent(templateContents, externalURL, captureTemplate)
+	if err != nil {
+		return nil, err
+	}
+
+	// Prepare the context.
+	alerts := OpenAPIAlertsToAlerts(c.Alerts)
+	ctx = notify.WithReceiverName(ctx, DefaultReceiverName)
+	ctx = notify.WithGroupLabels(ctx, model.LabelSet{DefaultGroupLabel: DefaultGroupLabelValue})
+
+	promTmplData := notify.GetTemplateData(ctx, newTmpl, alerts, logger)
+	data := templates.ExtendData(promTmplData, logger)
+
+	// Iterate over each definition in the template and evaluate it.
+	var results TestTemplatesResults
+	for _, def := range definitions {
+		var buf bytes.Buffer
+		err := newTextTmpl.ExecuteTemplate(&buf, def, data)
+		if err != nil {
+			results.Errors = append(results.Errors, TestTemplatesErrorResult{
+				Name:  def,
+				Kind:  ExecutionError,
+				Error: err,
+			})
+		} else {
+			results.Results = append(results.Results, TestTemplatesResult{
+				Name: def,
+				Text: buf.String(),
+			})
+		}
+	}
+
+	return &results, nil
 }
 
 func (am *GrafanaAlertmanager) ExternalURL() string {

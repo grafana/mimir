@@ -416,29 +416,6 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: ingester-zone-c
-  name: ingester-zone-c
-  namespace: default
-spec:
-  clusterIP: None
-  ports:
-  - name: ingester-http-metrics
-    port: 8080
-    targetPort: 8080
-  - name: ingester-grpc
-    port: 9095
-    targetPort: 9095
-  - name: ingester-gossip-ring
-    port: 7946
-    targetPort: 7946
-  selector:
-    name: ingester-zone-c
-    rollout-group: ingester
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
     name: memcached
   name: memcached
   namespace: default
@@ -836,7 +813,7 @@ spec:
           value: "8"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.12.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -943,7 +920,7 @@ spec:
           value: "5"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "5000"
-        image: grafana/mimir:2.12.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -1007,6 +984,7 @@ spec:
         - -ingest-storage.enabled=true
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
@@ -1029,7 +1007,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "5000"
-        image: grafana/mimir:2.12.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -1106,7 +1084,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.12.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -1256,7 +1234,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.12.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1360,7 +1338,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "5000"
-        image: grafana/mimir:2.12.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -1424,6 +1402,7 @@ spec:
         - -ingest-storage.enabled=true
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
         - -query-frontend.cache-results=false
         - -query-frontend.max-cache-freshness=10m
@@ -1449,7 +1428,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "5000"
-        image: grafana/mimir:2.12.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -1526,7 +1505,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.12.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -1600,7 +1579,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:2.12.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1703,7 +1682,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.12.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1760,7 +1739,7 @@ metadata:
     grafana.com/prepare-downscale-http-port: "80"
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 12h
+    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
   name: ingester-zone-a
@@ -1847,7 +1826,7 @@ spec:
           value: "1000"
         - name: Z
           value: "123"
-        image: grafana/mimir:2.12.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1905,7 +1884,7 @@ metadata:
     grafana.com/rollout-downscale-leader: ingester-zone-a
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 12h
+    grafana.com/min-time-between-zones-downscale: "0"
     grafana.com/prepare-downscale: "true"
     rollout-group: ingester
   name: ingester-zone-b
@@ -1985,145 +1964,7 @@ spec:
           value: all-ingesters
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.12.0
-        imagePullPolicy: IfNotPresent
-        name: ingester
-        ports:
-        - containerPort: 8080
-          name: http-metrics
-        - containerPort: 9095
-          name: grpc
-        - containerPort: 7946
-          name: gossip-ring
-        readinessProbe:
-          httpGet:
-            path: /ready
-            port: 8080
-          initialDelaySeconds: 15
-          timeoutSeconds: 1
-        resources:
-          limits:
-            memory: 25Gi
-          requests:
-            cpu: "4"
-            memory: 15Gi
-        volumeMounts:
-        - mountPath: /data
-          name: ingester-data
-        - mountPath: /etc/mimir
-          name: overrides
-      securityContext:
-        runAsUser: 0
-      terminationGracePeriodSeconds: 1200
-      volumes:
-      - configMap:
-          name: overrides
-        name: overrides
-  updateStrategy:
-    type: OnDelete
-  volumeClaimTemplates:
-  - apiVersion: v1
-    kind: PersistentVolumeClaim
-    metadata:
-      name: ingester-data
-    spec:
-      accessModes:
-      - ReadWriteOnce
-      resources:
-        requests:
-          storage: 100Gi
-      storageClassName: fast
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  annotations:
-    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
-    grafana.com/prepare-downscale-http-port: "80"
-    grafana.com/rollout-downscale-leader: ingester-zone-b
-    rollout-max-unavailable: "50"
-  labels:
-    grafana.com/min-time-between-zones-downscale: 12h
-    grafana.com/prepare-downscale: "true"
-    rollout-group: ingester
-  name: ingester-zone-c
-  namespace: default
-spec:
-  podManagementPolicy: Parallel
-  selector:
-    matchLabels:
-      name: ingester-zone-c
-      rollout-group: ingester
-  serviceName: ingester-zone-c
-  template:
-    metadata:
-      labels:
-        gossip_ring_member: "true"
-        name: ingester-zone-c
-        rollout-group: ingester
-    spec:
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchExpressions:
-              - key: rollout-group
-                operator: In
-                values:
-                - ingester
-              - key: name
-                operator: NotIn
-                values:
-                - ingester-zone-c
-            topologyKey: kubernetes.io/hostname
-      containers:
-      - args:
-        - -blocks-storage.gcs.bucket-name=blocks-bucket
-        - -blocks-storage.tsdb.block-ranges-period=2h
-        - -blocks-storage.tsdb.dir=/data/tsdb
-        - -blocks-storage.tsdb.head-compaction-interval=15m
-        - -blocks-storage.tsdb.ship-interval=1m
-        - -blocks-storage.tsdb.wal-replay-concurrency=3
-        - -common.storage.backend=gcs
-        - -distributor.health-check-ingesters=true
-        - -distributor.ingestion-tenant-shard-size=3
-        - -ingest-storage.enabled=true
-        - -ingest-storage.ingestion-partition-tenant-shard-size=1
-        - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
-        - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.consumer-group-offset-commit-interval=5s
-        - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
-        - -ingest-storage.kafka.topic=ingest
-        - -ingester.max-global-metadata-per-metric=10
-        - -ingester.max-global-metadata-per-user=30000
-        - -ingester.max-global-series-per-user=150000
-        - -ingester.partition-ring.prefix=
-        - -ingester.push-grpc-method-enabled=false
-        - -ingester.ring.heartbeat-period=2m
-        - -ingester.ring.heartbeat-timeout=10m
-        - -ingester.ring.instance-availability-zone=zone-c
-        - -ingester.ring.num-tokens=512
-        - -ingester.ring.prefix=partition-ingesters/
-        - -ingester.ring.replication-factor=3
-        - -ingester.ring.store=memberlist
-        - -ingester.ring.tokens-file-path=/data/tokens
-        - -ingester.ring.unregister-on-shutdown=true
-        - -ingester.ring.zone-awareness-enabled=true
-        - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
-        - -runtime-config.file=/etc/mimir/overrides.yaml
-        - -server.grpc-max-concurrent-streams=500
-        - -server.grpc.keepalive.min-time-between-pings=10s
-        - -server.grpc.keepalive.ping-without-stream-allowed=true
-        - -server.http-listen-port=8080
-        - -target=ingester
-        - -usage-stats.installation-mode=jsonnet
-        env:
-        - name: A
-          value: all-ingesters
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
-        image: grafana/mimir:2.12.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2484,7 +2325,7 @@ spec:
           value: "12884901888"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.12.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2631,7 +2472,7 @@ spec:
           value: "12884901888"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.12.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2776,7 +2617,7 @@ spec:
           value: "12884901888"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.12.0
+        image: grafana/mimir:2.13.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
