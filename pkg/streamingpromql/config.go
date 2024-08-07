@@ -20,6 +20,7 @@ type FeatureToggles struct {
 
 var overTimeFunctionNames = []string{
 	"count_over_time",
+	"present_over_time",
 }
 
 // EnableAllFeatures enables all features supported by MQE, including experimental or incomplete features.

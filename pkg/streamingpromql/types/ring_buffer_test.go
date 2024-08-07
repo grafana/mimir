@@ -23,6 +23,7 @@ type ringBuffer[T any] interface {
 	CopyPoints(maxT int64) ([]T, error)
 	LastAtOrBefore(maxT int64) (T, bool)
 	CountAtOrBefore(maxT int64) int
+	AnyAtOrBefore(maxT int64) bool
 	First() T
 	Reset()
 	GetPoints() []T
@@ -301,8 +302,10 @@ func shouldHavePointsAtOrBeforeTime[T any](t *testing.T, buf ringBuffer[T], ts i
 
 	if len(expected) == 0 {
 		require.Len(t, combinedPoints, 0)
+		require.False(t, buf.AnyAtOrBefore(ts))
 	} else {
 		require.Equal(t, expected, combinedPoints)
+		require.True(t, buf.AnyAtOrBefore(ts))
 	}
 
 	require.Equal(t, len(expected), buf.CountAtOrBefore(ts))

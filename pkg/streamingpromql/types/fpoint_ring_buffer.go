@@ -207,6 +207,15 @@ func (b *FPointRingBuffer) CountAtOrBefore(maxT int64) int {
 	return count
 }
 
+// AnyAtOrBefore returns true if this ring buffer contains any points with timestamp less than or equal to maxT.
+func (b *FPointRingBuffer) AnyAtOrBefore(maxT int64) bool {
+	if b.size == 0 {
+		return false
+	}
+
+	return b.points[b.firstIndex].T <= maxT
+}
+
 // These hooks exist so we can override them during unit tests.
 var getFPointSliceForRingBuffer = FPointSlicePool.Get
 var putFPointSliceForRingBuffer = FPointSlicePool.Put
