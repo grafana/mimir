@@ -102,6 +102,8 @@ func TestPartitionReader_logFetchErrors(t *testing.T) {
 }
 
 func TestPartitionReader_ConsumerError(t *testing.T) {
+	t.Parallel()
+
 	const (
 		topicName   = "test"
 		partitionID = 1
@@ -140,6 +142,53 @@ func TestPartitionReader_ConsumerError(t *testing.T) {
 	records, err := trackingConsumer.waitRecords(2, time.Second, 0)
 	assert.NoError(t, err)
 	assert.Equal(t, [][]byte{[]byte("1"), []byte("2")}, records)
+}
+
+func TestPartitionReader_ConsumerStopping(t *testing.T) {
+	const (
+		topicName   = "test"
+		partitionID = 1
+	)
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+
+	invocations := atomic.NewInt64(0)
+	blockingConsumer := newTestConsumer(0)
+	consumer := consumerFunc(func(ctx context.Context, records []record) error {
+		invocations.Inc()
+		return blockingConsumer.consume(ctx, records)
+	})
+	reader := createReader(t, clusterAddr, topicName, partitionID, consumer)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+
+	// Write to Kafka.
+	writeClient := newKafkaProduceClient(t, clusterAddr)
+
+	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("1"))
+	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("2"))
+
+	// Because the blockingConsumer blocks, after this point we know that the reader is in the in-flight.
+	assert.Eventually(t, func() bool { return invocations.Load() > 0 }, 5*time.Second, 100*time.Millisecond)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+
+		// Simulate a slow consumer, that blocks reader from stopping (see below).
+		time.Sleep(time.Second)
+
+		records, err := blockingConsumer.waitRecords(1, time.Second, 0)
+		assert.NoError(t, err)
+		assert.Equal(t, [][]byte{[]byte("1")}, records)
+	}()
+
+	// Stopping the reader shouldn't stop the in-flight consumption.
+	require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+
+	<-done
 }
 
 func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitReadConsistencyUntilOffset(t *testing.T) {
