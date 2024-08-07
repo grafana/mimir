@@ -2006,7 +2006,7 @@
               "required": false,
               "desc": "Enable support for binary operations in Mimir's query engine. Only applies if the Mimir query engine is in use.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-binary-operations",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
