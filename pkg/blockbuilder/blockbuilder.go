@@ -199,12 +199,12 @@ func (b *BlockBuilder) findOffsetToStartAt(ctx context.Context, part int32, metr
 			return -1, err
 		}
 		if exists {
-			level.Info(b.logger).Log("msg", "starting consumption from last consumed offset", "start_offset", offset, "consumer_group", b.cfg.Kafka.ConsumerGroup)
+			level.Info(b.logger).Log("msg", "starting consumption from last consumed offset", "part", part, "start_offset", offset, "consumer_group", b.cfg.Kafka.ConsumerGroup)
 			return offset, nil
 		}
 
 		offset = kafkaOffsetStart
-		level.Info(b.logger).Log("msg", "starting consumption from partition start because no offset has been found", "start_offset", offset)
+		level.Info(b.logger).Log("msg", "starting consumption from partition start because no offset has been found", "part", part, "start_offset", offset)
 
 		return offset, err
 	}
@@ -223,7 +223,7 @@ func (b *BlockBuilder) findOffsetToStartAt(ctx context.Context, part int32, metr
 			return startOffset, nil
 		}
 
-		level.Warn(b.logger).Log("msg", "failed to fetch offset", "err", err)
+		level.Warn(b.logger).Log("msg", "failed to fetch offset", "part", part, "err", err)
 		retry.Wait()
 	}
 
@@ -650,7 +650,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, client *kgo.Client,
 	// We are lagging behind. We need to consume the partition in parts.
 	// We iterate through all the cycleEnds starting from the first one after commit until the cycleEnd.
 	cycleEndStartAt := commitRecTime.Truncate(b.cfg.ConsumeInterval).Add(b.cfg.ConsumeInterval + b.cfg.ConsumeIntervalBuffer)
-	level.Info(b.logger).Log("msg", "partition is lagging behind", "part", pl.Partition, "lag", pl.Lag, "cycle_end_start", cycleEndStartAt, "cycle_end", cycleEnd)
+	level.Info(b.logger).Log("msg", "partition is lagging behind", "part", pl.Partition, "lag", pl.Lag, "cycle_end_start", cycleEndStartAt, "cycle_end", cycleEnd, "last_commit_rec_raw", pl.CommitRecTs, "last_commit_rec_time", commitRecTime)
 	for ce := cycleEndStartAt; cycleEnd.Sub(ce) >= 0; ce = ce.Add(b.cfg.ConsumeInterval) {
 		// Instead of looking for the commit metadata for each iteration, we use the data returned by consumePartition
 		// in the next iteration.
@@ -841,6 +841,7 @@ func (b *BlockBuilder) consumePartition(
 			// First record fetched was from the next cycle.
 			// Rewind partition's offset and re-consume this record again on the next cycle.
 			// No need to re-commit since the commit point did not change.
+			level.Info(b.logger).Log("msg", "skip commit record due to first record fetched is from next cycle", "part", part, "first_rec_offset", firstRec.Offset)
 			rec := kgo.EpochOffset{
 				Epoch:  firstRec.LeaderEpoch,
 				Offset: firstRec.Offset,
@@ -894,7 +895,7 @@ func (b *BlockBuilder) consumePartition(
 		LastBlockEnd:   commitBlockEnd,
 	}
 
-	return pl, commitRecord(ctx, b.logger, client, b.cfg.Kafka.ConsumerGroup, pl.Commit)
+	return pl, commitOffset(ctx, b.logger, client, b.cfg.Kafka.ConsumerGroup, pl.Commit)
 }
 
 func (b *BlockBuilder) seekPartition(client *kgo.Client, part int32, rec kgo.EpochOffset) {
@@ -932,14 +933,14 @@ func (b *BlockBuilder) blockUploaderForUser(ctx context.Context, userID string) 
 	}
 }
 
-func commitRecord(ctx context.Context, l log.Logger, client *kgo.Client, group string, offset kadm.Offset) error {
+func commitOffset(ctx context.Context, l log.Logger, client *kgo.Client, group string, offset kadm.Offset) error {
 	offsets := make(kadm.Offsets)
 	offsets.Add(offset)
 	if err := kadm.NewClient(client).CommitAllOffsets(ctx, group, offsets); err != nil {
 		return fmt.Errorf("commit with part %d, offset %d: %w", offset.Partition, offset.At, err)
 	}
 
-	level.Debug(l).Log("msg", "successfully committed to Kafka", "part", offset.Partition, "offset", offset.At)
+	level.Info(l).Log("msg", "successfully committed to Kafka", "part", offset.Partition, "offset", offset.At)
 
 	return nil
 }
