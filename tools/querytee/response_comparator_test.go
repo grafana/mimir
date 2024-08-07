@@ -1748,7 +1748,7 @@ func TestCompareSamplesResponse(t *testing.T) {
 			err:               errors.New("expected 1 metrics but got 2"),
 		},
 		{
-			name: "should not fail when there is a different number of samples in a series in a matrix, where some float samples are more recent than the configured skip recent samples interval",
+			name: "should not fail when there is different number of samples in a series, but non-matching float samples are more recent than configured skip recent samples interval",
 			expected: json.RawMessage(`{
 							"status": "success",
 							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[` + overAnHourAgo + `,"10"],[` + now + `,"20"]]}]}
@@ -1757,6 +1757,67 @@ func TestCompareSamplesResponse(t *testing.T) {
 			actual: json.RawMessage(`{
 							"status": "success",
 							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[` + overAnHourAgo + `,"10"]]}]}
+						}`),
+			skipRecentSamples: time.Hour,
+		},
+		{
+			name: "should not fail when there is different number of samples in a series, but non-matching histogram samples are more recent than configured skip recent samples interval",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "matrix",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histograms": [
+											[
+												` + overAnHourAgo + `,
+												{
+													"count": "2",
+													"sum": "3",
+													"buckets": [
+														[1,"0","2","2"]
+													]
+												}
+											],
+											[
+												` + now + `,
+												{
+													"count": "2",
+													"sum": "3",
+													"buckets": [
+														[1,"0","2","2"]
+													]
+												}
+											]
+										]
+									}
+								]
+							}
+						}`),
+
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "matrix",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histograms": [
+											[
+												` + overAnHourAgo + `,
+												{
+													"count": "2",
+													"sum": "3",
+													"buckets": [
+														[1,"0","2","2"]
+													]
+												}
+											]
+										]
+									}
+								]
+							}
 						}`),
 			skipRecentSamples: time.Hour,
 		},
