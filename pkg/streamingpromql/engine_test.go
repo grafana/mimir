@@ -1290,6 +1290,86 @@ func TestAnnotations(t *testing.T) {
 			data: mixedFloatHistogramData,
 			expr: `sum(metric{type="histogram"})`,
 		},
+
+		"rate() over metric without counter suffix containing only floats": {
+			data:                    mixedFloatHistogramData,
+			expr:                    `rate(metric{type="float"}[1m])`,
+			expectedInfoAnnotations: []string{`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "metric" (1:6)`},
+		},
+		"rate() over metric without counter suffix containing only native histograms": {
+			data: mixedFloatHistogramData,
+			expr: `rate(metric{type="histogram"}[1m])`,
+		},
+		"rate() over metric ending in _total": {
+			data: `some_metric_total 0+1x3`,
+			expr: `rate(some_metric_total[1m])`,
+		},
+		"rate() over metric ending in _sum": {
+			data: `some_metric_sum 0+1x3`,
+			expr: `rate(some_metric_sum[1m])`,
+		},
+		"rate() over metric ending in _count": {
+			data: `some_metric_count 0+1x3`,
+			expr: `rate(some_metric_count[1m])`,
+		},
+		"rate() over metric ending in _bucket": {
+			data: `some_metric_bucket 0+1x3`,
+			expr: `rate(some_metric_bucket[1m])`,
+		},
+		"rate() over multiple metric names": {
+			data: `
+				not_a_counter{env="prod", series="1"}      0+1x3
+				a_total{series="2"}                        1+1x3
+				a_sum{series="3"}                          2+1x3
+				a_count{series="4"}                        3+1x3
+				a_bucket{series="5"}                       4+1x3
+				not_a_counter{env="test", series="6"}      5+1x3
+				also_not_a_counter{env="test", series="7"} 6+1x3
+			`,
+			expr: `rate({__name__!=""}[1m])`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "not_a_counter" (1:6)`,
+				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "also_not_a_counter" (1:6)`,
+			},
+		},
+		"rate() over series with both floats and histograms": {
+			data:                       `some_metric_count 10 {{schema:0 sum:1 count:1 buckets:[1]}}`,
+			expr:                       `rate(some_metric_count[1m])`,
+			expectedWarningAnnotations: []string{`PromQL warning: encountered a mix of histograms and floats for metric name "some_metric_count" (1:6)`},
+		},
+		"rate() over series with first histogram that is not a counter": {
+			data:                       `some_metric {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2]}}`,
+			expr:                       `rate(some_metric[1m])`,
+			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:6)`},
+		},
+		"rate() over series with last histogram that is not a counter": {
+			data:                       `some_metric {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}}`,
+			expr:                       `rate(some_metric[1m])`,
+			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:6)`},
+		},
+		"rate() over series with a histogram that is not a counter that is neither the first or last in the range": {
+			data:                       `some_metric {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}} {{schema:0 sum:3 count:3 buckets:[3]}}`,
+			expr:                       `rate(some_metric[2m] @ 2m)`,
+			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:6)`},
+		},
+
+		"multiple annotations from different operators": {
+			data: `
+				mixed_metric_count       10 {{schema:0 sum:1 count:1 buckets:[1]}}
+				other_mixed_metric_count 10 {{schema:0 sum:1 count:1 buckets:[1]}}
+				float_metric             10 20
+				other_float_metric       10 20
+			`,
+			expr: "rate(mixed_metric_count[1m]) + rate(other_mixed_metric_count[1m]) + rate(float_metric[1m]) + rate(other_float_metric[1m])",
+			expectedWarningAnnotations: []string{
+				`PromQL warning: encountered a mix of histograms and floats for metric name "mixed_metric_count" (1:6)`,
+				`PromQL warning: encountered a mix of histograms and floats for metric name "other_mixed_metric_count" (1:37)`,
+			},
+			expectedInfoAnnotations: []string{
+				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "float_metric" (1:74)`,
+				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "other_float_metric" (1:99)`,
+			},
+		},
 	}
 
 	opts := NewTestEngineOpts()
@@ -1304,15 +1384,6 @@ func TestAnnotations(t *testing.T) {
 		"Prometheus' engine": prometheusEngine,
 	}
 
-	queryTypes := map[string]func(expr string, engine promql.QueryEngine, storage storage.Queryable) (promql.Query, error){
-		"range": func(expr string, engine promql.QueryEngine, storage storage.Queryable) (promql.Query, error) {
-			return engine.NewRangeQuery(context.Background(), storage, nil, expr, startT, endT, step)
-		},
-		"instant": func(expr string, engine promql.QueryEngine, storage storage.Queryable) (promql.Query, error) {
-			return engine.NewInstantQuery(context.Background(), storage, nil, expr, startT)
-		},
-	}
-
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			store := promqltest.LoadedStorage(t, "load 1m\n"+strings.TrimSpace(testCase.data))
@@ -1320,9 +1391,19 @@ func TestAnnotations(t *testing.T) {
 
 			for engineName, engine := range engines {
 				t.Run(engineName, func(t *testing.T) {
+
+					queryTypes := map[string]func() (promql.Query, error){
+						"range": func() (promql.Query, error) {
+							return engine.NewRangeQuery(context.Background(), store, nil, testCase.expr, startT, endT, step)
+						},
+						"instant": func() (promql.Query, error) {
+							return engine.NewInstantQuery(context.Background(), store, nil, testCase.expr, startT)
+						},
+					}
+
 					for queryType, generator := range queryTypes {
 						t.Run(queryType, func(t *testing.T) {
-							query, err := generator(testCase.expr, engine, store)
+							query, err := generator()
 							require.NoError(t, err)
 							t.Cleanup(query.Close)
 

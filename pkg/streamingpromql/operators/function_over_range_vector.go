@@ -22,18 +22,21 @@ import (
 type FunctionOverRangeVector struct {
 	Inner                    types.RangeVectorOperator
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
-
-	MetadataFunc functions.SeriesMetadataFunction
-	StepFunc     functions.RangeVectorStepFunction
+	Func                     functions.FunctionOverRangeVector
 
 	Annotations *annotations.Annotations
+
+	metricNames        *MetricNames
+	currentSeriesIndex int
 
 	numSteps        int
 	rangeSeconds    float64
 	floatBuffer     *types.FPointRingBuffer
 	histogramBuffer *types.HPointRingBuffer
 
-	expressionPosition posrange.PositionRange
+	expressionPosition   posrange.PositionRange
+	emitAnnotationFunc   functions.EmitAnnotationFunc
+	seriesValidationFunc functions.RangeVectorSeriesValidationFunction
 }
 
 var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
@@ -41,19 +44,29 @@ var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
 func NewFunctionOverRangeVector(
 	inner types.RangeVectorOperator,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
-	metadataFunc functions.SeriesMetadataFunction,
-	stepFunc functions.RangeVectorStepFunction,
+	f functions.FunctionOverRangeVector,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) *FunctionOverRangeVector {
-	return &FunctionOverRangeVector{
+	o := &FunctionOverRangeVector{
 		Inner:                    inner,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
-		MetadataFunc:             metadataFunc,
-		StepFunc:                 stepFunc,
+		Func:                     f,
 		Annotations:              annotations,
 		expressionPosition:       expressionPosition,
 	}
+
+	if f.SeriesValidationFuncFactory != nil {
+		o.seriesValidationFunc = f.SeriesValidationFuncFactory()
+	}
+
+	if f.NeedsSeriesNamesForAnnotations {
+		o.metricNames = &MetricNames{}
+	}
+
+	o.emitAnnotationFunc = o.emitAnnotation // This is an optimisation to avoid creating the EmitAnnotationFunc instance on every usage.
+
+	return o
 }
 
 func (m *FunctionOverRangeVector) ExpressionPosition() posrange.PositionRange {
@@ -66,16 +79,24 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 		return nil, err
 	}
 
+	if m.metricNames != nil {
+		m.metricNames.CaptureMetricNames(metadata)
+	}
+
 	m.numSteps = m.Inner.StepCount()
 	m.rangeSeconds = m.Inner.Range().Seconds()
 
-	return m.MetadataFunc(metadata, m.MemoryConsumptionTracker)
+	return m.Func.SeriesMetadataFunc(metadata, m.MemoryConsumptionTracker)
 }
 
 func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if err := m.Inner.NextSeries(ctx); err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
+
+	defer func() {
+		m.currentSeriesIndex++
+	}()
 
 	if m.floatBuffer == nil {
 		m.floatBuffer = types.NewFPointRingBuffer(m.MemoryConsumptionTracker)
@@ -95,12 +116,16 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 
 		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
 		if err == types.EOS {
+			if m.seriesValidationFunc != nil {
+				m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex), m.emitAnnotationFunc)
+			}
+
 			return data, nil
 		} else if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		f, hasFloat, h, err := m.StepFunc(step, m.rangeSeconds, m.floatBuffer, m.histogramBuffer)
+		f, hasFloat, h, err := m.Func.StepFunc(step, m.rangeSeconds, m.floatBuffer, m.histogramBuffer, m.emitAnnotationFunc)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
@@ -129,6 +154,11 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			data.Histograms = append(data.Histograms, promql.HPoint{T: step.StepT, H: h})
 		}
 	}
+}
+
+func (m *FunctionOverRangeVector) emitAnnotation(generator functions.AnnotationGenerator) {
+	metricName := m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex)
+	m.Annotations.Add(generator(metricName, m.Inner.ExpressionPosition()))
 }
 
 func (m *FunctionOverRangeVector) Close() {

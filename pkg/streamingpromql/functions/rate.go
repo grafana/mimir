@@ -6,13 +6,23 @@
 package functions
 
 import (
+	"strings"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer) (float64, bool, *histogram.FloatHistogram, error) {
+var Rate = FunctionOverRangeVector{
+	StepFunc:                       rate,
+	SeriesValidationFuncFactory:    rateSeriesValidator,
+	SeriesMetadataFunc:             DropSeriesName,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *types.FPointRingBuffer, histogramBuffer *types.HPointRingBuffer, emitAnnotation EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	fHead, fTail := floatBuffer.UnsafePoints(step.RangeEnd)
 	fCount := len(fHead) + len(fTail)
 
@@ -20,9 +30,9 @@ func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *typ
 	hCount := len(hHead) + len(hTail)
 
 	if fCount > 0 && hCount > 0 {
-		// We need either at least two Histograms and no Floats, or at least two
-		// Floats and no Histograms to calculate a rate. Otherwise, drop this
-		// Vector element.
+		// We need either at least two histograms and no floats, or at least two floats and no histograms to calculate a rate.
+		// Otherwise, emit a warning and drop this sample.
+		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 		return 0, false, nil, nil
 	}
 
@@ -32,18 +42,29 @@ func Rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *typ
 	}
 
 	if hCount >= 2 {
-		val, err := histogramRate(histogramBuffer, step, hHead, hTail, rangeSeconds, hCount)
+		val, err := histogramRate(histogramBuffer, step, hHead, hTail, rangeSeconds, hCount, emitAnnotation)
 		if err != nil {
 			return 0, false, nil, err
 		}
 		return 0, false, val, nil
 	}
+
 	return 0, false, nil, nil
 }
 
-func histogramRate(histogramBuffer *types.HPointRingBuffer, step types.RangeVectorStepData, hHead []promql.HPoint, hTail []promql.HPoint, rangeSeconds float64, hCount int) (*histogram.FloatHistogram, error) {
+func histogramRate(histogramBuffer *types.HPointRingBuffer, step types.RangeVectorStepData, hHead []promql.HPoint, hTail []promql.HPoint, rangeSeconds float64, hCount int, emitAnnotation EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
 	firstPoint := histogramBuffer.First()
-	lastPoint, _ := histogramBuffer.LastAtOrBefore(step.RangeEnd) // We already know there is a point at or before this time, no need to check.
+
+	var lastPoint promql.HPoint
+	if len(hTail) > 0 {
+		lastPoint = hTail[len(hTail)-1]
+	} else {
+		lastPoint = hHead[len(hHead)-1]
+	}
+
+	if firstPoint.H.CounterResetHint == histogram.GaugeType || lastPoint.H.CounterResetHint == histogram.GaugeType {
+		emitAnnotation(annotations.NewNativeHistogramNotCounterWarning)
+	}
 
 	currentSchema := firstPoint.H.Schema
 	if lastPoint.H.Schema < currentSchema {
@@ -70,6 +91,10 @@ func histogramRate(histogramBuffer *types.HPointRingBuffer, step types.RangeVect
 				delta = delta.CopyToSchema(p.H.Schema)
 			}
 
+			if p.H.CounterResetHint == histogram.GaugeType {
+				emitAnnotation(annotations.NewNativeHistogramNotCounterWarning)
+			}
+
 			previousValue = p.H
 		}
 		return nil
@@ -92,7 +117,14 @@ func histogramRate(histogramBuffer *types.HPointRingBuffer, step types.RangeVect
 
 func floatRate(fCount int, floatBuffer *types.FPointRingBuffer, step types.RangeVectorStepData, fHead []promql.FPoint, fTail []promql.FPoint, rangeSeconds float64) float64 {
 	firstPoint := floatBuffer.First()
-	lastPoint, _ := floatBuffer.LastAtOrBefore(step.RangeEnd) // We already know there is a point at or before this time, no need to check.
+
+	var lastPoint promql.FPoint
+	if len(fTail) > 0 {
+		lastPoint = fTail[len(fTail)-1]
+	} else {
+		lastPoint = fHead[len(fHead)-1]
+	}
+
 	delta := lastPoint.F - firstPoint.F
 	previousValue := firstPoint.F
 
@@ -185,4 +217,26 @@ func calculateFloatRate(rangeStart, rangeEnd int64, rangeSeconds float64, firstP
 	factor := extrapolateToInterval / sampledInterval
 	factor /= rangeSeconds
 	return delta * factor
+}
+
+func rateSeriesValidator() RangeVectorSeriesValidationFunction {
+	// Most of the time, rate() is performed over many series with the same metric name, so we can save some time
+	// by only checking a name we haven't already checked.
+	lastCheckedMetricName := ""
+
+	return func(data types.InstantVectorSeriesData, metricName string, emitAnnotation EmitAnnotationFunc) {
+		if len(data.Floats) == 0 {
+			return
+		}
+
+		if metricName == "" || metricName == lastCheckedMetricName {
+			return
+		}
+
+		if !strings.HasSuffix(metricName, "_total") && !strings.HasSuffix(metricName, "_count") && !strings.HasSuffix(metricName, "_sum") && !strings.HasSuffix(metricName, "_bucket") {
+			emitAnnotation(annotations.NewPossibleNonCounterInfo)
+		}
+
+		lastCheckedMetricName = metricName
+	}
 }
