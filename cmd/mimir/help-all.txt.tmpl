@@ -1895,6 +1895,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.mimir-query-engine.enable-binary-operations
     	[experimental] Enable support for binary operations in Mimir's query engine. Only applies if the Mimir query engine is in use.
+  -querier.mimir-query-engine.enable-over-time-functions
+    	[experimental] Enable support for count_over_time in Mimir's query engine. Only applies if the Mimir query engine is in use.
   -querier.minimize-ingester-requests
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
