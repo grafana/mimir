@@ -446,12 +446,12 @@ func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData,
 		} else if seriesGroup.histogramSums[idx] != nil {
 			seriesGroup.histogramSums[idx], err = seriesGroup.histogramSums[idx].Add(p.H)
 			if err != nil {
-				// We've seen an invalid combination of histograms. Make sure we don't emit a sample at this timestamp.
+				// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
 				seriesGroup.histogramSums[idx] = invalidCombinationOfHistograms
 				seriesGroup.histogramPointCount--
 
 				if err := functions.NativeHistogramErrorToAnnotation(err, a.emitAnnotationFunc); err != nil {
-					// We couldn't convert the error to an annotation. Give up.
+					// Unknown error: we couldn't convert the error to an annotation. Give up.
 					return err
 				}
 			}
