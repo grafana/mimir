@@ -90,6 +90,8 @@ func FunctionOverRangeVectorOperatorFactory(
 
 // These functions return an instant-vector.
 var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOperatorFactory{
+	// Please keep this list sorted alphabetically.
+
 	"abs":             InstantVectorTransformationFunctionOperatorFactory("abs", functions.Abs),
 	"acos":            InstantVectorTransformationFunctionOperatorFactory("acos", functions.Acos),
 	"acosh":           InstantVectorTransformationFunctionOperatorFactory("acosh", functions.Acosh),
@@ -100,6 +102,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"ceil":            InstantVectorTransformationFunctionOperatorFactory("ceil", functions.Ceil),
 	"cos":             InstantVectorTransformationFunctionOperatorFactory("cos", functions.Cos),
 	"cosh":            InstantVectorTransformationFunctionOperatorFactory("cosh", functions.Cosh),
+	"count_over_time": FunctionOverRangeVectorOperatorFactory("count_over_time", functions.CountOverTime),
 	"deg":             InstantVectorTransformationFunctionOperatorFactory("deg", functions.Deg),
 	"exp":             InstantVectorTransformationFunctionOperatorFactory("exp", functions.Exp),
 	"floor":           InstantVectorTransformationFunctionOperatorFactory("floor", functions.Floor),

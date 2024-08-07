@@ -241,6 +241,23 @@ func (b *HPointRingBuffer) LastAtOrBefore(maxT int64) (promql.HPoint, bool) {
 	return promql.HPoint{}, false
 }
 
+// CountAtOrBefore returns the number of points in this ring buffer with timestamp less than or equal to maxT.
+func (b *HPointRingBuffer) CountAtOrBefore(maxT int64) int {
+	count := b.size
+
+	for count > 0 {
+		p := b.points[(b.firstIndex+count-1)%len(b.points)]
+
+		if p.T <= maxT {
+			return count
+		}
+
+		count--
+	}
+
+	return count
+}
+
 // These hooks exist so we can override them during unit tests.
 var getHPointSliceForRingBuffer = HPointSlicePool.Get
 var putHPointSliceForRingBuffer = HPointSlicePool.Put
