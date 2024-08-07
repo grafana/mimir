@@ -20,6 +20,7 @@ type FeatureToggles struct {
 
 var overTimeFunctionNames = []string{
 	"count_over_time",
+	"last_over_time",
 	"present_over_time",
 }
 

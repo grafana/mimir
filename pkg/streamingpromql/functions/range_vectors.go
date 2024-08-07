@@ -24,6 +24,27 @@ func countOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPo
 	return float64(fPointCount + hPointCount), true, nil, nil
 }
 
+var LastOverTime = FunctionOverRangeVector{
+	SeriesMetadataFunc: PassthroughSeriesMetadata,
+	StepFunc:           lastOverTime,
+}
+
+func lastOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, hPoints *types.HPointRingBuffer, _ EmitAnnotationFunc) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error) {
+	lastFloat, floatAvailable := fPoints.LastAtOrBefore(step.RangeEnd)
+	lastHistogram, histogramAvailable := hPoints.LastAtOrBefore(step.RangeEnd)
+
+	if !floatAvailable && !histogramAvailable {
+		return 0, false, nil, nil
+	}
+
+	if floatAvailable && (!histogramAvailable || lastFloat.T > lastHistogram.T) {
+		return lastFloat.F, true, nil, nil
+	}
+
+	// We must make a copy of the histogram before returning it, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
+	return 0, false, lastHistogram.H.Copy(), nil
+}
+
 var PresentOverTime = FunctionOverRangeVector{
 	SeriesMetadataFunc: DropSeriesName,
 	StepFunc:           presentOverTime,

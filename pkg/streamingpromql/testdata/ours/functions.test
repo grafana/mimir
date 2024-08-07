@@ -75,6 +75,12 @@ eval range from 0 to 7m step 1m count_over_time(some_metric[3m])
 eval range from 0 to 7m step 1m count_over_time(some_metric[5s])
   {} 1 1 1 1 _ _ 1 1
 
+eval range from 0 to 7m step 1m last_over_time(some_metric[3m])
+  some_metric 0 1 2 3 3 3 {{schema:3 sum:4 count:4 buckets:[1 2 1]}} {{schema:3 sum:4 count:4 buckets:[1 2 1]}}
+
+eval range from 0 to 7m step 1m last_over_time(some_metric[5s])
+  some_metric 0 1 2 3 _ _ {{schema:3 sum:4 count:4 buckets:[1 2 1]}} {{schema:3 sum:4 count:4 buckets:[1 2 1]}}
+
 eval range from 0 to 7m step 1m present_over_time(some_metric[3m])
   {} 1 1 1 1 1 1 1 1
 

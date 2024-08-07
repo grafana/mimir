@@ -59,7 +59,7 @@ func InstantVectorTransformationFunctionOperatorFactory(name string, seriesDataF
 //   - name: The name of the function
 //   - metadataFunc: The function for handling metadata
 func InstantVectorLabelManipulationFunctionOperatorFactory(name string, metadataFunc functions.SeriesMetadataFunction) InstantVectorFunctionOperatorFactory {
-	return SingleInputVectorFunctionOperatorFactory(name, metadataFunc, functions.Passthrough)
+	return SingleInputVectorFunctionOperatorFactory(name, metadataFunc, functions.PassthroughData)
 }
 
 // FunctionOverRangeVectorOperatorFactory creates an InstantVectorFunctionOperatorFactory for functions
@@ -108,6 +108,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"floor":             InstantVectorTransformationFunctionOperatorFactory("floor", functions.Floor),
 	"histogram_count":   InstantVectorTransformationFunctionOperatorFactory("histogram_count", functions.HistogramCount),
 	"histogram_sum":     InstantVectorTransformationFunctionOperatorFactory("histogram_sum", functions.HistogramSum),
+	"last_over_time":    FunctionOverRangeVectorOperatorFactory("last_over_time", functions.LastOverTime),
 	"ln":                InstantVectorTransformationFunctionOperatorFactory("ln", functions.Ln),
 	"log10":             InstantVectorTransformationFunctionOperatorFactory("log10", functions.Log10),
 	"log2":              InstantVectorTransformationFunctionOperatorFactory("log2", functions.Log2),
