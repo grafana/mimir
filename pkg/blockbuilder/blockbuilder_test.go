@@ -473,7 +473,7 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 		LeaderEpoch: -1, // not a group consumer
 		Metadata:    meta,
 	}
-	err = commitRecord(ctx, log.NewNopLogger(), kc, testGroup, offset)
+	err = commitOffset(ctx, log.NewNopLogger(), kc, testGroup, offset)
 	require.NoError(t, err)
 	kc.CloseAllowingRebalance()
 	// Because there is a commit, on startup, the block builder should consume samples only after the commit.
