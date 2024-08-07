@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 	"time"
@@ -96,6 +97,7 @@ type group struct {
 
 	// Sum, presence, and histograms for each step.
 	floatSums           []float64
+	floatMeans          []float64 // Mean, or "compensating value" for Kahan summation.
 	floatPresent        []bool
 	histogramSums       []*histogram.FloatHistogram
 	histogramPointCount int
@@ -297,7 +299,8 @@ func (a *Aggregation) constructSeriesData(thisGroup *group, start int64, interva
 		for i, havePoint := range thisGroup.floatPresent {
 			if havePoint {
 				t := start + int64(i)*interval
-				floatPoints = append(floatPoints, promql.FPoint{T: t, F: thisGroup.floatSums[i]})
+				f := thisGroup.floatSums[i] + thisGroup.floatMeans[i]
+				floatPoints = append(floatPoints, promql.FPoint{T: t, F: f})
 			}
 		}
 	}
@@ -318,9 +321,11 @@ func (a *Aggregation) constructSeriesData(thisGroup *group, start int64, interva
 	}
 
 	types.Float64SlicePool.Put(thisGroup.floatSums, a.MemoryConsumptionTracker)
+	types.Float64SlicePool.Put(thisGroup.floatMeans, a.MemoryConsumptionTracker)
 	types.BoolSlicePool.Put(thisGroup.floatPresent, a.MemoryConsumptionTracker)
 	types.HistogramSlicePool.Put(thisGroup.histogramSums, a.MemoryConsumptionTracker)
 	thisGroup.floatSums = nil
+	thisGroup.floatMeans = nil
 	thisGroup.floatPresent = nil
 	thisGroup.histogramSums = nil
 	thisGroup.histogramPointCount = 0
@@ -383,11 +388,17 @@ func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData,
 			return err
 		}
 
+		seriesGroup.floatMeans, err = types.Float64SlicePool.Get(steps, a.MemoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+
 		seriesGroup.floatPresent, err = types.BoolSlicePool.Get(steps, a.MemoryConsumptionTracker)
 		if err != nil {
 			return err
 		}
 		seriesGroup.floatSums = seriesGroup.floatSums[:steps]
+		seriesGroup.floatMeans = seriesGroup.floatMeans[:steps]
 		seriesGroup.floatPresent = seriesGroup.floatPresent[:steps]
 	}
 
@@ -402,7 +413,7 @@ func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData,
 
 	for _, p := range s.Floats {
 		idx := (p.T - start) / interval
-		seriesGroup.floatSums[idx] += p.F
+		seriesGroup.floatSums[idx], seriesGroup.floatMeans[idx] = kahanSumInc(p.F, seriesGroup.floatSums[idx], seriesGroup.floatMeans[idx])
 		seriesGroup.floatPresent[idx] = true
 	}
 
@@ -455,4 +466,21 @@ func (g groupSorter) Less(i, j int) bool {
 func (g groupSorter) Swap(i, j int) {
 	g.metadata[i], g.metadata[j] = g.metadata[j], g.metadata[i]
 	g.groups[i], g.groups[j] = g.groups[j], g.groups[i]
+}
+
+// TODO(jhesketh): This will likely be useful elsewhere, so we may move this in the future.
+// (We could also consider exporting this from the upstream promql package).
+func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
+	t := sum + inc
+	switch {
+	case math.IsInf(t, 0):
+		c = 0
+
+	// Using Neumaier improvement, swap if next term larger than sum.
+	case math.Abs(sum) >= math.Abs(inc):
+		c += (sum - t) + inc
+	default:
+		c += (inc - t) + sum
+	}
+	return t, c
 }
