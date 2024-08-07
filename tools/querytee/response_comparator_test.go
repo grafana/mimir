@@ -98,6 +98,18 @@ func TestCompareMatrix(t *testing.T) {
 						]`),
 		},
 		{
+			name: "first series match but later series has difference in sample value",
+			expected: json.RawMessage(`[
+							{"metric":{"foo":"bar"},"values":[[1,"1"],[2,"2"]]},
+							{"metric":{"oops":"bar"},"values":[[1,"1"],[2,"2"]]}
+						]`),
+			actual: json.RawMessage(`[
+							{"metric":{"foo":"bar"},"values":[[1,"1"],[2,"2"]]},
+							{"metric":{"oops":"bar"},"values":[[1,"1"],[2,"3"]]}
+						]`),
+			err: errors.New(`float sample pair does not match for metric {oops="bar"}: expected value 2 for timestamp 2 but got 3`),
+		},
+		{
 			name: "single expected sample has histogram but actual sample has float value",
 			expected: json.RawMessage(`[
 							{
