@@ -140,15 +140,16 @@ func newNode(name string, height int, da QueuingAlgorithm) (*Node, error) {
 		name:             name,
 		localQueue:       nil,
 		queuePosition:    localQueueIndex,
-		queueOrder:       make([]string, 0),
-		queueMap:         make(map[string]*Node, 1),
 		height:           height,
 		queuingAlgorithm: da,
 	}
-	// if the node is a leaf node, it gets memory allocated towards a local queue and cannot have child nodes
+	// if the node is a leaf node, it gets memory allocated towards a local queue and cannot have child queues
 	if height == 0 {
 		n.localQueue = list.New()
-		n.queueMap = nil
+	} else {
+		// any other kind of node is allowed to have children, but not a local queue
+		n.queueMap = make(map[string]*Node, 1)
+		n.queueOrder = make([]string, 0)
 	}
 	return n, nil
 }
