@@ -96,11 +96,11 @@ type group struct {
 	lastSeriesIndex int
 
 	// Sum, presence, and histograms for each step.
-	floatSums           []float64
-	floatMeans          []float64 // Mean, or "compensating value" for Kahan summation.
-	floatPresent        []bool
-	histogramSums       []*histogram.FloatHistogram
-	histogramPointCount int
+	floatSums              []float64
+	floatCompensatingMeans []float64 // Mean, or "compensating value" for Kahan summation.
+	floatPresent           []bool
+	histogramSums          []*histogram.FloatHistogram
+	histogramPointCount    int
 }
 
 var _ types.InstantVectorOperator = &Aggregation{}
@@ -299,7 +299,7 @@ func (a *Aggregation) constructSeriesData(thisGroup *group, start int64, interva
 		for i, havePoint := range thisGroup.floatPresent {
 			if havePoint {
 				t := start + int64(i)*interval
-				f := thisGroup.floatSums[i] + thisGroup.floatMeans[i]
+				f := thisGroup.floatSums[i] + thisGroup.floatCompensatingMeans[i]
 				floatPoints = append(floatPoints, promql.FPoint{T: t, F: f})
 			}
 		}
@@ -321,11 +321,11 @@ func (a *Aggregation) constructSeriesData(thisGroup *group, start int64, interva
 	}
 
 	types.Float64SlicePool.Put(thisGroup.floatSums, a.MemoryConsumptionTracker)
-	types.Float64SlicePool.Put(thisGroup.floatMeans, a.MemoryConsumptionTracker)
+	types.Float64SlicePool.Put(thisGroup.floatCompensatingMeans, a.MemoryConsumptionTracker)
 	types.BoolSlicePool.Put(thisGroup.floatPresent, a.MemoryConsumptionTracker)
 	types.HistogramSlicePool.Put(thisGroup.histogramSums, a.MemoryConsumptionTracker)
 	thisGroup.floatSums = nil
-	thisGroup.floatMeans = nil
+	thisGroup.floatCompensatingMeans = nil
 	thisGroup.floatPresent = nil
 	thisGroup.histogramSums = nil
 	thisGroup.histogramPointCount = 0
@@ -388,7 +388,7 @@ func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData,
 			return err
 		}
 
-		seriesGroup.floatMeans, err = types.Float64SlicePool.Get(steps, a.MemoryConsumptionTracker)
+		seriesGroup.floatCompensatingMeans, err = types.Float64SlicePool.Get(steps, a.MemoryConsumptionTracker)
 		if err != nil {
 			return err
 		}
@@ -398,7 +398,7 @@ func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData,
 			return err
 		}
 		seriesGroup.floatSums = seriesGroup.floatSums[:steps]
-		seriesGroup.floatMeans = seriesGroup.floatMeans[:steps]
+		seriesGroup.floatCompensatingMeans = seriesGroup.floatCompensatingMeans[:steps]
 		seriesGroup.floatPresent = seriesGroup.floatPresent[:steps]
 	}
 
@@ -413,7 +413,7 @@ func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData,
 
 	for _, p := range s.Floats {
 		idx := (p.T - start) / interval
-		seriesGroup.floatSums[idx], seriesGroup.floatMeans[idx] = kahanSumInc(p.F, seriesGroup.floatSums[idx], seriesGroup.floatMeans[idx])
+		seriesGroup.floatSums[idx], seriesGroup.floatCompensatingMeans[idx] = kahanSumInc(p.F, seriesGroup.floatSums[idx], seriesGroup.floatCompensatingMeans[idx])
 		seriesGroup.floatPresent[idx] = true
 	}
 

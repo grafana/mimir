@@ -601,7 +601,6 @@ load 10s
 	data{test="nan",group="2",point="a"} 2
 	data{test="nan",group="2",point="b"} NaN
 
-# Unsupported by streaming engine.
 eval instant at 1m sum(data{test="ten"})
 	{} 10
 
