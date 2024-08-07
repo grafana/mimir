@@ -44,6 +44,7 @@ func rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *typ
 	if hCount >= 2 {
 		val, err := histogramRate(histogramBuffer, step, hHead, hTail, rangeSeconds, hCount, emitAnnotation)
 		if err != nil {
+			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 			return 0, false, nil, err
 		}
 		return 0, false, val, nil
@@ -54,6 +55,7 @@ func rate(step types.RangeVectorStepData, rangeSeconds float64, floatBuffer *typ
 
 func histogramRate(histogramBuffer *types.HPointRingBuffer, step types.RangeVectorStepData, hHead []promql.HPoint, hTail []promql.HPoint, rangeSeconds float64, hCount int, emitAnnotation EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
 	firstPoint := histogramBuffer.First()
+	usingCustomBuckets := firstPoint.H.UsesCustomBuckets()
 
 	var lastPoint promql.HPoint
 	if len(hTail) > 0 {
@@ -71,6 +73,10 @@ func histogramRate(histogramBuffer *types.HPointRingBuffer, step types.RangeVect
 		currentSchema = lastPoint.H.Schema
 	}
 
+	if lastPoint.H.UsesCustomBuckets() != usingCustomBuckets {
+		return nil, histogram.ErrHistogramsIncompatibleSchema
+	}
+
 	delta := lastPoint.H.CopyToSchema(currentSchema)
 	_, err := delta.Sub(firstPoint.H)
 	if err != nil {
@@ -82,8 +88,7 @@ func histogramRate(histogramBuffer *types.HPointRingBuffer, step types.RangeVect
 		for _, p := range points {
 			if p.H.DetectReset(previousValue) {
 				// Counter reset.
-				_, err = delta.Add(previousValue)
-				if err != nil {
+				if _, err := delta.Add(previousValue); err != nil {
 					return err
 				}
 			}
@@ -93,6 +98,10 @@ func histogramRate(histogramBuffer *types.HPointRingBuffer, step types.RangeVect
 
 			if p.H.CounterResetHint == histogram.GaugeType {
 				emitAnnotation(annotations.NewNativeHistogramNotCounterWarning)
+			}
+
+			if p.H.UsesCustomBuckets() != usingCustomBuckets {
+				return histogram.ErrHistogramsIncompatibleSchema
 			}
 
 			previousValue = p.H
