@@ -1376,6 +1376,9 @@ func (db *DB) CompactOOOHead(ctx context.Context) error {
 	return db.compactOOOHead(ctx)
 }
 
+// Callback for testing.
+var compactOOOHeadTestingCallback func()
+
 func (db *DB) compactOOOHead(ctx context.Context) error {
 	if !db.oooWasEnabled.Load() {
 		return nil
@@ -1383,6 +1386,11 @@ func (db *DB) compactOOOHead(ctx context.Context) error {
 	oooHead, err := NewOOOCompactionHead(ctx, db.head)
 	if err != nil {
 		return fmt.Errorf("get ooo compaction head: %w", err)
+	}
+
+	if compactOOOHeadTestingCallback != nil {
+		compactOOOHeadTestingCallback()
+		compactOOOHeadTestingCallback = nil
 	}
 
 	ulids, err := db.compactOOO(db.dir, oooHead)
