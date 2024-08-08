@@ -140,6 +140,51 @@
       )
     ),
 
+  newMimirServiceMonitor(name, port):: {
+    apiVersion: 'monitoring.coreos.com/v1',
+    kind: 'ServiceMonitor',
+    metadata: {
+      name: name,
+      namespace: $._config.namespace,
+      labels: {
+        name: name,
+      },
+    },
+    spec: {
+      namespaceSelector: {
+        matchNames: [$._config.namespace],
+      },
+      endpoints: [
+        {
+          port: port,
+          path: '/metrics',
+          relabelings: [
+            {
+              sourceLabels: ['job'],
+              action: 'replace',
+              replacement: $._config.namespace + '/$1',
+              targetLabel: 'job',
+            },
+          ],
+        },
+      ],
+      selector: {
+        matchLabels: {
+          name: name,
+        },
+        matchExpressions: [
+          {
+            key: 'prometheus.io/service-monitor',
+            operator: 'NotIn',
+            values: [
+              'false',
+            ],
+          },
+        ],
+      },
+    },
+  },
+
   mimirVolumeMounts::
     $.util.volumeMounts(
       [$.util.volumeMountItem(name, $._config.configmaps[name]) for name in std.objectFieldsAll($._config.configmaps)]
