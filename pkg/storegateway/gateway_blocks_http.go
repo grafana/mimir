@@ -4,16 +4,22 @@ package storegateway
 
 import (
 	_ "embed" // Used to embed html template
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/multierror"
+	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	prom_tsdb "github.com/prometheus/prometheus/tsdb"
 
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
@@ -33,6 +39,24 @@ type blocksPageContents struct {
 	ShowSources     bool                 `json:"-"`
 	ShowParents     bool                 `json:"-"`
 	SplitCount      int                  `json:"-"`
+	ActionType      ActionType           `json:"-"`
+}
+
+type ActionType string
+
+const (
+	ActionTypeNone            ActionType = "none"
+	ActionTypeNoCompact       ActionType = "no-compact"
+	ActionTypeDeleteNoCompact ActionType = "delete-no-compact"
+)
+
+func isValidActionType(value ActionType) bool {
+	switch value {
+	case ActionTypeNone, ActionTypeNoCompact, ActionTypeDeleteNoCompact:
+		return true
+	default:
+		return false
+	}
 }
 
 type formattedBlockData struct {
@@ -74,6 +98,33 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 	showDeleted := req.Form.Get("show_deleted") == "on"
 	showSources := req.Form.Get("show_sources") == "on"
 	showParents := req.Form.Get("show_parents") == "on"
+	actionType := req.Form.Get("action_type")
+	if actionType == "" {
+		actionType = string(ActionTypeNone) // Set the default value to "none"
+	}
+
+	if !isValidActionType(ActionType(actionType)) {
+		util.WriteTextResponse(w, fmt.Sprintf("Invalid Action Type: %s\n", actionType))
+		return
+	}
+	action := ActionType(actionType)
+
+	blockUlidsString := req.Form.Get("block_ulids")
+	if action != ActionTypeNone && blockUlidsString != "" {
+		var uids []string
+
+		err := json.Unmarshal([]byte(blockUlidsString), &uids)
+		if err != nil {
+			util.WriteTextResponse(w, fmt.Sprintf("Can't decode base64 of selected blocks' uid: %s", err))
+			return
+		}
+		err = s.performActionsOnBlocks(tenantID, req, action, uids)
+		if err != nil {
+			util.WriteTextResponse(w, err.Error())
+			return
+		}
+	}
+
 	var splitCount int
 	if sc := req.Form.Get("split_count"); sc != "" {
 		splitCount, _ = strconv.Atoi(sc)
@@ -156,7 +207,43 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		ShowDeleted: showDeleted,
 		ShowSources: showSources,
 		ShowParents: showParents,
+		ActionType:  action,
 	}, blocksPageTemplate, req)
+}
+
+func (s *StoreGateway) performActionsOnBlocks(tenantID string, req *http.Request, action ActionType, blockUlids []string) error {
+	// When blockUlids is set, and dropdown action is "no-compact" or "delete-no-compact",
+	// we will perform the action on the selected blocks
+	if (action != ActionTypeNoCompact && action != ActionTypeDeleteNoCompact) || len(blockUlids) == 0 {
+		return nil
+	}
+
+	errs := multierror.MultiError{}
+	for _, uid := range blockUlids {
+		ulid, err := ulid.Parse(uid)
+		if err != nil {
+			return fmt.Errorf("can't parse ULID %s: %w", uid, err)
+		}
+		bkt := block.BucketWithGlobalMarkers(bucket.NewUserBucketClient(tenantID, s.stores.bucket, nil))
+		switch action {
+		case ActionTypeNoCompact:
+			errs.Add(block.MarkForNoCompact(req.Context(), s.logger, bkt, ulid, block.ManualNoCompactReason, "Manual Operations from Admin UI: Mark for no compaction", nil))
+		case ActionTypeDeleteNoCompact:
+			errs.Add(block.DeleteNoCompactMarker(req.Context(), s.logger, bkt, ulid))
+		default:
+			return nil
+		}
+	}
+	ip := req.Header.Get("X-Forwarded-For")
+	// If X-Forwarded-For is empty, fall back to RemoteAddr
+	if ip == "" {
+		ip = strings.Split(req.RemoteAddr, ":")[0]
+	}
+	level.Info(s.logger).Log("msg", "Performed action on blocks", "action", action, "blocks", blockUlids, "ip", ip)
+	if errs.Err() != nil {
+		return fmt.Errorf("action failed with error: %w", errs.Err())
+	}
+	return nil
 }
 
 func formatTimeIfNotZero(t int64, format string) string {
