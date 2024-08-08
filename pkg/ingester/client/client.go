@@ -49,7 +49,7 @@ func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics) (H
 		return nil, err
 	}
 
-	ingClient := NewIngesterClient(conn)
+	ingClient := NewWrappedIngesterClient(conn)
 	ingClient = newBufferPoolingIngesterClient(ingClient, conn)
 
 	return &closableHealthAndIngesterClient{
