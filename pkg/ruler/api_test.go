@@ -1454,6 +1454,51 @@ func TestAlertStateDescToPrometheusAlert(t *testing.T) {
 	})
 }
 
+func TestAPIRoutesCorrectlyHandleInvalidOrgID(t *testing.T) {
+	tcs := []struct {
+		route  string
+		method string
+	}{
+		{route: "/api/v1/rules", method: http.MethodGet},
+		{route: "/api/v1/alerts", method: http.MethodGet},
+		{route: "/config/v1/rules", method: http.MethodGet},
+		{route: "/config/v1/rules/{namespace}", method: http.MethodGet},
+		{route: "/config/v1/rules/{namespace}/{groupName}", method: http.MethodGet},
+		{route: "/config/v1/rules/{namespace}", method: http.MethodPost},
+		{route: "/config/v1/rules/{namespace}/{groupName}", method: http.MethodDelete},
+		{route: "/config/v1/rules/{namespace}", method: http.MethodDelete},
+	}
+
+	for _, tc := range tcs {
+		const invalidOrgID = ""
+
+		cfg := defaultRulerConfig(t)
+		cfg.TenantFederation.Enabled = true
+
+		r := prepareRuler(t, cfg, newMockRuleStore(map[string]rulespb.RuleGroupList{}), withStart())
+
+		a := NewAPI(r, r.directStore, log.NewNopLogger())
+
+		router := mux.NewRouter()
+		router.Path("/api/v1/rules").Methods(http.MethodGet).HandlerFunc(a.PrometheusRules)
+		router.Path("/api/v1/alerts").Methods(http.MethodGet).HandlerFunc(a.PrometheusAlerts)
+		router.Path("/config/v1/rules").Methods(http.MethodGet).HandlerFunc(a.ListRules)
+		router.Path("/config/v1/rules/{namespace}").Methods(http.MethodGet).HandlerFunc(a.ListRules)
+		router.Path("/config/v1/rules/{namespace}/{groupName}").Methods(http.MethodGet).HandlerFunc(a.GetRuleGroup)
+		router.Path("/config/v1/rules/{namespace}").Methods(http.MethodPost).HandlerFunc(a.CreateRuleGroup)
+		router.Path("/config/v1/rules/{namespace}/{groupName}").Methods(http.MethodDelete).HandlerFunc(a.DeleteRuleGroup)
+		router.Path("/config/v1/rules/{namespace}").Methods(http.MethodDelete).HandlerFunc(a.DeleteNamespace)
+
+		req := requestFor(t, tc.method, "https://localhost:8080"+tc.route, nil, invalidOrgID)
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		resp := w.Result()
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	}
+}
+
 func requestFor(t *testing.T, method string, url string, body io.Reader, userID string) *http.Request {
 	t.Helper()
 
