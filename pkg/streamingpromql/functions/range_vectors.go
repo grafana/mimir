@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/promql/functions.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Prometheus Authors
 
 package functions
 
@@ -210,4 +213,116 @@ func sumHistograms(head, tail []promql.HPoint, emitAnnotation EmitAnnotationFunc
 	}
 
 	return sum, nil
+}
+
+var AvgOverTime = FunctionOverRangeVector{
+	SeriesMetadataFunc:             DropSeriesName,
+	StepFunc:                       avgOverTime,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func avgOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, hPoints *types.HPointRingBuffer, emitAnnotation EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	fHead, fTail := fPoints.UnsafePoints(step.RangeEnd)
+	hHead, hTail := hPoints.UnsafePoints(step.RangeEnd)
+
+	haveFloats := len(fHead) > 0 || len(fTail) > 0
+	haveHistograms := len(hHead) > 0 || len(hTail) > 0
+
+	if !haveFloats && !haveHistograms {
+		return 0, false, nil, nil
+	}
+
+	if haveFloats && haveHistograms {
+		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
+		return 0, false, nil, nil
+	}
+
+	if haveFloats {
+		return avgFloats(fHead, fTail), true, nil, nil
+	}
+
+	h, err := avgHistograms(hHead, hTail)
+
+	if err != nil {
+		err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+	}
+
+	return 0, false, h, err
+}
+
+func avgFloats(head, tail []promql.FPoint) float64 {
+	avgSoFar, c, count := 0.0, 0.0, 0.0
+
+	accumulate := func(points []promql.FPoint) {
+		for _, p := range points {
+			count++
+
+			if math.IsInf(avgSoFar, 0) {
+				if math.IsInf(p.F, 0) && (avgSoFar > 0) == (p.F > 0) {
+					// Running average is infinite and the next point is also the same infinite.
+					// We already have the correct running value, so just continue.
+					continue
+				}
+				if !math.IsInf(p.F, 0) && !math.IsNaN(p.F) {
+					// Running average is infinite, and the next point is neither infinite nor NaN.
+					// The running average will still be infinite after considering this point, so just continue
+					// to avoid incorrectly introducing NaN below.
+					continue
+				}
+			}
+
+			avgSoFar, c = floats.KahanSumInc(p.F/count-avgSoFar/count, avgSoFar, c)
+		}
+	}
+
+	accumulate(head)
+	accumulate(tail)
+
+	return avgSoFar + c
+}
+
+func avgHistograms(head, tail []promql.HPoint) (*histogram.FloatHistogram, error) {
+	var avgSoFar *histogram.FloatHistogram
+	count := 1.0
+
+	if len(head) > 0 {
+		avgSoFar = head[0].H
+		head = head[1:]
+	} else {
+		avgSoFar = tail[0].H
+		tail = tail[1:]
+	}
+
+	// We must make a copy of the histogram, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
+	avgSoFar = avgSoFar.Copy()
+
+	accumulate := func(points []promql.HPoint) error {
+		for _, p := range points {
+			count++
+			contributionByP := p.H.Copy().Div(count)
+			contributionByAvgSoFar := avgSoFar.Copy().Div(count)
+
+			change, err := contributionByP.Sub(contributionByAvgSoFar)
+			if err != nil {
+				return err
+			}
+
+			avgSoFar, err = avgSoFar.Add(change)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+
+	if err := accumulate(head); err != nil {
+		return nil, err
+	}
+
+	if err := accumulate(tail); err != nil {
+		return nil, err
+	}
+
+	return avgSoFar, nil
 }

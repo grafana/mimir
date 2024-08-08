@@ -48,13 +48,13 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		"metric{} or other_metric{}": "binary expression with many-to-many matching",
 		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
 		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
-		"1":                            "scalar value as top-level expression",
-		"metric{} offset 2h":           "instant vector selector with 'offset'",
-		"avg(metric{})":                "'avg' aggregation",
-		"rate(metric{}[5m] offset 2h)": "range vector selector with 'offset'",
-		"rate(metric{}[5m:1m])":        "PromQL expression type *parser.SubqueryExpr",
-		"avg_over_time(metric{}[5m])":  "'avg_over_time' function",
-		"-sum(metric{})":               "PromQL expression type *parser.UnaryExpr",
+		"1":                                     "scalar value as top-level expression",
+		"metric{} offset 2h":                    "instant vector selector with 'offset'",
+		"avg(metric{})":                         "'avg' aggregation",
+		"rate(metric{}[5m] offset 2h)":          "range vector selector with 'offset'",
+		"rate(metric{}[5m:1m])":                 "PromQL expression type *parser.SubqueryExpr",
+		"quantile_over_time(0.4, metric{}[5m])": "'quantile_over_time' function",
+		"-sum(metric{})":                        "PromQL expression type *parser.UnaryExpr",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
@@ -1420,6 +1420,26 @@ func TestAnnotations(t *testing.T) {
 		"sum_over_time() over native histograms with incompatible custom buckets": {
 			data: nativeHistogramsWithCustomBucketsData,
 			expr: `sum_over_time(metric{series="incompatible-custom-buckets"}[1m])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:15)`,
+			},
+		},
+
+		"avg_over_time() over series with both floats and histograms": {
+			data:                       `some_metric 10 {{schema:0 sum:1 count:1 buckets:[1]}}`,
+			expr:                       `avg_over_time(some_metric[1m])`,
+			expectedWarningAnnotations: []string{`PromQL warning: encountered a mix of histograms and floats for metric name "some_metric" (1:15)`},
+		},
+		"avg_over_time() over native histograms with both exponential and custom buckets": {
+			data: nativeHistogramsWithCustomBucketsData,
+			expr: `avg_over_time(metric{series="mixed-exponential-custom-buckets"}[1m])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:15)`,
+			},
+		},
+		"avg_over_time() over native histograms with incompatible custom buckets": {
+			data: nativeHistogramsWithCustomBucketsData,
+			expr: `avg_over_time(metric{series="incompatible-custom-buckets"}[1m])`,
 			expectedWarningAnnotations: []string{
 				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:15)`,
 			},

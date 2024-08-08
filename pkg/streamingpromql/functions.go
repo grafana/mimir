@@ -99,6 +99,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"asinh":             InstantVectorTransformationFunctionOperatorFactory("asinh", functions.Asinh),
 	"atan":              InstantVectorTransformationFunctionOperatorFactory("atan", functions.Atan),
 	"atanh":             InstantVectorTransformationFunctionOperatorFactory("atanh", functions.Atanh),
+	"avg_over_time":     FunctionOverRangeVectorOperatorFactory("avg_over_time", functions.AvgOverTime),
 	"ceil":              InstantVectorTransformationFunctionOperatorFactory("ceil", functions.Ceil),
 	"cos":               InstantVectorTransformationFunctionOperatorFactory("cos", functions.Cos),
 	"cosh":              InstantVectorTransformationFunctionOperatorFactory("cosh", functions.Cosh),

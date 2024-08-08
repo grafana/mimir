@@ -19,6 +19,7 @@ type FeatureToggles struct {
 }
 
 var overTimeFunctionNames = []string{
+	"avg_over_time",
 	"count_over_time",
 	"last_over_time",
 	"max_over_time",
