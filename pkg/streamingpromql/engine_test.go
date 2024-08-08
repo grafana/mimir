@@ -183,7 +183,7 @@ func TestOurTestCases(t *testing.T) {
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
 	testdataFS := os.DirFS("./testdata")
-	testFiles, err := fs.Glob(testdataFS, "ours/*.test")
+	testFiles, err := fs.Glob(testdataFS, "ours*/*.test")
 	require.NoError(t, err)
 
 	for _, testFile := range testFiles {
@@ -203,6 +203,10 @@ func TestOurTestCases(t *testing.T) {
 
 			// Run the tests against Prometheus' engine to ensure our test cases are valid.
 			t.Run("Prometheus' engine", func(t *testing.T) {
+				if strings.HasPrefix(testFile, "ours-only") {
+					t.Skip("disabled for Prometheus' engine due to bug in Prometheus' engine")
+				}
+
 				promqltest.RunTest(t, testScript, prometheusEngine)
 			})
 		})
@@ -1275,11 +1279,20 @@ func TestAnnotations(t *testing.T) {
 		metric{type="histogram", series="2"} {{schema:0 sum:1 count:1 buckets:[1]}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
 	`
 
+	nativeHistogramsWithCustomBucketsData := `
+		metric{series="exponential-buckets"} {{schema:0 sum:1 count:1 buckets:[1]}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
+		metric{series="custom-buckets-1"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}+{{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}x3
+		metric{series="custom-buckets-2"} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}}+{{schema:-53 sum:5 count:4 custom_values:[2 3] buckets:[1 2 1]}}x3
+		metric{series="mixed-exponential-custom-buckets"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}
+    `
+
 	testCases := map[string]struct {
-		data                       string
-		expr                       string
-		expectedWarningAnnotations []string
-		expectedInfoAnnotations    []string
+		data                               string
+		expr                               string
+		expectedWarningAnnotations         []string
+		expectedInfoAnnotations            []string
+		skipComparisonWithPrometheusReason string
 	}{
 		"sum() with float and native histogram at same step": {
 			data:                       mixedFloatHistogramData,
@@ -1361,6 +1374,37 @@ func TestAnnotations(t *testing.T) {
 			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:6)`},
 		},
 
+		"sum() over native histograms with both exponential and custom buckets": {
+			data: nativeHistogramsWithCustomBucketsData,
+			expr: `sum(metric{series=~"exponential-buckets|custom-buckets-1"})`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:5)`,
+			},
+		},
+		"sum() over native histograms with incompatible custom buckets": {
+			data: nativeHistogramsWithCustomBucketsData,
+			expr: `sum(metric{series=~"custom-buckets-(1|2)"})`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:5)`,
+			},
+		},
+
+		"rate() over native histograms with both exponential and custom buckets": {
+			data: nativeHistogramsWithCustomBucketsData,
+			expr: `rate(metric{series="mixed-exponential-custom-buckets"}[1m])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:6)`,
+			},
+			skipComparisonWithPrometheusReason: "Prometheus' engine panics for this teste case, https://github.com/prometheus/prometheus/pull/14609 will fix this",
+		},
+		"rate() over native histograms with incompatible custom buckets": {
+			data: nativeHistogramsWithCustomBucketsData,
+			expr: `rate(metric{series="incompatible-custom-buckets"}[1m])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:6)`,
+			},
+		},
+
 		"multiple annotations from different operators": {
 			data: `
 				mixed_metric_count       10 {{schema:0 sum:1 count:1 buckets:[1]}}
@@ -1385,11 +1429,12 @@ func TestAnnotations(t *testing.T) {
 	require.NoError(t, err)
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
+	const prometheusEngineName = "Prometheus' engine"
 	engines := map[string]promql.QueryEngine{
 		"Mimir's engine": mimirEngine,
 
 		// Compare against Prometheus' engine to verify our test cases are valid.
-		"Prometheus' engine": prometheusEngine,
+		prometheusEngineName: prometheusEngine,
 	}
 
 	for name, testCase := range testCases {
@@ -1399,6 +1444,9 @@ func TestAnnotations(t *testing.T) {
 
 			for engineName, engine := range engines {
 				t.Run(engineName, func(t *testing.T) {
+					if engineName == prometheusEngineName && testCase.skipComparisonWithPrometheusReason != "" {
+						t.Skipf("Skipping comparison with Prometheus' engine: %v", testCase.skipComparisonWithPrometheusReason)
+					}
 
 					queryTypes := map[string]func() (promql.Query, error){
 						"range": func() (promql.Query, error) {

@@ -116,8 +116,8 @@ load 1m
 	incr_histogram	1 2 3 4 {{schema:5 sum:2 count:1 buckets:[1] offset:1}}
 
 # Each element in v that contains a mix of float and native histogram samples within the range, will be missing from the result vector.
-# TODO(jhesketh): Re-enable once we support annotations
-# eval instant at 5m rate(incr_histogram[5m])
+eval_warn instant at 5m rate(incr_histogram[5m])
+  # We expect no results.
 
 clear
 
@@ -129,9 +129,8 @@ load 1m
 # - The second value is a rate from two floats
 # - The third value is a rate across a float and histogram (so no value returned)
 # - The remaining values contain the rate across two histograms in the vector
-# TODO(jhesketh): Re-enable once we support annotations
-# eval range from 0 to 4m step 1m rate(incr_histogram[1m])
-# 	{} _ 0.016666666666666666 _ {{schema:3 count:0.016666666666666666 sum:0.03333333333333333 offset:1 buckets:[0.016666666666666666]}} {{schema:3 count:0.016666666666666666 sum:0.03333333333333333 offset:1 buckets:[0.016666666666666666]}}
+eval_warn range from 0 to 4m step 1m rate(incr_histogram[1m])
+	{} _ 0.016666666666666666 _ {{schema:3 count:0.016666666666666666 sum:0.03333333333333333 offset:1 buckets:[0.016666666666666666]}} {{schema:3 count:0.016666666666666666 sum:0.03333333333333333 offset:1 buckets:[0.016666666666666666]}}
 
 clear
 
