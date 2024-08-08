@@ -417,7 +417,7 @@ local filename = 'mimir-tenants.json';
         ),
       )
       .addPanel(
-        local title = 'OOO Samples appended';
+        local title = 'Out-of-order samples appended';
         $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(rate(cortex_ingester_tsdb_out_of_order_samples_appended_total{%(job)s, user="$user"}[$__rate_interval]))'
