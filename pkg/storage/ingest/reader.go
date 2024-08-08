@@ -36,7 +36,6 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -103,12 +102,20 @@ func (c consumerFactoryFunc) consumer() recordConsumer {
 }
 
 type noopPusherCloser struct {
+	metrics *pusherConsumerMetrics
+
 	Pusher
-	numTimeSeriesPerFlush prometheus.Histogram
+}
+
+func newNoopPusherCloser(metrics *pusherConsumerMetrics, pusher Pusher) noopPusherCloser {
+	return noopPusherCloser{
+		metrics: metrics,
+		Pusher:  pusher,
+	}
 }
 
 func (c noopPusherCloser) PushToStorage(ctx context.Context, wr *mimirpb.WriteRequest) error {
-	c.numTimeSeriesPerFlush.Observe(float64(len(wr.Timeseries)))
+	c.metrics.numTimeSeriesPerFlush.Observe(float64(len(wr.Timeseries)))
 	return c.Pusher.PushToStorage(ctx, wr)
 }
 
@@ -117,17 +124,8 @@ func (noopPusherCloser) Close() []error {
 }
 
 func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instanceID string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
-	consumerProto := newPusherConsumerPrototype(util_log.NewSampler(kafkaCfg.FallbackClientErrorSampleRate), reg, logger)
-	numTimeSeriesPerFlush := promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-		Name:                        "cortex_ingester_pusher_num_timeseries_per_flush",
-		Help:                        "Number of time series per flush",
-		NativeHistogramBucketFactor: 1.1,
-	})
 	factory := consumerFactoryFunc(func() recordConsumer {
-		if kafkaCfg.ReplayShards == 0 {
-			return newPusherConsumer(noopPusherCloser{pusher, numTimeSeriesPerFlush}, consumerProto)
-		}
-		return newPusherConsumer(newMultiTenantPusher(numTimeSeriesPerFlush, pusher, kafkaCfg.ReplayShards, kafkaCfg.BatchSize), consumerProto)
+		return newPusherConsumer(pusher, kafkaCfg, reg, logger)
 	})
 	return newPartitionReader(kafkaCfg, partitionID, instanceID, factory, logger, reg)
 }
@@ -339,9 +337,9 @@ func (r *PartitionReader) processNextFetchesUntilLagHonored(ctx context.Context,
 	} else {
 		fetcher = r
 	}
-	//defer func() {
+	// defer func() {
 	//	r.setPollingStartOffset(r.consumedOffsetWatcher.LastConsumedOffset())
-	//}()
+	// }()
 
 	for boff.Ongoing() {
 		// Send a direct request to the Kafka backend to fetch the partition start offset.
@@ -1258,7 +1256,7 @@ func recordToRecord(
 		Headers:   h,
 		Topic:     topic,
 		Partition: partition,
-		//Attrs:         kgo.RecordAttrs{uint8(batch.Attributes)},
+		// Attrs:         kgo.RecordAttrs{uint8(batch.Attributes)},
 		ProducerID:    batch.ProducerID,
 		ProducerEpoch: batch.ProducerEpoch,
 		LeaderEpoch:   batch.PartitionLeaderEpoch,
