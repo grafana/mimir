@@ -76,7 +76,6 @@ func TestCompareMatrix(t *testing.T) {
 			actual: json.RawMessage(`[
 							{"metric":{"foo":"bar"},"values":[[1,"1"],[3,"2"]]}
 						]`),
-			// timestamps are parsed from seconds to ms which are then added to errors as is so adding 3 0s to expected error.
 			err: errors.New(`float sample pair does not match for metric {foo="bar"}: expected timestamp 2 but got 3`),
 		},
 		{
@@ -97,6 +96,18 @@ func TestCompareMatrix(t *testing.T) {
 			actual: json.RawMessage(`[
 							{"metric":{"foo":"bar"},"values":[[1,"1"],[2,"2"]]}
 						]`),
+		},
+		{
+			name: "first series match but later series has difference in sample value",
+			expected: json.RawMessage(`[
+							{"metric":{"foo":"bar"},"values":[[1,"1"],[2,"2"]]},
+							{"metric":{"oops":"bar"},"values":[[1,"1"],[2,"2"]]}
+						]`),
+			actual: json.RawMessage(`[
+							{"metric":{"foo":"bar"},"values":[[1,"1"],[2,"2"]]},
+							{"metric":{"oops":"bar"},"values":[[1,"1"],[2,"3"]]}
+						]`),
+			err: errors.New(`float sample pair does not match for metric {oops="bar"}: expected value 2 for timestamp 2 but got 3`),
 		},
 		{
 			name: "single expected sample has histogram but actual sample has float value",
@@ -1735,6 +1746,80 @@ func TestCompareSamplesResponse(t *testing.T) {
 						}`),
 			skipRecentSamples: time.Hour,
 			err:               errors.New("expected 1 metrics but got 2"),
+		},
+		{
+			name: "should not fail when there is different number of samples in a series, but non-matching float samples are more recent than configured skip recent samples interval",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[` + overAnHourAgo + `,"10"],[` + now + `,"20"]]}]}
+						}`),
+
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[` + overAnHourAgo + `,"10"]]}]}
+						}`),
+			skipRecentSamples: time.Hour,
+		},
+		{
+			name: "should not fail when there is different number of samples in a series, but non-matching histogram samples are more recent than configured skip recent samples interval",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "matrix",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histograms": [
+											[
+												` + overAnHourAgo + `,
+												{
+													"count": "2",
+													"sum": "3",
+													"buckets": [
+														[1,"0","2","2"]
+													]
+												}
+											],
+											[
+												` + now + `,
+												{
+													"count": "2",
+													"sum": "3",
+													"buckets": [
+														[1,"0","2","2"]
+													]
+												}
+											]
+										]
+									}
+								]
+							}
+						}`),
+
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {
+								"resultType": "matrix",
+								"result": [
+									{
+										"metric": {"foo":"bar"},
+										"histograms": [
+											[
+												` + overAnHourAgo + `,
+												{
+													"count": "2",
+													"sum": "3",
+													"buckets": [
+														[1,"0","2","2"]
+													]
+												}
+											]
+										]
+									}
+								]
+							}
+						}`),
+			skipRecentSamples: time.Hour,
 		},
 		{
 			name: "should not fail if both results have an empty set of warnings",
