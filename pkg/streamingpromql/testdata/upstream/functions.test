@@ -852,7 +852,6 @@ load 10s
 # eval instant at 1m sum_over_time(metric6c[1m])/count_over_time(metric6c[1m])
 #   {} NaN
 
-
 # Unsupported by streaming engine.
 # eval instant at 1m avg_over_time(metric7[1m])
 #   {} NaN
@@ -895,6 +894,10 @@ load 10s
 # Unsupported by streaming engine.
 # eval instant at 1m sum_over_time(metric[1m])
 #   {} 2
+
+# Unsupported by streaming engine.
+# eval instant at 1m avg_over_time(metric[1m])
+#   {} 0.5
 
 # Tests for stddev_over_time and stdvar_over_time.
 clear
