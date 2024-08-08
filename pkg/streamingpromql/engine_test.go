@@ -183,7 +183,7 @@ func TestOurTestCases(t *testing.T) {
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
 	testdataFS := os.DirFS("./testdata")
-	testFiles, err := fs.Glob(testdataFS, "ours/*.test")
+	testFiles, err := fs.Glob(testdataFS, "ours*/*.test")
 	require.NoError(t, err)
 
 	for _, testFile := range testFiles {
@@ -203,6 +203,10 @@ func TestOurTestCases(t *testing.T) {
 
 			// Run the tests against Prometheus' engine to ensure our test cases are valid.
 			t.Run("Prometheus' engine", func(t *testing.T) {
+				if strings.HasPrefix(testFile, "ours-only") {
+					t.Skip("disabled for Prometheus' engine due to bug in Prometheus' engine")
+				}
+
 				promqltest.RunTest(t, testScript, prometheusEngine)
 			})
 		})
