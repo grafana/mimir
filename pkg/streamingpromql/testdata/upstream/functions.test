@@ -1119,21 +1119,19 @@ load 10s
 	data{type="some_nan3"} NaN 0 1
 	data{type="only_nan"} NaN NaN NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m min_over_time(data[1m])
-# 	{type="numbers"} 0
-# 	{type="some_nan"} 0
-# 	{type="some_nan2"} 1
-# 	{type="some_nan3"} 0
-# 	{type="only_nan"} NaN
+eval instant at 1m min_over_time(data[1m])
+	{type="numbers"} 0
+	{type="some_nan"} 0
+	{type="some_nan2"} 1
+	{type="some_nan3"} 0
+	{type="only_nan"} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m max_over_time(data[1m])
-# 	{type="numbers"} 3
-# 	{type="some_nan"} 2
-# 	{type="some_nan2"} 2
-# 	{type="some_nan3"} 1
-# 	{type="only_nan"} NaN
+eval instant at 1m max_over_time(data[1m])
+	{type="numbers"} 3
+	{type="some_nan"} 2
+	{type="some_nan2"} 2
+	{type="some_nan3"} 1
+	{type="only_nan"} NaN
 
 eval instant at 1m last_over_time(data[1m])
 	data{type="numbers"} 3
