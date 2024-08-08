@@ -1284,10 +1284,11 @@ func TestAnnotations(t *testing.T) {
     `
 
 	testCases := map[string]struct {
-		data                       string
-		expr                       string
-		expectedWarningAnnotations []string
-		expectedInfoAnnotations    []string
+		data                               string
+		expr                               string
+		expectedWarningAnnotations         []string
+		expectedInfoAnnotations            []string
+		skipComparisonWithPrometheusReason string
 	}{
 		"sum() with float and native histogram at same step": {
 			data:                       mixedFloatHistogramData,
@@ -1390,6 +1391,7 @@ func TestAnnotations(t *testing.T) {
 			expectedWarningAnnotations: []string{
 				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:6)`,
 			},
+			skipComparisonWithPrometheusReason: "Prometheus' engine panics for this teste case, https://github.com/prometheus/prometheus/pull/14609 will fix this",
 		},
 		"rate() over native histograms with incompatible custom buckets": {
 			data: nativeHistogramsWithCustomBucketsData,
@@ -1423,11 +1425,12 @@ func TestAnnotations(t *testing.T) {
 	require.NoError(t, err)
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
+	const prometheusEngineName = "Prometheus' engine"
 	engines := map[string]promql.QueryEngine{
 		"Mimir's engine": mimirEngine,
 
 		// Compare against Prometheus' engine to verify our test cases are valid.
-		"Prometheus' engine": prometheusEngine,
+		prometheusEngineName: prometheusEngine,
 	}
 
 	for name, testCase := range testCases {
@@ -1437,6 +1440,9 @@ func TestAnnotations(t *testing.T) {
 
 			for engineName, engine := range engines {
 				t.Run(engineName, func(t *testing.T) {
+					if engineName == prometheusEngineName && testCase.skipComparisonWithPrometheusReason != "" {
+						t.Skipf("Skipping comparison with Prometheus' engine: %v", testCase.skipComparisonWithPrometheusReason)
+					}
 
 					queryTypes := map[string]func() (promql.Query, error){
 						"range": func() (promql.Query, error) {
