@@ -109,6 +109,8 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"histogram_count":   InstantVectorTransformationFunctionOperatorFactory("histogram_count", functions.HistogramCount),
 	"histogram_sum":     InstantVectorTransformationFunctionOperatorFactory("histogram_sum", functions.HistogramSum),
 	"last_over_time":    FunctionOverRangeVectorOperatorFactory("last_over_time", functions.LastOverTime),
+	"max_over_time":     FunctionOverRangeVectorOperatorFactory("max_over_time", functions.MaxOverTime),
+	"min_over_time":     FunctionOverRangeVectorOperatorFactory("min_over_time", functions.MinOverTime),
 	"ln":                InstantVectorTransformationFunctionOperatorFactory("ln", functions.Ln),
 	"log10":             InstantVectorTransformationFunctionOperatorFactory("log10", functions.Log10),
 	"log2":              InstantVectorTransformationFunctionOperatorFactory("log2", functions.Log2),

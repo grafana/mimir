@@ -3,6 +3,8 @@
 package functions
 
 import (
+	"math"
+
 	"github.com/prometheus/prometheus/model/histogram"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -56,4 +58,78 @@ func presentOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.F
 	}
 
 	return 0, false, nil, nil
+}
+
+var MaxOverTime = FunctionOverRangeVector{
+	SeriesMetadataFunc: DropSeriesName,
+	StepFunc:           maxOverTime,
+}
+
+func maxOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, _ *types.HPointRingBuffer, _ EmitAnnotationFunc) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error) {
+	head, tail := fPoints.UnsafePoints(step.RangeEnd)
+
+	if len(head) == 0 && len(tail) == 0 {
+		return 0, false, nil, nil
+	}
+
+	var maxSoFar float64
+
+	if len(head) > 0 {
+		maxSoFar = head[0].F
+		head = head[1:]
+	} else {
+		maxSoFar = tail[0].F
+		tail = tail[1:]
+	}
+
+	for _, p := range head {
+		if p.F > maxSoFar || math.IsNaN(maxSoFar) {
+			maxSoFar = p.F
+		}
+	}
+
+	for _, p := range tail {
+		if p.F > maxSoFar || math.IsNaN(maxSoFar) {
+			maxSoFar = p.F
+		}
+	}
+
+	return maxSoFar, true, nil, nil
+}
+
+var MinOverTime = FunctionOverRangeVector{
+	SeriesMetadataFunc: DropSeriesName,
+	StepFunc:           minOverTime,
+}
+
+func minOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, _ *types.HPointRingBuffer, _ EmitAnnotationFunc) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error) {
+	head, tail := fPoints.UnsafePoints(step.RangeEnd)
+
+	if len(head) == 0 && len(tail) == 0 {
+		return 0, false, nil, nil
+	}
+
+	var minSoFar float64
+
+	if len(head) > 0 {
+		minSoFar = head[0].F
+		head = head[1:]
+	} else {
+		minSoFar = tail[0].F
+		tail = tail[1:]
+	}
+
+	for _, p := range head {
+		if p.F < minSoFar || math.IsNaN(minSoFar) {
+			minSoFar = p.F
+		}
+	}
+
+	for _, p := range tail {
+		if p.F < minSoFar || math.IsNaN(minSoFar) {
+			minSoFar = p.F
+		}
+	}
+
+	return minSoFar, true, nil, nil
 }
