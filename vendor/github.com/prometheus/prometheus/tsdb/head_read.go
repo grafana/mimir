@@ -252,6 +252,75 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 	return nil
 }
 
+type headMetaIndexReader struct {
+	head *Head
+}
+
+// LabelValues returns label values present in the head for the
+// specific label name that are within the time range mint to maxt.
+// If matchers are specified the returned result set is reduced
+// to label values of metrics matching the matchers.
+func (h *headMetaIndexReader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+	if len(matchers) == 0 {
+		return h.head.postings.LabelValues(ctx, name), nil
+	}
+
+	return labelValuesWithMatchers(ctx, h, name, matchers...)
+}
+
+// Postings returns the postings list iterator for the label pairs.
+func (h *headMetaIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
+	switch len(values) {
+	case 0:
+		return index.EmptyPostings(), nil
+	case 1:
+		return h.head.metaLabelsPostings.Get(name, values[0]), nil
+	default:
+		res := make([]index.Postings, 0, len(values))
+		for _, value := range values {
+			if p := h.head.metaLabelsPostings.Get(name, value); !index.IsEmptyPostingsType(p) {
+				res = append(res, p)
+			}
+		}
+		return index.Merge(ctx, res...), nil
+	}
+}
+
+func (h *headMetaIndexReader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
+	return h.head.metaLabelsPostings.PostingsForLabelMatching(ctx, name, match)
+}
+
+func (h *headMetaIndexReader) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+	return PostingsForMatchers(ctx, h, ms...)
+}
+
+func (h *headMetaIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
+	return nil
+}
+
+func (h *headMetaIndexReader) Merge(seriesP, metaP index.Postings) ([][2]chunks.HeadSeriesRef, error) {
+	var seriesMetaPairs [][2]chunks.HeadSeriesRef
+	var metaPostings []chunks.HeadSeriesRef
+	for metaP.Next() {
+		metaPostings = append(metaPostings, chunks.HeadSeriesRef(metaP.At()))
+	}
+	if err := metaP.Err(); err != nil {
+		return seriesMetaPairs, err
+	}
+
+	// here get the latest pushed metadata for the series, return that as pair of series and metadata
+	for seriesP.Next() {
+		seriesRef := seriesP.At()
+		for _, mp := range metaPostings {
+			if len(h.head.seriesToMeta[chunks.HeadSeriesRef(seriesRef)][mp]) > 0 {
+				// TODO: link seriesRef with mp and return the updated thing.
+				seriesMetaPairs = append(seriesMetaPairs, [2]chunks.HeadSeriesRef{chunks.HeadSeriesRef(seriesRef), mp})
+			}
+		}
+	}
+	return seriesMetaPairs, seriesP.Err()
+}
+
 // headChunkID returns the HeadChunkID referred to by the given position.
 // * 0 <= pos < len(s.mmappedChunks) refer to s.mmappedChunks[pos]
 // * pos >= len(s.mmappedChunks) refers to s.headChunks linked list.

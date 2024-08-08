@@ -155,6 +155,12 @@ type RefSample struct {
 	V   float64
 }
 
+type RefMetaSample struct {
+	SeriesRef chunks.HeadSeriesRef // ref of series it is related to.
+	MetasRef  chunks.HeadSeriesRef // ref of metadata it is related to.
+	T         int64                // Timestamp of sample related to this append
+}
+
 // RefMetadata is the metadata associated with a series ID.
 type RefMetadata struct {
 	Ref  chunks.HeadSeriesRef

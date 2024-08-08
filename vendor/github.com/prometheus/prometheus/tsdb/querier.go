@@ -20,8 +20,6 @@ import (
 	"math"
 	"slices"
 
-	"github.com/grafana/regexp"
-
 	"github.com/oklog/ulid"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -38,7 +36,6 @@ import (
 // checkContextEveryNIterations is used in some tight loops to check if the context is done.
 const (
 	checkContextEveryNIterations = 100
-	metaDataPrefix               = `^__metadata__`
 )
 
 type blockBaseQuerier struct {
@@ -119,48 +116,27 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
 	return &blockQuerier{blockBaseQuerier: q}, nil
 }
 
+const (
+	metaMatchersID = "metaMatchers"
+)
+
 func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
 	mint := q.mint
 	maxt := q.maxt
 	disableTrimming := false
 	sharded := hints != nil && hints.ShardCount > 0
 
-	// TODO(jesus.vazquez) When we have the metadata store, we need to intersect postings results with it
 	var p index.Postings
 	var err error
-	// here we get the posting matches metadata
-	re := regexp.MustCompile(metaDataPrefix)
+	metaMatchers, normalMatchers := seperateMetaMatchers(ms)
+	// Get metadata refs separately
+	// Call a functions to link meta refs to series refs
+	// use that matching to return the series set later
+	context.WithValue(ctx, metaMatchersID, true)
 
-	// get the label matchers related to metadata
-	metaMatchers := make([]*labels.Matcher, 0)
-	normalMatchers := make([]*labels.Matcher, 0)
-	for _, m := range ms {
-		if re.MatchString(m.Name) {
-			metaMatchers = append(metaMatchers, m)
-		} else {
-			normalMatchers = append(normalMatchers, m)
-		}
-	}
-	if len(metaMatchers) > 0 {
-		// TODO(ying.wang): Here we need to query metadata store to get the metas, they are not normal postings
-		// this is not right for the moment
-		mp, err := q.index.PostingsForMatchers(ctx, sharded, metaMatchers...)
-		if err != nil {
-			return storage.ErrSeriesSet(err)
-		}
-
-		// get the normal matchers
-		np, err := q.index.PostingsForMatchers(ctx, sharded, normalMatchers...)
-		if err != nil {
-			return storage.ErrSeriesSet(err)
-		}
-		// intersect the metadata matchers with normal matchers
-		p = index.MetaIntersect(mp, np)
-	} else {
-		p, err = q.index.PostingsForMatchers(ctx, sharded, ms...)
-		if err != nil {
-			return storage.ErrSeriesSet(err)
-		}
+	p, err = q.index.PostingsForMatchers(ctx, sharded, normalMatchers...)
+	if err != nil {
+		return storage.ErrSeriesSet(err)
 	}
 
 	if sharded {
@@ -168,6 +144,26 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 	}
 	if sortSeries {
 		p = q.index.SortedPostings(p)
+	}
+
+	hir, ok := q.index.(*headIndexReader)
+	if len(metaMatchers) > 0 && ok {
+		ix := &headMetaIndexReader{hir.head}
+		metaPostings, err := PostingsForMatchers(ctx, ix, metaMatchers...)
+		if err != nil {
+			return storage.ErrSeriesSet(err)
+		}
+
+		// TODO: merge metaPostings with p to get pairs of (metadata, series).
+		seriesMetaPairs, err := ix.Merge(p, metaPostings)
+		if err != nil {
+			return storage.ErrSeriesSet(err)
+		}
+
+		_ = seriesMetaPairs
+		// TODO: take the merged thing from ix.Merge (which will include tuples of seriesRef and metaRef).
+		// And then use that to return appropriate series. Will probably need to write another newBlockSeriesSet
+		// with some updated parts.
 	}
 
 	if hints != nil {
@@ -417,7 +413,14 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexPostingsReader, m *l
 
 const maxExpandedPostingsFactor = 100 // Division factor for maximum number of matched series.
 
-func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
+type reducedIndexReader interface {
+	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
+	PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error)
+	Postings(ctx context.Context, name string, values ...string) (index.Postings, error)
+	Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error
+}
+
+func labelValuesWithMatchers(ctx context.Context, r reducedIndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
 	allValues, err := r.LabelValues(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("fetching values of label %s: %w", name, err)
@@ -513,7 +516,7 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 
 // labelValuesFromSeries returns all unique label values from for given label name from supplied series. Values are not sorted.
 // buf is space for holding result (if it isn't big enough, it will be ignored), may be nil.
-func labelValuesFromSeries(r IndexReader, labelName string, refs []storage.SeriesRef, buf []string) ([]string, error) {
+func labelValuesFromSeries(r reducedIndexReader, labelName string, refs []storage.SeriesRef, buf []string) ([]string, error) {
 	values := map[string]struct{}{}
 	var builder labels.ScratchBuilder
 	for _, ref := range refs {
