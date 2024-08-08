@@ -1041,7 +1041,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### OOO Samples appended\nThe rate of OOO samples that have been appended.\nThis doesn't account for the replication factor.\n\n",
+                  "description": "### Out-of-order samples appended\nThe rate of OOO samples that have been appended.\nThis doesn't account for the replication factor.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -1085,7 +1085,7 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "OOO Samples appended",
+                  "title": "Out-of-order samples appended",
                   "type": "timeseries"
                }
             ],
