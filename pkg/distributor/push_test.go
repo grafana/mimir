@@ -553,85 +553,106 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 			name:         "Request canceled, HTTP 499, no Retry-After",
 			responseCode: http.StatusRequestTimeout,
 			retryAttempt: "1",
-			retryCfg:     RetryConfig{Enabled: true, BaseSeconds: 3, MaxBackoffExponent: 2},
-			expectRetry:  false,
-		},
-		{
-			name:         "Generic error, HTTP 500, no Retry-After",
-			responseCode: http.StatusInternalServerError,
-			retryCfg:     RetryConfig{Enabled: false, BaseSeconds: 3, MaxBackoffExponent: 4},
+			retryCfg:     RetryConfig{MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
 			expectRetry:  false,
 		},
 		{
 			name:          "Generic error, HTTP 500, Retry-After with no Retry-Attempt set, default Retry-Attempt to 1",
 			responseCode:  http.StatusInternalServerError,
 			expectRetry:   true,
-			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 5, MaxBackoffExponent: 2},
+			retryCfg:      RetryConfig{MinBackoff: 5 * time.Second, MaxBackoff: 8 * time.Second},
 			minRetryAfter: 5,
-			maxRetryAfter: 10,
+			maxRetryAfter: 7,
 		},
 		{
 			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt is not an integer, default Retry-Attempt to 1",
 			responseCode:  http.StatusInternalServerError,
 			retryAttempt:  "not-an-integer",
 			expectRetry:   true,
-			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 3, MaxBackoffExponent: 2},
+			retryCfg:      RetryConfig{MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
 			minRetryAfter: 3,
-			maxRetryAfter: 6,
+			maxRetryAfter: 4,
 		},
 		{
 			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt is float, default Retry-Attempt to 1",
 			responseCode:  http.StatusInternalServerError,
 			retryAttempt:  "3.50",
 			expectRetry:   true,
-			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 2, MaxBackoffExponent: 5},
+			retryCfg:      RetryConfig{MinBackoff: 2 * time.Second, MaxBackoff: 64 * time.Second},
 			minRetryAfter: 2,
-			maxRetryAfter: 4,
+			maxRetryAfter: 3,
 		},
 		{
 			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt a list of integers, default Retry-Attempt to 1",
 			responseCode:  http.StatusInternalServerError,
 			retryAttempt:  "[1, 2, 3]",
 			expectRetry:   true,
-			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 1, MaxBackoffExponent: 5},
+			retryCfg:      RetryConfig{MinBackoff: 1 * time.Second, MaxBackoff: 64 * time.Second},
 			minRetryAfter: 1,
-			maxRetryAfter: 2,
+			maxRetryAfter: 1,
 		},
 		{
 			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt is negative, default Retry-Attempt to 1",
 			responseCode:  http.StatusInternalServerError,
 			retryAttempt:  "-1",
 			expectRetry:   true,
-			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 4, MaxBackoffExponent: 3},
+			retryCfg:      RetryConfig{MinBackoff: 4 * time.Second, MaxBackoff: 16 * time.Second},
 			minRetryAfter: 4,
-			maxRetryAfter: 8,
+			maxRetryAfter: 6,
 		},
 		{
 			name:          "Generic error, HTTP 500, Retry-After with valid Retry-Attempts set to 2",
 			responseCode:  http.StatusInternalServerError,
 			expectRetry:   true,
 			retryAttempt:  "2",
-			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 2, MaxBackoffExponent: 5},
-			minRetryAfter: 4,
-			maxRetryAfter: 8,
+			retryCfg:      RetryConfig{MinBackoff: 2 * time.Second, MaxBackoff: 64 * time.Second},
+			minRetryAfter: 4 - 0.5*4,
+			maxRetryAfter: 4 + 0.5*4,
 		},
 		{
 			name:          "Generic error, HTTP 429, Retry-After with valid Retry-Attempts set to 3",
 			responseCode:  StatusServiceOverloaded,
 			expectRetry:   true,
 			retryAttempt:  "3",
-			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 2, MaxBackoffExponent: 5},
-			minRetryAfter: 8,
-			maxRetryAfter: 16,
+			retryCfg:      RetryConfig{MinBackoff: 2 * time.Second, MaxBackoff: 64 * time.Second},
+			minRetryAfter: 8 - 0.5*8,
+			maxRetryAfter: 8 + 0.5*8,
 		},
 		{
-			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempts set higher than MaxAllowedAttempts",
+			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempts set higher than MaxBackoff",
 			responseCode:  http.StatusInternalServerError,
 			expectRetry:   true,
 			retryAttempt:  "8",
-			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 3, MaxBackoffExponent: 2},
-			minRetryAfter: 6,
-			maxRetryAfter: 12,
+			retryCfg:      RetryConfig{MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
+			minRetryAfter: 8 * 0.5,
+			maxRetryAfter: 8,
+		},
+		{
+			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempts set to a very high value (MaxInt64)",
+			responseCode:  http.StatusInternalServerError,
+			expectRetry:   true,
+			retryAttempt:  "9223372036854775807",
+			retryCfg:      RetryConfig{MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
+			minRetryAfter: 4,
+			maxRetryAfter: 8,
+		},
+		{
+			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempts set to a too high value fails to parse the value (MaxInt64+1)",
+			responseCode:  http.StatusInternalServerError,
+			expectRetry:   true,
+			retryAttempt:  "9223372036854775808",
+			retryCfg:      RetryConfig{MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
+			minRetryAfter: 2,
+			maxRetryAfter: 4,
+		},
+		{
+			name:          "Generic error, HTTP 500, Retry-After with MinBackoff and MaxBackoff set to <1s",
+			responseCode:  http.StatusInternalServerError,
+			expectRetry:   true,
+			retryAttempt:  "3",
+			retryCfg:      RetryConfig{MinBackoff: 3 * time.Millisecond, MaxBackoff: 8 * time.Millisecond},
+			minRetryAfter: 0,
+			maxRetryAfter: 0,
 		},
 	}
 
@@ -830,7 +851,6 @@ func TestHandler_toHTTPStatus(t *testing.T) {
 }
 
 func TestRetryConfig_Validate(t *testing.T) {
-	t.Parallel()
 	tests := map[string]struct {
 		cfg         RetryConfig
 		expectedErr error
@@ -843,33 +863,40 @@ func TestRetryConfig_Validate(t *testing.T) {
 			}(),
 			expectedErr: nil,
 		},
-		"should fail if retry base is less than 1 second": {
+		"should pass with min and max backoff equal to 1s": {
 			cfg: RetryConfig{
-				BaseSeconds:        0,
-				MaxBackoffExponent: 5,
+				MinBackoff: 1 * time.Second,
+				MaxBackoff: 1 * time.Second,
 			},
-			expectedErr: errRetryBaseLessThanOneSecond,
+			expectedErr: nil,
 		},
-		"should fail if retry base is negative": {
+		"should fail if min backoff is 0": {
 			cfg: RetryConfig{
-				BaseSeconds:        -1,
-				MaxBackoffExponent: 5,
+				MinBackoff: 0,
+				MaxBackoff: 3 * time.Second,
 			},
-			expectedErr: errRetryBaseLessThanOneSecond,
+			expectedErr: errNonPositiveMinBackoffDuration,
 		},
-		"should fail if max allowed attempts is 0": {
+		"should fail if min backoff is negative": {
 			cfg: RetryConfig{
-				BaseSeconds:        3,
-				MaxBackoffExponent: 0,
+				MinBackoff: -1 * time.Second,
+				MaxBackoff: 5 * time.Second,
 			},
-			expectedErr: errNonPositiveMaxBackoffExponent,
+			expectedErr: errNonPositiveMinBackoffDuration,
 		},
-		"should fail if max allowed attempts is negative": {
+		"should fail if max backoff is 0": {
 			cfg: RetryConfig{
-				BaseSeconds:        3,
-				MaxBackoffExponent: -1,
+				MinBackoff: 3 * time.Second,
+				MaxBackoff: 0,
 			},
-			expectedErr: errNonPositiveMaxBackoffExponent,
+			expectedErr: errNonPositiveMaxBackoffDuration,
+		},
+		"should fail if max backoff is negative": {
+			cfg: RetryConfig{
+				MinBackoff: 3 * time.Second,
+				MaxBackoff: -1,
+			},
+			expectedErr: errNonPositiveMaxBackoffDuration,
 		},
 	}
 
@@ -913,7 +940,7 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 
 		return nil
 	}
-	h := OTLPHandler(200, util.NewBufferPool(), nil, false, otlpLimitsMock{}, RetryConfig{Enabled: false}, push, newPushMetrics(reg), reg, log.NewNopLogger(), true)
+	h := OTLPHandler(200, util.NewBufferPool(), nil, false, otlpLimitsMock{}, RetryConfig{}, push, newPushMetrics(reg), reg, log.NewNopLogger(), true)
 	srv.HTTP.Handle("/otlp", h)
 
 	// start the server

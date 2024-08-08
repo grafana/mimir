@@ -759,23 +759,24 @@ pool:
   [health_check_ingesters: <boolean> | default = true]
 
 retry_after_header:
-  # (advanced) Enabled controls inclusion of the Retry-After header in the
-  # response: true includes it for client retry guidance, false omits it.
+  # (advanced) Enables inclusion of the Retry-After header in the response: true
+  # includes it for client retry guidance, false omits it.
   # CLI flag: -distributor.retry-after-header.enabled
   [enabled: <boolean> | default = true]
 
-  # (advanced) Base duration in seconds for calculating the Retry-After header
-  # in responses to 429/5xx errors.
-  # CLI flag: -distributor.retry-after-header.base-seconds
-  [base_seconds: <int> | default = 3]
+  # (advanced) Minimum duration of the Retry-After HTTP header in responses to
+  # 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated
+  # as 2^(RetryAttempt-1) seconds with random jitter of 50% in either direction.
+  # RetryAttempt is the value of the Retry-Attempt HTTP header.
+  # CLI flag: -distributor.retry-after-header.min-backoff
+  [min_backoff: <duration> | default = 6s]
 
-  # (advanced) Sets the upper limit on the number of Retry-Attempt considered
-  # for calculation. It caps the Retry-Attempt header without rejecting
-  # additional attempts, controlling exponential backoff calculations. For
-  # example, when the base-seconds is set to 3 and max-backoff-exponent to 5,
-  # the maximum retry duration would be 3 * 2^5 = 96 seconds.
-  # CLI flag: -distributor.retry-after-header.max-backoff-exponent
-  [max_backoff_exponent: <int> | default = 5]
+  # (advanced) Minimum duration of the Retry-After HTTP header in responses to
+  # 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated
+  # as 2^(RetryAttempt-1) seconds with random jitter of 50% in either direction.
+  # RetryAttempt is the value of the Retry-Attempt HTTP header.
+  # CLI flag: -distributor.retry-after-header.max-backoff
+  [max_backoff: <duration> | default = 1m36s]
 
 ha_tracker:
   # Enable the distributors HA tracker so that it can accept samples from
