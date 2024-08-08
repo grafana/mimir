@@ -20,7 +20,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/tenant"
-	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/prometheus/model/labels"
@@ -32,6 +31,9 @@ import (
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+// errNoValidOrgIDFound is returned when no valid org id is found in the request context.
+var errNoValidOrgIDFound = errors.New("no valid org id found")
 
 // In order to reimplement the prometheus rules API, a large amount of code was copied over
 // This is required because the prometheus api implementation does not allow us to return errors
@@ -160,7 +162,7 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil || userID == "" {
 		level.Error(logger).Log("msg", "error extracting org id from context", "err", err)
-		respondInvalidRequest(logger, w, "no valid org id found")
+		respondInvalidRequest(logger, w, errNoValidOrgIDFound.Error())
 		return
 	}
 
@@ -270,7 +272,7 @@ func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil || userID == "" {
 		level.Error(logger).Log("msg", "error extracting org id from context", "err", err)
-		respondInvalidRequest(logger, w, "no valid org id found")
+		respondInvalidRequest(logger, w, errNoValidOrgIDFound.Error())
 		return
 	}
 
@@ -405,10 +407,11 @@ func parseGroupName(params map[string]string) (string, error) {
 // parseRequest parses the incoming request to parse out the userID, rules namespace, and rule group name
 // and returns them in that order. It also allows users to require a namespace or group name and return
 // an error if it they can not be parsed.
-func parseRequest(req *http.Request, requireNamespace, requireGroup bool) (string, string, string, error) {
+func (a *API) parseRequest(req *http.Request, requireNamespace, requireGroup bool) (string, string, string, error) {
 	userID, err := tenant.TenantID(req.Context())
-	if err != nil {
-		return "", "", "", user.ErrNoOrgID
+	if err != nil || userID == "" {
+		level.Error(a.logger).Log("msg", "error extracting org id from context", "err", err)
+		return "", "", "", errNoValidOrgIDFound
 	}
 
 	vars := mux.Vars(req)
@@ -434,8 +437,12 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.ListRules")
 	defer logger.Finish()
 
-	userID, namespace, _, err := parseRequest(req, false, false)
+	userID, namespace, _, err := a.parseRequest(req, false, false)
 	if err != nil {
+		if errors.Is(err, errNoValidOrgIDFound) {
+			respondInvalidRequest(logger, w, err.Error())
+			return
+		}
 		respondServerError(logger, w, err.Error())
 		return
 	}
@@ -486,8 +493,12 @@ func (a *API) GetRuleGroup(w http.ResponseWriter, req *http.Request) {
 	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.GetRuleGroup")
 	defer logger.Finish()
 
-	userID, namespace, groupName, err := parseRequest(req, true, true)
+	userID, namespace, groupName, err := a.parseRequest(req, true, true)
 	if err != nil {
+		if errors.Is(err, errNoValidOrgIDFound) {
+			respondInvalidRequest(logger, w, err.Error())
+			return
+		}
 		respondServerError(logger, w, err.Error())
 		return
 	}
@@ -515,8 +526,12 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.CreateRuleGroup")
 	defer logger.Finish()
 
-	userID, namespace, _, err := parseRequest(req, true, false)
+	userID, namespace, _, err := a.parseRequest(req, true, false)
 	if err != nil {
+		if errors.Is(err, errNoValidOrgIDFound) {
+			respondInvalidRequest(logger, w, err.Error())
+			return
+		}
 		respondServerError(logger, w, err.Error())
 		return
 	}
@@ -599,8 +614,12 @@ func (a *API) DeleteNamespace(w http.ResponseWriter, req *http.Request) {
 	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.DeleteNamespace")
 	defer logger.Finish()
 
-	userID, namespace, _, err := parseRequest(req, true, false)
+	userID, namespace, _, err := a.parseRequest(req, true, false)
 	if err != nil {
+		if errors.Is(err, errNoValidOrgIDFound) {
+			respondInvalidRequest(logger, w, err.Error())
+			return
+		}
 		respondServerError(logger, w, err.Error())
 		return
 	}
@@ -632,8 +651,12 @@ func (a *API) DeleteRuleGroup(w http.ResponseWriter, req *http.Request) {
 	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.DeleteRuleGroup")
 	defer logger.Finish()
 
-	userID, namespace, groupName, err := parseRequest(req, true, true)
+	userID, namespace, groupName, err := a.parseRequest(req, true, true)
 	if err != nil {
+		if errors.Is(err, errNoValidOrgIDFound) {
+			respondInvalidRequest(logger, w, err.Error())
+			return
+		}
 		respondServerError(logger, w, err.Error())
 		return
 	}
