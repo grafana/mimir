@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"slices"
 	"sort"
 	"time"
@@ -22,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/zeropool"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/floats"
 	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -431,7 +431,7 @@ func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData,
 
 	for _, p := range s.Floats {
 		idx := (p.T - start) / interval
-		seriesGroup.floatSums[idx], seriesGroup.floatCompensatingMeans[idx] = kahanSumInc(p.F, seriesGroup.floatSums[idx], seriesGroup.floatCompensatingMeans[idx])
+		seriesGroup.floatSums[idx], seriesGroup.floatCompensatingMeans[idx] = floats.KahanSumInc(p.F, seriesGroup.floatSums[idx], seriesGroup.floatCompensatingMeans[idx])
 		seriesGroup.floatPresent[idx] = true
 	}
 
@@ -499,21 +499,4 @@ func (g groupSorter) Less(i, j int) bool {
 func (g groupSorter) Swap(i, j int) {
 	g.metadata[i], g.metadata[j] = g.metadata[j], g.metadata[i]
 	g.groups[i], g.groups[j] = g.groups[j], g.groups[i]
-}
-
-// TODO(jhesketh): This will likely be useful elsewhere, so we may move this in the future.
-// (We could also consider exporting this from the upstream promql package).
-func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
-	t := sum + inc
-	switch {
-	case math.IsInf(t, 0):
-		c = 0
-
-	// Using Neumaier improvement, swap if next term larger than sum.
-	case math.Abs(sum) >= math.Abs(inc):
-		c += (sum - t) + inc
-	default:
-		c += (inc - t) + sum
-	}
-	return t, c
 }

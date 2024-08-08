@@ -7,9 +7,8 @@
 load 30s
   bar 0 1 10 100 1000
 
-# Unsupported by streaming engine.
-# eval range from 0 to 2m step 1m sum_over_time(bar[30s])
-#   {} 0 11 1100
+eval range from 0 to 2m step 1m sum_over_time(bar[30s])
+  {} 0 11 1100
 
 clear
 
@@ -17,9 +16,8 @@ clear
 load 30s
   bar 0 1 10 100 1000 0 0 0 0
 
-# Unsupported by streaming engine.
-# eval range from 0 to 2m step 1m sum_over_time(bar[30s])
-#   {} 0 11 1100
+eval range from 0 to 2m step 1m sum_over_time(bar[30s])
+  {} 0 11 1100
 
 clear
 
@@ -27,9 +25,8 @@ clear
 load 30s
   bar 0 1 10 100 1000 10000 100000 1000000 10000000
 
-# Unsupported by streaming engine.
-# eval range from 0 to 4m step 1m sum_over_time(bar[30s])
-#   {} 0 11 1100 110000 11000000
+eval range from 0 to 4m step 1m sum_over_time(bar[30s])
+  {} 0 11 1100 110000 11000000
 
 clear
 
@@ -37,9 +34,8 @@ clear
 load 30s
   bar 5 17 42 2 7 905 51
 
-# Unsupported by streaming engine.
-# eval range from 0 to 3m step 1m sum_over_time(bar[30s])
-#   {} 5 59 9 956
+eval range from 0 to 3m step 1m sum_over_time(bar[30s])
+  {} 5 59 9 956
 
 clear
 
