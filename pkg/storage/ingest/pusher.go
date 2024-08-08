@@ -56,7 +56,7 @@ type pusherConsumer struct {
 	pusher PusherCloser
 }
 
-func (c pusherConsumer) Close(ctx context.Context) []error {
+func (c pusherConsumer) Close(ctx context.Context) error {
 	spanLog := spanlogger.FromContext(ctx, log.NewNopLogger())
 	errs := c.pusher.Close()
 	for eIdx := 0; eIdx < len(errs); eIdx++ {
@@ -68,7 +68,7 @@ func (c pusherConsumer) Close(ctx context.Context) []error {
 			eIdx--
 		}
 	}
-	return errs
+	return multierror.New(errs...).Err()
 }
 
 func newPusherConsumer(p PusherCloser, proto pusherConsumerPrototype) *pusherConsumer {

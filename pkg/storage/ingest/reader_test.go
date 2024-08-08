@@ -1714,19 +1714,10 @@ func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partit
 		logger:      testutil.NewLogger(t),
 		kafka:       createTestKafkaConfig(addr, topicName),
 		partitionID: partitionID,
-		consumer: consumerFactoryFunc(func() consumerCloser {
-			return nopConsumerCloser{consumer}
+		consumer: consumerFactoryFunc(func() recordConsumer {
+			return consumer
 		}),
 	}
-}
-
-// TODO dimitarvdimitrov make all consumers implement Close() and just rename consumerCloser to recordConsumer and keep only one interface
-type nopConsumerCloser struct {
-	recordConsumer
-}
-
-func (nopConsumerCloser) Close(context.Context) []error {
-	return nil
 }
 
 func createReader(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOtp) *PartitionReader {
@@ -1868,6 +1859,11 @@ func newTestConsumer(capacity int) testConsumer {
 	}
 }
 
+func (t testConsumer) Close(context.Context) error {
+	close(t.records)
+	return nil
+}
+
 func (t testConsumer) consume(ctx context.Context, records []record) error {
 	for _, r := range records {
 		select {
@@ -1908,6 +1904,10 @@ func (t testConsumer) waitRecords(numRecords int, waitTimeout, drainPeriod time.
 }
 
 type consumerFunc func(ctx context.Context, records []record) error
+
+func (consumerFunc) Close(context.Context) error {
+	return nil
+}
 
 func (c consumerFunc) consume(ctx context.Context, records []record) error {
 	return c(ctx, records)

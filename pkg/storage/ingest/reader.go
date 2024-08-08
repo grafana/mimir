@@ -61,6 +61,7 @@ type record struct {
 }
 
 type recordConsumer interface {
+	Close(context.Context) error
 	// consume should return an error only if there is a recoverable error. Returning an error will cause consumption to slow down.
 	consume(context.Context, []record) error
 }
@@ -95,9 +96,9 @@ type PartitionReader struct {
 	reg    prometheus.Registerer
 }
 
-type consumerFactoryFunc func() consumerCloser
+type consumerFactoryFunc func() recordConsumer
 
-func (c consumerFactoryFunc) consumer() consumerCloser {
+func (c consumerFactoryFunc) consumer() recordConsumer {
 	return c()
 }
 
@@ -122,7 +123,7 @@ func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instan
 		Help:                        "Number of time series per flush",
 		NativeHistogramBucketFactor: 1.1,
 	})
-	factory := consumerFactoryFunc(func() consumerCloser {
+	factory := consumerFactoryFunc(func() recordConsumer {
 		if kafkaCfg.ReplayShards == 0 {
 			return newPusherConsumer(noopPusherCloser{pusher, numTimeSeriesPerFlush}, consumerProto)
 		}
@@ -132,12 +133,7 @@ func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instan
 }
 
 type consumerFactory interface {
-	consumer() consumerCloser
-}
-
-type consumerCloser interface {
-	recordConsumer
-	Close(context.Context) []error
+	consumer() recordConsumer
 }
 
 func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID string, consumer consumerFactory, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
@@ -231,7 +227,7 @@ func (r *PartitionReader) stopDependencies() error {
 func (r *PartitionReader) run(ctx context.Context) error {
 	for ctx.Err() == nil {
 		fetches := r.pollFetches(ctx)
-		err := r.processFetches(ctx, fetches, r.metrics.receiveDelayWhenRunning, nil)
+		err := r.processFetches(ctx, fetches, r.metrics.receiveDelayWhenRunning)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			// Fail the whole service in case of a non-recoverable error.
 			return err
@@ -241,12 +237,12 @@ func (r *PartitionReader) run(ctx context.Context) error {
 	return nil
 }
 
-func (r *PartitionReader) processFetches(ctx context.Context, fetches kgo.Fetches, delayObserver prometheus.Observer, consumer consumerCloser) error {
+func (r *PartitionReader) processFetches(ctx context.Context, fetches kgo.Fetches, delayObserver prometheus.Observer) error {
 	r.recordFetchesMetrics(fetches, delayObserver)
 	r.logFetchErrors(fetches)
 	fetches = filterOutErrFetches(fetches)
 
-	err := r.consumeFetches(ctx, fetches, consumer)
+	err := r.consumeFetches(ctx, fetches)
 	if err != nil {
 		return fmt.Errorf("consume %d records: %w", fetches.NumRecords(), err)
 	}
@@ -385,7 +381,7 @@ func (r *PartitionReader) processNextFetchesUntilLagHonored(ctx context.Context,
 				break
 			}
 			fetches := fetcher.pollFetches(ctx)
-			err := r.processFetches(ctx, fetches, r.metrics.receiveDelayWhenStarting, nil)
+			err := r.processFetches(ctx, fetches, r.metrics.receiveDelayWhenStarting)
 			if err != nil {
 				return 0, err
 			}
@@ -467,12 +463,7 @@ func (r *PartitionReader) enqueueCommit(fetches kgo.Fetches) {
 	r.committer.enqueueOffset(lastOffset)
 }
 
-func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetches, consumer consumerCloser) error {
-	if consumer == nil {
-		consumer = r.newConsumer.consumer()
-		defer consumer.Close(ctx) // TODO dimitarvdimitrov this case should be encountered only when consuming at stable state not during cold replay; handle error properly
-	}
-
+func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetches) error {
 	if fetches.NumRecords() == 0 {
 		return nil
 	}
@@ -499,18 +490,23 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		MaxBackoff: 2 * time.Second,
 		MaxRetries: 0, // retry forever
 	})
+	defer func(consumeStart time.Time) {
+		r.metrics.consumeLatency.Observe(time.Since(consumeStart).Seconds())
+	}(time.Now())
+
 	for boff.Ongoing() {
+		// We instantiate the consumer on each iteration because it is stateful, and we can't reuse it after closing.
+		consumer := r.newConsumer.consumer()
 		// If the PartitionReader is stopping and the ctx was cancelled, we don't want to interrupt the in-flight
 		// processing midway. Instead, we let it finish, assuming it'll succeed.
 		// If the processing fails while stopping, we log the error and let the backoff stop and bail out.
 		// There is an edge-case when the processing gets stuck and doesn't let the stopping process. In such a case,
 		// we expect the infrastructure (e.g. k8s) to eventually kill the process.
 		consumeCtx := context.WithoutCancel(ctx)
-		consumeStart := time.Now()
 		err := consumer.consume(consumeCtx, records)
-		r.metrics.consumeLatency.Observe(time.Since(consumeStart).Seconds())
 		if err == nil {
-			return nil
+			err = consumer.Close(consumeCtx)
+			break
 		}
 		level.Error(r.logger).Log(
 			"msg", "encountered error while ingesting data from Kafka; should retry",
