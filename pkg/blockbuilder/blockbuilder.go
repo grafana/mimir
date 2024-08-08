@@ -656,7 +656,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, client *kgo.Client,
 	// We are lagging behind. We need to consume the partition in parts.
 	// We iterate through all the cycleEnds starting from the first one after commit until the cycleEnd.
 	cycleEndStartAt := commitRecTime.Truncate(b.cfg.ConsumeInterval).Add(b.cfg.ConsumeInterval + b.cfg.ConsumeIntervalBuffer)
-	level.Info(b.logger).Log("msg", "partition is lagging behind", "part", pl.Partition, "lag", pl.Lag, "cycle_end_start", cycleEndStartAt, "cycle_end", cycleEnd, "last_commit_rec_raw", pl.CommitRecTs, "last_commit_rec_time", commitRecTime)
+	level.Info(b.logger).Log("msg", "partition is lagging behind", "part", pl.Partition, "lag", pl.Lag, "cycle_end_start", cycleEndStartAt, "cycle_end", cycleEnd, "last_commit_rec_time", commitRecTime, "last_commit_rec_ts", pl.CommitRecTs)
 	for ce := cycleEndStartAt; cycleEnd.Sub(ce) >= 0; ce = ce.Add(b.cfg.ConsumeInterval) {
 		// Instead of looking for the commit metadata for each iteration, we use the data returned by consumePartition
 		// in the next iteration.
