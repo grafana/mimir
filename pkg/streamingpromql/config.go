@@ -24,5 +24,5 @@ var EnableAllFeatures = FeatureToggles{
 }
 
 func (t *FeatureToggles) RegisterFlags(f *flag.FlagSet) {
-	f.BoolVar(&t.EnableBinaryOperations, "querier.mimir-query-engine.enable-binary-operations", false, "Enable support for binary operations in Mimir's query engine. Only applies if the Mimir query engine is in use.")
+	f.BoolVar(&t.EnableBinaryOperations, "querier.mimir-query-engine.enable-binary-operations", true, "Enable support for binary operations in Mimir's query engine. Only applies if the Mimir query engine is in use.")
 }
