@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"time"
 
@@ -180,7 +181,8 @@ func (b *BinaryOperation) loadSeriesMetadata(ctx context.Context) (bool, error) 
 // - a list indicating which series from the left side are needed to compute the output
 // - a list indicating which series from the right side are needed to compute the output
 func (b *BinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*binaryOperationOutputSeries, []bool, []bool, error) {
-	labelsFunc := b.labelsFunc()
+	labelsFunc := b.groupLabelsFunc()
+	groupKeyFunc := b.groupKeyFunc()
 	outputSeriesMap := map[string]*binaryOperationOutputSeries{}
 
 	// Use the smaller side to populate the map of possible output series first.
@@ -197,12 +199,12 @@ func (b *BinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*bina
 	}
 
 	for idx, s := range smallerSide {
-		groupLabels := labelsFunc(s.Labels).String()
-		series, exists := outputSeriesMap[groupLabels]
+		groupKey := groupKeyFunc(s.Labels)
+		series, exists := outputSeriesMap[string(groupKey)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
 
 		if !exists {
 			series = &binaryOperationOutputSeries{}
-			outputSeriesMap[groupLabels] = series
+			outputSeriesMap[string(groupKey)] = series
 		}
 
 		if smallerSideIsLeftSide {
@@ -213,9 +215,10 @@ func (b *BinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*bina
 	}
 
 	for idx, s := range largerSide {
-		groupLabels := labelsFunc(s.Labels).String()
+		groupKey := groupKeyFunc(s.Labels)
 
-		if series, exists := outputSeriesMap[groupLabels]; exists {
+		// Important: don't extract the string(...) call below - passing it directly allows us to avoid allocating it.
+		if series, exists := outputSeriesMap[string(groupKey)]; exists {
 			if smallerSideIsLeftSide {
 				// Currently iterating through right side.
 				series.rightSeriesIndices = append(series.rightSeriesIndices, idx)
@@ -348,8 +351,8 @@ func (g favourRightSideSorter) Less(i, j int) bool {
 	return g.series[i].latestLeftSeries() < g.series[j].latestLeftSeries()
 }
 
-// labelsFunc returns a function that computes the labels of the output group this series belongs to.
-func (b *BinaryOperation) labelsFunc() func(labels.Labels) labels.Labels {
+// groupLabelsFunc returns a function that computes the labels of the output group this series belongs to.
+func (b *BinaryOperation) groupLabelsFunc() func(labels.Labels) labels.Labels {
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	if b.VectorMatching.On {
@@ -362,9 +365,36 @@ func (b *BinaryOperation) labelsFunc() func(labels.Labels) labels.Labels {
 
 	return func(l labels.Labels) labels.Labels {
 		lb.Reset(l)
-		lb.Del(b.VectorMatching.MatchingLabels...)
 		lb.Del(labels.MetricName)
+		lb.Del(b.VectorMatching.MatchingLabels...)
 		return lb.Labels()
+	}
+}
+
+// groupKeyFunc returns a function that computes the grouping key of the output group this series belongs to.
+func (b *BinaryOperation) groupKeyFunc() func(labels.Labels) []byte {
+	buf := make([]byte, 0, 1024)
+
+	if b.VectorMatching.On {
+		return func(l labels.Labels) []byte {
+			return l.BytesWithLabels(buf, b.VectorMatching.MatchingLabels...)
+		}
+	}
+
+	if len(b.VectorMatching.MatchingLabels) == 0 {
+		// Fast path for common case for expressions like "a + b" with no 'on' or 'without' labels.
+		return func(l labels.Labels) []byte {
+			return l.BytesWithoutLabels(buf, labels.MetricName)
+		}
+	}
+
+	lbls := make([]string, 0, len(b.VectorMatching.MatchingLabels)+1)
+	lbls = append(lbls, labels.MetricName)
+	lbls = append(lbls, b.VectorMatching.MatchingLabels...)
+	slices.Sort(lbls)
+
+	return func(l labels.Labels) []byte {
+		return l.BytesWithoutLabels(buf, lbls...)
 	}
 }
 
@@ -447,7 +477,7 @@ func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sou
 		if floats[idxFloats].T == histograms[idxHistograms].T {
 			// Conflict found
 			firstConflictingSeriesLabels := sourceSeriesMetadata[0].Labels
-			groupLabels := b.labelsFunc()(firstConflictingSeriesLabels)
+			groupLabels := b.groupLabelsFunc()(firstConflictingSeriesLabels)
 
 			return types.InstantVectorSeriesData{}, fmt.Errorf("found both float and histogram samples for the match group %s on the %s side of the operation at timestamp %s", groupLabels, side, timestamp.Time(floats[idxFloats].T).Format(time.RFC3339Nano))
 		}
@@ -563,7 +593,7 @@ func (b *BinaryOperation) mergeOneSideFloats(seriesGroupSide seriesForOneGroupSi
 				// Another series has a point with the same timestamp. We have a conflict.
 				firstConflictingSeriesLabels := sourceSeriesMetadata[seriesGroupSide.sourceSeriesIndices[sourceSeriesIndexInData]].Labels
 				secondConflictingSeriesLabels := sourceSeriesMetadata[seriesGroupSide.sourceSeriesIndices[seriesIndexInData]].Labels
-				groupLabels := b.labelsFunc()(firstConflictingSeriesLabels)
+				groupLabels := b.groupLabelsFunc()(firstConflictingSeriesLabels)
 
 				return nil, fmt.Errorf("found duplicate series for the match group %s on the %s side of the operation at timestamp %s: %s and %s", groupLabels, side, timestamp.Time(nextT).Format(time.RFC3339Nano), firstConflictingSeriesLabels, secondConflictingSeriesLabels)
 			}
@@ -684,7 +714,7 @@ func (b *BinaryOperation) mergeOneSideHistograms(seriesGroupSide seriesForOneGro
 				// Another series has a point with the same timestamp. We have a conflict.
 				firstConflictingSeriesLabels := sourceSeriesMetadata[seriesGroupSide.sourceSeriesIndices[sourceSeriesIndexInData]].Labels
 				secondConflictingSeriesLabels := sourceSeriesMetadata[seriesGroupSide.sourceSeriesIndices[seriesIndexInData]].Labels
-				groupLabels := b.labelsFunc()(firstConflictingSeriesLabels)
+				groupLabels := b.groupLabelsFunc()(firstConflictingSeriesLabels)
 
 				return nil, fmt.Errorf("found duplicate series for the match group %s on the %s side of the operation at timestamp %s: %s and %s", groupLabels, side, timestamp.Time(nextT).Format(time.RFC3339Nano), firstConflictingSeriesLabels, secondConflictingSeriesLabels)
 			}
