@@ -38,6 +38,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
@@ -133,8 +134,8 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 	}
 	sort.Stable(ByLabelName(promotedAttrs))
 
-	// Calculate the maximum possible number of labels we could return so we can preallocate l
-	maxLabelCount := attributes.Len() + len(settings.ExternalLabels) + len(promotedAttrs) + len(extras)/2
+	// Calculate the maximum possible number of labels we could return so we can preallocate l.
+	maxLabelCount := attributes.Len() + len(settings.ExternalLabels) + len(promotedAttrs) + resourceAttrs.Len() + len(extras)/2
 
 	if haveServiceName {
 		maxLabelCount++
@@ -146,20 +147,28 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 
 	// Ensure attributes are sorted by key for consistent merging of keys which
 	// collide when sanitized.
-	labels := make([]mimirpb.LabelAdapter, 0, maxLabelCount)
+	lbls := make([]mimirpb.LabelAdapter, 0, maxLabelCount)
 	// XXX: Should we always drop service namespace/service name/service instance ID from the labels
 	// (as they get mapped to other Prometheus labels)?
 	attributes.Range(func(key string, value pcommon.Value) bool {
 		if !slices.Contains(ignoreAttrs, key) {
-			labels = append(labels, mimirpb.LabelAdapter{Name: key, Value: value.AsString()})
+			lbls = append(lbls, mimirpb.LabelAdapter{Name: key, Value: value.AsString()})
 		}
 		return true
 	})
-	sort.Stable(ByLabelName(labels))
+	sort.Stable(ByLabelName(lbls))
+
+	metadataLabels := make([]mimirpb.LabelAdapter, 0, resourceAttrs.Len())
+	resourceAttrs.Range(func(key string, value pcommon.Value) bool {
+		name := labels.MetadataPrefix + "otel_res_attr_" + key
+		metadataLabels = append(metadataLabels, mimirpb.LabelAdapter{Name: name, Value: value.AsString()})
+		return true
+	})
+	sort.Stable(ByLabelName(metadataLabels))
 
 	// map ensures no duplicate label names.
 	l := make(map[string]string, maxLabelCount)
-	for _, label := range labels {
+	for _, label := range lbls {
 		var finalKey = prometheustranslator.NormalizeLabel(label.Name)
 		if existingValue, alreadyExists := l[finalKey]; alreadyExists {
 			l[finalKey] = existingValue + ";" + label.Value
@@ -169,6 +178,13 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 	}
 
 	for _, lbl := range promotedAttrs {
+		normalized := prometheustranslator.NormalizeLabel(lbl.Name)
+		if _, exists := l[normalized]; !exists {
+			l[normalized] = lbl.Value
+		}
+	}
+
+	for _, lbl := range metadataLabels {
 		normalized := prometheustranslator.NormalizeLabel(lbl.Name)
 		if _, exists := l[normalized]; !exists {
 			l[normalized] = lbl.Value
@@ -213,12 +229,12 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 		l[name] = extras[i+1]
 	}
 
-	labels = labels[:0]
+	lbls = lbls[:0]
 	for k, v := range l {
-		labels = append(labels, mimirpb.LabelAdapter{Name: k, Value: v})
+		lbls = append(lbls, mimirpb.LabelAdapter{Name: k, Value: v})
 	}
 
-	return labels
+	return lbls
 }
 
 // isValidAggregationTemporality checks whether an OTel metric has a valid
