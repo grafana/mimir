@@ -1395,13 +1395,33 @@ func TestAnnotations(t *testing.T) {
 			expectedWarningAnnotations: []string{
 				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:6)`,
 			},
-			skipComparisonWithPrometheusReason: "Prometheus' engine panics for this teste case, https://github.com/prometheus/prometheus/pull/14609 will fix this",
+			skipComparisonWithPrometheusReason: "Prometheus' engine panics for this test case, https://github.com/prometheus/prometheus/pull/14609 will fix this",
 		},
 		"rate() over native histograms with incompatible custom buckets": {
 			data: nativeHistogramsWithCustomBucketsData,
 			expr: `rate(metric{series="incompatible-custom-buckets"}[1m])`,
 			expectedWarningAnnotations: []string{
 				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:6)`,
+			},
+		},
+
+		"sum_over_time() over series with both floats and histograms": {
+			data:                       `some_metric 10 {{schema:0 sum:1 count:1 buckets:[1]}}`,
+			expr:                       `sum_over_time(some_metric[1m])`,
+			expectedWarningAnnotations: []string{`PromQL warning: encountered a mix of histograms and floats for metric name "some_metric" (1:15)`},
+		},
+		"sum_over_time() over native histograms with both exponential and custom buckets": {
+			data: nativeHistogramsWithCustomBucketsData,
+			expr: `sum_over_time(metric{series="mixed-exponential-custom-buckets"}[1m])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:15)`,
+			},
+		},
+		"sum_over_time() over native histograms with incompatible custom buckets": {
+			data: nativeHistogramsWithCustomBucketsData,
+			expr: `sum_over_time(metric{series="incompatible-custom-buckets"}[1m])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:15)`,
 			},
 		},
 

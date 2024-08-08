@@ -6,7 +6,10 @@ import (
 	"math"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/floats"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -15,7 +18,7 @@ var CountOverTime = FunctionOverRangeVector{
 	StepFunc:           countOverTime,
 }
 
-func countOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, hPoints *types.HPointRingBuffer, _ EmitAnnotationFunc) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error) {
+func countOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, hPoints *types.HPointRingBuffer, _ EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	fPointCount := fPoints.CountAtOrBefore(step.RangeEnd)
 	hPointCount := hPoints.CountAtOrBefore(step.RangeEnd)
 
@@ -31,7 +34,7 @@ var LastOverTime = FunctionOverRangeVector{
 	StepFunc:           lastOverTime,
 }
 
-func lastOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, hPoints *types.HPointRingBuffer, _ EmitAnnotationFunc) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error) {
+func lastOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, hPoints *types.HPointRingBuffer, _ EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	lastFloat, floatAvailable := fPoints.LastAtOrBefore(step.RangeEnd)
 	lastHistogram, histogramAvailable := hPoints.LastAtOrBefore(step.RangeEnd)
 
@@ -52,7 +55,7 @@ var PresentOverTime = FunctionOverRangeVector{
 	StepFunc:           presentOverTime,
 }
 
-func presentOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, hPoints *types.HPointRingBuffer, _ EmitAnnotationFunc) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error) {
+func presentOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, hPoints *types.HPointRingBuffer, _ EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	if fPoints.AnyAtOrBefore(step.RangeEnd) || hPoints.AnyAtOrBefore(step.RangeEnd) {
 		return 1, true, nil, nil
 	}
@@ -65,7 +68,7 @@ var MaxOverTime = FunctionOverRangeVector{
 	StepFunc:           maxOverTime,
 }
 
-func maxOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, _ *types.HPointRingBuffer, _ EmitAnnotationFunc) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error) {
+func maxOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, _ *types.HPointRingBuffer, _ EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	head, tail := fPoints.UnsafePoints(step.RangeEnd)
 
 	if len(head) == 0 && len(tail) == 0 {
@@ -102,7 +105,7 @@ var MinOverTime = FunctionOverRangeVector{
 	StepFunc:           minOverTime,
 }
 
-func minOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, _ *types.HPointRingBuffer, _ EmitAnnotationFunc) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error) {
+func minOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, _ *types.HPointRingBuffer, _ EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	head, tail := fPoints.UnsafePoints(step.RangeEnd)
 
 	if len(head) == 0 && len(tail) == 0 {
@@ -132,4 +135,79 @@ func minOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPoin
 	}
 
 	return minSoFar, true, nil, nil
+}
+
+var SumOverTime = FunctionOverRangeVector{
+	SeriesMetadataFunc:             DropSeriesName,
+	StepFunc:                       sumOverTime,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func sumOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPointRingBuffer, hPoints *types.HPointRingBuffer, emitAnnotation EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	fHead, fTail := fPoints.UnsafePoints(step.RangeEnd)
+	hHead, hTail := hPoints.UnsafePoints(step.RangeEnd)
+
+	haveFloats := len(fHead) > 0 || len(fTail) > 0
+	haveHistograms := len(hHead) > 0 || len(hTail) > 0
+
+	if !haveFloats && !haveHistograms {
+		return 0, false, nil, nil
+	}
+
+	if haveFloats && haveHistograms {
+		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
+		return 0, false, nil, nil
+	}
+
+	if haveFloats {
+		return sumFloats(fHead, fTail), true, nil, nil
+	}
+
+	h, err := sumHistograms(hHead, hTail, emitAnnotation)
+	return 0, false, h, err
+}
+
+func sumFloats(head, tail []promql.FPoint) float64 {
+	sum, c := 0.0, 0.0
+
+	for _, p := range head {
+		sum, c = floats.KahanSumInc(p.F, sum, c)
+	}
+
+	for _, p := range tail {
+		sum, c = floats.KahanSumInc(p.F, sum, c)
+	}
+
+	return sum + c
+}
+
+func sumHistograms(head, tail []promql.HPoint, emitAnnotation EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+	var sum *histogram.FloatHistogram
+
+	if len(head) > 0 {
+		sum = head[0].H
+		head = head[1:]
+	} else {
+		sum = tail[0].H
+		tail = tail[1:]
+	}
+
+	// We must make a copy of the histogram, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
+	sum = sum.Copy()
+
+	for _, p := range head {
+		if _, err := sum.Add(p.H); err != nil {
+			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+			return nil, err
+		}
+	}
+
+	for _, p := range tail {
+		if _, err := sum.Add(p.H); err != nil {
+			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+			return nil, err
+		}
+	}
+
+	return sum, nil
 }

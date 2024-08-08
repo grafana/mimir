@@ -24,6 +24,7 @@ var overTimeFunctionNames = []string{
 	"max_over_time",
 	"min_over_time",
 	"present_over_time",
+	"sum_over_time",
 }
 
 // EnableAllFeatures enables all features supported by MQE, including experimental or incomplete features.

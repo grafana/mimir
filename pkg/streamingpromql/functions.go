@@ -121,6 +121,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"sin":               InstantVectorTransformationFunctionOperatorFactory("sin", functions.Sin),
 	"sinh":              InstantVectorTransformationFunctionOperatorFactory("sinh", functions.Sinh),
 	"sqrt":              InstantVectorTransformationFunctionOperatorFactory("sqrt", functions.Sqrt),
+	"sum_over_time":     FunctionOverRangeVectorOperatorFactory("sum_over_time", functions.SumOverTime),
 	"tan":               InstantVectorTransformationFunctionOperatorFactory("tan", functions.Tan),
 	"tanh":              InstantVectorTransformationFunctionOperatorFactory("tanh", functions.Tanh),
 }

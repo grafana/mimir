@@ -68,6 +68,7 @@ clear
 
 load 1m
   some_metric{foo="bar"} 0 1 2 3 _ _ {{schema:3 sum:4 count:4 buckets:[1 2 1]}} {{schema:3 sum:4 count:4 buckets:[1 2 1]}}
+  some_nhcb_metric{baz="bar"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}}
 
 eval range from 0 to 7m step 1m count_over_time(some_metric[3m])
   {foo="bar"} 1 2 3 4 3 2 2 2
@@ -98,3 +99,18 @@ eval range from 0 to 7m step 1m max_over_time(some_metric[3m])
 
 eval range from 0 to 7m step 1m max_over_time(some_metric[5s])
   {foo="bar"} 0 1 2 3 _ _ _ _
+
+eval_warn range from 0 to 10m step 1m sum_over_time(some_metric[3m])
+  {foo="bar"} 0 1 3 6 6 5 _ {{schema:3 sum:8 count:8 buckets:[2 4 2]}} {{schema:3 sum:8 count:8 buckets:[2 4 2]}} {{schema:3 sum:8 count:8 buckets:[2 4 2]}} {{schema:3 sum:4 count:4 buckets:[1 2 1]}}
+
+eval range from 0 to 5m step 1m sum_over_time(some_metric[3m])
+  {foo="bar"} 0 1 3 6 6 5
+
+eval range from 7m to 10m step 1m sum_over_time(some_metric[3m])
+  {foo="bar"} {{schema:3 sum:8 count:8 buckets:[2 4 2]}} {{schema:3 sum:8 count:8 buckets:[2 4 2]}} {{schema:3 sum:8 count:8 buckets:[2 4 2]}} {{schema:3 sum:4 count:4 buckets:[1 2 1]}}
+
+eval range from 0 to 7m step 1m sum_over_time(some_metric[5s])
+  {foo="bar"} 0 1 2 3 _ _ {{schema:3 sum:4 count:4 buckets:[1 2 1]}} {{schema:3 sum:4 count:4 buckets:[1 2 1]}}
+
+eval range from 0 to 2m step 1m sum_over_time(some_nhcb_metric[3m])
+  {baz="bar"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:16 count:7 custom_values:[5 10] buckets:[1 6]}} {{schema:-53 sum:19 count:22 custom_values:[5 10] buckets:[8 14]}}
