@@ -381,6 +381,13 @@ func (b *BinaryOperation) groupKeyFunc() func(labels.Labels) []byte {
 		}
 	}
 
+	if len(b.VectorMatching.MatchingLabels) == 0 {
+		// Fast path for common case for expressions like "a + b" with no 'on' or 'without' labels.
+		return func(l labels.Labels) []byte {
+			return l.BytesWithoutLabels(buf, labels.MetricName)
+		}
+	}
+
 	lbls := make([]string, 0, len(b.VectorMatching.MatchingLabels)+1)
 	lbls = append(lbls, labels.MetricName)
 	lbls = append(lbls, b.VectorMatching.MatchingLabels...)
