@@ -1,12 +1,15 @@
 package ruler
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/pkg/errors"
+	"go.uber.org/multierr"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/go-kit/log/level"
@@ -22,6 +25,9 @@ import (
 type BoostQueryRequest struct {
 	Query string `json:"query"`
 }
+type BoostQueriesRequest struct {
+	Queries []string `json:"queries"`
+}
 
 const (
 	queryBoosterNamespace = "query_booster"
@@ -34,11 +40,43 @@ var (
 	errServerError = errors.New("server error")
 )
 
+func (a *API) BoostQueries(w http.ResponseWriter, r *http.Request) {
+	logger, ctx := spanlogger.NewWithLogger(r.Context(), a.logger, "API.BoostQueries")
+	defer logger.Finish()
+
+	userID, err := user.ExtractOrgID(ctx)
+	if err != nil {
+		respondInvalidRequest(logger, w, err.Error())
+		return
+	}
+
+	req := BoostQueriesRequest{}
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	err = dec.Decode(&req)
+	if err != nil {
+		respondInvalidRequest(logger, w, err.Error())
+		return
+	}
+
+	level.Info(logger).Log("msg", "queries submitted for boost", "query", strings.Join(req.Queries, ", "))
+
+	for _, query := range req.Queries {
+		err = a.boostQuery(ctx, userID, query)
+		if err != nil {
+			if errors.Is(err, errClientError) {
+				respondInvalidRequest(logger, w, err.Error())
+				return
+			}
+			respondServerError(logger, w, err.Error())
+			return
+		}
+	}
+}
+
 func (a *API) BoostQuery(w http.ResponseWriter, r *http.Request) {
 	logger, ctx := spanlogger.NewWithLogger(r.Context(), a.logger, "API.BoostQuery")
 	defer logger.Finish()
-
-	fmt.Println()
 
 	userID, err := user.ExtractOrgID(ctx)
 	if err != nil {
@@ -57,7 +95,7 @@ func (a *API) BoostQuery(w http.ResponseWriter, r *http.Request) {
 
 	level.Info(logger).Log("msg", "query submitted for boost", "query", req.Query)
 
-	ruleGroup, err := ruleGroupForQuery(req)
+	err = a.boostQuery(ctx, userID, req.Query)
 	if err != nil {
 		if errors.Is(err, errClientError) {
 			respondInvalidRequest(logger, w, err.Error())
@@ -67,30 +105,31 @@ func (a *API) BoostQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	respondAccepted(w, a.logger)
+}
+
+func (a *API) boostQuery(ctx context.Context, userID, query string) error {
+	ruleGroup, err := ruleGroupForQuery(query)
+	if err != nil {
+		return errors.Wrapf(err, "failed to create rule group for query %s", query)
+	}
+
 	errs := a.ruler.manager.ValidateRuleGroup(ruleGroup)
 	if len(errs) > 0 {
-		e := []string{}
-		for _, err := range errs {
-			level.Error(logger).Log("msg", "unable to validate rule group payload", "err", err.Error())
-			e = append(e, err.Error())
-		}
-
-		respondServerError(a.logger, w, strings.Join(e, "\n"))
-		return
+		return multierr.Combine(errs...)
 	}
 
 	rgProto := rulespb.ToProto(userID, queryBoosterNamespace, ruleGroup)
 	err = a.store.SetRuleGroup(ctx, userID, queryBoosterNamespace, rgProto)
 	if err != nil {
-		respondServerError(a.logger, w, err.Error())
-		return
+		return err
 	}
 
-	respondAccepted(w, a.logger)
+	return nil
 }
 
-func ruleGroupForQuery(req BoostQueryRequest) (rulefmt.RuleGroup, error) {
-	queryExpr, err := parser.ParseExpr(req.Query)
+func ruleGroupForQuery(query string) (rulefmt.RuleGroup, error) {
+	queryExpr, err := parser.ParseExpr(query)
 	if err != nil {
 		return rulefmt.RuleGroup{}, fmt.Errorf("%w: failed to parse query: %w", errClientError, err)
 	}
