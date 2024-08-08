@@ -160,7 +160,7 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil || userID == "" {
 		level.Error(logger).Log("msg", "error extracting org id from context", "err", err)
-		respondServerError(logger, w, "no valid org id found")
+		respondInvalidRequest(logger, w, "no valid org id found")
 		return
 	}
 
@@ -270,7 +270,7 @@ func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil || userID == "" {
 		level.Error(logger).Log("msg", "error extracting org id from context", "err", err)
-		respondServerError(logger, w, "no valid org id found")
+		respondInvalidRequest(logger, w, "no valid org id found")
 		return
 	}
 
