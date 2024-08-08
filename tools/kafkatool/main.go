@@ -47,5 +47,8 @@ func main() {
 	consumerGroupCommand := commands.ConsumerGroupCommand{}
 	consumerGroupCommand.Register(app, getKafkaClient)
 
+	clusterMetadataCommand := commands.BrokersCommand{}
+	clusterMetadataCommand.Register(app, getKafkaClient)
+
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 }
