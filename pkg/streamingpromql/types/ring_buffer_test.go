@@ -22,6 +22,8 @@ type ringBuffer[T any] interface {
 	UnsafePoints(maxT int64) (head []T, tail []T)
 	CopyPoints(maxT int64) ([]T, error)
 	LastAtOrBefore(maxT int64) (T, bool)
+	CountAtOrBefore(maxT int64) int
+	AnyAtOrBefore(maxT int64) bool
 	First() T
 	Reset()
 	GetPoints() []T
@@ -113,7 +115,7 @@ func testRingBuffer[T any](t *testing.T, buf ringBuffer[T], points []T) {
 func TestRingBuffer_DiscardPointsBefore_ThroughWrapAround(t *testing.T) {
 	setupRingBufferTestingPools(t)
 
-	t.Run("test FPoint ring buffer", func(t *testing.T) {
+	t.Run("test FPointRingBuffer", func(t *testing.T) {
 		points := []promql.FPoint{
 			{T: 1, F: 100},
 			{T: 2, F: 200},
@@ -126,7 +128,7 @@ func TestRingBuffer_DiscardPointsBefore_ThroughWrapAround(t *testing.T) {
 		testDiscardPointsBeforeThroughWrapAround(t, buf, points)
 	})
 
-	t.Run("test HPoint ring buffer", func(t *testing.T) {
+	t.Run("test HPointRingBuffer", func(t *testing.T) {
 		points := []promql.HPoint{
 			{T: 1, H: &histogram.FloatHistogram{Count: 100}},
 			{T: 2, H: &histogram.FloatHistogram{Count: 200}},
@@ -170,7 +172,7 @@ func testDiscardPointsBeforeThroughWrapAround[T any](t *testing.T, buf ringBuffe
 	shouldHavePoints(t, buf, points[5])
 }
 
-func TestRemoveLastPoint(t *testing.T) {
+func TestRingBuffer_RemoveLastPoint(t *testing.T) {
 	setupRingBufferTestingPools(t)
 
 	points := []promql.HPoint{
@@ -300,9 +302,13 @@ func shouldHavePointsAtOrBeforeTime[T any](t *testing.T, buf ringBuffer[T], ts i
 
 	if len(expected) == 0 {
 		require.Len(t, combinedPoints, 0)
+		require.False(t, buf.AnyAtOrBefore(ts))
 	} else {
 		require.Equal(t, expected, combinedPoints)
+		require.True(t, buf.AnyAtOrBefore(ts))
 	}
+
+	require.Equal(t, len(expected), buf.CountAtOrBefore(ts))
 
 	copiedPoints, err := buf.CopyPoints(ts)
 	require.NoError(t, err)

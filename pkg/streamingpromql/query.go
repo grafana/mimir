@@ -204,6 +204,10 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 }
 
 func (q *Query) convertFunctionCallToOperator(e *parser.Call) (types.InstantVectorOperator, error) {
+	if !q.engine.featureToggles.EnableOverTimeFunctions && slices.Contains(overTimeFunctionNames, e.Func.Name) {
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
+	}
+
 	factory, ok := instantVectorFunctionOperatorFactories[e.Func.Name]
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
