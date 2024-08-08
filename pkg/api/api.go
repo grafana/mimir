@@ -357,6 +357,7 @@ func (a *API) RegisterRulerAPI(r *ruler.API, configAPIEnabled bool, buildInfoHan
 	}
 
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/boost_query"), http.HandlerFunc(r.BoostQuery), true, true, "POST")
+	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/boost_queries"), http.HandlerFunc(r.BoostQueries), true, true, "POST")
 }
 
 // RegisterIngesterRing registers the ring UI page associated with the ingesters ring.
