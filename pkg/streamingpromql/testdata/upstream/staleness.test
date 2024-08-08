@@ -26,24 +26,19 @@ eval instant at 331s metric
 
 
 # Range vector ignores stale sample.
-# Unsupported by streaming engine.
-# eval instant at 30s count_over_time(metric[1m])
-#   {} 3
+eval instant at 30s count_over_time(metric[1m])
+  {} 3
 
-# Unsupported by streaming engine.
-# eval instant at 10s count_over_time(metric[1s])
-#   {} 1
+eval instant at 10s count_over_time(metric[1s])
+  {} 1
 
-# Unsupported by streaming engine.
-# eval instant at 20s count_over_time(metric[1s])
+eval instant at 20s count_over_time(metric[1s])
 
-# Unsupported by streaming engine.
-# eval instant at 20s count_over_time(metric[10s])
-#   {} 1
+eval instant at 20s count_over_time(metric[10s])
+  {} 1
 
-# Unsupported by streaming engine.
-# eval instant at 20s count_over_time(metric[10])
-#   {} 1
+eval instant at 20s count_over_time(metric[10])
+  {} 1
 
 
 clear

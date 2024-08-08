@@ -1519,7 +1519,12 @@ mimir_query_engine:
   # (experimental) Enable support for binary operations in Mimir's query engine.
   # Only applies if the Mimir query engine is in use.
   # CLI flag: -querier.mimir-query-engine.enable-binary-operations
-  [enable_binary_operations: <boolean> | default = false]
+  [enable_binary_operations: <boolean> | default = true]
+
+  # (experimental) Enable support for ..._over_time functions in Mimir's query
+  # engine. Only applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-over-time-functions
+  [enable_over_time_functions: <boolean> | default = true]
 ```
 
 ### frontend

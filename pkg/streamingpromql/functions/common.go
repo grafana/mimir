@@ -13,6 +13,10 @@ import (
 // SeriesMetadataFunction is a function to operate on the metadata across series.
 type SeriesMetadataFunction func(seriesMetadata []types.SeriesMetadata, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error)
 
+func PassthroughSeriesMetadata(seriesMetadata []types.SeriesMetadata, _ *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+	return seriesMetadata, nil
+}
+
 func DropSeriesName(seriesMetadata []types.SeriesMetadata, _ *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
 	for i := range seriesMetadata {
 		seriesMetadata[i].Labels = seriesMetadata[i].Labels.DropMetricName()
@@ -45,7 +49,7 @@ func FloatTransformationDropHistogramsFunc(transform func(f float64) float64) In
 	}
 }
 
-func Passthrough(seriesData types.InstantVectorSeriesData, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+func PassthroughData(seriesData types.InstantVectorSeriesData, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	return seriesData, nil
 }
 

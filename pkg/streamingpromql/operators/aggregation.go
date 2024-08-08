@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/zeropool"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -38,7 +39,11 @@ type Aggregation struct {
 
 	Annotations *annotations.Annotations
 
+	metricNames        *MetricNames
+	currentSeriesIndex int
+
 	expressionPosition posrange.PositionRange
+	emitAnnotationFunc functions.EmitAnnotationFunc
 
 	remainingInnerSeriesToGroup []*group // One entry per series produced by Inner, value is the group for that series
 	remainingGroups             []*group // One entry per group, in the order we want to return them
@@ -68,7 +73,7 @@ func NewAggregation(
 
 	slices.Sort(grouping)
 
-	return &Aggregation{
+	a := &Aggregation{
 		Inner:                    inner,
 		Start:                    s,
 		End:                      e,
@@ -78,8 +83,13 @@ func NewAggregation(
 		Without:                  without,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		Annotations:              annotations,
+		metricNames:              &MetricNames{},
 		expressionPosition:       expressionPosition,
 	}
+
+	a.emitAnnotationFunc = a.emitAnnotation // This is an optimisation to avoid creating the EmitAnnotationFunc instance on every usage.
+
+	return a
 }
 
 type groupWithLabels struct {
@@ -126,6 +136,8 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		// No input series == no output series.
 		return nil, nil
 	}
+
+	a.metricNames.CaptureMetricNames(innerSeries)
 
 	// Determine the groups we'll return.
 	// Note that we use a string here to uniquely identify the groups, while Prometheus' engine uses a hash without any handling of hash collisions.
@@ -278,13 +290,19 @@ func (a *Aggregation) accumulateUntilGroupComplete(ctx context.Context, g *group
 
 		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
 		a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
-		err = a.accumulateSeriesIntoGroup(s, thisSeriesGroup, a.Steps, a.Start, a.Interval)
-		if err != nil {
+		if err := a.accumulateSeriesIntoGroup(s, thisSeriesGroup, a.Steps, a.Start, a.Interval); err != nil {
 			return err
 		}
+
+		a.currentSeriesIndex++
 	}
 	return nil
 }
+
+// Sentinel value used to indicate a sample has seen an invalid combination of histograms and should be ignored.
+//
+// Invalid combinations include exponential and custom buckets, and histograms with incompatible custom buckets.
+var invalidCombinationOfHistograms = &histogram.FloatHistogram{}
 
 func (a *Aggregation) constructSeriesData(thisGroup *group, start int64, interval int64) (types.InstantVectorSeriesData, error) {
 	floatPointCount := a.reconcileAndCountFloatPoints(thisGroup)
@@ -313,7 +331,7 @@ func (a *Aggregation) constructSeriesData(thisGroup *group, start int64, interva
 		}
 
 		for i, h := range thisGroup.histogramSums {
-			if h != nil {
+			if h != nil && h != invalidCombinationOfHistograms {
 				t := start + int64(i)*interval
 				histogramPoints = append(histogramPoints, promql.HPoint{T: t, H: thisGroup.histogramSums[i]})
 			}
@@ -422,10 +440,20 @@ func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData,
 	for _, p := range s.Histograms {
 		idx := (p.T - start) / interval
 
-		if seriesGroup.histogramSums[idx] != nil {
+		if seriesGroup.histogramSums[idx] == invalidCombinationOfHistograms {
+			// We've already seen an invalid combination of histograms at this timestamp. Ignore this point.
+			continue
+		} else if seriesGroup.histogramSums[idx] != nil {
 			seriesGroup.histogramSums[idx], err = seriesGroup.histogramSums[idx].Add(p.H)
 			if err != nil {
-				return err
+				// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
+				seriesGroup.histogramSums[idx] = invalidCombinationOfHistograms
+				seriesGroup.histogramPointCount--
+
+				if err := functions.NativeHistogramErrorToAnnotation(err, a.emitAnnotationFunc); err != nil {
+					// Unknown error: we couldn't convert the error to an annotation. Give up.
+					return err
+				}
 			}
 		} else if lastUncopiedHistogram == p.H {
 			// We've already used this histogram for a previous point due to lookback.
@@ -444,6 +472,11 @@ func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData,
 	types.PutInstantVectorSeriesData(s, a.MemoryConsumptionTracker)
 	seriesGroup.remainingSeriesCount--
 	return nil
+}
+
+func (a *Aggregation) emitAnnotation(generator functions.AnnotationGenerator) {
+	metricName := a.metricNames.GetMetricNameForSeries(a.currentSeriesIndex)
+	a.Annotations.Add(generator(metricName, a.Inner.ExpressionPosition()))
 }
 
 func (a *Aggregation) Close() {

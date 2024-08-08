@@ -79,8 +79,9 @@ func TestAggregation_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			aggregator := &Aggregation{
-				Inner:    &testOperator{series: testCase.inputSeries},
-				Grouping: testCase.grouping,
+				Inner:       &testOperator{series: testCase.inputSeries},
+				Grouping:    testCase.grouping,
+				metricNames: &MetricNames{},
 			}
 
 			outputSeries, err := aggregator.SeriesMetadata(context.Background())

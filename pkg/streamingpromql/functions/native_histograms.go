@@ -3,7 +3,11 @@
 package functions
 
 import (
+	"errors"
+
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -51,4 +55,22 @@ func HistogramSum(seriesData types.InstantVectorSeriesData, memoryConsumptionTra
 	types.PutInstantVectorSeriesData(seriesData, memoryConsumptionTracker)
 
 	return data, nil
+}
+
+func NativeHistogramErrorToAnnotation(err error, emitAnnotation EmitAnnotationFunc) error {
+	if err == nil {
+		return nil
+	}
+
+	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+		emitAnnotation(annotations.NewMixedExponentialCustomHistogramsWarning)
+		return nil
+	}
+
+	if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+		emitAnnotation(annotations.NewIncompatibleCustomBucketsHistogramsWarning)
+		return nil
+	}
+
+	return err
 }
