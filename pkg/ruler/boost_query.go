@@ -72,6 +72,8 @@ func (a *API) BoostQueries(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	respondAccepted(w, a.logger)
 }
 
 func (a *API) BoostQuery(w http.ResponseWriter, r *http.Request) {
