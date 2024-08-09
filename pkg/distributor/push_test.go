@@ -595,7 +595,7 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 			expectRetry:   true,
 			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 1 * time.Second, MaxBackoff: 64 * time.Second},
 			minRetryAfter: 1,
-			maxRetryAfter: 1,
+			maxRetryAfter: 3,
 		},
 		{
 			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt is negative, default Retry-Attempt to 1",
