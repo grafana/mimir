@@ -424,7 +424,7 @@ type mockPusher struct {
 	mock.Mock
 }
 
-func (m mockPusher) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
+func (m *mockPusher) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
 	args := m.Called(ctx, request)
 	return args.Error(0)
 }

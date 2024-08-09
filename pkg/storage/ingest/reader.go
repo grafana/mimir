@@ -494,7 +494,7 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		consumeCtx := context.WithoutCancel(ctx)
 		err := consumer.consume(consumeCtx, records)
 		if err == nil {
-			err = consumer.Close(consumeCtx)
+			_ = consumer.Close(consumeCtx)
 			break
 		}
 		level.Error(r.logger).Log(
@@ -744,10 +744,6 @@ func (r *PartitionReader) pollFetches(ctx context.Context) (result kgo.Fetches) 
 	return f
 }
 
-func (r *PartitionReader) setPollingStartOffset(offset int64) {
-	r.consumedOffsetWatcher.Notify(offset)
-}
-
 type fetchWant struct {
 	startOffset int64 // inclusive
 	endOffset   int64 // exclusive
@@ -846,7 +842,7 @@ func (r *concurrentFetchers) pollFetches(ctx context.Context) (result kgo.Fetche
 	}
 }
 
-func (r *concurrentFetchers) fetchSingle(ctx context.Context, w fetchWant, logger log.Logger) (_ kgo.FetchPartition, fetchedBytes int) {
+func (r *concurrentFetchers) fetchSingle(ctx context.Context, w fetchWant, _ log.Logger) (_ kgo.FetchPartition, fetchedBytes int) {
 	req := kmsg.NewFetchRequest()
 	req.Topics = []kmsg.FetchRequestTopic{{
 		Topic:   r.topicName,
@@ -1167,9 +1163,9 @@ func processRespPartition(rp *kmsg.FetchResponseTopicPartition, topic string) kg
 
 		switch t := r.(type) {
 		case *kmsg.MessageV0:
-			panic("unkown message type")
+			panic("unknown message type")
 		case *kmsg.MessageV1:
-			panic("unkown message type")
+			panic("unknown message type")
 		case *kmsg.RecordBatch:
 			_, _ = processRecordBatch(topic, &fp, t)
 		}
