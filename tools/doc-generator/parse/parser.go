@@ -280,6 +280,11 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 			return nil, errors.Wrapf(err, "config=%s.%s", t.PkgPath(), t.Name())
 		}
 		if fieldFlag == nil {
+			var def string
+			if kind == KindField {
+				def = getFieldDefault(field, "")
+			}
+
 			block.Add(&ConfigEntry{
 				Kind:          kind,
 				Name:          fieldName,
@@ -288,6 +293,7 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 				FieldType:     fieldType,
 				FieldExample:  getFieldExample(fieldName, field.Type),
 				FieldCategory: getFieldCategory(field, ""),
+				FieldDefault:  def,
 				Element:       element,
 			})
 			continue
