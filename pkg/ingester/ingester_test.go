@@ -7526,7 +7526,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 							reqData, marshalErr := origReq.Marshal()
 							require.NoError(t, marshalErr)
 							req := &mimirpb.WriteRequest{}
-							require.NoError(t, req.Unmarshal(reqData, false))
+							require.NoError(t, req.Unmarshal(reqData))
 
 							var err error
 

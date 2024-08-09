@@ -241,6 +241,8 @@ type WriteRequest struct {
 	Metadata   []*MetricMetadata       `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
 	// Skip validation of label names.
 	SkipLabelNameValidation bool `protobuf:"varint,1000,opt,name=skip_label_name_validation,json=skipLabelNameValidation,proto3" json:"skip_label_name_validation,omitempty"`
+	// Skip unmarshaling of exemplars.
+	SkipUnmarshalingExemplars bool
 }
 
 func (m *WriteRequest) Reset()      { *m = WriteRequest{} }
@@ -249,7 +251,7 @@ func (*WriteRequest) Descriptor() ([]byte, []int) {
 	return fileDescriptor_86d4d7485f544059, []int{0}
 }
 func (m *WriteRequest) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b, false)
+	return m.Unmarshal(b)
 }
 func (m *WriteRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
@@ -380,6 +382,7 @@ type TimeSeries struct {
 	Samples    []Sample    `protobuf:"bytes,2,rep,name=samples,proto3" json:"samples"`
 	Exemplars  []Exemplar  `protobuf:"bytes,3,rep,name=exemplars,proto3" json:"exemplars"`
 	Histograms []Histogram `protobuf:"bytes,4,rep,name=histograms,proto3" json:"histograms"`
+	SkipUnmarshalingExemplars bool
 }
 
 func (m *TimeSeries) Reset()      { *m = TimeSeries{} }
@@ -388,7 +391,7 @@ func (*TimeSeries) Descriptor() ([]byte, []int) {
 	return fileDescriptor_86d4d7485f544059, []int{3}
 }
 func (m *TimeSeries) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b, false)
+	return m.Unmarshal(b)
 }
 func (m *TimeSeries) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
@@ -6117,7 +6120,7 @@ func valueToStringMimir(v interface{}) string {
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("*%v", pv)
 }
-func (m *WriteRequest) Unmarshal(dAtA []byte, skipUnmarshalingExemplars bool) error {
+func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -6176,7 +6179,8 @@ func (m *WriteRequest) Unmarshal(dAtA []byte, skipUnmarshalingExemplars bool) er
 				return io.ErrUnexpectedEOF
 			}
 			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], skipUnmarshalingExemplars); err != nil {
+			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.SkipUnmarshalingExemplars
+			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -6402,7 +6406,7 @@ func (m *ErrorDetails) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *TimeSeries) Unmarshal(dAtA []byte, skipUnmarshalingExemplars bool) error {
+func (m *TimeSeries) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -6528,14 +6532,12 @@ func (m *TimeSeries) Unmarshal(dAtA []byte, skipUnmarshalingExemplars bool) erro
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-
-			if !skipUnmarshalingExemplars {
+			if !m.SkipUnmarshalingExemplars {
 				m.Exemplars = append(m.Exemplars, Exemplar{})
 				if err := m.Exemplars[len(m.Exemplars)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 					return err
 				}
 			}
-
 			iNdEx = postIndex
 		case 4:
 			if wireType != 2 {

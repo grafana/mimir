@@ -170,7 +170,7 @@ func (c pusherConsumer) unmarshalRequests(ctx context.Context, records []record,
 			WriteRequest: &mimirpb.WriteRequest{},
 		}
 		// We don't free the WriteRequest slices because they are being freed by the Pusher.
-		err := pRecord.WriteRequest.Unmarshal(rec.content, false)
+		err := pRecord.WriteRequest.Unmarshal(rec.content)
 		if err != nil {
 			pRecord.err = fmt.Errorf("parsing ingest consumer write request: %w", err)
 		}

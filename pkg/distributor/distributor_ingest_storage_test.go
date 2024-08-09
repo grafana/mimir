@@ -1540,7 +1540,7 @@ func readAllRequestsByPartitionFromKafka(t testing.TB, kafkaAddresses []string, 
 
 	for _, record := range records {
 		req := &mimirpb.WriteRequest{}
-		require.NoError(t, req.Unmarshal(record.Value, false))
+		require.NoError(t, req.Unmarshal(record.Value))
 
 		requestsByPartition[record.Partition] = append(requestsByPartition[record.Partition], req)
 	}

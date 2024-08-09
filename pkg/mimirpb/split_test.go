@@ -190,7 +190,7 @@ func BenchmarkSplitWriteRequestByMaxMarshalSize_WithMarshalling(b *testing.B) {
 		for n := 0; n < b.N; n++ {
 			// Unmarshal the request.
 			unmarshalledReq := &WriteRequest{}
-			if err := unmarshalledReq.Unmarshal(marshalledReq, false); err != nil {
+			if err := unmarshalledReq.Unmarshal(marshalledReq); err != nil {
 				b.Fatal(err)
 			}
 

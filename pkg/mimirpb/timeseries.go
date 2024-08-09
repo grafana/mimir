@@ -67,7 +67,8 @@ type PreallocWriteRequest struct {
 // gets copied into the PreallocTimeseries{} object which gets appended to Timeseries.
 func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.Timeseries = PreallocTimeseriesSliceFromPool()
-	return p.WriteRequest.Unmarshal(dAtA, p.SkipUnmarshalingExemplars)
+	p.WriteRequest.SkipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
+	return p.WriteRequest.Unmarshal(dAtA)
 }
 
 func (p *WriteRequest) ClearTimeseriesUnmarshalData() {
@@ -89,6 +90,8 @@ type PreallocTimeseries struct {
 	// Original data used for unmarshalling this PreallocTimeseries. When set, Marshal methods will return it
 	// instead of doing full marshalling again. This assumes that this instance hasn't changed.
 	marshalledData []byte
+
+	skipUnmarshalingExemplars bool
 }
 
 // RemoveLabel removes the label labelName from this timeseries, if it exists.
@@ -207,12 +210,13 @@ var TimeseriesUnmarshalCachingEnabled = true
 // Unmarshal implements proto.Message. Input data slice is retained.
 // Copied from the protobuf generated code, the only change is that in case 3 the exemplars don't get unmarshaled
 // if p.skipUnmarshalingExemplars is false.
-func (p *PreallocTimeseries) Unmarshal(dAtA []byte, skipUnmarshalingExemplars bool) error {
+func (p *PreallocTimeseries) Unmarshal(dAtA []byte) error {
 	if TimeseriesUnmarshalCachingEnabled {
 		p.marshalledData = dAtA
 	}
 	p.TimeSeries = TimeseriesFromPool()
-	return p.TimeSeries.Unmarshal(dAtA, skipUnmarshalingExemplars)
+	p.TimeSeries.SkipUnmarshalingExemplars = p.skipUnmarshalingExemplars
+	return p.TimeSeries.Unmarshal(dAtA)
 }
 
 func (p *PreallocTimeseries) Size() int {
