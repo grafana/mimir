@@ -494,8 +494,10 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		consumeCtx := context.WithoutCancel(ctx)
 		err := consumer.consume(consumeCtx, records)
 		if err == nil {
-			_ = consumer.Close(consumeCtx)
-			break
+			err = consumer.Close(consumeCtx)
+			if err == nil {
+				break
+			}
 		}
 		level.Error(r.logger).Log(
 			"msg", "encountered error while ingesting data from Kafka; should retry",
@@ -818,15 +820,16 @@ type concurrentFetchers struct {
 // newConcurrentFetchers creates a new concurrentFetchers. startOffset can be kafkaOffsetStart, kafkaOffsetEnd or a specific offset.
 func newConcurrentFetchers(ctx context.Context, client *kgo.Client, logger log.Logger, topic string, partition int32, startOffset int64, concurrency int, recordsPerFetch int, metrics *readerMetrics) (*concurrentFetchers, error) {
 	f := &concurrentFetchers{
-		client:          client,
-		logger:          logger,
-		concurrency:     concurrency,
-		topicName:       topic,
-		partitionID:     partition,
-		metrics:         metrics,
-		recordsPerFetch: recordsPerFetch,
-		tracer:          kotel.NewTracer(kotel.TracerPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}))),
-		orderedFetches:  make(chan kgo.FetchPartition),
+		client:             client,
+		logger:             logger,
+		concurrency:        concurrency,
+		topicName:          topic,
+		partitionID:        partition,
+		metrics:            metrics,
+		recordsPerFetch:    recordsPerFetch,
+		lastReturnedRecord: -1, // we still haven't returned the 0 offset.
+		tracer:             kotel.NewTracer(kotel.TracerPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}))),
+		orderedFetches:     make(chan kgo.FetchPartition),
 	}
 
 	var err error
@@ -857,7 +860,7 @@ func (r *concurrentFetchers) pollFetches(ctx context.Context) (result kgo.Fetche
 	case <-ctx.Done():
 		return kgo.Fetches{}
 	case f := <-r.orderedFetches:
-		level.Info(r.logger).Log("msg", "received ordered fetch", "num_records", len(f.Records), "wait_duration", time.Since(waitStartTime))
+		level.Debug(r.logger).Log("msg", "received ordered fetch", "num_records", len(f.Records), "wait_duration", time.Since(waitStartTime))
 		r.metrics.fetchWaitDuration.Observe(time.Since(waitStartTime).Seconds())
 		trimUntil := 0
 		f.EachRecord(func(record *kgo.Record) {
@@ -1015,31 +1018,50 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 
 func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.WaitGroup, wants chan fetchWant, logger log.Logger) {
 	defer fetchersWg.Done()
-	boff := backoff.New(ctx, backoff.Config{
+	errBackoff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 250 * time.Millisecond,
 		MaxBackoff: 2 * time.Second,
 		MaxRetries: 0, // retry forever
 	})
+
+	// more aggressive backoff when we're waiting for records to be produced.
+	// It's likely there's already some records produced by the time we get back the response and send another request.
+	newRecordsProducedBackoff := backoff.New(ctx, backoff.Config{
+		MinBackoff: 10 * time.Millisecond,
+		MaxBackoff: time.Second,
+		MaxRetries: 0, // retry forever
+	})
+
 	for w := range wants {
-		for attempt := 0; boff.Ongoing() && w.endOffset > w.startOffset; attempt++ {
+		for attempt := 0; errBackoff.Ongoing() && w.endOffset > w.startOffset; attempt++ {
 			fetchStartTime := time.Now()
 			f := r.fetchSingle(ctx, w)
+			logCompletedFetch(logger, f, fetchStartTime, attempt, w)
 			if errors.Is(f.Err, kerr.OffsetOutOfRange) {
-				if w.startOffset > f.HighWatermark {
-					// we're too far ahead
-					break // TODO dimitarvdimitrov if we want to use this in stable state we should not give up here; maybe wait for some time, unsure how long
+				if w.startOffset >= f.HighWatermark {
+					// We're too far ahead.
+					// HWM is the NEXT offset to be produced, so the record with that offset doesn't exist yet.
+					// We can wait for it.
+					newRecordsProducedBackoff.Wait()
+					continue
 				} else if w.startOffset < f.LogStartOffset {
+					// We're too far behind.
+					if f.LogStartOffset >= w.endOffset {
+						// The next fetch want is responsible for this range.
+						break
+					}
+					// Only some of the offsets of our want are out of range, so let's fast-forward.
 					w.startOffset = f.LogStartOffset
-					attempt--
 					continue
 				}
+				panic(fmt.Errorf("kafka returned OFFSET_OUT_OF_RANGE, but we're not requesting too far ahead and not too far behind (HWM: %d, LSO: %d, start: %d, end: %d)", f.HighWatermark, f.LogStartOffset, w.startOffset, w.endOffset))
 			}
-			logCompletedFetch(logger, f, fetchStartTime, attempt, w)
 			if len(f.Records) == 0 {
-				boff.Wait()
+				errBackoff.Wait()
 				continue
 			}
-			boff.Reset()
+			errBackoff.Reset()
+			newRecordsProducedBackoff.Reset()
 			w.startOffset = f.Records[len(f.Records)-1].Offset + 1
 
 			select {
@@ -1075,6 +1097,8 @@ func logCompletedFetch(logger log.Logger, f fetchResult, fetchStartTime time.Tim
 		"asked_bytes", w.maxBytes(),
 		"got_bytes", f.fetchedBytes,
 		"diff_bytes", int(w.maxBytes())-f.fetchedBytes,
+		"hwm", f.HighWatermark,
+		"lso", f.LogStartOffset,
 		"err", f.Err,
 	)
 }
