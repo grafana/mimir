@@ -157,6 +157,11 @@ type Configuration interface {
 	Raw() []byte
 }
 
+type Limits struct {
+	MaxSilences         int
+	MaxSilenceSizeBytes int
+}
+
 type GrafanaAlertmanagerConfig struct {
 	ExternalURL        string
 	AlertStoreCallback mem.AlertStoreCallback
@@ -164,6 +169,8 @@ type GrafanaAlertmanagerConfig struct {
 
 	Silences MaintenanceOptions
 	Nflog    MaintenanceOptions
+
+	Limits Limits
 }
 
 func (c *GrafanaAlertmanagerConfig) Validate() error {
@@ -205,6 +212,10 @@ func NewGrafanaAlertmanager(tenantKey string, tenantID int64, config *GrafanaAle
 		Metrics:        m.Registerer,
 		SnapshotReader: strings.NewReader(config.Silences.InitialState()),
 		Retention:      config.Silences.Retention(),
+		Limits: silence.Limits{
+			MaxSilences:         func() int { return config.Limits.MaxSilences },
+			MaxSilenceSizeBytes: func() int { return config.Limits.MaxSilenceSizeBytes },
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("unable to initialize the silencing component of alerting: %w", err)
@@ -704,6 +715,41 @@ func (am *GrafanaAlertmanager) setReceiverMetrics(receivers []*nfstatus.Receiver
 // PutAlerts receives the alerts and then sends them through the corresponding route based on whenever the alert has a receiver embedded or not
 func (am *GrafanaAlertmanager) PutAlerts(postableAlerts amv2.PostableAlerts) error {
 	now := time.Now()
+	alerts, validationErr := PostableAlertsToAlertmanagerAlerts(postableAlerts, now)
+
+	// Register metrics.
+	for _, a := range alerts {
+		if a.EndsAt.After(now) {
+			am.Metrics.Firing().Inc()
+		} else {
+			am.Metrics.Resolved().Inc()
+		}
+
+		level.Debug(am.logger).Log("msg",
+			"Putting alert",
+			"alert",
+			a,
+			"starts_at",
+			a.StartsAt,
+			"ends_at",
+			a.EndsAt)
+	}
+
+	if err := am.alerts.Put(alerts...); err != nil {
+		// Notification sending alert takes precedence over validation errors.
+		return err
+	}
+	if validationErr != nil {
+		am.Metrics.Invalid().Add(float64(len(validationErr.Alerts)))
+		// Even if validationErr is nil, the require.NoError fails on it.
+		return validationErr
+	}
+	return nil
+}
+
+// PostableAlertsToAlertmanagerAlerts converts the PostableAlerts to a slice of *types.Alert.
+// It sets `StartsAt` and `EndsAt`, ignores empty and namespace UID labels, and captures validation errors for each skipped alert.
+func PostableAlertsToAlertmanagerAlerts(postableAlerts amv2.PostableAlerts, now time.Time) ([]*types.Alert, *AlertValidationError) {
 	alerts := make([]*types.Alert, 0, len(postableAlerts))
 	var validationErr *AlertValidationError
 	for _, a := range postableAlerts {
@@ -748,42 +794,19 @@ func (am *GrafanaAlertmanager) PutAlerts(postableAlerts amv2.PostableAlerts) err
 			alert.EndsAt = now.Add(defaultResolveTimeout)
 		}
 
-		if alert.EndsAt.After(now) {
-			am.Metrics.Firing().Inc()
-		} else {
-			am.Metrics.Resolved().Inc()
-		}
-
 		if err := alert.Validate(); err != nil {
 			if validationErr == nil {
 				validationErr = &AlertValidationError{}
 			}
 			validationErr.Alerts = append(validationErr.Alerts, a)
 			validationErr.Errors = append(validationErr.Errors, err)
-			am.Metrics.Invalid().Inc()
 			continue
 		}
 
-		level.Debug(am.logger).Log("msg",
-			"Putting alert",
-			"alert",
-			alert,
-			"starts_at",
-			alert.StartsAt,
-			"ends_at",
-			alert.EndsAt)
 		alerts = append(alerts, alert)
 	}
 
-	if err := am.alerts.Put(alerts...); err != nil {
-		// Notification sending alert takes precedence over validation errors.
-		return err
-	}
-	if validationErr != nil {
-		// Even if validationErr is nil, the require.NoError fails on it.
-		return validationErr
-	}
-	return nil
+	return alerts, validationErr
 }
 
 // AlertValidationError is the error capturing the validation errors

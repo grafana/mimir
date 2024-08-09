@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/pkg/errors"
 
@@ -49,6 +51,7 @@ type AdaptiveCardsMessage struct {
 
 // NewAdaptiveCardsMessage returns a message prepared for adaptive cards.
 // https://docs.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/connectors-using#send-adaptive-cards-using-an-incoming-webhook
+// more info https://learn.microsoft.com/en-us/connectors/teams/?tabs=text1#microsoft-teams-webhook
 func NewAdaptiveCardsMessage(card AdaptiveCard) AdaptiveCardsMessage {
 	return AdaptiveCardsMessage{
 		Attachments: []AdaptiveCardsAttachment{{
@@ -309,9 +312,18 @@ func (tn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 	}
 
 	cmd := &receivers.SendWebhookSettings{URL: u, Body: string(b)}
-	// Teams sometimes does not use status codes to show when a request has failed. Instead, the
-	// response can contain an error message, irrespective of status code (i.e. https://docs.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/connectors-using?tabs=cURL#rate-limiting-for-connectors)
-	cmd.Validation = validateResponse
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse URL: %w", err)
+	}
+	// TODO: remove it after August 15. Office webhooks are deprecated and are removed on August 15, https://devblogs.microsoft.com/microsoft365dev/retirement-of-office-365-connectors-within-microsoft-teams/
+	if strings.HasSuffix(parsed.Host, "webhook.office.com") {
+		// Teams sometimes does not use status codes to show when a request has failed. Instead, the
+		// response can contain an error message, irrespective of status code (i.e. https://docs.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/connectors-using?tabs=cURL#rate-limiting-for-connectors)
+		cmd.Validation = validateOfficeWebhookResponse
+	} else {
+		cmd.Validation = validateResponse(tn.log)
+	}
 
 	if err := tn.ns.SendWebhook(ctx, cmd); err != nil {
 		return false, errors.Wrap(err, "send notification to Teams")
@@ -321,13 +333,28 @@ func (tn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 }
 
 //nolint:revive
-func validateResponse(b []byte, statusCode int) error {
+func validateOfficeWebhookResponse(b []byte, statusCode int) error {
 	// The request succeeded if the response is "1"
 	// https://docs.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/connectors-using?tabs=cURL#send-messages-using-curl-and-powershell
 	if !bytes.Equal(b, []byte("1")) {
 		return errors.New(string(b))
 	}
 	return nil
+}
+
+func validateResponse(l logging.Logger) func(b []byte, statusCode int) error {
+	return func(b []byte, statusCode int) error {
+		if statusCode/100 == 2 {
+			return nil
+		}
+		l.Error("failed to send notification and parse response", "statusCode", statusCode, "body", string(b))
+		errResponse := errorResponse{}
+		err := json.Unmarshal(b, &errResponse)
+		if err != nil {
+			return fmt.Errorf("failed to send notification, got status code %d, check logs for more details", statusCode)
+		}
+		return fmt.Errorf("failed to send notification, got status code %d: (%s) %s", statusCode, errResponse.Error.Code, errResponse.Error.Message)
+	}
 }
 
 func (tn *Notifier) SendResolved() bool {
