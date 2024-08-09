@@ -1012,7 +1012,7 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 			logCompletedFetch(logger, f, fetchStartTime, attempt, w)
 			if errors.Is(f.Err, kerr.OffsetOutOfRange) {
 				// Note that Kafka might return -1 for HWM and LSO if those are unknown (around startup or leader changes).
-				// So be careful how you use those.
+				// They can also be equal when the partition is empty. So be careful how you use those.
 				// In those cases it's also safe to retry.
 				if w.startOffset < f.LogStartOffset {
 					// We're too far behind.
