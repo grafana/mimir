@@ -583,7 +583,7 @@ func TestCompareMatrix(t *testing.T) {
 				return
 			}
 			require.Error(t, err)
-			require.EqualError(t, err, tc.err)
+			require.ErrorContains(t, err, tc.err)
 		})
 	}
 }
