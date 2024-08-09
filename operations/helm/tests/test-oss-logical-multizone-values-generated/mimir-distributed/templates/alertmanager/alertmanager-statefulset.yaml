@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
     name: "alertmanager-zone-a"
-    rollout-group: alertmanager
+    rollout-group: test-oss-logical-multizone-values-mimir-alertmanager
     zone: zone-a
   annotations:
     rollout-max-unavailable: "2"
@@ -23,7 +23,7 @@ spec:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: test-oss-logical-multizone-values
       app.kubernetes.io/component: alertmanager
-      rollout-group: alertmanager
+      rollout-group: test-oss-logical-multizone-values-mimir-alertmanager
       zone: zone-a
   updateStrategy:
     type: OnDelete
@@ -37,7 +37,7 @@ spec:
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
         name: "alertmanager-zone-a"
-        rollout-group: alertmanager
+        rollout-group: test-oss-logical-multizone-values-mimir-alertmanager
         zone: zone-a
       annotations:
       namespace: "citestns"
@@ -138,7 +138,7 @@ metadata:
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
     name: "alertmanager-zone-b"
-    rollout-group: alertmanager
+    rollout-group: test-oss-logical-multizone-values-mimir-alertmanager
     zone: zone-b
   annotations:
     rollout-max-unavailable: "2"
@@ -150,7 +150,7 @@ spec:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: test-oss-logical-multizone-values
       app.kubernetes.io/component: alertmanager
-      rollout-group: alertmanager
+      rollout-group: test-oss-logical-multizone-values-mimir-alertmanager
       zone: zone-b
   updateStrategy:
     type: OnDelete
@@ -164,7 +164,7 @@ spec:
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
         name: "alertmanager-zone-b"
-        rollout-group: alertmanager
+        rollout-group: test-oss-logical-multizone-values-mimir-alertmanager
         zone: zone-b
       annotations:
       namespace: "citestns"
@@ -265,7 +265,7 @@ metadata:
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
     name: "alertmanager-zone-c"
-    rollout-group: alertmanager
+    rollout-group: test-oss-logical-multizone-values-mimir-alertmanager
     zone: zone-c
   annotations:
     rollout-max-unavailable: "2"
@@ -277,7 +277,7 @@ spec:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: test-oss-logical-multizone-values
       app.kubernetes.io/component: alertmanager
-      rollout-group: alertmanager
+      rollout-group: test-oss-logical-multizone-values-mimir-alertmanager
       zone: zone-c
   updateStrategy:
     type: OnDelete
@@ -291,7 +291,7 @@ spec:
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
         name: "alertmanager-zone-c"
-        rollout-group: alertmanager
+        rollout-group: test-oss-logical-multizone-values-mimir-alertmanager
         zone: zone-c
       annotations:
       namespace: "citestns"

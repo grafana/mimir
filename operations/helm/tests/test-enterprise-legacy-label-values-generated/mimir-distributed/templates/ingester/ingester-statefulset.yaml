@@ -9,7 +9,7 @@ metadata:
     heritage: Helm
     release: test-enterprise-legacy-label-values
     name: "ingester-zone-a"
-    rollout-group: ingester
+    rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-ingester
     zone: zone-a
   annotations:
     rollout-max-unavailable: "50"
@@ -21,7 +21,7 @@ spec:
     matchLabels:
       app: enterprise-metrics-ingester
       release: test-enterprise-legacy-label-values
-      rollout-group: ingester
+      rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-ingester
       zone: zone-a
   updateStrategy:
     type: OnDelete
@@ -45,7 +45,7 @@ spec:
         target: ingester
         release: test-enterprise-legacy-label-values
         name: "ingester-zone-a"
-        rollout-group: ingester
+        rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-ingester
         zone: zone-a
       annotations:
       namespace: "citestns"
@@ -139,7 +139,7 @@ metadata:
     heritage: Helm
     release: test-enterprise-legacy-label-values
     name: "ingester-zone-b"
-    rollout-group: ingester
+    rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-ingester
     zone: zone-b
   annotations:
     rollout-max-unavailable: "50"
@@ -151,7 +151,7 @@ spec:
     matchLabels:
       app: enterprise-metrics-ingester
       release: test-enterprise-legacy-label-values
-      rollout-group: ingester
+      rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-ingester
       zone: zone-b
   updateStrategy:
     type: OnDelete
@@ -175,7 +175,7 @@ spec:
         target: ingester
         release: test-enterprise-legacy-label-values
         name: "ingester-zone-b"
-        rollout-group: ingester
+        rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-ingester
         zone: zone-b
       annotations:
       namespace: "citestns"
@@ -269,7 +269,7 @@ metadata:
     heritage: Helm
     release: test-enterprise-legacy-label-values
     name: "ingester-zone-c"
-    rollout-group: ingester
+    rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-ingester
     zone: zone-c
   annotations:
     rollout-max-unavailable: "50"
@@ -281,7 +281,7 @@ spec:
     matchLabels:
       app: enterprise-metrics-ingester
       release: test-enterprise-legacy-label-values
-      rollout-group: ingester
+      rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-ingester
       zone: zone-c
   updateStrategy:
     type: OnDelete
@@ -305,7 +305,7 @@ spec:
         target: ingester
         release: test-enterprise-legacy-label-values
         name: "ingester-zone-c"
-        rollout-group: ingester
+        rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-ingester
         zone: zone-c
       annotations:
       namespace: "citestns"
