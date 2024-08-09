@@ -243,7 +243,7 @@ type WriteRequest struct {
 	SkipLabelNameValidation bool `protobuf:"varint,1000,opt,name=skip_label_name_validation,json=skipLabelNameValidation,proto3" json:"skip_label_name_validation,omitempty"`
 
 	// Skip unmarshaling of exemplars.
-	SkipUnmarshalingExemplars bool
+	skipUnmarshalingExemplars bool
 }
 
 func (m *WriteRequest) Reset()      { *m = WriteRequest{} }
@@ -6182,7 +6182,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
-			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.SkipUnmarshalingExemplars
+			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
 			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}

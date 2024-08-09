@@ -67,7 +67,7 @@ type PreallocWriteRequest struct {
 // gets copied into the PreallocTimeseries{} object which gets appended to Timeseries.
 func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.Timeseries = PreallocTimeseriesSliceFromPool()
-	p.WriteRequest.SkipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
+	p.WriteRequest.skipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
 	return p.WriteRequest.Unmarshal(dAtA)
 }
 
