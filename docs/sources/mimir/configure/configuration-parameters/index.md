@@ -3818,6 +3818,23 @@ kafka:
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
   [wait_strong_read_consistency_timeout: <duration> | default = 20s]
 
+  # The number of concurrent fetch requests that the ingester sends to kafka
+  # when catching up during startup.
+  # CLI flag: -ingest-storage.kafka.replay-concurrency
+  [replay_concurrency: <int> | default = 1]
+
+  # The number of concurrent appends to the TSDB head.
+  # CLI flag: -ingest-storage.kafka.replay-shards
+  [replay_shards: <int> | default = 1]
+
+  # The number of timeseries to batch together before ingesting into TSDB.
+  # CLI flag: -ingest-storage.kafka.batch-size
+  [batch_size: <int> | default = 128]
+
+  # The number of records to fetch from Kafka in a single request.
+  # CLI flag: -ingest-storage.kafka.records-per-fetch
+  [records_per_fetch: <int> | default = 128]
+
 migration:
   # When both this option and ingest storage are enabled, distributors write to
   # both Kafka and ingesters. A write request is considered successful only when
