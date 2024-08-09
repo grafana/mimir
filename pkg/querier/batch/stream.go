@@ -159,11 +159,49 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 			populate(batch, rt)
 			batch.Next()
 		} else {
-			if (rt == chunkenc.ValHistogram || rt == chunkenc.ValFloatHistogram) && lt == chunkenc.ValFloat {
-				// Prefer histograms than floats. Take left side if both have histograms.
-				populate(batch, rt)
-			} else {
+			// The two samples have the same timestamp. They may be the same exact sample or different one
+			// (e.g. we ingested an in-order sample and then OOO sample with same timestamp but different value).
+			// We want query results to be deterministic, so we select one of the two side deterministically.
+			var pickLeftSide bool
+
+			switch {
+			// If the sample types are the same, we pick the highest value.
+			case lt == rt:
+				if lt == chunkenc.ValFloat {
+					_, lValue := bs.curr().At()
+					_, rValue := batch.At()
+					pickLeftSide = lValue > rValue
+				} else if lt == chunkenc.ValHistogram {
+					_, lValue := bs.curr().AtHistogram()
+					_, rValue := batch.AtHistogram()
+
+					pickLeftSide = (*histogram.Histogram)(lValue).Sum > (*histogram.Histogram)(rValue).Sum
+				} else if lt == chunkenc.ValFloatHistogram {
+					_, lValue := bs.curr().AtFloatHistogram()
+					_, rValue := batch.AtFloatHistogram()
+
+					pickLeftSide = (*histogram.FloatHistogram)(lValue).Sum > (*histogram.FloatHistogram)(rValue).Sum
+				} else {
+					// We should never reach this point.
+					pickLeftSide = true
+				}
+
+			// Otherwise, give preference to histogram.
+			case lt == chunkenc.ValHistogram || rt == chunkenc.ValHistogram:
+				pickLeftSide = lt == chunkenc.ValHistogram
+
+			// Otherwise, give preference to float histogram.
+			case lt == chunkenc.ValFloatHistogram || rt == chunkenc.ValFloatHistogram:
+				pickLeftSide = lt == chunkenc.ValFloatHistogram
+
+			default:
+				// We should never reach this point.
+				pickLeftSide = true
+			}
+
+			if pickLeftSide {
 				populate(bs.curr(), lt)
+
 				// if bs.hPool is not nil, we put there the discarded histogram.Histogram object from batch, so it can be reused.
 				if rt == chunkenc.ValHistogram && bs.hPool != nil {
 					_, h := batch.AtHistogram()
@@ -174,7 +212,22 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 					_, fh := batch.AtFloatHistogram()
 					bs.fhPool.Put((*histogram.FloatHistogram)(fh))
 				}
+			} else {
+				populate(batch, rt)
+
+				// if bs.hPool is not nil, we put there the discarded histogram.Histogram object from batch, so it can be reused.
+				if lt == chunkenc.ValHistogram && bs.hPool != nil {
+					_, h := bs.curr().AtHistogram()
+					bs.hPool.Put((*histogram.Histogram)(h))
+				}
+				// if bs.fhPool is not nil, we put there the discarded histogram.FloatHistogram object from batch, so it can be reused.
+				if lt == chunkenc.ValFloatHistogram && bs.fhPool != nil {
+					_, fh := bs.curr().AtFloatHistogram()
+					bs.fhPool.Put((*histogram.FloatHistogram)(fh))
+				}
 			}
+
+			// Advance both iterators.
 			bs.next()
 			batch.Next()
 		}
