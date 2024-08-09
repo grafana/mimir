@@ -884,7 +884,7 @@ func (r *concurrentFetchers) pollFetches(ctx context.Context) (result kgo.Fetche
 	}
 }
 
-func (r *concurrentFetchers) fetchSingle(ctx context.Context, w fetchWant, _ log.Logger) (_ kgo.FetchPartition, fetchedBytes int) {
+func (r *concurrentFetchers) fetchSingle(ctx context.Context, w fetchWant) fetchResult {
 	req := kmsg.NewFetchRequest()
 	req.MinBytes = 1
 	req.Version = 13
@@ -906,18 +906,18 @@ func (r *concurrentFetchers) fetchSingle(ctx context.Context, w fetchWant, _ log
 	resp, err := req.RequestWith(ctx, r.client)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return kgo.FetchPartition{}, 0
+			return fetchResult{kgo.FetchPartition{}, 0}
 		}
-		return kgo.FetchPartition{
+		return fetchResult{kgo.FetchPartition{
 			Err: fmt.Errorf("fetching from kafka: %w", err),
-		}, 0
+		}, 0}
 	}
 	rawPartitionResp := resp.Topics[0].Partitions[0]
-	fetchedBytes = len(rawPartitionResp.RecordBatches)          // TODO dimitarvdimitrov make this conditional on the kafka backend - for WS we use uncompressed bytes (sumRecordLengths), for kafka we use the size of the response (rawPartitionResp.RecordBatches)
-	r.metrics.fetchesCompressedBytes.Add(float64(fetchedBytes)) // This doesn't include overhead in the response, but that should be small.
+	// TODO dimitarvdimitrov make this conditional on the kafka backend - for WS we use uncompressed bytes (sumRecordLengths), for kafka we use the size of the response (rawPartitionResp.RecordBatches)
+	r.metrics.fetchesCompressedBytes.Add(float64(len(rawPartitionResp.RecordBatches))) // This doesn't include overhead in the response, but that should be small.
 	partition := processRespPartition(&rawPartitionResp, r.topicName)
 	partition.EachRecord(r.tracer.OnFetchRecordBuffered) // TODO dimitarvdimitrov we might end up buffering the same record multiple times - what happens then?
-	return partition, sumRecordLengths(partition.Records)
+	return fetchResult{partition, sumRecordLengths(partition.Records)}
 }
 
 func sumRecordLengths(records []*kgo.Record) (sum int) {
@@ -950,7 +950,7 @@ func (r *concurrentFetchers) getEndOffset(ctx context.Context) (int64, error) {
 }
 
 func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64) {
-	fetchersWg := sync.WaitGroup{}
+	fetchersWg := &sync.WaitGroup{}
 	fetchersWg.Add(r.concurrency)
 	defer fetchersWg.Wait()
 
@@ -958,47 +958,7 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 	defer close(wants)
 	for i := 0; i < r.concurrency; i++ {
 		logger := log.With(r.logger, "fetcher", i)
-		go func() {
-			defer fetchersWg.Done()
-			for w := range wants {
-				boff := backoff.New(ctx, backoff.Config{
-					MinBackoff: 250 * time.Millisecond,
-					MaxBackoff: 2 * time.Second,
-					MaxRetries: 0, // retry forever
-				})
-				for attempt := 0; boff.Ongoing() && w.endOffset > w.startOffset; attempt++ {
-					fetchStartTime := time.Now()
-					f, fetchedBytes := r.fetchSingle(ctx, w, logger)
-					if errors.Is(f.Err, kerr.OffsetOutOfRange) {
-						if w.startOffset > f.HighWatermark {
-							// we're too far ahead
-							break // TODO dimitarvdimitrov if we want to use this in stable state we should not give up here; maybe wait for some time, unsure how long
-						} else if w.startOffset < f.LogStartOffset {
-							w.startOffset = f.LogStartOffset
-							attempt--
-							continue
-						}
-					}
-					var lastOffset int64
-					if len(f.Records) > 0 {
-						lastOffset = f.Records[len(f.Records)-1].Offset
-					}
-					logCompletedFetch(logger, f.Err, fetchStartTime, attempt, w, len(f.Records), fetchedBytes, lastOffset)
-					if len(f.Records) == 0 {
-						boff.Wait()
-						continue
-					}
-					boff.Reset()
-					w.startOffset = lastOffset + 1
-
-					select {
-					case w.result <- fetchResult{FetchPartition: f, fetchedBytes: fetchedBytes}:
-					case <-ctx.Done():
-					}
-				}
-				close(w.result)
-			}
-		}()
+		go r.runFetcher(ctx, fetchersWg, wants, logger)
 	}
 
 	var (
@@ -1013,7 +973,7 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 
 	for {
 		refillBufferedResult := nextResult
-		if len(bufferedResult.Records) > 0 {
+		if readyBufferedResults != nil {
 			// We have a single result that's still not consumed.
 			// So we don't try to get new results from the fetchers.
 			refillBufferedResult = nil
@@ -1053,28 +1013,69 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 	}
 }
 
-func logCompletedFetch(logger log.Logger, err error, fetchStartTime time.Time, attempt int, w fetchWant, numRecords, fetchedBytes int, lastOffset int64) {
+func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.WaitGroup, wants chan fetchWant, logger log.Logger) {
+	defer fetchersWg.Done()
+	boff := backoff.New(ctx, backoff.Config{
+		MinBackoff: 250 * time.Millisecond,
+		MaxBackoff: 2 * time.Second,
+		MaxRetries: 0, // retry forever
+	})
+	for w := range wants {
+		for attempt := 0; boff.Ongoing() && w.endOffset > w.startOffset; attempt++ {
+			fetchStartTime := time.Now()
+			f := r.fetchSingle(ctx, w)
+			if errors.Is(f.Err, kerr.OffsetOutOfRange) {
+				if w.startOffset > f.HighWatermark {
+					// we're too far ahead
+					break // TODO dimitarvdimitrov if we want to use this in stable state we should not give up here; maybe wait for some time, unsure how long
+				} else if w.startOffset < f.LogStartOffset {
+					w.startOffset = f.LogStartOffset
+					attempt--
+					continue
+				}
+			}
+			logCompletedFetch(logger, f, fetchStartTime, attempt, w)
+			if len(f.Records) == 0 {
+				boff.Wait()
+				continue
+			}
+			boff.Reset()
+			w.startOffset = f.Records[len(f.Records)-1].Offset + 1
+
+			select {
+			case w.result <- f:
+			case <-ctx.Done():
+			}
+		}
+		close(w.result)
+	}
+}
+
+func logCompletedFetch(logger log.Logger, f fetchResult, fetchStartTime time.Time, attempt int, w fetchWant) {
 	msg := "fetched records"
-	if err != nil {
+	if f.Err != nil {
 		msg = "received an error while fetching records; will retry after processing received records (if any)"
 		logger = level.Info(logger)
 	} else {
 		logger = level.Debug(logger)
 	}
+	var (
+		gotRecords   = int64(len(f.Records))
+		askedRecords = w.endOffset - w.startOffset
+	)
 	logger.Log(
 		"msg", msg,
 		"duration", time.Since(fetchStartTime),
 		"attempt", attempt,
 		"start_offset", w.startOffset,
 		"end_offset", w.endOffset,
-		"asked_records", w.endOffset-w.startOffset,
-		"got_records", numRecords,
-		"diff_records", int(w.endOffset-w.startOffset)-numRecords,
+		"asked_records", askedRecords,
+		"got_records", gotRecords,
+		"diff_records", askedRecords-gotRecords,
 		"asked_bytes", w.maxBytes(),
-		"got_bytes", fetchedBytes,
-		"diff_bytes", int(w.maxBytes())-fetchedBytes,
-		"remaining_records", w.endOffset-lastOffset,
-		"err", err,
+		"got_bytes", f.fetchedBytes,
+		"diff_bytes", int(w.maxBytes())-f.fetchedBytes,
+		"err", f.Err,
 	)
 }
 
