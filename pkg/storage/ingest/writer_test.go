@@ -84,7 +84,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		assert.Equal(t, []byte(tenantID), fetches.Records()[0].Key)
 
 		received := mimirpb.WriteRequest{}
-		require.NoError(t, received.Unmarshal(fetches.Records()[0].Value))
+		require.NoError(t, received.Unmarshal(fetches.Records()[0].Value, false))
 		require.Len(t, received.Timeseries, len(multiSeries))
 
 		for idx, expected := range multiSeries {
@@ -172,8 +172,8 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		actualReq1 := &mimirpb.WriteRequest{}
 		actualReq2 := &mimirpb.WriteRequest{}
-		require.NoError(t, actualReq1.Unmarshal(records[0].Value))
-		require.NoError(t, actualReq2.Unmarshal(records[1].Value))
+		require.NoError(t, actualReq1.Unmarshal(records[0].Value, false))
+		require.NoError(t, actualReq2.Unmarshal(records[1].Value, false))
 
 		actualMergedReq := *actualReq1
 		actualMergedReq.Timeseries = append(actualMergedReq.Timeseries, actualReq2.Timeseries...)
@@ -251,7 +251,7 @@ func TestWriter_WriteSync(t *testing.T) {
 					assert.Equal(t, []byte(tenantID), fetches.Records()[0].Key)
 
 					received := mimirpb.WriteRequest{}
-					require.NoError(t, received.Unmarshal(fetches.Records()[0].Value))
+					require.NoError(t, received.Unmarshal(fetches.Records()[0].Value, false))
 					require.Len(t, received.Timeseries, len(expectedSeries))
 
 					for idx, expected := range expectedSeries {
@@ -588,7 +588,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		assert.Equal(t, []byte(tenantID), fetches.Records()[0].Key)
 
 		received := mimirpb.WriteRequest{}
-		require.NoError(t, received.Unmarshal(fetches.Records()[0].Value))
+		require.NoError(t, received.Unmarshal(fetches.Records()[0].Value, false))
 		received.ClearTimeseriesUnmarshalData()
 
 		// We expect that the small time series has been ingested, while the huge one has been discarded.
@@ -896,7 +896,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 		require.Len(t, records, 1)
 
 		actual := &mimirpb.WriteRequest{}
-		require.NoError(t, actual.Unmarshal(records[0].Value))
+		require.NoError(t, actual.Unmarshal(records[0].Value, false))
 
 		actual.ClearTimeseriesUnmarshalData()
 		assert.Equal(t, req, actual)
@@ -918,7 +918,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 			assert.Less(t, len(rec.Value), limit)
 
 			actual := &mimirpb.WriteRequest{}
-			require.NoError(t, actual.Unmarshal(rec.Value))
+			require.NoError(t, actual.Unmarshal(rec.Value, false))
 
 			actual.ClearTimeseriesUnmarshalData()
 			partials = append(partials, actual)
@@ -958,7 +958,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 			assert.Greater(t, len(rec.Value), limit)
 
 			actual := &mimirpb.WriteRequest{}
-			require.NoError(t, actual.Unmarshal(rec.Value))
+			require.NoError(t, actual.Unmarshal(rec.Value, false))
 
 			actual.ClearTimeseriesUnmarshalData()
 			partials = append(partials, actual)
