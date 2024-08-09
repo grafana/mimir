@@ -71,11 +71,7 @@ The following features are currently experimental:
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`
   - Using status code 529 instead of 429 upon rate limit exhaustion.
-    - `distributor.service-overload-status-code-on-rate-limit-enabled`
-  - Set Retry-After header in recoverable error responses
-    - `-distributor.retry-after-header.enabled`
-    - `-distributor.retry-after-header.base-seconds`
-    - `-distributor.retry-after-header.max-backoff-exponent`
+    - `-distributor.service-overload-status-code-on-rate-limit-enabled`
   - Limit exemplars per series per request
     - `-distributor.max-exemplars-per-series-per-request`
   - Limit OTLP write request byte size
