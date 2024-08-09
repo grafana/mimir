@@ -299,7 +299,8 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 					{Labels: []mimirpb.LabelAdapter{{Name: "label2", Value: "value2"}}, Value: 2, TimestampMs: timestampMs},
 					{Labels: []mimirpb.LabelAdapter{{Name: "label3", Value: "value3"}}, Value: 3, TimestampMs: timestampMs},
 				},
-				Histograms: []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
+				Histograms:                []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
+				SkipUnmarshalingExemplars: true,
 			},
 			maxGlobalExemplarsPerUser: 0, // 0 disables exemplars
 			expectTimeseries: mimirpb.TimeSeries{
@@ -309,8 +310,9 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 				Samples: []mimirpb.Sample{
 					{Value: 1, TimestampMs: timestampMs},
 				},
-				Exemplars:  []mimirpb.Exemplar{},
-				Histograms: []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
+				Exemplars:                 []mimirpb.Exemplar{},
+				Histograms:                []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
+				SkipUnmarshalingExemplars: true,
 			},
 		}, {
 			name: "request without exemplars and exemplars are enabled",

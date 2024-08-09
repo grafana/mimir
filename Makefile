@@ -242,6 +242,7 @@ images: ## Print all image names.
 # Generating proto code is automated.
 PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*.proto' -print)
 PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
+PROTO_GO_EXPECTED_DIFFS := $(patsubst %.proto,%.pb.go.expdiff,$(PROTO_DEFS))
 
 # Generating OTLP translation code is automated.
 OTLP_GOS := $(shell find ./pkg/distributor/otlp/ -type f -name '*_generated.go' -print)
@@ -504,6 +505,7 @@ mod-check: ## Check the go mod is clean and tidy.
 
 check-protos: ## Check the protobuf files are up to date.
 check-protos: clean-protos protos
+	@./tools/apply-expected-diffs.sh $(PROTO_GO_EXPECTED_DIFFS)
 	@./tools/find-diff-or-untracked.sh $(PROTO_GOS) || (echo "Please rebuild protobuf code by running 'check-protos'" && false)
 
 %.md : %.template
