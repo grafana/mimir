@@ -246,9 +246,9 @@ func newQueryTripperware(
 		// IMPORTANT: roundtrippers are executed in *reverse* order because they are wrappers.
 		// It means that the first roundtrippers defined in this function will be the last to be
 		// executed.
-
-		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
-		instant := newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...)
+		queryBoosterMiddleware := newQueryBoosterMiddleware(next, log)
+		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, append(queryRangeMiddleware, queryBoosterMiddleware)...)
+		instant := newLimitedParallelismRoundTripper(next, codec, limits, append(queryInstantMiddleware, queryBoosterMiddleware)...)
 		remoteRead := newRemoteReadRoundTripper(next, remoteReadMiddleware...)
 
 		// Wrap next for cardinality, labels queries and all other queries.
