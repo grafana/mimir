@@ -309,7 +309,7 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 				Samples: []mimirpb.Sample{
 					{Value: 1, TimestampMs: timestampMs},
 				},
-				Exemplars:  []mimirpb.Exemplar{},
+				Exemplars:  nil,
 				Histograms: []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
 			},
 		}, {
@@ -321,7 +321,7 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 				Samples: []mimirpb.Sample{
 					{Value: 1, TimestampMs: timestampMs},
 				},
-				Exemplars:  []mimirpb.Exemplar{},
+				Exemplars:  nil,
 				Histograms: []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
 			},
 			maxGlobalExemplarsPerUser: 1, // exemplars are not disabled
@@ -332,7 +332,7 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 				Samples: []mimirpb.Sample{
 					{Value: 1, TimestampMs: timestampMs},
 				},
-				Exemplars:  []mimirpb.Exemplar{},
+				Exemplars:  nil,
 				Histograms: []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
 			},
 		},
