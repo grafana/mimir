@@ -241,6 +241,7 @@ type WriteRequest struct {
 	Metadata   []*MetricMetadata       `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
 	// Skip validation of label names.
 	SkipLabelNameValidation bool `protobuf:"varint,1000,opt,name=skip_label_name_validation,json=skipLabelNameValidation,proto3" json:"skip_label_name_validation,omitempty"`
+
 	// Skip unmarshaling of exemplars.
 	SkipUnmarshalingExemplars bool
 }
@@ -382,6 +383,8 @@ type TimeSeries struct {
 	Samples    []Sample    `protobuf:"bytes,2,rep,name=samples,proto3" json:"samples"`
 	Exemplars  []Exemplar  `protobuf:"bytes,3,rep,name=exemplars,proto3" json:"exemplars"`
 	Histograms []Histogram `protobuf:"bytes,4,rep,name=histograms,proto3" json:"histograms"`
+
+	// Skip unmarshaling of exemplars.
 	SkipUnmarshalingExemplars bool
 }
 
