@@ -1,0 +1,25 @@
+services:
+  mimir-block-builder-1:
+    build:
+      context: .
+      dockerfile: dev.dockerfile
+    command:
+      - ./mimir
+      - -config.file=./config/mimir.yaml
+      - -target=block-builder
+      - -block-builder.kafka.client-id=block-builder-1
+      - -activity-tracker.filepath=/activity/mimir-block-builder-1
+    depends_on:
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment: []
+    hostname: mimir-block-builder-1
+    image: mimir
+    ports:
+      - :8080
+    volumes:
+      - ./config:/mimir/config:ro
+      - ./activity:/activity
+      - .data/mimir-block-builder-1:/data:delegated

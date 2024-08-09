@@ -24,6 +24,12 @@ ingester:
     min_partition_owners_duration:    10s
     delete_inactive_partition_after:  1m
 
+block_builder:
+  kafka:
+    address: kafka:9092
+    topic: mimir-ingest
+    consumer_group: mimir-block-builder
+
 blocks_storage:
   s3:
     bucket_name:       mimir-blocks
@@ -51,11 +57,8 @@ memberlist:
   # Use write replicas as seed nodes.
   join_members:
     - mimir-write-zone-a-1
-    - mimir-write-zone-b-1
     - mimir-write-zone-a-2
-    - mimir-write-zone-b-2
     - mimir-write-zone-a-3
-    - mimir-write-zone-b-3
 
 ruler:
   rule_path: /data/ruler
