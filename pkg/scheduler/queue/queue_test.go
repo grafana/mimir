@@ -136,7 +136,6 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 			}
 
 			for _, additionalQueueDimensionsEnabled := range additionalQueueDimensionsEnabledCases {
-
 				// Scheduler code uses a histogram for queue duration, but a counter is a more direct metric
 				// for this test, as we are concerned with the total or average wait time for all queue items.
 				// Prometheus histograms also lack support for test assertions via prometheus/testutil.

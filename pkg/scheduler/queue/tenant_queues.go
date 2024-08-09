@@ -13,6 +13,7 @@ import (
 type TenantID string
 
 const emptyTenantID = TenantID("")
+const unknownQueueDimension = "unknown"
 
 type QuerierID string
 
@@ -55,11 +56,17 @@ func newQueueBroker(
 	var tree Tree
 	var err error
 	if useMultiAlgoTreeQueue {
-		tree, err = NewTree(
+		algos := []QueuingAlgorithm{
 			tqas,               // root; QueuingAlgorithm selects tenants
 			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
-			&roundRobinState{}, // query components; QueuingAlgorithm selects query from local queue
-		)
+		}
+		if additionalQueueDimensionsEnabled {
+			algos = append(
+				algos,
+				&roundRobinState{}, // query components; QueuingAlgorithm selects query from local queue
+			)
+		}
+		tree, err = NewTree(algos...)
 	} else {
 		// by default, use the legacy tree queue
 		tree = NewTreeQueue("root")
@@ -140,12 +147,14 @@ func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQuer
 
 func (qb *queueBroker) makeQueuePath(request *tenantRequest) (QueuePath, error) {
 	if qb.additionalQueueDimensionsEnabled {
+		var queryComponent string
 		if schedulerRequest, ok := request.req.(*SchedulerRequest); ok {
-			if qb.prioritizeQueryComponents {
-				return append(schedulerRequest.AdditionalQueueDimensions, string(request.tenantID)), nil
-			}
-			return append(QueuePath{string(request.tenantID)}, schedulerRequest.AdditionalQueueDimensions...), nil
+			queryComponent = schedulerRequest.ExpectedQueryComponentName()
 		}
+		if qb.prioritizeQueryComponents {
+			return append([]string{queryComponent}, string(request.tenantID)), nil
+		}
+		return append(QueuePath{string(request.tenantID)}, queryComponent), nil
 	}
 
 	// else request.req is a frontend/v1.request, or additional queue dimensions are disabled

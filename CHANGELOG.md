@@ -1,6 +1,7 @@
 # Changelog
 
 ## main / unreleased
+* [ENHANCEMENT] Query-scheduler: Improve CPU/memory performance of experimental query-scheduler. #8871
 
 ### Grafana Mimir
 
