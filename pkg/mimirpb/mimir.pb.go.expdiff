@@ -1,0 +1,67 @@
+diff --git a/pkg/mimirpb/mimir.pb.go b/pkg/mimirpb/mimir.pb.go
+index 7504e684c0..1ec0a3ecf9 100644
+--- a/pkg/mimirpb/mimir.pb.go
++++ b/pkg/mimirpb/mimir.pb.go
+@@ -249,7 +249,7 @@ func (*WriteRequest) Descriptor() ([]byte, []int) {
+ 	return fileDescriptor_86d4d7485f544059, []int{0}
+ }
+ func (m *WriteRequest) XXX_Unmarshal(b []byte) error {
+-	return m.Unmarshal(b, false)
++	return m.Unmarshal(b)
+ }
+ func (m *WriteRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+ 	if deterministic {
+@@ -388,7 +388,7 @@ func (*TimeSeries) Descriptor() ([]byte, []int) {
+ 	return fileDescriptor_86d4d7485f544059, []int{3}
+ }
+ func (m *TimeSeries) XXX_Unmarshal(b []byte) error {
+-	return m.Unmarshal(b, false)
++	return m.Unmarshal(b)
+ }
+ func (m *TimeSeries) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+ 	if deterministic {
+@@ -6117,7 +6117,7 @@ func valueToStringMimir(v interface{}) string {
+ 	pv := reflect.Indirect(rv).Interface()
+ 	return fmt.Sprintf("*%v", pv)
+ }
+-func (m *WriteRequest) Unmarshal(dAtA []byte, skipUnmarshalingExemplars bool) error {
++func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+ 	l := len(dAtA)
+ 	iNdEx := 0
+ 	for iNdEx < l {
+@@ -6176,7 +6176,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte, skipUnmarshalingExemplars bool) er
+ 				return io.ErrUnexpectedEOF
+ 			}
+ 			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
+-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], skipUnmarshalingExemplars); err != nil {
++			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+ 				return err
+ 			}
+ 			iNdEx = postIndex
+@@ -6402,7 +6402,7 @@ func (m *ErrorDetails) Unmarshal(dAtA []byte) error {
+ 	}
+ 	return nil
+ }
+-func (m *TimeSeries) Unmarshal(dAtA []byte, skipUnmarshalingExemplars bool) error {
++func (m *TimeSeries) Unmarshal(dAtA []byte) error {
+ 	l := len(dAtA)
+ 	iNdEx := 0
+ 	for iNdEx < l {
+@@ -6528,14 +6528,10 @@ func (m *TimeSeries) Unmarshal(dAtA []byte, skipUnmarshalingExemplars bool) erro
+ 			if postIndex > l {
+ 				return io.ErrUnexpectedEOF
+ 			}
+-
+-			if !skipUnmarshalingExemplars {
+-				m.Exemplars = append(m.Exemplars, Exemplar{})
+-				if err := m.Exemplars[len(m.Exemplars)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+-					return err
+-				}
++			m.Exemplars = append(m.Exemplars, Exemplar{})
++			if err := m.Exemplars[len(m.Exemplars)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
++				return err
+ 			}
+-
+ 			iNdEx = postIndex
+ 		case 4:
+ 			if wireType != 2 {

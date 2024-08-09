@@ -1338,7 +1338,7 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 			reqBytes, err := tc.req.Marshal()
 			require.NoError(t, err)
 			reqCopy := &mimirpb.WriteRequest{}
-			require.NoError(t, reqCopy.Unmarshal(reqBytes))
+			require.NoError(t, reqCopy.Unmarshal(reqBytes, false))
 
 			expectedSamples := tc.req.Timeseries[0].Samples
 			expectedExemplars := tc.req.Timeseries[0].Exemplars
@@ -7946,7 +7946,7 @@ func cloneTimeseries(orig *mimirpb.TimeSeries) (*mimirpb.TimeSeries, error) {
 	}
 
 	cloned := &mimirpb.TimeSeries{}
-	err = cloned.Unmarshal(data)
+	err = cloned.Unmarshal(data, false)
 	return cloned, err
 }
 
