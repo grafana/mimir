@@ -63,8 +63,8 @@ type PreallocWriteRequest struct {
 }
 
 // Unmarshal implements proto.Message.
-// Copied from generated code, the only change is the addition that
-// propagates SkipUnmarshalingExemplars into the .Timeseries slice objects.
+// Copied from the protobuf generated code, the only change is that in case 1 the value of .SkipUnmarshalingExemplars
+// gets copied into the PreallocTimeseries{} object which gets appended to Timeseries.
 func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.Timeseries = PreallocTimeseriesSliceFromPool()
 
@@ -367,7 +367,8 @@ func (p *PreallocTimeseries) clearUnmarshalData() {
 var TimeseriesUnmarshalCachingEnabled = true
 
 // Unmarshal implements proto.Message. Input data slice is retained.
-// Copied from generated code, the only change is the conditional skipping of the exemplar unmarshaling.
+// Copied from the protobuf generated code, the only change is that in case 3 the exemplars don't get unmarshaled
+// if p.skipUnmarshalingExemplars is false.
 func (p *PreallocTimeseries) Unmarshal(dAtA []byte) error {
 	if TimeseriesUnmarshalCachingEnabled {
 		p.marshalledData = dAtA
