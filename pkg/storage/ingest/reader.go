@@ -748,8 +748,50 @@ type fetchWant struct {
 	startOffset int64 // inclusive
 	endOffset   int64 // exclusive
 	// result should be closed when there are no more fetches for this partition. It is ok to send multiple times on the channel.
-	result   chan fetchResult
-	maxBytes int32
+	result         chan fetchResult
+	bytesPerRecord int
+}
+
+func (w fetchWant) next(numRecords int) fetchWant {
+	n := fetchWantFrom(w.endOffset, numRecords)
+	n.bytesPerRecord = w.bytesPerRecord
+	return n.trimIfOverflowing()
+}
+
+func fetchWantFrom(offset int64, recordsPerFetch int) fetchWant {
+	return fetchWant{
+		startOffset: offset,
+		endOffset:   offset + int64(recordsPerFetch),
+		result:      make(chan fetchResult, 1), // buffer of 1 so we can do secondary attempt requests in the background
+	}
+}
+
+func (w fetchWant) expectedBytes() int {
+	// We over-fetch bytes to reduce the likelihood of under-fetching and having to run another request.
+	// Based on some testing 65% of under-estimations are by less than 5%. So we account for that.
+	const overFetchBytesFactor = 1.05
+	return int(overFetchBytesFactor * float64(w.bytesPerRecord*int(w.endOffset-w.startOffset)))
+}
+
+func (w fetchWant) maxBytes() int32 {
+	fetchBytes := w.expectedBytes()
+	if fetchBytes > math.MaxInt32 {
+		// This shouldn't happen because w should have been trimmed before sending the request.
+		// But we definitely don't want to request negative bytes by casting to int32, so add this safeguard.
+		return math.MaxInt32
+	}
+	fetchBytes = max(1_000_000, fetchBytes) // when we're fetching few records, we can afford to over-fetch to avoid more requests.
+	return int32(fetchBytes)
+}
+
+func (w fetchWant) trimIfOverflowing() fetchWant {
+	if w.expectedBytes() <= math.MaxInt32 {
+		return w
+	}
+	// We are overflowing, so we need to trim the end offset.
+	// We do this by calculating how many records we can fetch with the max bytes, and then setting the end offset to that.
+	w.endOffset = w.startOffset + int64(math.MaxInt32/w.bytesPerRecord)
+	return w
 }
 
 type fetchResult struct {
@@ -844,6 +886,10 @@ func (r *concurrentFetchers) pollFetches(ctx context.Context) (result kgo.Fetche
 
 func (r *concurrentFetchers) fetchSingle(ctx context.Context, w fetchWant, _ log.Logger) (_ kgo.FetchPartition, fetchedBytes int) {
 	req := kmsg.NewFetchRequest()
+	req.MinBytes = 1
+	req.Version = 13
+	req.MaxWaitMillis = 10000
+	req.MaxBytes = w.maxBytes()
 	req.Topics = []kmsg.FetchRequestTopic{{
 		Topic:   r.topicName,
 		TopicID: r.topicID,
@@ -853,14 +899,9 @@ func (r *concurrentFetchers) fetchSingle(ctx context.Context, w fetchWant, _ log
 			LastFetchedEpoch:   -1,
 			CurrentLeaderEpoch: -1,
 			LogStartOffset:     -1,
-			PartitionMaxBytes:  w.maxBytes,
+			PartitionMaxBytes:  req.MaxBytes,
 		}},
 	}}
-	req.MinBytes = 1
-	req.Version = 13
-	req.MaxWaitMillis = 10000
-	req.MaxBytes = w.maxBytes
-	req.SessionEpoch = -1
 
 	resp, err := req.RequestWith(ctx, r.client)
 	if err != nil {
@@ -909,63 +950,46 @@ func (r *concurrentFetchers) getEndOffset(ctx context.Context) (int64, error) {
 }
 
 func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64) {
-	defer level.Info(r.logger).Log("msg", "done running fetchers")
-	wg := sync.WaitGroup{}
-	wg.Add(r.concurrency)
-	defer wg.Wait()
+	fetchersWg := sync.WaitGroup{}
+	fetchersWg.Add(r.concurrency)
+	defer fetchersWg.Wait()
 
 	wants := make(chan fetchWant)
 	defer close(wants)
 	for i := 0; i < r.concurrency; i++ {
 		logger := log.With(r.logger, "fetcher", i)
 		go func() {
-			defer wg.Done()
-			level.Info(logger).Log("msg", "starting fetcher")
-			defer level.Info(logger).Log("msg", "done with fetcher")
+			defer fetchersWg.Done()
 			for w := range wants {
 				boff := backoff.New(ctx, backoff.Config{
 					MinBackoff: 250 * time.Millisecond,
 					MaxBackoff: 2 * time.Second,
 					MaxRetries: 0, // retry forever
 				})
-				level.Info(logger).Log("msg", "starting to fetch", "start_offset", w.startOffset, "end_offset", w.endOffset)
 				for attempt := 0; boff.Ongoing() && w.endOffset > w.startOffset; attempt++ {
 					fetchStartTime := time.Now()
 					f, fetchedBytes := r.fetchSingle(ctx, w, logger)
-					if f.Err != nil {
-						level.Info(logger).Log("msg", "fetcher got en error", "err", f.Err, "num_records", len(f.Records))
-					}
 					if errors.Is(f.Err, kerr.OffsetOutOfRange) {
 						if w.startOffset > f.HighWatermark {
-							break
+							// we're too far ahead
+							break // TODO dimitarvdimitrov if we want to use this in stable state we should not give up here; maybe wait for some time, unsure how long
 						} else if w.startOffset < f.LogStartOffset {
 							w.startOffset = f.LogStartOffset
+							attempt--
 							continue
 						}
 					}
+					var lastOffset int64
+					if len(f.Records) > 0 {
+						lastOffset = f.Records[len(f.Records)-1].Offset
+					}
+					logCompletedFetch(logger, f.Err, fetchStartTime, attempt, w, len(f.Records), fetchedBytes, lastOffset)
 					if len(f.Records) == 0 {
 						boff.Wait()
 						continue
 					}
 					boff.Reset()
-					lastOffset := f.Records[len(f.Records)-1].Offset
-					level.Info(logger).Log(
-						"msg", "fetched records",
-						"duration", time.Since(fetchStartTime),
-						"attempt", attempt,
-						"start_offset", w.startOffset,
-						"end_offset", w.endOffset,
-						"asked_records", w.endOffset-w.startOffset,
-						"got_records", len(f.Records),
-						"diff_records", int(w.endOffset-w.startOffset)-len(f.Records),
-						"asked_bytes", w.maxBytes,
-						"got_bytes", fetchedBytes,
-						"diff_bytes", int(w.maxBytes)-fetchedBytes,
-						"remaining_records", w.endOffset-lastOffset,
-					)
 					w.startOffset = lastOffset + 1
-					bytesPerRecord := fetchedBytes / len(f.Records)
-					w.maxBytes = max(1_000_000, int32(float64(bytesPerRecord))*int32(w.endOffset-w.startOffset)) // when we have only a few records to fetch we can afford to overfetch in order to not do more requests.
 
 					select {
 					case w.result <- fetchResult{FetchPartition: f, fetchedBytes: fetchedBytes}:
@@ -978,14 +1002,15 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 	}
 
 	var (
-		bytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
-		nextFetch      = fetchWantFrom(bytesPerRecord, startOffset, r.recordsPerFetch)
+		nextFetch      = fetchWantFrom(startOffset, r.recordsPerFetch)
 		nextResult     chan fetchResult
 		pendingResults = list.New()
 
 		bufferedResult       fetchResult
 		readyBufferedResults chan kgo.FetchPartition // this is non-nil when bufferedResult is non-empty
 	)
+	nextFetch.bytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
+
 	for {
 		refillBufferedResult := nextResult
 		if len(bufferedResult.Records) > 0 {
@@ -1004,7 +1029,7 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 				nextResult = pendingResults.Front().Value.(chan fetchResult)
 				pendingResults.Remove(pendingResults.Front())
 			}
-			nextFetch = nextFetchWant(bytesPerRecord, nextFetch, r.recordsPerFetch)
+			nextFetch = nextFetch.next(r.recordsPerFetch)
 
 		case result, moreLeft := <-refillBufferedResult:
 			if !moreLeft {
@@ -1016,7 +1041,8 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 				}
 				continue
 			}
-			bytesPerRecord = estimateBytesPerRecord(bytesPerRecord, result.fetchedBytes, len(result.Records))
+			nextFetch.bytesPerRecord = estimateBytesPerRecord(nextFetch.bytesPerRecord, result.fetchedBytes, len(result.Records))
+			nextFetch = nextFetch.trimIfOverflowing()
 			bufferedResult = result
 			readyBufferedResults = r.orderedFetches
 
@@ -1027,25 +1053,42 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 	}
 }
 
-func estimateBytesPerRecord(currentBytesPerRecord, recordsSizeBytes, numRecords int) int {
-	const currentFetchFactor = 0.8
-	return int(
-		(1-currentFetchFactor)*float64(currentBytesPerRecord) +
-			currentFetchFactor*float64(recordsSizeBytes/numRecords),
+func logCompletedFetch(logger log.Logger, err error, fetchStartTime time.Time, attempt int, w fetchWant, numRecords, fetchedBytes int, lastOffset int64) {
+	msg := "fetched records"
+	if err != nil {
+		msg = "received an error while fetching records; will retry after processing received records (if any)"
+		logger = level.Info(logger)
+	} else {
+		logger = level.Debug(logger)
+	}
+	logger.Log(
+		"msg", msg,
+		"duration", time.Since(fetchStartTime),
+		"attempt", attempt,
+		"start_offset", w.startOffset,
+		"end_offset", w.endOffset,
+		"asked_records", w.endOffset-w.startOffset,
+		"got_records", numRecords,
+		"diff_records", int(w.endOffset-w.startOffset)-numRecords,
+		"asked_bytes", w.maxBytes(),
+		"got_bytes", fetchedBytes,
+		"diff_bytes", int(w.maxBytes())-fetchedBytes,
+		"remaining_records", w.endOffset-lastOffset,
+		"err", err,
 	)
 }
 
-func nextFetchWant(bytesPerRecord int, fetch fetchWant, recordsPerFetch int) fetchWant {
-	return fetchWantFrom(bytesPerRecord, fetch.endOffset, recordsPerFetch)
-}
+func estimateBytesPerRecord(currentBytesPerRecord int, recordsSizeBytes, numRecords int) int {
+	// Smooth over the estimation to avoid having outlier fetches from throwing off the estimation.
+	// We don't want a fetch of 5 records to determine how we fetch the next fetch of 6000 records.
+	// Ideally we weigh the estimation on the number of records observed, but it's simpler to smooth it over with a constant factor.
+	const currentEstimateWeight = 0.8
 
-func fetchWantFrom(bytesPerRecord int, offset int64, recordsPerFetch int) fetchWant {
-	return fetchWant{
-		startOffset: offset,
-		endOffset:   offset + int64(recordsPerFetch),
-		result:      make(chan fetchResult, 1), // buffer of 1 to reduce impact of refetches
-		maxBytes:    int32(recordsPerFetch * bytesPerRecord),
-	}
+	actualBytesPerRecord := float64(recordsSizeBytes) / float64(numRecords)
+	return int(
+		currentEstimateWeight*float64(currentBytesPerRecord) +
+			(1-currentEstimateWeight)*actualBytesPerRecord,
+	)
 }
 
 type readerFrom interface {
