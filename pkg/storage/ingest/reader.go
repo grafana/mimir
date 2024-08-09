@@ -874,11 +874,14 @@ func (r *concurrentFetchers) fetchSingle(ctx context.Context, w fetchWant) fetch
 		Topic:   r.topicName,
 		TopicID: r.topicID,
 		Partitions: []kmsg.FetchRequestTopicPartition{{
-			Partition:          r.partitionID,
-			FetchOffset:        w.startOffset,
-			LastFetchedEpoch:   -1,
+			Partition:   r.partitionID,
+			FetchOffset: w.startOffset,
+			// CurrentLeaderEpoch: -1 means we don't know. Kafka brokers are ok with that.
+			// It does mean that we might end up fetching from an out-of-sync replica.
+			// If we provide this the broker would check if we have up-to-date data.
 			CurrentLeaderEpoch: -1,
-			LogStartOffset:     -1,
+			LastFetchedEpoch:   -1,
+			LogStartOffset:     -1, // this is broker-follower only field. Set it to -1 to not use it.
 			PartitionMaxBytes:  req.MaxBytes,
 		}},
 	}}
