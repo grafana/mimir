@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package main
+package write
 
 import (
 	"fmt"
@@ -18,8 +18,14 @@ import (
 	"github.com/grafana/mimir/tools/doc-generator/parse"
 )
 
+const (
+	maxLineWidth = 80
+	tabWidth     = 2
+)
+
 type specWriter struct {
-	out strings.Builder
+	out                strings.Builder
+	modifyDescriptions func(string) string
 }
 
 func (w *specWriter) writeConfigBlock(b *parse.ConfigBlock, indent int) {
@@ -43,7 +49,7 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) {
 		// so here we've just to write down the reference without re-iterating on it.
 		if e.Root {
 			// Description
-			w.writeComment(e.BlockDesc, indent, 0)
+			w.writeComment(w.modifyDescriptions(e.BlockDesc), indent, 0)
 			if e.Block.FlagsPrefix != "" {
 				w.writeComment(fmt.Sprintf("The CLI flags prefix for this block configuration is: %s", e.Block.FlagsPrefix), indent, 0)
 			}
@@ -52,7 +58,7 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) {
 			w.out.WriteString(pad(indent) + "[" + e.Name + ": <" + e.Block.Name + ">]\n")
 		} else {
 			// Description
-			w.writeComment(e.BlockDesc, indent, 0)
+			w.writeComment(w.modifyDescriptions(e.BlockDesc), indent, 0)
 
 			// Name
 			w.out.WriteString(pad(indent) + e.Name + ":\n")
@@ -64,7 +70,7 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) {
 
 	if e.Kind == parse.KindField || e.Kind == parse.KindMap {
 		// Description
-		w.writeComment(e.Description(), indent, 0)
+		w.writeComment(w.modifyDescriptions(e.Description()), indent, 0)
 		w.writeExample(e.FieldExample, indent)
 		w.writeFlag(e.FieldFlag, indent)
 
@@ -85,7 +91,7 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) {
 
 	if e.Kind == parse.KindSlice {
 		// Description
-		w.writeComment(replaceProductName(e.Description()), indent, 0)
+		w.writeComment(w.modifyDescriptions(e.Description()), indent, 0)
 
 		// Name
 		w.out.WriteString(pad(indent) + e.Name + ":\n")
@@ -120,7 +126,7 @@ func (w *specWriter) writeExample(example *parse.FieldExample, indent int) {
 
 	w.writeComment("Example:", indent, 0)
 	if example.Comment != "" {
-		w.writeComment(example.Comment, indent, 2)
+		w.writeComment(w.modifyDescriptions(example.Comment), indent, 2)
 	}
 
 	data, err := yaml.Marshal(example.Yaml)
@@ -142,11 +148,12 @@ func (w *specWriter) string() string {
 	return strings.TrimSpace(w.out.String())
 }
 
-type markdownWriter struct {
-	out strings.Builder
+type MarkdownWriter struct {
+	out                strings.Builder
+	ModifyDescriptions func(string) string
 }
 
-func (w *markdownWriter) writeConfigDoc(blocks []*parse.ConfigBlock) {
+func (w *MarkdownWriter) WriteConfigDoc(blocks []*parse.ConfigBlock, rootBlocks []parse.RootBlock) {
 	// Deduplicate root blocks.
 	uniqueBlocks := map[string]*parse.ConfigBlock{}
 	for _, block := range blocks {
@@ -155,21 +162,21 @@ func (w *markdownWriter) writeConfigDoc(blocks []*parse.ConfigBlock) {
 
 	// Generate the markdown, honoring the root blocks order.
 	if topBlock, ok := uniqueBlocks[""]; ok {
-		w.writeConfigBlock(topBlock)
+		w.WriteConfigBlock(topBlock)
 	}
 
-	for _, rootBlock := range parse.RootBlocks {
+	for _, rootBlock := range rootBlocks {
 		if block, ok := uniqueBlocks[rootBlock.Name]; ok {
 			// Keep the root block description.
 			blockToWrite := *block
 			blockToWrite.Desc = rootBlock.Desc
 
-			w.writeConfigBlock(&blockToWrite)
+			w.WriteConfigBlock(&blockToWrite)
 		}
 	}
 }
 
-func (w *markdownWriter) writeConfigBlock(block *parse.ConfigBlock) {
+func (w *MarkdownWriter) WriteConfigBlock(block *parse.ConfigBlock) {
 	// Title
 	if block.Name != "" {
 		w.out.WriteString("### " + block.Name + "\n")
@@ -219,7 +226,14 @@ func (w *markdownWriter) writeConfigBlock(block *parse.ConfigBlock) {
 	}
 
 	// Config specs
-	spec := &specWriter{}
+	spec := &specWriter{
+		modifyDescriptions: w.ModifyDescriptions,
+	}
+
+	if w.ModifyDescriptions == nil {
+		spec.modifyDescriptions = func(s string) string { return s }
+	}
+
 	spec.writeConfigBlock(block, 0)
 
 	w.out.WriteString("```yaml\n")
@@ -228,7 +242,7 @@ func (w *markdownWriter) writeConfigBlock(block *parse.ConfigBlock) {
 	w.out.WriteString("\n")
 }
 
-func (w *markdownWriter) string() string {
+func (w *MarkdownWriter) String() string {
 	return strings.TrimSpace(w.out.String())
 }
 
