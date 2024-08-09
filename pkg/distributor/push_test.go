@@ -309,7 +309,7 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 				Samples: []mimirpb.Sample{
 					{Value: 1, TimestampMs: timestampMs},
 				},
-				Exemplars:  nil,
+				Exemplars:  []mimirpb.Exemplar{},
 				Histograms: []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
 			},
 		}, {
@@ -321,7 +321,7 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 				Samples: []mimirpb.Sample{
 					{Value: 1, TimestampMs: timestampMs},
 				},
-				Exemplars:  nil,
+				Exemplars:  []mimirpb.Exemplar{},
 				Histograms: []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
 			},
 			maxGlobalExemplarsPerUser: 1, // exemplars are not disabled
@@ -332,7 +332,7 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 				Samples: []mimirpb.Sample{
 					{Value: 1, TimestampMs: timestampMs},
 				},
-				Exemplars:  nil,
+				Exemplars:  []mimirpb.Exemplar{},
 				Histograms: []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
 			},
 		},
@@ -367,6 +367,11 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 
 			assert.Len(t, gotReq.Timeseries, 1)
 			gotTimeseries := *(gotReq.Timeseries[0].TimeSeries)
+
+			if gotTimeseries.Exemplars == nil {
+				// To fix equality if the empty slice is nil.
+				gotTimeseries.Exemplars = []mimirpb.Exemplar{}
+			}
 
 			assert.EqualValues(t, tc.expectTimeseries, gotTimeseries)
 		})
