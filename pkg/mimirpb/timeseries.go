@@ -501,7 +501,12 @@ func (p *PreallocTimeseries) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 
-			if !p.skipUnmarshalingExemplars {
+			if p.skipUnmarshalingExemplars {
+				if p.Exemplars == nil {
+					// For predictability in tests.
+					p.Exemplars = []Exemplar{}
+				}
+			} else {
 				p.Exemplars = append(p.Exemplars, Exemplar{})
 				if err := p.Exemplars[len(p.Exemplars)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 					return err
