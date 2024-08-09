@@ -33810,7 +33810,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Ingester appended exemplars rate\nTotal number of exemplars appended in the ingesters.\nThis can be lower than ingested exemplars rate since TSDB does not append the same exemplar twice, and those can be frequent.\nThis doesn't account for the replication factor\n\n",
+                      "description": "### Ingester appended exemplars rate\nTotal number of exemplars appended in the ingesters.\nThis can be lower than ingested exemplars rate since TSDB does not append the same exemplar twice, and those can be frequent.\nThis doesn't account for the replication factor.\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
