@@ -121,8 +121,9 @@ func (noopPusherCloser) Close() []error {
 }
 
 func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instanceID string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+	metrics := newPusherConsumerMetrics(reg)
 	factory := consumerFactoryFunc(func() recordConsumer {
-		return newPusherConsumer(pusher, kafkaCfg, reg, logger)
+		return newPusherConsumer(pusher, kafkaCfg, metrics, logger)
 	})
 	return newPartitionReader(kafkaCfg, partitionID, instanceID, factory, logger, reg)
 }
@@ -1010,23 +1011,25 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 			f := r.fetchSingle(ctx, w)
 			logCompletedFetch(logger, f, fetchStartTime, attempt, w)
 			if errors.Is(f.Err, kerr.OffsetOutOfRange) {
-				if w.startOffset >= f.HighWatermark {
-					// We're too far ahead.
-					// HWM is the NEXT offset to be produced, so the record with that offset doesn't exist yet.
-					// We can wait for it.
-					newRecordsProducedBackoff.Wait()
-					continue
-				} else if w.startOffset < f.LogStartOffset {
+				// Note that Kafka might return -1 for HWM and LSO if those are unknown (around startup or leader changes).
+				// So be careful how you use those.
+				// In those cases it's also safe to retry.
+				if w.startOffset < f.LogStartOffset {
 					// We're too far behind.
 					if f.LogStartOffset >= w.endOffset {
-						// The next fetch want is responsible for this range.
+						// The next fetch want is responsible for this range. We can finish this one.
 						break
 					}
 					// Only some of the offsets of our want are out of range, so let's fast-forward.
 					w.startOffset = f.LogStartOffset
 					continue
 				}
-				panic(fmt.Errorf("kafka returned OFFSET_OUT_OF_RANGE, but we're not requesting too far ahead and not too far behind (HWM: %d, LSO: %d, start: %d, end: %d)", f.HighWatermark, f.LogStartOffset, w.startOffset, w.endOffset))
+				// If the broker is behind or if we are requesting offsets which have not yet been produced, we end up here.
+				// If the broker is behind HWM might be lower than the start offset, but we'd still get OFFSET_OUT_OF_RANGE.
+				// So there's no use in looking at the HWM. See KIP-392 for more details.
+				// We set a MaxWaitMillis, but even then there may be no records for some time.
+				newRecordsProducedBackoff.Wait()
+				continue
 			}
 			if len(f.Records) == 0 {
 				errBackoff.Wait()
