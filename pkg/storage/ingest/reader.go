@@ -36,7 +36,6 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -64,12 +63,6 @@ type recordConsumer interface {
 	Close(context.Context) error
 	// consume should return an error only if there is a recoverable error. Returning an error will cause consumption to slow down.
 	consume(context.Context, []record) error
-}
-
-type noopConsumer struct{}
-
-func (noopConsumer) consume(ctx context.Context, records []record) error {
-	return nil
 }
 
 type PartitionReader struct {
@@ -103,12 +96,20 @@ func (c consumerFactoryFunc) consumer() recordConsumer {
 }
 
 type noopPusherCloser struct {
+	metrics *pusherConsumerMetrics
+
 	Pusher
-	numTimeSeriesPerFlush prometheus.Histogram
+}
+
+func newNoopPusherCloser(metrics *pusherConsumerMetrics, pusher Pusher) noopPusherCloser {
+	return noopPusherCloser{
+		metrics: metrics,
+		Pusher:  pusher,
+	}
 }
 
 func (c noopPusherCloser) PushToStorage(ctx context.Context, wr *mimirpb.WriteRequest) error {
-	c.numTimeSeriesPerFlush.Observe(float64(len(wr.Timeseries)))
+	c.metrics.numTimeSeriesPerFlush.Observe(float64(len(wr.Timeseries)))
 	return c.Pusher.PushToStorage(ctx, wr)
 }
 
@@ -117,17 +118,8 @@ func (noopPusherCloser) Close() []error {
 }
 
 func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instanceID string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
-	consumerProto := newPusherConsumerPrototype(util_log.NewSampler(kafkaCfg.FallbackClientErrorSampleRate), reg, logger)
-	numTimeSeriesPerFlush := promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-		Name:                        "cortex_ingester_pusher_num_timeseries_per_flush",
-		Help:                        "Number of time series per flush",
-		NativeHistogramBucketFactor: 1.1,
-	})
 	factory := consumerFactoryFunc(func() recordConsumer {
-		if kafkaCfg.ReplayShards == 0 {
-			return newPusherConsumer(noopPusherCloser{pusher, numTimeSeriesPerFlush}, consumerProto)
-		}
-		return newPusherConsumer(newMultiTenantPusher(numTimeSeriesPerFlush, pusher, kafkaCfg.ReplayShards, kafkaCfg.BatchSize), consumerProto)
+		return newPusherConsumer(pusher, kafkaCfg, reg, logger)
 	})
 	return newPartitionReader(kafkaCfg, partitionID, instanceID, factory, logger, reg)
 }
@@ -339,9 +331,6 @@ func (r *PartitionReader) processNextFetchesUntilLagHonored(ctx context.Context,
 	} else {
 		fetcher = r
 	}
-	//defer func() {
-	//	r.setPollingStartOffset(r.consumedOffsetWatcher.LastConsumedOffset())
-	//}()
 
 	for boff.Ongoing() {
 		// Send a direct request to the Kafka backend to fetch the partition start offset.
@@ -505,7 +494,7 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		consumeCtx := context.WithoutCancel(ctx)
 		err := consumer.consume(consumeCtx, records)
 		if err == nil {
-			err = consumer.Close(consumeCtx)
+			_ = consumer.Close(consumeCtx)
 			break
 		}
 		level.Error(r.logger).Log(
@@ -755,10 +744,6 @@ func (r *PartitionReader) pollFetches(ctx context.Context) (result kgo.Fetches) 
 	return f
 }
 
-func (r *PartitionReader) setPollingStartOffset(offset int64) {
-	r.consumedOffsetWatcher.Notify(offset)
-}
-
 type fetchWant struct {
 	startOffset int64 // inclusive
 	endOffset   int64 // exclusive
@@ -857,7 +842,7 @@ func (r *concurrentFetchers) pollFetches(ctx context.Context) (result kgo.Fetche
 	}
 }
 
-func (r *concurrentFetchers) fetchSingle(ctx context.Context, w fetchWant, logger log.Logger) (_ kgo.FetchPartition, fetchedBytes int) {
+func (r *concurrentFetchers) fetchSingle(ctx context.Context, w fetchWant, _ log.Logger) (_ kgo.FetchPartition, fetchedBytes int) {
 	req := kmsg.NewFetchRequest()
 	req.Topics = []kmsg.FetchRequestTopic{{
 		Topic:   r.topicName,
@@ -1178,9 +1163,9 @@ func processRespPartition(rp *kmsg.FetchResponseTopicPartition, topic string) kg
 
 		switch t := r.(type) {
 		case *kmsg.MessageV0:
-			panic("unkown message type")
+			panic("unknown message type")
 		case *kmsg.MessageV1:
-			panic("unkown message type")
+			panic("unknown message type")
 		case *kmsg.RecordBatch:
 			_, _ = processRecordBatch(topic, &fp, t)
 		}
@@ -1258,7 +1243,7 @@ func recordToRecord(
 		Headers:   h,
 		Topic:     topic,
 		Partition: partition,
-		//Attrs:         kgo.RecordAttrs{uint8(batch.Attributes)},
+		// Attrs:         kgo.RecordAttrs{uint8(batch.Attributes)},
 		ProducerID:    batch.ProducerID,
 		ProducerEpoch: batch.ProducerEpoch,
 		LeaderEpoch:   batch.PartitionLeaderEpoch,

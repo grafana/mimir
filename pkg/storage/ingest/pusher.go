@@ -28,16 +28,6 @@ type Pusher interface {
 	PushToStorage(context.Context, *mimirpb.WriteRequest) error
 }
 
-type pusherConsumerPrototype struct {
-	processingTimeSeconds prometheus.Observer
-	clientErrRequests     prometheus.Counter
-	serverErrRequests     prometheus.Counter
-	totalRequests         prometheus.Counter
-
-	fallbackClientErrSampler *util_log.Sampler // Fallback log message sampler client errors that are not sampled yet.
-	logger                   log.Logger
-}
-
 type parsedRecord struct {
 	*mimirpb.WriteRequest
 	// Context holds the tracing and cancellation data for this record/request.
@@ -52,41 +42,33 @@ type PusherCloser interface {
 }
 
 type pusherConsumer struct {
-	pusherConsumerPrototype
+	fallbackClientErrSampler *util_log.Sampler
+	metrics                  *pusherConsumerMetrics
+	logger                   log.Logger
+
 	pusher PusherCloser
 }
 
-func (c pusherConsumer) Close(ctx context.Context) error {
-	spanLog := spanlogger.FromContext(ctx, log.NewNopLogger())
-	errs := c.pusher.Close()
-	for eIdx := 0; eIdx < len(errs); eIdx++ {
-		err := errs[eIdx]
-		isServerErr := c.handlePushErr(ctx, "TODO", err, spanLog)
-		if !isServerErr {
-			errs[len(errs)-1], errs[eIdx] = errs[eIdx], errs[len(errs)-1]
-			errs = errs[:len(errs)-1]
-			eIdx--
-		}
-	}
-	return multierror.New(errs...).Err()
+type pusherConsumerMetrics struct {
+	numTimeSeriesPerFlush prometheus.Histogram
+	processingTimeSeconds prometheus.Observer
+	clientErrRequests     prometheus.Counter
+	serverErrRequests     prometheus.Counter
+	totalRequests         prometheus.Counter
 }
 
-func newPusherConsumer(p PusherCloser, proto pusherConsumerPrototype) *pusherConsumer {
-	return &pusherConsumer{
-		pusher:                  p,
-		pusherConsumerPrototype: proto,
-	}
-}
-
-func newPusherConsumerPrototype(fallbackClientErrSampler *util_log.Sampler, reg prometheus.Registerer, l log.Logger) pusherConsumerPrototype {
+func newPusherConsumerMetrics(reg prometheus.Registerer) *pusherConsumerMetrics {
 	errRequestsCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_ingest_storage_reader_records_failed_total",
 		Help: "Number of records (write requests) which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.",
 	}, []string{"cause"})
 
-	return pusherConsumerPrototype{
-		logger:                   l,
-		fallbackClientErrSampler: fallbackClientErrSampler,
+	return &pusherConsumerMetrics{
+		numTimeSeriesPerFlush: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                        "cortex_ingester_pusher_num_timeseries_per_flush",
+			Help:                        "Number of time series per flush",
+			NativeHistogramBucketFactor: 1.1,
+		}),
 		processingTimeSeconds: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                            "cortex_ingest_storage_reader_processing_time_seconds",
 			Help:                            "Time taken to process a single record (write request).",
@@ -104,6 +86,25 @@ func newPusherConsumerPrototype(fallbackClientErrSampler *util_log.Sampler, reg 
 	}
 }
 
+func newPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, reg prometheus.Registerer, logger log.Logger) *pusherConsumer {
+	metrics := newPusherConsumerMetrics(reg)
+
+	var p PusherCloser
+	if kafkaCfg.ReplayShards == 0 {
+		p = newNoopPusherCloser(metrics, pusher)
+	} else {
+		p = newMultiTenantPusher(metrics, pusher, kafkaCfg.ReplayShards, kafkaCfg.BatchSize)
+	}
+
+	return &pusherConsumer{
+		metrics:                  metrics,
+		logger:                   logger,
+		fallbackClientErrSampler: util_log.NewSampler(kafkaCfg.FallbackClientErrorSampleRate),
+
+		pusher: p,
+	}
+}
+
 func (c pusherConsumer) consume(ctx context.Context, records []record) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(cancellation.NewErrorf("done consuming records"))
@@ -113,6 +114,21 @@ func (c pusherConsumer) consume(ctx context.Context, records []record) error {
 	// Speed up consumption by unmarhsalling the next request while the previous one is being pushed.
 	go c.unmarshalRequests(ctx, records, recC)
 	return c.pushRequests(recC)
+}
+
+func (c pusherConsumer) Close(ctx context.Context) error {
+	spanLog := spanlogger.FromContext(ctx, log.NewNopLogger())
+	errs := c.pusher.Close()
+	for eIdx := 0; eIdx < len(errs); eIdx++ {
+		err := errs[eIdx]
+		isServerErr := c.handlePushErr(ctx, "TODO", err, spanLog)
+		if !isServerErr {
+			errs[len(errs)-1], errs[eIdx] = errs[eIdx], errs[len(errs)-1]
+			errs = errs[:len(errs)-1]
+			eIdx--
+		}
+	}
+	return multierror.New(errs...).Err()
 }
 
 func (c pusherConsumer) pushRequests(reqC <-chan parsedRecord) error {
@@ -143,8 +159,8 @@ func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req 
 	err := c.pusher.PushToStorage(ctx, req)
 
 	// TODO dimitarvdimitrov processing time is flawed because it's only counting enqueuing time, not processing time.
-	c.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
-	c.totalRequests.Inc()
+	c.metrics.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
+	c.metrics.totalRequests.Inc()
 
 	isServerErr := c.handlePushErr(ctx, tenantID, err, spanLog)
 	if isServerErr {
@@ -159,12 +175,12 @@ func (c pusherConsumer) handlePushErr(ctx context.Context, tenantID string, err 
 	}
 	// Only return non-client errors; these will stop the processing of the current Kafka fetches and retry (possibly).
 	if !mimirpb.IsClientError(err) {
-		c.serverErrRequests.Inc()
+		c.metrics.serverErrRequests.Inc()
 		_ = spanLog.Error(err)
 		return true
 	}
 
-	c.clientErrRequests.Inc()
+	c.metrics.clientErrRequests.Inc()
 
 	// The error could be sampled or marked to be skipped in logs, so we check whether it should be
 	// logged before doing it.
@@ -226,11 +242,12 @@ func (c pusherConsumer) unmarshalRequests(ctx context.Context, records []record,
 }
 
 type multiTenantPusher struct {
-	pushers               map[string]*shardingPusher
-	upstreamPusher        Pusher
-	numShards             int
-	batchSize             int
-	numTimeSeriesPerFlush prometheus.Histogram
+	metrics *pusherConsumerMetrics
+
+	pushers        map[string]*shardingPusher
+	upstreamPusher Pusher
+	numShards      int
+	batchSize      int
 }
 
 func (c multiTenantPusher) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
@@ -239,13 +256,13 @@ func (c multiTenantPusher) PushToStorage(ctx context.Context, request *mimirpb.W
 }
 
 // TODO dimitarvdimitrov rename because this is multi-tenant sharding pusher
-func newMultiTenantPusher(numTimeSeriesPerFlush prometheus.Histogram, upstream Pusher, numShards int, batchSize int) *multiTenantPusher {
+func newMultiTenantPusher(metrics *pusherConsumerMetrics, upstream Pusher, numShards int, batchSize int) *multiTenantPusher {
 	return &multiTenantPusher{
-		pushers:               make(map[string]*shardingPusher),
-		upstreamPusher:        upstream,
-		numShards:             numShards,
-		batchSize:             batchSize,
-		numTimeSeriesPerFlush: numTimeSeriesPerFlush,
+		pushers:        make(map[string]*shardingPusher),
+		upstreamPusher: upstream,
+		numShards:      numShards,
+		batchSize:      batchSize,
+		metrics:        metrics,
 	}
 }
 
@@ -253,7 +270,7 @@ func (c multiTenantPusher) pusher(userID string) *shardingPusher {
 	if p := c.pushers[userID]; p != nil {
 		return p
 	}
-	p := newShardingPusher(c.numTimeSeriesPerFlush, c.numShards, c.batchSize, c.upstreamPusher) // TODO dimitarvdimitrov this ok or do we need to inject a factory here too?
+	p := newShardingPusher(c.metrics.numTimeSeriesPerFlush, c.numShards, c.batchSize, c.upstreamPusher) // TODO dimitarvdimitrov this ok or do we need to inject a factory here too?
 	c.pushers[userID] = p
 	return p
 }
@@ -265,11 +282,6 @@ func (c multiTenantPusher) Close() []error {
 	}
 	clear(c.pushers)
 	return errs
-}
-
-type shardedPush struct {
-	mimirpb.PreallocTimeseries
-	context.Context
 }
 
 type shardingPusher struct {

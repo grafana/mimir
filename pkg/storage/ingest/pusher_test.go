@@ -208,7 +208,7 @@ func TestPusherConsumer(t *testing.T) {
 			})
 
 			logs := &concurrency.SyncBuffer{}
-			c := newPusherConsumer(pusher, newPusherConsumerPrototype(nil, prometheus.NewPedanticRegistry(), log.NewLogfmtLogger(logs)))
+			c := newPusherConsumer(pusher, KafkaConfig{}, prometheus.NewPedanticRegistry(), log.NewLogfmtLogger(logs))
 			err := c.consume(context.Background(), tc.records)
 			if tc.expErr == "" {
 				assert.NoError(t, err)
@@ -278,7 +278,8 @@ func TestPusherConsumer_clientErrorSampling(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			c := newPusherConsumer(nil, newPusherConsumerPrototype(tc.sampler, prometheus.NewPedanticRegistry(), log.NewNopLogger()))
+			c := newPusherConsumer(nil, KafkaConfig{}, prometheus.NewPedanticRegistry(), log.NewNopLogger())
+			c.fallbackClientErrSampler = tc.sampler
 
 			sampled, reason := c.shouldLogClientError(context.Background(), tc.err)
 			assert.Equal(t, tc.expectedSampled, sampled)
@@ -307,7 +308,7 @@ func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 
 		reg := prometheus.NewPedanticRegistry()
 		logs := &concurrency.SyncBuffer{}
-		consumer := newPusherConsumer(pusher, newPusherConsumerPrototype(nil, reg, log.NewLogfmtLogger(logs)))
+		consumer := newPusherConsumer(pusher, KafkaConfig{}, reg, log.NewLogfmtLogger(logs))
 
 		return consumer, logs, reg
 	}
@@ -393,7 +394,7 @@ func TestPusherConsumer_consume_ShouldHonorContextCancellation(t *testing.T) {
 		<-ctx.Done()
 		return context.Cause(ctx)
 	})
-	consumer := newPusherConsumer(pusher, newPusherConsumerPrototype(nil, prometheus.NewPedanticRegistry(), log.NewNopLogger()))
+	consumer := newPusherConsumer(pusher, KafkaConfig{}, prometheus.NewPedanticRegistry(), log.NewNopLogger())
 
 	wantCancelErr := cancellation.NewErrorf("stop")
 
@@ -423,7 +424,7 @@ type mockPusher struct {
 	mock.Mock
 }
 
-func (m mockPusher) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
+func (m *mockPusher) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
 	args := m.Called(ctx, request)
 	return args.Error(0)
 }

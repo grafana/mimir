@@ -18,6 +18,12 @@ import (
 	"go.uber.org/atomic"
 )
 
+type key int
+
+const (
+	originalOffsetKey key = iota
+)
+
 func main() {
 
 	topic := flag.String("topic", "mimir", "Kafka topic to dump")
@@ -157,7 +163,7 @@ func doImport(from io.Reader, topic, broker string, partition, skipUntil int) er
 		}
 		record.Topic = topic
 		record.Partition = int32(partition)
-		record.Context = context.WithValue(context.Background(), "original_offset", record.Offset)
+		record.Context = context.WithValue(context.Background(), originalOffsetKey, record.Offset)
 
 		client.Produce(context.Background(), record, func(record *kgo.Record, err error) {
 			recordCount.Inc()
@@ -166,7 +172,7 @@ func doImport(from io.Reader, topic, broker string, partition, skipUntil int) er
 				return
 			}
 			if err != nil {
-				panic(fmt.Sprintf("failed to produce record with offset %d: %v", record.Context.Value("original_offset"), err))
+				panic(fmt.Sprintf("failed to produce record with offset %d: %v", record.Context.Value(originalOffsetKey), err))
 			}
 		})
 	}
