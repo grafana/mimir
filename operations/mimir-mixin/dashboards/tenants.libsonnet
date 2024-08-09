@@ -500,7 +500,7 @@ local filename = 'mimir-tenants.json';
           |||
             Total number of exemplars appended in the ingesters.
             This can be lower than ingested exemplars rate since TSDB does not append the same exemplar twice, and those can be frequent.
-            This doesn't account for the replication factor
+            This doesn't account for the replication factor.
           |||
         ),
       ),
