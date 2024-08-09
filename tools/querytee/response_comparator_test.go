@@ -66,7 +66,15 @@ func TestCompareMatrix(t *testing.T) {
 			actual: json.RawMessage(`[
 							{"metric":{"foo":"bar"},"values":[[1,"1"]]}
 						]`),
-			err: `expected 2 float sample(s) and 0 histogram sample(s) for metric {foo="bar"} but got 1 float sample(s) and 0 histogram sample(s)`,
+			err: `expected 2 float sample(s) and 0 histogram sample(s) for metric {foo="bar"} but got 1 float sample(s) and 0 histogram sample(s)
+Expected result for series:
+{foo="bar"} =>
+1 @[1]
+2 @[2]
+
+Actual result for series:
+{foo="bar"} =>
+1 @[1]`,
 		},
 		{
 			name: "difference in float sample timestamp",
@@ -76,7 +84,16 @@ func TestCompareMatrix(t *testing.T) {
 			actual: json.RawMessage(`[
 							{"metric":{"foo":"bar"},"values":[[1,"1"],[3,"2"]]}
 						]`),
-			err: `float sample pair does not match for metric {foo="bar"}: expected timestamp 2 but got 3`,
+			err: `float sample pair does not match for metric {foo="bar"}: expected timestamp 2 but got 3
+Expected result for series:
+{foo="bar"} =>
+1 @[1]
+2 @[2]
+
+Actual result for series:
+{foo="bar"} =>
+1 @[1]
+2 @[3]`,
 		},
 		{
 			name: "difference in float sample value",
@@ -86,7 +103,16 @@ func TestCompareMatrix(t *testing.T) {
 			actual: json.RawMessage(`[
 							{"metric":{"foo":"bar"},"values":[[1,"1"],[2,"3"]]}
 						]`),
-			err: `float sample pair does not match for metric {foo="bar"}: expected value 2 for timestamp 2 but got 3`,
+			err: `float sample pair does not match for metric {foo="bar"}: expected value 2 for timestamp 2 but got 3
+Expected result for series:
+{foo="bar"} =>
+1 @[1]
+2 @[2]
+
+Actual result for series:
+{foo="bar"} =>
+1 @[1]
+3 @[2]`,
 		},
 		{
 			name: "actual float samples match expected",
@@ -107,7 +133,16 @@ func TestCompareMatrix(t *testing.T) {
 							{"metric":{"foo":"bar"},"values":[[1,"1"],[2,"2"]]},
 							{"metric":{"oops":"bar"},"values":[[1,"1"],[2,"3"]]}
 						]`),
-			err: `float sample pair does not match for metric {oops="bar"}: expected value 2 for timestamp 2 but got 3`,
+			err: `float sample pair does not match for metric {oops="bar"}: expected value 2 for timestamp 2 but got 3
+Expected result for series:
+{oops="bar"} =>
+1 @[1]
+2 @[2]
+
+Actual result for series:
+{oops="bar"} =>
+1 @[1]
+3 @[2]`,
 		},
 		{
 			name: "single expected sample has histogram but actual sample has float value",
@@ -131,7 +166,14 @@ func TestCompareMatrix(t *testing.T) {
 								"values": [[1,"1"]]
 							}
 						]`),
-			err: `expected 0 float sample(s) and 1 histogram sample(s) for metric {foo="bar"} but got 1 float sample(s) and 0 histogram sample(s)`,
+			err: `expected 0 float sample(s) and 1 histogram sample(s) for metric {foo="bar"} but got 1 float sample(s) and 0 histogram sample(s)
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+
+Actual result for series:
+{foo="bar"} =>
+1 @[1]`,
 		},
 		{
 			name: "single expected sample has float value but actual sample has histogram",
@@ -155,7 +197,14 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: `expected 1 float sample(s) and 0 histogram sample(s) for metric {foo="bar"} but got 0 float sample(s) and 1 histogram sample(s)`,
+			err: `expected 1 float sample(s) and 0 histogram sample(s) for metric {foo="bar"} but got 0 float sample(s) and 1 histogram sample(s)
+Expected result for series:
+{foo="bar"} =>
+1 @[1]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[2]`,
 		},
 		{
 			name: "difference in histogram sample timestamp",
@@ -187,7 +236,14 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: `histogram sample pair does not match for metric {foo="bar"}: expected timestamp 1 but got 2`,
+			err: `histogram sample pair does not match for metric {foo="bar"}: expected timestamp 1 but got 2
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[2]`,
 		},
 		{
 			name: "difference in histogram sample count",
@@ -219,7 +275,14 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: `histogram sample pair does not match for metric {foo="bar"}: expected count 2 for timestamp 1 but got 5`,
+			err: `histogram sample pair does not match for metric {foo="bar"}: expected count 2 for timestamp 1 but got 5
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 5.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]`,
 		},
 		{
 			name: "difference in histogram sample sum",
@@ -251,7 +314,14 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: `histogram sample pair does not match for metric {foo="bar"}: expected sum 3 for timestamp 1 but got 5`,
+			err: `histogram sample pair does not match for metric {foo="bar"}: expected sum 3 for timestamp 1 but got 5
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 5.000000, Buckets: [[0,2):2] @[1]`,
 		},
 		{
 			name: "difference in histogram sample buckets length",
@@ -284,7 +354,14 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: `histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,2):2 [2,4):2]`,
+			err: `histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,2):2 [2,4):2]
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2 [2,4):2] @[1]`,
 		},
 		{
 			name: "difference in histogram sample buckets boundaries",
@@ -316,7 +393,14 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: `histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [(0,2):2]`,
+			err: `histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [(0,2):2]
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [(0,2):2] @[1]`,
 		},
 		{
 			name: "difference in histogram sample buckets lower boundary",
@@ -348,7 +432,14 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: `histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[1,2):2]`,
+			err: `histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[1,2):2]
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[1,2):2] @[1]`,
 		},
 		{
 			name: "difference in histogram sample buckets upper boundary",
@@ -380,7 +471,14 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: `histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,3):2]`,
+			err: `histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,3):2]
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,3):2] @[1]`,
 		},
 		{
 			name: "difference in histogram sample buckets count",
@@ -412,7 +510,14 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: `histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,2):3]`,
+			err: `histogram sample pair does not match for metric {foo="bar"}: expected buckets [[0,2):2] for timestamp 1 but got [[0,2):3]
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):3] @[1]`,
 		},
 		{
 			name: "single actual histogram value matches expected",
@@ -534,7 +639,16 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: `histogram sample pair does not match for metric {foo="bar"}: expected sum 5 for timestamp 2 but got 6`,
+			err: `histogram sample pair does not match for metric {foo="bar"}: expected sum 5 for timestamp 2 but got 6
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+Count: 4.000000, Sum: 5.000000, Buckets: [[0,2):4] @[2]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+Count: 4.000000, Sum: 6.000000, Buckets: [[0,2):4] @[2]`,
 		},
 		{
 			name: "actual result has different number of histogram samples to expected result",
@@ -573,7 +687,15 @@ func TestCompareMatrix(t *testing.T) {
 								]
 							}
 						]`),
-			err: `expected 0 float sample(s) and 2 histogram sample(s) for metric {foo="bar"} but got 0 float sample(s) and 1 histogram sample(s)`,
+			err: `expected 0 float sample(s) and 2 histogram sample(s) for metric {foo="bar"} but got 0 float sample(s) and 1 histogram sample(s)
+Expected result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]
+Count: 4.000000, Sum: 5.000000, Buckets: [[0,2):4] @[2]
+
+Actual result for series:
+{foo="bar"} =>
+Count: 2.000000, Sum: 3.000000, Buckets: [[0,2):2] @[1]`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -583,7 +705,7 @@ func TestCompareMatrix(t *testing.T) {
 				return
 			}
 			require.Error(t, err)
-			require.ErrorContains(t, err, tc.err)
+			require.EqualError(t, err, tc.err)
 		})
 	}
 }
