@@ -46,9 +46,6 @@ type pusherConsumer struct {
 	metrics                  *pusherConsumerMetrics
 	logger                   log.Logger
 
-	shards    int
-	batchSize int
-
 	pusher PusherCloser
 }
 

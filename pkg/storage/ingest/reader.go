@@ -65,12 +65,6 @@ type recordConsumer interface {
 	consume(context.Context, []record) error
 }
 
-type noopConsumer struct{}
-
-func (noopConsumer) consume(ctx context.Context, records []record) error {
-	return nil
-}
-
 type PartitionReader struct {
 	services.Service
 	dependencies *services.Manager
@@ -337,9 +331,6 @@ func (r *PartitionReader) processNextFetchesUntilLagHonored(ctx context.Context,
 	} else {
 		fetcher = r
 	}
-	// defer func() {
-	//	r.setPollingStartOffset(r.consumedOffsetWatcher.LastConsumedOffset())
-	// }()
 
 	for boff.Ongoing() {
 		// Send a direct request to the Kafka backend to fetch the partition start offset.
