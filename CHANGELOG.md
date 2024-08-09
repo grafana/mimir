@@ -154,6 +154,7 @@
 * [ENHANCEMENT] Check annotations emitted by both backends are the same when comparing responses from two backends. #8660
 * [ENHANCEMENT] Compare native histograms in query results when comparing results between two backends. #8724
 * [ENHANCEMENT] Don't consider responses to be different during response comparison if both backends' responses contain different series, but all samples are within the recent sample window. #8749 #8894
+* [ENHANCEMENT] When the expected and actual response for a matrix series is different, the full set of samples for that series from both backends will now be logged. #8947
 * [BUGFIX] Ensure any errors encountered while forwarding a request to a backend (eg. DNS resolution failures) are logged. #8419
 * [BUGFIX] The comparison of the results should not fail when either side contains extra samples from within SkipRecentSamples duration. #8920
 
