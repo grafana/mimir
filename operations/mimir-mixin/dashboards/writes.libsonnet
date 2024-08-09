@@ -297,6 +297,8 @@ local filename = 'mimir-writes.json';
       $.row('Ingester – end-to-end latency (ingest storage)')
       .addPanel(
         $.ingestStorageIngesterEndToEndLatencyWhenRunningPanel(),
+      ).addPanel(
+        $.ingestStorageIngesterEndToEndLatencyOutliersWhenRunningPanel(),
       )
       .addPanel(
         $.ingestStorageIngesterEndToEndLatencyWhenStartingPanel(),
