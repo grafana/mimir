@@ -44,7 +44,8 @@ func (w *specWriter) writeConfigBlock(b *parse.ConfigBlock, indent int) {
 }
 
 func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) {
-	if e.Kind == parse.KindBlock {
+	switch e.Kind {
+	case parse.KindBlock:
 		// If the block is a root block it will have its dedicated section in the doc,
 		// so here we've just to write down the reference without re-iterating on it.
 		if e.Root {
@@ -66,9 +67,8 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) {
 			// Entries
 			w.writeConfigBlock(e.Block, indent+tabWidth)
 		}
-	}
 
-	if e.Kind == parse.KindField || e.Kind == parse.KindMap {
+	case parse.KindField, parse.KindMap:
 		// Description
 		w.writeComment(w.modifyDescriptions(e.Description()), indent, 0)
 		w.writeExample(e.FieldExample, indent)
@@ -87,9 +87,8 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) {
 		} else {
 			w.out.WriteString(pad(indent) + "[" + e.Name + ": <" + e.FieldType + "> | default = " + fieldDefault + "]\n")
 		}
-	}
 
-	if e.Kind == parse.KindSlice {
+	case parse.KindSlice:
 		// Description
 		w.writeComment(w.modifyDescriptions(e.Description()), indent, 0)
 
