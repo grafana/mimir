@@ -33404,7 +33404,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 2,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum(rate(cortex_distributor_samples_in_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -33472,7 +33472,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 2,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum(rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
