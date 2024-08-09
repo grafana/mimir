@@ -56,6 +56,7 @@ func newS3Config(cfg Config) (s3.Config, error) {
 		Region:             cfg.Region,
 		AccessKey:          cfg.AccessKeyID,
 		SecretKey:          cfg.SecretAccessKey.String(),
+		SessionToken:       cfg.SessionToken.String(),
 		Insecure:           cfg.Insecure,
 		PutUserMetadata:    putUserMetadata,
 		SendContentMd5:     cfg.SendContentMd5,

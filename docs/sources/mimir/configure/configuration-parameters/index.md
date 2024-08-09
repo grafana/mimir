@@ -5003,6 +5003,10 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # CLI flag: -<prefix>.s3.access-key-id
 [access_key_id: <string> | default = ""]
 
+# S3 session token
+# CLI flag: -<prefix>.s3.session-token
+[session_token: <string> | default = ""]
+
 # (advanced) If enabled, use http:// for the S3 endpoint instead of https://.
 # This could be useful in local dev/test environments while using an
 # S3-compatible backend storage, like Minio.
