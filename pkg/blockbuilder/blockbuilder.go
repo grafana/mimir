@@ -311,13 +311,19 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 
 	nextCycleTime := time.Now().Truncate(b.cfg.ConsumeInterval).Add(b.cfg.ConsumeInterval + b.cfg.ConsumeIntervalBuffer)
 	waitTime := time.Until(nextCycleTime)
+	for waitTime > b.cfg.ConsumeInterval {
+		// NB: at now=14:12, next cycle starts at 14:15 (startup cycle ended at 13:15)
+		//     at now=14:17, next cycle starts at 15:15 (startup cycle ended at 14:15)
+		nextCycleTime = nextCycleTime.Add(-b.cfg.ConsumeInterval)
+		waitTime -= b.cfg.ConsumeInterval
+	}
 
 	for {
 		select {
 		case <-time.After(waitTime):
-			cycleEnd = nextCycleTime
+			cycleEnd := nextCycleTime
 			level.Info(b.logger).Log("msg", "triggering next consume from running", "cycle_end", cycleEnd, "cycle_time", nextCycleTime)
-			err := b.NextConsumeCycle(ctx, cycleEnd.Add(-time.Second))
+			err := b.NextConsumeCycle(ctx, cycleEnd)
 			if err != nil {
 				b.metrics.consumeCycleFailures.Inc()
 				level.Error(b.logger).Log("msg", "consume cycle failed", "cycle_end", cycleEnd, "err", err)
@@ -650,7 +656,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, client *kgo.Client,
 	// We are lagging behind. We need to consume the partition in parts.
 	// We iterate through all the cycleEnds starting from the first one after commit until the cycleEnd.
 	cycleEndStartAt := commitRecTime.Truncate(b.cfg.ConsumeInterval).Add(b.cfg.ConsumeInterval + b.cfg.ConsumeIntervalBuffer)
-	level.Info(b.logger).Log("msg", "partition is lagging behind", "part", pl.Partition, "lag", pl.Lag, "cycle_end_start", cycleEndStartAt, "cycle_end", cycleEnd, "last_commit_rec_raw", pl.CommitRecTs, "last_commit_rec_time", commitRecTime)
+	level.Info(b.logger).Log("msg", "partition is lagging behind", "part", pl.Partition, "lag", pl.Lag, "cycle_end_start", cycleEndStartAt, "cycle_end", cycleEnd, "last_commit_rec_time", commitRecTime, "last_commit_rec_ts", pl.CommitRecTs)
 	for ce := cycleEndStartAt; cycleEnd.Sub(ce) >= 0; ce = ce.Add(b.cfg.ConsumeInterval) {
 		// Instead of looking for the commit metadata for each iteration, we use the data returned by consumePartition
 		// in the next iteration.
