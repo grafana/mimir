@@ -1860,7 +1860,7 @@ func newTestConsumer(capacity int) testConsumer {
 }
 
 func (t testConsumer) Close(context.Context) error {
-	close(t.records)
+	// We don't close the channel because the same consumer can be reused to consume multiple fetches.
 	return nil
 }
 
