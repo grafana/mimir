@@ -170,7 +170,6 @@ func (n *Node) IsEmpty() bool {
 	if n.isLeaf() {
 		return n.localQueue.Len() == 0
 	}
-
 	return len(n.queueMap) == 0
 }
 
@@ -222,14 +221,14 @@ func (n *Node) dequeue() (QueuePath, any) {
 
 	path := QueuePath{n.name}
 
-	if n.IsEmpty() {
-		return path, nil
-	}
-
 	var checkedAllNodes bool
 	var dequeueNode *Node
 	// continue until we've found a value or checked all nodes that need checking
 	for v == nil && !checkedAllNodes {
+		if n.IsEmpty() {
+			// we can't dequeue a value from an empty node; return early
+			return path, nil
+		}
 		dequeueNode, checkedAllNodes = n.queuingAlgorithm.dequeueSelectNode(n)
 		switch dequeueNode {
 		case n:
