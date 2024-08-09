@@ -333,6 +333,7 @@ local filename = 'mimir-tenants.json';
 
     .addRow(
       $.row('Samples ingestion funnel')
+      .justifyPanels()  // Make sure panels use all width even if 12 columns are not divisible by the number of panels.
       .addPanel(
         local title = 'Distributor samples incoming rate';
         $.timeseriesPanel(title) +
