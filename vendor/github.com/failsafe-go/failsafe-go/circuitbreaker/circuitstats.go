@@ -9,7 +9,8 @@ import (
 	"github.com/failsafe-go/failsafe-go/internal/util"
 )
 
-// stats for a CircuitBreaker.
+// Stats for a CircuitBreaker.
+// Implementations are not concurrency safe and must be guarded externally.
 type circuitStats interface {
 	getExecutionCount() uint
 	getFailureCount() uint
@@ -145,13 +146,13 @@ type timedCircuitStats struct {
 	windowSize time.Duration
 
 	// Mutable state
-	buckets      []*bucket
+	buckets      []bucket
 	summary      stat
 	currentIndex int
 }
 
 type bucket struct {
-	*stat
+	stat
 	startTime int64
 }
 
@@ -176,10 +177,10 @@ func (s *stat) remove(bucket *bucket) {
 }
 
 func newTimedCircuitStats(bucketCount int, thresholdingPeriod time.Duration, clock util.Clock) *timedCircuitStats {
-	buckets := make([]*bucket, bucketCount)
+	buckets := make([]bucket, bucketCount)
 	for i := 0; i < bucketCount; i++ {
-		buckets[i] = &bucket{
-			stat:      &stat{},
+		buckets[i] = bucket{
+			stat:      stat{},
 			startTime: -1,
 		}
 	}
@@ -195,7 +196,7 @@ func newTimedCircuitStats(bucketCount int, thresholdingPeriod time.Duration, clo
 }
 
 func (s *timedCircuitStats) getCurrentBucket() *bucket {
-	previousBucket := s.buckets[s.currentIndex]
+	previousBucket := &s.buckets[s.currentIndex]
 	currentBucket := previousBucket
 	timeDiff := s.clock.CurrentUnixNano() - currentBucket.startTime
 	if timeDiff >= s.bucketSize.Nanoseconds() {
@@ -205,7 +206,7 @@ func (s *timedCircuitStats) getCurrentBucket() *bucket {
 			for ; bucketsToMove > 0; bucketsToMove-- {
 				s.currentIndex = s.nextIndex()
 				previousBucket = currentBucket
-				currentBucket = s.buckets[s.currentIndex]
+				currentBucket = &s.buckets[s.currentIndex]
 				var bucketStartTime int64
 				if currentBucket.startTime == -1 {
 					bucketStartTime = previousBucket.startTime + s.bucketSize.Nanoseconds()
@@ -269,7 +270,8 @@ func (s *timedCircuitStats) recordSuccess() {
 
 func (s *timedCircuitStats) reset() {
 	startTime := s.clock.CurrentUnixNano()
-	for _, bucket := range s.buckets {
+	for i := range s.buckets {
+		bucket := &s.buckets[i]
 		bucket.reset()
 		bucket.startTime = startTime
 		startTime += s.bucketSize.Nanoseconds()

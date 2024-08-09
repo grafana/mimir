@@ -60,7 +60,7 @@ func (e *executionResult[R]) Get() (R, error) {
 	if result != nil {
 		return (*result).Result, (*result).Error
 	}
-	return *(new(R)), nil
+	return *new(R), nil
 }
 
 func (e *executionResult[R]) Result() R {

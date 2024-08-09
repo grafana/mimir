@@ -144,6 +144,12 @@ type Metrics interface {
 type StateChangedEvent struct {
 	OldState State
 	NewState State
+	metrics  *eventMetrics
+}
+
+// Metrics returns metrics from the CircuitBreaker old state.
+func (e *StateChangedEvent) Metrics() Metrics {
+	return e.metrics
 }
 
 type circuitBreaker[R any] struct {
@@ -190,8 +196,6 @@ func (cb *circuitBreaker[R]) RemainingDelay() time.Duration {
 }
 
 func (cb *circuitBreaker[R]) Metrics() Metrics {
-	cb.mtx.Lock()
-	defer cb.mtx.Unlock()
 	return cb
 }
 
@@ -246,7 +250,7 @@ func (cb *circuitBreaker[R]) RecordFailure() {
 func (cb *circuitBreaker[R]) RecordError(err error) {
 	cb.mtx.Lock()
 	defer cb.mtx.Unlock()
-	cb.recordResult(*(new(R)), err)
+	cb.recordResult(*new(R), err)
 }
 
 func (cb *circuitBreaker[R]) RecordResult(result R) {
@@ -278,6 +282,7 @@ func (cb *circuitBreaker[R]) ToExecutor(_ R) any {
 func (cb *circuitBreaker[R]) transitionTo(newState State, exec failsafe.Execution[R], listener func(StateChangedEvent)) {
 	transitioned := false
 	currentState := cb.state.getState()
+	currentStats := cb.state.getStats()
 	if currentState != newState {
 		switch newState {
 		case ClosedState:
@@ -294,18 +299,43 @@ func (cb *circuitBreaker[R]) transitionTo(newState State, exec failsafe.Executio
 		transitioned = true
 	}
 
-	if transitioned {
+	if transitioned && (listener != nil || cb.config.stateChangedListener != nil) {
 		event := StateChangedEvent{
 			OldState: currentState,
 			NewState: newState,
-		}
-		if cb.config.stateChangedListener != nil {
-			cb.config.stateChangedListener(event)
+			metrics:  &eventMetrics{currentStats},
 		}
 		if listener != nil {
 			listener(event)
 		}
+		if cb.config.stateChangedListener != nil {
+			cb.config.stateChangedListener(event)
+		}
 	}
+}
+
+type eventMetrics struct {
+	stats circuitStats
+}
+
+func (m *eventMetrics) Executions() uint {
+	return m.stats.getExecutionCount()
+}
+
+func (m *eventMetrics) Failures() uint {
+	return m.stats.getFailureCount()
+}
+
+func (m *eventMetrics) FailureRate() uint {
+	return m.stats.getFailureRate()
+}
+
+func (m *eventMetrics) Successes() uint {
+	return m.stats.getSuccessCount()
+}
+
+func (m *eventMetrics) SuccessRate() uint {
+	return m.stats.getSuccessRate()
 }
 
 // Requires external locking.

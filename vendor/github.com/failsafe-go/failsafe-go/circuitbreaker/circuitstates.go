@@ -7,6 +7,7 @@ import (
 )
 
 // State of a CircuitBreaker.
+// Implementations are not concurrency safe and must be guarded externally.
 type circuitState[R any] interface {
 	getState() State
 	getStats() circuitStats
