@@ -22,7 +22,15 @@ local filename = 'mimir-tenants.json';
     ($.dashboard('Tenants') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addActiveUserSelectorTemplates()
-    .addCustomTemplate('limit', ['10', '50', '100', '500', '1000'])
+    .addCustomTemplate(
+      'limit', 'limit', [
+        { label: '10', value: '10' },
+        { label: '50', value: '50' },
+        { label: '100', value: '100' },
+        { label: '500', value: '500' },
+        { label: '1000', value: '1000' },
+      ]
+    )
     .addRowIf(
       $._config.show_dashboard_descriptions.tenants,
       ($.row('Tenants dashboard description') { height: '25px', showTitle: false })
