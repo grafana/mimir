@@ -6695,6 +6695,16 @@
             },
             {
               "kind": "field",
+              "name": "session_token",
+              "required": false,
+              "desc": "S3 session token",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.s3.session-token",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "insecure",
               "required": false,
               "desc": "If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.",
@@ -12689,6 +12699,16 @@
             },
             {
               "kind": "field",
+              "name": "session_token",
+              "required": false,
+              "desc": "S3 session token",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.s3.session-token",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "insecure",
               "required": false,
               "desc": "If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.",
@@ -14846,6 +14866,16 @@
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager-storage.s3.access-key-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "session_token",
+              "required": false,
+              "desc": "S3 session token",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.s3.session-token",
               "fieldType": "string"
             },
             {
@@ -17262,6 +17292,16 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "common.storage.s3.access-key-id",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "session_token",
+                  "required": false,
+                  "desc": "S3 session token",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.s3.session-token",
                   "fieldType": "string"
                 },
                 {
