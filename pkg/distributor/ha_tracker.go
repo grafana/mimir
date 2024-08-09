@@ -39,6 +39,9 @@ type haTrackerLimits interface {
 	// MaxHAClusters returns the max number of clusters that the HA tracker should track for a user.
 	// Samples from additional clusters are rejected.
 	MaxHAClusters(user string) int
+
+	// HATrackerFailoverTimeout returns FailoverTimeout for the tenant.
+	HATrackerFailoverTimeout(user string) time.Duration
 }
 
 // ProtoReplicaDescFactory makes new InstanceDescs
@@ -83,15 +86,18 @@ func (cfg *HATrackerConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.KVStore.RegisterFlagsWithPrefix("distributor.ha-tracker.", "ha-tracker/", f)
 }
 
+func (cfg *HATrackerConfig) minFailureTimeout() time.Duration {
+	return cfg.UpdateTimeout + cfg.UpdateTimeoutJitterMax + time.Second
+}
+
 // Validate config and returns error on failure
 func (cfg *HATrackerConfig) Validate() error {
 	if cfg.UpdateTimeoutJitterMax < 0 {
 		return errNegativeUpdateTimeoutJitterMax
 	}
 
-	minFailureTimeout := cfg.UpdateTimeout + cfg.UpdateTimeoutJitterMax + time.Second
-	if cfg.FailoverTimeout < minFailureTimeout {
-		return fmt.Errorf(errInvalidFailoverTimeout, cfg.FailoverTimeout, minFailureTimeout)
+	if cfg.FailoverTimeout < cfg.minFailureTimeout() {
+		return fmt.Errorf(errInvalidFailoverTimeout, cfg.FailoverTimeout, cfg.minFailureTimeout())
 	}
 
 	if cfg.KVStore.Store == "memberlist" {
@@ -470,6 +476,8 @@ func (h *haTracker) updateCache(userID, cluster string, desc *ReplicaDesc) {
 // If we do set the value then err will be nil and desc will contain the value we set.
 // If there is already a valid value in the store, return nil, nil.
 func (h *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica string, now time.Time) error {
+	failoverTimeout := h.getFailoverTimeoutForUser(userID)
+
 	key := fmt.Sprintf("%s/%s", userID, cluster)
 	var desc *ReplicaDesc
 	err := h.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
@@ -478,7 +486,7 @@ func (h *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica 
 			// If the entry in KVStore is up-to-date, just stop the loop.
 			if h.withinUpdateTimeout(now, desc.ReceivedAt) ||
 				// If our replica is different, wait until the failover time.
-				desc.Replica != replica && now.Sub(timestamp.Time(desc.ReceivedAt)) < h.cfg.FailoverTimeout {
+				desc.Replica != replica && now.Sub(timestamp.Time(desc.ReceivedAt)) < failoverTimeout {
 				return nil, false, nil
 			}
 		}
@@ -525,4 +533,17 @@ func (h *haTracker) cleanupHATrackerMetricsForUser(userID string) {
 	h.electedReplicaChanges.DeletePartialMatch(filter)
 	h.electedReplicaTimestamp.DeletePartialMatch(filter)
 	h.kvCASCalls.DeletePartialMatch(filter)
+}
+
+func (h *haTracker) getFailoverTimeoutForUser(user string) time.Duration {
+	failoverTimeout := h.limits.HATrackerFailoverTimeout(user)
+	if failoverTimeout <= 0 {
+		return h.cfg.FailoverTimeout
+	}
+
+	minFailoverTimeout := h.cfg.minFailureTimeout()
+	if failoverTimeout < minFailoverTimeout {
+		return minFailoverTimeout
+	}
+	return failoverTimeout
 }
