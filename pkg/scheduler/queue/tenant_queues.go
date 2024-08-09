@@ -29,14 +29,12 @@ type queueBroker struct {
 
 	tenantQuerierAssignments *tenantQuerierAssignments
 
-	maxTenantQueueSize               int
-	additionalQueueDimensionsEnabled bool
-	prioritizeQueryComponents        bool
+	maxTenantQueueSize        int
+	prioritizeQueryComponents bool
 }
 
 func newQueueBroker(
 	maxTenantQueueSize int,
-	additionalQueueDimensionsEnabled bool,
 	useMultiAlgoTreeQueue bool,
 	forgetDelay time.Duration,
 ) *queueBroker {
@@ -59,12 +57,7 @@ func newQueueBroker(
 		algos := []QueuingAlgorithm{
 			tqas,               // root; QueuingAlgorithm selects tenants
 			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
-		}
-		if additionalQueueDimensionsEnabled {
-			algos = append(
-				algos,
-				&roundRobinState{}, // query components; QueuingAlgorithm selects query from local queue
-			)
+			&roundRobinState{}, // query components; QueuingAlgorithm selects query from local queue
 		}
 		tree, err = NewTree(algos...)
 	} else {
@@ -77,10 +70,9 @@ func newQueueBroker(
 		panic(fmt.Sprintf("error creating the tree queue: %v", err))
 	}
 	qb := &queueBroker{
-		tree:                             tree,
-		tenantQuerierAssignments:         tqas,
-		maxTenantQueueSize:               maxTenantQueueSize,
-		additionalQueueDimensionsEnabled: additionalQueueDimensionsEnabled,
+		tree:                     tree,
+		tenantQuerierAssignments: tqas,
+		maxTenantQueueSize:       maxTenantQueueSize,
 	}
 
 	return qb
@@ -146,19 +138,16 @@ func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQuer
 }
 
 func (qb *queueBroker) makeQueuePath(request *tenantRequest) (QueuePath, error) {
-	if qb.additionalQueueDimensionsEnabled {
-		var queryComponent string
-		if schedulerRequest, ok := request.req.(*SchedulerRequest); ok {
-			queryComponent = schedulerRequest.ExpectedQueryComponentName()
-		}
-		if qb.prioritizeQueryComponents {
-			return append([]string{queryComponent}, string(request.tenantID)), nil
-		}
-		return append(QueuePath{string(request.tenantID)}, queryComponent), nil
+	// some requests may not be type asserted to a schedulerRequest; in this case,
+	// they should also be queued as "unknown" query components
+	queryComponent := unknownQueueDimension
+	if schedulerRequest, ok := request.req.(*SchedulerRequest); ok {
+		queryComponent = schedulerRequest.ExpectedQueryComponentName()
 	}
-
-	// else request.req is a frontend/v1.request, or additional queue dimensions are disabled
-	return QueuePath{string(request.tenantID)}, nil
+	if qb.prioritizeQueryComponents {
+		return append([]string{queryComponent}, string(request.tenantID)), nil
+	}
+	return append(QueuePath{string(request.tenantID)}, queryComponent), nil
 }
 
 func (qb *queueBroker) dequeueRequestForQuerier(

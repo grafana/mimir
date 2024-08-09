@@ -97,16 +97,17 @@ func makeSchedulerRequest(tenantID string, additionalQueueDimensions []string) *
 //
 // In this scenario, one category of queue item causes the queue consumer to slow down, introducing a
 // significant delay while the queue consumer processes it and before the consumer can dequeue the next item.
-// This emulates a situation where one of the query components - the ingesters or store-gateways - is under load.
+// This simulates a situation where one of the query components - the ingesters or store-gateways - is under load.
 //
-// If queue items belonging to the slow category are in the same queue in front of the normal queue items,
-// the normal queue items must wait for all slow queue items to be cleared before they can be serviced.
+// If queue items belonging to the slow category are in the same queue ("normal-channel") in front of the normal queue
+// items, the normal queue items must wait for all slow queue items to be cleared before they can be serviced.
 // In this way, the degraded performance of the slow query component equally degrades the performance of the
 // queries which *could* be serviced quickly, but are waiting behind the slow queries in the queue.
 //
-// With the additional queue dimensions enabled, the queues are split by which query component the query will utilize.
-// The queue broker then round-robins between the split queues, which has the effect of alternating between
-// dequeuing the slow queries and normal queries rather than blocking normal queries behind slow queries.
+// When using multiple queue dimensions, the queues are split by which "component" the query will utilize -- in this
+// test, those components are called "normal-channel" and "slow-channel" for clarity. The queue broker then
+// round-robins between the multiple queues, which has the effect of alternately dequeuing from the slow queries
+// and normal queries rather than blocking normal queries behind slow queries.
 func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 	treeTypes := buildTreeTestsStruct()
 
@@ -126,16 +127,23 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 			normalQueueDimension := "normal-request"
 			slowConsumerLatency := 20 * time.Millisecond
 			slowConsumerQueueDimension := "slow-request"
-			normalQueueDimensionFunc := func() []string { return []string{normalQueueDimension} }
-			slowQueueDimensionFunc := func() []string { return []string{slowConsumerQueueDimension} }
+			normalQueueDimensionFunc := func(usingMultipleDimensions bool) []string { return []string{"normal-channel"} }
+			slowQueueDimensionFunc := func(usingMultipleDimensions bool) []string {
+				if usingMultipleDimensions {
+					return []string{"slow-channel"}
+				} else {
+					return []string{"normal-channel"}
+				}
+			}
 
-			additionalQueueDimensionsEnabledCases := []bool{false, true}
+			useMultipleDimensions := []bool{false, true}
 			queueDurationTotals := map[bool]map[string]float64{
 				false: {normalQueueDimension: 0.0, slowConsumerQueueDimension: 0.0},
 				true:  {normalQueueDimension: 0.0, slowConsumerQueueDimension: 0.0},
 			}
 
-			for _, additionalQueueDimensionsEnabled := range additionalQueueDimensionsEnabledCases {
+			for _, multipleDimensionsUsed := range useMultipleDimensions {
+
 				// Scheduler code uses a histogram for queue duration, but a counter is a more direct metric
 				// for this test, as we are concerned with the total or average wait time for all queue items.
 				// Prometheus histograms also lack support for test assertions via prometheus/testutil.
@@ -147,7 +155,6 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 				queue, err := NewRequestQueue(
 					log.NewNopLogger(),
 					maxOutstandingRequestsPerTenant,
-					additionalQueueDimensionsEnabled,
 					tt.useMultiAlgoTreeQueue,
 					forgetQuerierDelay,
 					promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -164,12 +171,12 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 				})
 
 				// fill queue first with the slow queries, then the normal queries
-				for _, queueDimensionFunc := range []func() []string{slowQueueDimensionFunc, normalQueueDimensionFunc} {
+				for _, queueDimensionFunc := range []func(bool) []string{slowQueueDimensionFunc, normalQueueDimensionFunc} {
 					startProducersChan := make(chan struct{})
 					producersErrGroup, _ := errgroup.WithContext(ctx)
 
 					runProducer := runQueueProducerIters(
-						queue, maxQueriersPerTenant, totalRequests/2, numProducers, numTenants, startProducersChan, queueDimensionFunc,
+						queue, maxQueriersPerTenant, totalRequests/2, numProducers, numTenants, startProducersChan, multipleDimensionsUsed, queueDimensionFunc,
 					)
 					for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
 						producerIdx := producerIdx
@@ -213,7 +220,7 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 
 				// record total queue duration by queue dimensions and whether the queue splitting was enabled
 				for _, queueDimension := range []string{normalQueueDimension, slowConsumerQueueDimension} {
-					queueDurationTotals[additionalQueueDimensionsEnabled][queueDimension] = promtest.ToFloat64(
+					queueDurationTotals[multipleDimensionsUsed][queueDimension] = promtest.ToFloat64(
 						queueDuration.With(prometheus.Labels{"additional_queue_dimensions": queueDimension}),
 					)
 				}
@@ -259,7 +266,6 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 									queue, err := NewRequestQueue(
 										log.NewNopLogger(),
 										maxOutstandingRequestsPerTenant,
-										true,
 										t.useMultiAlgoTreeQueue,
 										forgetQuerierDelay,
 										promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -278,7 +284,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 									})
 
 									runProducer := runQueueProducerIters(
-										queue, maxQueriersPerTenant, b.N, numProducers, numTenants, startSignalChan, nil,
+										queue, maxQueriersPerTenant, b.N, numProducers, numTenants, startSignalChan, true, nil,
 									)
 
 									for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
@@ -340,7 +346,8 @@ func runQueueProducerIters(
 	numProducers int,
 	numTenants int,
 	start chan struct{},
-	additionalQueueDimensionFunc func() []string,
+	usingMultipleDimensions bool,
+	additionalQueueDimensionFunc func(bool) []string,
 ) func(producerIdx int) error {
 	return func(producerIdx int) error {
 		producerIters := queueActorIterationCount(totalIters, numProducers, producerIdx)
@@ -349,7 +356,7 @@ func runQueueProducerIters(
 		<-start
 
 		for i := 0; i < producerIters; i++ {
-			err := queueProduce(queue, maxQueriersPerTenant, tenantIDStr, additionalQueueDimensionFunc)
+			err := queueProduce(queue, maxQueriersPerTenant, tenantIDStr, usingMultipleDimensions, additionalQueueDimensionFunc)
 			if err != nil {
 				return err
 			}
@@ -362,11 +369,15 @@ func runQueueProducerIters(
 }
 
 func queueProduce(
-	queue *RequestQueue, maxQueriersPerTenant int, tenantID string, additionalQueueDimensionFunc func() []string,
+	queue *RequestQueue,
+	maxQueriersPerTenant int,
+	tenantID string,
+	usingMultipleDimensions bool,
+	additionalQueueDimensionFunc func(bool) []string,
 ) error {
 	var additionalQueueDimensions []string
 	if additionalQueueDimensionFunc != nil {
-		additionalQueueDimensions = additionalQueueDimensionFunc()
+		additionalQueueDimensions = additionalQueueDimensionFunc(usingMultipleDimensions)
 	}
 	req := makeSchedulerRequest(tenantID, additionalQueueDimensions)
 	for {
@@ -439,7 +450,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 		t.Run(tt.name, func(t *testing.T) {
 			queue, err := NewRequestQueue(
 				log.NewNopLogger(),
-				1, true,
+				1,
 				tt.useMultiAlgoTreeQueue,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -515,7 +526,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 		t.Run(tt.name, func(t *testing.T) {
 			queue, err := NewRequestQueue(
 				log.NewNopLogger(),
-				1, true,
+				1,
 				tt.useMultiAlgoTreeQueue,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -606,7 +617,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 			queue, err := NewRequestQueue(
 				log.NewNopLogger(),
 				1,
-				true,
 				tt.useMultiAlgoTreeQueue,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -666,7 +676,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 			queue, err := NewRequestQueue(
 				log.NewNopLogger(),
 				1,
-				true,
 				tt.useMultiAlgoTreeQueue,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -702,7 +711,6 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 			queue, err := NewRequestQueue(
 				log.NewNopLogger(),
 				1,
-				true,
 				tt.useMultiAlgoTreeQueue,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -714,7 +722,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 
 			// bypassing queue dispatcher loop for direct usage of the queueBroker and
 			// passing a waitingQuerierConn for a canceled querier connection
-			queueBroker := newQueueBroker(queue.maxOutstandingPerTenant, queue.additionalQueueDimensionsEnabled, false, queue.forgetDelay)
+			queueBroker := newQueueBroker(queue.maxOutstandingPerTenant, false, queue.forgetDelay)
 			queueBroker.addQuerierConnection(querierID)
 
 			tenantMaxQueriers := 0 // no sharding
