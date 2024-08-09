@@ -34,6 +34,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
         if condition
         then self.addPanel(panel)
         else self,
+
+      // justifyPanels make sure that the panels span the whole row.
+      // It is useful when the number of panels is not a divisor of 12.
+      justifyPanels()::
+        self + {
+          local n = std.length(super.panels),
+          local span = std.floor(12 / n),
+          panels: [
+            super.panels[i] { span: span + if i < (12 % n) then 1 else 0 }
+            for i in std.range(0, n - 1)
+          ],
+        },
     },
 
   // Override the dashboard constructor to add:
