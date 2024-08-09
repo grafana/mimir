@@ -1,5 +1,5 @@
 diff --git a/pkg/mimirpb/mimir.pb.go b/pkg/mimirpb/mimir.pb.go
-index 906419a9d6..1ec0a3ecf9 100644
+index 8e2109f8ae..1ec0a3ecf9 100644
 --- a/pkg/mimirpb/mimir.pb.go
 +++ b/pkg/mimirpb/mimir.pb.go
 @@ -241,9 +241,6 @@ type WriteRequest struct {
@@ -8,7 +8,7 @@ index 906419a9d6..1ec0a3ecf9 100644
  	SkipLabelNameValidation bool `protobuf:"varint,1000,opt,name=skip_label_name_validation,json=skipLabelNameValidation,proto3" json:"skip_label_name_validation,omitempty"`
 -
 -	// Skip unmarshaling of exemplars.
--	SkipUnmarshalingExemplars bool
+-	skipUnmarshalingExemplars bool
  }
  
  func (m *WriteRequest) Reset()      { *m = WriteRequest{} }
@@ -26,7 +26,7 @@ index 906419a9d6..1ec0a3ecf9 100644
  				return io.ErrUnexpectedEOF
  			}
  			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
--			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.SkipUnmarshalingExemplars
+-			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
  			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
  				return err
  			}
