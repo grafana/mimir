@@ -1611,9 +1611,9 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.instance-port
 [port: <int> | default = 0]
 
-# (experimental) Enqueue query requests with additional queue dimensions to
-# split tenant request queues into subqueues. This enables separate requests to
-# proceed from a tenant's subqueues even when other subqueues are blocked on
+# (experimental) NO-OP: Enqueue query requests with additional queue dimensions
+# to split tenant request queues into subqueues. This enables separate requests
+# to proceed from a tenant's subqueues even when other subqueues are blocked on
 # slow query requests. Must be set on both query-frontend and scheduler to take
 # effect. (default false)
 # CLI flag: -query-frontend.additional-query-queue-dimensions-enabled
@@ -1702,9 +1702,9 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
 [max_outstanding_requests_per_tenant: <int> | default = 100]
 
-# (experimental) Enqueue query requests with additional queue dimensions to
-# split tenant request queues into subqueues. This enables separate requests to
-# proceed from a tenant's subqueues even when other subqueues are blocked on
+# (experimental) NO-OP: Enqueue query requests with additional queue dimensions
+# to split tenant request queues into subqueues. This enables separate requests
+# to proceed from a tenant's subqueues even when other subqueues are blocked on
 # slow query requests. Must be set on both query-frontend and scheduler to take
 # effect. (default false)
 # CLI flag: -query-scheduler.additional-query-queue-dimensions-enabled
