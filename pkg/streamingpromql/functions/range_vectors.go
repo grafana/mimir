@@ -304,20 +304,21 @@ func avgHistograms(head, tail []promql.HPoint) (*histogram.FloatHistogram, error
 		for _, p := range points {
 			count++
 
+			// Make a copy of p.H, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
 			if contributionByP == nil {
 				contributionByP = p.H.Copy()
 			} else {
 				p.H.CopyTo(contributionByP)
 			}
 
-			contributionByP = contributionByP.Div(count)
-
+			// Make a copy of avgSoFar so we can divide it below without modifying the running total.
 			if contributionByAvgSoFar == nil {
 				contributionByAvgSoFar = avgSoFar.Copy()
 			} else {
 				avgSoFar.CopyTo(contributionByAvgSoFar)
 			}
 
+			contributionByP = contributionByP.Div(count)
 			contributionByAvgSoFar = contributionByAvgSoFar.Div(count)
 
 			change, err := contributionByP.Sub(contributionByAvgSoFar)
