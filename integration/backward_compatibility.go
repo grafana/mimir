@@ -9,27 +9,20 @@ import "github.com/grafana/mimir/integration/e2emimir"
 var DefaultPreviousVersionImages = map[string]e2emimir.FlagMapper{
 	"grafana/mimir:2.11.0": e2emimir.ChainFlagMappers(
 		removePartitionRingFlags,
-		removeRemoteReadLimitsFlags,
 	),
 	"grafana/mimir:2.12.0": e2emimir.ChainFlagMappers(
 		removePartitionRingFlags,
-		removeRemoteReadLimitsFlags,
 	),
 	"grafana/mimir:2.13.0": e2emimir.ChainFlagMappers(
 		removePartitionRingFlags,
-		removeRemoteReadLimitsFlags,
 	),
 }
 
 // Always remove this flag so that it's not a pain to run GEM integration tests.
 // This temporarily flag will be removed soon from Mimir.
-var defaultPreviousVersionGlobalOverrides = removeRemoteReadLimitsFlags
+var defaultPreviousVersionGlobalOverrides = e2emimir.NoopFlagMapper
 
 var removePartitionRingFlags = e2emimir.RemoveFlagMapper([]string{
 	"-ingester.partition-ring.store",
 	"-ingester.partition-ring.consul.hostname",
-})
-
-var removeRemoteReadLimitsFlags = e2emimir.RemoveFlagMapper([]string{
-	"-query-frontend.remote-read-limits-enabled",
 })
