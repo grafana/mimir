@@ -771,13 +771,6 @@ func (w fetchWant) Next(numRecords int) fetchWant {
 	return n.trimIfTooBig()
 }
 
-func (w fetchWant) expectedBytes() int {
-	// We over-fetch bytes to reduce the likelihood of under-fetching and having to run another request.
-	// Based on some testing 65% of under-estimations are by less than 5%. So we account for that.
-	const overFetchBytesFactor = 1.05
-	return int(overFetchBytesFactor * float64(w.bytesPerRecord*int(w.endOffset-w.startOffset)))
-}
-
 // MaxBytes returns the maximum number of bytes we can fetch in a single request.
 // It's capped at math.MaxInt32 to avoid overflow, and it'll always fetch a minimum of 1MB.
 func (w fetchWant) MaxBytes() int32 {
@@ -802,6 +795,15 @@ func (w fetchWant) UpdateBytesPerRecord(lastFetchBytes int, lastFetchNumberOfRec
 	w.bytesPerRecord = int(currentEstimateWeight*float64(w.bytesPerRecord) + (1-currentEstimateWeight)*actualBytesPerRecord)
 
 	return w.trimIfTooBig()
+}
+
+// expectedBytes returns how many bytes we'd need to accommodate the range of offsets using bytesPerRecord.
+// They may be more than the kafka protocol supports (> MaxInt32). Use MaxBytes.
+func (w fetchWant) expectedBytes() int {
+	// We over-fetch bytes to reduce the likelihood of under-fetching and having to run another request.
+	// Based on some testing 65% of under-estimations are by less than 5%. So we account for that.
+	const overFetchBytesFactor = 1.05
+	return int(overFetchBytesFactor * float64(w.bytesPerRecord*int(w.endOffset-w.startOffset)))
 }
 
 // trimIfTooBig adjusts the end offset if we expect to fetch too many bytes.
