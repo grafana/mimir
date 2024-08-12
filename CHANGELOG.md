@@ -1,7 +1,6 @@
 # Changelog
 
 ## main / unreleased
-* [ENHANCEMENT] Query-scheduler: Improve CPU/memory performance of experimental query-scheduler. #8871
 
 ### Grafana Mimir
 
@@ -51,6 +50,7 @@
 * [ENHANCEMENT] Ingester, store-gateway: optimised regular expression matching for patterns like `1.*|2.*|3.*|...|1000.*`. #8632
 * [ENHANCEMENT] Query-frontend: Add `header_cache_control` to query stats. #8590
 * [ENHANCEMENT] Query-scheduler: Introduce `query-scheduler.use-multi-algorithm-query-queue`, which allows use of an experimental queue structure, with no change in external queue behavior. #7873
+* [ENHANCEMENT] Query-scheduler: Improve CPU/memory performance of experimental query-scheduler. #8871
 * [ENHANCEMENT] Expose a new `s3.trace.enabled` configuration option to enable detailed logging of operations against S3-compatible object stores. #8690
 * [ENHANCEMENT] memberlist: locally-generated messages (e.g. ring updates) are sent to gossip network before forwarded messages. Introduced `-memberlist.broadcast-timeout-for-local-updates-on-shutdown` option to modify how long to wait until queue with locally-generated messages is empty when shutting down. Previously this was hard-coded to 10s, and wait included all messages (locally-generated and forwarded). Now it defaults to 10s, 0 means no timeout. Increasing this value may help to avoid problem when ring updates on shutdown are not propagated to other nodes, and ring entry is left in a wrong state. #8761
 * [ENHANCEMENT] Querier: allow using both raw numbers of seconds and duration literals in queries where previously only one or the other was permitted. For example, `predict_linear` now accepts a duration literal (eg. `predict_linear(..., 4h)`), and range vector selectors now accept a number of seconds (eg. `rate(metric[2])`). #8780
