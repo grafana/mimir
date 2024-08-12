@@ -450,16 +450,17 @@ func TestFrontendStreamingResponse(t *testing.T) {
 			name: "context cancelled while streaming response",
 			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
 				ctx, cancelCause := context.WithCancelCause(user.InjectOrgID(context.Background(), userID))
-				recvCalled := make(chan struct{})
+				recvCalled := make(chan chan struct{})
 				cancelAfterCalls := 2
 				s := &mockQueryResultStreamServer{ctx: ctx, queryID: msg.QueryID, recvCalled: recvCalled}
 				go func() {
 					recvCount := 0
-					for range recvCalled {
+					for called := range recvCalled {
 						recvCount++
 						if recvCount == cancelAfterCalls {
 							cancelCause(fmt.Errorf("streaming cancelled"))
 						}
+						called <- struct{}{}
 					}
 				}()
 				s.msgs = append(s.msgs,
@@ -539,7 +540,7 @@ type mockQueryResultStreamServer struct {
 	queryID    uint64
 	msgs       []*frontendv2pb.QueryResultStreamRequest
 	next       int
-	recvCalled chan struct{}
+	recvCalled chan chan struct{}
 
 	grpc.ServerStream
 }
@@ -553,14 +554,16 @@ func (s *mockQueryResultStreamServer) SendAndClose(_ *frontendv2pb.QueryResultRe
 }
 
 func (s *mockQueryResultStreamServer) Recv() (*frontendv2pb.QueryResultStreamRequest, error) {
-	if s.recvCalled != nil {
-		s.recvCalled <- struct{}{}
-	}
 	if err := s.ctx.Err(); err != nil {
 		if s.recvCalled != nil {
 			close(s.recvCalled)
 		}
 		return nil, err
+	}
+	if s.recvCalled != nil {
+		called := make(chan struct{}, 1)
+		s.recvCalled <- called
+		<-called
 	}
 	if s.next >= len(s.msgs) {
 		return nil, io.EOF
