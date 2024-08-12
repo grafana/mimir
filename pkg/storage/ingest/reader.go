@@ -744,12 +744,78 @@ func (r *PartitionReader) pollFetches(ctx context.Context) (result kgo.Fetches) 
 	return f
 }
 
+// fetchWant represents a range of offsets to fetch.
+// Based on a given number of records, it tries to estimate how many bytes we need to fetch, given there's no support for fetching offsets directly.
+// fetchWant also contains the channel on which to send the fetched records for the offset range.
 type fetchWant struct {
-	startOffset int64 // inclusive
-	endOffset   int64 // exclusive
+	startOffset    int64 // inclusive
+	endOffset      int64 // exclusive
+	bytesPerRecord int
+
 	// result should be closed when there are no more fetches for this partition. It is ok to send multiple times on the channel.
-	result   chan fetchResult
-	maxBytes int32
+	result chan fetchResult
+}
+
+func fetchWantFrom(offset int64, recordsPerFetch int) fetchWant {
+	return fetchWant{
+		startOffset: offset,
+		endOffset:   offset + int64(recordsPerFetch),
+		result:      make(chan fetchResult, 1), // buffer of 1 so we can do secondary attempt requests in the background
+	}
+}
+
+// Next returns the fetchWant for the next numRecords starting from the last known offset.
+func (w fetchWant) Next(numRecords int) fetchWant {
+	n := fetchWantFrom(w.endOffset, numRecords)
+	n.bytesPerRecord = w.bytesPerRecord
+	return n.trimIfTooBig()
+}
+
+// MaxBytes returns the maximum number of bytes we can fetch in a single request.
+// It's capped at math.MaxInt32 to avoid overflow, and it'll always fetch a minimum of 1MB.
+func (w fetchWant) MaxBytes() int32 {
+	fetchBytes := w.expectedBytes()
+	if fetchBytes > math.MaxInt32 {
+		// This shouldn't happen because w should have been trimmed before sending the request.
+		// But we definitely don't want to request negative bytes by casting to int32, so add this safeguard.
+		return math.MaxInt32
+	}
+	fetchBytes = max(1_000_000, fetchBytes) // when we're fetching few records, we can afford to over-fetch to avoid more requests.
+	return int32(fetchBytes)
+}
+
+// UpdateBytesPerRecord updates the expected bytes per record based on the results of the last fetch and trims the fetchWant if MaxBytes() would now exceed math.MaxInt32.
+func (w fetchWant) UpdateBytesPerRecord(lastFetchBytes int, lastFetchNumberOfRecords int) fetchWant {
+	// Smooth over the estimation to avoid having outlier fetches from throwing off the estimation.
+	// We don't want a fetch of 5 records to determine how we fetch the next fetch of 6000 records.
+	// Ideally we weigh the estimation on the number of records observed, but it's simpler to smooth it over with a constant factor.
+	const currentEstimateWeight = 0.8
+
+	actualBytesPerRecord := float64(lastFetchBytes) / float64(lastFetchNumberOfRecords)
+	w.bytesPerRecord = int(currentEstimateWeight*float64(w.bytesPerRecord) + (1-currentEstimateWeight)*actualBytesPerRecord)
+
+	return w.trimIfTooBig()
+}
+
+// expectedBytes returns how many bytes we'd need to accommodate the range of offsets using bytesPerRecord.
+// They may be more than the kafka protocol supports (> MaxInt32). Use MaxBytes.
+func (w fetchWant) expectedBytes() int {
+	// We over-fetch bytes to reduce the likelihood of under-fetching and having to run another request.
+	// Based on some testing 65% of under-estimations are by less than 5%. So we account for that.
+	const overFetchBytesFactor = 1.05
+	return int(overFetchBytesFactor * float64(w.bytesPerRecord*int(w.endOffset-w.startOffset)))
+}
+
+// trimIfTooBig adjusts the end offset if we expect to fetch too many bytes.
+// It's capped at math.MaxInt32 bytes.
+func (w fetchWant) trimIfTooBig() fetchWant {
+	if w.expectedBytes() <= math.MaxInt32 {
+		return w
+	}
+	// We are overflowing, so we need to trim the end offset.
+	// We do this by calculating how many records we can fetch with the max bytes, and then setting the end offset to that.
+	w.endOffset = w.startOffset + int64(math.MaxInt32/w.bytesPerRecord)
+	return w
 }
 
 type fetchResult struct {
@@ -844,6 +910,10 @@ func (r *concurrentFetchers) pollFetches(ctx context.Context) (result kgo.Fetche
 
 func (r *concurrentFetchers) fetchSingle(ctx context.Context, w fetchWant, _ log.Logger) (_ kgo.FetchPartition, fetchedBytes int) {
 	req := kmsg.NewFetchRequest()
+	req.MinBytes = 1
+	req.Version = 13
+	req.MaxWaitMillis = 10000
+	req.MaxBytes = w.MaxBytes()
 	req.Topics = []kmsg.FetchRequestTopic{{
 		Topic:   r.topicName,
 		TopicID: r.topicID,
@@ -853,14 +923,9 @@ func (r *concurrentFetchers) fetchSingle(ctx context.Context, w fetchWant, _ log
 			LastFetchedEpoch:   -1,
 			CurrentLeaderEpoch: -1,
 			LogStartOffset:     -1,
-			PartitionMaxBytes:  w.maxBytes,
+			PartitionMaxBytes:  req.MaxBytes,
 		}},
 	}}
-	req.MinBytes = 1
-	req.Version = 13
-	req.MaxWaitMillis = 10000
-	req.MaxBytes = w.maxBytes
-	req.SessionEpoch = -1
 
 	resp, err := req.RequestWith(ctx, r.client)
 	if err != nil {
@@ -958,14 +1023,12 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 						"asked_records", w.endOffset-w.startOffset,
 						"got_records", len(f.Records),
 						"diff_records", int(w.endOffset-w.startOffset)-len(f.Records),
-						"asked_bytes", w.maxBytes,
+						"asked_bytes", w.MaxBytes(),
 						"got_bytes", fetchedBytes,
-						"diff_bytes", int(w.maxBytes)-fetchedBytes,
+						"diff_bytes", int(w.MaxBytes())-fetchedBytes,
 						"remaining_records", w.endOffset-lastOffset,
 					)
 					w.startOffset = lastOffset + 1
-					bytesPerRecord := fetchedBytes / len(f.Records)
-					w.maxBytes = max(1_000_000, int32(float64(bytesPerRecord))*int32(w.endOffset-w.startOffset)) // when we have only a few records to fetch we can afford to overfetch in order to not do more requests.
 
 					select {
 					case w.result <- fetchResult{FetchPartition: f, fetchedBytes: fetchedBytes}:
@@ -978,14 +1041,15 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 	}
 
 	var (
-		bytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
-		nextFetch      = fetchWantFrom(bytesPerRecord, startOffset, r.recordsPerFetch)
+		nextFetch      = fetchWantFrom(startOffset, r.recordsPerFetch)
 		nextResult     chan fetchResult
 		pendingResults = list.New()
 
 		bufferedResult       fetchResult
 		readyBufferedResults chan kgo.FetchPartition // this is non-nil when bufferedResult is non-empty
 	)
+	nextFetch.bytesPerRecord = 10_000 // start with an estimation, we will update it as we consume
+
 	for {
 		refillBufferedResult := nextResult
 		if len(bufferedResult.Records) > 0 {
@@ -1004,7 +1068,7 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 				nextResult = pendingResults.Front().Value.(chan fetchResult)
 				pendingResults.Remove(pendingResults.Front())
 			}
-			nextFetch = nextFetchWant(bytesPerRecord, nextFetch, r.recordsPerFetch)
+			nextFetch = nextFetch.Next(r.recordsPerFetch)
 
 		case result, moreLeft := <-refillBufferedResult:
 			if !moreLeft {
@@ -1016,7 +1080,7 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 				}
 				continue
 			}
-			bytesPerRecord = estimateBytesPerRecord(bytesPerRecord, result.fetchedBytes, len(result.Records))
+			nextFetch = nextFetch.UpdateBytesPerRecord(result.fetchedBytes, len(result.Records))
 			bufferedResult = result
 			readyBufferedResults = r.orderedFetches
 
@@ -1024,27 +1088,6 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 			readyBufferedResults = nil
 			bufferedResult = fetchResult{}
 		}
-	}
-}
-
-func estimateBytesPerRecord(currentBytesPerRecord, recordsSizeBytes, numRecords int) int {
-	const currentFetchFactor = 0.8
-	return int(
-		(1-currentFetchFactor)*float64(currentBytesPerRecord) +
-			currentFetchFactor*float64(recordsSizeBytes/numRecords),
-	)
-}
-
-func nextFetchWant(bytesPerRecord int, fetch fetchWant, recordsPerFetch int) fetchWant {
-	return fetchWantFrom(bytesPerRecord, fetch.endOffset, recordsPerFetch)
-}
-
-func fetchWantFrom(bytesPerRecord int, offset int64, recordsPerFetch int) fetchWant {
-	return fetchWant{
-		startOffset: offset,
-		endOffset:   offset + int64(recordsPerFetch),
-		result:      make(chan fetchResult, 1), // buffer of 1 to reduce impact of refetches
-		maxBytes:    int32(recordsPerFetch * bytesPerRecord),
 	}
 }
 
