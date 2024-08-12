@@ -1395,7 +1395,6 @@ func TestAnnotations(t *testing.T) {
 			expectedWarningAnnotations: []string{
 				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:6)`,
 			},
-			skipComparisonWithPrometheusReason: "Prometheus' engine panics for this teste case, https://github.com/prometheus/prometheus/pull/14609 will fix this",
 		},
 		"rate() over native histograms with incompatible custom buckets": {
 			data: nativeHistogramsWithCustomBucketsData,
