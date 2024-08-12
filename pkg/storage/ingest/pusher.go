@@ -86,9 +86,7 @@ func newPusherConsumerMetrics(reg prometheus.Registerer) *pusherConsumerMetrics 
 	}
 }
 
-func newPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, reg prometheus.Registerer, logger log.Logger) *pusherConsumer {
-	metrics := newPusherConsumerMetrics(reg)
-
+func newPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *pusherConsumerMetrics, logger log.Logger) *pusherConsumer {
 	var p PusherCloser
 	if kafkaCfg.ReplayShards == 0 {
 		p = newNoopPusherCloser(metrics, pusher)
