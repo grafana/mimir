@@ -123,7 +123,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			lookbackDelta = q.engine.lookbackDelta
 		}
 
-		if e.OriginalOffset != 0 || e.Offset != 0 {
+		if !q.engine.featureToggles.EnableOffsetModifier && (e.OriginalOffset != 0 || e.Offset != 0) {
 			return nil, compat.NewNotSupportedError("instant vector selector with 'offset'")
 		}
 
@@ -135,6 +135,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 				End:           timestamp.FromTime(q.statement.End),
 				Timestamp:     e.Timestamp,
 				Interval:      interval.Milliseconds(),
+				Offset:        e.OriginalOffset.Milliseconds(),
 				LookbackDelta: lookbackDelta,
 				Matchers:      e.LabelMatchers,
 
@@ -234,7 +235,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (types.RangeVecto
 	case *parser.MatrixSelector:
 		vectorSelector := e.VectorSelector.(*parser.VectorSelector)
 
-		if vectorSelector.OriginalOffset != 0 || vectorSelector.Offset != 0 {
+		if !q.engine.featureToggles.EnableOffsetModifier && (vectorSelector.OriginalOffset != 0 || vectorSelector.Offset != 0) {
 			return nil, compat.NewNotSupportedError("range vector selector with 'offset'")
 		}
 
@@ -251,6 +252,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (types.RangeVecto
 				End:       timestamp.FromTime(q.statement.End),
 				Timestamp: vectorSelector.Timestamp,
 				Interval:  interval.Milliseconds(),
+				Offset:    vectorSelector.OriginalOffset.Milliseconds(),
 				Range:     e.Range,
 				Matchers:  vectorSelector.LabelMatchers,
 

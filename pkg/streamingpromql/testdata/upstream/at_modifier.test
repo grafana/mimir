@@ -74,9 +74,8 @@ eval instant at 10s metric @ 0 offset -50
 #   {job="2"} -20
 
 # Millisecond precision.
-# Unsupported by streaming engine.
-# eval instant at 100s metric_ms @ 1.234
-#   metric_ms 1234
+eval instant at 100s metric_ms @ 1.234
+  metric_ms 1234
 
 # Range vector selectors.
 eval instant at 25s sum_over_time(metric{job="1"}[100s] @ 100)

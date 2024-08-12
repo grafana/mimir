@@ -49,9 +49,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
 		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
 		"1":                                     "scalar value as top-level expression",
-		"metric{} offset 2h":                    "instant vector selector with 'offset'",
 		"avg(metric{})":                         "'avg' aggregation",
-		"rate(metric{}[5m] offset 2h)":          "range vector selector with 'offset'",
 		"rate(metric{}[5m:1m])":                 "PromQL expression type *parser.SubqueryExpr",
 		"quantile_over_time(0.4, metric{}[5m])": "'quantile_over_time' function",
 		"-sum(metric{})":                        "PromQL expression type *parser.UnaryExpr",
@@ -66,9 +64,8 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 
 	// These expressions are also unsupported, but are only valid as instant queries.
 	unsupportedInstantQueryExpressions := map[string]string{
-		"'a'":                    "string value as top-level expression",
-		"metric{}[5m] offset 2h": "range vector selector with 'offset'",
-		"metric{}[5m:1m]":        "PromQL expression type *parser.SubqueryExpr",
+		"'a'":             "string value as top-level expression",
+		"metric{}[5m:1m]": "PromQL expression type *parser.SubqueryExpr",
 	}
 
 	for expression, expectedError := range unsupportedInstantQueryExpressions {

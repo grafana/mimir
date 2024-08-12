@@ -70,9 +70,12 @@ func (m *RangeVectorSelector) NextStepSamples(floats *types.FPointRingBuffer, hi
 	rangeEnd := stepT
 
 	if m.Selector.Timestamp != nil {
+		// Timestamp from @ modifier takes precedence over query evaluation timestamp.
 		rangeEnd = *m.Selector.Timestamp
 	}
 
+	// Apply offset after adjusting for timestamp from @ modifier.
+	rangeEnd = rangeEnd - m.Selector.Offset
 	rangeStart := rangeEnd - m.rangeMilliseconds
 	floats.DiscardPointsBefore(rangeStart)
 	histograms.DiscardPointsBefore(rangeStart)
