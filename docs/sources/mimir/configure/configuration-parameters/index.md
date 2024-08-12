@@ -1681,10 +1681,6 @@ results_cache:
 # CLI flag: -query-frontend.use-active-series-decoder
 [use_active_series_decoder: <boolean> | default = false]
 
-# (experimental) True to enable limits enforcement for remote read requests.
-# CLI flag: -query-frontend.remote-read-limits-enabled
-[remote_read_limits_enabled: <boolean> | default = false]
-
 # Format to use when retrieving query results from queriers. Supported values:
 # json, protobuf
 # CLI flag: -query-frontend.query-result-response-format
@@ -5002,6 +4998,10 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # S3 access key ID
 # CLI flag: -<prefix>.s3.access-key-id
 [access_key_id: <string> | default = ""]
+
+# S3 session token
+# CLI flag: -<prefix>.s3.session-token
+[session_token: <string> | default = ""]
 
 # (advanced) If enabled, use http:// for the S3 endpoint instead of https://.
 # This could be useful in local dev/test environments while using an

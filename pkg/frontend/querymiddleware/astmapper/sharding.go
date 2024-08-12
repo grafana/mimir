@@ -18,39 +18,71 @@ import (
 )
 
 // NewSharding creates a new query sharding mapper.
-func NewSharding(ctx context.Context, shards int, logger log.Logger, stats *MapperStats) (ASTMapper, error) {
-	shardSummer, err := newShardSummer(ctx, shards, vectorSquasher, logger, stats)
-	if err != nil {
-		return nil, err
-	}
+func NewSharding(shardSummer ASTMapper) ASTMapper {
 	subtreeFolder := newSubtreeFolder()
 	return NewMultiMapper(
 		shardSummer,
 		subtreeFolder,
-	), nil
+	)
 }
 
-type squasher = func(...parser.Expr) (parser.Expr, error)
+type Squasher = func(...parser.Expr) (parser.Expr, error)
+
+type ShardLabeller interface {
+	GetLabelName() string
+	GetLabelValue(shard int) string
+}
+
+// queryShardLabeller implements ShardLabeller for query sharding.
+type queryShardLabeller struct {
+	shards int
+}
+
+func newQueryShardLabeller(shards int) ShardLabeller {
+	return &queryShardLabeller{shards: shards}
+}
+
+func (lbl *queryShardLabeller) GetLabelName() string {
+	return sharding.ShardLabel
+}
+
+func (lbl *queryShardLabeller) GetLabelValue(shard int) string {
+	return sharding.ShardSelector{ShardIndex: uint64(shard), ShardCount: uint64(lbl.shards)}.LabelValue()
+}
+
+// NewQueryShardSummer instantiates an ASTMapper which will fan out sum queries by shard.
+func NewQueryShardSummer(ctx context.Context, shards int, squasher Squasher, logger log.Logger, stats *MapperStats) (ASTMapper, error) {
+	return NewShardSummerWithLabeller(ctx, shards, squasher, logger, stats, newQueryShardLabeller(shards))
+}
+
+func NewShardSummerWithLabeller(ctx context.Context, shards int, squasher Squasher, logger log.Logger, stats *MapperStats, labeller ShardLabeller) (ASTMapper, error) {
+	summer, err := newShardSummer(ctx, shards, squasher, logger, stats, labeller)
+	if err != nil {
+		return nil, err
+	}
+	return NewASTExprMapper(summer), nil
+}
 
 type shardSummer struct {
 	ctx context.Context
 
 	shards       int
 	currentShard *int
-	squash       squasher
+	squash       Squasher
 	logger       log.Logger
 	stats        *MapperStats
+
+	shardLabeller ShardLabeller
 
 	canShardAllVectorSelectorsCache map[string]bool
 }
 
-// newShardSummer instantiates an ASTMapper which will fan out sum queries by shard
-func newShardSummer(ctx context.Context, shards int, squasher squasher, logger log.Logger, stats *MapperStats) (ASTMapper, error) {
+func newShardSummer(ctx context.Context, shards int, squasher Squasher, logger log.Logger, stats *MapperStats, shardLabeller ShardLabeller) (*shardSummer, error) {
 	if squasher == nil {
 		return nil, errors.Errorf("squasher required and not passed")
 	}
 
-	return NewASTExprMapper(&shardSummer{
+	return &shardSummer{
 		ctx: ctx,
 
 		shards:       shards,
@@ -59,8 +91,10 @@ func newShardSummer(ctx context.Context, shards int, squasher squasher, logger l
 		logger:       logger,
 		stats:        stats,
 
+		shardLabeller: shardLabeller,
+
 		canShardAllVectorSelectorsCache: make(map[string]bool),
-	}), nil
+	}, nil
 }
 
 // Clone returns a clone of shardSummer with stats and current shard index reset to default.
@@ -98,7 +132,7 @@ func (summer *shardSummer) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 
 	case *parser.VectorSelector:
 		if summer.currentShard != nil {
-			mapped, err := shardVectorSelector(*summer.currentShard, summer.shards, e)
+			mapped, err := summer.shardVectorSelector(e)
 			return mapped, true, err
 		}
 		return e, true, nil
@@ -522,8 +556,8 @@ func (summer *shardSummer) shardAndSquashBinOp(expr *parser.BinaryExpr) (parser.
 	return summer.squash(children...)
 }
 
-func shardVectorSelector(curshard, shards int, selector *parser.VectorSelector) (parser.Expr, error) {
-	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, sharding.ShardLabel, sharding.ShardSelector{ShardIndex: uint64(curshard), ShardCount: uint64(shards)}.LabelValue())
+func (summer *shardSummer) shardVectorSelector(selector *parser.VectorSelector) (parser.Expr, error) {
+	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, summer.shardLabeller.GetLabelName(), summer.shardLabeller.GetLabelValue(*summer.currentShard))
 	if err != nil {
 		return nil, err
 	}

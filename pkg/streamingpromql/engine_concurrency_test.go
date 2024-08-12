@@ -42,7 +42,6 @@ func TestConcurrentQueries(t *testing.T) {
 
 	testCases := []concurrentQueryTestCase{
 		{
-			// Rate over native histogram
 			expr:  `rate(native_histogram[5m])`,
 			start: startT,
 			end:   startT.Add(10 * time.Minute),
@@ -58,6 +57,24 @@ func TestConcurrentQueries(t *testing.T) {
 		{
 			// Sum of native histograms into many groups
 			expr:  `sum by (group) (native_histogram)`,
+			start: startT,
+			end:   startT.Add(10 * time.Minute),
+			step:  time.Minute,
+		},
+		{
+			expr:  `count_over_time(native_histogram[5m])`,
+			start: startT,
+			end:   startT.Add(10 * time.Minute),
+			step:  time.Minute,
+		},
+		{
+			expr:  `sum_over_time(native_histogram[5m])`,
+			start: startT,
+			end:   startT.Add(10 * time.Minute),
+			step:  time.Minute,
+		},
+		{
+			expr:  `avg_over_time(native_histogram[5m])`,
 			start: startT,
 			end:   startT.Add(10 * time.Minute),
 			step:  time.Minute,
