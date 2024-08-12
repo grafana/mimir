@@ -138,7 +138,7 @@ func TestQueues_QuerierWorkerIDAssignment(t *testing.T) {
 	require.Equal(t, 2, querier1Conn3.WorkerID)
 
 	// The next connection should get the next available worker ID;
-	// since worker ID 1 was deregistered, the next connection will get worker ID 1.
+	// since worker ID 0 was deregistered, the next connection will get worker ID 0.
 	querier1Conn4 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
 	tqa.addQuerierWorkerConn(querier1Conn4)
 	require.Equal(t, 0, querier1Conn4.WorkerID)

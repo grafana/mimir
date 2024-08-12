@@ -523,7 +523,7 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 		return err == nil
 	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_connected_querier_clients metric to be incremented after querier connected")
 
-	cancel() // FIND WHERE THIS CANCEL GOES
+	cancel()
 	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
 
 	require.Eventually(t, func() bool {

@@ -412,7 +412,7 @@ func (s *Scheduler) transformRequestQueueError(err error) error {
 
 	// the main other error we receive here is if the querier itself is ErrQuerierShuttingDown;
 	// this information was submitted via another endpoint and processed internally
-	// by the RequestQueue's tracking of querier connections. The error bubbles up here
+	// by the RequestQueue's tracking of querier connections. ErrQuerierShuttingDown bubbles up here
 	// as a way to exit this loop and allow the querier to shut down gracefully.
 	return err
 }

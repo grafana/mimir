@@ -80,10 +80,16 @@ func (sr *SchedulerRequest) ExpectedQueryComponentName() string {
 // Request stored into the queue.
 type Request interface{}
 
-// QuerierWorkerConn is a registered connection from the querier-worker to the request queue.
+// QuerierWorkerConn is a connection from the querier-worker to the request queue.
 //
 // WorkerID is unique only per querier; querier-1 and querier-2 will both have a WorkerID=0.
-// WorkerID is derived internally in order to distribute worker connections across queue dimensions
+// WorkerID is derived internally in order to distribute worker connections across queue dimensions.
+// Unregistered querier-worker connections are assigned a sentinal unregisteredWorkerID.
+//
+// QuerierWorkerConn is also used when passing querierWorkerOperation messages to update querier connection statuses.
+// The querierWorkerOperations can be specific to a querier, but not a particular worker connection (notifyShutdown),
+// or may apply to all queriers instead of any particular querier (forgetDisconnected).
+// In these cases the relevant ID fields are ignored and should be left as their unregistered or zero values.
 type QuerierWorkerConn struct {
 	ctx       context.Context
 	QuerierID QuerierID
@@ -161,15 +167,20 @@ const (
 	forgetDisconnected
 )
 
+// querierWorkerOperation is a message to the RequestQueue's dispatcherLoop to perform operations
+// on querier and querier-worker connections, such as registering, unregistering, or notifying shutdown.
+//
+// Initializing recvChan as non-nil indicates that the operation is awaitable.
+// For awaitable operations, recvChan is written to when the operation is processed,
+// and updates are reflected on the referenced QuerierWorkerConn.
+//
+// A nil recvChan as nil indicates that the operation is not awaitable;
+// the caller does not care to wait for the result to be written
+// and the processor will not bother to write the result.
 type querierWorkerOperation struct {
 	conn      *QuerierWorkerConn
 	operation querierOperationType
-	// Initializing recvChan as nil indicates that the operation is not awaitable,
-	// indicating the caller does not care to wait for the result to be written
-	// and the processor will not bother to write the result.
-	//
-	// If the operation is awaitable, recvChan is written to when the operation is processed.
-	// Updates are reflected on the referenced QuerierWorkerConn.
+
 	recvChan chan struct{}
 }
 
@@ -549,7 +560,7 @@ func (q *RequestQueue) submitForgetDisconnectedQueriers(ctx context.Context) {
 // are submitted from the querier to an endpoint, separate from any specific querier-worker connection.
 func (q *RequestQueue) SubmitNotifyQuerierShutdown(ctx context.Context, querierID QuerierID) {
 	// Create a generic querier-worker connection to submit the operation.
-	conn := NewUnregisteredQuerierWorkerConn(ctx, querierID)
+	conn := NewUnregisteredQuerierWorkerConn(ctx, querierID) // querierID matters but workerID does not
 	q.submitQuerierWorkerOperation(conn, notifyShutdown)
 }
 
