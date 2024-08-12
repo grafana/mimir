@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -34,21 +35,18 @@ const (
 )
 
 func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Overrides) {
-	cfg := Config{
-		InstanceID:            "block-builder-0",
-		ConsumeInterval:       time.Hour,
-		ConsumeIntervalBuffer: 15 * time.Minute,
-		Kafka: KafkaConfig{
-			Address:       addr,
-			Topic:         testTopic,
-			ClientID:      "1",
-			DialTimeout:   10 * time.Second,
-			PollTimeout:   500 * time.Millisecond,
-			ConsumerGroup: testGroup,
-		},
-		LookbackOnNoCommit: 12 * time.Hour,
-	}
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
 
+	cfg.InstanceID = "block-builder-0"
+
+	// Kafka related options.
+	cfg.Kafka.Address = addr
+	cfg.Kafka.Topic = testTopic
+	cfg.Kafka.ConsumerGroup = testGroup
+	cfg.Kafka.PollTimeout = 500 * time.Millisecond // reduced for testing
+
+	// Block storage related options.
 	cfg.BlocksStorageConfig.TSDB.Dir = t.TempDir()
 	cfg.BlocksStorageConfig.Bucket.StorageBackendConfig.Backend = bucket.Filesystem
 	cfg.BlocksStorageConfig.Bucket.Filesystem.Directory = t.TempDir()
