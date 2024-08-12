@@ -157,13 +157,20 @@ func TestPartitionReader_ConsumerStopping(t *testing.T) {
 
 	// consumerErrs will store the last error returned by the consumer; its initial value doesn't matter, but it must be non-nil.
 	consumerErrs := atomic.NewError(errors.New("dummy error"))
-	consumeCalls := make(chan chan error)
-	consumer := consumerFunc(func(context.Context, []record) (err error) {
+	type consumerCall struct {
+		f    func() []record
+		resp chan error
+	}
+	consumeCalls := make(chan consumerCall)
+	consumer := consumerFunc(func(_ context.Context, records []record) (err error) {
 		defer consumerErrs.Store(err)
 
-		call := make(chan error, 1)
+		call := consumerCall{
+			f:    func() []record { return records },
+			resp: make(chan error),
+		}
 		consumeCalls <- call
-		return <-call
+		return <-call.resp
 	})
 	reader := createReader(t, clusterAddr, topicName, partitionID, consumer)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
@@ -176,7 +183,12 @@ func TestPartitionReader_ConsumerStopping(t *testing.T) {
 	call := <-consumeCalls
 	go func() {
 		// Simulate a slow consumer, that blocks reader from stopping (see below).
-		defer close(call)
+		defer close(call.resp)
+
+		records := call.f()
+		require.Len(t, records, 1)
+		require.Equal(t, []byte("1"), records[0].content)
+
 		time.Sleep(time.Second)
 	}()
 
