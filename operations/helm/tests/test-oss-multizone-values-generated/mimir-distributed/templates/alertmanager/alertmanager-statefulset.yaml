@@ -69,7 +69,7 @@ spec:
                 values:
                 - alertmanager
               - key: zone
-                operator: NotIn
+                operator: In
                 values:
                 - zone-a
             topologyKey: kubernetes.io/hostname
@@ -219,7 +219,7 @@ spec:
                 values:
                 - alertmanager
               - key: zone
-                operator: NotIn
+                operator: In
                 values:
                 - zone-b
             topologyKey: kubernetes.io/hostname
@@ -369,7 +369,7 @@ spec:
                 values:
                 - alertmanager
               - key: zone
-                operator: NotIn
+                operator: In
                 values:
                 - zone-c
             topologyKey: kubernetes.io/hostname
