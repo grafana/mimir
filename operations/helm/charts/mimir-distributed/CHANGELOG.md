@@ -47,7 +47,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Add missing container security context to run `continuous-test` under the restricted security policy. #8653
 * [BUGFIX] Add `global.extraVolumeMounts` to the exporter container on memcached statefulsets #8787
 * [BUGFIX] Fix helm releases failing when `querier.kedaAutoscaling.predictiveScalingEnabled=true`. #8731
-* [BUGFIX] change the pod anti affinity when setting zone aware replication. #8955
+* [BUGFIX] change the pod anti affinity when setting zone aware replication. #8972
 
 ## 5.4.0
 
