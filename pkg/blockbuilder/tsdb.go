@@ -397,10 +397,7 @@ func (u *userTSDB) compactEverything(ctx context.Context) error {
 	for blockMint := mint; blockMint <= maxt; blockMint += blockRange {
 		blockMaxt := blockMint + blockRange - 1
 		rh := tsdb.NewRangeHead(u.Head(), blockMint, blockMaxt)
-		// TODO(codesome): this also truncates the memory here. We can skip it since we will close
-		// this TSDB right after all the compactions. We will save a good chunks of computation this way.
-		// See https://github.com/grafana/mimir-prometheus/pull/638
-		if err := u.db.CompactHead(rh); err != nil {
+		if err := u.db.CompactHeadWithoutTruncation(rh); err != nil {
 			return err
 		}
 	}
