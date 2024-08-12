@@ -756,19 +756,19 @@ type fetchWant struct {
 	result chan fetchResult
 }
 
-// next returns the fetchWant for the next numRecords starting from the last known offset.
-func (w fetchWant) next(numRecords int) fetchWant {
-	n := fetchWantFrom(w.endOffset, numRecords)
-	n.bytesPerRecord = w.bytesPerRecord
-	return n.trimIfTooBig()
-}
-
 func fetchWantFrom(offset int64, recordsPerFetch int) fetchWant {
 	return fetchWant{
 		startOffset: offset,
 		endOffset:   offset + int64(recordsPerFetch),
 		result:      make(chan fetchResult, 1), // buffer of 1 so we can do secondary attempt requests in the background
 	}
+}
+
+// Next returns the fetchWant for the next numRecords starting from the last known offset.
+func (w fetchWant) Next(numRecords int) fetchWant {
+	n := fetchWantFrom(w.endOffset, numRecords)
+	n.bytesPerRecord = w.bytesPerRecord
+	return n.trimIfTooBig()
 }
 
 func (w fetchWant) expectedBytes() int {
@@ -778,9 +778,9 @@ func (w fetchWant) expectedBytes() int {
 	return int(overFetchBytesFactor * float64(w.bytesPerRecord*int(w.endOffset-w.startOffset)))
 }
 
-// maxBytes returns the maximum number of bytes we can fetch in a single request.
-// It's capped at math.MaxInt32 to avoid overflow, and it'll always fetch a minimum of 1MiB.
-func (w fetchWant) maxBytes() int32 {
+// MaxBytes returns the maximum number of bytes we can fetch in a single request.
+// It's capped at math.MaxInt32 to avoid overflow, and it'll always fetch a minimum of 1MB.
+func (w fetchWant) MaxBytes() int32 {
 	fetchBytes := w.expectedBytes()
 	if fetchBytes > math.MaxInt32 {
 		// This shouldn't happen because w should have been trimmed before sending the request.
@@ -898,7 +898,7 @@ func (r *concurrentFetchers) fetchSingle(ctx context.Context, w fetchWant, _ log
 	req.MinBytes = 1
 	req.Version = 13
 	req.MaxWaitMillis = 10000
-	req.MaxBytes = w.maxBytes()
+	req.MaxBytes = w.MaxBytes()
 	req.Topics = []kmsg.FetchRequestTopic{{
 		Topic:   r.topicName,
 		TopicID: r.topicID,
@@ -1008,9 +1008,9 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 						"asked_records", w.endOffset-w.startOffset,
 						"got_records", len(f.Records),
 						"diff_records", int(w.endOffset-w.startOffset)-len(f.Records),
-						"asked_bytes", w.maxBytes,
+						"asked_bytes", w.MaxBytes(),
 						"got_bytes", fetchedBytes,
-						"diff_bytes", int(w.maxBytes)-fetchedBytes,
+						"diff_bytes", int(w.MaxBytes())-fetchedBytes,
 						"remaining_records", w.endOffset-lastOffset,
 					)
 					w.startOffset = lastOffset + 1
@@ -1053,7 +1053,7 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 				nextResult = pendingResults.Front().Value.(chan fetchResult)
 				pendingResults.Remove(pendingResults.Front())
 			}
-			nextFetch = nextFetch.next(r.recordsPerFetch)
+			nextFetch = nextFetch.Next(r.recordsPerFetch)
 
 		case result, moreLeft := <-refillBufferedResult:
 			if !moreLeft {
