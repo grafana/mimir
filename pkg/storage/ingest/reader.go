@@ -891,27 +891,28 @@ func (r *concurrentFetchers) pollFetches(ctx context.Context) (result kgo.Fetche
 	}
 }
 
-func (r *concurrentFetchers) fetchSingle(ctx context.Context, w fetchWant) fetchResult {
+func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant) fetchResult {
 	req := kmsg.NewFetchRequest()
 	req.MinBytes = 1
 	req.Version = 13
 	req.MaxWaitMillis = 10000
-	req.MaxBytes = w.MaxBytes()
-	req.Topics = []kmsg.FetchRequestTopic{{
-		Topic:   r.topicName,
-		TopicID: r.topicID,
-		Partitions: []kmsg.FetchRequestTopicPartition{{
-			Partition:   r.partitionID,
-			FetchOffset: w.startOffset,
-			// CurrentLeaderEpoch: -1 means we don't know. Kafka brokers are ok with that.
-			// It does mean that we might end up fetching from an out-of-sync replica.
-			// If we provide this the broker would check if we have up-to-date data.
-			CurrentLeaderEpoch: -1,
-			LastFetchedEpoch:   -1,
-			LogStartOffset:     -1, // this is broker-follower only field. Set it to -1 to not use it.
-			PartitionMaxBytes:  req.MaxBytes,
-		}},
-	}}
+	req.MaxBytes = fw.MaxBytes()
+
+	reqTopic := kmsg.NewFetchRequestTopic()
+	reqTopic.Topic = r.topicName
+	reqTopic.TopicID = r.topicID
+
+	// Using NewFetchRequestTopicPartition gives us a partition with the default values.
+	// One of them is CurrentLeaderEpoch: -1, which means we don't know the leader epoch and Kafka brokers are ok with that.
+	// It does mean that we might end up fetching from an out-of-sync replica.
+	// If we provide this the broker would check if we have up-to-date data.
+	reqPartition := kmsg.NewFetchRequestTopicPartition()
+	reqPartition.Partition = r.partitionID
+	reqPartition.FetchOffset = fw.startOffset
+	reqPartition.PartitionMaxBytes = req.MaxBytes
+
+	reqTopic.Partitions = append(reqTopic.Partitions, reqPartition)
+	req.Topics = append(req.Topics, reqTopic)
 
 	resp, err := req.RequestWith(ctx, r.client)
 	if err != nil {
