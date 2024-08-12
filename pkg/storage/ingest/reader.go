@@ -65,6 +65,10 @@ type recordConsumer interface {
 	consume(context.Context, []record) error
 }
 
+type fetcher interface {
+	pollFetches(context.Context) kgo.Fetches
+}
+
 type PartitionReader struct {
 	services.Service
 	dependencies *services.Manager
@@ -74,9 +78,7 @@ type PartitionReader struct {
 	consumerGroup string
 
 	client  *kgo.Client
-	fetcher interface {
-		pollFetches(context.Context) kgo.Fetches
-	}
+	fetcher fetcher
 
 	newConsumer consumerFactory
 	metrics     readerMetrics
