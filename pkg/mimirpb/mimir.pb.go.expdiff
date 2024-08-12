@@ -1,0 +1,47 @@
+diff --git a/pkg/mimirpb/mimir.pb.go b/pkg/mimirpb/mimir.pb.go
+index 8e2109f8ae..1ec0a3ecf9 100644
+--- a/pkg/mimirpb/mimir.pb.go
++++ b/pkg/mimirpb/mimir.pb.go
+@@ -241,9 +241,6 @@ type WriteRequest struct {
+ 	Metadata   []*MetricMetadata       `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
+ 	// Skip validation of label names.
+ 	SkipLabelNameValidation bool `protobuf:"varint,1000,opt,name=skip_label_name_validation,json=skipLabelNameValidation,proto3" json:"skip_label_name_validation,omitempty"`
+-
+-	// Skip unmarshaling of exemplars.
+-	skipUnmarshalingExemplars bool
+ }
+ 
+ func (m *WriteRequest) Reset()      { *m = WriteRequest{} }
+@@ -383,9 +380,6 @@ type TimeSeries struct {
+ 	Samples    []Sample    `protobuf:"bytes,2,rep,name=samples,proto3" json:"samples"`
+ 	Exemplars  []Exemplar  `protobuf:"bytes,3,rep,name=exemplars,proto3" json:"exemplars"`
+ 	Histograms []Histogram `protobuf:"bytes,4,rep,name=histograms,proto3" json:"histograms"`
+-
+-	// Skip unmarshaling of exemplars.
+-	SkipUnmarshalingExemplars bool
+ }
+ 
+ func (m *TimeSeries) Reset()      { *m = TimeSeries{} }
+@@ -6182,7 +6176,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+ 				return io.ErrUnexpectedEOF
+ 			}
+ 			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
+-			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
+ 			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+ 				return err
+ 			}
+@@ -6535,11 +6528,9 @@ func (m *TimeSeries) Unmarshal(dAtA []byte) error {
+ 			if postIndex > l {
+ 				return io.ErrUnexpectedEOF
+ 			}
+-			if !m.SkipUnmarshalingExemplars {
+-				m.Exemplars = append(m.Exemplars, Exemplar{})
+-				if err := m.Exemplars[len(m.Exemplars)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+-					return err
+-				}
++			m.Exemplars = append(m.Exemplars, Exemplar{})
++			if err := m.Exemplars[len(m.Exemplars)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
++				return err
+ 			}
+ 			iNdEx = postIndex
+ 		case 4:
