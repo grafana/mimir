@@ -822,6 +822,7 @@ type concurrentFetchers struct {
 
 // newConcurrentFetchers creates a new concurrentFetchers. startOffset can be kafkaOffsetStart, kafkaOffsetEnd or a specific offset.
 func newConcurrentFetchers(ctx context.Context, client *kgo.Client, logger log.Logger, topic string, partition int32, startOffset int64, concurrency int, recordsPerFetch int, metrics *readerMetrics) (*concurrentFetchers, error) {
+	const noReturnedRecords = -1 // we still haven't returned the 0 offset.
 	f := &concurrentFetchers{
 		client:             client,
 		logger:             logger,
@@ -830,7 +831,7 @@ func newConcurrentFetchers(ctx context.Context, client *kgo.Client, logger log.L
 		partitionID:        partition,
 		metrics:            metrics,
 		recordsPerFetch:    recordsPerFetch,
-		lastReturnedRecord: -1, // we still haven't returned the 0 offset.
+		lastReturnedRecord: noReturnedRecords,
 		tracer:             kotel.NewTracer(kotel.TracerPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}))),
 		orderedFetches:     make(chan kgo.FetchPartition),
 	}
