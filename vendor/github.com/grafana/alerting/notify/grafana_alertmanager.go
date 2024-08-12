@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	tmplhtml "html/template"
+	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -360,7 +361,9 @@ type result struct {
 	Error        error
 }
 
-func newTestReceiversResult(alert types.Alert, results []result, receivers []*APIReceiver, notifiedAt time.Time) *TestReceiversResult {
+func newTestReceiversResult(alert types.Alert, results []result, receivers []*APIReceiver, notifiedAt time.Time) (*TestReceiversResult, int) {
+	var numBadRequests, numTimeouts, numUnknownErrors int
+
 	m := make(map[string]TestReceiverResult)
 	for _, receiver := range receivers {
 		// Set up the result for this receiver
@@ -376,11 +379,29 @@ func newTestReceiversResult(alert types.Alert, results []result, receivers []*AP
 		if next.Error != nil {
 			status = "failed"
 		}
+
+		var invalidReceiverErr IntegrationValidationError
+		var receiverTimeoutErr IntegrationTimeoutError
+
+		var errString string
+		err := ProcessIntegrationError(next.Config, next.Error)
+		if err != nil {
+			if errors.As(err, &invalidReceiverErr) {
+				numBadRequests++
+			} else if errors.As(err, &receiverTimeoutErr) {
+				numTimeouts++
+			} else {
+				numUnknownErrors++
+			}
+
+			errString = err.Error()
+		}
+
 		tmp.Configs = append(tmp.Configs, TestIntegrationConfigResult{
 			Name:   next.Config.Name,
 			UID:    next.Config.UID,
 			Status: status,
-			Error:  ProcessIntegrationError(next.Config, next.Error),
+			Error:  errString,
 		})
 		m[next.ReceiverName] = tmp
 	}
@@ -397,7 +418,21 @@ func newTestReceiversResult(alert types.Alert, results []result, receivers []*AP
 		return v.Receivers[i].Name < v.Receivers[j].Name
 	})
 
-	return v
+	var returnCode int
+	if numBadRequests == len(v.Receivers) {
+		// if all receivers contain invalid configuration
+		returnCode = http.StatusBadRequest
+	} else if numTimeouts == len(v.Receivers) {
+		// if all receivers contain valid configuration but timed out
+		returnCode = http.StatusRequestTimeout
+	} else if numBadRequests+numTimeouts+numUnknownErrors > 0 {
+		returnCode = http.StatusMultiStatus
+	} else {
+		// all receivers were sent a notification without error
+		returnCode = http.StatusOK
+	}
+
+	return v, returnCode
 }
 
 func TestReceivers(
@@ -405,14 +440,14 @@ func TestReceivers(
 	c TestReceiversConfigBodyParams,
 	tmpls []string,
 	buildIntegrationsFunc func(*APIReceiver, *template.Template) ([]*nfstatus.Integration, error),
-	externalURL string) (*TestReceiversResult, error) {
+	externalURL string) (*TestReceiversResult, int, error) {
 
 	now := time.Now() // The start time of the test
 	testAlert := newTestAlert(c, now, now)
 
 	tmpl, err := templateFromContent(tmpls, externalURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get template: %w", err)
+		return nil, 0, fmt.Errorf("failed to get template: %w", err)
 	}
 
 	// All invalid receiver configurations
@@ -447,11 +482,12 @@ func TestReceivers(
 	}
 
 	if len(invalid)+len(jobs) == 0 {
-		return nil, ErrNoReceivers
+		return nil, 0, ErrNoReceivers
 	}
 
 	if len(jobs) == 0 {
-		return newTestReceiversResult(testAlert, invalid, c.Receivers, now), nil
+		res, status := newTestReceiversResult(testAlert, invalid, c.Receivers, now)
+		return res, status, nil
 	}
 
 	numWorkers := maxTestReceiversWorkers
@@ -490,7 +526,7 @@ func TestReceivers(
 	close(resultCh)
 
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	results := make([]result, 0, len(jobs))
@@ -498,7 +534,8 @@ func TestReceivers(
 		results = append(results, next)
 	}
 
-	return newTestReceiversResult(testAlert, append(invalid, results...), c.Receivers, now), nil
+	res, status := newTestReceiversResult(testAlert, append(invalid, results...), c.Receivers, now)
+	return res, status, nil
 }
 
 func TestTemplate(ctx context.Context, c TestTemplatesConfigBodyParams, tmpls []templates.TemplateDefinition, externalURL string, logger log.Logger) (*TestTemplatesResults, error) {
@@ -507,7 +544,7 @@ func TestTemplate(ctx context.Context, c TestTemplatesConfigBodyParams, tmpls []
 		return &TestTemplatesResults{
 			Errors: []TestTemplatesErrorResult{{
 				Kind:  InvalidTemplate,
-				Error: err,
+				Error: err.Error(),
 			}},
 		}, nil
 	}
@@ -557,7 +594,7 @@ func TestTemplate(ctx context.Context, c TestTemplatesConfigBodyParams, tmpls []
 			results.Errors = append(results.Errors, TestTemplatesErrorResult{
 				Name:  def,
 				Kind:  ExecutionError,
-				Error: err,
+				Error: err.Error(),
 			})
 		} else {
 			results.Results = append(results.Results, TestTemplatesResult{
