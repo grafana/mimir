@@ -267,8 +267,9 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 		if _, err := ing.Push(ctx, req); err != nil {
 			return fmt.Errorf("failed to push samples to ingester: %w", err)
 		}
-		ing.Flush()
 	}
+
+	ing.Flush()
 
 	return nil
 }
