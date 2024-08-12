@@ -162,7 +162,7 @@ func TestPartitionReader_ConsumerStopping(t *testing.T) {
 		resp chan error
 	}
 	consumeCalls := make(chan consumerCall)
-	consumer := consumerFunc(func(_ context.Context, records []record) (err error) {
+	consumer := consumerFunc(func(ctx context.Context, records []record) (err error) {
 		defer consumerErrs.Store(err)
 
 		call := consumerCall{
@@ -170,7 +170,11 @@ func TestPartitionReader_ConsumerStopping(t *testing.T) {
 			resp: make(chan error),
 		}
 		consumeCalls <- call
-		return <-call.resp
+		err = <-call.resp
+		// The service is about to transition into its stopping phase. But the consumer must not observe it via the parent context.
+		assert.NoError(t, ctx.Err())
+
+		return err
 	})
 	reader := createReader(t, clusterAddr, topicName, partitionID, consumer)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
@@ -181,18 +185,21 @@ func TestPartitionReader_ConsumerStopping(t *testing.T) {
 
 	// After this point, we know that the consumer is in the in-flight.
 	call := <-consumeCalls
+	// Explicitly begin to stop the service while it's still consuming the records. This shouldn't cancel the in-flight consumption.
+	reader.StopAsync()
+
 	go func() {
-		// Simulate a slow consumer, that blocks reader from stopping (see below).
+		// Simulate a slow consumer, that blocks reader from stopping.
+		time.Sleep(time.Second)
+
 		defer close(call.resp)
 
 		records := call.f()
 		require.Len(t, records, 1)
 		require.Equal(t, []byte("1"), records[0].content)
-
-		time.Sleep(time.Second)
 	}()
 
-	// Stopping the reader shouldn't stop the in-flight consumption.
+	// Wait for the reader to stop completely.
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
 	// Checks the consumer returned a non-errored result.
 	require.NoError(t, consumerErrs.Load())
