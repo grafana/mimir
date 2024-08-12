@@ -791,6 +791,19 @@ func (w fetchWant) MaxBytes() int32 {
 	return int32(fetchBytes)
 }
 
+// UpdateBytesPerRecord updates the expected bytes per record based on the results of the last fetch and trims the fetchWant if MaxBytes() would now exceed math.MaxInt32.
+func (w fetchWant) UpdateBytesPerRecord(lastFetchBytes int, lastFetchNumberOfRecords int) fetchWant {
+	// Smooth over the estimation to avoid having outlier fetches from throwing off the estimation.
+	// We don't want a fetch of 5 records to determine how we fetch the next fetch of 6000 records.
+	// Ideally we weigh the estimation on the number of records observed, but it's simpler to smooth it over with a constant factor.
+	const currentEstimateWeight = 0.8
+
+	actualBytesPerRecord := float64(lastFetchBytes) / float64(lastFetchNumberOfRecords)
+	w.bytesPerRecord = int(currentEstimateWeight*float64(w.bytesPerRecord) + (1-currentEstimateWeight)*actualBytesPerRecord)
+
+	return w.trimIfTooBig()
+}
+
 // trimIfTooBig adjusts the end offset if we expect to fetch too many bytes.
 // It's capped at math.MaxInt32 bytes.
 func (w fetchWant) trimIfTooBig() fetchWant {
@@ -1065,8 +1078,7 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 				}
 				continue
 			}
-			nextFetch.bytesPerRecord = estimateBytesPerRecord(nextFetch.bytesPerRecord, result.fetchedBytes, len(result.Records))
-			nextFetch = nextFetch.trimIfTooBig()
+			nextFetch = nextFetch.UpdateBytesPerRecord(result.fetchedBytes, len(result.Records))
 			bufferedResult = result
 			readyBufferedResults = r.orderedFetches
 
@@ -1075,19 +1087,6 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 			bufferedResult = fetchResult{}
 		}
 	}
-}
-
-func estimateBytesPerRecord(currentBytesPerRecord int, recordsSizeBytes, numRecords int) int {
-	// Smooth over the estimation to avoid having outlier fetches from throwing off the estimation.
-	// We don't want a fetch of 5 records to determine how we fetch the next fetch of 6000 records.
-	// Ideally we weigh the estimation on the number of records observed, but it's simpler to smooth it over with a constant factor.
-	const currentEstimateWeight = 0.8
-
-	actualBytesPerRecord := float64(recordsSizeBytes) / float64(numRecords)
-	return int(
-		currentEstimateWeight*float64(currentBytesPerRecord) +
-			(1-currentEstimateWeight)*actualBytesPerRecord,
-	)
 }
 
 type readerFrom interface {
