@@ -12,7 +12,7 @@ load 6m
 
 # T=0: only exponential
 # T=6: only custom
-# T=12: mixed, should be ignored and emit an warning
+# T=12: mixed, should be ignored and emit a warning
 # T=18: only exponential
 # T=24: only custom
 eval_warn range from 0 to 24m step 6m sum(metric)
