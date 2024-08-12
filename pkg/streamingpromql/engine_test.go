@@ -594,6 +594,94 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
+		"selector with positive offset (looking backwards)": {
+			expr: "some_metric[1m] offset 1m",
+			ts:   baseT.Add(3 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "1"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 2},
+						},
+					},
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "2"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 2},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 4},
+						},
+					},
+				},
+			},
+		},
+		"selector with negative offset (looking forwards)": {
+			expr: "some_metric[1m] offset -1m",
+			ts:   baseT.Add(1 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "1"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 2},
+						},
+					},
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "2"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 2},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 4},
+						},
+					},
+				},
+			},
+		},
+		"selector with @ modifier": {
+			expr: "some_metric[1m] @ 2m",
+			ts:   baseT.Add(20 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "1"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 2},
+						},
+					},
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "2"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 2},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 4},
+						},
+					},
+				},
+			},
+		},
+		"selector with @ modifier and offset": {
+			expr: "some_metric[1m] @ 3m offset 1m",
+			ts:   baseT.Add(20 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "1"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 2},
+						},
+					},
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "2"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 2},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 4},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for name, testCase := range testCases {
