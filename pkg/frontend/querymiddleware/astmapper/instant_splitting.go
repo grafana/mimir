@@ -380,7 +380,7 @@ func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, rangeInterval ti
 		embeddedQueries = append([]parser.Expr{splitExpr}, embeddedQueries...)
 	}
 
-	squashExpr, err := vectorSquasher(embeddedQueries...)
+	squashExpr, err := VectorSquasher(embeddedQueries...)
 	if err != nil {
 		return nil, false, err
 	}
