@@ -75,7 +75,7 @@ require (
 	github.com/thanos-io/objstore v0.0.0-20240722162417-19b0c0f0ffd8
 	github.com/twmb/franz-go v1.17.1
 	github.com/twmb/franz-go/pkg/kadm v1.13.0
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20240730205842-6b61d17383b1
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20240808170820-56f1b061c895
 	github.com/twmb/franz-go/pkg/kmsg v1.8.0
 	github.com/twmb/franz-go/plugin/kotel v1.4.1
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
