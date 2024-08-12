@@ -433,10 +433,11 @@ func TestShardingPusher(t *testing.T) {
 	noopHistogram := promauto.With(prometheus.NewRegistry()).NewHistogram(prometheus.HistogramOpts{Name: "noop", NativeHistogramBucketFactor: 1.1})
 
 	testCases := map[string]struct {
-		shardCount   int
-		batchSize    int
-		requests     []*mimirpb.WriteRequest
-		expectedErrs []error
+		shardCount        int
+		batchSize         int
+		requests          []*mimirpb.WriteRequest
+		expectedErrs      []error
+		expectedErrsCount int
 
 		expectedUpstreamPushes []*mimirpb.WriteRequest
 		upstreamPushErrs       []error
@@ -588,16 +589,20 @@ func TestShardingPusher(t *testing.T) {
 			upstreamPushErrs: []error{assert.AnError},
 			expectedCloseErr: assert.AnError,
 		},
-		// TODO dimitarvdimitrov update test; since now the sharding pusher flushes in the background, we can't guarantee that the error will be returned after the first push or even after the second push;
 		"push to single shard and get an error with an overfilled shard (i.e. during some of the pushes)": {
 			shardCount: 1,
 			batchSize:  2,
 			requests: []*mimirpb.WriteRequest{
 				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}},
 				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2")}},
+
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3")}},
+
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3")}},
 				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3")}},
 			},
-			expectedErrs: []error{nil, nil, assert.AnError},
+			expectedErrsCount: 1, // at least one of those should fail because the first flush failed
 
 			expectedUpstreamPushes: []*mimirpb.WriteRequest{
 				{Timeseries: []mimirpb.PreallocTimeseries{
@@ -606,9 +611,14 @@ func TestShardingPusher(t *testing.T) {
 				}},
 				{Timeseries: []mimirpb.PreallocTimeseries{
 					mockPreallocTimeseries("series_3"),
+					mockPreallocTimeseries("series_3"),
+				}},
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseries("series_3"),
+					mockPreallocTimeseries("series_3"),
 				}},
 			},
-			upstreamPushErrs: []error{assert.AnError, nil},
+			upstreamPushErrs: []error{assert.AnError, nil, nil},
 			expectedCloseErr: nil,
 		},
 	}
@@ -617,18 +627,39 @@ func TestShardingPusher(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			require.Equal(t, len(tc.expectedUpstreamPushes), len(tc.upstreamPushErrs))
-			require.Equal(t, len(tc.expectedErrs), len(tc.requests))
+			if len(tc.expectedErrs) != 0 && tc.expectedErrsCount > 0 {
+				require.Fail(t, "expectedErrs and expectedErrsCount are mutually exclusive")
+			}
+			if len(tc.expectedErrs) != 0 {
+				require.Equal(t, len(tc.expectedErrs), len(tc.requests))
+			}
 
 			pusher := &mockPusher{}
-			shardingP := newShardingPusher(noopHistogram, tc.shardCount, tc.batchSize, pusher)
+			// run with a buffer of one, so some of the tests can fill the buffer and test the error handling
+			const buffer = 1
+			shardingP := newShardingPusher(noopHistogram, tc.shardCount, tc.batchSize, buffer, pusher)
 
 			for i, req := range tc.expectedUpstreamPushes {
 				pusher.On("PushToStorage", mock.Anything, req).Return(tc.upstreamPushErrs[i])
 			}
-			for i, req := range tc.requests {
+			var actualPushErrs []error
+			for _, req := range tc.requests {
 				err := shardingP.PushToStorage(context.Background(), req)
-				assert.ErrorIs(t, err, tc.expectedErrs[i])
+				actualPushErrs = append(actualPushErrs, err)
 			}
+
+			if len(tc.expectedErrs) > 0 {
+				assert.Equal(t, tc.expectedErrs, actualPushErrs)
+			} else {
+				receivedErrs := 0
+				for _, err := range actualPushErrs {
+					if err != nil {
+						receivedErrs++
+					}
+				}
+				assert.Equalf(t, tc.expectedErrsCount, receivedErrs, "received %d errors instead of %d: %v", receivedErrs, tc.expectedErrsCount, actualPushErrs)
+			}
+
 			closeErr := shardingP.close()
 			assert.ErrorIs(t, closeErr, tc.expectedCloseErr)
 			pusher.AssertExpectations(t)
