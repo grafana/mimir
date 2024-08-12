@@ -285,7 +285,7 @@ func (c multiTenantPusher) Close() []error {
 type shardingPusher struct {
 	numShards             int
 	shards                []chan flushableWriteRequest
-	unfilledShards        []*mimirpb.WriteRequest
+	unfilledShards        []flushableWriteRequest
 	upstream              Pusher
 	wg                    *sync.WaitGroup
 	errs                  chan error
@@ -302,12 +302,12 @@ func newShardingPusher(numTimeSeriesPerFlush prometheus.Histogram, numShards int
 		batchSize:             batchSize,
 		wg:                    &sync.WaitGroup{},
 		errs:                  make(chan error, numShards),
-		unfilledShards:        make([]*mimirpb.WriteRequest, numShards),
+		unfilledShards:        make([]flushableWriteRequest, numShards),
 	}
 	shards := make([]chan flushableWriteRequest, numShards)
 	pusher.wg.Add(numShards)
 	for i := range shards {
-		pusher.unfilledShards[i] = &mimirpb.WriteRequest{Timeseries: mimirpb.PreallocTimeseriesSliceFromPool()}
+		pusher.unfilledShards[i].WriteRequest = &mimirpb.WriteRequest{Timeseries: mimirpb.PreallocTimeseriesSliceFromPool()}
 		shards[i] = make(chan flushableWriteRequest, 2000) // TODO dimitarvdimitrov 2000 is arbitrary; the idea is that we don't block the goroutine calling PushToStorage while we're flushing. A linked list with a sync.Cond or something different would also work
 		go pusher.runShard(shards[i])
 	}
@@ -333,11 +333,14 @@ func (p *shardingPusher) PushToStorage(ctx context.Context, request *mimirpb.Wri
 		s := p.unfilledShards[shard]
 		// TODO dimitarvdimitrov support metadata and the rest of the fields; perhaps cut a new request for different values of SkipLabelNameValidation?
 		s.Timeseries = append(s.Timeseries, ts)
+		s.Context = ctx // retain the last context in case we have to flush it when closing shardingPusher
 
 		if len(s.Timeseries) < p.batchSize {
 			continue
 		}
-		p.unfilledShards[shard] = &mimirpb.WriteRequest{Timeseries: mimirpb.PreallocTimeseriesSliceFromPool()}
+		p.unfilledShards[shard] = flushableWriteRequest{
+			WriteRequest: &mimirpb.WriteRequest{Timeseries: mimirpb.PreallocTimeseriesSliceFromPool()},
+		}
 		flushDest := p.shards[shard]
 
 	tryFlush:
@@ -375,7 +378,7 @@ func (p *shardingPusher) runShard(toFlush chan flushableWriteRequest) {
 func (p *shardingPusher) close() error {
 	for shard, wr := range p.unfilledShards {
 		if len(wr.Timeseries) > 0 {
-			p.shards[shard] <- flushableWriteRequest{wr, context.Background()} // TODO dimitarvdimitrov use a proper context; use shardedPush as the element type of p.unfilledShards and use some context from there
+			p.shards[shard] <- wr
 		}
 	}
 	for _, shard := range p.shards {
