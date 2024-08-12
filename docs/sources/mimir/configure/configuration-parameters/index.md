@@ -1525,6 +1525,11 @@ mimir_query_engine:
   # engine. Only applies if the Mimir query engine is in use.
   # CLI flag: -querier.mimir-query-engine.enable-over-time-functions
   [enable_over_time_functions: <boolean> | default = true]
+
+  # (experimental) Enable support for offset modifier in Mimir's query engine.
+  # Only applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-offset-modifier
+  [enable_offset_modifier: <boolean> | default = true]
 ```
 
 ### frontend
