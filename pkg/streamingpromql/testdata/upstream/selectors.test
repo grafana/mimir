@@ -28,26 +28,23 @@ eval instant at 8000s rate(http_requests{group=~"pro.*"}[1m])
 eval instant at 18000s rate(http_requests{group=~".*ry", instance="1"}[1m])
 	{job="api-server", instance="1", group="canary"} 4
 
-# Unsupported by streaming engine.
-# eval instant at 18000s rate(http_requests{instance!="3"}[1m] offset 10000s)
-# 	{job="api-server", instance="0", group="production"} 1
-# 	{job="api-server", instance="1", group="production"} 2
-# 	{job="api-server", instance="0", group="canary"} 3
-# 	{job="api-server", instance="1", group="canary"} 4
+eval instant at 18000s rate(http_requests{instance!="3"}[1m] offset 10000s)
+	{job="api-server", instance="0", group="production"} 1
+	{job="api-server", instance="1", group="production"} 2
+	{job="api-server", instance="0", group="canary"} 3
+	{job="api-server", instance="1", group="canary"} 4
 
-# Unsupported by streaming engine.
-# eval instant at 4000s rate(http_requests{instance!="3"}[1m] offset -4000s)
-# 	{job="api-server", instance="0", group="production"} 1
-# 	{job="api-server", instance="1", group="production"} 2
-# 	{job="api-server", instance="0", group="canary"} 3
-# 	{job="api-server", instance="1", group="canary"} 4
+eval instant at 4000s rate(http_requests{instance!="3"}[1m] offset -4000s)
+	{job="api-server", instance="0", group="production"} 1
+	{job="api-server", instance="1", group="production"} 2
+	{job="api-server", instance="0", group="canary"} 3
+	{job="api-server", instance="1", group="canary"} 4
 
-# Unsupported by streaming engine.
-# eval instant at 18000s rate(http_requests[40s]) - rate(http_requests[1m] offset 10000s)
-# 	{job="api-server", instance="0", group="production"} 2
-# 	{job="api-server", instance="1", group="production"} 1
-# 	{job="api-server", instance="0", group="canary"} 5
-# 	{job="api-server", instance="1", group="canary"} 0
+eval instant at 18000s rate(http_requests[40s]) - rate(http_requests[1m] offset 10000s)
+	{job="api-server", instance="0", group="production"} 2
+	{job="api-server", instance="1", group="production"} 1
+	{job="api-server", instance="0", group="canary"} 5
+	{job="api-server", instance="1", group="canary"} 0
 
 # https://github.com/prometheus/prometheus/issues/3575
 eval instant at 0s http_requests{foo!="bar"}
@@ -198,10 +195,9 @@ eval instant at 50m http_requests{group="production",job=~"api-.+"}
 	http_requests{group="production", instance="0", job="api-server"} 100
 	http_requests{group="production", instance="1", job="api-server"} 200
 
-# Unsupported by streaming engine.
-# eval instant at 50m http_requests{group="production",job="api-server"} offset 5m
-# 	http_requests{group="production", instance="0", job="api-server"} 90
-# 	http_requests{group="production", instance="1", job="api-server"} 180
+eval instant at 50m http_requests{group="production",job="api-server"} offset 5m
+	http_requests{group="production", instance="0", job="api-server"} 90
+	http_requests{group="production", instance="1", job="api-server"} 180
 
 clear
 
