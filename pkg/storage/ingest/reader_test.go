@@ -155,7 +155,7 @@ func TestPartitionReader_ConsumerStopping(t *testing.T) {
 
 	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 
-	// consumerErrs will store the last error returned by the consumer; it's initial value doesn't matter, but it must be a non-nil.
+	// consumerErrs will store the last error returned by the consumer; its initial value doesn't matter, but it must be non-nil.
 	consumerErrs := atomic.NewError(errors.New("dummy error"))
 	consumeCalls := make(chan chan error)
 	consumer := consumerFunc(func(context.Context, []record) (err error) {
