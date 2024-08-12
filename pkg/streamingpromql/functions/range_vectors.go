@@ -251,12 +251,32 @@ func avgOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPoin
 }
 
 func avgFloats(head, tail []promql.FPoint) float64 {
-	avgSoFar, c, count := 0.0, 0.0, 0.0
+	sum, c, count := 0.0, 0.0, 0.0
+	avgSoFar := 0.0 // Only used for incremental calculation method.
+	useIncrementalCalculation := false
 
 	accumulate := func(points []promql.FPoint) {
 		for _, p := range points {
 			count++
 
+			if !useIncrementalCalculation {
+				newSum, newC := floats.KahanSumInc(p.F, sum, c)
+
+				if count == 1 || !math.IsInf(newSum, 0) {
+					// Continue using simple average calculation provided we haven't overflowed,
+					// and also for first point to avoid dividing by zero below.
+					sum, c = newSum, newC
+					continue
+				}
+
+				// We've just hit overflow, switch to incremental calculation.
+				useIncrementalCalculation = true
+				avgSoFar = sum / (count - 1)
+				c = c / (count - 1)
+			}
+
+			// If we get here, we've hit overflow at some point in the range.
+			// Use incremental calculation method to produce more accurate results.
 			if math.IsInf(avgSoFar, 0) {
 				if math.IsInf(p.F, 0) && (avgSoFar > 0) == (p.F > 0) {
 					// Running average is infinite and the next point is also the same infinite.
@@ -271,14 +291,18 @@ func avgFloats(head, tail []promql.FPoint) float64 {
 				}
 			}
 
-			avgSoFar, c = floats.KahanSumInc(p.F/count-avgSoFar/count, avgSoFar, c)
+			avgSoFar, c = floats.KahanSumInc(p.F/count-(avgSoFar+c)/count, avgSoFar, c)
 		}
 	}
 
 	accumulate(head)
 	accumulate(tail)
 
-	return avgSoFar + c
+	if useIncrementalCalculation {
+		return avgSoFar + c
+	}
+
+	return (sum + c) / count
 }
 
 func avgHistograms(head, tail []promql.HPoint) (*histogram.FloatHistogram, error) {
