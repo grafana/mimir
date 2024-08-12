@@ -978,9 +978,6 @@ func makeTestConfig(overrides ...func(*Config)) Config {
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 
-	// Enable remote read limits by default, in order to exercise the code in tests.
-	cfg.RemoteReadLimitsEnabled = true
-
 	for _, override := range overrides {
 		override(&cfg)
 	}

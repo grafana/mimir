@@ -34,6 +34,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
         if condition
         then self.addPanel(panel)
         else self,
+
+      // justifyPanels make sure that the panels span the whole row.
+      // It is useful when the number of panels is not a divisor of 12.
+      justifyPanels()::
+        self + {
+          local n = std.length(super.panels),
+          local span = std.floor(12 / n),
+          panels: [
+            super.panels[i] { span: span + if i < (12 % n) then 1 else 0 }
+            for i in std.range(0, n - 1)
+          ],
+        },
     },
 
   // Override the dashboard constructor to add:
@@ -1732,9 +1744,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ],
 
   ingestStorageIngesterEndToEndLatencyWhenStartingPanel()::
-    $.timeseriesPanel('Kafka record end-to-end latency when starting') +
+    $.timeseriesPanel('Kafka end-to-end latency when starting') +
     $.panelDescription(
-      'Kafka record end-to-end latency when starting',
+      'Kafka end-to-end latency when starting',
       |||
         Time between writing request by distributor to Kafka and reading the record by ingester during catch-up phase, when ingesters are starting.
         If ingesters are not starting and catching up in the selected time range, this panel will be empty.
@@ -1760,9 +1772,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
   ingestStorageIngesterEndToEndLatencyWhenRunningPanel()::
-    $.timeseriesPanel('Kafka record end-to-end latency when ingesters are running') +
+    $.timeseriesPanel('Kafka end-to-end latency when ingesters are running') +
     $.panelDescription(
-      'Kafka record end-to-end latency when ingesters are running',
+      'Kafka end-to-end latency when ingesters are running',
       |||
         Time between writing request by distributor to Kafka and reading the record by ingester, when ingesters are running.
       |||
@@ -1780,6 +1792,41 @@ local utils = import 'mixin-utils/utils.libsonnet';
         '99.9th percentile',
         '100th percentile',
       ],
+    ) + {
+      fieldConfig+: {
+        defaults+: { unit: 's' },
+      },
+    },
+
+  ingestStorageIngesterEndToEndLatencyOutliersWhenRunningPanel()::
+    $.timeseriesPanel('Kafka 100th percentile end-to-end latency when ingesters are running (outliers)') +
+    $.panelDescription(
+      'Kafka 100th percentile end-to-end latency when ingesters are running (outliers only)',
+      |||
+        The 100th percentile of the time between writing request by distributor to Kafka and reading the record by ingester,
+        when ingesters are running. This panel only shows ingester outliers, to easily spot if the high end-to-end latency
+        may be caused by few ingesters.
+      |||
+    ) +
+    $.hiddenLegendQueryPanel(
+      |||
+        histogram_quantile(1.0, sum by(pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{%(job_matcher)s, phase="running"}[$__rate_interval])))
+
+        # Add a filter to show only the outliers. We consider an ingester an outlier if its
+        # 100th percentile latency is greater than the 200%% of the average 100th of the 10
+        # worst ingesters (if there are less than 10 ingesters, then all ingesters will be took
+        # in account).
+        > scalar(
+          avg(
+            topk(10,
+                histogram_quantile(1.0, sum by(pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{%(job_matcher)s, phase="running"}[$__rate_interval])))
+                > 0
+            )
+          )
+          * 2
+        )
+      ||| % { job_matcher: $.jobMatcher($._config.job_names.ingester) },
+      '{{pod}}',
     ) + {
       fieldConfig+: {
         defaults+: { unit: 's' },

@@ -49,8 +49,8 @@ spec:
             - "-server.http-listen-port={{ include "mimir.serverHttpListenPort" . }}"
             - "-tests.write-read-series-test.num-series={{ .Values.continuous_test.numSeries }}"
             - "-tests.write-read-series-test.max-query-age={{ .Values.continuous_test.maxQueryAge }}"
-            - "-tests.write-endpoint={{ template "mimir.gatewayUrl" . }}"
-            - "-tests.read-endpoint={{ template "mimir.gatewayUrl" . }}/prometheus"
+            - "-tests.write-endpoint={{ default (include "mimir.gatewayUrl" .) .Values.continuous_test.write }}"
+            - "-tests.read-endpoint={{ default (include "mimir.gatewayUrl" .) .Values.continuous_test.read }}/prometheus"
             - "-tests.run-interval={{ .Values.continuous_test.runInterval }}"
             {{- if eq .Values.continuous_test.auth.type "tenantId" }}
             - "-tests.tenant-id={{ .Values.continuous_test.auth.tenant }}"

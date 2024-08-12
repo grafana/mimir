@@ -179,7 +179,7 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, opts SampleComparison
 
 		err := compareMatrixSamples(expectedMetric, actualMetric, opts)
 		if err != nil {
-			return err
+			return fmt.Errorf("%w\nExpected result for series:\n%v\n\nActual result for series:\n%v", err, expectedMetric, actualMetric)
 		}
 	}
 

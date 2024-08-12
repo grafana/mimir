@@ -19,9 +19,13 @@ type FeatureToggles struct {
 }
 
 var overTimeFunctionNames = []string{
+	"avg_over_time",
 	"count_over_time",
 	"last_over_time",
+	"max_over_time",
+	"min_over_time",
 	"present_over_time",
+	"sum_over_time",
 }
 
 // EnableAllFeatures enables all features supported by MQE, including experimental or incomplete features.

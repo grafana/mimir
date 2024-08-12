@@ -4381,7 +4381,10 @@ continuous_test:
   replicas: 1
   # The image section has been removed as continuous test is now a module of the regular Mimir image.
   # See settings for the image at the top image section.
-
+  ## -- Mimir Write Endpoint if not set, its will be set to mimir.gatewayUrl
+  write:
+  # -- Mimir Read Endpoint if not set, its will be set to mimir.gatewayUrl at /prometheus
+  read:
   # -- Authentication settings of continuous test
   auth:
     # -- Type of authentication to use (tenantId, basicAuth, bearerToken)
