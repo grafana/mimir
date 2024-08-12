@@ -44,10 +44,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add support for setting resource requests and limits in the Grafana Agent pods used for metamonitoring. #8715
 * [ENHANCEMENT] Add support for setting namespace for dashboard config maps. #8813
 * [ENHANCEMENT] Add support for string `extraObjects` for better support with templating. #8825
+* [ENHANCEMENT] Helm : allow setting a read and write urls to continous-test. #7674
 * [BUGFIX] Add missing container security context to run `continuous-test` under the restricted security policy. #8653
 * [BUGFIX] Add `global.extraVolumeMounts` to the exporter container on memcached statefulsets #8787
 * [BUGFIX] Fix helm releases failing when `querier.kedaAutoscaling.predictiveScalingEnabled=true`. #8731
-* [ENHANCEMENT] Helm : allow setting a read and write urls to continous-test. #7674
 
 
 ## 5.4.0
