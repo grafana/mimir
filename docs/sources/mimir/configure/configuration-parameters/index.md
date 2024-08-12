@@ -766,15 +766,15 @@ retry_after_header:
 
   # (advanced) Minimum duration of the Retry-After HTTP header in responses to
   # 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated
-  # as 2^(RetryAttempt-1) seconds with random jitter of 50% in either direction.
-  # RetryAttempt is the value of the Retry-Attempt HTTP header.
+  # as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either
+  # direction. RetryAttempt is the value of the Retry-Attempt HTTP header.
   # CLI flag: -distributor.retry-after-header.min-backoff
   [min_backoff: <duration> | default = 6s]
 
   # (advanced) Minimum duration of the Retry-After HTTP header in responses to
   # 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated
-  # as 2^(RetryAttempt-1) seconds with random jitter of 50% in either direction.
-  # RetryAttempt is the value of the Retry-Attempt HTTP header.
+  # as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either
+  # direction. RetryAttempt is the value of the Retry-Attempt HTTP header.
   # CLI flag: -distributor.retry-after-header.max-backoff
   [max_backoff: <duration> | default = 1m36s]
 
