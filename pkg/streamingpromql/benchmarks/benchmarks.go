@@ -115,6 +115,18 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "rate(nh_X[1h])",
 		},
+		{
+			Expr: "avg_over_time(a_X[1m])",
+		},
+		{
+			Expr: "avg_over_time(nh_X[1m])",
+		},
+		{
+			Expr: "sum_over_time(a_X[1m])",
+		},
+		{
+			Expr: "sum_over_time(nh_X[1m])",
+		},
 		//{
 		//	Expr: "absent_over_time(a_X[1d])",
 		//},

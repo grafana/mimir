@@ -772,132 +772,102 @@ load 10s
   metric9 -9.988465674311579e+307 -9.988465674311579e+307 -9.988465674311579e+307
   metric10 -9.988465674311579e+307 9.988465674311579e+307
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric[1m])
-#   {} 3
+eval instant at 1m avg_over_time(metric[1m])
+  {} 3
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric[1m])/count_over_time(metric[1m])
-#   {} 3
+eval instant at 1m sum_over_time(metric[1m])/count_over_time(metric[1m])
+  {} 3
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric2[1m])
-#   {} Inf
+eval instant at 1m avg_over_time(metric2[1m])
+  {} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric2[1m])/count_over_time(metric2[1m])
-#   {} Inf
+eval instant at 1m sum_over_time(metric2[1m])/count_over_time(metric2[1m])
+  {} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric3[1m])
-#   {} -Inf
+eval instant at 1m avg_over_time(metric3[1m])
+  {} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric3[1m])/count_over_time(metric3[1m])
-#   {} -Inf
+eval instant at 1m sum_over_time(metric3[1m])/count_over_time(metric3[1m])
+  {} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric4[1m])
-#   {} NaN
+eval instant at 1m avg_over_time(metric4[1m])
+  {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric4[1m])/count_over_time(metric4[1m])
-#   {} NaN
+eval instant at 1m sum_over_time(metric4[1m])/count_over_time(metric4[1m])
+  {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric5[1m])
-#   {} Inf
+eval instant at 1m avg_over_time(metric5[1m])
+  {} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric5[1m])/count_over_time(metric5[1m])
-#   {} Inf
+eval instant at 1m sum_over_time(metric5[1m])/count_over_time(metric5[1m])
+  {} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric5b[1m])
-#   {} Inf
+eval instant at 1m avg_over_time(metric5b[1m])
+  {} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric5b[1m])/count_over_time(metric5b[1m])
-#   {} Inf
+eval instant at 1m sum_over_time(metric5b[1m])/count_over_time(metric5b[1m])
+  {} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric5c[1m])
-#   {} NaN
+eval instant at 1m avg_over_time(metric5c[1m])
+  {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric5c[1m])/count_over_time(metric5c[1m])
-#   {} NaN
+eval instant at 1m sum_over_time(metric5c[1m])/count_over_time(metric5c[1m])
+  {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric6[1m])
-#   {} -Inf
+eval instant at 1m avg_over_time(metric6[1m])
+  {} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric6[1m])/count_over_time(metric6[1m])
-#   {} -Inf
+eval instant at 1m sum_over_time(metric6[1m])/count_over_time(metric6[1m])
+  {} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric6b[1m])
-#   {} -Inf
+eval instant at 1m avg_over_time(metric6b[1m])
+  {} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric6b[1m])/count_over_time(metric6b[1m])
-#   {} -Inf
+eval instant at 1m sum_over_time(metric6b[1m])/count_over_time(metric6b[1m])
+  {} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric6c[1m])
-#   {} NaN
+eval instant at 1m avg_over_time(metric6c[1m])
+  {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric6c[1m])/count_over_time(metric6c[1m])
-#   {} NaN
+eval instant at 1m sum_over_time(metric6c[1m])/count_over_time(metric6c[1m])
+  {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric7[1m])
-#   {} NaN
+eval instant at 1m avg_over_time(metric7[1m])
+  {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric7[1m])/count_over_time(metric7[1m])
-#   {} NaN
+eval instant at 1m sum_over_time(metric7[1m])/count_over_time(metric7[1m])
+  {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric8[1m])
-#   {} 9.988465674311579e+307
+eval instant at 1m avg_over_time(metric8[1m])
+  {} 9.988465674311579e+307
 
 # This overflows float64.
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric8[1m])/count_over_time(metric8[1m])
-#   {} Inf
+eval instant at 1m sum_over_time(metric8[1m])/count_over_time(metric8[1m])
+  {} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric9[1m])
-#   {} -9.988465674311579e+307
+eval instant at 1m avg_over_time(metric9[1m])
+  {} -9.988465674311579e+307
 
 # This overflows float64.
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric9[1m])/count_over_time(metric9[1m])
-#   {} -Inf
+eval instant at 1m sum_over_time(metric9[1m])/count_over_time(metric9[1m])
+  {} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric10[1m])
-#   {} 0
+eval instant at 1m avg_over_time(metric10[1m])
+  {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric10[1m])/count_over_time(metric10[1m])
-#   {} 0
+eval instant at 1m sum_over_time(metric10[1m])/count_over_time(metric10[1m])
+  {} 0
 
 # Test if very big intermediate values cause loss of detail.
 clear
 load 10s
   metric 1 1e100 1 -1e100
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric[1m])
-#   {} 2
+eval instant at 1m sum_over_time(metric[1m])
+  {} 2
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric[1m])
-#   {} 0.5
+eval instant at 1m avg_over_time(metric[1m])
+  {} 0.5
 
 # Tests for stddev_over_time and stdvar_over_time.
 clear
@@ -1122,21 +1092,19 @@ load 10s
 	data{type="some_nan3"} NaN 0 1
 	data{type="only_nan"} NaN NaN NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m min_over_time(data[1m])
-# 	{type="numbers"} 0
-# 	{type="some_nan"} 0
-# 	{type="some_nan2"} 1
-# 	{type="some_nan3"} 0
-# 	{type="only_nan"} NaN
+eval instant at 1m min_over_time(data[1m])
+	{type="numbers"} 0
+	{type="some_nan"} 0
+	{type="some_nan2"} 1
+	{type="some_nan3"} 0
+	{type="only_nan"} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m max_over_time(data[1m])
-# 	{type="numbers"} 3
-# 	{type="some_nan"} 2
-# 	{type="some_nan2"} 2
-# 	{type="some_nan3"} 1
-# 	{type="only_nan"} NaN
+eval instant at 1m max_over_time(data[1m])
+	{type="numbers"} 3
+	{type="some_nan"} 2
+	{type="some_nan2"} 2
+	{type="some_nan3"} 1
+	{type="only_nan"} NaN
 
 eval instant at 1m last_over_time(data[1m])
 	data{type="numbers"} 3
