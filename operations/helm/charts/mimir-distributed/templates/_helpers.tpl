@@ -607,7 +607,7 @@ podAntiAffinity:
             values:
               - {{ .component }}
           - key: zone
-            operator: NotIn
+            operator: In
             values:
               - {{ .rolloutZoneName }}
       topologyKey: {{ .topologyKey | quote }}
