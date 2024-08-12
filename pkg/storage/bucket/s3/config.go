@@ -118,6 +118,7 @@ type Config struct {
 	BucketName           string              `yaml:"bucket_name"`
 	SecretAccessKey      flagext.Secret      `yaml:"secret_access_key"`
 	AccessKeyID          string              `yaml:"access_key_id"`
+	SessionToken         flagext.Secret      `yaml:"session_token"`
 	Insecure             bool                `yaml:"insecure" category:"advanced"`
 	SignatureVersion     string              `yaml:"signature_version" category:"advanced"`
 	ListObjectsVersion   string              `yaml:"list_objects_version" category:"advanced"`
@@ -143,6 +144,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.AccessKeyID, prefix+"s3.access-key-id", "", "S3 access key ID")
 	f.Var(&cfg.SecretAccessKey, prefix+"s3.secret-access-key", "S3 secret access key")
+	f.Var(&cfg.SessionToken, prefix+"s3.session-token", "S3 session token")
 	f.StringVar(&cfg.BucketName, prefix+"s3.bucket-name", "", "S3 bucket name")
 	f.StringVar(&cfg.Region, prefix+"s3.region", "", "S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.")
 	f.StringVar(&cfg.Endpoint, prefix+"s3.endpoint", "", "The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.")
