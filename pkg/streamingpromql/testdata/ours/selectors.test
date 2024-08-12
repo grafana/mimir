@@ -52,3 +52,11 @@ eval range from 0 to 10m step 1m some_metric @ 3m offset 1m
   some_metric{env="prod", cluster="us"} 4 4 4 4 4 4 4 4 4 4 4
   some_metric{env="test", cluster="eu"} 6 6 6 6 6 6 6 6 6 6 6
   some_metric{env="test", cluster="us"} 8 8 8 8 8 8 8 8 8 8 8
+
+# Range query with @ modifier beyond range of available data.
+eval range from 0 to 10m step 1m some_metric @ 20m
+  # Should return no results.
+
+# Range query with @ modifier before range of available data.
+eval range from 0 to 10m step 1m some_metric @ -5m
+  # Should return no results.
