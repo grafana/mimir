@@ -744,9 +744,9 @@ func (r *PartitionReader) pollFetches(ctx context.Context) (result kgo.Fetches) 
 	return f
 }
 
-// fetchWant is a range of offsets we want to fetch.
-// It knows how many records it needs to fetch and roughly how many bytes they will be.
-// It's also used to communicate the result of fetching the fetchWant.
+// fetchWant represents a range of offsets to fetch.
+// Based on a given number of records, it tries to estimate how many bytes we need to fetch, given there's no support for fetching offsets directly.
+// fetchWant also contains the channel on which to send the fetched records for the offset range.
 type fetchWant struct {
 	startOffset    int64 // inclusive
 	endOffset      int64 // exclusive
@@ -756,7 +756,7 @@ type fetchWant struct {
 	result chan fetchResult
 }
 
-// next returns the fetchWant for the next numRecords starting from endOffset.
+// next returns the fetchWant for the next numRecords starting from the last known offset.
 func (w fetchWant) next(numRecords int) fetchWant {
 	n := fetchWantFrom(w.endOffset, numRecords)
 	n.bytesPerRecord = w.bytesPerRecord
@@ -778,6 +778,8 @@ func (w fetchWant) expectedBytes() int {
 	return int(overFetchBytesFactor * float64(w.bytesPerRecord*int(w.endOffset-w.startOffset)))
 }
 
+// maxBytes returns the maximum number of bytes we can fetch in a single request.
+// It's capped at math.MaxInt32 to avoid overflow, and it'll always fetch a minimum of 1MiB.
 func (w fetchWant) maxBytes() int32 {
 	fetchBytes := w.expectedBytes()
 	if fetchBytes > math.MaxInt32 {
@@ -789,7 +791,8 @@ func (w fetchWant) maxBytes() int32 {
 	return int32(fetchBytes)
 }
 
-// trimIfTooBig returns the same fetchWant, but with potentially lower endOffset if the total size of records exceeds 4GiB.
+// trimIfTooBig adjusts the end offset if we expect to fetch too many bytes.
+// It's capped at math.MaxInt32 bytes.
 func (w fetchWant) trimIfTooBig() fetchWant {
 	if w.expectedBytes() <= math.MaxInt32 {
 		return w
