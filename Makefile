@@ -505,7 +505,6 @@ mod-check: ## Check the go mod is clean and tidy.
 
 check-protos: ## Check the protobuf files are up to date.
 check-protos: clean-protos protos
-	@./tools/apply-expected-diffs.sh $(PROTO_GOS)
 	@./tools/find-diff-or-untracked.sh $(PROTO_GOS) || (echo "Please rebuild protobuf code by running 'check-protos'" && false)
 
 %.md : %.template

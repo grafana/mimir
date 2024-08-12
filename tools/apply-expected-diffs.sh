@@ -9,17 +9,17 @@ function apply_expected_diffs {
 
         expdiff_file="$file.expdiff"
         if [ ! -f "${expdiff_file}" ] ; then
-            echo "$file: expected diff does not exist: ${expdiff_file}"
+            echo "$file: expected diff does not exist: $expdiff_file"
             continue
         fi
 
         if git diff -s --exit-code $file > /dev/null
         then
-            echo "$file: file has not changed, not applying expected diff"
+            echo "$file: file has not changed, not applying expected diff: $expdiff_file"
             continue
         fi
 
-        echo "$file: applying expected diff $expdiff_file"
+        echo "$file: applying expected diff: $expdiff_file"
         git apply -R "$expdiff_file"
     done
 }
