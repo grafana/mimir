@@ -15,7 +15,7 @@ A circuit breaker monitors the number of recent failures and then uses this info
 In the case of a failing operation, a circuit breaker allows an application to proceed, without waiting for you to resolve the failure cause.
 Because the failing operation is immediately rejected, the application doesn't retry it. This reduces its CPU usage.
 
-The circuit breaker pattern typically operates in 3 main states: `closed`, `open` and `half-open`.
+The circuit breaker pattern typically operates in 3 main states: `closed`, `open`, and `half-open`.
 
 - In the `closed` state, a circuit breaker operates normally, forwarding all the requests to the application it protects.
 - In the `open` state, the circuit breaker immediately stops forwarding requests to the failing application, effectively isolating it.
