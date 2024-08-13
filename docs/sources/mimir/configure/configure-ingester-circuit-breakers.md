@@ -13,7 +13,7 @@ title: Configure Grafana Mimir ingester circuit breakers
 Use circuit breakers to prevent an application from repeatedly trying to run an operation that is likely to fail.
 A circuit breaker monitors the number of recent failures and then uses this information to decide whether to allow a new operation to proceed, or to simply return an exception immediately.
 In the case of a failing operation, a circuit breaker allows an application to proceed, without waiting for you to resolve the failure cause.
-Because the failing operation is immediately rejected, the application doesn't retry it. This reduces its CPU usage.
+Because the failing operation is immediately rejected, the application doesn't retry it. This reduces application's CPU usage.
 
 The circuit breaker pattern typically operates in 3 main states: `closed`, `open`, and `half-open`.
 
@@ -30,9 +30,8 @@ A request to a resource protected by a circuit breaker follows these steps:
 1. The request tries to acquire a circuit breaker permit.
 1. If the circuit breaker is open, no permit is acquired, and the request fails with a _circuit breaker open error_.
 1. Otherwise, the request acquires a circuit breaker permit and runs.
-
-- If the request meets the circuit breaker's failure condition, the circuit breaker records a failure.
-- Otherwise, the circuit breaker records a success.
+1. If the request meets the circuit breaker's failure condition, the circuit breaker records a failure.
+   Otherwise, the circuit breaker records a success.
 
 Depending on the configured frequencies of successes and failures, the circuit breaker transits from one state to another.
 
@@ -43,7 +42,6 @@ For the time being they don't protect ingesters from other issues.
 
 More precisely, Grafana Mimir ingesters distinguish between _push requests circuit breakers_ and _read requests circuit breakers_, and they can be configured independently.
 It is possible to configure the maximum allowed duration of both push and read requests, as well as the highest frequency of the slow requests before the circuit breakers open and start protecting the ingesters.
-For the time being Grafana Mimir.
 
 ### Push requests circuit breakers
 
@@ -55,41 +53,28 @@ Read requests circuit breakers follow these conditions:
 
 - in order to protect the write path as much as possible, ingesters do not allow read push requests if their push circuit breakers are open.
   This means that before an ingester tries to acquire a read circuit breaker permit, it first checks if its push circuit breaker is open.
-  If it's open, a circuit breaker open error is returned.
+  If it iss open, a circuit breaker open error is returned.
   Otherwise, the ingester tries to acquire a read requests circuit breaker permit.
 - a read request that acquired a read requests circuit breaker permit meets the read requests circuit breaker failure condition if its duration is longer than the configured read request maximum duration.
 
 ## Grafana Mimir Ingester circuit breakers configuration
 
-You can configure Grafana Mimir ingester circuit breakers with the following options.
+You can enable Grafana Mimir ingester push and read circuit breaker by respectively setting `-ingester.push-circuit-breaker.enabled=true` and `-ingester.read-circuit-breaker.enabled=true`.
+You can enable the circuit breakers independently, i.e., enabling one of them does not require enabling the other one.
 
-- `-ingester.push-circuit-breaker.enabled`: Enable circuit breaking when making push requests to ingesters.
+When enabled, push and read circuit breakers come with some default configurations.
+For example, the percentage of failing requests is computed over the moving window of 1 minute (`1m`).
+You can change these configurations by setting `-ingester.push-circuit-breaker.thresholding-period` or `-ingester.read-circuit-breaker.thresholding-period` to a desired value.
 
-- `-ingester.read-circuit-breaker.enabled`: Enable circuit breaking when making read requests to ingesters.
+The default percentage of push and pull requests that can fail over the configured moving window before the corresponding circuit breaker opens is `10`.
+You can set a different percentage via `-ingester.push-circuit-breaker.failure-threshold-percentage` and `-ingester.read-circuit-breaker.failure-threshold-percentage` flags.
 
-- `-ingester.push-circuit-breaker.thresholding-period`: Moving window of time that the percentage of failed requests is computed over for push circuit breakers.
+Once a circuit breaker reaches the `open` state, it waits for 10 seconds (`10s`) before it transitions to the `half-open` state and allows trial requests.
+You can change these waiting times via `-ingester.push-circuit-breaker.cooldown-period` and `-ingester.read-circuit-breaker.cooldown-period` flags.
 
-- `-ingester.read-circuit-breaker.thresholding-period`: Moving window of time that the percentage of failed requests is computed over for read circuit breakers.
-
-- `-ingester.push-circuit-breaker.failure-execution-threshold`: The number of push requests that must run in the thresholding period for a push circuit breaker to be eligible to open for the rate of failures.
-
-- `-ingester.read-circuit-breaker.failure-execution-threshold`: The number of read requests that must run in the thresholding period for a push circuit breaker to be eligible to open for the rate of failures.
-
-- `-ingester.push-circuit-breaker.failure-threshold-percentage`: Maximum percentage of push requests that can fail over period before a push circuit breaker opens.
-
-- `-ingester.read-circuit-breaker.failure-threshold-percentage`: Maximum percentage of read requests that can fail over period before a read circuit breaker opens.
-
-- `-ingester.push-circuit-breaker.cooldown-period`: How long a push circuit breaker stays in an `open` state before allowing additional push requests?
-
-- `-ingester.read-circuit-breaker.cooldown-period`: How long a read circuit breaker stays in an `open` state before allowing additional read requests?
-
-- `-ingester.push-circuit-breaker.initial-delay`: How long a push circuit breaker waits to become active after an activation request. During this time, neither failures nor successes are counted.
-
-- `-ingester.read-circuit-breaker.initial-delay`: How long a read circuit breaker waits to become active after an activation request. During this time, neither failures nor successes are counted.
-
-- `-ingester.push-circuit-breaker.request-timeout`: The maximum duration of a push request before it triggers a timeout. This configuration is used for push circuit breakers only, and the corresponding timeouts are not reported as errors.
-
-- `-ingester.read-circuit-breaker.request-timeout`: The maximum duration of a read request before it triggers a timeout. This configuration is used for read circuit breakers only, and the corresponding timeouts are not reported as errors.
+Grafana Mimir ingester push and read circuit breakers come with one different default configuration: the maximum duration of a request before it triggers a timeout.
+The default values are 2 seconds (`2s`) for push requests, and 30 seconds (`30s`) for read requests, and can be configured via `-ingester.push-circuit-breaker.request-timeout` and `-ingester.read-circuit-breaker.request-timeout`.
+Circuit breakers use these timeouts only internally, and never report them as errors.
 
 ## Grafana Mimir Ingester circuit breakers metrics
 
