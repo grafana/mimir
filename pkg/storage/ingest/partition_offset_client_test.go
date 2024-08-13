@@ -43,7 +43,7 @@ func TestPartitionOffsetClient_FetchPartitionLastProducedOffset(t *testing.T) {
 			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
 			client         = createTestKafkaClient(t, kafkaCfg)
 			reg            = prometheus.NewPedanticRegistry()
-			reader         = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader         = NewPartitionOffsetClient(client, topicName, reg, logger)
 		)
 
 		offset, err := reader.FetchPartitionLastProducedOffset(ctx, partitionID)
@@ -84,7 +84,7 @@ func TestPartitionOffsetClient_FetchPartitionLastProducedOffset(t *testing.T) {
 			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
 			client               = createTestKafkaClient(t, kafkaCfg)
 			reg                  = prometheus.NewPedanticRegistry()
-			reader               = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader               = NewPartitionOffsetClient(client, topicName, reg, logger)
 
 			firstRequest         = atomic.NewBool(true)
 			firstRequestReceived = make(chan struct{})
@@ -139,7 +139,7 @@ func TestPartitionOffsetClient_FetchPartitionLastProducedOffset(t *testing.T) {
 
 		client := createTestKafkaClient(t, kafkaCfg)
 		reg := prometheus.NewPedanticRegistry()
-		reader := newPartitionOffsetClient(client, topicName, reg, logger)
+		reader := NewPartitionOffsetClient(client, topicName, reg, logger)
 
 		// Make the ListOffsets request failing.
 		actualTries := atomic.NewInt64(0)
@@ -184,7 +184,7 @@ func TestPartitionOffsetClient_FetchPartitionStartOffset(t *testing.T) {
 			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
 			client         = createTestKafkaClient(t, kafkaCfg)
 			reg            = prometheus.NewPedanticRegistry()
-			reader         = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader         = NewPartitionOffsetClient(client, topicName, reg, logger)
 		)
 
 		offset, err := reader.FetchPartitionStartOffset(ctx, partitionID)
@@ -237,7 +237,7 @@ func TestPartitionOffsetClient_FetchPartitionStartOffset(t *testing.T) {
 			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
 			client               = createTestKafkaClient(t, kafkaCfg)
 			reg                  = prometheus.NewPedanticRegistry()
-			reader               = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader               = NewPartitionOffsetClient(client, topicName, reg, logger)
 
 			firstRequest         = atomic.NewBool(true)
 			firstRequestReceived = make(chan struct{})
@@ -302,7 +302,7 @@ func TestPartitionOffsetClient_FetchPartitionStartOffset(t *testing.T) {
 
 		client := createTestKafkaClient(t, kafkaCfg)
 		reg := prometheus.NewPedanticRegistry()
-		reader := newPartitionOffsetClient(client, topicName, reg, logger)
+		reader := NewPartitionOffsetClient(client, topicName, reg, logger)
 
 		// Make the ListOffsets request failing.
 		actualTries := atomic.NewInt64(0)
@@ -347,7 +347,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
 			client         = createTestKafkaClient(t, kafkaCfg)
 			reg            = prometheus.NewPedanticRegistry()
-			reader         = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader         = NewPartitionOffsetClient(client, topicName, reg, logger)
 		)
 
 		offsets, err := reader.FetchPartitionsLastProducedOffsets(ctx, allPartitionIDs)
@@ -397,7 +397,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
 			client         = createTestKafkaClient(t, kafkaCfg)
 			reg            = prometheus.NewPedanticRegistry()
-			reader         = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader         = NewPartitionOffsetClient(client, topicName, reg, logger)
 		)
 
 		// Write some records.
@@ -422,7 +422,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
 			client               = createTestKafkaClient(t, kafkaCfg)
 			reg                  = prometheus.NewPedanticRegistry()
-			reader               = newPartitionOffsetClient(client, topicName, reg, logger)
+			reader               = NewPartitionOffsetClient(client, topicName, reg, logger)
 
 			firstRequest         = atomic.NewBool(true)
 			firstRequestReceived = make(chan struct{})
@@ -477,7 +477,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 
 		client := createTestKafkaClient(t, kafkaCfg)
 		reg := prometheus.NewPedanticRegistry()
-		reader := newPartitionOffsetClient(client, topicName, reg, logger)
+		reader := NewPartitionOffsetClient(client, topicName, reg, logger)
 
 		// Make the ListOffsets request failing.
 		actualTries := atomic.NewInt64(0)
@@ -512,7 +512,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 
 		client := createTestKafkaClient(t, kafkaCfg)
 		reg := prometheus.NewPedanticRegistry()
-		reader := newPartitionOffsetClient(client, topicName, reg, logger)
+		reader := NewPartitionOffsetClient(client, topicName, reg, logger)
 
 		cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
@@ -544,7 +544,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 
 		client := createTestKafkaClient(t, kafkaCfg)
 		reg := prometheus.NewPedanticRegistry()
-		reader := newPartitionOffsetClient(client, topicName, reg, logger)
+		reader := NewPartitionOffsetClient(client, topicName, reg, logger)
 
 		cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
@@ -575,7 +575,7 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 
 		client := createTestKafkaClient(t, kafkaCfg)
 		reg := prometheus.NewPedanticRegistry()
-		reader := newPartitionOffsetClient(client, topicName, reg, logger)
+		reader := NewPartitionOffsetClient(client, topicName, reg, logger)
 
 		cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
@@ -617,7 +617,7 @@ func TestPartitionOffsetClient_ListTopicPartitionIDs(t *testing.T) {
 		logger = log.NewNopLogger()
 	)
 
-	runWithAndWithoutCache := func(t *testing.T, client *partitionOffsetClient, assert func(_ *testing.T, _ []int32, _ error)) {
+	runWithAndWithoutCache := func(t *testing.T, client *PartitionOffsetClient, assert func(_ *testing.T, _ []int32, _ error)) {
 		t.Run("without cache", func(t *testing.T) {
 			ids, err := client.ListTopicPartitionIDs(ctx)
 			assert(t, ids, err)
@@ -636,7 +636,7 @@ func TestPartitionOffsetClient_ListTopicPartitionIDs(t *testing.T) {
 			_, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
 			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
 			client         = createTestKafkaClient(t, kafkaCfg)
-			reader         = newPartitionOffsetClient(client, topicName, nil, logger)
+			reader         = NewPartitionOffsetClient(client, topicName, nil, logger)
 		)
 
 		runWithAndWithoutCache(t, reader, func(t *testing.T, actualIDs []int32, actualErr error) {
@@ -654,7 +654,7 @@ func TestPartitionOffsetClient_ListTopicPartitionIDs(t *testing.T) {
 			cluster, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
 			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
 			client               = createTestKafkaClient(t, kafkaCfg)
-			reader               = newPartitionOffsetClient(client, topicName, nil, logger)
+			reader               = NewPartitionOffsetClient(client, topicName, nil, logger)
 		)
 
 		cluster.ControlKey(int16(kmsg.Metadata), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
@@ -691,7 +691,7 @@ func TestPartitionOffsetClient_ListTopicPartitionIDsWithCache(t *testing.T) {
 		cluster, clusterAddr = testkafka.CreateCluster(t, initialNumPartitions, topicName)
 		kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
 		client               = createTestKafkaClient(t, kafkaCfg)
-		reader               = newPartitionOffsetClient(client, topicName, nil, logger)
+		reader               = NewPartitionOffsetClient(client, topicName, nil, logger)
 		metadataRequests     = atomic.NewInt64(0)
 	)
 

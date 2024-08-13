@@ -106,14 +106,14 @@ func (r *genericOffsetReader[O]) WaitNextFetchLastProducedOffset(ctx context.Con
 type partitionOffsetReader struct {
 	*genericOffsetReader[int64]
 
-	client      *partitionOffsetClient
+	client      *PartitionOffsetClient
 	logger      log.Logger
 	partitionID int32
 }
 
 func newPartitionOffsetReader(client *kgo.Client, topic string, partitionID int32, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *partitionOffsetReader {
 	r := &partitionOffsetReader{
-		client:      newPartitionOffsetClient(client, topic, reg, logger),
+		client:      NewPartitionOffsetClient(client, topic, reg, logger),
 		partitionID: partitionID,
 		logger:      logger, // Do not wrap with partition ID because it's already done by the caller.
 	}
@@ -141,7 +141,7 @@ func (p *partitionOffsetReader) FetchPartitionStartOffset(ctx context.Context) (
 type TopicOffsetsReader struct {
 	*genericOffsetReader[map[int32]int64]
 
-	client          *partitionOffsetClient
+	client          *PartitionOffsetClient
 	topic           string
 	getPartitionIDs func() []int32
 	logger          log.Logger
@@ -149,7 +149,7 @@ type TopicOffsetsReader struct {
 
 func NewTopicOffsetsReader(client *kgo.Client, topic string, getPartitionIDs func() []int32, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *TopicOffsetsReader {
 	r := &TopicOffsetsReader{
-		client:          newPartitionOffsetClient(client, topic, reg, logger),
+		client:          NewPartitionOffsetClient(client, topic, reg, logger),
 		topic:           topic,
 		getPartitionIDs: getPartitionIDs,
 		logger:          logger,
