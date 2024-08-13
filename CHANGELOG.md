@@ -77,6 +77,7 @@
 * [BUGFIX] Query-frontend: Ensure that internal errors result in an HTTP 500 response code instead of 422. #8595 #8666
 * [BUGFIX] Configuration: Multi line envs variables are flatten during injection to be compatible with YAML syntax
 * [BUGFIX] Querier: fix issue where queries can return incorrect results if a single store-gateway returns overlapping chunks for a series. #8827
+* [BUGFIX] HA Tracker: store correct timestamp for last received request from elected replica. #8821
 * [BUGFIX] Querier: do not return `grpc: the client connection is closing` errors as HTTP `499`. #8865 #8888
 * [BUGFIX] Compactor: fix a race condition between different compactor replicas that may cause a deleted block to be still referenced as non-deleted in the bucket index. #8905
 * [BUGFIX] Querier: fix issue where some native histogram-related warnings were not emitted when `rate()` was used over native histograms. #8918
