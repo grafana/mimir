@@ -464,7 +464,7 @@ func TestShardingPusher(t *testing.T) {
 			upstreamPushErrs: []error{nil},
 			expectedCloseErr: nil,
 		},
-		"push to multiple shards and fill exactly capacity": {
+		"push to multiple shards and fill exact capacity": {
 			shardCount: 2,
 			batchSize:  2,
 			requests: []*mimirpb.WriteRequest{
@@ -665,6 +665,7 @@ func TestShardingPusher(t *testing.T) {
 
 			closeErr := shardingP.close()
 			assert.ErrorIs(t, closeErr, tc.expectedCloseErr)
+			pusher.AssertNumberOfCalls(t, "PushToStorage", len(tc.expectedUpstreamPushes))
 			pusher.AssertExpectations(t)
 		})
 	}
