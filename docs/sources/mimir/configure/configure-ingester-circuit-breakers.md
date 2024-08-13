@@ -12,7 +12,7 @@ title: Configure Grafana Mimir ingester circuit breakers
 
 Use circuit breakers to prevent an application from repeatedly trying to run an operation that is likely to fail.
 A circuit breaker monitors the number of recent failures and then uses this information to decide whether to allow a new operation to proceed, or to simply return an exception immediately.
-In case of a failing operation, a circuit breaker allows an application to proceed with its execution, without waiting for the failure cause to be fixed.
+In the case of a failing operation, a circuit breaker allows an application to proceed, without waiting for you to resolve the failure cause.
 Since the failing operation is immediately rejected, the application doesn't retry to execute it, reducing this way its CPU usage.
 
 The circuit breaker pattern typically operates in 3 main states: `closed`, `open` and `half-open`.
