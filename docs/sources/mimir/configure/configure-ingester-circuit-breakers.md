@@ -13,7 +13,7 @@ title: Configure Grafana Mimir ingester circuit breakers
 A request to a resource protected by a circuit breaker follows these steps:
 
 - The request tries to acquire a circuit breaker permit.
-- If the circuit breaker is open, no permit is acquired, and the request fails with an _circuit breaker open error_.
+- If the circuit breaker is open, no permit is acquired, and the request fails with a _circuit breaker open error_.
 - Otherwise, a circuit breaker permit is acquired, and the request is executed.
   - If the request execution meets the circuit breaker failure condition, a failure is recorded within the circuit breaker.
   - Otherwise, a success is recorded with the circuit breaker.
