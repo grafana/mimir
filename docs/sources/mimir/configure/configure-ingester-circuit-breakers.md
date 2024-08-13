@@ -72,7 +72,7 @@ You can configure Grafana Mimir ingester circuit breakers with the following opt
 
 ## Grafana Mimir Ingester circuit breakers metrics
 
-Grafana Mimir Ingester circuit breakers contain the following metrics:
+Grafana Mimir ingester circuit breakers contain the following metrics:
 
 - `cortex_ingester_circuit_breaker_transitions_total`: Counter showing the number of times a circuit breaker enters a state. It contains the labels state, with possible values of `closed`, `open`, and `half-open`, and the `request_type` setting , with possible values of `push` and `read`.
 
