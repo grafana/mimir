@@ -3823,9 +3823,9 @@ kafka:
   # CLI flag: -ingest-storage.kafka.replay-concurrency
   [replay_concurrency: <int> | default = 1]
 
-  # The number of concurrent appends to the TSDB head.
+  # The number of concurrent appends to the TSDB head. 0 to disable.
   # CLI flag: -ingest-storage.kafka.replay-shards
-  [replay_shards: <int> | default = 1]
+  [replay_shards: <int> | default = 0]
 
   # The number of timeseries to batch together before ingesting into TSDB.
   # CLI flag: -ingest-storage.kafka.batch-size
