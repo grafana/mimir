@@ -54,7 +54,7 @@ You can configure Grafana Mimir ingester circuit breakers with the following opt
 
 - `-ingester.read-circuit-breaker.failure-execution-threshold`: How many read requests must have been executed within the thresholding period for a read circuit breaker to be eligible to open for the rate of failures?
 
-- `-ingester.push-circuit-breaker.failure-threshold-percentage`: Max percentage of push requests that can fail over period before a push circuit breaker opens.
+- `-ingester.push-circuit-breaker.failure-threshold-percentage`: Maximum percentage of push requests that can fail over period before a push circuit breaker opens.
 
 - `-ingester.read-circuit-breaker.failure-threshold-percentage`: Max percentage of read requests that can fail over period before a read circuit breaker opens.
 
