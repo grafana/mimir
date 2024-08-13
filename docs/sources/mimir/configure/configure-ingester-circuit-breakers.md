@@ -22,7 +22,7 @@ Depending on configurable frequencies of successes and failures, the circuit bre
 
 Grafana Mimir ingester circuit breakers are an experimental feature.
 They independently protect Mimir's write and read paths from slow push and read requests.
-More precisely, Grafana Mimir Ingester distinguishes between _push requests circuit breakers_ and _read requests circuit breakers_.
+More precisely, Grafana Mimir ingesters distinguish between _push requests circuit breakers_ and _read requests circuit breakers_.
 
 ### Push requests circuit breakers
 
