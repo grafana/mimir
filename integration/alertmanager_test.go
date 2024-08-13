@@ -1294,5 +1294,5 @@ func TestAlertmanagerTestReceivers(t *testing.T) {
 	require.Len(t, res.Receivers[0].Configs, 1)
 	require.Equal(t, trConfig.Receivers[0].GrafanaIntegrations.Integrations[0].UID, res.Receivers[0].Configs[0].UID)
 	require.Equal(t, trConfig.Receivers[0].GrafanaIntegrations.Integrations[0].Name, res.Receivers[0].Configs[0].Name)
-	require.NoError(t, res.Receivers[0].Configs[0].Error)
+	require.Equal(t, "", res.Receivers[0].Configs[0].Error)
 }
