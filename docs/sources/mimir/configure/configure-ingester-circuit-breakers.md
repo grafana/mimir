@@ -8,6 +8,20 @@ title: Configure Grafana Mimir ingester circuit breakers
 
 # Configure Grafana Mimir ingester circuit breakers
 
+## Background
+
+The circuit breaker pattern prevents an application from repeatedly trying to execute an operation that is likely to fail.
+A circuit breaker monitors the number of recent failures that have occurred, and uses this information to decide whether to allow a new operation to proceed, or simply return an exception immediately.
+In case of a failing operation, a circuit breaker allows an application to proceed with its execution, without waiting for the failure cause to be fixed.
+Since the failing operation is immediately rejected, the application doesn't retry to execute it, reducing this way its CPU usage.
+
+The circuit breaker pattern typically operates in 3 main states: `closed`, `open` and `half-open`.
+In the `closed` state, a circuit breaker operates normally, forwarding all the requests to the application it protects.
+In the `open` state, the circuit breaker immediately stops forwarding requests to the failing application, effectively isolating it.
+After a specified timeout period in the `open` state, the circuit breaker transitions to the `half-open`, where it forwards a limited number of trial requests to the application and monitors their execution.
+Successful trial requests indicate application recovery, and the circuit breaker transitions back to the `closed` state.
+Failing trial requests indicate that the issues persist, and the circuit breaker transitions back to the `open` state.
+
 ## How do Grafana Mimir Ingester circuit breakers work?
 
 A request to a resource protected by a circuit breaker follows these steps:
@@ -15,8 +29,9 @@ A request to a resource protected by a circuit breaker follows these steps:
 1. The request tries to acquire a circuit breaker permit.
 1. If the circuit breaker is open, no permit is acquired, and the request fails with a _circuit breaker open error_.
 1. Otherwise, the request acquires a circuit breaker permit and runs.
-  - If the request meets the circuit breaker's failure condition, the circuit breaker records a failure.
-  - Otherwise, the circuit breaker records a success.
+
+- If the request meets the circuit breaker's failure condition, the circuit breaker records a failure.
+- Otherwise, the circuit breaker records a success.
 
 Depending on the configured frequencies of successes and failures, the circuit breaker transits from one state to another.
 
