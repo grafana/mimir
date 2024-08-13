@@ -15,6 +15,7 @@ package storage
 
 import (
 	"math"
+	"fmt"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -74,13 +75,13 @@ func (b *MemoizedSeriesIterator) PeekPrev() (t int64, v float64, fh *histogram.F
 // Seek advances the iterator to the element at time t or greater.
 func (b *MemoizedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	t0 := t - b.delta
-
 	if b.valueType != chunkenc.ValNone && t0 > b.lastTime {
 		// Reset the previously stored element because the seek advanced
 		// more than the delta.
 		b.prevTime = math.MinInt64
 
 		b.valueType = b.it.Seek(t0)
+		fmt.Println("SEEK", t0, t, b.it.AtT(), b.delta)
 		switch b.valueType {
 		case chunkenc.ValNone:
 			return chunkenc.ValNone
@@ -92,6 +93,7 @@ func (b *MemoizedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	if b.lastTime >= t {
 		return b.valueType
 	}
+	fmt.Println("SEEK NEXT")
 	for b.Next() != chunkenc.ValNone {
 		if b.lastTime >= t {
 			return b.valueType
@@ -117,6 +119,7 @@ func (b *MemoizedSeriesIterator) Next() chunkenc.ValueType {
 	}
 
 	b.valueType = b.it.Next()
+	fmt.Println("NEXT", b.it.AtT())
 	if b.valueType != chunkenc.ValNone {
 		b.lastTime = b.it.AtT()
 	}

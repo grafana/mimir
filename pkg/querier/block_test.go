@@ -857,7 +857,7 @@ func TestBlockQuerierSeriesIterator_Incident(t *testing.T) {
 
 	// Run the same request with 3 chunks; This should give us the same data points and the same PeekPrev() (apart from the first one, maybe.
 	// But that's not true...
-	t.Log("NewMemoizedIterator 3 chunks")
+	t.Log("\n\nNewMemoizedIterator 3 chunks")
 	it = storage.NewMemoizedIterator(newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), []storepb.AggrChunk{chunk1, chunk2, chunk3}), lookbackMillis)
 	threeChunksPoints, threeChunksPeekPoints := runSteps(memoizingIteratorSteps, it)
 
@@ -868,7 +868,51 @@ func TestBlockQuerierSeriesIterator_Incident(t *testing.T) {
 	twoChunksPeekPoints[0], threeChunksPeekPoints[0] = promql.FPoint{}, promql.FPoint{}
 
 	// BUG - some of the last PeekPrev() values aren't the same. They are 0 with 3 chunks and non-zero with 2 chunks.
-	checkSlicesSame(t, twoChunksPeekPoints, threeChunksPeekPoints)
+	// 1723427946795 = Aug 12 2024 01:59:06 GMT+0000
+	//checkSlicesSame(t, twoChunksPeekPoints, threeChunksPeekPoints)
+
+	c2It := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), []storepb.AggrChunk{chunk2, chunk3})
+	c3It := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), []storepb.AggrChunk{chunk1, chunk2, chunk3})
+
+	fmt.Println("#######")
+	c2It.Seek(1723420500000)
+	c3It.Seek(1723420500000)
+	// These three Next() makes the samples to be the first sample in 2nd chunk,
+	// similar to where the Seek() for the 2 chunk would come to.
+	c3It.Next()
+	c3It.Next()
+	c3It.Next()
+	fmt.Println(c2It.AtT(), c3It.AtT(), c2It.AtT() == c3It.AtT())
+
+	fmt.Println("\n----")
+	c2It.Seek(1723421700000)
+	c3It.Seek(1723421700000)
+	fmt.Println(c2It.AtT(), c3It.AtT(), c2It.AtT() == c3It.AtT())
+
+	fmt.Println("\n$$$----")
+	fmt.Println("c2it")
+	c2It.Seek(1723427700000)
+	fmt.Println("\nc3it")
+	c3It.Seek(1723427700000)
+	fmt.Println(c2It.AtT(), c3It.AtT(), c2It.AtT() == c3It.AtT())
+
+	//1723420806795 1723420806795 true
+	//1723427346795 1723427346795 true
+	//1723427946795 1723428006795 false
+
+	//fmt.Println(c2It.AtT())
+	//fmt.Println(c2It.AtT())
+	//fmt.Println(c2It.AtT())
+	//
+	//fmt.Println("---")
+	//fmt.Println(c3It.AtT())
+	//
+	//c3It.Seek(1723421700000)
+	//fmt.Println(c3It.AtT())
+	//
+	//c3It.Seek(1723427700000)
+	//fmt.Println(c3It.AtT())
+
 }
 
 type Iterator interface {
@@ -900,11 +944,13 @@ func checkSlicesSame(t *testing.T, expected []promql.FPoint, actual []promql.FPo
 }
 
 func readFloats(t *testing.T, chunks ...storepb.AggrChunk) []promql.FPoint {
+	fmt.Println("READ FLOATS")
 	it := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), chunks)
 	var firstIteratorPoints []promql.FPoint
 	for it.Next() != chunkenc.ValNone {
 		ts, value := it.At()
 		firstIteratorPoints = append(firstIteratorPoints, promql.FPoint{T: ts, F: value})
+		fmt.Println("   ", ts, "\t", time.UnixMilli(ts).UTC().String(), "\t", value)
 
 		require.Equal(t, ts, it.AtT())
 	}

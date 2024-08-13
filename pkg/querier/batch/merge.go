@@ -7,6 +7,7 @@ package batch
 
 import (
 	"container/heap"
+	"fmt"
 	"sort"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -69,6 +70,7 @@ func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 }
 
 func (c *mergeIterator) Seek(t int64, size int) chunkenc.ValueType {
+	fmt.Println("SEEEEEEEEEK", t, c.batches.len())
 	if c.currErr != nil {
 		// We've already failed. Stop.
 		return chunkenc.ValNone
@@ -78,6 +80,8 @@ func (c *mergeIterator) Seek(t int64, size int) chunkenc.ValueType {
 found:
 	for c.batches.len() > 0 {
 		batch := c.batches.curr()
+		fmt.Println("HERE", t >= batch.Timestamps[0], t <= batch.Timestamps[batch.Length-1], t, batch.Timestamps[batch.Length-1])
+		fmt.Println("HERE2", batch.Timestamps)
 		if t >= batch.Timestamps[0] && t <= batch.Timestamps[batch.Length-1] {
 			batch.Index = 0
 			for batch.Index < batch.Length && t > batch.Timestamps[batch.Index] {
@@ -89,6 +93,7 @@ found:
 		c.batches.removeFirst()
 	}
 
+	fmt.Println("RESETTING")
 	// If we didn't find anything in the current set of batches, reset the heap
 	// and seek.
 	if c.batches.len() == 0 {
@@ -137,6 +142,7 @@ func (c *mergeIterator) buildNextBatch(size int) chunkenc.ValueType {
 	// is before all iterators next entry.
 	for len(c.h) > 0 && (c.batches.len() == 0 || c.nextBatchEndTime() >= c.h[0].AtTime()) {
 		batch := c.h[0].Batch()
+		fmt.Println("ITER", batch.Length, batch.Timestamps, c.batches.len())
 		c.batches.merge(&batch, size)
 
 		if c.h[0].Next(size) != chunkenc.ValNone {
@@ -147,6 +153,7 @@ func (c *mergeIterator) buildNextBatch(size int) chunkenc.ValueType {
 	}
 
 	if c.batches.len() > 0 {
+		fmt.Println("RETURNING", c.batches.curr().Timestamps)
 		return c.batches.curr().ValueType
 	}
 	return chunkenc.ValNone

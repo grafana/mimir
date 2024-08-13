@@ -107,17 +107,21 @@ func newIteratorAdapter(it *iteratorAdapter, underlying iterator, lbls labels.La
 // Seek implements chunkenc.Iterator.
 func (a *iteratorAdapter) Seek(t int64) chunkenc.ValueType {
 	// Optimisation: fulfill the seek using current batch if possible.
+	fmt.Println("CALLED", t, a.curr.Index, a.curr.Length, a.curr.Timestamps)
 	if a.curr.Length > 0 && a.curr.Index < a.curr.Length {
 		if t <= a.curr.Timestamps[a.curr.Index] {
 			//In this case, the interface's requirement is met, so state of this
 			//iterator does not need any change.
+			fmt.Println("P1")
 			return a.curr.ValueType
 		} else if t <= a.curr.Timestamps[a.curr.Length-1] {
 			//In this case, some timestamp between current sample and end of batch can fulfill
 			//the seek. Let's find it.
 			for a.curr.Index < a.curr.Length && t > a.curr.Timestamps[a.curr.Index] {
+				fmt.Println("Plussing")
 				a.curr.Index++
 			}
+			fmt.Println("P2")
 			return a.curr.ValueType
 		}
 	}
@@ -127,9 +131,11 @@ func (a *iteratorAdapter) Seek(t int64) chunkenc.ValueType {
 	if typ := a.underlying.Seek(t, a.batchSize); typ != chunkenc.ValNone {
 		a.curr = a.underlying.Batch()
 		if a.curr.Index < a.curr.Length {
+			fmt.Println("P3", a.curr.Timestamps, a.curr.Length)
 			return typ
 		}
 	}
+	fmt.Println("P4")
 	return chunkenc.ValNone
 }
 
