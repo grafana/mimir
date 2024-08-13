@@ -178,7 +178,7 @@ func getBinaryNameForBackwardsCompatibility() string {
 	return "mimir"
 }
 
-func NewQueryFrontend(name string, flags map[string]string, options ...Option) *MimirService {
+func NewQueryFrontend(name string, consulAddress string, flags map[string]string, options ...Option) *MimirService {
 	return newMimirServiceFromOptions(
 		name,
 		map[string]string{
@@ -186,6 +186,9 @@ func NewQueryFrontend(name string, flags map[string]string, options ...Option) *
 			"-log.level": "warn",
 			// Quickly detect query-scheduler when running it.
 			"-query-frontend.scheduler-dns-lookup-period": "1s",
+			// Configure the partitions ring backend.
+			"-ingester.partition-ring.store":           "consul",
+			"-ingester.partition-ring.consul.hostname": consulAddress,
 		},
 		flags,
 		options...,

@@ -137,20 +137,22 @@ func (p *partitionOffsetReader) FetchPartitionStartOffset(ctx context.Context) (
 	return p.client.FetchPartitionStartOffset(ctx, p.partitionID)
 }
 
-// TopicOffsetsReader is responsible to read the offsets of a all partitions in a topic.
+// TopicOffsetsReader is responsible to read the offsets of partitions in a topic.
 type TopicOffsetsReader struct {
 	*genericOffsetReader[map[int32]int64]
 
-	client *partitionOffsetClient
-	topic  string
-	logger log.Logger
+	client          *partitionOffsetClient
+	topic           string
+	getPartitionIDs func() []int32
+	logger          log.Logger
 }
 
-func NewTopicOffsetsReader(client *kgo.Client, topic string, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *TopicOffsetsReader {
+func NewTopicOffsetsReader(client *kgo.Client, topic string, getPartitionIDs func() []int32, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *TopicOffsetsReader {
 	r := &TopicOffsetsReader{
-		client: newPartitionOffsetClient(client, topic, reg, logger),
-		topic:  topic,
-		logger: logger,
+		client:          newPartitionOffsetClient(client, topic, reg, logger),
+		topic:           topic,
+		getPartitionIDs: getPartitionIDs,
+		logger:          logger,
 	}
 
 	r.genericOffsetReader = newGenericOffsetReader[map[int32]int64](r.FetchLastProducedOffset, pollInterval, logger)
@@ -158,8 +160,8 @@ func NewTopicOffsetsReader(client *kgo.Client, topic string, pollInterval time.D
 	return r
 }
 
-// FetchLastProducedOffset fetches and returns the last produced offset for each partition in the topic.
+// FetchLastProducedOffset fetches and returns the last produced offset for each requested partition in the topic.
 // The offset is -1 if a partition has been created but no record has been produced yet.
 func (p *TopicOffsetsReader) FetchLastProducedOffset(ctx context.Context) (map[int32]int64, error) {
-	return p.client.FetchTopicLastProducedOffsets(ctx)
+	return p.client.FetchPartitionsLastProducedOffsets(ctx, p.getPartitionIDs())
 }
