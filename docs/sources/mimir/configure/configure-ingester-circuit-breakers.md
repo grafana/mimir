@@ -36,9 +36,14 @@ A request to a resource protected by a circuit breaker follows these steps:
 
 Depending on the configured frequencies of successes and failures, the circuit breaker transits from one state to another.
 
-Grafana Mimir ingester circuit breakers are an experimental feature.
-They independently protect Mimir's write and read paths from slow push and read requests.
-More precisely, Grafana Mimir ingesters distinguish between _push requests circuit breakers_ and _read requests circuit breakers_.
+{{% admonition type="note" %}}Grafana Mimir ingester circuit breakers are an experimental feature.
+They independently protect Mimir's write and read paths from slow requests.
+For the time being they don't protect ingesters from other issues.
+{{% /admonition %}}
+
+More precisely, Grafana Mimir ingesters distinguish between _push requests circuit breakers_ and _read requests circuit breakers_, and they can be configured independently.
+It is possible to configure the maximum allowed duration of both push and read requests, as well as the highest frequency of the slow requests before the circuit breakers open and start protecting the ingesters.
+For the time being Grafana Mimir.
 
 ### Push requests circuit breakers
 
@@ -88,7 +93,7 @@ You can configure Grafana Mimir ingester circuit breakers with the following opt
 
 ## Grafana Mimir Ingester circuit breakers metrics
 
-Grafana Mimir ingester circuit breakers contain the following metrics:
+Grafana Mimir ingester circuit breakers add several metrics, which aren't part of any API guarantee and can be changed at any time.
 
 - `cortex_ingester_circuit_breaker_transitions_total`: Counter showing the number of times a circuit breaker enters a state. It contains the labels state, with possible values of `closed`, `open`, and `half-open`, and the `request_type` setting , with possible values of `push` and `read`.
 
