@@ -5,6 +5,7 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -425,7 +426,9 @@ type mockPusher struct {
 }
 
 func (m *mockPusher) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
-	args := m.Called(ctx, request)
+	c := &mimirpb.WriteRequest{}
+	c.Timeseries = slices.Clone(request.Timeseries)
+	args := m.Called(ctx, c)
 	return args.Error(0)
 }
 
