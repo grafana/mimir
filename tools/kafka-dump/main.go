@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-jose/go-jose/v3/json"
+	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -25,48 +26,66 @@ const (
 )
 
 func main() {
+	// Clean up all flags registered via init() methods of 3rd-party libraries.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
-	topic := flag.String("topic", "mimir", "Kafka topic to dump")
-	brokers := flag.String("brokers", "localhost:9092", "Kafka brokers")
-	partition := flag.Int("partition", 0, "Kafka partition to dump or import into")
-	skipFirst := flag.Int("skipFirst", 0, "Skip until input record with offset N")
-	mode := flag.String("mode", "import", "Mode to run in: import or export")
-	exportOffsetStart := flag.Int64("exportOffsetStart", 0, "Offset to start exporting from")
-	exportMaxRecords := flag.Int("exportMaxRecords", 1_000_000, "Maximum number of records to export")
-	fileName := flag.String("file", "-", "File to read from or write to. - for stdin/stdout")
-	flag.Parse()
+	cfg := struct {
+		topic             string
+		brokers           string
+		partition         int
+		skipFirst         int
+		mode              string
+		exportOffsetStart int64
+		exportMaxRecords  int
+		fileName          string
+	}{}
 
-	_, _ = fmt.Fprintf(os.Stderr, "Importing to topic %q via brokers %q partition %d\n", *topic, *brokers, *partition)
+	flag.StringVar(&cfg.topic, "topic", "mimir", "Kafka topic to dump")
+	flag.StringVar(&cfg.brokers, "brokers", "localhost:9092", "Kafka brokers")
+	flag.IntVar(&cfg.partition, "partition", 0, "Kafka partition to dump or import into")
+	flag.IntVar(&cfg.skipFirst, "skipFirst", 0, "Skip until input record with offset N")
+	flag.StringVar(&cfg.mode, "mode", "import", "Mode to run in: import or export")
+	flag.Int64Var(&cfg.exportOffsetStart, "exportOffsetStart", 0, "Offset to start exporting from")
+	flag.IntVar(&cfg.exportMaxRecords, "exportMaxRecords", 1_000_000, "Maximum number of records to export")
+	flag.StringVar(&cfg.fileName, "file", "-", "File to read from or write to. - for stdin/stdout")
+
+	// Parse the CLI arguments.
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
+
+	_, _ = fmt.Fprintf(os.Stderr, "Importing to topic %q via brokers %q partition %d\n", cfg.topic, cfg.brokers, cfg.partition)
 	var file io.ReadWriter
-	if *fileName == "-" {
-		switch *mode {
+	if cfg.fileName == "-" {
+		switch cfg.mode {
 		case "export":
 			file = os.Stdout
 		case "import":
 			file = os.Stdin
 		}
 	} else {
-		explicitFile, err := os.Open(*fileName)
+		explicitFile, err := os.Open(cfg.fileName)
 		if err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "failed to open file %s: %v\n", *fileName, err)
+			_, _ = fmt.Fprintf(os.Stderr, "failed to open file %s: %v\n", cfg.fileName, err)
 			return
 		}
 		defer explicitFile.Close()
 		file = explicitFile
 	}
 
-	if *mode == "import" {
-		if err := doImport(file, *topic, *brokers, *partition, *skipFirst); err != nil {
+	if cfg.mode == "import" {
+		if err := doImport(file, cfg.topic, cfg.brokers, cfg.partition, cfg.skipFirst); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "failed to import: %v\n", err)
 			return
 		}
-	} else if *mode == "export" {
-		if err := doExport(file, *topic, *brokers, *partition, *exportOffsetStart, *exportMaxRecords); err != nil {
+	} else if cfg.mode == "export" {
+		if err := doExport(file, cfg.topic, cfg.brokers, cfg.partition, cfg.exportOffsetStart, cfg.exportMaxRecords); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "failed to export: %v\n", err)
 			return
 		}
 	} else {
-		_, _ = fmt.Fprintf(os.Stderr, "unknown mode %q\n", *mode)
+		_, _ = fmt.Fprintf(os.Stderr, "unknown mode %q\n", cfg.mode)
 	}
 }
 
