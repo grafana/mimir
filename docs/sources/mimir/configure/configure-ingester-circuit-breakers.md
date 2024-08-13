@@ -15,8 +15,8 @@ A request to a resource protected by a circuit breaker follows these steps:
 - The request tries to acquire a circuit breaker permit.
 - If the circuit breaker is open, no permit is acquired, and the request fails with a _circuit breaker open error_.
 - Otherwise, the request acquires a circuit breaker permit and runs.
-  - If the request execution meets the circuit breaker failure condition, a failure is recorded within the circuit breaker.
-  - Otherwise, a success is recorded with the circuit breaker.
+  - If the request meets the circuit breaker's failure condition, the circuit breaker records a failure.
+  - Otherwise, the circuit breaker records a success.
 
 Depending on configurable frequencies of successes and failures, the circuit breaker transits from one state to another.
 
