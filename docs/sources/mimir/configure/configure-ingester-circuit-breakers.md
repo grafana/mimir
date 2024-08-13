@@ -64,7 +64,7 @@ You can configure Grafana Mimir ingester circuit breakers with the following opt
 
 - `-ingester.push-circuit-breaker.initial-delay`: How long a push circuit breaker waits to become active after an activation request. During this time, neither failures nor successes are counted.
 
-- `-ingester.read-circuit-breaker.initial-delay`: How long a read circuit breaker should wait between an activation request and becoming effectively active? During that time both failures and successes are not counted.
+- `-ingester.read-circuit-breaker.initial-delay`: How long a read circuit breaker waits to become active after an activation request. During this time, neither failures nor successes are counted.
 
 - `-ingester.push-circuit-breaker.request-timeout`: The maximum duration of a push request before it triggers a timeout. This configuration is used for push circuit breakers only, and the corresponding timeouts are not reported as errors.
 
