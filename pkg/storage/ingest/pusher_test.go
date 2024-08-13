@@ -426,9 +426,7 @@ type mockPusher struct {
 }
 
 func (m *mockPusher) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
-	c := &mimirpb.WriteRequest{}
-	c.Timeseries = slices.Clone(request.Timeseries)
-	args := m.Called(ctx, c)
+	args := m.Called(ctx, request)
 	return args.Error(0)
 }
 
