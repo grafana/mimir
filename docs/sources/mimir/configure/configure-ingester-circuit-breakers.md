@@ -62,7 +62,7 @@ You can configure Grafana Mimir ingester circuit breakers with the following opt
 
 - `-ingester.read-circuit-breaker.cooldown-period`: How long a read circuit breaker will stay in the open state before allowing additional read requests?
 
-- `-ingester.push-circuit-breaker.initial-delay`: How long a push circuit breaker should wait between an activation request and becoming effectively active? During that time both failures and successes are not counted.
+- `-ingester.push-circuit-breaker.initial-delay`: How long a push circuit breaker waits to become active after an activation request. During this time, neither failures nor successes are counted.
 
 - `-ingester.read-circuit-breaker.initial-delay`: How long a read circuit breaker should wait between an activation request and becoming effectively active? During that time both failures and successes are not counted.
 
