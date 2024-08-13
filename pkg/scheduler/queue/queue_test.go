@@ -127,13 +127,12 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 			normalQueueDimension := "normal-request"
 			slowConsumerLatency := 20 * time.Millisecond
 			slowConsumerQueueDimension := "slow-request"
-			normalQueueDimensionFunc := func(usingMultipleDimensions bool) []string { return []string{"normal-channel"} }
+			normalQueueDimensionFunc := func(_ bool) []string { return []string{"normal-channel"} }
 			slowQueueDimensionFunc := func(usingMultipleDimensions bool) []string {
 				if usingMultipleDimensions {
 					return []string{"slow-channel"}
-				} else {
-					return []string{"normal-channel"}
 				}
+				return []string{"normal-channel"}
 			}
 
 			useMultipleDimensions := []bool{false, true}

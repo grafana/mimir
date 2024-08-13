@@ -113,11 +113,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 }
 
 func (cfg *Config) Validate() error {
-	err := cfg.ServiceDiscovery.Validate()
-	if err != nil {
-		return err
-	}
-	return nil
+	return cfg.ServiceDiscovery.Validate()
 }
 
 // NewScheduler creates a new Scheduler.
@@ -162,7 +158,16 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		[]string{"query_component"},
 	)
 
-	s.requestQueue, err = queue.NewRequestQueue(s.log, cfg.MaxOutstandingPerTenant, cfg.UseMultiAlgorithmQueryQueue, cfg.QuerierForgetDelay, s.queueLength, s.discardedRequests, enqueueDuration, querierInflightRequestsMetric)
+	s.requestQueue, err = queue.NewRequestQueue(
+		s.log,
+		cfg.MaxOutstandingPerTenant,
+		cfg.UseMultiAlgorithmQueryQueue,
+		cfg.QuerierForgetDelay,
+		s.queueLength,
+		s.discardedRequests,
+		enqueueDuration,
+		querierInflightRequestsMetric,
+	)
 	if err != nil {
 		return nil, err
 	}
