@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -720,111 +721,194 @@ func TestBlockQuerierSeriesIterator_SeekPastEnd(t *testing.T) {
 }
 
 func TestBlockQuerierSeriesIterator_Incident(t *testing.T) {
+	// block1 chunk11 (last chunk) 01J5240S2R3BE24W8CH4TPEEGV ALERTS{alertstate="pending", asserts_request_context="default#currant", job="istio-system/envoy-stats-monitor", workload="agarita", asserts_request_type="inbound"}'
 	chunk1 := storepb.AggrChunk{
-		MinTime: 1723415826795,
-		MaxTime: 1723420746795,
+		MinTime: 1723415826795, // Aug. 11, 2024 22:37:06
+		MaxTime: 1723420746795, // Aug. 11, 2024 23:59:06
 		Raw: storepb.Chunk{
 			Type: storepb.Chunk_XOR,
 			Data: []byte{0, 13, 214, 197, 180, 185, 168, 100, 63, 240, 0, 0, 0, 0, 0, 0, 224, 212, 3, 195, 244, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 0, 0, 0, 87, 228, 1, 64, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 250, 129, 192, 20, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 0, 0, 0, 21, 249, 1, 64, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 254, 160, 112, 0, 20, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 0, 0, 0, 18, 79, 129, 64, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 254, 219, 8, 20, 0, 0, 0, 0, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0, 16},
 		},
 	}
-
+	// block2 chunk0 01J54R4TMGBG5966G4MX6C37XD ALERTS{alertstate="pending", asserts_request_context="default#currant", job="istio-system/envoy-stats-monitor", workload="agarita", asserts_request_type="inbound"}
 	chunk2 := storepb.AggrChunk{
-		MinTime: 1723420806795,
-		MaxTime: 1723427946795,
+		MinTime: 1723420806795, // Aug. 12, 2024 00:00:06
+		MaxTime: 1723427946795, // Aug. 12, 2024 01:59:06
 		Raw: storepb.Chunk{
 			Type: storepb.Chunk_XOR,
 			Data: []byte{0, 6, 150, 186, 148, 190, 168, 100, 63, 240, 0, 0, 0, 0, 0, 0, 224, 212, 3, 48, 253, 0, 0, 0, 0, 0, 0, 0, 15, 128, 0, 0, 0, 0, 48, 133, 224, 80, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 252, 247, 162, 5, 0, 0, 0, 0, 0, 0, 0, 15, 58, 152, 5, 0, 0, 0, 0, 0, 0, 0, 8},
 		},
 	}
 
+	// block2 chunk1 01J54R4TMGBG5966G4MX6C37XD ALERTS{alertstate="pending", asserts_request_context="default#currant", job="istio-system/envoy-stats-monitor", workload="agarita", asserts_request_type="inbound"}
 	chunk3 := storepb.AggrChunk{
-		MinTime: 1723428006795,
-		MaxTime: 1723429326795,
+		MinTime: 1723428006795, // Aug. 12, 2024 02:00:06
+		MaxTime: 1723429326795, // Aug. 12, 2024 02:22:06
 		Raw: storepb.Chunk{
 			Type: storepb.Chunk_XOR,
 			Data: []byte{0, 13, 150, 174, 131, 197, 168, 100, 127, 240, 0, 0, 0, 0, 0, 2, 224, 250, 32, 195, 244, 0, 0, 0, 0, 0, 0, 0, 61, 21, 160, 0, 20, 0, 0, 0, 0, 0, 0, 0, 60, 58, 152, 20, 0, 0, 0, 0, 0, 0, 0, 61, 197, 104, 0, 20, 0, 0, 0, 0, 0, 0, 0, 32},
 		},
 	}
 
-	firstIterator := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), []storepb.AggrChunk{chunk1, chunk2, chunk3})
+	t.Log(fmt.Sprintf("%#v\n", readFloats(t, chunk1)))
+	t.Log(fmt.Sprintf("%#v\n", readFloats(t, chunk2)))
+	t.Log(fmt.Sprintf("%#v\n", readFloats(t, chunk3)))
 
+	// steps that NewMemoizedIterator calls on newBlockQuerierSeriesIterator
+	underlyingIteratorSteps := []int64{
+		1723416900000, // Aug. 11, 2024 22:55:00
+		1723419300000, // Aug. 11, 2024 23:35:00
+		1723420500000, // Aug. 11, 2024 23:55:00
+		-1,            // next
+		-1,            // next
+		-1,            // next
+		1723421700000, // Aug. 12, 2024 00:15:00
+		1723427700000, // Aug. 12, 2024 01:55:00
+		1723428900000, // Aug. 12, 2024 02:15:00
+		-1,            // next
+		-1,            // next
+		-1,            // next
+		1723430100000, // Aug. 12, 2024 02:35:00
+	}
+
+	// steps that NewMemoizedIterator calls on newBlockQuerierSeriesIterator
+	underlyingIteratorStepsShort := []int64{
+		1723424100000,
+		1723427700000, // Aug. 12, 2024 01:55:00
+		-1,            // next
+		1723428900000, // Aug. 12, 2024 02:15:00
+		-1,            // next
+		-1,            // next
+		-1,            // next
+		1723430100000, // Aug. 12, 2024 02:35:00
+	}
+
+	// steps that the promQL engine calls on NewMemoizedIterator
+	memoizingIteratorSteps := []int64{
+		// The query we're testing with has the first 3 steps too, but since those don't return data with 2 chunks we trim them to reduce the differences.
+		//1723417200000, // Aug. 11, 2024 23:00:00
+		//1723418400000, // Aug. 11, 2024 23:20:00
+		//1723419600000, // Aug. 11, 2024 23:40:00
+		1723420800000, // Aug. 12, 2024 00:00:00
+		1723422000000, // Aug. 12, 2024 00:20:00
+		1723423200000, // Aug. 12, 2024 00:40:00
+		1723424400000, // Aug. 12, 2024 01:00:00
+		1723425600000,
+		1723426800000,
+		1723428000000,
+		1723429200000,
+		1723430400000,
+		1723431600000, // Aug. 12, 2024 03:00:00
+	}
+
+	// steps that the promQL engine calls on NewMemoizedIterator
+	memoizingIteratorStepsShort := []int64{
+		1723424400000, // Aug. 12, 2024 01:00:00
+		1723425600000,
+		1723426800000,
+		1723428000000,
+		1723429200000,
+		1723430400000,
+		1723431600000, // Aug. 12, 2024 03:00:00
+	}
+
+	_ = underlyingIteratorSteps
+	_ = underlyingIteratorStepsShort
+	_ = memoizingIteratorSteps
+	_ = memoizingIteratorStepsShort
+
+	runSteps := func(steps []int64, it Iterator) (points, peekPoints []promql.FPoint) {
+		for _, step := range steps {
+			if step == -1 {
+				if it.Next() == chunkenc.ValNone {
+					break
+				}
+			} else if it.Seek(step) == chunkenc.ValNone {
+				break
+			}
+			formattedStep := time.UnixMilli(step).UTC().String()
+			if step == -1 {
+				formattedStep = "                             "
+			}
+			ts, f := it.At()
+			t.Log("   ", formattedStep, "\t", time.UnixMilli(ts).UTC().String(), ts, "\t", f)
+			points = append(points, promql.FPoint{T: ts, F: f})
+
+			// Implemented only by NewMemoizedIterator
+			type peeker interface {
+				PeekPrev() (t int64, v float64, fh *histogram.FloatHistogram, ok bool)
+			}
+			if p, ok := it.(peeker); ok {
+				ts, f, _, _ = p.PeekPrev()
+				t.Log("p: ", formattedStep, "\t", time.UnixMilli(ts).UTC().String(), ts, "\t", f)
+				peekPoints = append(peekPoints, promql.FPoint{T: ts, F: f})
+			}
+		}
+		return
+	}
+
+	// Actual test:
+	// Run the same request with 2 chunks - those contain the sufficient data and don't necessarily need the first chunk (except for the first PeekPrev() value, but that's not the problem)
+	const lookbackMillis = int64(5 * time.Minute / time.Millisecond)
+	it := storage.NewMemoizedIterator(newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), []storepb.AggrChunk{chunk2, chunk3}), lookbackMillis)
+
+	t.Log("NewMemoizedIterator 2 chunks")
+	twoChunksPoints, twoChunksPeekPoints := runSteps(memoizingIteratorSteps, it)
+
+	// Run the same request with 3 chunks; This should give us the same data points and the same PeekPrev() (apart from the first one, maybe.
+	// But that's not true...
+	t.Log("NewMemoizedIterator 3 chunks")
+	it = storage.NewMemoizedIterator(newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), []storepb.AggrChunk{chunk1, chunk2, chunk3}), lookbackMillis)
+	threeChunksPoints, threeChunksPeekPoints := runSteps(memoizingIteratorSteps, it)
+
+	// This is ok.
+	checkSlicesSame(t, twoChunksPoints, threeChunksPoints)
+
+	// zero the first two peek points - since the first two points are not available in the 2 chunk case
+	twoChunksPeekPoints[0], threeChunksPeekPoints[0] = promql.FPoint{}, promql.FPoint{}
+
+	// BUG - some of the last PeekPrev() values aren't the same. They are 0 with 3 chunks and non-zero with 2 chunks.
+	checkSlicesSame(t, twoChunksPeekPoints, threeChunksPeekPoints)
+}
+
+type Iterator interface {
+	// Next advances the iterator by one and returns the type of the value
+	// at the new position (or ValNone if the iterator is exhausted).
+	Next() chunkenc.ValueType
+	// Seek advances the iterator forward to the first sample with a
+	// timestamp equal or greater than t. If the current sample found by a
+	// previous `Next` or `Seek` operation already has this property, Seek
+	// has no effect. If a sample has been found, Seek returns the type of
+	// its value. Otherwise, it returns ValNone, after which the iterator is
+	// exhausted.
+	Seek(t int64) chunkenc.ValueType
+	// At returns the current timestamp/value pair if the value is a float.
+	// Before the iterator has advanced, the behaviour is unspecified.
+	At() (int64, float64)
+}
+
+func checkSlicesSame(t *testing.T, expected []promql.FPoint, actual []promql.FPoint) {
+	assert.Equalf(t, len(expected), len(actual), "expected: %#v\nactual: %#v", expected, actual)
+	for i := range expected {
+		if math.IsNaN(expected[i].F) != math.IsNaN(actual[i].F) {
+			t.Log("NaN mismatch", expected[i], actual[i], "index", i)
+			t.Fail()
+		} else if !math.IsNaN(expected[i].F) || !math.IsNaN(actual[i].F) {
+			assert.Equalf(t, expected[i], actual[i], "index %d; expected: %#v\nactual: %#v", i, expected, actual)
+		}
+	}
+}
+
+func readFloats(t *testing.T, chunks ...storepb.AggrChunk) []promql.FPoint {
+	it := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), chunks)
 	var firstIteratorPoints []promql.FPoint
-	for firstIterator.Next() != chunkenc.ValNone {
-		ts, value := firstIterator.At()
+	for it.Next() != chunkenc.ValNone {
+		ts, value := it.At()
 		firstIteratorPoints = append(firstIteratorPoints, promql.FPoint{T: ts, F: value})
 
-		require.Equal(t, ts, firstIterator.AtT())
+		require.Equal(t, ts, it.AtT())
 	}
 
-	require.NoError(t, firstIterator.Err())
-
-	assert.Equal(t, []promql.FPoint{
-		{T: 1723415826795, F: 1},
-		{T: 1723415886795, F: math.NaN()},
-		{T: 1723418826795, F: 1},
-		{T: 1723418886795, F: math.NaN()},
-		{T: 1723419666795, F: 1},
-		{T: 1723419726795, F: 1},
-		{T: 1723419786795, F: 1},
-		{T: 1723419846795, F: 1},
-		{T: 1723419906795, F: 1},
-		{T: 1723419966795, F: math.NaN()},
-		{T: 1723420626795, F: 1},
-		{T: 1723420686795, F: math.NaN()},
-		{T: 1723420746795, F: 1},
-		{T: 1723420806795, F: 1},
-		{T: 1723420866795, F: 1},
-		{T: 1723420926795, F: math.NaN()},
-		{T: 1723427346795, F: 1},
-		{T: 1723427406795, F: math.NaN()},
-		{T: 1723427946795, F: 1},
-		{T: 1723428006795, F: math.NaN()},
-		{T: 1723428546795, F: 1},
-		{T: 1723428606795, F: 1},
-		{T: 1723428666795, F: 1},
-		{T: 1723428726795, F: 1},
-		{T: 1723428786795, F: 1},
-		{T: 1723428846795, F: math.NaN()},
-		{T: 1723429026795, F: 1},
-		{T: 1723429086795, F: 1},
-		{T: 1723429146795, F: 1},
-		{T: 1723429206795, F: 1},
-		{T: 1723429266795, F: 1},
-		{T: 1723429326795, F: math.NaN()},
-	}, firstIteratorPoints, "first iterator points")
-
-	secondIterator := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), []storepb.AggrChunk{chunk2, chunk3})
-
-	var secondIteratorPoints []promql.FPoint
-	for secondIterator.Next() != chunkenc.ValNone {
-		ts, value := secondIterator.At()
-		secondIteratorPoints = append(secondIteratorPoints, promql.FPoint{T: ts, F: value})
-
-		require.Equal(t, ts, secondIterator.AtT())
-	}
-
-	require.NoError(t, secondIterator.Err())
-
-	assert.Equal(t, []promql.FPoint{
-		{T: 1723420806795, F: 1},
-		{T: 1723420866795, F: 1},
-		{T: 1723420926795, F: math.NaN()},
-		{T: 1723427346795, F: 1},
-		{T: 1723427406795, F: math.NaN()},
-		{T: 1723427946795, F: 1},
-		{T: 1723428006795, F: math.NaN()},
-		{T: 1723428546795, F: 1},
-		{T: 1723428606795, F: 1},
-		{T: 1723428666795, F: 1},
-		{T: 1723428726795, F: 1},
-		{T: 1723428786795, F: 1},
-		{T: 1723428846795, F: math.NaN()},
-		{T: 1723429026795, F: 1},
-		{T: 1723429086795, F: 1},
-		{T: 1723429146795, F: 1},
-		{T: 1723429206795, F: 1},
-		{T: 1723429266795, F: 1},
-		{T: 1723429326795, F: math.NaN()},
-	}, secondIteratorPoints, "second iterator points")
+	require.NoError(t, it.Err())
+	return firstIteratorPoints
 }
