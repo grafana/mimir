@@ -23,12 +23,12 @@ std.manifestYamlDoc({
     ring: 'memberlist',
 
     // If true, a load generator is started.
-    enable_load_generator: true,
+    enable_load_generator: false,
 
     // If true, start and enable scraping by these components.
     // Note that if more than one component is enabled, the dashboards shown in Grafana may contain duplicate series or aggregates may be doubled or tripled.
     enable_grafana_agent: false,
-    enable_prometheus: true,  // If Prometheus is disabled, recording rules will not be evaluated and so dashboards in Grafana that depend on these recorded series will display no data.
+    enable_prometheus: false,  // If Prometheus is disabled, recording rules will not be evaluated and so dashboards in Grafana that depend on these recorded series will display no data.
     enable_otel_collector: false,
 
     // If true, a query-tee instance with a single backend is started.
@@ -41,9 +41,9 @@ std.manifestYamlDoc({
     self.ingesters +
     self.read_components +  // Querier, Frontend and query-scheduler, if enabled.
     self.store_gateways +
-    self.compactor +
-    self.rulers(2) +
-    self.alertmanagers(3) +
+    // self.compactor +
+    // self.rulers(2) +
+    // self.alertmanagers(3) +
     self.nginx +
     self.minio +
     (if $._config.enable_prometheus then self.prometheus else {}) +
@@ -167,12 +167,12 @@ std.manifestYamlDoc({
       jaegerApp: 'store-gateway-1',
     }),
 
-    'store-gateway-2': mimirService({
-      name: 'store-gateway-2',
-      target: 'store-gateway',
-      httpPort: 8009,
-      jaegerApp: 'store-gateway-2',
-    }),
+    // 'store-gateway-2': mimirService({
+    //   name: 'store-gateway-2',
+    //   target: 'store-gateway',
+    //   httpPort: 8009,
+    //   jaegerApp: 'store-gateway-2',
+    // }),
   },
 
   local all_caches = ['-blocks-storage.bucket-store.index-cache', '-blocks-storage.bucket-store.chunks-cache', '-blocks-storage.bucket-store.metadata-cache', '-query-frontend.results-cache', '-ruler-storage.cache'],

@@ -136,6 +136,8 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 		return allChunks[i].MinTime < allChunks[j].MinTime
 	})
 
+	fmt.Printf("For %v, got chunks %v\n", bqs.labels, allChunks)
+
 	return newBlockQuerierSeriesIterator(reuse, bqs.Labels(), allChunks)
 }
 

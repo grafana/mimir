@@ -179,8 +179,16 @@ func printBlockIndex(ctx context.Context, blockDir string, printChunks bool, ser
 			}
 		}
 
+		//if output.Samples == 0 {
+		//	continue
+		//}
+
 		if printChunks {
 			for _, c := range chks {
+				//if c.MaxTime < minTime.UnixMilli() || c.MinTime > maxTime.UnixMilli() {
+				//	continue
+				//}
+
 				output.Chunks = append(output.Chunks, chunk{
 					Ref:     c.Ref,
 					MinTime: c.MinTime,
@@ -208,7 +216,7 @@ func printBlockIndex(ctx context.Context, blockDir string, printChunks bool, ser
 
 			if printChunks {
 				for _, c := range output.Chunks {
-					fmt.Println("chunk:", c.Ref,
+					fmt.Println("  chunk:", c.Ref,
 						"min time:", c.MinTime, formatTime(timestamp.Time(c.MinTime)),
 						"max time:", c.MaxTime, formatTime(timestamp.Time(c.MaxTime)))
 				}

@@ -718,3 +718,113 @@ func TestBlockQuerierSeriesIterator_SeekPastEnd(t *testing.T) {
 	it := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), []storepb.AggrChunk{chunk1, chunk2, chunk3})
 	require.Equal(t, chunkenc.ValNone, it.Seek(10))
 }
+
+func TestBlockQuerierSeriesIterator_Incident(t *testing.T) {
+	chunk1 := storepb.AggrChunk{
+		MinTime: 1723415826795,
+		MaxTime: 1723420746795,
+		Raw: storepb.Chunk{
+			Type: storepb.Chunk_XOR,
+			Data: []byte{0, 13, 214, 197, 180, 185, 168, 100, 63, 240, 0, 0, 0, 0, 0, 0, 224, 212, 3, 195, 244, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 0, 0, 0, 87, 228, 1, 64, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 250, 129, 192, 20, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 0, 0, 0, 21, 249, 1, 64, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 254, 160, 112, 0, 20, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 0, 0, 0, 18, 79, 129, 64, 0, 0, 0, 0, 0, 0, 3, 255, 255, 255, 255, 255, 254, 219, 8, 20, 0, 0, 0, 0, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0, 16},
+		},
+	}
+
+	chunk2 := storepb.AggrChunk{
+		MinTime: 1723420806795,
+		MaxTime: 1723427946795,
+		Raw: storepb.Chunk{
+			Type: storepb.Chunk_XOR,
+			Data: []byte{0, 6, 150, 186, 148, 190, 168, 100, 63, 240, 0, 0, 0, 0, 0, 0, 224, 212, 3, 48, 253, 0, 0, 0, 0, 0, 0, 0, 15, 128, 0, 0, 0, 0, 48, 133, 224, 80, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 252, 247, 162, 5, 0, 0, 0, 0, 0, 0, 0, 15, 58, 152, 5, 0, 0, 0, 0, 0, 0, 0, 8},
+		},
+	}
+
+	chunk3 := storepb.AggrChunk{
+		MinTime: 1723428006795,
+		MaxTime: 1723429326795,
+		Raw: storepb.Chunk{
+			Type: storepb.Chunk_XOR,
+			Data: []byte{0, 13, 150, 174, 131, 197, 168, 100, 127, 240, 0, 0, 0, 0, 0, 2, 224, 250, 32, 195, 244, 0, 0, 0, 0, 0, 0, 0, 61, 21, 160, 0, 20, 0, 0, 0, 0, 0, 0, 0, 60, 58, 152, 20, 0, 0, 0, 0, 0, 0, 0, 61, 197, 104, 0, 20, 0, 0, 0, 0, 0, 0, 0, 32},
+		},
+	}
+
+	firstIterator := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), []storepb.AggrChunk{chunk1, chunk2, chunk3})
+
+	var firstIteratorPoints []promql.FPoint
+	for firstIterator.Next() != chunkenc.ValNone {
+		ts, value := firstIterator.At()
+		firstIteratorPoints = append(firstIteratorPoints, promql.FPoint{T: ts, F: value})
+
+		require.Equal(t, ts, firstIterator.AtT())
+	}
+
+	require.NoError(t, firstIterator.Err())
+
+	assert.Equal(t, []promql.FPoint{
+		{T: 1723415826795, F: 1},
+		{T: 1723415886795, F: math.NaN()},
+		{T: 1723418826795, F: 1},
+		{T: 1723418886795, F: math.NaN()},
+		{T: 1723419666795, F: 1},
+		{T: 1723419726795, F: 1},
+		{T: 1723419786795, F: 1},
+		{T: 1723419846795, F: 1},
+		{T: 1723419906795, F: 1},
+		{T: 1723419966795, F: math.NaN()},
+		{T: 1723420626795, F: 1},
+		{T: 1723420686795, F: math.NaN()},
+		{T: 1723420746795, F: 1},
+		{T: 1723420806795, F: 1},
+		{T: 1723420866795, F: 1},
+		{T: 1723420926795, F: math.NaN()},
+		{T: 1723427346795, F: 1},
+		{T: 1723427406795, F: math.NaN()},
+		{T: 1723427946795, F: 1},
+		{T: 1723428006795, F: math.NaN()},
+		{T: 1723428546795, F: 1},
+		{T: 1723428606795, F: 1},
+		{T: 1723428666795, F: 1},
+		{T: 1723428726795, F: 1},
+		{T: 1723428786795, F: 1},
+		{T: 1723428846795, F: math.NaN()},
+		{T: 1723429026795, F: 1},
+		{T: 1723429086795, F: 1},
+		{T: 1723429146795, F: 1},
+		{T: 1723429206795, F: 1},
+		{T: 1723429266795, F: 1},
+		{T: 1723429326795, F: math.NaN()},
+	}, firstIteratorPoints, "first iterator points")
+
+	secondIterator := newBlockQuerierSeriesIterator(nil, labels.EmptyLabels(), []storepb.AggrChunk{chunk2, chunk3})
+
+	var secondIteratorPoints []promql.FPoint
+	for secondIterator.Next() != chunkenc.ValNone {
+		ts, value := secondIterator.At()
+		secondIteratorPoints = append(secondIteratorPoints, promql.FPoint{T: ts, F: value})
+
+		require.Equal(t, ts, secondIterator.AtT())
+	}
+
+	require.NoError(t, secondIterator.Err())
+
+	assert.Equal(t, []promql.FPoint{
+		{T: 1723420806795, F: 1},
+		{T: 1723420866795, F: 1},
+		{T: 1723420926795, F: math.NaN()},
+		{T: 1723427346795, F: 1},
+		{T: 1723427406795, F: math.NaN()},
+		{T: 1723427946795, F: 1},
+		{T: 1723428006795, F: math.NaN()},
+		{T: 1723428546795, F: 1},
+		{T: 1723428606795, F: 1},
+		{T: 1723428666795, F: 1},
+		{T: 1723428726795, F: 1},
+		{T: 1723428786795, F: 1},
+		{T: 1723428846795, F: math.NaN()},
+		{T: 1723429026795, F: 1},
+		{T: 1723429086795, F: 1},
+		{T: 1723429146795, F: 1},
+		{T: 1723429206795, F: 1},
+		{T: 1723429266795, F: 1},
+		{T: 1723429326795, F: math.NaN()},
+	}, secondIteratorPoints, "second iterator points")
+}

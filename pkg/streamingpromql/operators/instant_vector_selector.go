@@ -70,6 +70,8 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 	var lastHistogram *histogram.FloatHistogram
 
 	for stepT := v.Selector.Start; stepT <= v.Selector.End; stepT += v.Selector.Interval {
+		fmt.Printf("stepT: %v\n", stepT)
+
 		var t int64
 		var f float64
 		var h *histogram.FloatHistogram
@@ -104,10 +106,15 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			return types.InstantVectorSeriesData{}, fmt.Errorf("streaming PromQL engine: unknown value type %s", valueType.String())
 		}
 
+		fmt.Printf("  Got valueType %v, t=%v, f=%v\n", valueType, t, f)
+
 		if valueType == chunkenc.ValNone || t > ts {
+
 			var ok bool
 			t, f, h, ok = v.memoizedIterator.PeekPrev()
+			fmt.Printf("  > Peeking, got ok=%v, t=%v, f=%v\n", ok, t, f)
 			if !ok || t < ts-v.Selector.LookbackDelta.Milliseconds() {
+				fmt.Printf("  > Skipping\n")
 				continue
 			}
 			if h != nil {
@@ -126,6 +133,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			}
 		}
 		if value.IsStaleNaN(f) || (h != nil && value.IsStaleNaN(h.Sum)) {
+			fmt.Printf("  > Stale, skipping\n")
 			continue
 		}
 
