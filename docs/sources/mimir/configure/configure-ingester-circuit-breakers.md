@@ -40,7 +40,7 @@ Read requests circuit breakers follow these conditions:
 
 ## Grafana Mimir Ingester circuit breakers configuration
 
-Grafana Mimir Ingester circuit breakers can be configured by using the following configuration options.
+You can configure Grafana Mimir ingester circuit breakers with the following options.
 
 - `-ingester.push-circuit-breaker.enabled`: Enable circuit breaking when making push requests to ingesters.
 
