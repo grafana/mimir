@@ -6,7 +6,7 @@ menuTitle: Configure ingester circuit breakers
 title: Configure Grafana Mimir ingester circuit breakers
 ---
 
-# Configure Grafana Mimir Ingester circuit breakers
+# Configure Grafana Mimir ingester circuit breakers
 
 ## How do Grafana Mimir Ingester circuit breakers work?
 
