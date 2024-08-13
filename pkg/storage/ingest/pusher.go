@@ -331,8 +331,6 @@ func (p *shardingPusher) PushToStorage(ctx context.Context, request *mimirpb.Wri
 		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, ts.Labels, &nonCopiedLabels)
 		shard := nonCopiedLabels.Hash() % uint64(p.numShards)
 
-		fmt.Printf("for labels %s, with hash '%d' you get shard %d\n", nonCopiedLabels.String(), nonCopiedLabels.Hash(), shard)
-
 		s := p.unfilledShards[shard]
 		// TODO dimitarvdimitrov support metadata and the rest of the fields; perhaps cut a new request for different values of SkipLabelNameValidation?
 		s.Timeseries = append(s.Timeseries, ts)
