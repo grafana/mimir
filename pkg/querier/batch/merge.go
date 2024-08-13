@@ -78,7 +78,7 @@ func (c *mergeIterator) Seek(t int64, size int) chunkenc.ValueType {
 found:
 	for c.batches.len() > 0 {
 		batch := c.batches.curr()
-		if t >= batch.Timestamps[0] && t <= batch.Timestamps[batch.Length-1] {
+		if t <= batch.Timestamps[batch.Length-1] {
 			batch.Index = 0
 			for batch.Index < batch.Length && t > batch.Timestamps[batch.Index] {
 				batch.Index++
