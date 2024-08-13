@@ -26,7 +26,7 @@ More precisely, Grafana Mimir ingesters distinguish between _push requests circu
 
 ### Push requests circuit breakers
 
-Push requests circuit breakers follow the general procedure explained [above](#how-do-grafana-mimir-ingester-circuit-breakers-work), with the following remark: a push request meets the push requests circuit breaker failure condition if its duration is longer than the configurable maximum push request duration.
+A push request meets the push requests circuit breaker failure condition if its duration is longer than the configurable maximum push request duration.
 
 ### Read requests circuit breakers
 
