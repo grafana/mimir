@@ -17,7 +17,7 @@ Because the failing operation is immediately rejected, the application doesn't r
 
 The circuit breaker pattern typically operates in 3 main states: `closed`, `open`, and `half-open`.
 
-- In the `closed` state, a circuit breaker operates normally, forwarding all the requests to the application it protects.
+- In the `closed` state, a circuit breaker operates normally, forwarding all requests to the application it protects.
 - In the `open` state, the circuit breaker immediately stops forwarding requests to the failing application, effectively isolating it.
 - After a specified timeout period in the `open` state, the circuit breaker transitions to the `half-open`, where it forwards a limited number of trial requests to the application and monitors their execution.
   Successful trial requests indicate application recovery, and the circuit breaker transitions back to the `closed` state.
