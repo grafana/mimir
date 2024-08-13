@@ -68,7 +68,7 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	grpcPort, err := strconv.Atoi(p)
 	require.NoError(t, err)
 
-	cfg := Config{AdditionalQueryQueueDimensionsEnabled: true}
+	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	cfg.SchedulerAddress = l.Addr().String()
 	cfg.WorkerConcurrency = concurrency
@@ -142,7 +142,7 @@ func TestFrontendBasicWorkflow(t *testing.T) {
 	})
 
 	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
 	}
 	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
 	require.NoError(t, err)
@@ -178,7 +178,7 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 	assert.Equal(t, uint64(0), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetHistogram().GetSampleCount())
 
 	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
 	}
 	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
 	require.NoError(t, err)
@@ -223,7 +223,7 @@ func TestFrontendRetryEnqueue(t *testing.T) {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
 	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
 	}
 	_, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
 	require.NoError(t, err)
@@ -235,7 +235,7 @@ func TestFrontendTooManyRequests(t *testing.T) {
 	})
 
 	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
 	}
 	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), "test"), req)
 	require.NoError(t, err)
@@ -262,7 +262,7 @@ func TestFrontendCancellation(t *testing.T) {
 	defer cancel()
 
 	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
 	}
 	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), req)
 	require.EqualError(t, err, context.DeadlineExceeded.Error())
@@ -295,7 +295,7 @@ func TestFrontendWorkerCancellation(t *testing.T) {
 
 	// send multiple requests > maxconcurrency of scheduler. So that it keeps all the frontend worker busy in serving requests.
 	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
 	}
 	reqCount := testFrontendWorkerConcurrency + 5
 	var wg sync.WaitGroup
@@ -366,7 +366,7 @@ func TestFrontendFailedCancellation(t *testing.T) {
 
 	// send request
 	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
 	}
 	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), req)
 	require.EqualError(t, err, context.Canceled.Error())
@@ -686,7 +686,7 @@ func TestWithClosingGrpcServer(t *testing.T) {
 
 	// Connection will be established on the first roundtrip.
 	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
 	}
 	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
 	require.NoError(t, err)

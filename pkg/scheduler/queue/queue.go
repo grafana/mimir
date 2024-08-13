@@ -119,9 +119,8 @@ type RequestQueue struct {
 	log log.Logger
 
 	// settings
-	maxOutstandingPerTenant          int
-	additionalQueueDimensionsEnabled bool
-	forgetDelay                      time.Duration
+	maxOutstandingPerTenant int
+	forgetDelay             time.Duration
 
 	// metrics for reporting
 	connectedQuerierWorkers *atomic.Int64
@@ -173,7 +172,6 @@ type requestToEnqueue struct {
 func NewRequestQueue(
 	log log.Logger,
 	maxOutstandingPerTenant int,
-	additionalQueueDimensionsEnabled bool,
 	useMultiAlgoQueue bool,
 	forgetDelay time.Duration,
 	queueLength *prometheus.GaugeVec,
@@ -188,10 +186,9 @@ func NewRequestQueue(
 
 	q := &RequestQueue{
 		// settings
-		log:                              log,
-		maxOutstandingPerTenant:          maxOutstandingPerTenant,
-		additionalQueueDimensionsEnabled: additionalQueueDimensionsEnabled,
-		forgetDelay:                      forgetDelay,
+		log:                     log,
+		maxOutstandingPerTenant: maxOutstandingPerTenant,
+		forgetDelay:             forgetDelay,
 
 		// metrics for reporting
 		connectedQuerierWorkers: atomic.NewInt64(0),
@@ -211,7 +208,7 @@ func NewRequestQueue(
 		waitingQuerierConnsToDispatch: list.New(),
 
 		QueryComponentUtilization: queryComponentCapacity,
-		queueBroker:               newQueueBroker(maxOutstandingPerTenant, additionalQueueDimensionsEnabled, useMultiAlgoQueue, forgetDelay),
+		queueBroker:               newQueueBroker(maxOutstandingPerTenant, useMultiAlgoQueue, forgetDelay),
 	}
 
 	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")
