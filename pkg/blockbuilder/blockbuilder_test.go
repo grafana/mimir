@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -65,6 +66,8 @@ func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Override
 // The test is simplified by always producing float samples to partition 0 and histogram samples
 // to partition 1. That way, managing and checking timestamps for each partition remains the same.
 func TestBlockBuilder(t *testing.T) {
+	t.Parallel()
+
 	const (
 		userID        = "1"
 		numPartitions = 2
@@ -412,6 +415,8 @@ func TestBlockBuilder(t *testing.T) {
 
 // Testing block builder starting up with an existing kafka commit.
 func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
@@ -671,13 +676,13 @@ func TestBlockBuilderMultiTenancy(t *testing.T) {
 	}
 }
 
-// This test is trying to test a particular case/bug:
 // When there is no commit on startup, and say the first cycle end is at t1 for the consumption,
 // and all the samples are before t1 minus the lookback time, then the first consumption cycle of
-// catchup will end up consuming (and discard) all records. But the next cycle should not get stuck
-// since there is no record to consume here. Before the bug fix, a wrong lag was communicated
-// to the subsequent cycle without resetting the client's offset and it would get stuck.
+// catchup skip all the records. But the next cycle should not get stuck
+// since there is no record to consume here.
 func TestBlockBuilder_LongCatchupWithNoRecordsProcessed(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
@@ -705,11 +710,11 @@ func TestBlockBuilder_LongCatchupWithNoRecordsProcessed(t *testing.T) {
 
 	bb, err := New(cfg, logger, prometheus.NewPedanticRegistry(), overrides)
 	require.NoError(t, err)
-	compactCalled := make(chan struct{}, 10)
+	var compactCalled atomic.Int32
 	bb.tsdbBuilder = func() builder {
 		testBuilder := newTestTSDBBuilder(cfg, overrides)
 		testBuilder.compactFunc = func() {
-			compactCalled <- struct{}{}
+			compactCalled.Add(1)
 		}
 		return testBuilder
 	}
@@ -718,19 +723,10 @@ func TestBlockBuilder_LongCatchupWithNoRecordsProcessed(t *testing.T) {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
 	})
 
-	// First cycle should happen normally.
-	select {
-	case <-compactCalled:
-	case <-time.After(5 * time.Second):
-		t.Fatal("first compaction did not happen within expected time")
-	}
-	// Second cycle is prone to getting stuck. So we wait for a while and then check if the
-	// second compaction happens.
-	select {
-	case <-compactCalled:
-	case <-time.After(15 * time.Second):
-		t.Fatal("second compaction did not happen within expected time")
-	}
+	time.Sleep(5 * time.Second)
+
+	// Nothing is consumed due to zero lag.
+	require.Zero(t, compactCalled.Load(), "expected skipping all records before lookback period")
 }
 
 func TestBlockBuilderNonMonotonicRecordTimestamps(t *testing.T) {
