@@ -45,7 +45,6 @@ func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Override
 	cfg.Kafka.Address = addr
 	cfg.Kafka.Topic = testTopic
 	cfg.Kafka.ConsumerGroup = testGroup
-	cfg.Kafka.PollTimeout = 500 * time.Millisecond // reduced for testing
 
 	// Block storage related options.
 	cfg.BlocksStorageConfig.TSDB.Dir = t.TempDir()
