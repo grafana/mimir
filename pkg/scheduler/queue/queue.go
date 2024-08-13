@@ -74,7 +74,7 @@ func (sr *SchedulerRequest) ExpectedQueryComponentName() string {
 	if len(sr.AdditionalQueueDimensions) > 0 {
 		return sr.AdditionalQueueDimensions[0]
 	}
-	return ""
+	return unknownQueueDimension
 }
 
 // TenantIndex is opaque type that allows to resume iteration over tenants

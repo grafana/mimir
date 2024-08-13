@@ -408,8 +408,5 @@ std.manifestYamlDoc({
     },
   },
 
-  // docker-compose YAML output version.
-  version: '3.4',
-
   // "true" option for std.manifestYamlDoc indents arrays in objects.
 }, true)

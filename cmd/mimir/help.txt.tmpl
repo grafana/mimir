@@ -31,6 +31,8 @@ Usage of ./cmd/mimir/mimir:
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -alertmanager-storage.s3.secret-access-key string
     	S3 secret access key
+  -alertmanager-storage.s3.session-token string
+    	S3 session token
   -alertmanager-storage.s3.sse.kms-encryption-context string
     	KMS Encryption Context used for object encryption. It expects JSON formatted string.
   -alertmanager-storage.s3.sse.kms-key-id string
@@ -195,6 +197,8 @@ Usage of ./cmd/mimir/mimir:
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -blocks-storage.s3.secret-access-key string
     	S3 secret access key
+  -blocks-storage.s3.session-token string
+    	S3 session token
   -blocks-storage.s3.sse.kms-encryption-context string
     	KMS Encryption Context used for object encryption. It expects JSON formatted string.
   -blocks-storage.s3.sse.kms-key-id string
@@ -267,6 +271,8 @@ Usage of ./cmd/mimir/mimir:
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -common.storage.s3.secret-access-key string
     	S3 secret access key
+  -common.storage.s3.session-token string
+    	S3 session token
   -common.storage.s3.sse.kms-encryption-context string
     	KMS Encryption Context used for object encryption. It expects JSON formatted string.
   -common.storage.s3.sse.kms-key-id string
@@ -647,6 +653,8 @@ Usage of ./cmd/mimir/mimir:
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -ruler-storage.s3.secret-access-key string
     	S3 secret access key
+  -ruler-storage.s3.session-token string
+    	S3 session token
   -ruler-storage.s3.sse.kms-encryption-context string
     	KMS Encryption Context used for object encryption. It expects JSON formatted string.
   -ruler-storage.s3.sse.kms-key-id string

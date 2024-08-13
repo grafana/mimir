@@ -12,7 +12,7 @@ prometheus.scrape "mimir" {
 
   scrape_interval = "5s"
   scrape_timeout = "4s"
-  enable_protobuf_negotiation = true
+  scrape_protocols = ["PrometheusProto", "OpenMetricsText1.0.0", "OpenMetricsText0.0.1", "PrometheusText0.0.4"]
   scrape_classic_histograms = true
 }
 
@@ -21,7 +21,7 @@ prometheus.relabel "mimir" {
 
   rule {
     action       = "replace"
-    replacement  = "grafana-agent-flow"
+    replacement  = "grafana-alloy"
     target_label = "scraped_by"
   }
   rule {

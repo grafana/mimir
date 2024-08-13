@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -23,6 +23,8 @@ type Selector struct {
 	Timestamp *int64 // Milliseconds since Unix epoch, only set if selector uses @ modifier (eg. metric{...} @ 123)
 	Interval  int64  // In milliseconds
 	Matchers  []*labels.Matcher
+
+	ExpressionPosition posrange.PositionRange
 
 	// Set for instant vector selectors, otherwise 0.
 	LookbackDelta time.Duration
@@ -159,7 +161,7 @@ func (l *seriesList) Len() int {
 //
 // Calling ToSeriesMetadata after calling Pop may return an incomplete list.
 func (l *seriesList) ToSeriesMetadata() []types.SeriesMetadata {
-	metadata := pooling.GetSeriesMetadataSlice(l.length)
+	metadata := types.GetSeriesMetadataSlice(l.length)
 	batch := l.currentSeriesBatch
 
 	for batch != nil {

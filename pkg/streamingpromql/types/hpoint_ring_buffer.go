@@ -4,6 +4,8 @@ package types
 
 import (
 	"github.com/prometheus/prometheus/promql"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 )
 
 // FPointRingBuffer and HPointRingBuffer are nearly identical, but exist for each
@@ -14,19 +16,14 @@ import (
 // (see: https://github.com/grafana/mimir/pull/8508#discussion_r1654668995)
 
 type HPointRingBuffer struct {
-	pool       HPointRingBufferPool
-	points     []promql.HPoint
-	firstIndex int // Index into 'points' of first point in this buffer.
-	size       int // Number of points in this buffer.
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	points                   []promql.HPoint
+	firstIndex               int // Index into 'points' of first point in this buffer.
+	size                     int // Number of points in this buffer.
 }
 
-type HPointRingBufferPool interface {
-	GetHPointSlice(size int) ([]promql.HPoint, error)
-	PutHPointSlice(s []promql.HPoint)
-}
-
-func NewHPointRingBuffer(pool HPointRingBufferPool) *HPointRingBuffer {
-	return &HPointRingBuffer{pool: pool}
+func NewHPointRingBuffer(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *HPointRingBuffer {
+	return &HPointRingBuffer{memoryConsumptionTracker: memoryConsumptionTracker}
 }
 
 // DiscardPointsBefore discards all points in this buffer with timestamp less than t.
@@ -50,7 +47,8 @@ func (b *HPointRingBuffer) DiscardPointsBefore(t int64) {
 // Callers must not modify the values in the returned slices or return them to a pool.
 // Calling UnsafePoints is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
 // points into the slice, whereas UnsafePoints returns a view into the internal state of this buffer.
-// The returned slices are no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
+// The returned slices, and the FloatHistogram instances in the returned slices, are no longer valid if this buffer is modified
+// (eg. a point is added, or the buffer is reset or closed).
 //
 // FIXME: the fact we have to expose this is a bit gross, but the overhead of calling a function with ForEach is terrible.
 // Perhaps we can use range-over function iterators (https://go.dev/wiki/RangefuncExperiment) once this is not experimental?
@@ -79,14 +77,14 @@ func (b *HPointRingBuffer) UnsafePoints(maxT int64) (head []promql.HPoint, tail 
 // Calling UnsafePoints is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
 // points into the slice, whereas UnsafePoints returns a view into the internal state of this buffer.
 // In addition to copying the points, CopyPoints will also duplicate the FloatHistogram values
-// so that they are also safe to modify.
+// so that they are also safe to modify and use after calling Close.
 func (b *HPointRingBuffer) CopyPoints(maxT int64) ([]promql.HPoint, error) {
 	if b.size == 0 {
 		return nil, nil
 	}
 
 	head, tail := b.UnsafePoints(maxT)
-	combined, err := b.pool.GetHPointSlice(len(head) + len(tail))
+	combined, err := getHPointSliceForRingBuffer(len(head)+len(tail), b.memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +160,7 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 			newSize = 2
 		}
 
-		newSlice, err := b.pool.GetHPointSlice(newSize)
+		newSlice, err := getHPointSliceForRingBuffer(newSize, b.memoryConsumptionTracker)
 		if err != nil {
 			return nil, err
 		}
@@ -172,7 +170,12 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 		copy(newSlice, b.points[b.firstIndex:])
 		copy(newSlice[pointsAtEnd:], b.points[:b.firstIndex])
 
-		b.pool.PutHPointSlice(b.points)
+		// We must clear b.points before returning it to the pool, as the current query could continue using the
+		// FloatHistogram instances it contains a reference to, but a later user of b.points may otherwise reuse
+		// those instances instead of creating new FloatHistograms.
+		clear(b.points)
+
+		putHPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
 		b.points = newSlice
 		b.firstIndex = 0
 	}
@@ -182,7 +185,7 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 	return &b.points[nextIndex], nil
 }
 
-// Remove the last point that was allocated.
+// RemoveLastPoint removes the last point that was allocated.
 // This is used for when NextPoint allocates a point that is then unused and
 // needs to be returned to the ring buffer.
 // This occurs when a histogram point has a stale marker.
@@ -206,8 +209,7 @@ func (b *HPointRingBuffer) Reset() {
 
 // Close releases any resources associated with this buffer.
 func (b *HPointRingBuffer) Close() {
-	b.Reset()
-	b.pool.PutHPointSlice(b.points)
+	putHPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
 	b.points = nil
 }
 
@@ -238,3 +240,33 @@ func (b *HPointRingBuffer) LastAtOrBefore(maxT int64) (promql.HPoint, bool) {
 
 	return promql.HPoint{}, false
 }
+
+// CountAtOrBefore returns the number of points in this ring buffer with timestamp less than or equal to maxT.
+func (b *HPointRingBuffer) CountAtOrBefore(maxT int64) int {
+	count := b.size
+
+	for count > 0 {
+		p := b.points[(b.firstIndex+count-1)%len(b.points)]
+
+		if p.T <= maxT {
+			return count
+		}
+
+		count--
+	}
+
+	return count
+}
+
+// AnyAtOrBefore returns true if this ring buffer contains any points with timestamp less than or equal to maxT.
+func (b *HPointRingBuffer) AnyAtOrBefore(maxT int64) bool {
+	if b.size == 0 {
+		return false
+	}
+
+	return b.points[b.firstIndex].T <= maxT
+}
+
+// These hooks exist so we can override them during unit tests.
+var getHPointSliceForRingBuffer = HPointSlicePool.Get
+var putHPointSliceForRingBuffer = HPointSlicePool.Put

@@ -36,7 +36,7 @@ func WrapQueryFuncWithReadConsistency(fn rules.QueryFunc, logger log.Logger) rul
 			spanLog.SetTag("read_consistency", api.ReadConsistencyStrong)
 			spanLog.DebugLog("msg", "forced strong read consistency because the rule depends on other rules in the same rule group")
 
-			ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 		}
 
 		return fn(ctx, qs, t)
@@ -129,7 +129,7 @@ func forceStrongReadConsistencyIfQueryingAlertsForStateMetric(ctx context.Contex
 		spanLog.SetTag("read_consistency", api.ReadConsistencyStrong)
 		spanLog.DebugLog("msg", fmt.Sprintf("forced strong read consistency because %s metric has been queried", alertForStateMetricName))
 
-		ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+		ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 	}
 
 	return ctx

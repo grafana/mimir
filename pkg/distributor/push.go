@@ -7,7 +7,6 @@ package distributor
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -20,7 +19,9 @@ import (
 	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/opentracing/opentracing-go"
+	"github.com/pkg/errors"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -145,6 +146,19 @@ func handler(
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
 			var req mimirpb.PreallocWriteRequest
+
+			userID, err := tenant.TenantID(ctx)
+			if err != nil && !errors.Is(err, user.ErrNoOrgID) { // ignore user.ErrNoOrgID
+				return nil, nil, errors.Wrap(err, "failed to get tenant ID")
+			}
+
+			// userID might be empty if none was in the ctx, in this case just use the default setting.
+			if limits.MaxGlobalExemplarsPerUser(userID) == 0 {
+				// The user is not allowed to send exemplars, so there is no need to unmarshal them.
+				// Optimization to avoid the allocations required for unmarshaling exemplars.
+				req.SkipUnmarshalingExemplars = true
+			}
+
 			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
 				// Check for httpgrpc error, default to client error if parsing failed
 				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
@@ -179,9 +193,8 @@ func handler(
 				msg  string
 			)
 			if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
-				// TODO: This code is needed for backwards compatibility,
-				// and can be removed once -ingester.return-only-grpc-errors
-				// is removed.
+				// This code is needed for a correct handling of errors returned by the supplier function.
+				// These errors are created by using the httpgrpc package.
 				code, msg = int(resp.Code), string(resp.Body)
 			} else {
 				code = toHTTPStatus(ctx, err, limits)

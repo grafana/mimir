@@ -31,6 +31,7 @@ s3:
   bucket_name:       test
   access_key_id:     xxx
   secret_access_key: yyy
+  session_token:     zzz
   insecure:          true
 `
 

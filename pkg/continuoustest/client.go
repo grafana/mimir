@@ -156,7 +156,7 @@ func (c *Client) QueryRange(ctx context.Context, query string, start, end time.T
 	ctx, cancel := context.WithTimeout(ctx, c.cfg.ReadTimeout)
 	defer cancel()
 
-	ctx = querierapi.ContextWithReadConsistency(ctx, querierapi.ReadConsistencyStrong)
+	ctx = querierapi.ContextWithReadConsistencyLevel(ctx, querierapi.ReadConsistencyStrong)
 
 	value, _, err := c.readClient.QueryRange(ctx, query, v1.Range{
 		Start: start,
@@ -185,7 +185,7 @@ func (c *Client) Query(ctx context.Context, query string, ts time.Time, options 
 	ctx, cancel := context.WithTimeout(ctx, c.cfg.ReadTimeout)
 	defer cancel()
 
-	ctx = querierapi.ContextWithReadConsistency(ctx, querierapi.ReadConsistencyStrong)
+	ctx = querierapi.ContextWithReadConsistencyLevel(ctx, querierapi.ReadConsistencyStrong)
 
 	value, _, err := c.readClient.Query(ctx, query, ts)
 	if err != nil {
@@ -280,7 +280,7 @@ func (rt *clientRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 
 	req.Header.Set("User-Agent", "mimir-continuous-test")
 
-	if lvl, ok := querierapi.ReadConsistencyFromContext(req.Context()); ok {
+	if lvl, ok := querierapi.ReadConsistencyLevelFromContext(req.Context()); ok {
 		req.Header.Add(querierapi.ReadConsistencyHeader, lvl)
 	}
 

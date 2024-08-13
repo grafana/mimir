@@ -12,7 +12,6 @@ import (
 	"io"
 	"math"
 	"math/rand"
-	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -2204,7 +2203,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Push fixtures
 					for _, series := range fixtures {
@@ -2353,7 +2352,7 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Push test data.
 					for _, series := range pushedData {
@@ -2511,7 +2510,7 @@ func TestDistributor_ActiveNativeHistogramSeries(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Push test data.
 					for _, series := range pushedData {
@@ -3057,7 +3056,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Push fixtures
 					for _, series := range fixtures {
@@ -3136,7 +3135,7 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Push metadata
 					req := makeWriteRequest(0, 0, 10, false, true, "foo")
@@ -3214,7 +3213,7 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "label-names-values")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Create distributor
 					limits := validation.Limits{}
@@ -3294,7 +3293,7 @@ func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "label-names-values")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Create distributor
 					ds, _, _, _ := prepare(t, prepConfig{
@@ -3355,7 +3354,7 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 
 				// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 				ctx := user.InjectOrgID(context.Background(), "label-names-values")
-				ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+				ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 				// Create distributor
 				ds, _, _, _ := prepare(t, prepConfig{
@@ -6495,7 +6494,7 @@ func (i *mockIngester) enforceReadConsistency(ctx context.Context) error {
 		return nil
 	}
 
-	level, ok := api.ReadConsistencyFromContext(ctx)
+	level, ok := api.ReadConsistencyLevelFromContext(ctx)
 	if !ok || level != api.ReadConsistencyStrong {
 		return nil
 	}
@@ -7393,8 +7392,6 @@ func TestHandlePushError(t *testing.T) {
 	testErrorMsg := "this is a test error message"
 	userID := "test"
 	errWithUserID := fmt.Errorf("user=%s: %s", userID, testErrorMsg)
-	httpGrpc4xxErr := httpgrpc.Errorf(http.StatusBadRequest, testErrorMsg)
-	httpGrpc5xxErr := httpgrpc.Errorf(http.StatusServiceUnavailable, testErrorMsg)
 	test := map[string]struct {
 		pushError          error
 		expectedGRPCError  *status.Status
@@ -7407,14 +7404,6 @@ func TestHandlePushError(t *testing.T) {
 		"a context.DeadlineExceeded error gives context.DeadlineExceeded": {
 			pushError:          context.DeadlineExceeded,
 			expectedOtherError: context.DeadlineExceeded,
-		},
-		"a 4xx HTTP gRPC error gives the same 4xx HTTP gRPC error": {
-			pushError:          httpGrpc4xxErr,
-			expectedOtherError: httpGrpc4xxErr,
-		},
-		"a 5xx HTTP gRPC error gives the same 5xx HTTP gRPC error": {
-			pushError:          httpGrpc5xxErr,
-			expectedOtherError: httpGrpc5xxErr,
 		},
 		"an Error gives the error returned by toErrorWithGRPCStatus()": {
 			pushError:         mockDistributorErr(testErrorMsg),

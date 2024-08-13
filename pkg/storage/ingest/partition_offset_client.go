@@ -6,7 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -24,6 +26,11 @@ type partitionOffsetClient struct {
 	admin  *kadm.Client
 	logger log.Logger
 	topic  string
+
+	// Cached topic partition IDs.
+	topicPartitionIDsMx        sync.RWMutex
+	topicPartitionIDs          []int32
+	topicPartitionIDsUpdatedAt time.Time
 
 	// Metrics.
 	lastProducedOffsetRequestsTotal   *prometheus.CounterVec
@@ -199,6 +206,10 @@ func (p *partitionOffsetClient) fetchPartitionOffset(ctx context.Context, partit
 // -1 if a partition has been created but no record has been produced yet.
 //
 // The Kafka client used under the hood may retry a failed request until the retry timeout is hit.
+//
+// New partitions may not be immediately discovered by this function because the list of existing partitions is cached
+// for a short period of time under the hood. However, the returned offsets for the known partitions are guaranteed
+// to be always updated.
 func (p *partitionOffsetClient) FetchTopicLastProducedOffsets(ctx context.Context) (_ map[int32]int64, returnErr error) {
 	var (
 		startTime = time.Now()
@@ -220,7 +231,7 @@ func (p *partitionOffsetClient) FetchTopicLastProducedOffsets(ctx context.Contex
 		}
 	}()
 
-	res, err := p.admin.ListEndOffsets(ctx, p.topic)
+	res, err := p.fetchTopicPartitionsEndOffsets(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -237,4 +248,137 @@ func (p *partitionOffsetClient) FetchTopicLastProducedOffsets(ctx context.Contex
 	})
 
 	return offsets, nil
+}
+
+// fetchTopicPartitionsEndOffsets returns the end offset of each partition in the topic. This function returns
+// error if fails to get the offset of any partition (no partial result is returned).
+//
+// The list partitions of the topic is not refreshed for each request, but an in-memory cache is used to reduce
+// the number of requests to Kafka. This is based on the assumption that new partitions don't get added frequently,
+// and a stale view on the existing partitions (but not their offsets) is accepted for a short period of time.
+func (p *partitionOffsetClient) fetchTopicPartitionsEndOffsets(ctx context.Context) (kadm.ListedOffsets, error) {
+	// Fetch the partition IDs. We don't expect partition IDs to change frequently, because we expect
+	// partitions to be pre-provisioned when running Mimir, so use the lookup cache.
+	partitionIDs, err := p.listTopicPartitionIDsWithCache(ctx, 15*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
+	list := kadm.ListedOffsets{
+		p.topic: make(map[int32]kadm.ListedOffset, len(partitionIDs)),
+	}
+
+	// Prepare the request to list offsets.
+	topicReq := kmsg.NewListOffsetsRequestTopic()
+	topicReq.Topic = p.topic
+	for _, partitionID := range partitionIDs {
+		partitionReq := kmsg.NewListOffsetsRequestTopicPartition()
+		partitionReq.Partition = partitionID
+		partitionReq.Timestamp = kafkaOffsetEnd
+
+		topicReq.Partitions = append(topicReq.Partitions, partitionReq)
+	}
+
+	req := kmsg.NewPtrListOffsetsRequest()
+	req.IsolationLevel = 0 // 0 means READ_UNCOMMITTED.
+	req.Topics = []kmsg.ListOffsetsRequestTopic{topicReq}
+
+	// Execute the request.
+	shards := p.client.RequestSharded(ctx, req)
+
+	for _, shard := range shards {
+		if shard.Err != nil {
+			return nil, shard.Err
+		}
+
+		res := shard.Resp.(*kmsg.ListOffsetsResponse)
+		if len(res.Topics) != 1 {
+			return nil, fmt.Errorf("unexpected number of topics in the response (expected: %d, got: %d)", 1, len(res.Topics))
+		}
+		if res.Topics[0].Topic != p.topic {
+			return nil, fmt.Errorf("unexpected topic in the response (expected: %s, got: %s)", p.topic, res.Topics[0].Topic)
+		}
+
+		for _, pt := range res.Topics[0].Partitions {
+			if err := kerr.ErrorForCode(pt.ErrorCode); err != nil {
+				return nil, err
+			}
+
+			list[p.topic][pt.Partition] = kadm.ListedOffset{
+				Topic:       p.topic,
+				Partition:   pt.Partition,
+				Timestamp:   pt.Timestamp,
+				Offset:      pt.Offset,
+				LeaderEpoch: pt.LeaderEpoch,
+			}
+		}
+	}
+
+	return list, nil
+}
+
+// listTopicPartitionIDs returns a list of all partition IDs in the topic.
+func (p *partitionOffsetClient) listTopicPartitionIDs(ctx context.Context) ([]int32, error) {
+	topics, err := p.admin.ListTopics(ctx, p.topic)
+	if err != nil {
+		return nil, err
+	}
+	if err := topics.Error(); err != nil {
+		return nil, err
+	}
+
+	// We expect 1 topic in the response.
+	if len(topics) != 1 {
+		return nil, fmt.Errorf("unexpected number of topics in the response (expected: %d, got: %d)", 1, len(topics))
+	}
+
+	// Get the expected topic.
+	topic, ok := topics[p.topic]
+	if !ok {
+		return nil, fmt.Errorf("unexpected topic in the response (expected: %s)", p.topic)
+	}
+
+	// Extract the partition IDs from the response.
+	ids := make([]int32, 0, len(topic.Partitions))
+	for _, partition := range topic.Partitions {
+		// We don't check partition.Err because all we need is the partition ID;
+		// kadm.Client.ListEndOffsets() doesn't check it neither.
+		ids = append(ids, partition.Partition)
+	}
+
+	// It's not required to sort the partition IDs, but we do it to simplify tests and troubleshooting.
+	slices.Sort(ids)
+
+	return ids, nil
+}
+
+// listTopicPartitionIDsWithCache returns a list of all partition IDs in the topic. The returned list
+// of partition IDs may be picked up from the in-memory cache if the previously cached list has been
+// refreshed less than ttl time ago.
+func (p *partitionOffsetClient) listTopicPartitionIDsWithCache(ctx context.Context, ttl time.Duration) ([]int32, error) {
+	// Lookup cache.
+	p.topicPartitionIDsMx.RLock()
+	var cachedPartitionIDs []int32
+	if !p.topicPartitionIDsUpdatedAt.IsZero() && time.Since(p.topicPartitionIDsUpdatedAt) <= ttl {
+		cachedPartitionIDs = slices.Clone(p.topicPartitionIDs)
+	}
+	p.topicPartitionIDsMx.RUnlock()
+
+	if cachedPartitionIDs != nil {
+		return cachedPartitionIDs, nil
+	}
+
+	// Fetch partition IDs.
+	partitionIDs, err := p.listTopicPartitionIDs(ctx)
+	if err != nil {
+		return partitionIDs, err
+	}
+
+	// Cache it.
+	p.topicPartitionIDsMx.Lock()
+	p.topicPartitionIDs = slices.Clone(partitionIDs)
+	p.topicPartitionIDsUpdatedAt = time.Now()
+	p.topicPartitionIDsMx.Unlock()
+
+	return partitionIDs, nil
 }

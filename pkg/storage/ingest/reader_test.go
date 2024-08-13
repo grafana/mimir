@@ -102,6 +102,8 @@ func TestPartitionReader_logFetchErrors(t *testing.T) {
 }
 
 func TestPartitionReader_ConsumerError(t *testing.T) {
+	t.Parallel()
+
 	const (
 		topicName   = "test"
 		partitionID = 1
@@ -140,6 +142,67 @@ func TestPartitionReader_ConsumerError(t *testing.T) {
 	records, err := trackingConsumer.waitRecords(2, time.Second, 0)
 	assert.NoError(t, err)
 	assert.Equal(t, [][]byte{[]byte("1"), []byte("2")}, records)
+}
+
+func TestPartitionReader_ConsumerStopping(t *testing.T) {
+	const (
+		topicName   = "test"
+		partitionID = 1
+	)
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+
+	// consumerErrs will store the last error returned by the consumer; its initial value doesn't matter, but it must be non-nil.
+	consumerErrs := atomic.NewError(errors.New("dummy error"))
+	type consumerCall struct {
+		f    func() []record
+		resp chan error
+	}
+	consumeCalls := make(chan consumerCall)
+	consumer := consumerFunc(func(ctx context.Context, records []record) (err error) {
+		defer consumerErrs.Store(err)
+
+		call := consumerCall{
+			f:    func() []record { return records },
+			resp: make(chan error),
+		}
+		consumeCalls <- call
+		err = <-call.resp
+		// The service is about to transition into its stopping phase. But the consumer must not observe it via the parent context.
+		assert.NoError(t, ctx.Err())
+
+		return err
+	})
+	reader := createReader(t, clusterAddr, topicName, partitionID, consumer)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+
+	// Write to Kafka.
+	writeClient := newKafkaProduceClient(t, clusterAddr)
+	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("1"))
+
+	// After this point, we know that the consumer is in the in-flight.
+	call := <-consumeCalls
+	// Explicitly begin to stop the service while it's still consuming the records. This shouldn't cancel the in-flight consumption.
+	reader.StopAsync()
+
+	go func() {
+		// Simulate a slow consumer, that blocks reader from stopping.
+		time.Sleep(time.Second)
+
+		defer close(call.resp)
+
+		records := call.f()
+		require.Len(t, records, 1)
+		require.Equal(t, []byte("1"), records[0].content)
+	}()
+
+	// Wait for the reader to stop completely.
+	require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+	// Checks the consumer returned a non-errored result.
+	require.NoError(t, consumerErrs.Load())
 }
 
 func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitReadConsistencyUntilOffset(t *testing.T) {
@@ -219,15 +282,18 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				assert.Equal(t, int64(2), consumedRecords.Load())
 				t.Log("finished waiting for read consistency")
 
-				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
+				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
 					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-					cortex_ingest_storage_strong_consistency_requests_total 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 0
 		
 					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-					cortex_ingest_storage_strong_consistency_failures_total 0
-				`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 0
+				`, withOffset, !withOffset)),
+					"cortex_ingest_storage_strong_consistency_requests_total",
+					"cortex_ingest_storage_strong_consistency_failures_total"))
 			})
 		}
 
@@ -268,19 +334,22 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				assert.NoError(t, err)
 				assert.Equal(t, [][]byte{[]byte("record-1")}, records)
 
-				// Now the WaitReadConsistencyUntilLastProducedOffset() should return soon.
-				err = reader.WaitReadConsistencyUntilLastProducedOffset(createTestContextWithTimeout(t, time.Second))
-				require.NoError(t, err)
-
-				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
+				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
 					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-					cortex_ingest_storage_strong_consistency_requests_total 2
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 0
 		
 					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-					cortex_ingest_storage_strong_consistency_failures_total 1
-				`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 1
+				`, withOffset, !withOffset)),
+					"cortex_ingest_storage_strong_consistency_requests_total",
+					"cortex_ingest_storage_strong_consistency_failures_total"))
+
+				// Now the WaitReadConsistencyUntilLastProducedOffset() should return soon.
+				err = reader.WaitReadConsistencyUntilLastProducedOffset(createTestContextWithTimeout(t, time.Second))
+				require.NoError(t, err)
 			})
 		}
 	})
@@ -320,19 +389,22 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				assert.NoError(t, err)
 				assert.Equal(t, [][]byte{[]byte("record-1")}, records)
 
-				// Now the WaitReadConsistencyUntilLastProducedOffset() should return soon.
-				err = reader.WaitReadConsistencyUntilLastProducedOffset(ctx)
-				require.NoError(t, err)
-
-				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
+				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
 					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-					cortex_ingest_storage_strong_consistency_requests_total 2
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 0
 		
 					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-					cortex_ingest_storage_strong_consistency_failures_total 1
-				`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 1
+				`, withOffset, !withOffset)),
+					"cortex_ingest_storage_strong_consistency_requests_total",
+					"cortex_ingest_storage_strong_consistency_failures_total"))
+
+				// Now the WaitReadConsistencyUntilLastProducedOffset() should return soon.
+				err = reader.WaitReadConsistencyUntilLastProducedOffset(ctx)
+				require.NoError(t, err)
 			})
 		}
 	})
@@ -356,15 +428,18 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 					require.NoError(t, reader.WaitReadConsistencyUntilLastProducedOffset(waitCtx))
 				}
 
-				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
+				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
 					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-					cortex_ingest_storage_strong_consistency_requests_total 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 0
 		
 					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-					cortex_ingest_storage_strong_consistency_failures_total 0
-				`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 0
+				`, withOffset, !withOffset)),
+					"cortex_ingest_storage_strong_consistency_requests_total",
+					"cortex_ingest_storage_strong_consistency_failures_total"))
 			})
 		}
 	})
@@ -392,15 +467,18 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 
 				require.ErrorContains(t, err, "partition reader service is not running")
 
-				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
+				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
 					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-					cortex_ingest_storage_strong_consistency_requests_total 1
-		
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 0
+
 					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-					cortex_ingest_storage_strong_consistency_failures_total 1
-				`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 1
+				`, withOffset, !withOffset)),
+					"cortex_ingest_storage_strong_consistency_requests_total",
+					"cortex_ingest_storage_strong_consistency_failures_total"))
 			})
 		}
 	})

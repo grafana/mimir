@@ -152,6 +152,9 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 
 			checkResponseErr: func(t *testing.T, err error) (continueTest bool) {
 				assert.Contains(t, err.Error(), errShardCountTooLow.Error())
+				resp, ok := apierror.HTTPResponseFromError(err)
+				require.True(t, ok)
+				assert.Equal(t, int(resp.Code), http.StatusRequestEntityTooLarge)
 				return false
 			},
 		},

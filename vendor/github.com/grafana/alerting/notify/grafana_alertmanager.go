@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	tmplhtml "html/template"
+	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -157,6 +158,11 @@ type Configuration interface {
 	Raw() []byte
 }
 
+type Limits struct {
+	MaxSilences         int
+	MaxSilenceSizeBytes int
+}
+
 type GrafanaAlertmanagerConfig struct {
 	ExternalURL        string
 	AlertStoreCallback mem.AlertStoreCallback
@@ -164,6 +170,8 @@ type GrafanaAlertmanagerConfig struct {
 
 	Silences MaintenanceOptions
 	Nflog    MaintenanceOptions
+
+	Limits Limits
 }
 
 func (c *GrafanaAlertmanagerConfig) Validate() error {
@@ -205,6 +213,10 @@ func NewGrafanaAlertmanager(tenantKey string, tenantID int64, config *GrafanaAle
 		Metrics:        m.Registerer,
 		SnapshotReader: strings.NewReader(config.Silences.InitialState()),
 		Retention:      config.Silences.Retention(),
+		Limits: silence.Limits{
+			MaxSilences:         func() int { return config.Limits.MaxSilences },
+			MaxSilenceSizeBytes: func() int { return config.Limits.MaxSilenceSizeBytes },
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("unable to initialize the silencing component of alerting: %w", err)
@@ -349,7 +361,9 @@ type result struct {
 	Error        error
 }
 
-func newTestReceiversResult(alert types.Alert, results []result, receivers []*APIReceiver, notifiedAt time.Time) *TestReceiversResult {
+func newTestReceiversResult(alert types.Alert, results []result, receivers []*APIReceiver, notifiedAt time.Time) (*TestReceiversResult, int) {
+	var numBadRequests, numTimeouts, numUnknownErrors int
+
 	m := make(map[string]TestReceiverResult)
 	for _, receiver := range receivers {
 		// Set up the result for this receiver
@@ -365,11 +379,29 @@ func newTestReceiversResult(alert types.Alert, results []result, receivers []*AP
 		if next.Error != nil {
 			status = "failed"
 		}
+
+		var invalidReceiverErr IntegrationValidationError
+		var receiverTimeoutErr IntegrationTimeoutError
+
+		var errString string
+		err := ProcessIntegrationError(next.Config, next.Error)
+		if err != nil {
+			if errors.As(err, &invalidReceiverErr) {
+				numBadRequests++
+			} else if errors.As(err, &receiverTimeoutErr) {
+				numTimeouts++
+			} else {
+				numUnknownErrors++
+			}
+
+			errString = err.Error()
+		}
+
 		tmp.Configs = append(tmp.Configs, TestIntegrationConfigResult{
 			Name:   next.Config.Name,
 			UID:    next.Config.UID,
 			Status: status,
-			Error:  ProcessIntegrationError(next.Config, next.Error),
+			Error:  errString,
 		})
 		m[next.ReceiverName] = tmp
 	}
@@ -386,7 +418,21 @@ func newTestReceiversResult(alert types.Alert, results []result, receivers []*AP
 		return v.Receivers[i].Name < v.Receivers[j].Name
 	})
 
-	return v
+	var returnCode int
+	if numBadRequests == len(v.Receivers) {
+		// if all receivers contain invalid configuration
+		returnCode = http.StatusBadRequest
+	} else if numTimeouts == len(v.Receivers) {
+		// if all receivers contain valid configuration but timed out
+		returnCode = http.StatusRequestTimeout
+	} else if numBadRequests+numTimeouts+numUnknownErrors > 0 {
+		returnCode = http.StatusMultiStatus
+	} else {
+		// all receivers were sent a notification without error
+		returnCode = http.StatusOK
+	}
+
+	return v, returnCode
 }
 
 func TestReceivers(
@@ -394,14 +440,14 @@ func TestReceivers(
 	c TestReceiversConfigBodyParams,
 	tmpls []string,
 	buildIntegrationsFunc func(*APIReceiver, *template.Template) ([]*nfstatus.Integration, error),
-	externalURL string) (*TestReceiversResult, error) {
+	externalURL string) (*TestReceiversResult, int, error) {
 
 	now := time.Now() // The start time of the test
 	testAlert := newTestAlert(c, now, now)
 
 	tmpl, err := templateFromContent(tmpls, externalURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get template: %w", err)
+		return nil, 0, fmt.Errorf("failed to get template: %w", err)
 	}
 
 	// All invalid receiver configurations
@@ -436,11 +482,12 @@ func TestReceivers(
 	}
 
 	if len(invalid)+len(jobs) == 0 {
-		return nil, ErrNoReceivers
+		return nil, 0, ErrNoReceivers
 	}
 
 	if len(jobs) == 0 {
-		return newTestReceiversResult(testAlert, invalid, c.Receivers, now), nil
+		res, status := newTestReceiversResult(testAlert, invalid, c.Receivers, now)
+		return res, status, nil
 	}
 
 	numWorkers := maxTestReceiversWorkers
@@ -479,7 +526,7 @@ func TestReceivers(
 	close(resultCh)
 
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	results := make([]result, 0, len(jobs))
@@ -487,7 +534,8 @@ func TestReceivers(
 		results = append(results, next)
 	}
 
-	return newTestReceiversResult(testAlert, append(invalid, results...), c.Receivers, now), nil
+	res, status := newTestReceiversResult(testAlert, append(invalid, results...), c.Receivers, now)
+	return res, status, nil
 }
 
 func TestTemplate(ctx context.Context, c TestTemplatesConfigBodyParams, tmpls []templates.TemplateDefinition, externalURL string, logger log.Logger) (*TestTemplatesResults, error) {
@@ -496,7 +544,7 @@ func TestTemplate(ctx context.Context, c TestTemplatesConfigBodyParams, tmpls []
 		return &TestTemplatesResults{
 			Errors: []TestTemplatesErrorResult{{
 				Kind:  InvalidTemplate,
-				Error: err,
+				Error: err.Error(),
 			}},
 		}, nil
 	}
@@ -546,7 +594,7 @@ func TestTemplate(ctx context.Context, c TestTemplatesConfigBodyParams, tmpls []
 			results.Errors = append(results.Errors, TestTemplatesErrorResult{
 				Name:  def,
 				Kind:  ExecutionError,
-				Error: err,
+				Error: err.Error(),
 			})
 		} else {
 			results.Results = append(results.Results, TestTemplatesResult{
@@ -704,6 +752,41 @@ func (am *GrafanaAlertmanager) setReceiverMetrics(receivers []*nfstatus.Receiver
 // PutAlerts receives the alerts and then sends them through the corresponding route based on whenever the alert has a receiver embedded or not
 func (am *GrafanaAlertmanager) PutAlerts(postableAlerts amv2.PostableAlerts) error {
 	now := time.Now()
+	alerts, validationErr := PostableAlertsToAlertmanagerAlerts(postableAlerts, now)
+
+	// Register metrics.
+	for _, a := range alerts {
+		if a.EndsAt.After(now) {
+			am.Metrics.Firing().Inc()
+		} else {
+			am.Metrics.Resolved().Inc()
+		}
+
+		level.Debug(am.logger).Log("msg",
+			"Putting alert",
+			"alert",
+			a,
+			"starts_at",
+			a.StartsAt,
+			"ends_at",
+			a.EndsAt)
+	}
+
+	if err := am.alerts.Put(alerts...); err != nil {
+		// Notification sending alert takes precedence over validation errors.
+		return err
+	}
+	if validationErr != nil {
+		am.Metrics.Invalid().Add(float64(len(validationErr.Alerts)))
+		// Even if validationErr is nil, the require.NoError fails on it.
+		return validationErr
+	}
+	return nil
+}
+
+// PostableAlertsToAlertmanagerAlerts converts the PostableAlerts to a slice of *types.Alert.
+// It sets `StartsAt` and `EndsAt`, ignores empty and namespace UID labels, and captures validation errors for each skipped alert.
+func PostableAlertsToAlertmanagerAlerts(postableAlerts amv2.PostableAlerts, now time.Time) ([]*types.Alert, *AlertValidationError) {
 	alerts := make([]*types.Alert, 0, len(postableAlerts))
 	var validationErr *AlertValidationError
 	for _, a := range postableAlerts {
@@ -748,42 +831,19 @@ func (am *GrafanaAlertmanager) PutAlerts(postableAlerts amv2.PostableAlerts) err
 			alert.EndsAt = now.Add(defaultResolveTimeout)
 		}
 
-		if alert.EndsAt.After(now) {
-			am.Metrics.Firing().Inc()
-		} else {
-			am.Metrics.Resolved().Inc()
-		}
-
 		if err := alert.Validate(); err != nil {
 			if validationErr == nil {
 				validationErr = &AlertValidationError{}
 			}
 			validationErr.Alerts = append(validationErr.Alerts, a)
 			validationErr.Errors = append(validationErr.Errors, err)
-			am.Metrics.Invalid().Inc()
 			continue
 		}
 
-		level.Debug(am.logger).Log("msg",
-			"Putting alert",
-			"alert",
-			alert,
-			"starts_at",
-			alert.StartsAt,
-			"ends_at",
-			alert.EndsAt)
 		alerts = append(alerts, alert)
 	}
 
-	if err := am.alerts.Put(alerts...); err != nil {
-		// Notification sending alert takes precedence over validation errors.
-		return err
-	}
-	if validationErr != nil {
-		// Even if validationErr is nil, the require.NoError fails on it.
-		return validationErr
-	}
-	return nil
+	return alerts, validationErr
 }
 
 // AlertValidationError is the error capturing the validation errors

@@ -1993,6 +1993,38 @@
           "fieldFlag": "querier.promql-experimental-functions-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "block",
+          "name": "mimir_query_engine",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enable_binary_operations",
+              "required": false,
+              "desc": "Enable support for binary operations in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-binary-operations",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_over_time_functions",
+              "required": false,
+              "desc": "Enable support for ..._over_time functions in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-over-time-functions",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -4377,6 +4409,17 @@
         },
         {
           "kind": "field",
+          "name": "ruler_max_independent_rule_evaluation_concurrency_per_tenant",
+          "required": false,
+          "desc": "Maximum number of independent rules that can run concurrently for each tenant. Depends on ruler.max-independent-rule-evaluation-concurrency being greater than 0. Ideally this flag should be a lower value. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 4,
+          "fieldFlag": "ruler.max-independent-rule-evaluation-concurrency-per-tenant",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "store_gateway_tenant_shard_size",
           "required": false,
           "desc": "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.",
@@ -6315,17 +6358,6 @@
         },
         {
           "kind": "field",
-          "name": "remote_read_limits_enabled",
-          "required": false,
-          "desc": "True to enable limits enforcement for remote read requests.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.remote-read-limits-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "query_result_response_format",
           "required": false,
           "desc": "Format to use when retrieving query results from queriers. Supported values: json, protobuf",
@@ -6659,6 +6691,16 @@
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "blocks-storage.s3.access-key-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "session_token",
+              "required": false,
+              "desc": "S3 session token",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.s3.session-token",
               "fieldType": "string"
             },
             {
@@ -12556,6 +12598,28 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "max_independent_rule_evaluation_concurrency",
+          "required": false,
+          "desc": "Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ruler.max-independent-rule-evaluation-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "independent_rule_evaluation_concurrency_min_duration_percentage",
+          "required": false,
+          "desc": "Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval.",
+          "fieldValue": null,
+          "fieldDefaultValue": 50,
+          "fieldFlag": "ruler.independent-rule-evaluation-concurrency-min-duration-percentage",
+          "fieldType": "float",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -12631,6 +12695,16 @@
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ruler-storage.s3.access-key-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "session_token",
+              "required": false,
+              "desc": "S3 session token",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.s3.session-token",
               "fieldType": "string"
             },
             {
@@ -14792,6 +14866,16 @@
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager-storage.s3.access-key-id",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "session_token",
+              "required": false,
+              "desc": "S3 session token",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.s3.session-token",
               "fieldType": "string"
             },
             {
@@ -17208,6 +17292,16 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "common.storage.s3.access-key-id",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "session_token",
+                  "required": false,
+                  "desc": "S3 session token",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.s3.session-token",
                   "fieldType": "string"
                 },
                 {

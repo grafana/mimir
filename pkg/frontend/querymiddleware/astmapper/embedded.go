@@ -62,7 +62,7 @@ func (c jsonCodec) Decode(encoded string) (queries []string, err error) {
 // VectorSquash reduces an AST into a single vector query which can be hijacked by a Queryable impl.
 // It always uses a VectorSelector as the substitution expr.
 // This is important because logical/set binops can only be applied against vectors and not matrices.
-func vectorSquasher(exprs ...parser.Expr) (parser.Expr, error) {
+func VectorSquasher(exprs ...parser.Expr) (parser.Expr, error) {
 	// concat OR legs
 	strs := make([]string, 0, len(exprs))
 	for _, expr := range exprs {
