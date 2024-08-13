@@ -76,7 +76,7 @@ Grafana Mimir Ingester circuit breakers contain the following metrics:
 
 - `cortex_ingester_circuit_breaker_transitions_total`: a counter showing the number of times a circuit breaker has entered a state. It contains labels state (with possible values closed, open and half-open) and request_type (with possible values push and read).
 
-- `cortex_ingester_circuit_breaker_results_total`: a counter showing the results of executing requests via a circuit breaker. It contains lables result (with possble values success, error and circuit_breaker_open) and request_type (with possible values push and read).
+- `cortex_ingester_circuit_breaker_results_total`: Counter showing the results of executing requests via a circuit breaker. It contains lables result, with possible values of `success`, `error`, and `circuit_breaker_open`,  and the `request_type` setting, with possible values of `push` and `read`.
 
 - `cortex_ingester_circuit_breaker_request_timeouts_total`: Counter showing the number of times the circuit breaker records a request that reaches timeout. It contains the `request_type` label, with possible values of `push` and `read`.
 
