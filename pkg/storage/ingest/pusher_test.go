@@ -450,15 +450,15 @@ func TestShardingPusher(t *testing.T) {
 			shardCount: 1,
 			batchSize:  2,
 			requests: []*mimirpb.WriteRequest{
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}},
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1_1")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2_1")}},
 			},
 			expectedErrs: []error{nil, nil},
 
 			expectedUpstreamPushes: []*mimirpb.WriteRequest{
 				{Timeseries: []mimirpb.PreallocTimeseries{
-					mockPreallocTimeseries("series_1"),
-					mockPreallocTimeseries("series_2"),
+					mockPreallocTimeseries("series_1_1"),
+					mockPreallocTimeseries("series_2_1"),
 				}},
 			},
 			upstreamPushErrs: []error{nil},
@@ -468,21 +468,21 @@ func TestShardingPusher(t *testing.T) {
 			shardCount: 2,
 			batchSize:  2,
 			requests: []*mimirpb.WriteRequest{
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}},
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2")}},
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3")}},
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_4")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1_2")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2_2")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3_2")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_4_2")}},
 			},
 			expectedErrs: []error{nil, nil, nil, nil},
 
 			expectedUpstreamPushes: []*mimirpb.WriteRequest{
 				{Timeseries: []mimirpb.PreallocTimeseries{
-					mockPreallocTimeseries("series_1"),
-					mockPreallocTimeseries("series_3"),
+					mockPreallocTimeseries("series_1_2"),
+					mockPreallocTimeseries("series_3_2"),
 				}},
 				{Timeseries: []mimirpb.PreallocTimeseries{
-					mockPreallocTimeseries("series_2"),
-					mockPreallocTimeseries("series_4"),
+					mockPreallocTimeseries("series_2_2"),
+					mockPreallocTimeseries("series_4_2"),
 				}},
 			},
 			upstreamPushErrs: []error{nil, nil},
@@ -492,12 +492,12 @@ func TestShardingPusher(t *testing.T) {
 			shardCount: 1,
 			batchSize:  2,
 			requests: []*mimirpb.WriteRequest{
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1_3")}},
 			},
 			expectedErrs: []error{nil},
 
 			expectedUpstreamPushes: []*mimirpb.WriteRequest{
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1_3")}},
 			},
 			upstreamPushErrs: []error{nil},
 			expectedCloseErr: nil,
@@ -506,19 +506,19 @@ func TestShardingPusher(t *testing.T) {
 			shardCount: 1,
 			batchSize:  2,
 			requests: []*mimirpb.WriteRequest{
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}},
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2")}},
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1_4")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2_4")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3_4")}},
 			},
 			expectedErrs: []error{nil, nil, nil},
 
 			expectedUpstreamPushes: []*mimirpb.WriteRequest{
 				{Timeseries: []mimirpb.PreallocTimeseries{
-					mockPreallocTimeseries("series_1"),
-					mockPreallocTimeseries("series_2"),
+					mockPreallocTimeseries("series_1_4"),
+					mockPreallocTimeseries("series_2_4"),
 				}},
 				{Timeseries: []mimirpb.PreallocTimeseries{
-					mockPreallocTimeseries("series_3"),
+					mockPreallocTimeseries("series_3_4"),
 				}},
 			},
 			upstreamPushErrs: []error{nil, nil},
@@ -529,20 +529,20 @@ func TestShardingPusher(t *testing.T) {
 			batchSize:  2,
 			requests: []*mimirpb.WriteRequest{
 				{Timeseries: []mimirpb.PreallocTimeseries{
-					mockPreallocTimeseries("series_1"),
-					mockPreallocTimeseries("series_2"),
-					mockPreallocTimeseries("series_3"),
+					mockPreallocTimeseries("series_1_5"),
+					mockPreallocTimeseries("series_2_5"),
+					mockPreallocTimeseries("series_3_5"),
 				}},
 			},
 			expectedErrs: []error{nil},
 
 			expectedUpstreamPushes: []*mimirpb.WriteRequest{
 				{Timeseries: []mimirpb.PreallocTimeseries{
-					mockPreallocTimeseries("series_1"),
-					mockPreallocTimeseries("series_2"),
+					mockPreallocTimeseries("series_1_5"),
+					mockPreallocTimeseries("series_2_5"),
 				}},
 				{Timeseries: []mimirpb.PreallocTimeseries{
-					mockPreallocTimeseries("series_3"),
+					mockPreallocTimeseries("series_3_5"),
 				}},
 			},
 			upstreamPushErrs: []error{nil, nil},
@@ -552,23 +552,23 @@ func TestShardingPusher(t *testing.T) {
 			shardCount: 2,
 			batchSize:  2,
 			requests: []*mimirpb.WriteRequest{
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}},
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2")}},
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3")}},
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1_6")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2_6")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3_6")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3_6")}},
 			},
 
 			expectedErrs: []error{nil, nil, nil, nil},
 			expectedUpstreamPushes: []*mimirpb.WriteRequest{
 				{Timeseries: []mimirpb.PreallocTimeseries{
-					mockPreallocTimeseries("series_1"),
-					mockPreallocTimeseries("series_3"),
+					mockPreallocTimeseries("series_1_6"),
+					mockPreallocTimeseries("series_3_6"),
 				}},
 				{Timeseries: []mimirpb.PreallocTimeseries{
-					mockPreallocTimeseries("series_2"),
+					mockPreallocTimeseries("series_2_6"),
 				}},
 				{Timeseries: []mimirpb.PreallocTimeseries{
-					mockPreallocTimeseries("series_3"),
+					mockPreallocTimeseries("series_3_6"),
 				}},
 			},
 			upstreamPushErrs: []error{nil, nil, nil},
@@ -578,15 +578,15 @@ func TestShardingPusher(t *testing.T) {
 			shardCount: 1,
 			batchSize:  2,
 			requests: []*mimirpb.WriteRequest{
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}},
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1_7")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2_7")}},
 			},
 			expectedErrs: []error{nil, nil},
 
 			expectedUpstreamPushes: []*mimirpb.WriteRequest{
 				{Timeseries: []mimirpb.PreallocTimeseries{
-					mockPreallocTimeseries("series_1"),
-					mockPreallocTimeseries("series_2"),
+					mockPreallocTimeseries("series_1_7"),
+					mockPreallocTimeseries("series_2_7"),
 				}},
 			},
 			upstreamPushErrs: []error{assert.AnError},
@@ -596,29 +596,29 @@ func TestShardingPusher(t *testing.T) {
 			shardCount: 1,
 			batchSize:  2,
 			requests: []*mimirpb.WriteRequest{
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}},
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1_8")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2_8")}},
 
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3")}},
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3_8")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3_8")}},
 
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3")}},
-				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3_8")}},
+				{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3_8")}},
 			},
 			expectedErrsCount: 1, // at least one of those should fail because the first flush failed
 
 			expectedUpstreamPushes: []*mimirpb.WriteRequest{
 				{Timeseries: []mimirpb.PreallocTimeseries{
-					mockPreallocTimeseries("series_1"),
-					mockPreallocTimeseries("series_2"),
+					mockPreallocTimeseries("series_1_8"),
+					mockPreallocTimeseries("series_2_8"),
 				}},
 				{Timeseries: []mimirpb.PreallocTimeseries{
-					mockPreallocTimeseries("series_3"),
-					mockPreallocTimeseries("series_3"),
+					mockPreallocTimeseries("series_3_8"),
+					mockPreallocTimeseries("series_3_8"),
 				}},
 				{Timeseries: []mimirpb.PreallocTimeseries{
-					mockPreallocTimeseries("series_3"),
-					mockPreallocTimeseries("series_3"),
+					mockPreallocTimeseries("series_3_8"),
+					mockPreallocTimeseries("series_3_8"),
 				}},
 			},
 			upstreamPushErrs: []error{assert.AnError, nil, nil},
