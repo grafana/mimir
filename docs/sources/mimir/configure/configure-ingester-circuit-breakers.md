@@ -20,7 +20,7 @@ A request to a resource protected by a circuit breaker follows these steps:
 
 Depending on configurable frequencies of successes and failures, the circuit breaker transits from one state to another.
 
-Grafana Mimir Ingester circuit breakers are an experimental feature.
+Grafana Mimir ingester circuit breakers are an experimental feature.
 They independently protect Mimir's write and read paths from slow push and read requests.
 More precisely, Grafana Mimir Ingester distinguishes between _push requests circuit breakers_ and _read requests circuit breakers_.
 
