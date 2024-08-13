@@ -70,6 +70,7 @@ require (
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
+	github.com/pierrec/lz4/v4 v4.1.21
 	github.com/prometheus/procfs v0.15.1
 	github.com/shirou/gopsutil/v4 v4.24.7
 	github.com/thanos-io/objstore v0.0.0-20240722162417-19b0c0f0ffd8
@@ -119,7 +120,6 @@ require (
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/mitchellh/copystructure v1.0.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.0 // indirect
-	github.com/pierrec/lz4/v4 v4.1.21 // indirect
 	github.com/pires/go-proxyproto v0.7.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
@@ -177,7 +177,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-errors/errors v1.4.2 // indirect
-	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
+	github.com/go-jose/go-jose/v3 v3.0.3
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

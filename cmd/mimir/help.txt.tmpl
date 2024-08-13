@@ -426,7 +426,7 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.replay-concurrency int
     	The number of concurrent fetch requests that the ingester sends to kafka when catching up during startup. (default 1)
   -ingest-storage.kafka.replay-shards int
-    	The number of concurrent appends to the TSDB head. (default 1)
+    	The number of concurrent appends to the TSDB head. 0 to disable.
   -ingest-storage.kafka.target-consumer-lag-at-startup duration
     	The best-effort maximum lag a consumer tries to achieve at startup. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
   -ingest-storage.kafka.topic string

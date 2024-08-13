@@ -6607,9 +6607,9 @@
               "kind": "field",
               "name": "replay_shards",
               "required": false,
-              "desc": "The number of concurrent appends to the TSDB head.",
+              "desc": "The number of concurrent appends to the TSDB head. 0 to disable.",
               "fieldValue": null,
-              "fieldDefaultValue": 1,
+              "fieldDefaultValue": 0,
               "fieldFlag": "ingest-storage.kafka.replay-shards",
               "fieldType": "int"
             },

@@ -131,7 +131,7 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 
 	f.DurationVar(&cfg.WaitStrongReadConsistencyTimeout, prefix+".wait-strong-read-consistency-timeout", 20*time.Second, "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.")
 	f.IntVar(&cfg.ReplayConcurrency, prefix+".replay-concurrency", 1, "The number of concurrent fetch requests that the ingester sends to kafka when catching up during startup.")
-	f.IntVar(&cfg.ReplayShards, prefix+".replay-shards", 1, "The number of concurrent appends to the TSDB head.")
+	f.IntVar(&cfg.ReplayShards, prefix+".replay-shards", 0, "The number of concurrent appends to the TSDB head. 0 to disable.")
 	f.IntVar(&cfg.BatchSize, prefix+".batch-size", 128, "The number of timeseries to batch together before ingesting into TSDB.")
 	f.IntVar(&cfg.RecordsPerFetch, prefix+".records-per-fetch", 128, "The number of records to fetch from Kafka in a single request.")
 }
