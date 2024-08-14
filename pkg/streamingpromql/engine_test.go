@@ -647,6 +647,20 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
+		"selector with offset to before beginning of available data": {
+			expr: "some_metric[1m] offset 10m",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{},
+			},
+		},
+		"selector with offset to after end of available data": {
+			expr: "some_metric[1m] offset -20m",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{},
+			},
+		},
 		"selector with @ modifier": {
 			expr: "some_metric[1m] @ 2m",
 			ts:   baseT.Add(20 * time.Minute),
