@@ -19,8 +19,8 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
-// PartitionOffsetClient is a client used to read partition offsets.
-type PartitionOffsetClient struct {
+// partitionOffsetClient is a client used to read partition offsets.
+type partitionOffsetClient struct {
 	client *kgo.Client
 	admin  *kadm.Client
 	logger log.Logger
@@ -35,8 +35,8 @@ type PartitionOffsetClient struct {
 	partitionStartOffsetLatency       *prometheus.HistogramVec
 }
 
-func NewPartitionOffsetClient(client *kgo.Client, topic string, reg prometheus.Registerer, logger log.Logger) *PartitionOffsetClient {
-	return &PartitionOffsetClient{
+func newPartitionOffsetClient(client *kgo.Client, topic string, reg prometheus.Registerer, logger log.Logger) *partitionOffsetClient {
+	return &partitionOffsetClient{
 		client: client,
 		admin:  kadm.NewClient(client),
 		logger: logger,
@@ -81,7 +81,7 @@ func NewPartitionOffsetClient(client *kgo.Client, topic string, reg prometheus.R
 // FetchPartitionLastProducedOffset fetches and returns the last produced offset for a partition, or -1 if no record has
 // been ever produced in the partition. This function issues a single request, but the Kafka client used under the
 // hood may retry a failed request until the retry timeout is hit.
-func (p *PartitionOffsetClient) FetchPartitionLastProducedOffset(ctx context.Context, partitionID int32) (_ int64, returnErr error) {
+func (p *partitionOffsetClient) FetchPartitionLastProducedOffset(ctx context.Context, partitionID int32) (_ int64, returnErr error) {
 	var (
 		startTime        = time.Now()
 		partitionIDLabel = strconv.Itoa(int(partitionID))
@@ -116,7 +116,7 @@ func (p *PartitionOffsetClient) FetchPartitionLastProducedOffset(ctx context.Con
 // FetchPartitionStartOffset fetches and returns the start offset for a partition. This function returns 0 if no record has
 // been ever produced in the partition. This function issues a single request, but the Kafka client used under the
 // hood may retry a failed request until the retry timeout is hit.
-func (p *PartitionOffsetClient) FetchPartitionStartOffset(ctx context.Context, partitionID int32) (_ int64, returnErr error) {
+func (p *partitionOffsetClient) FetchPartitionStartOffset(ctx context.Context, partitionID int32) (_ int64, returnErr error) {
 	var (
 		startTime        = time.Now()
 		partitionIDLabel = strconv.Itoa(int(partitionID))
@@ -141,7 +141,7 @@ func (p *PartitionOffsetClient) FetchPartitionStartOffset(ctx context.Context, p
 	return p.fetchPartitionOffset(ctx, partitionID, kafkaOffsetStart)
 }
 
-func (p *PartitionOffsetClient) fetchPartitionOffset(ctx context.Context, partitionID int32, position int64) (int64, error) {
+func (p *partitionOffsetClient) fetchPartitionOffset(ctx context.Context, partitionID int32, position int64) (int64, error) {
 	// Create a custom request to fetch the latest offset of a specific partition.
 	// We manually create a request so that we can request the offset for a single partition
 	// only, which is more performant than requesting the offsets for all partitions.
@@ -201,7 +201,7 @@ func (p *PartitionOffsetClient) fetchPartitionOffset(ctx context.Context, partit
 // are guaranteed to be always updated (no stale or cached offsets returned).
 //
 // The Kafka client used under the hood may retry a failed request until the retry timeout is hit.
-func (p *PartitionOffsetClient) FetchPartitionsLastProducedOffsets(ctx context.Context, partitionIDs []int32) (_ map[int32]int64, returnErr error) {
+func (p *partitionOffsetClient) FetchPartitionsLastProducedOffsets(ctx context.Context, partitionIDs []int32) (_ map[int32]int64, returnErr error) {
 	// Skip lookup and don't track any metric if no partition was requested.
 	if len(partitionIDs) == 0 {
 		return nil, nil
@@ -248,7 +248,7 @@ func (p *PartitionOffsetClient) FetchPartitionsLastProducedOffsets(ctx context.C
 
 // fetchPartitionsEndOffsets returns the end offset of each partition in input. This function returns
 // error if fails to get the offset of any partition (no partial result is returned).
-func (p *PartitionOffsetClient) fetchPartitionsEndOffsets(ctx context.Context, partitionIDs []int32) (kadm.ListedOffsets, error) {
+func (p *partitionOffsetClient) fetchPartitionsEndOffsets(ctx context.Context, partitionIDs []int32) (kadm.ListedOffsets, error) {
 	list := kadm.ListedOffsets{
 		p.topic: make(map[int32]kadm.ListedOffset, len(partitionIDs)),
 	}
@@ -303,7 +303,7 @@ func (p *PartitionOffsetClient) fetchPartitionsEndOffsets(ctx context.Context, p
 }
 
 // ListTopicPartitionIDs returns a list of all partition IDs in the topic.
-func (p *PartitionOffsetClient) ListTopicPartitionIDs(ctx context.Context) ([]int32, error) {
+func (p *partitionOffsetClient) ListTopicPartitionIDs(ctx context.Context) ([]int32, error) {
 	topics, err := p.admin.ListTopics(ctx, p.topic)
 	if err != nil {
 		return nil, err

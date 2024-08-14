@@ -724,8 +724,8 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReader() (services.Service, error) 
 	// we're currently using in Mimir. We include all partition states because ACTIVE and INACTIVE partitions
 	// must be queried, and PENDING partitions may switch to ACTIVE between when the query-frontend fetch the offsets
 	// and the querier builds the replicaset of partitions to query.
-	getPartitionIDs := func() []int32 {
-		return t.IngesterPartitionRingWatcher.PartitionRing().PartitionIDs()
+	getPartitionIDs := func(_ context.Context) ([]int32, error) {
+		return t.IngesterPartitionRingWatcher.PartitionRing().PartitionIDs(), nil
 	}
 
 	t.QueryFrontendTopicOffsetsReader = ingest.NewTopicOffsetsReader(kafkaClient, t.Cfg.IngestStorage.KafkaConfig.Topic, getPartitionIDs, t.Cfg.IngestStorage.KafkaConfig.LastProducedOffsetPollInterval, t.Registerer, util_log.Logger)

@@ -160,7 +160,7 @@ func TestTopicOffsetsReader(t *testing.T) {
 
 	var (
 		ctx             = context.Background()
-		allPartitionIDs = func() []int32 { return []int32{0} }
+		allPartitionIDs = func(_ context.Context) ([]int32, error) { return []int32{0}, nil }
 	)
 
 	t.Run("should notify waiting goroutines when stopped", func(t *testing.T) {
@@ -205,7 +205,7 @@ func TestTopicOffsetsReader_WaitNextFetchLastProducedOffset(t *testing.T) {
 	var (
 		ctx             = context.Background()
 		logger          = log.NewNopLogger()
-		allPartitionIDs = func() []int32 { return []int32{0} }
+		allPartitionIDs = func(_ context.Context) ([]int32, error) { return []int32{0}, nil }
 	)
 
 	t.Run("should wait the result of the next request issued", func(t *testing.T) {
