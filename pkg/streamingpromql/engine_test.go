@@ -41,14 +41,13 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"1 + 2":                      "scalar value as top-level expression",
-		"1 + metric{}":               "binary expression with scalars",
-		"metric{} + 1":               "binary expression with scalars",
+		"1 + 2":                      "binary expression between two scalars",
+		"1 + metric{}":               "binary expression between scalar and instant vector",
+		"metric{} + 1":               "binary expression between scalar and instant vector",
 		"metric{} < other_metric{}":  "binary expression with '<'",
 		"metric{} or other_metric{}": "binary expression with many-to-many matching",
 		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
 		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
-		"1":                                     "scalar value as top-level expression",
 		"avg(metric{})":                         "'avg' aggregation",
 		"rate(metric{}[5m:1m])":                 "PromQL expression type *parser.SubqueryExpr",
 		"quantile_over_time(0.4, metric{}[5m])": "'quantile_over_time' function",
