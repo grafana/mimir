@@ -170,18 +170,18 @@ const (
 // querierWorkerOperation is a message to the RequestQueue's dispatcherLoop to perform operations
 // on querier and querier-worker connections, such as registering, unregistering, or notifying shutdown.
 //
-// Initializing recvChan as non-nil indicates that the operation is awaitable.
-// For awaitable operations, recvChan is written to when the operation is processed,
+// Initializing the done chan as non-nil indicates that the operation is awaitable.
+// For awaitable operations, done is written to when the operation is processed,
 // and updates are reflected on the referenced QuerierWorkerConn.
 //
-// A nil recvChan as nil indicates that the operation is not awaitable;
+// A nil done chan indicates that the operation is not awaitable;
 // the caller does not care to wait for the result to be written
 // and the processor will not bother to write the result.
 type querierWorkerOperation struct {
 	conn      *QuerierWorkerConn
 	operation querierOperationType
 
-	recvChan chan struct{}
+	done chan struct{}
 }
 
 func newQuerierWorkerOperation(
@@ -190,7 +190,7 @@ func newQuerierWorkerOperation(
 	return &querierWorkerOperation{
 		conn:      querierWorkerConn,
 		operation: opType,
-		recvChan:  nil,
+		done:      nil,
 	}
 }
 
@@ -200,12 +200,12 @@ func newAwaitableQuerierWorkerOperation(
 	return &querierWorkerOperation{
 		conn:      querierWorkerConn,
 		operation: opType,
-		recvChan:  make(chan struct{}),
+		done:      make(chan struct{}),
 	}
 }
 
 func (qwo *querierWorkerOperation) IsAwaitable() bool {
-	return qwo.recvChan != nil
+	return qwo.done != nil
 }
 
 func (qwo *querierWorkerOperation) AwaitQuerierWorkerConnUpdate() error {
@@ -221,7 +221,7 @@ func (qwo *querierWorkerOperation) AwaitQuerierWorkerConnUpdate() error {
 		// if the waiting querier-worker connection's context times out or is canceled,
 		// allowing the dispatcherLoop to proceed with its next iteration
 		return qwo.conn.ctx.Err()
-	case <-qwo.recvChan:
+	case <-qwo.done:
 		return nil
 	}
 }
@@ -612,7 +612,7 @@ func (q *RequestQueue) processQuerierWorkerOperation(querierWorkerOp *querierWor
 	}
 	if querierWorkerOp.IsAwaitable() {
 		select {
-		case querierWorkerOp.recvChan <- struct{}{}:
+		case querierWorkerOp.done <- struct{}{}:
 		case <-querierWorkerOp.conn.ctx.Done():
 		case <-q.stopCompleted:
 		}
