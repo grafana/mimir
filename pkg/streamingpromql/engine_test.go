@@ -103,6 +103,14 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 		requireRangeQueryIsUnsupported(t, featureToggles, "rate(metric[2m] offset 1m)", "range vector selector with 'offset'")
 		requireInstantQueryIsUnsupported(t, featureToggles, "rate(metric[2m] offset 1m)", "range vector selector with 'offset'")
 	})
+
+	t.Run("scalars", func(t *testing.T) {
+		featureToggles := EnableAllFeatures
+		featureToggles.EnableScalars = false
+
+		requireRangeQueryIsUnsupported(t, featureToggles, "2", "scalar values")
+		requireInstantQueryIsUnsupported(t, featureToggles, "2", "scalar values")
+	})
 }
 
 func requireRangeQueryIsUnsupported(t *testing.T, featureToggles FeatureToggles, expression string, expectedError string) {

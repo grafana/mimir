@@ -100,6 +100,8 @@ func (q *Query) convertToOperator(expr parser.Expr) (types.Operator, error) {
 		return q.convertToRangeVectorOperator(expr)
 	case parser.ValueTypeVector:
 		return q.convertToInstantVectorOperator(expr)
+	case parser.ValueTypeScalar:
+		return nil, compat.NewNotSupportedError("scalar values")
 	default:
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("%s value as top-level expression", parser.DocumentedType(expr.Type())))
 	}
