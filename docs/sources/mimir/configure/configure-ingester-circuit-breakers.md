@@ -51,7 +51,7 @@ A push request meets the push requests circuit breaker failure condition if its 
 
 Read requests circuit breakers follow these conditions:
 
-- in order to protect the write path as much as possible, ingesters do not allow read push requests if their push circuit breakers are open.
+- In order to protect the write path as much as possible, ingesters do not allow read push requests if their push circuit breakers are open.
   This means that before an ingester tries to acquire a read circuit breaker permit, it first checks if its push circuit breaker is open.
   If it iss open, a circuit breaker open error is returned.
   Otherwise, the ingester tries to acquire a read requests circuit breaker permit.
