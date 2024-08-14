@@ -1555,6 +1555,21 @@ func TestAnnotations(t *testing.T) {
 			},
 		},
 
+		"binary operation between native histograms with exponential and custom buckets": {
+			data: nativeHistogramsWithCustomBucketsData,
+			expr: `metric{series="exponential-buckets"} + ignoring(series) metric{series="custom-buckets-1"}`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "" (1:1)`,
+			},
+		},
+		"binary operation between native histograms with incompatible custom buckets": {
+			data: nativeHistogramsWithCustomBucketsData,
+			expr: `metric{series="custom-buckets-1"} + ignoring(series) metric{series="custom-buckets-2"}`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "" (1:1)`,
+			},
+		},
+
 		"multiple annotations from different operators": {
 			data: `
 				mixed_metric_count       10 {{schema:0 sum:1 count:1 buckets:[1]}}

@@ -127,7 +127,7 @@ func TestBenchmarkSetup(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
-	query, err := mimirEngine.NewRangeQuery(ctx, q, nil, "a_1", time.Unix(0, 0), time.Unix(int64(15*intervalSeconds), 0), interval)
+	query, err := mimirEngine.NewRangeQuery(ctx, q, nil, "a_1", time.Unix(0, 0), time.Unix(int64((NumIntervals-1)*intervalSeconds), 0), interval)
 	require.NoError(t, err)
 
 	t.Cleanup(query.Close)
@@ -143,23 +143,11 @@ func TestBenchmarkSetup(t *testing.T) {
 	require.Len(t, series.Histograms, 0)
 
 	intervalMilliseconds := interval.Milliseconds()
-	expectedPoints := []promql.FPoint{
-		{T: 0, F: 0},
-		{T: 1 * intervalMilliseconds, F: 1},
-		{T: 2 * intervalMilliseconds, F: 2},
-		{T: 3 * intervalMilliseconds, F: 3},
-		{T: 4 * intervalMilliseconds, F: 4},
-		{T: 5 * intervalMilliseconds, F: 5},
-		{T: 6 * intervalMilliseconds, F: 6},
-		{T: 7 * intervalMilliseconds, F: 7},
-		{T: 8 * intervalMilliseconds, F: 8},
-		{T: 9 * intervalMilliseconds, F: 9},
-		{T: 10 * intervalMilliseconds, F: 10},
-		{T: 11 * intervalMilliseconds, F: 11},
-		{T: 12 * intervalMilliseconds, F: 12},
-		{T: 13 * intervalMilliseconds, F: 13},
-		{T: 14 * intervalMilliseconds, F: 14},
-		{T: 15 * intervalMilliseconds, F: 15},
+	expectedPoints := make([]promql.FPoint, NumIntervals)
+
+	for i := range expectedPoints {
+		expectedPoints[i].T = int64(i) * intervalMilliseconds
+		expectedPoints[i].F = float64(i)
 	}
 
 	require.Equal(t, expectedPoints, series.Floats)
