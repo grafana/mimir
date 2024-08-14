@@ -110,6 +110,7 @@
 * [ENHANCEMENT] Dashboards: remove "All" option for namespace dropdown in dashboards. #8829
 * [ENHANCEMENT] Dashboards: add Kafka end-to-end latency outliers panel in the "Mimir / Writes" dashboard. #8948
 * [ENHANCEMENT] Dashboards: add "Out-of-order samples appended" panel to "Mimir / Tenants" dashboard. #8939
+* [ENHANCEMENT] Alerts: `RequestErrors` and `RulerRemoteEvaluationFailing` have been enriched with a native histogram version. #9004
 * [BUGFIX] Dashboards: fix "current replicas" in autoscaling panels when HPA is not active. #8566
 * [BUGFIX] Alerts: do not fire `MimirRingMembersMismatch` during the migration to experimental ingest storage. #8727
 

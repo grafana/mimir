@@ -12,6 +12,80 @@ local utils = import 'mixin-utils/utils.libsonnet';
   local groupStatefulSetByRolloutGroup(metricName) =
     'sum without(statefulset) (label_replace(%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % metricName,
 
+  local request_metric = 'cortex_request_duration_seconds',
+
+  local rate(error_query, total_query, comment='') = |||
+    %(comment)s(
+      %(errorQuery)s
+      /
+      %(totalQuery)s
+    ) * 100 > 1
+  ||| % { comment: comment, errorQuery: error_query, totalQuery: total_query },
+
+  local requestErrorsQuery(selector, error_selector, rate_interval, sum_by, comment='') =
+    local errorSelector = '%s, %s' % [ error_selector, selector ];
+    local errorQuery = utils.ncHistogramSumBy(utils.ncHistogramCountRate(request_metric, errorSelector, rate_interval), sum_by);
+    local totalQuery = utils.ncHistogramSumBy(utils.ncHistogramCountRate(request_metric, selector, rate_interval), sum_by);
+    {
+      classic: rate(errorQuery.classic, totalQuery.classic, comment),
+      native: rate(errorQuery.native, totalQuery.native, comment),
+    },
+
+  local requestErrorsAlert(histogram) =
+    local query = requestErrorsQuery(
+      selector='route!~"%s"' % std.join('|', ['ready'] + $._config.alert_excluded_routes),
+      // Note if alert_aggregation_labels is "job", this will repeat the label. But
+      // prometheus seems to tolerate that.
+      error_selector='status_code=~"5..",status_code!~"529|598"',
+      rate_interval=$.alertRangeInterval(1),
+      sum_by=[$._config.alert_aggregation_labels, $._config.per_job_label, 'route'],
+      comment=|||
+        # The following 5xx errors considered as non-error:
+        # - 529: used by distributor rate limiting (using 529 instead of 429 to let the client retry)
+        # - 598: used by GEM gateway when the client is very slow to send the request and the gateway times out reading the request body
+      |||,
+    );
+    if histogram != 'classic' && histogram != 'native'
+    then {}
+    else {
+      alert: $.alertName('RequestErrors'),
+      expr: if histogram == 'classic' then query.classic else query.native,
+      'for': '15m',
+      labels: {
+        severity: 'critical',
+        histogram: histogram,
+      },
+      annotations: {
+        message: |||
+          The route {{ $labels.route }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors.
+        ||| % $._config,
+      },
+    },
+
+  local rulerRemoteEvaluationFailingAlert(histogram) =
+    local query = requestErrorsQuery(
+      selector='route="/httpgrpc.HTTP/Handle", %s' % $.jobMatcher($._config.job_names.ruler_query_frontend),
+      error_selector='status_code=~"5.."',
+      rate_interval=$.alertRangeInterval(5),
+      sum_by=[$._config.alert_aggregation_labels],
+    );
+    if histogram != 'classic' && histogram != 'native'
+    then {}
+    else {
+      alert: $.alertName('RulerRemoteEvaluationFailing'),
+      expr: if histogram == 'classic' then query.classic else query.native,
+      'for': '5m',
+      labels: {
+        severity: 'warning',
+        histogram: histogram,
+      },
+      annotations: {
+        message: |||
+          %(product)s rulers in %(alert_aggregation_variables)s are failing to perform {{ printf "%%.2f" $value }}%% of remote evaluations through the ruler-query-frontend.
+        ||| % $._config,
+      },
+    },
+
   local alertGroups = [
     {
       name: 'mimir_alerts',
@@ -29,35 +103,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s cluster %(alert_aggregation_variables)s has {{ printf "%%f" $value }} unhealthy ingester(s).' % $._config,
           },
         },
-        {
-          alert: $.alertName('RequestErrors'),
-          // Note if alert_aggregation_labels is "job", this will repeat the label. But
-          // prometheus seems to tolerate that.
-          expr: |||
-            # The following 5xx errors considered as non-error:
-            # - 529: used by distributor rate limiting (using 529 instead of 429 to let the client retry)
-            # - 598: used by GEM gateway when the client is very slow to send the request and the gateway times out reading the request body
-            (
-              sum by (%(group_by)s, %(job_label)s, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..",status_code!~"529|598",route!~"%(excluded_routes)s"}[%(range_interval)s]))
-              /
-              sum by (%(group_by)s, %(job_label)s, route) (rate(cortex_request_duration_seconds_count{route!~"%(excluded_routes)s"}[%(range_interval)s]))
-            ) * 100 > 1
-          ||| % {
-            group_by: $._config.alert_aggregation_labels,
-            job_label: $._config.per_job_label,
-            excluded_routes: std.join('|', ['ready'] + $._config.alert_excluded_routes),
-            range_interval: $.alertRangeInterval(1),
-          },
-          'for': '15m',
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: |||
-              The route {{ $labels.route }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors.
-            ||| % $._config,
-          },
-        },
+        requestErrorsAlert('classic'),
+        requestErrorsAlert('native'),
         {
           alert: $.alertName('RequestLatency'),
           expr: |||
@@ -708,29 +755,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
             ||| % $._config,
           },
         },
-        {
-          alert: $.alertName('RulerRemoteEvaluationFailing'),
-          expr: |||
-            100 * (
-            sum by (%(alert_aggregation_labels)s) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", status_code=~"5..", %(job_regex)s}[%(range_interval)s]))
-              /
-            sum by (%(alert_aggregation_labels)s) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", %(job_regex)s}[%(range_interval)s]))
-            ) > 1
-          ||| % {
-            alert_aggregation_labels: $._config.alert_aggregation_labels,
-            job_regex: $.jobMatcher($._config.job_names.ruler_query_frontend),
-            range_interval: $.alertRangeInterval(5),
-          },
-          'for': '5m',
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              %(product)s rulers in %(alert_aggregation_variables)s are failing to perform {{ printf "%%.2f" $value }}%% of remote evaluations through the ruler-query-frontend.
-            ||| % $._config,
-          },
-        },
+        rulerRemoteEvaluationFailingAlert('classic'),
+        rulerRemoteEvaluationFailingAlert('native'),
       ],
     },
     {
