@@ -610,7 +610,7 @@ github.com/grafana/alerting/receivers/webex
 github.com/grafana/alerting/receivers/webhook
 github.com/grafana/alerting/receivers/wecom
 github.com/grafana/alerting/templates
-# github.com/grafana/dskit v0.0.0-20240801171758-736c44c85382
+# github.com/grafana/dskit v0.0.0-20240814201308-442170dfed1b
 ## explicit; go 1.21
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -629,7 +629,6 @@ github.com/grafana/dskit/grpcutil
 github.com/grafana/dskit/httpgrpc
 github.com/grafana/dskit/httpgrpc/server
 github.com/grafana/dskit/instrument
-github.com/grafana/dskit/internal/math
 github.com/grafana/dskit/internal/slices
 github.com/grafana/dskit/kv
 github.com/grafana/dskit/kv/codec
@@ -669,7 +668,7 @@ github.com/grafana/e2e/images
 # github.com/grafana/gomemcache v0.0.0-20240229205252-cd6a66d6fb56
 ## explicit; go 1.18
 github.com/grafana/gomemcache/memcache
-# github.com/grafana/pyroscope-go/godeltaprof v0.1.6
+# github.com/grafana/pyroscope-go/godeltaprof v0.1.7
 ## explicit; go 1.16
 github.com/grafana/pyroscope-go/godeltaprof
 github.com/grafana/pyroscope-go/godeltaprof/http/pprof

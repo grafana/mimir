@@ -137,11 +137,10 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 	// Lookup ingesters ring because ingest storage is disabled.
 	shardSize := d.limits.IngestionTenantShardSize(userID)
 	r := d.ingestersRing
-
-	// If tenant uses shuffle sharding, we should only query ingesters which are part of the tenant's subring.
-	if lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod; shardSize > 0 && lookbackPeriod > 0 {
-		r = r.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now())
+	if shardSize == 0 {
+		shardSize = r.InstancesCount()
 	}
+	r = r.ShuffleShardWithLookback(userID, shardSize, d.cfg.ShuffleShardingLookbackPeriod, time.Now())
 
 	replicationSet, err := r.GetReplicationSetForOperation(readNoExtend)
 	if err != nil {

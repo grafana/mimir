@@ -62,6 +62,7 @@
     * `cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total`
 * [ENHANCEMENT] Expose a new `s3.session-token` configuration option to enable using temporary security credentials. #8952
 * [ENHANCEMENT] Make `-query-frontend.additional-query-queue-dimensions-enabled` and `-query-scheduler.additional-query-queue-dimensions-enabled` non-operational flags in preparation for removal. #8984
+* [ENHANCEMENT] Add a new ingester endpoint to prepare instances to downscale. #8956
 * [BUGFIX] Ruler: add support for draining any outstanding alert notifications before shutting down. This can be enabled with the `-ruler.drain-notification-queue-on-shutdown=true` CLI flag. #8346
 * [BUGFIX] Query-frontend: fix `-querier.max-query-lookback` enforcement when `-compactor.blocks-retention-period` is not set, and viceversa. #8388
 * [BUGFIX] Ingester: fix sporadic `not found` error causing an internal server error if label names are queried with matchers during head compaction. #8391
