@@ -72,7 +72,7 @@ You can set a different percentage via the `-ingester.push-circuit-breaker.failu
 After a circuit breaker reaches the `open` state, it waits 10 seconds (`10s`) before it transitions to the `half-open` state and allows trial requests.
 You can change these waiting times via the `-ingester.push-circuit-breaker.cooldown-period` and `-ingester.read-circuit-breaker.cooldown-period` flags.
 
-Grafana Mimir ingester push and read circuit breakers come with one different default configuration: the maximum duration of a request before it triggers a timeout.
+Grafana Mimir ingester push and read circuit breakers come with a default configuration for the maximum duration of a request before it triggers a timeout.
 The default values are two seconds (`2s`) for push requests, and thirty seconds (`30s`) for read requests. You can configure these settings via the `-ingester.push-circuit-breaker.request-timeout` and `-ingester.read-circuit-breaker.request-timeout` settings.
 Circuit breakers use these timeouts internally and never report them as errors.
 
