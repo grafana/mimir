@@ -74,7 +74,7 @@ You can change these waiting times via the `-ingester.push-circuit-breaker.coold
 
 Grafana Mimir ingester push and read circuit breakers come with one different default configuration: the maximum duration of a request before it triggers a timeout.
 The default values are two seconds (`2s`) for push requests, and thirty seconds (`30s`) for read requests. You can configure these settings via the `-ingester.push-circuit-breaker.request-timeout` and `-ingester.read-circuit-breaker.request-timeout` settings.
-Circuit breakers use these timeouts only internally, and never report them as errors.
+Circuit breakers use these timeouts internally and never report them as errors.
 
 ## Grafana Mimir Ingester circuit breakers metrics
 
