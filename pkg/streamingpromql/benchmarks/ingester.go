@@ -211,10 +211,9 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 	ctx := user.InjectOrgID(context.Background(), UserID)
 
 	// Batch samples into separate requests
-	// There is no precise science behind this number currently.
-	// A quick run locally found batching by 100 did not increase the loading time by any noticeable amount.
-	// Additionally memory usage maxed about 4GB for the whole process.
-	batchSize := 100
+	// There is no precise science behind this number: based on a few experiments,
+	// batching by 1000 gives a good balance between peak memory consumption and run time.
+	batchSize := 1000
 	histogramSpans := []mimirpb.BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}}
 	histogramDeltas := []int64{1, 1, -1, 0}
 
@@ -272,9 +271,9 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 		if _, err := ing.Push(ctx, req); err != nil {
 			return fmt.Errorf("failed to push samples to ingester: %w", err)
 		}
-	}
 
-	ing.Flush()
+		ing.Flush()
+	}
 
 	return nil
 }
