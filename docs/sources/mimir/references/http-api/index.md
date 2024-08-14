@@ -913,8 +913,8 @@ GET <prometheus-http-prefix>/config/v1/rules/{namespace}
 ```
 
 Returns the rule groups defined for a given namespace.
-The `{namespace}` path segment should be escaped using percent-encoding as defined by
-[RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) (for example, `/` should escaped to `%2F`).
+Escape the `{namespace}` path segment using percent-encoding, as defined by
+[RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). For example, escape `/` to `%2F`.
 
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
@@ -946,8 +946,8 @@ GET <prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}
 ```
 
 Returns the rule group matching the request namespace and group name.
-The `{namespace}` and `{groupName}` path segments should be escaped using percent-encoding as defined by
-[RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) (for example, `/` should escaped to `%2F`).
+Escape the `{namespace}` and `{groupName}` path segments using percent-encoding, as defined by
+[RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). For example, escape `/` to `%2F`.
 
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
@@ -966,8 +966,8 @@ POST /<prometheus-http-prefix>/config/v1/rules/{namespace}
 Creates or updates a rule group.
 This endpoint expects a request with `Content-Type: application/yaml` header and the rules group **YAML** definition in the request body, and returns `202` on success.
 The request body must contain the definition of one and only one rule group.
-The `{namespace}` path segment should be escaped using percent-encoding as defined by [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986)
-(for example, `/` should escaped to `%2F`).
+Escape the `{namespace}` path segment using percent-encoding, as defined by [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+For example, escape `/` to `%2F`.
 
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
@@ -1001,8 +1001,8 @@ DELETE /<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}
 ```
 
 Deletes a rule group by namespace and group name. This endpoints returns `202` on success.
-The `{namespace}` and `{groupName}` path segments should be escaped using percent-encoding as defined by [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986)
-(for example, `/` should escaped to `%2F`).
+Escape the `{namespace}` and `{groupName}` path segments using percent-encoding, as defined by [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+For example, escape `/` to `%2F`.
 
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
@@ -1019,8 +1019,8 @@ DELETE /<prometheus-http-prefix>/config/v1/rules/{namespace}
 ```
 
 Deletes all the rule groups in a namespace (including the namespace itself). This endpoint returns `202` on success.
-The `{namespace}` path segment should be escaped using percent-encoding as defined by [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986)
-(for example, `/` should escaped to `%2F`).
+Escape the `{namespace}` path segment using percent-encoding, as defined by [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+For example, escape `/` to `%2F`.
 
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
