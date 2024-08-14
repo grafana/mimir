@@ -59,7 +59,7 @@ Read requests circuit breakers follow these conditions:
 
 ## Grafana Mimir Ingester circuit breakers configuration
 
-You can enable Grafana Mimir ingester push and read circuit breaker by respectively setting `-ingester.push-circuit-breaker.enabled=true` and `-ingester.read-circuit-breaker.enabled=true`.
+To enable Grafana Mimir ingester push and read circuit breakers, set `-ingester.push-circuit-breaker.enabled=true` and `-ingester.read-circuit-breaker.enabled=true`.
 You can enable the circuit breakers independently, i.e., enabling one of them does not require enabling the other one.
 
 When enabled, push and read circuit breakers come with some default configurations.
