@@ -399,11 +399,12 @@ func (am *Alertmanager) TestReceiversHandler(w http.ResponseWriter, r *http.Requ
 	}
 	am.templatesMtx.RUnlock()
 
-	response, err := alertingNotify.TestReceivers(r.Context(), c, tmpls, am.buildGrafanaReceiverIntegrations, am.cfg.ExternalURL.String())
+	response, status, err := alertingNotify.TestReceivers(r.Context(), c, tmpls, am.buildGrafanaReceiverIntegrations, am.cfg.ExternalURL.String())
 	if err != nil {
 		http.Error(w,
 			fmt.Sprintf("error testing receivers: %s", err.Error()),
 			http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -411,6 +412,8 @@ func (am *Alertmanager) TestReceiversHandler(w http.ResponseWriter, r *http.Requ
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	w.WriteHeader(status)
 }
 
 func (am *Alertmanager) WaitInitialStateSync(ctx context.Context) error {

@@ -22,8 +22,7 @@
 * [CHANGE] Ingester client: experimental support for client-side circuit breakers, their configuration options (`-ingester.client.circuit-breaker.*`) and metrics (`cortex_ingester_client_circuit_breaker_results_total`, `cortex_ingester_client_circuit_breaker_transitions_total`) were removed. #8802
 * [CHANGE] Ingester: circuit breakers do not open in case of per-instance limit errors anymore. Opening can be triggered only in case of push and pull requests exceeding the configured duration. #8854
 * [CHANGE] Query-frontend: Return `413 Request Entity Too Large` if a response shard for an `/active_series` request is too large. #8861
-* [CHANGE] Ingester: increase the default inactivity timeout of active series (`-ingester.active-series-metrics-idle-timeout`) from `10m` to `20m`. #8975
-* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.query-engine=mimir`. #8422 #8430 #8454 #8455 #8360 #8490 #8508 #8577 #8660 #8671 #8677 #8747 #8850 #8872 #8838 #8911 #8909 #8923 #8924 #8925 #8932 #8933 #8934
+* [CHANGE] Ingester: increase the default inactivity timeout of active series (`-ingester.active-series-metrics-idle-timeout`) from `10m` to `20m`. #8975* [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.query-engine=mimir`. #8422 #8430 #8454 #8455 #8360 #8490 #8508 #8577 #8660 #8671 #8677 #8747 #8850 #8872 #8838 #8911 #8909 #8923 #8924 #8925 #8932 #8933 #8934 #8962 #8986 #8993
 * [FEATURE] Experimental Kafka-based ingest storage. #6888 #6894 #6929 #6940 #6951 #6974 #6982 #7029 #7030 #7091 #7142 #7147 #7148 #7153 #7160 #7193 #7349 #7376 #7388 #7391 #7393 #7394 #7402 #7404 #7423 #7424 #7437 #7486 #7503 #7508 #7540 #7621 #7682 #7685 #7694 #7695 #7696 #7697 #7701 #7733 #7734 #7741 #7752 #7838 #7851 #7871 #7877 #7880 #7882 #7887 #7891 #7925 #7955 #7967 #8031 #8063 #8077 #8088 #8135 #8176 #8184 #8194 #8216 #8217 #8222 #8233 #8503 #8542 #8579 #8657 #8686 #8688 #8703 #8706 #8708 #8738 #8750 #8778 #8808 #8809 #8841 #8842 #8845 #8853 #8886
   * What it is:
     * When the new ingest storage architecture is enabled, distributors write incoming write requests to a Kafka-compatible backend, and the ingesters asynchronously replay ingested data from Kafka. In this architecture, the write and read path are de-coupled through a Kafka-compatible backend. The write path and Kafka load is a function of the incoming write traffic, the read path load is a function of received queries. Whatever the load on the read path, it doesn't affect the write path.
@@ -51,6 +50,7 @@
 * [ENHANCEMENT] Ingester, store-gateway: optimised regular expression matching for patterns like `1.*|2.*|3.*|...|1000.*`. #8632
 * [ENHANCEMENT] Query-frontend: Add `header_cache_control` to query stats. #8590
 * [ENHANCEMENT] Query-scheduler: Introduce `query-scheduler.use-multi-algorithm-query-queue`, which allows use of an experimental queue structure, with no change in external queue behavior. #7873
+* [ENHANCEMENT] Query-scheduler: Improve CPU/memory performance of experimental query-scheduler. #8871
 * [ENHANCEMENT] Expose a new `s3.trace.enabled` configuration option to enable detailed logging of operations against S3-compatible object stores. #8690
 * [ENHANCEMENT] memberlist: locally-generated messages (e.g. ring updates) are sent to gossip network before forwarded messages. Introduced `-memberlist.broadcast-timeout-for-local-updates-on-shutdown` option to modify how long to wait until queue with locally-generated messages is empty when shutting down. Previously this was hard-coded to 10s, and wait included all messages (locally-generated and forwarded). Now it defaults to 10s, 0 means no timeout. Increasing this value may help to avoid problem when ring updates on shutdown are not propagated to other nodes, and ring entry is left in a wrong state. #8761
 * [ENHANCEMENT] Querier: allow using both raw numbers of seconds and duration literals in queries where previously only one or the other was permitted. For example, `predict_linear` now accepts a duration literal (eg. `predict_linear(..., 4h)`), and range vector selectors now accept a number of seconds (eg. `rate(metric[2])`). #8780
@@ -61,6 +61,7 @@
     * `cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total`
     * `cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total`
 * [ENHANCEMENT] Expose a new `s3.session-token` configuration option to enable using temporary security credentials. #8952
+* [ENHANCEMENT] Make `-query-frontend.additional-query-queue-dimensions-enabled` and `-query-scheduler.additional-query-queue-dimensions-enabled` non-operational flags in preparation for removal. #8984
 * [BUGFIX] Ruler: add support for draining any outstanding alert notifications before shutting down. This can be enabled with the `-ruler.drain-notification-queue-on-shutdown=true` CLI flag. #8346
 * [BUGFIX] Query-frontend: fix `-querier.max-query-lookback` enforcement when `-compactor.blocks-retention-period` is not set, and viceversa. #8388
 * [BUGFIX] Ingester: fix sporadic `not found` error causing an internal server error if label names are queried with matchers during head compaction. #8391
@@ -77,6 +78,7 @@
 * [BUGFIX] Query-frontend: Ensure that internal errors result in an HTTP 500 response code instead of 422. #8595 #8666
 * [BUGFIX] Configuration: Multi line envs variables are flatten during injection to be compatible with YAML syntax
 * [BUGFIX] Querier: fix issue where queries can return incorrect results if a single store-gateway returns overlapping chunks for a series. #8827
+* [BUGFIX] HA Tracker: store correct timestamp for last received request from elected replica. #8821
 * [BUGFIX] Querier: do not return `grpc: the client connection is closing` errors as HTTP `499`. #8865 #8888
 * [BUGFIX] Compactor: fix a race condition between different compactor replicas that may cause a deleted block to be still referenced as non-deleted in the bucket index. #8905
 * [BUGFIX] Querier: fix issue where some native histogram-related warnings were not emitted when `rate()` was used over native histograms. #8918
@@ -159,6 +161,7 @@
 * [ENHANCEMENT] Compare native histograms in query results when comparing results between two backends. #8724
 * [ENHANCEMENT] Don't consider responses to be different during response comparison if both backends' responses contain different series, but all samples are within the recent sample window. #8749 #8894
 * [ENHANCEMENT] When the expected and actual response for a matrix series is different, the full set of samples for that series from both backends will now be logged. #8947
+* [ENHANCEMENT] Wait up to `-server.graceful-shutdown-timeout` for inflight requests to finish when shutting down, rather than immediately terminating inflight requests on shutdown. #8985
 * [BUGFIX] Ensure any errors encountered while forwarding a request to a backend (eg. DNS resolution failures) are logged. #8419
 * [BUGFIX] The comparison of the results should not fail when either side contains extra samples from within SkipRecentSamples duration. #8920
 

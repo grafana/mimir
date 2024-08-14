@@ -342,7 +342,7 @@ func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compressi
 }
 
 // ParseRequestFormWithoutConsumingBody parsed and returns the request parameters (query string and/or request body)
-// from the input http.Request. If the request has a Body, the request's Body is replaces so that it can be consumed again.
+// from the input http.Request. If the request has a Body, the request's Body is replaced so that it can be consumed again.
 // It does not check the req.Body size, so it is the caller's responsibility to ensure that the body is not too large.
 func ParseRequestFormWithoutConsumingBody(r *http.Request) (url.Values, error) {
 	if r.Body == nil {

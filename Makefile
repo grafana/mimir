@@ -318,6 +318,7 @@ $(EXES_RACE):
 
 protos: ## Generates protobuf files.
 protos: $(PROTO_GOS)
+	@./tools/apply-expected-diffs.sh $(PROTO_GOS)
 
 GENERATE_FILES ?= true
 

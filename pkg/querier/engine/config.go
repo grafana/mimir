@@ -72,7 +72,8 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 	}
 
 	mqeOpts := streamingpromql.EngineOpts{
-		CommonOpts: commonOpts,
+		CommonOpts:     commonOpts,
+		FeatureToggles: cfg.MimirQueryEngine,
 	}
 
 	return commonOpts, mqeOpts, cfg.PromQLExperimentalFunctionsEnabled

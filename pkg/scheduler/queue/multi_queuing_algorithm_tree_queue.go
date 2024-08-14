@@ -43,11 +43,10 @@ func NewTree(queuingAlgorithms ...QueuingAlgorithm) (*MultiQueuingAlgorithmTreeQ
 	if len(queuingAlgorithms) == 0 {
 		return nil, fmt.Errorf("cannot create a tree without defined QueuingAlgorithm")
 	}
-	root, err := newNode("root", 0, queuingAlgorithms[0])
+	root, err := newNode("root", len(queuingAlgorithms)-1, queuingAlgorithms[0])
 	if err != nil {
 		return nil, err
 	}
-	root.depth = 0
 	return &MultiQueuingAlgorithmTreeQueue{
 		rootNode:     root,
 		algosByDepth: queuingAlgorithms,
@@ -85,6 +84,9 @@ func (t *MultiQueuingAlgorithmTreeQueue) Dequeue() (QueuePath, any) {
 // path is relative to the root node; providing a QueuePath beginning with "root"
 // will create a child node of the root node which is also named "root."
 func (t *MultiQueuingAlgorithmTreeQueue) EnqueueBackByPath(path QueuePath, v any) error {
+	if len(path) != len(t.algosByDepth)-1 {
+		return fmt.Errorf("can't enqueue object to non-leaf node")
+	}
 	return t.rootNode.enqueueBackByPath(t, path, v)
 }
 
@@ -111,7 +113,7 @@ func (t *MultiQueuingAlgorithmTreeQueue) GetNode(path QueuePath) *Node {
 }
 
 // Node maintains node-specific information used to enqueue and dequeue to itself, such as a local
-// queue, node depth, references to its children, and position in queue.
+// queue, node height, references to its children, and position in queue.
 // Note that the tenantQuerierAssignments QueuingAlgorithm largely disregards Node's queueOrder and
 // queuePosition, managing analogous state instead, because shuffle-sharding + fairness  requirements
 // necessitate input from the querier.
@@ -121,24 +123,35 @@ type Node struct {
 	queuePosition    int      // next index in queueOrder to dequeue from
 	queueOrder       []string // order for dequeuing from self/children
 	queueMap         map[string]*Node
-	depth            int
+	height           int
 	queuingAlgorithm QueuingAlgorithm
 	childrenChecked  int
 }
 
-func newNode(name string, depth int, da QueuingAlgorithm) (*Node, error) {
+func newNode(name string, height int, da QueuingAlgorithm) (*Node, error) {
+	if height < 0 {
+		return nil, fmt.Errorf("cannot create a node at negative height")
+	}
+
 	if da == nil {
 		return nil, fmt.Errorf("cannot create a node without a defined QueuingAlgorithm")
 	}
-	return &Node{
+	n := &Node{
 		name:             name,
-		localQueue:       list.New(),
+		localQueue:       nil,
 		queuePosition:    localQueueIndex,
-		queueOrder:       make([]string, 0),
-		queueMap:         make(map[string]*Node, 1),
-		depth:            depth,
+		height:           height,
 		queuingAlgorithm: da,
-	}, nil
+	}
+	// if the node is a leaf node, it gets memory allocated towards a local queue and cannot have child queues
+	if height == 0 {
+		n.localQueue = list.New()
+	} else {
+		// any other kind of node is allowed to have children, but not a local queue
+		n.queueMap = make(map[string]*Node, 1)
+		n.queueOrder = make([]string, 0)
+	}
+	return n, nil
 }
 
 func (n *Node) IsEmpty() bool {
@@ -146,17 +159,30 @@ func (n *Node) IsEmpty() bool {
 	//
 	// Because we dereference empty child nodes during dequeuing,
 	// we assume that emptiness means there are no child nodes
-	// and nothing in this tree node's local queue.
+	// and nothing in this node's local queue.
+	//
+	// We also assume that leaf nodes have no child nodes, since leaf nodes sit at
+	// the tree's max-height, and that non-leaf nodes have no local queues
 	//
 	// In reality a package member could attach empty child queues with getOrAddNode
 	// in order to get a functionally-empty tree that would report false for IsEmpty.
 	// We assume this does not occur or is not relevant during normal operation.
-	return n.localQueue.Len() == 0 && len(n.queueMap) == 0
+	if n.isLeaf() {
+		return n.localQueue.Len() == 0
+	}
+	return len(n.queueMap) == 0
+}
+
+func (n *Node) isLeaf() bool {
+	return n.height == 0
 }
 
 // ItemCount counts the queue items in the Node and in all its children, recursively.
 func (n *Node) ItemCount() int {
-	items := n.localQueue.Len()
+	if n.isLeaf() {
+		return n.localQueue.Len()
+	}
+	items := 0
 	for _, child := range n.queueMap {
 		items += child.ItemCount()
 	}
@@ -195,23 +221,24 @@ func (n *Node) dequeue() (QueuePath, any) {
 
 	path := QueuePath{n.name}
 
-	if n.IsEmpty() {
-		return path, nil
-	}
-
 	var checkedAllNodes bool
 	var dequeueNode *Node
 	// continue until we've found a value or checked all nodes that need checking
 	for v == nil && !checkedAllNodes {
+		if n.IsEmpty() {
+			// we can't dequeue a value from an empty node; return early
+			return path, nil
+		}
 		dequeueNode, checkedAllNodes = n.queuingAlgorithm.dequeueSelectNode(n)
 		switch dequeueNode {
-		// dequeuing from local queue
 		case n:
-			if n.localQueue.Len() > 0 {
-				// dequeueNode is self, local queue non-empty
-				if elt := n.localQueue.Front(); elt != nil {
-					n.localQueue.Remove(elt)
-					v = elt.Value
+			if n.isLeaf() {
+				// dequeue node is self, and is a leaf node; dequeue from local queue
+				if n.localQueue.Len() > 0 {
+					if elt := n.localQueue.Front(); elt != nil {
+						n.localQueue.Remove(elt)
+						v = elt.Value
+					}
 				}
 			}
 		// no dequeue-able child found; break out of the loop,
@@ -268,10 +295,10 @@ func (n *Node) getOrAddNode(pathFromNode QueuePath, tree *MultiQueuingAlgorithmT
 	var err error
 	if childNode, ok = n.queueMap[pathFromNode[0]]; !ok {
 		// child does not exist, create it
-		if n.depth+1 >= len(tree.algosByDepth) {
-			return nil, fmt.Errorf("cannot add a node beyond max tree depth: %v", len(tree.algosByDepth))
-		}
-		childNode, err = newNode(pathFromNode[0], n.depth+1, tree.algosByDepth[n.depth+1])
+		childHeight := n.height - 1
+		// calculate child depth to properly assign queuing algorithm
+		childDepth := len(tree.algosByDepth) - childHeight - 1
+		childNode, err = newNode(pathFromNode[0], childHeight, tree.algosByDepth[childDepth])
 		if err != nil {
 			return nil, err
 		}
