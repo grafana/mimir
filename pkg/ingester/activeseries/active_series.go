@@ -34,7 +34,7 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, EnabledFlag, true, "Enable tracking of active series and export them as metrics.")
 	f.DurationVar(&cfg.UpdatePeriod, "ingester.active-series-metrics-update-period", 1*time.Minute, "How often to update active series metrics.")
-	f.DurationVar(&cfg.IdleTimeout, IdleTimeoutFlag, 10*time.Minute, "After what time a series is considered to be inactive.")
+	f.DurationVar(&cfg.IdleTimeout, IdleTimeoutFlag, 20*time.Minute, "After what time a series is considered to be inactive.")
 }
 
 // ActiveSeries is keeping track of recently active series for a single tenant.

@@ -2950,7 +2950,7 @@
           "required": false,
           "desc": "After what time a series is considered to be inactive.",
           "fieldValue": null,
-          "fieldDefaultValue": 600000000000,
+          "fieldDefaultValue": 1200000000000,
           "fieldFlag": "ingester.active-series-metrics-idle-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
