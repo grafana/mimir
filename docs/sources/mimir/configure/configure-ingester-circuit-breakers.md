@@ -67,7 +67,7 @@ For example, the percentage of failing requests is computed over a moving window
 To change these configurations, set `-ingester.push-circuit-breaker.thresholding-period` or `-ingester.read-circuit-breaker.thresholding-period` to your desired values.
 
 The default percentage of push and pull requests that can fail over the configured moving window before the corresponding circuit breaker opens is 10% (`10`).
-You can set a different percentage via `-ingester.push-circuit-breaker.failure-threshold-percentage` and `-ingester.read-circuit-breaker.failure-threshold-percentage` flags.
+You can set a different percentage via the `-ingester.push-circuit-breaker.failure-threshold-percentage` and `-ingester.read-circuit-breaker.failure-threshold-percentage` flags.
 
 Once a circuit breaker reaches the `open` state, it waits for 10 seconds (`10s`) before it transitions to the `half-open` state and allows trial requests.
 You can change these waiting times via `-ingester.push-circuit-breaker.cooldown-period` and `-ingester.read-circuit-breaker.cooldown-period` flags.
