@@ -640,6 +640,16 @@ type partitionInfo struct {
 }
 
 func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, client *kgo.Client, pl *partitionInfo, cycleEnd time.Time) error {
+	for pl.Lag > 0 {
+		err := b.consumePartition(ctx, client, pl, cycleEnd)
+		if err != nil {
+			return fmt.Errorf("consume partition %d: %w", pl.Partition, err)
+		}
+	}
+	return nil
+}
+
+func (b *BlockBuilder) nextConsumeCycle2(ctx context.Context, client *kgo.Client, pl *partitionInfo, cycleEnd time.Time) error {
 	var commitRecTime time.Time
 	if pl.CommitRecTs > 0 {
 		commitRecTime = time.UnixMilli(pl.CommitRecTs)
@@ -703,10 +713,9 @@ func (b *BlockBuilder) consumePartition(
 		seenTillOffset = pl.SeenTillOffset
 		lastBlockEnd   = pl.LastBlockEnd
 		lastCommit     = pl.Commit
-
-		blockEndAt = cycleEnd.Truncate(b.cfg.ConsumeInterval)
-		blockEnd   = blockEndAt.UnixMilli()
 	)
+
+	blockEnd := cycleEnd.Truncate(b.cfg.ConsumeInterval).UnixMilli()
 
 	// TopicPartition to resume consuming on this iteration.
 	// Note: pause/resume is a client-local state. On restart or a crash, the client will be assigned its share of partitions,
@@ -739,7 +748,7 @@ func (b *BlockBuilder) consumePartition(
 
 	level.Info(b.logger).Log(
 		"msg", "consuming partition", "part", part, "lag", pl.Lag,
-		"cycle_end", cycleEnd, "last_block_end", time.UnixMilli(lastBlockEnd), "curr_block_end", blockEndAt,
+		"cycle_end", cycleEnd, "last_block_end", time.UnixMilli(lastBlockEnd), "curr_block_end", time.UnixMilli(blockEnd),
 		"last_seen_till", seenTillOffset)
 
 	var firstRec, lastRec, commitRec *kgo.Record
@@ -770,6 +779,13 @@ consumerLoop:
 
 			if firstRec == nil {
 				firstRec = rec
+
+				if d := cycleEnd.Sub(firstRec.Timestamp); d > b.cfg.ConsumeInterval {
+					origCycleEnd := cycleEnd
+					cycleEnd = firstRec.Timestamp.Truncate(b.cfg.ConsumeInterval).Add(b.cfg.ConsumeInterval + b.cfg.ConsumeIntervalBuffer)
+					blockEnd = cycleEnd.Truncate(b.cfg.ConsumeInterval).UnixMilli()
+					level.Info(b.logger).Log("msg", "partition is lagging behind", "part", pl.Partition, "lag", pl.Lag, "cycle_end_start", cycleEnd, "cycle_end", origCycleEnd, "delta", d)
+				}
 			}
 
 			level.Debug(b.logger).Log("msg", "process record", "offset", rec.Offset, "rec", rec.Timestamp, "last_bmax", lastBlockEnd, "bmax", blockEnd)

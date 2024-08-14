@@ -259,9 +259,10 @@ func TestBlockBuilder(t *testing.T) {
 
 		// Since there was no commit record, with LookbackOnNoCommit as 12h, we will have
 		// 12 compact calls per partition. One per 1h.
-		for want := 22; want > 0; want-- {
+		for want := 12; want > 0; want-- {
 			select {
 			case <-compactCalled:
+				t.Logf("compact called, want %d", want)
 			case <-ctx.Done():
 				t.Fatal(ctx.Err())
 			}
