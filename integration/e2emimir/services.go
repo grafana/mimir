@@ -178,6 +178,8 @@ func getBinaryNameForBackwardsCompatibility() string {
 	return "mimir"
 }
 
+// NewQueryFrontend returns a new query-frontend instance. The consulAddress is required to be a valid
+// consul address when Mimir is configured with ingest storage enabled, otherwise it's ignored.
 func NewQueryFrontend(name string, consulAddress string, flags map[string]string, options ...Option) *MimirService {
 	return newMimirServiceFromOptions(
 		name,
