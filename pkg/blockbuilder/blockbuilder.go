@@ -125,19 +125,13 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 		return fmt.Errorf("creating tsdb dir: %w", err)
 	}
 
-	startAtMap := make(map[int32]kgo.Offset)
-	for _, part := range b.parts {
-		startAt, err := b.findOffsetToStartAt(ctx, part, nil)
-		if err != nil {
-			return fmt.Errorf("partition %d: finding offset to start at: %w", part, err)
-		}
-
-		startAtMap[part] = kgo.NewOffset().At(startAt)
+	startAtOffsets, err := b.findOffsetsToStartAt(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("find offsets to start at: %w", err)
 	}
-
 	opts := []kgo.Opt{
 		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
-			b.cfg.Kafka.Topic: startAtMap,
+			b.cfg.Kafka.Topic: startAtOffsets,
 		}),
 		kgo.FetchMinBytes(128),
 		kgo.FetchMaxBytes(fetchMaxBytes),
@@ -183,78 +177,63 @@ const (
 	//kafkaOffsetEnd = int64(-1)
 )
 
-func (b *BlockBuilder) findOffsetToStartAt(ctx context.Context, part int32, metrics *kprom.Metrics) (int64, error) {
+func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context, metrics *kprom.Metrics) (map[int32]kgo.Offset, error) {
 	// We use an ephemeral client to fetch the offset and then create a new client with this offset.
 	// The reason for this is that changing the offset of an existing client requires to have used this client for fetching at least once.
 	// We don't want to do noop fetches just to warm up the client, so we create a new client instead.
 	cl, err := kgo.NewClient(commonKafkaClientOptions(b.cfg.Kafka, b.logger, metrics)...)
 	if err != nil {
-		return kafkaOffsetStart, fmt.Errorf("unable to create bootstrap client: %w", err)
+		return nil, fmt.Errorf("unable to create bootstrap client: %w", err)
 	}
 	defer cl.Close()
 
-	fetchOffset := func(ctx context.Context) (offset int64, err error) {
-		offset, exists, err := b.fetchLastCommittedOffset(ctx, cl, part)
-		if err != nil {
-			return -1, err
+	admClient := kadm.NewClient(cl)
+
+	fetchOffsets := func(ctx context.Context) (offsets map[int32]kgo.Offset, err error) {
+		resp, err := admClient.FetchOffsets(ctx, b.cfg.Kafka.ConsumerGroup)
+		if err == nil {
+			err = resp.Error()
 		}
-		if exists {
-			level.Info(b.logger).Log("msg", "starting consumption from last consumed offset", "part", part, "start_offset", offset, "consumer_group", b.cfg.Kafka.ConsumerGroup)
-			return offset, nil
+		// Either success or the requested group does not exist.
+		if err == nil {
+			offsets = resp.KOffsets()[b.cfg.Kafka.Topic]
+		} else if errors.Is(err, kerr.GroupIDNotFound) || errors.Is(err, kerr.UnknownTopicOrPartition) {
+			offsets = make(map[int32]kgo.Offset)
+		} else if err != nil {
+			return nil, fmt.Errorf("unable to fetch group offsets: %w", err)
 		}
 
-		offset = kafkaOffsetStart
-		level.Info(b.logger).Log("msg", "starting consumption from partition start because no offset has been found", "part", part, "start_offset", offset)
-
-		return offset, err
+		// Look over the assigned partitions and fallback to the ConsumerResetOffset if a partition doesn't have any commit for the configured group.
+		for _, part := range b.parts {
+			if _, ok := offsets[part]; ok {
+				level.Info(b.logger).Log("msg", "consuming from last consumed offset", "consumer_group", b.cfg.Kafka.ConsumerGroup, "part", part, "offset", offsets[part].String())
+			} else {
+				offsets[part] = kgo.NewOffset().At(kafkaOffsetStart)
+				level.Info(b.logger).Log("msg", "consuming from partition start because no offset has been found", "consumer_group", b.cfg.Kafka.ConsumerGroup, "part", part, "offset", offsets[part].String())
+			}
+		}
+		return offsets, nil
 	}
 
-	retry := backoff.New(ctx, backoff.Config{
+	boff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 100 * time.Millisecond,
 		MaxBackoff: 2 * time.Second,
 		MaxRetries: 10,
 	})
-	var (
-		startOffset int64
-	)
-	for retry.Ongoing() {
-		startOffset, err = fetchOffset(ctx)
+	for boff.Ongoing() {
+		var offsets map[int32]kgo.Offset
+		offsets, err = fetchOffsets(ctx)
 		if err == nil {
-			return startOffset, nil
+			return offsets, nil
 		}
-
-		level.Warn(b.logger).Log("msg", "failed to fetch offset", "part", part, "err", err)
-		retry.Wait()
+		level.Warn(b.logger).Log("msg", "failed to fetch startup offsets", "err", err)
+		boff.Wait()
 	}
-
 	// Handle the case the context was canceled before the first attempt.
 	if err == nil {
-		err = retry.Err()
+		err = boff.Err()
 	}
-
-	return kafkaOffsetStart, err
-}
-
-// fetchLastCommittedOffset returns the last consumed offset which has been committed by the PartitionReader
-// to the consumer group.
-func (b *BlockBuilder) fetchLastCommittedOffset(ctx context.Context, cl *kgo.Client, part int32) (offset int64, exists bool, _ error) {
-	offsets, err := kadm.NewClient(cl).FetchOffsets(ctx, b.cfg.Kafka.ConsumerGroup)
-	if errors.Is(err, kerr.GroupIDNotFound) || errors.Is(err, kerr.UnknownTopicOrPartition) {
-		return 0, false, nil
-	}
-	if err != nil {
-		return 0, false, fmt.Errorf("unable to fetch group offsets: %w", err)
-	}
-
-	offsetRes, exists := offsets.Lookup(b.cfg.Kafka.Topic, part)
-	if !exists {
-		return 0, false, nil
-	}
-	if offsetRes.Err != nil {
-		return 0, false, offsetRes.Err
-	}
-
-	return offsetRes.At, true, nil
+	return nil, err
 }
 
 func commonKafkaClientOptions(cfg KafkaConfig, logger log.Logger, metrics *kprom.Metrics) []kgo.Opt {
