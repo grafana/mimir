@@ -63,7 +63,7 @@ To enable Grafana Mimir ingester push and read circuit breakers, set `-ingester.
 You can enable the circuit breakers independently. Enabling one of them does not require enabling the other one.
 
 When enabled, push and read circuit breakers come with some default configurations.
-For example, the percentage of failing requests is computed over the moving window of 1 minute (`1m`).
+For example, the percentage of failing requests is computed over a moving window of one minute (`1m`).
 You can change these configurations by setting `-ingester.push-circuit-breaker.thresholding-period` or `-ingester.read-circuit-breaker.thresholding-period` to a desired value.
 
 The default percentage of push and pull requests that can fail over the configured moving window before the corresponding circuit breaker opens is `10`.
