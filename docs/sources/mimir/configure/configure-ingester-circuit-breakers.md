@@ -37,7 +37,7 @@ Depending on the configured frequencies of successes and failures, the circuit b
 
 {{% admonition type="note" %}}Grafana Mimir ingester circuit breakers are an experimental feature.
 They independently protect Mimir's write and read paths from slow requests.
-For the time being they don't protect ingesters from other issues.
+They don't protect ingesters from other issues.
 {{% /admonition %}}
 
 More precisely, Grafana Mimir ingesters distinguish between _push requests circuit breakers_ and _read requests circuit breakers_, and they can be configured independently.
