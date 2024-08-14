@@ -614,8 +614,7 @@ func (q *RequestQueue) processQuerierWorkerOperation(querierWorkerOp *querierWor
 
 func (q *RequestQueue) processRegisterQuerierWorkerConn(conn *QuerierWorkerConn) (resharded bool) {
 	q.connectedQuerierWorkers.Inc()
-	q.queueBroker.addQuerierWorkerConn(conn)
-	return resharded
+	return q.queueBroker.addQuerierWorkerConn(conn)
 }
 
 func (q *RequestQueue) processUnregisterQuerierWorkerConn(conn *QuerierWorkerConn) (resharded bool) {
