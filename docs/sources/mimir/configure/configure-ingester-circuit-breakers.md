@@ -40,7 +40,7 @@ They independently protect Mimir's write and read paths from slow requests.
 They don't protect ingesters from other issues.
 {{% /admonition %}}
 
-More precisely, Grafana Mimir ingesters distinguish between _push requests circuit breakers_ and _read requests circuit breakers_, and they can be configured independently.
+More precisely, Grafana Mimir ingesters distinguish between _push requests circuit breakers_ and _read requests circuit breakers_, and you can configure them independently.
 It is possible to configure the maximum allowed duration of both push and read requests, as well as the highest frequency of the slow requests before the circuit breakers open and start protecting the ingesters.
 
 ### Push requests circuit breakers
