@@ -218,14 +218,14 @@ func TestTSDBBuilder(t *testing.T) {
 
 			// Query the TSDB for the expected samples.
 			tenant := tsdbTenant{
-				part: 0,
-				id:   userID,
+				partitionID: 0,
+				tenantID:    userID,
 			}
 			db, err := builder.getOrCreateTSDB(tenant)
 			require.NoError(t, err)
 
 			// Check the samples in the DB.
-			compareQuery(t, db.db, expSamples, expHistograms, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
+			compareQuery(t, db.DB, expSamples, expHistograms, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
 
 			// This should create the appropriate blocks and close the DB.
 			shipperDir := t.TempDir()
@@ -296,13 +296,14 @@ func compareQuery(t *testing.T, db *tsdb.DB, expSamples []mimirpb.Sample, expHis
 	require.Equal(t, expHistograms, actHistograms)
 }
 
-func mockUploaderFunc(t *testing.T, destDir string) func(context.Context, string) blockUploader {
-	return func(context.Context, string) blockUploader {
-		return func(blockDir string) error {
+func mockUploaderFunc(t *testing.T, destDir string) blockUploader {
+	return func(_ context.Context, tenantID, dbDir string, blockIDs []string) error {
+		for _, bid := range blockIDs {
+			blockDir := path.Join(dbDir, bid)
 			err := os.Rename(blockDir, path.Join(destDir, path.Base(blockDir)))
 			require.NoError(t, err)
-			return nil
 		}
+		return nil
 	}
 }
 
@@ -347,7 +348,7 @@ func TestProcessingEmptyRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, allProcessed)
 
-	require.NoError(t, builder.tsdbs[tsdbTenant{0, userID}].db.Close())
+	require.NoError(t, builder.tsdbs[tsdbTenant{0, userID}].Close())
 }
 
 func defaultLimitsTestConfig() validation.Limits {
