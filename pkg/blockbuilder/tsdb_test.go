@@ -297,7 +297,7 @@ func compareQuery(t *testing.T, db *tsdb.DB, expSamples []mimirpb.Sample, expHis
 }
 
 func mockUploaderFunc(t *testing.T, destDir string) blockUploader {
-	return func(_ context.Context, tenantID, dbDir string, blockIDs []string) error {
+	return func(_ context.Context, _, dbDir string, blockIDs []string) error {
 		for _, bid := range blockIDs {
 			blockDir := path.Join(dbDir, bid)
 			err := os.Rename(blockDir, path.Join(destDir, path.Base(blockDir)))
