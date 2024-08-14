@@ -19,8 +19,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
-
-	"github.com/grafana/regexp"
+	"strings"
 
 	"github.com/oklog/ulid"
 
@@ -38,7 +37,6 @@ import (
 // checkContextEveryNIterations is used in some tight loops to check if the context is done.
 const (
 	checkContextEveryNIterations = 100
-	metaDataPrefix               = `^__metadata__`
 )
 
 type blockBaseQuerier struct {
@@ -125,42 +123,15 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 	disableTrimming := false
 	sharded := hints != nil && hints.ShardCount > 0
 
-	// TODO(jesus.vazquez) When we have the metadata store, we need to intersect postings results with it
 	var p index.Postings
 	var err error
-	// here we get the posting matches metadata
-	re := regexp.MustCompile(metaDataPrefix)
-
-	// get the label matchers related to metadata
-	metaMatchers := make([]*labels.Matcher, 0)
-	normalMatchers := make([]*labels.Matcher, 0)
-	for _, m := range ms {
-		if re.MatchString(m.Name) {
-			metaMatchers = append(metaMatchers, m)
-		} else {
-			normalMatchers = append(normalMatchers, m)
-		}
-	}
-	if len(metaMatchers) > 0 {
-		// TODO(ying.wang): Here we need to query metadata store to get the metas, they are not normal postings
-		// this is not right for the moment
-		mp, err := q.index.PostingsForMatchers(ctx, sharded, metaMatchers...)
-		if err != nil {
-			return storage.ErrSeriesSet(err)
-		}
-
-		// get the normal matchers
-		np, err := q.index.PostingsForMatchers(ctx, sharded, normalMatchers...)
-		if err != nil {
-			return storage.ErrSeriesSet(err)
-		}
-		// intersect the metadata matchers with normal matchers
-		p = index.MetaIntersect(mp, np)
-	} else {
-		p, err = q.index.PostingsForMatchers(ctx, sharded, ms...)
-		if err != nil {
-			return storage.ErrSeriesSet(err)
-		}
+	metaMatchers, normalMatchers := seperateMetaMatchers(ms)
+	// Get metadata refs separately
+	// Call a functions to link meta refs to series refs
+	// use that matching to return the series set later
+	p, err = q.index.PostingsForMatchers(ctx, sharded, normalMatchers...)
+	if err != nil {
+		return storage.ErrSeriesSet(err)
 	}
 
 	if sharded {
@@ -170,17 +141,47 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 		p = q.index.SortedPostings(p)
 	}
 
+	hir, ok := q.index.(*headIndexReader)
+	var metaInfo *seriesSetMetaInfo
+	if len(metaMatchers) > 0 && ok {
+		hmir := &headMetaIndexReader{hir.head}
+		metaPostings, err := PostingsForMatchers(ctx, hmir, metaMatchers...)
+		if err != nil {
+			return storage.ErrSeriesSet(err)
+		}
+
+		seriesMetaPairs, err := hmir.Merge(p, metaPostings)
+		if err != nil {
+			return storage.ErrSeriesSet(err)
+		}
+
+		var seriesPostings []storage.SeriesRef
+		for _, pair := range seriesMetaPairs {
+			seriesPostings = append(seriesPostings, pair[0])
+		}
+		p = index.NewListPostings(seriesPostings)
+
+		metaInfo = &seriesSetMetaInfo{
+			seriesMetaMapping: seriesMetaPairs,
+			hmir:              hmir,
+			metaNames:         make(map[string]bool),
+		}
+		for _, m := range metaMatchers {
+			metaInfo.metaNames[m.Name] = true
+		}
+	}
+
 	if hints != nil {
 		mint = hints.Start
 		maxt = hints.End
 		disableTrimming = hints.DisableTrimming
 		if hints.Func == "series" {
 			// When you're only looking up metadata (for example series API), you don't need to load any chunks.
-			return newBlockSeriesSet(q.index, newNopChunkReader(), q.tombstones, p, mint, maxt, disableTrimming)
+			return newBlockSeriesSet(q.index, newNopChunkReader(), q.tombstones, p, mint, maxt, disableTrimming, metaInfo)
 		}
 	}
 
-	return newBlockSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
+	return newBlockSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming, metaInfo)
 }
 
 // blockChunkQuerier provides chunk querying access to a single block database.
@@ -417,7 +418,14 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexPostingsReader, m *l
 
 const maxExpandedPostingsFactor = 100 // Division factor for maximum number of matched series.
 
-func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
+type reducedIndexReader interface {
+	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
+	PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error)
+	Postings(ctx context.Context, name string, values ...string) (index.Postings, error)
+	Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error
+}
+
+func labelValuesWithMatchers(ctx context.Context, r reducedIndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
 	allValues, err := r.LabelValues(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("fetching values of label %s: %w", name, err)
@@ -513,7 +521,7 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 
 // labelValuesFromSeries returns all unique label values from for given label name from supplied series. Values are not sorted.
 // buf is space for holding result (if it isn't big enough, it will be ignored), may be nil.
-func labelValuesFromSeries(r IndexReader, labelName string, refs []storage.SeriesRef, buf []string) ([]string, error) {
+func labelValuesFromSeries(r reducedIndexReader, labelName string, refs []storage.SeriesRef, buf []string) ([]string, error) {
 	values := map[string]struct{}{}
 	var builder labels.ScratchBuilder
 	for _, ref := range refs {
@@ -626,10 +634,22 @@ type blockBaseSeriesSet struct {
 	bufChks []chunks.Meta
 	builder labels.ScratchBuilder
 	err     error
+
+	seriesMetaMappingIdx int
+	metaInfo             *seriesSetMetaInfo
+}
+
+type seriesSetMetaInfo struct {
+	seriesMetaMapping [][2]storage.SeriesRef
+	hmir              *headMetaIndexReader
+	metaNames         map[string]bool
 }
 
 func (b *blockBaseSeriesSet) Next() bool {
 	for b.p.Next() {
+		metaIdx := b.seriesMetaMappingIdx
+		b.seriesMetaMappingIdx++
+		b.builder.Reset()
 		if err := b.index.Series(b.p.At(), &b.builder, &b.bufChks); err != nil {
 			// Postings may be stale. Skip if no underlying series exists.
 			if errors.Is(err, storage.ErrNotFound) {
@@ -701,6 +721,18 @@ func (b *blockBaseSeriesSet) Next() bool {
 			intervals = intervals.Add(tombstones.Interval{Mint: b.maxt + 1, Maxt: math.MaxInt64})
 		}
 
+		if b.metaInfo != nil {
+			_ = b.metaInfo.hmir.Series(b.metaInfo.seriesMetaMapping[metaIdx][1], &b.builder, nil)
+			lbls := b.builder.Labels()
+			b.builder.Reset()
+			lbls.Range(func(l labels.Label) {
+				if strings.HasPrefix(l.Name, "__metalabel__") && !b.metaInfo.metaNames[l.Name] {
+					return
+				}
+				b.builder.Add(l.Name, l.Value)
+			})
+			b.builder.Sort()
+		}
 		b.curr.labels = b.builder.Labels()
 		b.curr.chks = chks
 		b.curr.intervals = intervals
@@ -1201,7 +1233,7 @@ type blockSeriesSet struct {
 	blockBaseSeriesSet
 }
 
-func newBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool) storage.SeriesSet {
+func newBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool, metaInfo *seriesSetMetaInfo) storage.SeriesSet {
 	return &blockSeriesSet{
 		blockBaseSeriesSet{
 			index:           i,
@@ -1211,6 +1243,7 @@ func newBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p inde
 			mint:            mint,
 			maxt:            maxt,
 			disableTrimming: disableTrimming,
+			metaInfo:        metaInfo,
 		},
 	}
 }
