@@ -227,7 +227,6 @@ func calculateRetryAfter(retryAttemptHeader string, minBackoff, maxBackoff time.
 
 	delaySeconds := minBackoff.Seconds() * math.Pow(2.0, float64(retryAttempt-1))
 	delaySeconds = min(maxBackoff.Seconds(), delaySeconds)
-	delaySeconds = max(minBackoff.Seconds(), delaySeconds)
 	if jitterAmount := int64(delaySeconds * jitterFactor); jitterAmount > 0 {
 		// The random jitter can be negative too, so we generate a 2x greater the random number and subtract the jitter.
 		randomJitter := float64(rand.Int63n(jitterAmount*2+1) - jitterAmount)
