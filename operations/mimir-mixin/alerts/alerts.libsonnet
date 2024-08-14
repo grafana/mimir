@@ -23,7 +23,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   ||| % { comment: comment, errorQuery: error_query, totalQuery: total_query },
 
   local requestErrorsQuery(selector, error_selector, rate_interval, sum_by, comment='') =
-    local errorSelector = '%s, %s' % [ error_selector, selector ];
+    local errorSelector = '%s, %s' % [error_selector, selector];
     local errorQuery = utils.ncHistogramSumBy(utils.ncHistogramCountRate(request_metric, errorSelector, rate_interval), sum_by);
     local totalQuery = utils.ncHistogramSumBy(utils.ncHistogramCountRate(request_metric, selector, rate_interval), sum_by);
     {
