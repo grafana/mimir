@@ -217,6 +217,9 @@ func (qwo *querierWorkerOperation) AwaitQuerierWorkerConnUpdate() error {
 
 	select {
 	case <-qwo.conn.ctx.Done():
+		// context done case serves as a default case to bail out
+		// if the waiting querier-worker connection's context times out or is canceled,
+		// allowing the dispatcherLoop to proceed with its next iteration
 		return qwo.conn.ctx.Err()
 	case <-qwo.recvChan:
 		return nil
@@ -303,6 +306,9 @@ func (q *RequestQueue) running(ctx context.Context) error {
 		case <-inflightRequestsTicker.C:
 			q.QueryComponentUtilization.ObserveInflightRequests()
 		case <-ctx.Done():
+			// context done case serves as a default case to bail out
+			// if the waiting querier-worker connection's context times out or is canceled,
+			// allowing the dispatcherLoop to proceed with its next iteration
 			return nil
 		}
 	}
@@ -493,6 +499,9 @@ func (q *RequestQueue) WaitForRequestForQuerier(ctx context.Context, last Tenant
 		recvChan:        make(chan requestForQuerier),
 	}
 
+	// context done cases serves as a default case to bail out
+	// if the waiting querier-worker connection's context times out or is canceled,
+	// allowing the dispatcherLoop to proceed with its next iteration
 	select {
 	case q.waitingQuerierConns <- waitingConn:
 		select {
@@ -677,6 +686,9 @@ func (wqc *waitingQuerierConn) send(req requestForQuerier) bool {
 	case wqc.recvChan <- req:
 		return true
 	case <-wqc.querierConnCtx.Done():
+		// context done case serves as a default case to bail out
+		// if the waiting querier-worker connection's context times out or is canceled,
+		// allowing the dispatcherLoop to proceed with its next iteration
 		return false
 	}
 }
