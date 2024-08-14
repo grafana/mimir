@@ -175,7 +175,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 			return false, err
 		}
 
-		// Exemplars are not persisted in the block. So we skip them.
+		// Exemplars and metadata are not persisted in the block. So we skip them.
 	}
 
 	return allSamplesProcessed, app.Commit()
