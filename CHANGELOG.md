@@ -174,7 +174,7 @@
 
 * [CHANGE] `wal-reader`: Renamed `-series-entries` to `-print-series`. Renamed `-print-series-with-samples` to `-print-samples`. #8568
 * [FEATURE] `query-bucket-index`: add new tool to query a bucket index file and print the blocks that would be used for a given query time range. #8818
-* [FEATURE] `kafkatool`: add new CLI tool to operate Kafka. Supported commands:
+* [FEATURE] `kafkatool`: add new CLI tool to operate Kafka. Supported commands: #9000
   * `brokers list-leaders-by-partition`
   * `consumer-group commit-offset`
   * `consumer-group copy-offset`
