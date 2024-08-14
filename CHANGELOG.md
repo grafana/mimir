@@ -479,6 +479,7 @@
 * [BUGFIX] Fix issue where all incoming HTTP requests have duplicate trace spans. #6920
 * [BUGFIX] Querier: do not retry requests to store-gateway when a query gets canceled. #6934
 * [BUGFIX] Querier: return 499 status code instead of 500 when a request to remote read endpoint gets canceled. #6934
+* [BUGFIX] Distributor: distributor might start serving writes with an empty HA tracker state. #5796
 * [BUGFIX] Querier: fix issue where `-querier.max-fetched-series-per-query` is not applied to `/series` endpoint if the series are loaded from ingesters. #7055
 * [BUGFIX] Distributor: fix issue where `-distributor.metric-relabeling-enabled` may cause distributors to panic #7176
 * [BUGFIX] Distributor: fix issue where `-distributor.metric-relabeling-enabled` may cause distributors to write unsorted labels and corrupt blocks #7326
