@@ -719,8 +719,8 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReader() (services.Service, error) 
 		return nil, err
 	}
 
-	// The Kafka partitions may have been pre-provisioned, so the existing partitions in Kafka may be way more
-	// than the actual number of partitions we use. To improve performance, we only look up the actual partitions
+	// The Kafka partitions may have been pre-provisioned. There are may be much more existing partitions in Kafka
+	// than the actual number we use. To improve performance, we only look up the actual partitions
 	// we're currently using in Mimir. We include all partition states because ACTIVE and INACTIVE partitions
 	// must be queried, and PENDING partitions may switch to ACTIVE between when the query-frontend fetch the offsets
 	// and the querier builds the replicaset of partitions to query.
