@@ -12,6 +12,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
   local groupStatefulSetByRolloutGroup(metricName) =
     'sum without(statefulset) (label_replace(%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % metricName,
 
+  local customForPeriod = std.extVar('CUSTOM_FOR_PERIOD') || '1h',
+
   local alertGroups = [
     {
       name: 'mimir_alerts',
@@ -88,7 +90,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: |||
             count(count by(%(alert_aggregation_labels)s, %(per_job_label)s, sha256) (cortex_runtime_config_hash)) without(sha256) > 1
           ||| % $._config,
-          'for': '1h',
+          'for': customForPeriod,
           labels: {
             severity: 'critical',
           },
