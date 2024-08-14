@@ -15,14 +15,16 @@ import (
 // CreatePartitionsCommand creates Kafka partitions.
 type CreatePartitionsCommand struct {
 	getKafkaClient func() *kgo.Client
+	printer        Printer
 
 	topic         string
 	numPartitions int
 }
 
 // Register is used to register the command to a parent command.
-func (c *CreatePartitionsCommand) Register(app *kingpin.Application, getKafkaClient func() *kgo.Client) {
+func (c *CreatePartitionsCommand) Register(app *kingpin.Application, getKafkaClient func() *kgo.Client, printer Printer) {
 	c.getKafkaClient = getKafkaClient
+	c.printer = printer
 
 	cmd := app.Command("create-partitions", "Creates Kafka partitions to a topic.").Action(c.createPartitions)
 	cmd.Flag("topic", "Kafka topic to which partitions should be added.").Required().StringVar(&c.topic)
@@ -39,7 +41,7 @@ func (c *CreatePartitionsCommand) createPartitions(_ *kingpin.ParseContext) erro
 		return err
 	}
 
-	fmt.Printf("Number of partitions before creating additional partitions: %d\n", len(details.Partitions))
+	c.printer.PrintLine(fmt.Sprintf("Number of partitions before creating additional partitions: %d", len(details.Partitions)))
 
 	// Create new partitions.
 	responses, err := adm.CreatePartitions(context.Background(), c.numPartitions, c.topic)
@@ -56,7 +58,7 @@ func (c *CreatePartitionsCommand) createPartitions(_ *kingpin.ParseContext) erro
 		return res.Err
 	}
 
-	fmt.Printf("Created %d additional partitions to topic %s\n", c.numPartitions, c.topic)
+	c.printer.PrintLine(fmt.Sprintf("Created %d additional partitions to topic %s", c.numPartitions, c.topic))
 
 	// Get the current number of partitions (just for logging purposes).
 	details, err = getTopicDetails(adm, c.topic)
@@ -64,7 +66,7 @@ func (c *CreatePartitionsCommand) createPartitions(_ *kingpin.ParseContext) erro
 		return err
 	}
 
-	fmt.Printf("Number of partitions after creating additional partitions: %d\n", len(details.Partitions))
+	c.printer.PrintLine(fmt.Sprintf("Number of partitions after creating additional partitions: %d", len(details.Partitions)))
 	return nil
 }
 

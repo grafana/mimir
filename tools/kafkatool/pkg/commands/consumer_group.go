@@ -14,6 +14,7 @@ import (
 // ConsumerGroupCommand manages Kafka consumer groups.
 type ConsumerGroupCommand struct {
 	getKafkaClient func() *kgo.Client
+	printer        Printer
 
 	group       string
 	topic       string
@@ -23,8 +24,9 @@ type ConsumerGroupCommand struct {
 }
 
 // Register is used to register the command to a parent command.
-func (c *ConsumerGroupCommand) Register(app *kingpin.Application, getKafkaClient func() *kgo.Client) {
+func (c *ConsumerGroupCommand) Register(app *kingpin.Application, getKafkaClient func() *kgo.Client, printer Printer) {
 	c.getKafkaClient = getKafkaClient
+	c.printer = printer
 
 	cmd := app.Command("consumer-group", "Manages a single consumer group.")
 
@@ -53,9 +55,10 @@ func (c *ConsumerGroupCommand) listOffsets(_ *kingpin.ParseContext) error {
 		return err
 	}
 
-	offsets.Each(func(res kadm.OffsetResponse) {
-		fmt.Printf("Topic: %s \tPartition: %d \tOffset: %d\n", res.Topic, res.Partition, res.Offset.At)
-	})
+	// Sort topic and partitions to get a stable output.
+	for _, entry := range offsets.Sorted() {
+		c.printer.PrintLine(fmt.Sprintf("Topic: %s \tPartition: %d \tOffset: %d", entry.Topic, entry.Partition, entry.Offset.At))
+	}
 
 	return nil
 }
@@ -65,7 +68,7 @@ func (c *ConsumerGroupCommand) commitOffset(_ *kingpin.ParseContext) error {
 	adm := kadm.NewClient(client)
 
 	// Commit the offset.
-	return commitConsumerGroupOffset(adm, c.group, c.topic, c.partitionID, c.offset)
+	return commitConsumerGroupOffset(adm, c.group, c.topic, c.partitionID, c.offset, c.printer)
 }
 
 func (c *ConsumerGroupCommand) copyOffset(_ *kingpin.ParseContext) error {
@@ -84,7 +87,7 @@ func (c *ConsumerGroupCommand) copyOffset(_ *kingpin.ParseContext) error {
 	}
 
 	// Commit the offset.
-	return commitConsumerGroupOffset(adm, c.copyToGroup, c.topic, c.partitionID, offset.At)
+	return commitConsumerGroupOffset(adm, c.copyToGroup, c.topic, c.partitionID, offset.At, c.printer)
 }
 
 func fetchConsumerGroupOffsets(adm *kadm.Client, group string) (kadm.OffsetResponses, error) {
@@ -99,7 +102,7 @@ func fetchConsumerGroupOffsets(adm *kadm.Client, group string) (kadm.OffsetRespo
 	return offsets, nil
 }
 
-func commitConsumerGroupOffset(adm *kadm.Client, group, topic string, partitionID int32, offset int64) error {
+func commitConsumerGroupOffset(adm *kadm.Client, group, topic string, partitionID int32, offset int64, printer Printer) error {
 	// Commit the offset.
 	toCommit := kadm.Offsets{}
 	toCommit.AddOffset(topic, partitionID, offset, -1)
@@ -112,7 +115,7 @@ func commitConsumerGroupOffset(adm *kadm.Client, group, topic string, partitionI
 	}
 
 	committedOffset, _ := committed.Lookup(topic, partitionID)
-	fmt.Printf("successfully committed offset %d for consumer group %s, topic %s and partition %d\n", committedOffset.At, group, topic, partitionID)
+	printer.PrintLine(fmt.Sprintf("successfully committed offset %d for consumer group %s, topic %s and partition %d", committedOffset.At, group, topic, partitionID))
 
 	return nil
 }

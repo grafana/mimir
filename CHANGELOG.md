@@ -174,6 +174,12 @@
 
 * [CHANGE] `wal-reader`: Renamed `-series-entries` to `-print-series`. Renamed `-print-series-with-samples` to `-print-samples`. #8568
 * [FEATURE] `query-bucket-index`: add new tool to query a bucket index file and print the blocks that would be used for a given query time range. #8818
+* [FEATURE] `kafkatool`: add new CLI tool to operate Kafka. Supported commands:
+  * `brokers list-leaders-by-partition`
+  * `consumer-group commit-offset`
+  * `consumer-group copy-offset`
+  * `consumer-group list-offsets`
+  * `create-partitions`
 * [ENHANCEMENT] `wal-reader`: References to unknown series from Samples, Exemplars, histogram or tombstones records are now always logged. #8568
 * [ENHANCEMENT] `tsdb-series`: added `-stats` option to print min/max time of chunks, total number of samples and DPM for each series. #8420
 * [ENHANCEMENT] `tsdb-print-chunk`: print counter reset information for native histograms. #8812
@@ -366,8 +372,6 @@
 
 ### Tools
 
-* [FEATURE] kafkatool: add new CLI tool to operate Kafka. Support commands: #7983
-  * `create-partitions`
 * [ENHANCEMENT] ulidtime: add option to show random part of ULID, timestamp in milliseconds and header. #7615
 * [ENHANCEMENT] copyblocks: add a flag to configure part-size for multipart uploads in s3 client-side copying. #8292
 * [ENHANCEMENT] copyblocks: enable pprof HTTP endpoints. #8292

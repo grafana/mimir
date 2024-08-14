@@ -13,6 +13,7 @@ import (
 
 type BrokersCommand struct {
 	getKafkaClient func() *kgo.Client
+	printer        Printer
 
 	topic          string
 	minPartitionID int32
@@ -20,8 +21,9 @@ type BrokersCommand struct {
 }
 
 // Register is used to register the command to a parent command.
-func (c *BrokersCommand) Register(app *kingpin.Application, getKafkaClient func() *kgo.Client) {
+func (c *BrokersCommand) Register(app *kingpin.Application, getKafkaClient func() *kgo.Client, printer Printer) {
 	c.getKafkaClient = getKafkaClient
+	c.printer = printer
 
 	cmd := app.Command("brokers", "Retrieve information about brokers.")
 
@@ -68,9 +70,9 @@ func (c *BrokersCommand) listLeadersByPartition(_ *kingpin.ParseContext) error {
 			}
 
 			if leader, ok := brokersByNodeID[partition.Leader]; ok {
-				fmt.Println("Partition:", partition.Partition, "\tLeader:", leader.Host)
+				c.printer.PrintLine(fmt.Sprintf("Partition: %d \tLeader: %s", partition.Partition, leader.Host))
 			} else {
-				fmt.Println("Partition:", partition.Partition, "\tLeader: unknown")
+				c.printer.PrintLine(fmt.Sprintf("Partition: %d \tLeader: unknown", partition.Partition))
 			}
 		}
 	}

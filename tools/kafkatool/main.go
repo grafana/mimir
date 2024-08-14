@@ -25,7 +25,7 @@ func main() {
 	// Create the Kafka client before any command is executed.
 	app.Action(func(context *kingpin.ParseContext) error {
 		var err error
-		kafkaClient, err = kgo.NewClient(kgo.SeedBrokers(kafkaAddress), kgo.ClientID(kafkaClientID))
+		kafkaClient, err = commands.CreateKafkaClient(kafkaAddress, kafkaClientID)
 		return err
 	})
 
@@ -36,19 +36,21 @@ func main() {
 		}
 	}()
 
+	printer := &commands.StdoutPrinter{}
+
 	// Function passed to commands to get Kafka client.
 	getKafkaClient := func() *kgo.Client {
 		return kafkaClient
 	}
 
-	createPartitionsCommand := commands.CreatePartitionsCommand{}
-	createPartitionsCommand.Register(app, getKafkaClient)
+	createPartitionsCommand := &commands.CreatePartitionsCommand{}
+	createPartitionsCommand.Register(app, getKafkaClient, printer)
 
-	consumerGroupCommand := commands.ConsumerGroupCommand{}
-	consumerGroupCommand.Register(app, getKafkaClient)
+	consumerGroupCommand := &commands.ConsumerGroupCommand{}
+	consumerGroupCommand.Register(app, getKafkaClient, printer)
 
-	clusterMetadataCommand := commands.BrokersCommand{}
-	clusterMetadataCommand.Register(app, getKafkaClient)
+	clusterMetadataCommand := &commands.BrokersCommand{}
+	clusterMetadataCommand.Register(app, getKafkaClient, printer)
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 }
