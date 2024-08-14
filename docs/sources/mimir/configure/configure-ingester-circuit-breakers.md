@@ -69,7 +69,7 @@ To change these configurations, set `-ingester.push-circuit-breaker.thresholding
 The default percentage of push and pull requests that can fail over the configured moving window before the corresponding circuit breaker opens is 10% (`10`).
 You can set a different percentage via the `-ingester.push-circuit-breaker.failure-threshold-percentage` and `-ingester.read-circuit-breaker.failure-threshold-percentage` flags.
 
-Once a circuit breaker reaches the `open` state, it waits for 10 seconds (`10s`) before it transitions to the `half-open` state and allows trial requests.
+After a circuit breaker reaches the `open` state, it waits 10 seconds (`10s`) before it transitions to the `half-open` state and allows trial requests.
 You can change these waiting times via `-ingester.push-circuit-breaker.cooldown-period` and `-ingester.read-circuit-breaker.cooldown-period` flags.
 
 Grafana Mimir ingester push and read circuit breakers come with one different default configuration: the maximum duration of a request before it triggers a timeout.
