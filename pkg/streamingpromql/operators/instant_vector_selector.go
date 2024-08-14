@@ -75,10 +75,14 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 		var h *histogram.FloatHistogram
 
 		ts := stepT
+
 		if v.Selector.Timestamp != nil {
+			// Timestamp from @ modifier takes precedence over query evaluation timestamp.
 			ts = *v.Selector.Timestamp
 		}
 
+		// Apply offset after adjusting for timestamp from @ modifier.
+		ts = ts - v.Selector.Offset
 		valueType := v.memoizedIterator.Seek(ts)
 
 		switch valueType {

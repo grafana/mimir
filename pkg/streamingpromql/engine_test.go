@@ -49,9 +49,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
 		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
 		"1":                                     "scalar value as top-level expression",
-		"metric{} offset 2h":                    "instant vector selector with 'offset'",
 		"avg(metric{})":                         "'avg' aggregation",
-		"rate(metric{}[5m] offset 2h)":          "range vector selector with 'offset'",
 		"rate(metric{}[5m:1m])":                 "PromQL expression type *parser.SubqueryExpr",
 		"quantile_over_time(0.4, metric{}[5m])": "'quantile_over_time' function",
 		"-sum(metric{})":                        "PromQL expression type *parser.UnaryExpr",
@@ -66,9 +64,8 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 
 	// These expressions are also unsupported, but are only valid as instant queries.
 	unsupportedInstantQueryExpressions := map[string]string{
-		"'a'":                    "string value as top-level expression",
-		"metric{}[5m] offset 2h": "range vector selector with 'offset'",
-		"metric{}[5m:1m]":        "PromQL expression type *parser.SubqueryExpr",
+		"'a'":             "string value as top-level expression",
+		"metric{}[5m:1m]": "PromQL expression type *parser.SubqueryExpr",
 	}
 
 	for expression, expectedError := range unsupportedInstantQueryExpressions {
@@ -93,6 +90,18 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 
 		requireRangeQueryIsUnsupported(t, featureToggles, "count_over_time(metric[1m])", "'count_over_time' function")
 		requireInstantQueryIsUnsupported(t, featureToggles, "count_over_time(metric[1m])", "'count_over_time' function")
+	})
+
+	t.Run("offset modifier", func(t *testing.T) {
+		featureToggles := EnableAllFeatures
+		featureToggles.EnableOffsetModifier = false
+
+		requireRangeQueryIsUnsupported(t, featureToggles, "metric offset 1m", "instant vector selector with 'offset'")
+		requireInstantQueryIsUnsupported(t, featureToggles, "metric offset 1m", "instant vector selector with 'offset'")
+		requireInstantQueryIsUnsupported(t, featureToggles, "metric[2m] offset 1m", "range vector selector with 'offset'")
+
+		requireRangeQueryIsUnsupported(t, featureToggles, "rate(metric[2m] offset 1m)", "range vector selector with 'offset'")
+		requireInstantQueryIsUnsupported(t, featureToggles, "rate(metric[2m] offset 1m)", "range vector selector with 'offset'")
 	})
 }
 
@@ -589,6 +598,108 @@ func TestRangeVectorSelectors(t *testing.T) {
 									},
 								},
 							},
+						},
+					},
+				},
+			},
+		},
+		"selector with positive offset (looking backwards)": {
+			expr: "some_metric[1m] offset 1m",
+			ts:   baseT.Add(3 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "1"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 2},
+						},
+					},
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "2"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 2},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 4},
+						},
+					},
+				},
+			},
+		},
+		"selector with negative offset (looking forwards)": {
+			expr: "some_metric[1m] offset -1m",
+			ts:   baseT.Add(1 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "1"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 2},
+						},
+					},
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "2"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 2},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 4},
+						},
+					},
+				},
+			},
+		},
+		"selector with offset to before beginning of available data": {
+			expr: "some_metric[1m] offset 10m",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{},
+			},
+		},
+		"selector with offset to after end of available data": {
+			expr: "some_metric[1m] offset -20m",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{},
+			},
+		},
+		"selector with @ modifier": {
+			expr: "some_metric[1m] @ 2m",
+			ts:   baseT.Add(20 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "1"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 2},
+						},
+					},
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "2"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 2},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 4},
+						},
+					},
+				},
+			},
+		},
+		"selector with @ modifier and offset": {
+			expr: "some_metric[1m] @ 3m offset 1m",
+			ts:   baseT.Add(20 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "1"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 2},
+						},
+					},
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "2"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 2},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 4},
 						},
 					},
 				},

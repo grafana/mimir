@@ -2021,6 +2021,17 @@
               "fieldFlag": "querier.mimir-query-engine.enable-over-time-functions",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_offset_modifier",
+              "required": false,
+              "desc": "Enable support for offset modifier in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-offset-modifier",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
