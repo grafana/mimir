@@ -21,7 +21,7 @@ func main() {
 	app.Flag("kafka-client-id", "Kafka client ID.").StringVar(&kafkaClientID)
 
 	// Create the Kafka client before any command is executed.
-	app.Action(func(context *kingpin.ParseContext) error {
+	app.Action(func(_ *kingpin.ParseContext) error {
 		var err error
 		kafkaClient, err = CreateKafkaClient(kafkaAddress, kafkaClientID)
 		return err

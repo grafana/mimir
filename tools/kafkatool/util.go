@@ -18,7 +18,7 @@ type Printer interface {
 
 type StdoutPrinter struct{}
 
-func (_ StdoutPrinter) PrintLine(line string) {
+func (StdoutPrinter) PrintLine(line string) {
 	fmt.Println(line)
 }
 
