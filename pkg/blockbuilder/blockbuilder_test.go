@@ -432,8 +432,8 @@ func TestBlockBuilder_StartupWithExistingCommit(t *testing.T) {
 	}
 
 	// Producing some records
-	kafkaTime := time.Now().Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
 	ceStartup := cycleEndAtStartup(cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+	kafkaTime := ceStartup.Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
 	var expSamples []mimirpb.Sample
 	for i := int64(0); i < 12; i++ {
 		kafkaTime = kafkaTime.Add(cfg.ConsumeInterval / 2)
