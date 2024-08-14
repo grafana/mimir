@@ -55,7 +55,7 @@ Read requests circuit breakers follow these conditions:
   This means that before an ingester tries to acquire a read circuit breaker permit, it first checks if its push circuit breaker is open.
   If it's open, a circuit breaker open error is returned.
   Otherwise, the ingester tries to acquire a read requests circuit breaker permit.
-- a read request that acquired a read requests circuit breaker permit meets the read requests circuit breaker failure condition if its duration is longer than the configured read request maximum duration.
+- A read request that acquires a read requests circuit breaker permit meets the read requests circuit breaker failure condition if its duration is longer than the configured read request maximum duration.
 
 ## Grafana Mimir Ingester circuit breakers configuration
 
