@@ -104,7 +104,7 @@ type Config struct {
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxOutstandingPerTenant, "query-scheduler.max-outstanding-requests-per-tenant", 100, "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429.")
-	f.BoolVar(&cfg.AdditionalQueryQueueDimensionsEnabled, "query-scheduler.additional-query-queue-dimensions-enabled", false, "Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)")
+	f.BoolVar(&cfg.AdditionalQueryQueueDimensionsEnabled, "query-scheduler.additional-query-queue-dimensions-enabled", false, "Non-operational: Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)")
 	f.BoolVar(&cfg.UseMultiAlgorithmQueryQueue, "query-scheduler.use-multi-algorithm-query-queue", false, "Use an experimental version of the query queue which has the same behavior as the existing queue, but integrates tenant selection into the tree model.")
 	f.DurationVar(&cfg.QuerierForgetDelay, "query-scheduler.querier-forget-delay", 0, "If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.")
 
@@ -161,7 +161,6 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 	s.requestQueue, err = queue.NewRequestQueue(
 		s.log,
 		cfg.MaxOutstandingPerTenant,
-		cfg.AdditionalQueryQueueDimensionsEnabled,
 		cfg.UseMultiAlgorithmQueryQueue,
 		cfg.QuerierForgetDelay,
 		s.queueLength,
@@ -405,6 +404,19 @@ func (s *Scheduler) cancelRequestAndRemoveFromPending(key queue.RequestKey, reas
 	return req
 }
 
+func (s *Scheduler) transformRequestQueueError(err error) error {
+	if errors.Is(err, queue.ErrStopped) && !s.isRunning() {
+		// Return a more clear error if the queue is stopped because the query-scheduler is not running.
+		return schedulerpb.ErrSchedulerIsNotRunning
+	}
+
+	// the main other error we receive here is if the querier itself is ErrQuerierShuttingDown;
+	// this information was submitted via another endpoint and processed internally
+	// by the RequestQueue's tracking of querier connections. ErrQuerierShuttingDown bubbles up here
+	// as a way to exit this loop and allow the querier to shut down gracefully.
+	return err
+}
+
 // QuerierLoop is started by querier to receive queries from scheduler.
 func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer) error {
 	resp, err := querier.Recv()
@@ -413,9 +425,12 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 	}
 
 	querierID := resp.GetQuerierID()
-
-	s.requestQueue.SubmitRegisterQuerierConnection(querierID)
-	defer s.requestQueue.SubmitUnregisterQuerierConnection(querierID)
+	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(querier.Context(), queue.QuerierID(querierID))
+	err = s.requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn)
+	if err != nil {
+		return s.transformRequestQueueError(err)
+	}
+	defer s.requestQueue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
 
 	lastUserIndex := queue.FirstTenant()
 
@@ -423,16 +438,9 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 	for s.isRunningOrStopping() {
 		queueReq, idx, err := s.requestQueue.WaitForRequestForQuerier(querier.Context(), lastUserIndex, querierID)
 		if err != nil {
-			// Return a more clear error if the queue is stopped because the query-scheduler is not running.
-			if errors.Is(err, queue.ErrStopped) && !s.isRunning() {
-				return schedulerpb.ErrSchedulerIsNotRunning
-			}
-			// the main other error we receive here is if the querier itself is shutting down;
-			// this information was submitted via another endpoint and processed internally
-			// by the RequestQueue's tracking of querier connections. The error bubbles up here
-			// as a way to exit this loop and allow the querier to shut down gracefully.
-			return err
+			return s.transformRequestQueueError(err)
 		}
+
 		lastUserIndex = idx
 
 		schedulerReq := queueReq.(*queue.SchedulerRequest)
@@ -470,9 +478,10 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 	return schedulerpb.ErrSchedulerIsNotRunning
 }
 
-func (s *Scheduler) NotifyQuerierShutdown(_ context.Context, req *schedulerpb.NotifyQuerierShutdownRequest) (*schedulerpb.NotifyQuerierShutdownResponse, error) {
+func (s *Scheduler) NotifyQuerierShutdown(ctx context.Context, req *schedulerpb.NotifyQuerierShutdownRequest) (*schedulerpb.NotifyQuerierShutdownResponse, error) {
 	level.Info(s.log).Log("msg", "received shutdown notification from querier", "querier", req.GetQuerierID())
-	s.requestQueue.SubmitNotifyQuerierShutdown(req.GetQuerierID())
+
+	s.requestQueue.SubmitNotifyQuerierShutdown(ctx, queue.QuerierID(req.GetQuerierID()))
 
 	return &schedulerpb.NotifyQuerierShutdownResponse{}, nil
 }

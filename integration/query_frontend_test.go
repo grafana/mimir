@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/test"
 	"github.com/grafana/e2e"
 	e2ecache "github.com/grafana/e2e/cache"
 	e2edb "github.com/grafana/e2e/db"
@@ -292,7 +293,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	}
 
 	// Start the query-frontend.
-	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, e2emimir.WithConfigFile(configFile))
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontend))
 
 	if !cfg.querySchedulerEnabled {
@@ -322,13 +323,14 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 
 	// When using the ingest storage, wait until partitions are ACTIVE in the ring.
 	if flags["-ingest-storage.enabled"] == "true" {
-		require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
-			labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
-			labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
+		for _, service := range []*e2emimir.MimirService{distributor, queryFrontend, querier} {
+			require.NoErrorf(t, service.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
+				labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))),
+				"service: %s", service.Name())
+		}
 
-		require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
-			labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
-			labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
+		waitQueryFrontendToSuccessfullyFetchLastProducedOffsets(t, queryFrontend)
 	}
 
 	// Push a series for each user to Mimir.
@@ -504,7 +506,7 @@ overrides:
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(consul))
 
-	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, e2emimir.WithConfigFile(configFile))
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontend))
 
 	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
@@ -891,7 +893,7 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 	}
 
 	// Start the query-frontend.
-	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, e2emimir.WithConfigFile(configFile))
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontend))
 
 	if !cfg.querySchedulerEnabled {
@@ -945,4 +947,18 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_query_frontend_discarded_requests_total"))
 		}
 	}
+}
+
+// waitQueryFrontendToSuccessfullyFetchLastProducedOffsets waits until the query-frontend has successfully fetched
+// the last produced offsets at least once. This is required in integration tests to avoid flakiness, because we
+// bootstrap a new Mimir and Kafka cluster from scratch in each integration test and the query-frontend may start
+// to lookup partitions before the topic is created in Kafka, which will result in a query failure.
+func waitQueryFrontendToSuccessfullyFetchLastProducedOffsets(t *testing.T, queryFrontend *e2emimir.MimirService) {
+	test.Poll(t, 10*time.Second, true, func() interface{} {
+		requests, requestsErr := queryFrontend.SumMetrics([]string{"cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds"}, e2e.WithMetricCount, e2e.WaitMissingMetrics)
+		failures, failuresErr := queryFrontend.SumMetrics([]string{"cortex_ingest_storage_reader_last_produced_offset_failures_total"}, e2e.WaitMissingMetrics)
+
+		t.Logf("Waiting query-frontend to successfully fetch last produced offsets – requestsErr: %v requests: %v failuresErr: %v failures: %v", requestsErr, requests, failuresErr, failures)
+		return requestsErr == nil && failuresErr == nil && len(requests) == 1 && len(failures) == 1 && requests[0] > failures[0]
+	})
 }

@@ -719,7 +719,16 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReader() (services.Service, error) 
 		return nil, err
 	}
 
-	t.QueryFrontendTopicOffsetsReader = ingest.NewTopicOffsetsReader(kafkaClient, t.Cfg.IngestStorage.KafkaConfig.Topic, t.Cfg.IngestStorage.KafkaConfig.LastProducedOffsetPollInterval, t.Registerer, util_log.Logger)
+	// The Kafka partitions may have been pre-provisioned. There are may be much more existing partitions in Kafka
+	// than the actual number we use. To improve performance, we only look up the actual partitions
+	// we're currently using in Mimir. We include all partition states because ACTIVE and INACTIVE partitions
+	// must be queried, and PENDING partitions may switch to ACTIVE between when the query-frontend fetch the offsets
+	// and the querier builds the replicaset of partitions to query.
+	getPartitionIDs := func(_ context.Context) ([]int32, error) {
+		return t.IngesterPartitionRingWatcher.PartitionRing().PartitionIDs(), nil
+	}
+
+	t.QueryFrontendTopicOffsetsReader = ingest.NewTopicOffsetsReader(kafkaClient, t.Cfg.IngestStorage.KafkaConfig.Topic, getPartitionIDs, t.Cfg.IngestStorage.KafkaConfig.LastProducedOffsetPollInterval, t.Registerer, util_log.Logger)
 	return t.QueryFrontendTopicOffsetsReader, nil
 }
 
@@ -1134,36 +1143,37 @@ func (t *Mimir) setupModuleManager() error {
 
 	// Add dependencies
 	deps := map[string][]string{
-		Server:                   {ActivityTracker, SanityCheck, UsageStats},
-		API:                      {Server},
-		MemberlistKV:             {API, Vault},
-		RuntimeConfig:            {API},
-		IngesterRing:             {API, RuntimeConfig, MemberlistKV, Vault},
-		IngesterPartitionRing:    {MemberlistKV, IngesterRing, API},
-		Overrides:                {RuntimeConfig},
-		OverridesExporter:        {Overrides, MemberlistKV, Vault},
-		Distributor:              {DistributorService, API, ActiveGroupsCleanupService, Vault},
-		DistributorService:       {IngesterRing, IngesterPartitionRing, Overrides, Vault},
-		Ingester:                 {IngesterService, API, ActiveGroupsCleanupService, Vault},
-		IngesterService:          {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV},
-		Flusher:                  {Overrides, API},
-		Queryable:                {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV},
-		Querier:                  {TenantFederation, Vault},
-		StoreQueryable:           {Overrides, MemberlistKV},
-		QueryFrontendTripperware: {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReader},
-		QueryFrontend:            {QueryFrontendTripperware, MemberlistKV, Vault},
-		QueryScheduler:           {API, Overrides, MemberlistKV, Vault},
-		Ruler:                    {DistributorService, StoreQueryable, RulerStorage, Vault},
-		RulerStorage:             {Overrides},
-		AlertManager:             {API, MemberlistKV, Overrides, Vault},
-		Compactor:                {API, MemberlistKV, Overrides, Vault},
-		StoreGateway:             {API, Overrides, MemberlistKV, Vault},
-		TenantFederation:         {Queryable},
-		ContinuousTest:           {API},
-		Write:                    {Distributor, Ingester},
-		Read:                     {QueryFrontend, Querier},
-		Backend:                  {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
-		All:                      {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
+		Server:                          {ActivityTracker, SanityCheck, UsageStats},
+		API:                             {Server},
+		MemberlistKV:                    {API, Vault},
+		RuntimeConfig:                   {API},
+		IngesterRing:                    {API, RuntimeConfig, MemberlistKV, Vault},
+		IngesterPartitionRing:           {MemberlistKV, IngesterRing, API},
+		Overrides:                       {RuntimeConfig},
+		OverridesExporter:               {Overrides, MemberlistKV, Vault},
+		Distributor:                     {DistributorService, API, ActiveGroupsCleanupService, Vault},
+		DistributorService:              {IngesterRing, IngesterPartitionRing, Overrides, Vault},
+		Ingester:                        {IngesterService, API, ActiveGroupsCleanupService, Vault},
+		IngesterService:                 {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV},
+		Flusher:                         {Overrides, API},
+		Queryable:                       {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV},
+		Querier:                         {TenantFederation, Vault},
+		StoreQueryable:                  {Overrides, MemberlistKV},
+		QueryFrontendTripperware:        {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReader},
+		QueryFrontend:                   {QueryFrontendTripperware, MemberlistKV, Vault},
+		QueryFrontendTopicOffsetsReader: {IngesterPartitionRing},
+		QueryScheduler:                  {API, Overrides, MemberlistKV, Vault},
+		Ruler:                           {DistributorService, StoreQueryable, RulerStorage, Vault},
+		RulerStorage:                    {Overrides},
+		AlertManager:                    {API, MemberlistKV, Overrides, Vault},
+		Compactor:                       {API, MemberlistKV, Overrides, Vault},
+		StoreGateway:                    {API, Overrides, MemberlistKV, Vault},
+		TenantFederation:                {Queryable},
+		ContinuousTest:                  {API},
+		Write:                           {Distributor, Ingester},
+		Read:                            {QueryFrontend, Querier},
+		Backend:                         {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
+		All:                             {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
 	}
 	for mod, targets := range deps {
 		if err := mm.AddDependency(mod, targets...); err != nil {

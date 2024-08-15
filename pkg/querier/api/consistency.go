@@ -208,8 +208,7 @@ func (p EncodedOffsets) Lookup(partitionID int32) (int64, bool) {
 }
 
 // EncodeOffsets serialise the input offsets into a string which is safe to be used as HTTP header value.
-// Empty partitions are skipped because partitions may be pre-allocated in Kafka, even if unused.
-// A partition is considered empty if its offset is -1.
+// Empty partitions (offset is -1) are NOT skipped.
 func EncodeOffsets(offsets map[int32]int64) EncodedOffsets {
 	const versionLen = 3
 
@@ -223,11 +222,6 @@ func EncodeOffsets(offsets map[int32]int64) EncodedOffsets {
 	// re-allocations because we under-counted digits.
 	size := versionLen
 	for partitionID, offset := range offsets {
-		// Skip empty partitions.
-		if offset == -1 {
-			continue
-		}
-
 		sizeSeparator := 0
 		if size > 0 {
 			sizeSeparator = 1
@@ -244,11 +238,6 @@ func EncodeOffsets(offsets map[int32]int64) EncodedOffsets {
 	buffer = append(buffer, []byte("v1=")...)
 
 	for partitionID, offset := range offsets {
-		// Skip empty partitions.
-		if offset == -1 {
-			continue
-		}
-
 		// Add the separator, unless it's the first entry.
 		if len(buffer) > versionLen {
 			buffer = append(buffer, ',')

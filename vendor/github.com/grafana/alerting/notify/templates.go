@@ -42,7 +42,7 @@ type TestTemplatesErrorResult struct {
 	Kind TemplateErrorKind `json:"kind"`
 
 	// Error cause.
-	Error error `json:"error"`
+	Error string `json:"error"`
 }
 
 type TemplateErrorKind string

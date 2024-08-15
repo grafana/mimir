@@ -759,23 +759,24 @@ pool:
   [health_check_ingesters: <boolean> | default = true]
 
 retry_after_header:
-  # (experimental) Enabled controls inclusion of the Retry-After header in the
-  # response: true includes it for client retry guidance, false omits it.
+  # (advanced) Enables inclusion of the Retry-After header in the response: true
+  # includes it for client retry guidance, false omits it.
   # CLI flag: -distributor.retry-after-header.enabled
-  [enabled: <boolean> | default = false]
+  [enabled: <boolean> | default = true]
 
-  # (experimental) Base duration in seconds for calculating the Retry-After
-  # header in responses to 429/5xx errors.
-  # CLI flag: -distributor.retry-after-header.base-seconds
-  [base_seconds: <int> | default = 3]
+  # (advanced) Minimum duration of the Retry-After HTTP header in responses to
+  # 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated
+  # as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either
+  # direction. RetryAttempt is the value of the Retry-Attempt HTTP header.
+  # CLI flag: -distributor.retry-after-header.min-backoff
+  [min_backoff: <duration> | default = 6s]
 
-  # (experimental) Sets the upper limit on the number of Retry-Attempt
-  # considered for calculation. It caps the Retry-Attempt header without
-  # rejecting additional attempts, controlling exponential backoff calculations.
-  # For example, when the base-seconds is set to 3 and max-backoff-exponent to
-  # 5, the maximum retry duration would be 3 * 2^5 = 96 seconds.
-  # CLI flag: -distributor.retry-after-header.max-backoff-exponent
-  [max_backoff_exponent: <int> | default = 5]
+  # (advanced) Minimum duration of the Retry-After HTTP header in responses to
+  # 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated
+  # as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either
+  # direction. RetryAttempt is the value of the Retry-Attempt HTTP header.
+  # CLI flag: -distributor.retry-after-header.max-backoff
+  [max_backoff: <duration> | default = 1m36s]
 
 ha_tracker:
   # Enable the distributors HA tracker so that it can accept samples from
@@ -1200,7 +1201,7 @@ partition_ring:
 
 # (advanced) After what time a series is considered to be inactive.
 # CLI flag: -ingester.active-series-metrics-idle-timeout
-[active_series_metrics_idle_timeout: <duration> | default = 10m]
+[active_series_metrics_idle_timeout: <duration> | default = 20m]
 
 # (experimental) Period with which to update the per-tenant TSDB configuration.
 # CLI flag: -ingester.tsdb-config-update-period
@@ -1525,6 +1526,11 @@ mimir_query_engine:
   # engine. Only applies if the Mimir query engine is in use.
   # CLI flag: -querier.mimir-query-engine.enable-over-time-functions
   [enable_over_time_functions: <boolean> | default = true]
+
+  # (experimental) Enable support for offset modifier in Mimir's query engine.
+  # Only applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-offset-modifier
+  [enable_offset_modifier: <boolean> | default = true]
 ```
 
 ### frontend
@@ -1611,11 +1617,11 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.instance-port
 [port: <int> | default = 0]
 
-# (experimental) Enqueue query requests with additional queue dimensions to
-# split tenant request queues into subqueues. This enables separate requests to
-# proceed from a tenant's subqueues even when other subqueues are blocked on
-# slow query requests. Must be set on both query-frontend and scheduler to take
-# effect. (default false)
+# (experimental) Non-operational: Enqueue query requests with additional queue
+# dimensions to split tenant request queues into subqueues. This enables
+# separate requests to proceed from a tenant's subqueues even when other
+# subqueues are blocked on slow query requests. Must be set on both
+# query-frontend and scheduler to take effect. (default false)
 # CLI flag: -query-frontend.additional-query-queue-dimensions-enabled
 [additional_query_queue_dimensions_enabled: <boolean> | default = false]
 
@@ -1702,11 +1708,11 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
 [max_outstanding_requests_per_tenant: <int> | default = 100]
 
-# (experimental) Enqueue query requests with additional queue dimensions to
-# split tenant request queues into subqueues. This enables separate requests to
-# proceed from a tenant's subqueues even when other subqueues are blocked on
-# slow query requests. Must be set on both query-frontend and scheduler to take
-# effect. (default false)
+# (experimental) Non-operational: Enqueue query requests with additional queue
+# dimensions to split tenant request queues into subqueues. This enables
+# separate requests to proceed from a tenant's subqueues even when other
+# subqueues are blocked on slow query requests. Must be set on both
+# query-frontend and scheduler to take effect. (default false)
 # CLI flag: -query-scheduler.additional-query-queue-dimensions-enabled
 [additional_query_queue_dimensions_enabled: <boolean> | default = false]
 

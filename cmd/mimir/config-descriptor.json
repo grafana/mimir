@@ -779,34 +779,34 @@
               "kind": "field",
               "name": "enabled",
               "required": false,
-              "desc": "Enabled controls inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.",
+              "desc": "Enables inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "distributor.retry-after-header.enabled",
               "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
-              "name": "base_seconds",
+              "name": "min_backoff",
               "required": false,
-              "desc": "Base duration in seconds for calculating the Retry-After header in responses to 429/5xx errors.",
+              "desc": "Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.",
               "fieldValue": null,
-              "fieldDefaultValue": 3,
-              "fieldFlag": "distributor.retry-after-header.base-seconds",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
+              "fieldDefaultValue": 6000000000,
+              "fieldFlag": "distributor.retry-after-header.min-backoff",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
-              "name": "max_backoff_exponent",
+              "name": "max_backoff",
               "required": false,
-              "desc": "Sets the upper limit on the number of Retry-Attempt considered for calculation. It caps the Retry-Attempt header without rejecting additional attempts, controlling exponential backoff calculations. For example, when the base-seconds is set to 3 and max-backoff-exponent to 5, the maximum retry duration would be 3 * 2^5 = 96 seconds.",
+              "desc": "Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header.",
               "fieldValue": null,
-              "fieldDefaultValue": 5,
-              "fieldFlag": "distributor.retry-after-header.max-backoff-exponent",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
+              "fieldDefaultValue": 96000000000,
+              "fieldFlag": "distributor.retry-after-header.max-backoff",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -2019,6 +2019,17 @@
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-over-time-functions",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_offset_modifier",
+              "required": false,
+              "desc": "Enable support for offset modifier in Mimir's query engine. Only applies if the Mimir query engine is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-offset-modifier",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             }
@@ -3267,7 +3278,7 @@
           "required": false,
           "desc": "After what time a series is considered to be inactive.",
           "fieldValue": null,
-          "fieldDefaultValue": 600000000000,
+          "fieldDefaultValue": 1200000000000,
           "fieldFlag": "ingester.active-series-metrics-idle-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -5714,7 +5725,7 @@
           "kind": "field",
           "name": "additional_query_queue_dimensions_enabled",
           "required": false,
-          "desc": "Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)",
+          "desc": "Non-operational: Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.additional-query-queue-dimensions-enabled",
@@ -16004,7 +16015,7 @@
           "kind": "field",
           "name": "additional_query_queue_dimensions_enabled",
           "required": false,
-          "desc": "Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)",
+          "desc": "Non-operational: Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-scheduler.additional-query-queue-dimensions-enabled",

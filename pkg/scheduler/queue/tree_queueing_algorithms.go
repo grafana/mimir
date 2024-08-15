@@ -32,10 +32,10 @@ type QueuingAlgorithm interface {
 }
 
 // roundRobinState is the simplest type of QueuingAlgorithm; nodes which use this QueuingAlgorithm and are at
-// the same depth in a MultiQueuingAlgorithmTreeQueue do not share any state. When children are added to these nodes, they are placed at
-// the "end" of the order from the perspective of the node's current queuePosition (e.g., if queuePosition is 3,
-// a new child will be placed at index 2). Children are dequeued from using a simple round-robin ordering;
-// queuePosition is incremented on every dequeue.
+// the same depth in a MultiQueuingAlgorithmTreeQueue do not share any state. When children are added to these nodes,
+// they are placed at the "end" of the order from the perspective of the node's current queuePosition (e.g., if
+// queuePosition is 3, a new child will be placed at index 2). Children are dequeued from using a simple round-robin
+// ordering; queuePosition is incremented on every dequeue.
 type roundRobinState struct {
 }
 

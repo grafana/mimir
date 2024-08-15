@@ -106,20 +106,26 @@
     'ingest-storage.kafka.consumer-group-offset-commit-interval': '5s',
   },
 
-  ingest_storage_ingester_ring_client_args+:: {
+  ingest_storage_partition_ring_client_args+:: {
     // Set no key prefix for the partition ring, like we do for all other hash rings.
     'ingester.partition-ring.prefix': '',
-  } + (
+  },
+
+  ingest_storage_ingester_ring_client_args+:: $.ingest_storage_partition_ring_client_args + (
     if !$._config.ingest_storage_ingester_instance_ring_dedicated_prefix_enabled then {} else {
       // Run partition ingesters on a dedicated hash ring, so that they don't clash with classic ingesters.
       'ingester.ring.prefix': $._config.ingest_storage_ingester_instance_ring_dedicated_prefix,
     }
   ),
 
-  ingest_storage_query_frontend_args+:: {
-    // Reduce the LPO polling interval to improve latency of strong consistency reads.
-    'ingest-storage.kafka.last-produced-offset-poll-interval': '500ms',
-  },
+  ingest_storage_query_frontend_args+::
+    // The query-frontend uses the partitions ring to discover in-use partitions, used by
+    // the logic to fetch the last produced offsets.
+    $.ingest_storage_partition_ring_client_args
+    {
+      // Reduce the LPO polling interval to improve latency of strong consistency reads.
+      'ingest-storage.kafka.last-produced-offset-poll-interval': '500ms',
+    },
 
   //
   // Enforce the configured ingester zones.

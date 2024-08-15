@@ -160,7 +160,7 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			require.NoError(t, s.StartAndWaitReady(storeGateway1, storeGateway2))
 
 			// Start the query-frontend but do not check for readiness yet.
-			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags)
+			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
 			t.Cleanup(func() { require.NoError(t, s.Stop(queryFrontend)) })
 			require.NoError(t, s.Start(queryFrontend))
 
