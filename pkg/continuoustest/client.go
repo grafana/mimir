@@ -104,7 +104,8 @@ func NewClient(cfg ClientConfig, logger log.Logger) (*Client, error) {
 	if cfg.WriteProtocol != "prometheus" && cfg.WriteProtocol != "otlp-http" {
 		return nil, fmt.Errorf("the only supported write protocols are \"prometheus\" or \"otlp-http\"")
 	}
-	// Ensure not both tenant-id and basic-auth are used at the same time
+	// Ensure not multiple auth methods set at the same time
+	// Allow tenantID and auth to be defined at the same time for tenant testing
 	// anonymous is the default value for TenantID.
 	if (cfg.TenantID != "anonymous" && cfg.BasicAuthUser != "" && cfg.BasicAuthPassword != "" && cfg.BearerToken != "") || // all authentication at once
 		(cfg.BasicAuthUser != "" && cfg.BasicAuthPassword != "" && cfg.BearerToken != "") { // basic auth and bearer token
@@ -272,8 +273,14 @@ func (rt *clientRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 
 	if rt.bearerToken != "" {
 		req.Header.Set("Authorization", "Bearer "+rt.bearerToken)
+		if rt.tenantID != "anonymous" {
+			req.Header.Set("X-Scope-OrgID", rt.tenantID)
+		}
 	} else if rt.basicAuthUser != "" && rt.basicAuthPassword != "" {
 		req.SetBasicAuth(rt.basicAuthUser, rt.basicAuthPassword)
+		if rt.tenantID != "anonymous" {
+			req.Header.Set("X-Scope-OrgID", rt.tenantID)
+		}
 	} else {
 		req.Header.Set("X-Scope-OrgID", rt.tenantID)
 	}
