@@ -73,6 +73,8 @@ Usage of ./cmd/mimir/mimir:
     	S3 secret access key
   -alertmanager-storage.s3.send-content-md5
     	[experimental] If enabled, a Content-MD5 header is sent with S3 Put Object requests. Consumes more resources to compute the MD5, but may improve compatibility with object storage services that do not support checksums.
+  -alertmanager-storage.s3.session-token string
+    	S3 session token
   -alertmanager-storage.s3.signature-version string
     	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
   -alertmanager-storage.s3.sse.kms-encryption-context string
@@ -87,6 +89,8 @@ Usage of ./cmd/mimir/mimir:
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -alertmanager-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
+  -alertmanager-storage.s3.trace.enabled
+    	When enabled, low-level S3 HTTP operation information is logged at the debug level.
   -alertmanager-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
   -alertmanager-storage.swift.auth-url string
@@ -534,7 +538,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency int
     	Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited. (default 4)
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout duration
-    	[experimental] Timeout for the queue of index header loads. If the queue is full and the timeout is reached, the load will return an error. 0 means no timeout and the load will wait indefinitely.
+    	Timeout for the queue of index header loads. If the queue is full and the timeout is reached, the load will return an error. 0 means no timeout and the load will wait indefinitely. (default 5s)
   -blocks-storage.bucket-store.index-header.lazy-loading-enabled
     	If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
   -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout duration
@@ -544,7 +548,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-header.verify-on-load
     	If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.
   -blocks-storage.bucket-store.max-concurrent int
-    	Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants. (default 100)
+    	Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants. (default 200)
   -blocks-storage.bucket-store.max-concurrent-queue-timeout duration
     	Timeout for the queue of queries waiting for execution. If the queue is full and the timeout is reached, the query will be retried on another store-gateway. 0 means no timeout and all queries will wait indefinitely for their turn. (default 5s)
   -blocks-storage.bucket-store.meta-sync-concurrency int
@@ -669,12 +673,10 @@ Usage of ./cmd/mimir/mimir:
     	Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests. (default 524288)
   -blocks-storage.bucket-store.posting-offsets-in-mem-sampling int
     	Controls what is the ratio of postings offsets that the store will hold in memory. (default 32)
+  -blocks-storage.bucket-store.series-fetch-preference float
+    	This parameter controls the trade-off in fetching series versus fetching postings to fulfill a series request. Increasing the series preference results in fetching more series and reducing the volume of postings fetched. Reducing the series preference results in the opposite. Increase this parameter to reduce the rate of fetched series bytes (see "Mimir / Queries" dashboard) or API calls to the object store. Must be a positive floating point number. (default 0.75)
   -blocks-storage.bucket-store.series-hash-cache-max-size-bytes uint
     	Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled. (default 1073741824)
-  -blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference float
-    	[experimental] This option is only used when blocks-storage.bucket-store.series-selection-strategy=worst-case. Increasing the series preference results in fetching more series than postings. Must be a positive floating point number. (default 0.75)
-  -blocks-storage.bucket-store.series-selection-strategy string
-    	[experimental] This option controls the strategy to selection of series and deferring application of matchers. A more aggressive strategy will fetch less posting lists at the cost of more series. This is useful when querying large blocks in which many series share the same label name and value. Supported values (most aggressive to least aggressive): speculative, worst-case, worst-case-small-posting-lists, all. (default "worst-case")
   -blocks-storage.bucket-store.sync-dir string
     	Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time. (default "./tsdb-sync/")
   -blocks-storage.bucket-store.sync-interval duration
@@ -733,6 +735,8 @@ Usage of ./cmd/mimir/mimir:
     	S3 secret access key
   -blocks-storage.s3.send-content-md5
     	[experimental] If enabled, a Content-MD5 header is sent with S3 Put Object requests. Consumes more resources to compute the MD5, but may improve compatibility with object storage services that do not support checksums.
+  -blocks-storage.s3.session-token string
+    	S3 session token
   -blocks-storage.s3.signature-version string
     	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
   -blocks-storage.s3.sse.kms-encryption-context string
@@ -747,6 +751,8 @@ Usage of ./cmd/mimir/mimir:
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -blocks-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
+  -blocks-storage.s3.trace.enabled
+    	When enabled, low-level S3 HTTP operation information is logged at the debug level.
   -blocks-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
   -blocks-storage.swift.auth-url string
@@ -913,6 +919,8 @@ Usage of ./cmd/mimir/mimir:
     	S3 secret access key
   -common.storage.s3.send-content-md5
     	[experimental] If enabled, a Content-MD5 header is sent with S3 Put Object requests. Consumes more resources to compute the MD5, but may improve compatibility with object storage services that do not support checksums.
+  -common.storage.s3.session-token string
+    	S3 session token
   -common.storage.s3.signature-version string
     	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
   -common.storage.s3.sse.kms-encryption-context string
@@ -927,6 +935,8 @@ Usage of ./cmd/mimir/mimir:
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -common.storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
+  -common.storage.s3.trace.enabled
+    	When enabled, low-level S3 HTTP operation information is logged at the debug level.
   -common.storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -common.storage.swift.auth-version int
@@ -1199,6 +1209,8 @@ Usage of ./cmd/mimir/mimir:
     	[deprecated] When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed. (default true)
   -distributor.max-exemplars-per-series-per-request int
     	[experimental] Maximum number of exemplars per series per request. 0 to disable limit in request. The exceeding exemplars are dropped.
+  -distributor.max-otlp-request-size int
+    	[experimental] Maximum OTLP request size in bytes that the distributors accept. Requests exceeding this limit are rejected. (default 104857600)
   -distributor.max-recv-msg-size int
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
   -distributor.max-request-pool-buffer-size int
@@ -1213,12 +1225,12 @@ Usage of ./cmd/mimir/mimir:
     	Per-tenant allowed push request burst size. 0 to disable.
   -distributor.request-rate-limit float
     	Per-tenant push request rate limit in requests per second. 0 to disable.
-  -distributor.retry-after-header.base-seconds int
-    	[experimental] Base duration in seconds for calculating the Retry-After header in responses to 429/5xx errors. (default 3)
   -distributor.retry-after-header.enabled
-    	[experimental] Enabled controls inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.
-  -distributor.retry-after-header.max-backoff-exponent int
-    	[experimental] Sets the upper limit on the number of Retry-Attempt considered for calculation. It caps the Retry-Attempt header without rejecting additional attempts, controlling exponential backoff calculations. For example, when the base-seconds is set to 3 and max-backoff-exponent to 5, the maximum retry duration would be 3 * 2^5 = 96 seconds. (default 5)
+    	Enables inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it. (default true)
+  -distributor.retry-after-header.max-backoff duration
+    	Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header. (default 1m36s)
+  -distributor.retry-after-header.min-backoff duration
+    	Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header. (default 6s)
   -distributor.reusable-ingester-push-workers int
     	Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.) (default 2000)
   -distributor.ring.consul.acl-token string
@@ -1332,9 +1344,13 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.last-produced-offset-retry-timeout duration
     	How long to retry a failed request to get the last produced offset. (default 10s)
   -ingest-storage.kafka.max-consumer-lag-at-startup duration
-    	The maximum tolerated lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
+    	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
+  -ingest-storage.kafka.producer-max-buffered-bytes int
+    	The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit. (default 1073741824)
   -ingest-storage.kafka.producer-max-record-size-bytes int
     	The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes. (default 15983616)
+  -ingest-storage.kafka.target-consumer-lag-at-startup duration
+    	The best-effort maximum lag a consumer tries to achieve at startup. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
   -ingest-storage.kafka.topic string
     	The Kafka topic name.
   -ingest-storage.kafka.wait-strong-read-consistency-timeout duration
@@ -1352,7 +1368,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.active-series-metrics-enabled
     	Enable tracking of active series and export them as metrics. (default true)
   -ingester.active-series-metrics-idle-timeout duration
-    	After what time a series is considered to be inactive. (default 10m0s)
+    	After what time a series is considered to be inactive. (default 20m0s)
   -ingester.active-series-metrics-update-period duration
     	How often to update active series metrics. (default 1m0s)
   -ingester.client.backoff-max-period duration
@@ -1363,16 +1379,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -ingester.client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
-  -ingester.client.circuit-breaker.cooldown-period duration
-    	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 10s)
-  -ingester.client.circuit-breaker.enabled
-    	[experimental] Enable circuit breaking when making requests to ingesters
-  -ingester.client.circuit-breaker.failure-execution-threshold uint
-    	[experimental] How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures (default 100)
-  -ingester.client.circuit-breaker.failure-threshold uint
-    	[experimental] Max percentage of requests that can fail over period before the circuit breaker opens (default 10)
-  -ingester.client.circuit-breaker.thresholding-period duration
-    	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -ingester.client.connect-backoff-max-delay duration
@@ -1393,8 +1399,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ingester.client.initial-stream-window-size value
     	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
-  -ingester.client.report-grpc-codes-in-instrumentation-label-enabled
-    	[deprecated] If set to true, gRPC status codes will be reported in "status_code" label of "cortex_ingester_client_request_duration_seconds" metric. Otherwise, they will be reported as "error" (default true)
   -ingester.client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ingester.client.tls-cert-path string
@@ -1541,8 +1545,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.read-path-memory-utilization-limit uint
     	[experimental] Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
-  -ingester.return-only-grpc-errors
-    	[deprecated] When enabled only gRPC errors will be returned by the ingester. (default true)
   -ingester.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -ingester.ring.consul.cas-retry-delay duration
@@ -1667,6 +1669,8 @@ Usage of ./cmd/mimir/mimir:
     	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
   -memberlist.bind-port int
     	Port to listen on for gossip messages. (default 7946)
+  -memberlist.broadcast-timeout-for-local-updates-on-shutdown duration
+    	Timeout for broadcasting all remaining locally-generated updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to locally-generated updates, not to broadcast messages that are result of incoming gossip updates. 0 = no timeout, wait until all locally-generated updates are sent. (default 10s)
   -memberlist.cluster-label string
     	The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.
   -memberlist.cluster-label-verification-disabled
@@ -1895,12 +1899,16 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers. (default 14)
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
+  -querier.mimir-query-engine.enable-binary-operations
+    	[experimental] Enable support for binary operations in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
+  -querier.mimir-query-engine.enable-offset-modifier
+    	[experimental] Enable support for offset modifier in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
+  -querier.mimir-query-engine.enable-over-time-functions
+    	[experimental] Enable support for ..._over_time functions in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
   -querier.minimize-ingester-requests
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
     	Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled. (default 3s)
-  -querier.prefer-streaming-chunks-from-store-gateways
-    	[experimental] Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this. (default true)
   -querier.promql-experimental-functions-enabled
     	[experimental] Enable experimental PromQL functions. This config option should be set on query-frontend too when query sharding is enabled.
   -querier.query-engine string
@@ -1984,7 +1992,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.active-series-write-timeout duration
     	[experimental] Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used. (default 5m0s)
   -query-frontend.additional-query-queue-dimensions-enabled
-    	[experimental] Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)
+    	[experimental] Non-operational: Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)
   -query-frontend.align-queries-with-step
     	Mutate incoming queries to align their start and end with their step to improve result caching.
   -query-frontend.cache-results
@@ -2079,8 +2087,6 @@ Usage of ./cmd/mimir/mimir:
     	The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
   -query-frontend.query-stats-enabled
     	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
-  -query-frontend.remote-read-limits-enabled
-    	[experimental] True to enable limits enforcement for remote read requests.
   -query-frontend.results-cache-ttl duration
     	Time to live duration for cached query results. If query falls into out-of-order time window, -query-frontend.results-cache-ttl-for-out-of-order-time-window is used instead. (default 1w)
   -query-frontend.results-cache-ttl-for-cardinality-query duration
@@ -2200,7 +2206,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.use-active-series-decoder
     	[experimental] Set to true to use the zero-allocation response decoder for active series queries.
   -query-scheduler.additional-query-queue-dimensions-enabled
-    	[experimental] Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)
+    	[experimental] Non-operational: Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)
   -query-scheduler.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -query-scheduler.grpc-client-config.backoff-min-period duration
@@ -2319,6 +2325,8 @@ Usage of ./cmd/mimir/mimir:
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -query-scheduler.service-discovery-mode string
     	[experimental] Service discovery mode that query-frontends and queriers use to find query-scheduler instances. When query-scheduler ring-based service discovery is enabled, this option needs be set on query-schedulers, query-frontends and queriers. Supported values are: dns, ring. (default "dns")
+  -query-scheduler.use-multi-algorithm-query-queue
+    	[experimental] Use an experimental version of the query queue which has the same behavior as the existing queue, but integrates tenant selection into the tree model.
   -ruler-storage.azure.account-key string
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -ruler-storage.azure.account-name string
@@ -2483,6 +2491,8 @@ Usage of ./cmd/mimir/mimir:
     	S3 secret access key
   -ruler-storage.s3.send-content-md5
     	[experimental] If enabled, a Content-MD5 header is sent with S3 Put Object requests. Consumes more resources to compute the MD5, but may improve compatibility with object storage services that do not support checksums.
+  -ruler-storage.s3.session-token string
+    	S3 session token
   -ruler-storage.s3.signature-version string
     	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
   -ruler-storage.s3.sse.kms-encryption-context string
@@ -2497,6 +2507,8 @@ Usage of ./cmd/mimir/mimir:
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -ruler-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
+  -ruler-storage.s3.trace.enabled
+    	When enabled, low-level S3 HTTP operation information is logged at the debug level.
   -ruler-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
   -ruler-storage.swift.auth-url string
@@ -2607,6 +2619,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -ruler.disabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants whose rules this ruler cannot evaluate. If specified, a ruler that would normally pick the specified tenant(s) for processing will ignore them instead. Subject to sharding.
+  -ruler.drain-notification-queue-on-shutdown
+    	[experimental] Drain all outstanding alert notifications when shutting down. If false, any outstanding alert notifications are dropped when shutting down.
   -ruler.enable-api
     	Enable the ruler config API. (default true)
   -ruler.enabled-tenants comma-separated-list-of-strings
@@ -2621,6 +2635,12 @@ Usage of ./cmd/mimir/mimir:
     	This grace period controls which alerts the ruler restores after a restart. Alerts with "for" duration lower than this grace period are not restored after a ruler restart. This means that if the alerts have been firing before the ruler restarted, they will now go to pending state and then to firing again after their "for" duration expires. Alerts with "for" duration greater than or equal to this grace period that have been pending before the ruler restart will remain in pending state for at least this grace period. Alerts with "for" duration greater than or equal to this grace period that have been firing before the ruler restart will continue to be firing after the restart. (default 2m0s)
   -ruler.for-outage-tolerance duration
     	Max time to tolerate outage for restoring "for" state of alert. (default 1h0m0s)
+  -ruler.independent-rule-evaluation-concurrency-min-duration-percentage float
+    	[experimental] Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval. (default 50)
+  -ruler.max-independent-rule-evaluation-concurrency int
+    	[experimental] Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.
+  -ruler.max-independent-rule-evaluation-concurrency-per-tenant int
+    	[experimental] Maximum number of independent rules that can run concurrently for each tenant. Depends on ruler.max-independent-rule-evaluation-concurrency being greater than 0. Ideally this flag should be a lower value. 0 to disable. (default 4)
   -ruler.max-rule-groups-per-tenant int
     	Maximum number of rule groups per-tenant. 0 to disable. (default 70)
   -ruler.max-rule-groups-per-tenant-by-namespace value
@@ -2977,6 +2997,8 @@ Usage of ./cmd/mimir/mimir:
     	The timeout for a single read request. (default 1m0s)
   -tests.run-interval duration
     	How frequently tests should run. (default 5m0s)
+  -tests.send-chunks-debugging-header
+    	Request debugging on the server side via header.
   -tests.smoke-test
     	Run a smoke test, i.e. run all tests once and exit.
   -tests.tenant-id string

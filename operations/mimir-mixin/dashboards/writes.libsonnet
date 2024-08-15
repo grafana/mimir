@@ -8,6 +8,7 @@ local filename = 'mimir-writes.json';
     assert std.md5(filename) == '8280707b8f16e7b87b840fc1cc92d4c5' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Writes') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
+    .addShowNativeLatencyVariable()
     .addRowIf(
       $._config.show_dashboard_descriptions.writes,
       ($.row('Writes dashboard description') { height: '125px', showTitle: false })
@@ -97,7 +98,7 @@ local filename = 'mimir-writes.json';
       .addPanelIf(
         $._config.gateway_enabled,
         $.panel('Requests / sec') +
-        $.statPanel('sum(rate(cortex_request_duration_seconds_count{%s, route=~"%s"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.gateway), $.queries.write_http_routes_regex], format='reqps')
+        $.statPanel(utils.ncHistogramSumBy(utils.ncHistogramCountRate($.queries.gateway.requestsPerSecondMetric, $.queries.gateway.writeRequestsPerSecondSelector)), format='reqps')
       )
     )
     .addRowIf(
@@ -105,17 +106,15 @@ local filename = 'mimir-writes.json';
       $.row('Gateway')
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
-        $.qpsPanel($.queries.gateway.writeRequestsPerSecond)
+        $.qpsPanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.queries.gateway.writeRequestsPerSecondSelector)
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)])
+        $.latencyRecordingRulePanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.gateway), $.queries.write_http_routes_regex], ''
-        )
+        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)])
       )
     )
     .addRow(
@@ -131,7 +130,7 @@ local filename = 'mimir-writes.json';
             When distributor is not configured to use "early" request rejection, then rejected requests are also counted as "errors".
           |||
         ) +
-        $.qpsPanel($.queries.distributor.writeRequestsPerSecond) +
+        $.qpsPanelNativeHistogram($.queries.distributor.requestsPerSecondMetric, $.queries.distributor.writeRequestsPerSecondSelector) +
         if $._config.show_rejected_requests_on_writes_dashboard then
           {
             targets: [
@@ -151,41 +150,21 @@ local filename = 'mimir-writes.json';
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '/distributor.Distributor/Push|/httpgrpc.*|%s' % $.queries.write_http_routes_regex)])
+        $.latencyRecordingRulePanelNativeHistogram($.queries.distributor.requestsPerSecondMetric, $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '%s' % $.queries.distributor.writeRequestsPerSecondRouteRegex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/distributor.Distributor/Push|/httpgrpc.*|%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.distributor), $.queries.write_http_routes_regex], ''
-        )
+        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.distributor.requestsPerSecondMetric, $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '%s' % $.queries.distributor.writeRequestsPerSecondRouteRegex)])
       )
-      .addPanelIf(
-        $._config.show_ingest_storage_panels,
-        $.timeseriesPanel('Sync write to Kafka latency (ingest storage)') +
-        $.panelDescription(
-          'Sync write to Kafka latency (ingest storage)',
-          |||
-            Latency of synchronous write operation used to store data into Kafka.
-          |||
-        ) +
-        $.queryPanel(
-          [
-            'histogram_avg(sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
-            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
-            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
-            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.distributor)],
-          ],
-          [
-            'avg',
-            '99th percentile',
-            '99.9th percentile',
-            '100th percentile',
-          ],
-        ) + {
-          fieldConfig+: {
-            defaults+: { unit: 's' },
-          },
-        },
+    )
+    .addRowIf(
+      $._config.show_ingest_storage_panels,
+      $.row('Distributor (ingest storage)')
+      .addPanel(
+        $.ingestStorageKafkaProducedRecordsRatePanel('distributor')
+      )
+      .addPanel(
+        $.ingestStorageKafkaProducedRecordsLatencyPanel('distributor')
       )
     )
     .addRowsIf(std.objectHasAll($._config.injectRows, 'postDistributor'), $._config.injectRows.postDistributor($))
@@ -203,7 +182,7 @@ local filename = 'mimir-writes.json';
             When ingester is not configured to use "early" request rejection, then rejected requests are also counted as "errors".
           |||
         ) +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s,route="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ingester)) +
+        $.qpsPanelNativeHistogram($.queries.ingester.requestsPerSecondMetric, $.queries.ingester.writeRequestsPerSecondSelector) +
         if $._config.show_rejected_requests_on_writes_dashboard then
           {
             targets: [
@@ -223,13 +202,11 @@ local filename = 'mimir-writes.json';
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('route', '/cortex.Ingester/Push')])
+        $.latencyRecordingRulePanelNativeHistogram($.queries.ingester.requestsPerSecondMetric, $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('route', '/cortex.Ingester/Push')])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route="/cortex.Ingester/Push"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], ''
-        )
+        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.ingester.requestsPerSecondMetric, $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('route', '/cortex.Ingester/Push')])
       )
     )
     .addRowIf(
@@ -320,6 +297,8 @@ local filename = 'mimir-writes.json';
       $.row('Ingester – end-to-end latency (ingest storage)')
       .addPanel(
         $.ingestStorageIngesterEndToEndLatencyWhenRunningPanel(),
+      ).addPanel(
+        $.ingestStorageIngesterEndToEndLatencyOutliersWhenRunningPanel(),
       )
       .addPanel(
         $.ingestStorageIngesterEndToEndLatencyWhenStartingPanel(),

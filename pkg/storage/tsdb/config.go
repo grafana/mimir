@@ -21,7 +21,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -416,25 +415,8 @@ type BucketStoreConfig struct {
 	// Controls advanced options for index-header file reading.
 	IndexHeader indexheader.Config `yaml:"index_header" category:"advanced"`
 
-	StreamingBatchSize          int    `yaml:"streaming_series_batch_size" category:"advanced"`
-	SeriesSelectionStrategyName string `yaml:"series_selection_strategy" category:"experimental"`
-	SelectionStrategies         struct {
-		WorstCaseSeriesPreference float64 `yaml:"worst_case_series_preference" category:"experimental"`
-	} `yaml:"series_selection_strategies"`
-}
-
-const (
-	SpeculativePostingsStrategy                = "speculative"
-	WorstCasePostingsStrategy                  = "worst-case"
-	WorstCaseSmallPostingListsPostingsStrategy = "worst-case-small-posting-lists"
-	AllPostingsStrategy                        = "all"
-)
-
-var validSeriesSelectionStrategies = []string{
-	SpeculativePostingsStrategy,
-	WorstCasePostingsStrategy,
-	WorstCaseSmallPostingListsPostingsStrategy,
-	AllPostingsStrategy,
+	StreamingBatchSize    int     `yaml:"streaming_series_batch_size" category:"advanced"`
+	SeriesFetchPreference float64 `yaml:"series_fetch_preference" category:"advanced"`
 }
 
 // RegisterFlags registers the BucketStore flags
@@ -448,7 +430,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.SyncDir, "blocks-storage.bucket-store.sync-dir", "./tsdb-sync/", "Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time.")
 	f.DurationVar(&cfg.SyncInterval, "blocks-storage.bucket-store.sync-interval", 15*time.Minute, "How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction).")
 	f.Uint64Var(&cfg.SeriesHashCacheMaxBytes, "blocks-storage.bucket-store.series-hash-cache-max-size-bytes", uint64(1*units.Gibibyte), "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.")
-	f.IntVar(&cfg.MaxConcurrent, "blocks-storage.bucket-store.max-concurrent", 100, "Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants.")
+	f.IntVar(&cfg.MaxConcurrent, "blocks-storage.bucket-store.max-concurrent", 200, "Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants.")
 	f.DurationVar(&cfg.MaxConcurrentQueueTimeout, "blocks-storage.bucket-store.max-concurrent-queue-timeout", 5*time.Second, "Timeout for the queue of queries waiting for execution. If the queue is full and the timeout is reached, the query will be retried on another store-gateway. 0 means no timeout and all queries will wait indefinitely for their turn.")
 	f.IntVar(&cfg.TenantSyncConcurrency, "blocks-storage.bucket-store.tenant-sync-concurrency", 1, "Maximum number of concurrent tenants synching blocks.")
 	f.IntVar(&cfg.BlockSyncConcurrency, "blocks-storage.bucket-store.block-sync-concurrency", 4, "Maximum number of concurrent blocks synching per tenant.")
@@ -459,8 +441,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.PostingOffsetsInMemSampling, "blocks-storage.bucket-store.posting-offsets-in-mem-sampling", DefaultPostingOffsetInMemorySampling, "Controls what is the ratio of postings offsets that the store will hold in memory.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
 	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 5000, "This option controls how many series to fetch per batch. The batch size must be greater than 0.")
-	f.StringVar(&cfg.SeriesSelectionStrategyName, seriesSelectionStrategyFlag, WorstCasePostingsStrategy, "This option controls the strategy to selection of series and deferring application of matchers. A more aggressive strategy will fetch less posting lists at the cost of more series. This is useful when querying large blocks in which many series share the same label name and value. Supported values (most aggressive to least aggressive): "+strings.Join(validSeriesSelectionStrategies, ", ")+".")
-	f.Float64Var(&cfg.SelectionStrategies.WorstCaseSeriesPreference, "blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference", 0.75, "This option is only used when "+seriesSelectionStrategyFlag+"="+WorstCasePostingsStrategy+". Increasing the series preference results in fetching more series than postings. Must be a positive floating point number.")
+	f.Float64Var(&cfg.SeriesFetchPreference, "blocks-storage.bucket-store.series-fetch-preference", 0.75, "This parameter controls the trade-off in fetching series versus fetching postings to fulfill a series request. Increasing the series preference results in fetching more series and reducing the volume of postings fetched. Reducing the series preference results in the opposite. Increase this parameter to reduce the rate of fetched series bytes (see \"Mimir / Queries\" dashboard) or API calls to the object store. Must be a positive floating point number.")
 }
 
 // Validate the config.
@@ -480,10 +461,7 @@ func (cfg *BucketStoreConfig) Validate() error {
 	if err := cfg.BucketIndex.Validate(); err != nil {
 		return errors.Wrap(err, "bucket-index configuration")
 	}
-	if !util.StringsContain(validSeriesSelectionStrategies, cfg.SeriesSelectionStrategyName) {
-		return errors.New("invalid series-selection-strategy, set one of " + strings.Join(validSeriesSelectionStrategies, ", "))
-	}
-	if cfg.SeriesSelectionStrategyName == WorstCasePostingsStrategy && cfg.SelectionStrategies.WorstCaseSeriesPreference <= 0 {
+	if cfg.SeriesFetchPreference <= 0 {
 		return errors.New("invalid worst-case series preference; must be positive")
 	}
 	if err := cfg.IndexHeader.Validate(); err != nil {

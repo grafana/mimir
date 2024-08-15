@@ -3,9 +3,9 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
-FROM registry.k8s.io/kustomize/kustomize:v5.4.1 as kustomize
+FROM registry.k8s.io/kustomize/kustomize:v5.4.3 as kustomize
 FROM alpine/helm:3.14.4 as helm
-FROM golang:1.22.4-bookworm
+FROM golang:1.22.5-bookworm
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"

@@ -134,9 +134,7 @@ store_gateway:
 frontend:
   query_stats_enabled: true
   parallelize_shardable_queries: true
-  align_queries_with_step: true
   cache_results: true
-  additional_query_queue_dimensions_enabled: true
   shard_active_series_queries: true
 
   # Uncomment when using "dns" service discovery mode for query-scheduler.
@@ -162,7 +160,6 @@ querier:
 query_scheduler:
   # Change to "dns" to switch to query-scheduler DNS-based service discovery.
   service_discovery_mode: "ring"
-  additional_query_queue_dimensions_enabled: true
 
 limits:
   # Limit max query time range to 31d

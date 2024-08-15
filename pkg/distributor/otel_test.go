@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -23,7 +22,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -33,7 +31,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -55,7 +52,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 			},
 			Samples: samples,
 			Histograms: []prompb.Histogram{
-				remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(1)),
+				prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1)),
 			},
 		},
 	}
@@ -286,7 +283,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			enableOtelMetadataStorage: true,
 		},
 		{
-			name:        "Write samples. Request too big",
+			name:        "Write samples. No compression, request too big",
 			compression: false,
 			maxMsgSize:  30,
 			series:      sampleSeries,
@@ -296,8 +293,8 @@ func TestHandlerOTLPPush(t *testing.T) {
 				return err
 			},
 			responseCode: http.StatusRequestEntityTooLarge,
-			errMessage:   "the incoming push request has been rejected because its message size of 63 bytes is larger",
-			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming push request has been rejected because its message size of 63 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-write-message-size). To adjust the related limit, configure -distributor.max-recv-msg-size, or contact your service administrator." insight=true`},
+			errMessage:   "the incoming OTLP request has been rejected because its message size of 63 bytes is larger",
+			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 63 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
 		},
 		{
 			name:       "Write samples. Unsupported compression",
@@ -312,6 +309,20 @@ func TestHandlerOTLPPush(t *testing.T) {
 			responseCode: http.StatusUnsupportedMediaType,
 			errMessage:   "Only \"gzip\" or no compression supported",
 			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. Only \"gzip\" or no compression supported" insight=true`},
+		},
+		{
+			name:        "Write samples. With compression, request too big",
+			compression: true,
+			maxMsgSize:  30,
+			series:      sampleSeries,
+			metadata:    sampleMetadata,
+			verifyFunc: func(_ *testing.T, pushReq *Request) error {
+				_, err := pushReq.WriteRequest()
+				return err
+			},
+			responseCode: http.StatusRequestEntityTooLarge,
+			errMessage:   "the incoming OTLP request has been rejected because its message size of 78 bytes is larger",
+			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 78 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
 		},
 		{
 			name:       "Rate limited request",
@@ -335,7 +346,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 						{Name: "__name__", Value: "foo"},
 					},
 					Histograms: []prompb.Histogram{
-						remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(1)),
+						prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1)),
 					},
 				},
 			},
@@ -389,7 +400,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			}
 
 			logs := &concurrency.SyncBuffer{}
-			retryConfig := RetryConfig{Enabled: true, BaseSeconds: 5, MaxBackoffExponent: 5}
+			retryConfig := RetryConfig{Enabled: true, MinBackoff: 5 * time.Second, MaxBackoff: 5 * time.Second}
 			handler := OTLPHandler(tt.maxMsgSize, nil, nil, tt.enableOtelMetadataStorage, limits, retryConfig, pusher, nil, nil, level.NewFilter(log.NewLogfmtLogger(logs), level.AllowInfo()), true)
 
 			resp := httptest.NewRecorder()
@@ -571,7 +582,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 	respStatus := &status.Status{}
 	err = proto.Unmarshal(body, respStatus)
 	assert.NoError(t, err)
-	assert.Contains(t, respStatus.GetMessage(), "the incoming push request has been rejected because its message size is larger than the allowed limit of 140 bytes (err-mimir-distributor-max-write-message-size). To adjust the related limit, configure -distributor.max-recv-msg-size, or contact your service administrator.")
+	assert.Contains(t, respStatus.GetMessage(), "the incoming OTLP request has been rejected because its message size is larger than the allowed limit of 140 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator.")
 }
 
 func TestHandler_toOtlpGRPCHTTPStatus(t *testing.T) {
@@ -720,13 +731,13 @@ func TestHandler_toOtlpGRPCHTTPStatus(t *testing.T) {
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
 		},
-		"a circuitBreakerOpenError gets translated into gRPC codes.Unavailable and HTTP 503 statuses": {
-			err:                newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}),
+		"an ingesterPushError with CIRCUIT_BREAKER_OPEN cause gets translated into an Unavailable error with CIRCUIT_BREAKER_OPEN cause": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.CIRCUIT_BREAKER_OPEN), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Unavailable,
 		},
-		"a wrapped circuitBreakerOpenError gets translated into gRPC codes.Unavailable and HTTP 503 statuses": {
-			err:                errors.Wrap(newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}), fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)),
+		"a wrapped ingesterPushError with CIRCUIT_BREAKER_OPEN cause gets translated into an Unavailable error with CIRCUIT_BREAKER_OPEN cause": {
+			err:                errors.Wrap(newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.CIRCUIT_BREAKER_OPEN), ingesterID), "wrapped"),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Unavailable,
 		},

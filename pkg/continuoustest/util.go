@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage/remote"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -22,7 +21,7 @@ const (
 	maxComparisonDeltaFloat     = 0.001
 	maxComparisonDeltaHistogram = 0.01
 
-	floatMetricName = "mimir_continuous_test_sine_wave"
+	floatMetricName = "mimir_continuous_test_sine_wave_v2"
 	floatTypeLabel  = "float"
 )
 
@@ -43,44 +42,44 @@ type histogramProfile struct {
 var (
 	histogramProfiles = []histogramProfile{
 		{
-			metricName: "mimir_continuous_test_histogram_int_counter",
+			metricName: "mimir_continuous_test_histogram_int_counter_v2",
 			typeLabel:  "histogram_int_counter",
 			generateHistogram: func(t time.Time) prompb.Histogram {
 				ts := t.UnixMilli()
-				return remote.HistogramToHistogramProto(ts, generateIntHistogram(generateHistogramIntValue(t, false), 1, false))
+				return prompb.FromIntHistogram(ts, generateIntHistogram(generateHistogramIntValue(t, false), 1, false))
 			},
 			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
 				return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, false), numSeries, false).ToFloat(nil))
 			},
 		},
 		{
-			metricName: "mimir_continuous_test_histogram_float_counter",
+			metricName: "mimir_continuous_test_histogram_float_counter_v2",
 			typeLabel:  "histogram_float_counter",
 			generateHistogram: func(t time.Time) prompb.Histogram {
 				ts := t.UnixMilli()
-				return remote.FloatHistogramToHistogramProto(ts, generateFloatHistogram(generateHistogramFloatValue(t, false), 1, false))
+				return prompb.FromFloatHistogram(ts, generateFloatHistogram(generateHistogramFloatValue(t, false), 1, false))
 			},
 			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
 				return mimirpb.FromFloatHistogramToPromHistogram(generateFloatHistogram(generateHistogramFloatValue(t, false), numSeries, false))
 			},
 		},
 		{
-			metricName: "mimir_continuous_test_histogram_int_gauge",
+			metricName: "mimir_continuous_test_histogram_int_gauge_v2",
 			typeLabel:  "histogram_int_gauge",
 			generateHistogram: func(t time.Time) prompb.Histogram {
 				ts := t.UnixMilli()
-				return remote.HistogramToHistogramProto(ts, generateIntHistogram(generateHistogramIntValue(t, true), 1, true))
+				return prompb.FromIntHistogram(ts, generateIntHistogram(generateHistogramIntValue(t, true), 1, true))
 			},
 			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
 				return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, true), numSeries, true).ToFloat(nil))
 			},
 		},
 		{
-			metricName: "mimir_continuous_test_histogram_float_gauge",
+			metricName: "mimir_continuous_test_histogram_float_gauge_v2",
 			typeLabel:  "histogram_float_gauge",
 			generateHistogram: func(t time.Time) prompb.Histogram {
 				ts := t.UnixMilli()
-				return remote.FloatHistogramToHistogramProto(ts, generateFloatHistogram(generateHistogramFloatValue(t, true), 1, true))
+				return prompb.FromFloatHistogram(ts, generateFloatHistogram(generateHistogramFloatValue(t, true), 1, true))
 			},
 			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
 				return mimirpb.FromFloatHistogramToPromHistogram(generateFloatHistogram(generateHistogramFloatValue(t, true), numSeries, true))
@@ -270,7 +269,7 @@ func generateHistogramSeriesInner(name string, t time.Time, numSeries int, histo
 func generateSineWaveValue(t time.Time) float64 {
 	period := 10 * time.Minute
 	radians := 2 * math.Pi * float64(t.UnixNano()) / float64(period.Nanoseconds())
-	return math.Sin(radians)
+	return math.Sin(radians) + 2
 }
 
 func generateHistogramIntValue(t time.Time, gauge bool) int64 {
@@ -431,7 +430,9 @@ func formatExpectedAndActualValuesComparison(matrix model.Matrix, expectedSeries
 		match := compareFloatValues(actual, expected, maxComparisonDeltaFloat)
 
 		builder.WriteString(strconv.FormatInt(int64(sample.Timestamp), 10))
-		builder.WriteString("  ")
+		builder.WriteString(" (")
+		builder.WriteString(sample.Timestamp.Time().UTC().Format(time.RFC3339))
+		builder.WriteString(")  ")
 		builder.WriteString(strconv.FormatFloat(expected, 'f', precision, 64))
 		builder.WriteString("  ")
 		builder.WriteString(strconv.FormatFloat(actual, 'f', precision, 64))

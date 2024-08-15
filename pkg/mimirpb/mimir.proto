@@ -173,6 +173,7 @@ message FloatHistogram {
   repeated BucketSpan negative_spans = 8 [(gogoproto.nullable) = false];
   repeated double positive_buckets = 13;
   repeated double negative_buckets = 10;
+  repeated double custom_values = 16;
 }
 
 // A BucketSpan defines a number of consecutive buckets with their
@@ -252,6 +253,7 @@ message QueryResponse {
   }
 
   repeated string warnings = 8;
+  repeated string infos = 9;
 }
 
 message StringData {

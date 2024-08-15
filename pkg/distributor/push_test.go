@@ -33,7 +33,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -41,7 +40,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -51,7 +49,7 @@ import (
 func TestHandler_remoteWrite(t *testing.T) {
 	req := createRequest(t, createPrometheusRemoteWriteProtobuf(t))
 	resp := httptest.NewRecorder()
-	handler := Handler(100000, nil, nil, false, nil, RetryConfig{}, verifyWritePushFunc(t, mimirpb.API), nil, log.NewNopLogger())
+	handler := Handler(100000, nil, nil, false, validation.MockDefaultOverrides(), RetryConfig{}, verifyWritePushFunc(t, mimirpb.API), nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -119,7 +117,7 @@ func TestHandler_mimirWriteRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
-	handler := Handler(100000, nil, sourceIPs, false, nil, RetryConfig{}, verifyWritePushFunc(t, mimirpb.RULE), nil, log.NewNopLogger())
+	handler := Handler(100000, nil, sourceIPs, false, validation.MockDefaultOverrides(), RetryConfig{}, verifyWritePushFunc(t, mimirpb.RULE), nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -128,7 +126,7 @@ func TestHandler_contextCanceledRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
-	handler := Handler(100000, nil, sourceIPs, false, nil, RetryConfig{}, func(_ context.Context, req *Request) error {
+	handler := Handler(100000, nil, sourceIPs, false, validation.MockDefaultOverrides(), RetryConfig{}, func(_ context.Context, req *Request) error {
 		defer req.CleanUp()
 		return fmt.Errorf("the request failed: %w", context.Canceled)
 	}, nil, log.NewNopLogger())
@@ -237,12 +235,147 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			resp := httptest.NewRecorder()
-			handler := Handler(100000, nil, nil, tc.allowSkipLabelNameValidation, nil, RetryConfig{}, tc.verifyReqHandler, nil, log.NewNopLogger())
+			handler := Handler(100000, nil, nil, tc.allowSkipLabelNameValidation, validation.MockDefaultOverrides(), RetryConfig{}, tc.verifyReqHandler, nil, log.NewNopLogger())
 			if !tc.includeAllowSkiplabelNameValidationHeader {
 				tc.req.Header.Set(SkipLabelNameValidationHeader, "true")
 			}
 			handler.ServeHTTP(resp, tc.req)
 			assert.Equal(t, tc.expectedStatusCode, resp.Code)
+		})
+	}
+}
+
+func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
+	timestampMs := time.Now().UnixMilli()
+
+	tests := []struct {
+		name                      string
+		submitTimeseries          mimirpb.TimeSeries
+		expectTimeseries          mimirpb.TimeSeries
+		maxGlobalExemplarsPerUser int
+	}{
+		{
+			name: "request with exemplars and exemplars are enabled",
+			submitTimeseries: mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{
+					{Name: "label1", Value: "value1"},
+				},
+				Samples: []mimirpb.Sample{
+					{Value: 1, TimestampMs: timestampMs},
+				},
+				Exemplars: []mimirpb.Exemplar{
+					{Labels: []mimirpb.LabelAdapter{{Name: "label1", Value: "value1"}}, Value: 1, TimestampMs: timestampMs},
+					{Labels: []mimirpb.LabelAdapter{{Name: "label2", Value: "value2"}}, Value: 2, TimestampMs: timestampMs},
+					{Labels: []mimirpb.LabelAdapter{{Name: "label3", Value: "value3"}}, Value: 3, TimestampMs: timestampMs},
+				},
+				Histograms: []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
+			},
+			maxGlobalExemplarsPerUser: 1, // exemplars are not disabled
+			expectTimeseries: mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{
+					{Name: "label1", Value: "value1"},
+				},
+				Samples: []mimirpb.Sample{
+					{Value: 1, TimestampMs: timestampMs},
+				},
+				Exemplars: []mimirpb.Exemplar{
+					{Labels: []mimirpb.LabelAdapter{{Name: "label1", Value: "value1"}}, Value: 1, TimestampMs: timestampMs},
+					{Labels: []mimirpb.LabelAdapter{{Name: "label2", Value: "value2"}}, Value: 2, TimestampMs: timestampMs},
+					{Labels: []mimirpb.LabelAdapter{{Name: "label3", Value: "value3"}}, Value: 3, TimestampMs: timestampMs},
+				},
+				Histograms: []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
+			},
+		}, {
+			name: "request with exemplars and exemplars are disabled",
+			submitTimeseries: mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{
+					{Name: "label1", Value: "value1"},
+				},
+				Samples: []mimirpb.Sample{
+					{Value: 1, TimestampMs: timestampMs},
+				},
+				Exemplars: []mimirpb.Exemplar{
+					{Labels: []mimirpb.LabelAdapter{{Name: "label1", Value: "value1"}}, Value: 1, TimestampMs: timestampMs},
+					{Labels: []mimirpb.LabelAdapter{{Name: "label2", Value: "value2"}}, Value: 2, TimestampMs: timestampMs},
+					{Labels: []mimirpb.LabelAdapter{{Name: "label3", Value: "value3"}}, Value: 3, TimestampMs: timestampMs},
+				},
+				Histograms:                []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
+				SkipUnmarshalingExemplars: true,
+			},
+			maxGlobalExemplarsPerUser: 0, // 0 disables exemplars
+			expectTimeseries: mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{
+					{Name: "label1", Value: "value1"},
+				},
+				Samples: []mimirpb.Sample{
+					{Value: 1, TimestampMs: timestampMs},
+				},
+				Exemplars:                 []mimirpb.Exemplar{},
+				Histograms:                []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
+				SkipUnmarshalingExemplars: true,
+			},
+		}, {
+			name: "request without exemplars and exemplars are enabled",
+			submitTimeseries: mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{
+					{Name: "label1", Value: "value1"},
+				},
+				Samples: []mimirpb.Sample{
+					{Value: 1, TimestampMs: timestampMs},
+				},
+				Exemplars:  []mimirpb.Exemplar{},
+				Histograms: []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
+			},
+			maxGlobalExemplarsPerUser: 1, // exemplars are not disabled
+			expectTimeseries: mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{
+					{Name: "label1", Value: "value1"},
+				},
+				Samples: []mimirpb.Sample{
+					{Value: 1, TimestampMs: timestampMs},
+				},
+				Exemplars:  []mimirpb.Exemplar{},
+				Histograms: []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			reqDecoded := mimirpb.WriteRequest{
+				Timeseries: []mimirpb.PreallocTimeseries{{TimeSeries: &tc.submitTimeseries}},
+				Source:     mimirpb.RULE,
+			}
+			reqEncoded, err := reqDecoded.Marshal()
+			require.NoError(t, err)
+			reqHTTP := createRequest(t, reqEncoded)
+
+			defaults := validation.MockDefaultLimits()
+			defaults.MaxGlobalExemplarsPerUser = tc.maxGlobalExemplarsPerUser
+			limits, err := validation.NewOverrides(*defaults, nil)
+			require.NoError(t, err)
+
+			var gotReqEncoded *Request
+			handler := Handler(100000, nil, nil, true, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
+				gotReqEncoded = pushReq
+				return nil
+			}, nil, log.NewNopLogger())
+
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, reqHTTP)
+			require.Equal(t, http.StatusOK, resp.Code)
+
+			gotReq, err := gotReqEncoded.WriteRequest()
+			require.NoError(t, err)
+
+			assert.Len(t, gotReq.Timeseries, 1)
+			gotTimeseries := *(gotReq.Timeseries[0].TimeSeries)
+
+			if gotTimeseries.Exemplars == nil {
+				// To fix equality if the empty slice is nil.
+				gotTimeseries.Exemplars = []mimirpb.Exemplar{}
+			}
+
+			assert.EqualValues(t, tc.expectTimeseries, gotTimeseries)
 		})
 	}
 }
@@ -299,7 +432,7 @@ func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
 					{Value: 1, Timestamp: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
 				},
 				Histograms: []prompb.Histogram{
-					remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(1))},
+					prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1))},
 			},
 		},
 	}
@@ -310,7 +443,7 @@ func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
 
 func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation bool) []byte {
 	t.Helper()
-	h := remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(1))
+	h := prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1))
 	ts := mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
 			Labels: []mimirpb.LabelAdapter{
@@ -365,7 +498,7 @@ func BenchmarkPushHandler(b *testing.B) {
 		pushReq.CleanUp()
 		return nil
 	}
-	handler := Handler(100000, nil, nil, false, nil, RetryConfig{}, pushFunc, nil, log.NewNopLogger())
+	handler := Handler(100000, nil, nil, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, nil, log.NewNopLogger())
 	b.ResetTimer()
 	for iter := 0; iter < b.N; iter++ {
 		req.Body = bufCloser{Buffer: buf} // reset Body so it can be read each time round the loop
@@ -425,7 +558,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			}
 
 			logs := &concurrency.SyncBuffer{}
-			h := handler(10, nil, nil, false, nil, RetryConfig{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
+			h := handler(10, nil, nil, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
 
 			recorder := httptest.NewRecorder()
 			ctxWithUser := user.InjectOrgID(context.Background(), "testuser")
@@ -516,7 +649,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			}
 
 			logs := &concurrency.SyncBuffer{}
-			h := handler(10, nil, nil, false, nil, RetryConfig{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
+			h := handler(10, nil, nil, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
 			recorder := httptest.NewRecorder()
 			ctxWithUser := user.InjectOrgID(context.Background(), "testuser")
 			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}).WithContext(ctxWithUser))
@@ -555,85 +688,112 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 			name:         "Request canceled, HTTP 499, no Retry-After",
 			responseCode: http.StatusRequestTimeout,
 			retryAttempt: "1",
-			retryCfg:     RetryConfig{Enabled: true, BaseSeconds: 3, MaxBackoffExponent: 2},
+			retryCfg:     RetryConfig{Enabled: true, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
 			expectRetry:  false,
 		},
 		{
 			name:         "Generic error, HTTP 500, no Retry-After",
 			responseCode: http.StatusInternalServerError,
-			retryCfg:     RetryConfig{Enabled: false, BaseSeconds: 3, MaxBackoffExponent: 4},
+			retryCfg:     RetryConfig{Enabled: false, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
 			expectRetry:  false,
 		},
 		{
 			name:          "Generic error, HTTP 500, Retry-After with no Retry-Attempt set, default Retry-Attempt to 1",
 			responseCode:  http.StatusInternalServerError,
 			expectRetry:   true,
-			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 5, MaxBackoffExponent: 2},
+			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 5 * time.Second, MaxBackoff: 8 * time.Second},
 			minRetryAfter: 5,
-			maxRetryAfter: 10,
+			maxRetryAfter: 7,
 		},
 		{
 			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt is not an integer, default Retry-Attempt to 1",
 			responseCode:  http.StatusInternalServerError,
 			retryAttempt:  "not-an-integer",
 			expectRetry:   true,
-			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 3, MaxBackoffExponent: 2},
+			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
 			minRetryAfter: 3,
-			maxRetryAfter: 6,
+			maxRetryAfter: 4,
 		},
 		{
 			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt is float, default Retry-Attempt to 1",
 			responseCode:  http.StatusInternalServerError,
 			retryAttempt:  "3.50",
 			expectRetry:   true,
-			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 2, MaxBackoffExponent: 5},
+			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 2 * time.Second, MaxBackoff: 64 * time.Second},
 			minRetryAfter: 2,
-			maxRetryAfter: 4,
+			maxRetryAfter: 3,
 		},
 		{
 			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt a list of integers, default Retry-Attempt to 1",
 			responseCode:  http.StatusInternalServerError,
 			retryAttempt:  "[1, 2, 3]",
 			expectRetry:   true,
-			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 1, MaxBackoffExponent: 5},
+			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 1 * time.Second, MaxBackoff: 64 * time.Second},
 			minRetryAfter: 1,
-			maxRetryAfter: 2,
+			maxRetryAfter: 3,
 		},
 		{
 			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt is negative, default Retry-Attempt to 1",
 			responseCode:  http.StatusInternalServerError,
 			retryAttempt:  "-1",
 			expectRetry:   true,
-			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 4, MaxBackoffExponent: 3},
+			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 4 * time.Second, MaxBackoff: 16 * time.Second},
 			minRetryAfter: 4,
-			maxRetryAfter: 8,
+			maxRetryAfter: 6,
 		},
 		{
 			name:          "Generic error, HTTP 500, Retry-After with valid Retry-Attempts set to 2",
 			responseCode:  http.StatusInternalServerError,
 			expectRetry:   true,
 			retryAttempt:  "2",
-			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 2, MaxBackoffExponent: 5},
-			minRetryAfter: 4,
-			maxRetryAfter: 8,
+			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 2 * time.Second, MaxBackoff: 64 * time.Second},
+			minRetryAfter: 4 - 0.5*4,
+			maxRetryAfter: 4 + 0.5*4,
 		},
 		{
 			name:          "Generic error, HTTP 429, Retry-After with valid Retry-Attempts set to 3",
 			responseCode:  StatusServiceOverloaded,
 			expectRetry:   true,
 			retryAttempt:  "3",
-			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 2, MaxBackoffExponent: 5},
-			minRetryAfter: 8,
-			maxRetryAfter: 16,
+			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 2 * time.Second, MaxBackoff: 64 * time.Second},
+			minRetryAfter: 8 - 0.5*8,
+			maxRetryAfter: 8 + 0.5*8,
 		},
 		{
-			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempts set higher than MaxAllowedAttempts",
+			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempts set higher than MaxBackoff",
 			responseCode:  http.StatusInternalServerError,
 			expectRetry:   true,
 			retryAttempt:  "8",
-			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 3, MaxBackoffExponent: 2},
-			minRetryAfter: 6,
-			maxRetryAfter: 12,
+			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
+			minRetryAfter: 8 * 0.5,
+			maxRetryAfter: 8,
+		},
+		{
+			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempts set to a very high value (MaxInt64)",
+			responseCode:  http.StatusInternalServerError,
+			expectRetry:   true,
+			retryAttempt:  "9223372036854775807",
+			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
+			minRetryAfter: 4,
+			maxRetryAfter: 8,
+		},
+		{
+			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempts set to a too high value fails to parse the value (MaxInt64+1)",
+			responseCode:  http.StatusInternalServerError,
+			expectRetry:   true,
+			retryAttempt:  "9223372036854775808",
+			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 3 * time.Second, MaxBackoff: 8 * time.Second},
+			minRetryAfter: 2,
+			maxRetryAfter: 4,
+		},
+		{
+			name:          "Generic error, HTTP 500, Retry-After with MinBackoff and MaxBackoff set to <1s",
+			responseCode:  http.StatusInternalServerError,
+			expectRetry:   true,
+			retryAttempt:  "3",
+			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 3 * time.Millisecond, MaxBackoff: 8 * time.Millisecond},
+			minRetryAfter: 0,
+			maxRetryAfter: 0,
 		},
 	}
 
@@ -801,12 +961,12 @@ func TestHandler_toHTTPStatus(t *testing.T) {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, context.DeadlineExceeded.Error(), mimirpb.UNKNOWN_CAUSE), ingesterID),
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
-		"a circuitBreakerOpenError gets translated into an HTTP 503": {
-			err:                newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}),
+		"an ingesterPushError with CIRCUIT_BREAKER_OPEN cause gets translated into an Unavailable error with CIRCUIT_BREAKER_OPEN cause": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.CIRCUIT_BREAKER_OPEN), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 		},
-		"a wrapped circuitBreakerOpenError gets translated into an HTTP 503": {
-			err:                errors.Wrap(newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}), fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)),
+		"a wrapped ingesterPushError with CIRCUIT_BREAKER_OPEN cause gets translated into an Unavailable error with CIRCUIT_BREAKER_OPEN cause": {
+			err:                errors.Wrap(newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.CIRCUIT_BREAKER_OPEN), ingesterID), "wrapped"),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 		},
 	}
@@ -832,7 +992,6 @@ func TestHandler_toHTTPStatus(t *testing.T) {
 }
 
 func TestRetryConfig_Validate(t *testing.T) {
-	t.Parallel()
 	tests := map[string]struct {
 		cfg         RetryConfig
 		expectedErr error
@@ -845,33 +1004,40 @@ func TestRetryConfig_Validate(t *testing.T) {
 			}(),
 			expectedErr: nil,
 		},
-		"should fail if retry base is less than 1 second": {
+		"should pass with min and max backoff equal to 1s": {
 			cfg: RetryConfig{
-				BaseSeconds:        0,
-				MaxBackoffExponent: 5,
+				MinBackoff: 1 * time.Second,
+				MaxBackoff: 1 * time.Second,
 			},
-			expectedErr: errRetryBaseLessThanOneSecond,
+			expectedErr: nil,
 		},
-		"should fail if retry base is negative": {
+		"should fail if min backoff is 0": {
 			cfg: RetryConfig{
-				BaseSeconds:        -1,
-				MaxBackoffExponent: 5,
+				MinBackoff: 0,
+				MaxBackoff: 3 * time.Second,
 			},
-			expectedErr: errRetryBaseLessThanOneSecond,
+			expectedErr: errNonPositiveMinBackoffDuration,
 		},
-		"should fail if max allowed attempts is 0": {
+		"should fail if min backoff is negative": {
 			cfg: RetryConfig{
-				BaseSeconds:        3,
-				MaxBackoffExponent: 0,
+				MinBackoff: -1 * time.Second,
+				MaxBackoff: 5 * time.Second,
 			},
-			expectedErr: errNonPositiveMaxBackoffExponent,
+			expectedErr: errNonPositiveMinBackoffDuration,
 		},
-		"should fail if max allowed attempts is negative": {
+		"should fail if max backoff is 0": {
 			cfg: RetryConfig{
-				BaseSeconds:        3,
-				MaxBackoffExponent: -1,
+				MinBackoff: 3 * time.Second,
+				MaxBackoff: 0,
 			},
-			expectedErr: errNonPositiveMaxBackoffExponent,
+			expectedErr: errNonPositiveMaxBackoffDuration,
+		},
+		"should fail if max backoff is negative": {
+			cfg: RetryConfig{
+				MinBackoff: 3 * time.Second,
+				MaxBackoff: -1,
+			},
+			expectedErr: errNonPositiveMaxBackoffDuration,
 		},
 	}
 
@@ -915,7 +1081,7 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 
 		return nil
 	}
-	h := OTLPHandler(200, util.NewBufferPool(), nil, false, otlpLimitsMock{}, RetryConfig{Enabled: false}, push, newPushMetrics(reg), reg, log.NewNopLogger(), true)
+	h := OTLPHandler(200, util.NewBufferPool(), nil, false, otlpLimitsMock{}, RetryConfig{}, push, newPushMetrics(reg), reg, log.NewNopLogger(), true)
 	srv.HTTP.Handle("/otlp", h)
 
 	// start the server

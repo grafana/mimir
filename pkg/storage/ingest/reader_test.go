@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
@@ -101,6 +102,8 @@ func TestPartitionReader_logFetchErrors(t *testing.T) {
 }
 
 func TestPartitionReader_ConsumerError(t *testing.T) {
+	t.Parallel()
+
 	const (
 		topicName   = "test"
 		partitionID = 1
@@ -141,7 +144,68 @@ func TestPartitionReader_ConsumerError(t *testing.T) {
 	assert.Equal(t, [][]byte{[]byte("1"), []byte("2")}, records)
 }
 
-func TestPartitionReader_WaitReadConsistency(t *testing.T) {
+func TestPartitionReader_ConsumerStopping(t *testing.T) {
+	const (
+		topicName   = "test"
+		partitionID = 1
+	)
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+
+	// consumerErrs will store the last error returned by the consumer; its initial value doesn't matter, but it must be non-nil.
+	consumerErrs := atomic.NewError(errors.New("dummy error"))
+	type consumerCall struct {
+		f    func() []record
+		resp chan error
+	}
+	consumeCalls := make(chan consumerCall)
+	consumer := consumerFunc(func(ctx context.Context, records []record) (err error) {
+		defer consumerErrs.Store(err)
+
+		call := consumerCall{
+			f:    func() []record { return records },
+			resp: make(chan error),
+		}
+		consumeCalls <- call
+		err = <-call.resp
+		// The service is about to transition into its stopping phase. But the consumer must not observe it via the parent context.
+		assert.NoError(t, ctx.Err())
+
+		return err
+	})
+	reader := createReader(t, clusterAddr, topicName, partitionID, consumer)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+
+	// Write to Kafka.
+	writeClient := newKafkaProduceClient(t, clusterAddr)
+	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("1"))
+
+	// After this point, we know that the consumer is in the in-flight.
+	call := <-consumeCalls
+	// Explicitly begin to stop the service while it's still consuming the records. This shouldn't cancel the in-flight consumption.
+	reader.StopAsync()
+
+	go func() {
+		// Simulate a slow consumer, that blocks reader from stopping.
+		time.Sleep(time.Second)
+
+		defer close(call.resp)
+
+		records := call.f()
+		require.Len(t, records, 1)
+		require.Equal(t, []byte("1"), records[0].content)
+	}()
+
+	// Wait for the reader to stop completely.
+	require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+	// Checks the consumer returned a non-errored result.
+	require.NoError(t, consumerErrs.Load())
+}
+
+func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitReadConsistencyUntilOffset(t *testing.T) {
 	const (
 		topicName   = "test"
 		partitionID = 0
@@ -171,165 +235,252 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 	t.Run("should return after all produced records have been consumed", func(t *testing.T) {
 		t.Parallel()
 
-		consumedRecords := atomic.NewInt64(0)
+		for _, withOffset := range []bool{false, true} {
+			withOffset := withOffset
 
-		// We define a custom consume function which introduces a delay once the 2nd record
-		// has been consumed but before the function returns. From the PartitionReader perspective,
-		// the 2nd record consumption will be delayed.
-		consumer := consumerFunc(func(_ context.Context, records []record) error {
-			for _, record := range records {
-				// Introduce a delay before returning from the consume function once
-				// the 2nd record has been consumed.
-				if consumedRecords.Load()+1 == 2 {
-					time.Sleep(time.Second)
+			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
+				t.Parallel()
+
+				consumedRecords := atomic.NewInt64(0)
+
+				// We define a custom consume function which introduces a delay once the 2nd record
+				// has been consumed but before the function returns. From the PartitionReader perspective,
+				// the 2nd record consumption will be delayed.
+				consumer := consumerFunc(func(_ context.Context, records []record) error {
+					for _, record := range records {
+						// Introduce a delay before returning from the consume function once
+						// the 2nd record has been consumed.
+						if consumedRecords.Load()+1 == 2 {
+							time.Sleep(time.Second)
+						}
+
+						consumedRecords.Inc()
+						assert.Equal(t, fmt.Sprintf("record-%d", consumedRecords.Load()), string(record.content))
+						t.Logf("consumed record: %s", string(record.content))
+					}
+
+					return nil
+				})
+
+				reader, writeClient, reg := setup(t, consumer)
+
+				// Produce some records.
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+				lastRecordOffset := produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
+				t.Logf("produced 2 records (last record offset: %d)", lastRecordOffset)
+
+				// WaitReadConsistencyUntilLastProducedOffset() should return after all records produced up until this
+				// point have been consumed.
+				t.Log("started waiting for read consistency")
+
+				if withOffset {
+					require.NoError(t, reader.WaitReadConsistencyUntilOffset(ctx, lastRecordOffset))
+				} else {
+					require.NoError(t, reader.WaitReadConsistencyUntilLastProducedOffset(ctx))
 				}
 
-				consumedRecords.Inc()
-				assert.Equal(t, fmt.Sprintf("record-%d", consumedRecords.Load()), string(record.content))
-				t.Logf("consumed record: %s", string(record.content))
-			}
+				assert.Equal(t, int64(2), consumedRecords.Load())
+				t.Log("finished waiting for read consistency")
 
-			return nil
-		})
+				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
+					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 0
+		
+					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
+					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 0
+				`, withOffset, !withOffset)),
+					"cortex_ingest_storage_strong_consistency_requests_total",
+					"cortex_ingest_storage_strong_consistency_failures_total"))
+			})
+		}
 
-		reader, writeClient, reg := setup(t, consumer)
-
-		// Produce some records.
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
-		t.Log("produced 2 records")
-
-		// WaitReadConsistency() should return after all records produced up until this
-		// point have been consumed.
-		t.Log("started waiting for read consistency")
-
-		err := reader.WaitReadConsistency(ctx)
-		require.NoError(t, err)
-		assert.Equal(t, int64(2), consumedRecords.Load())
-		t.Log("finished waiting for read consistency")
-
-		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
-			# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-			cortex_ingest_storage_strong_consistency_requests_total 1
-
-			# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
-			# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-			cortex_ingest_storage_strong_consistency_failures_total 0
-		`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
 	})
 
 	t.Run("should block until the request context deadline is exceeded if produced records are not consumed", func(t *testing.T) {
 		t.Parallel()
 
-		// Create a consumer with no buffer capacity.
-		consumer := newTestConsumer(0)
+		for _, withOffset := range []bool{false, true} {
+			withOffset := withOffset
 
-		reader, writeClient, reg := setup(t, consumer, withWaitStrongReadConsistencyTimeout(0))
+			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
+				t.Parallel()
 
-		// Produce some records.
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
-		t.Log("produced 1 record")
+				// Create a consumer with no buffer capacity.
+				consumer := newTestConsumer(0)
 
-		err := reader.WaitReadConsistency(createTestContextWithTimeout(t, time.Second))
-		require.ErrorIs(t, err, context.DeadlineExceeded)
-		require.NotErrorIs(t, err, errWaitStrongReadConsistencyTimeoutExceeded)
+				reader, writeClient, reg := setup(t, consumer, withWaitStrongReadConsistencyTimeout(0))
 
-		// Consume the records.
-		records, err := consumer.waitRecords(1, 2*time.Second, 0)
-		assert.NoError(t, err)
-		assert.Equal(t, [][]byte{[]byte("record-1")}, records)
+				// Produce some records.
+				lastRecordOffset := produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+				t.Logf("produced 1 record (last record offset: %d)", lastRecordOffset)
 
-		// Now the WaitReadConsistency() should return soon.
-		err = reader.WaitReadConsistency(createTestContextWithTimeout(t, time.Second))
-		require.NoError(t, err)
+				waitCtx := createTestContextWithTimeout(t, time.Second)
+				var err error
 
-		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
-			# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-			cortex_ingest_storage_strong_consistency_requests_total 2
+				if withOffset {
+					err = reader.WaitReadConsistencyUntilOffset(waitCtx, lastRecordOffset)
+				} else {
+					err = reader.WaitReadConsistencyUntilLastProducedOffset(waitCtx)
+				}
 
-			# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
-			# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-			cortex_ingest_storage_strong_consistency_failures_total 1
-		`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
+				require.ErrorIs(t, err, context.DeadlineExceeded)
+				require.NotErrorIs(t, err, errWaitStrongReadConsistencyTimeoutExceeded)
+
+				// Consume the records.
+				records, err := consumer.waitRecords(1, 2*time.Second, 0)
+				assert.NoError(t, err)
+				assert.Equal(t, [][]byte{[]byte("record-1")}, records)
+
+				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
+					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 0
+		
+					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
+					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 1
+				`, withOffset, !withOffset)),
+					"cortex_ingest_storage_strong_consistency_requests_total",
+					"cortex_ingest_storage_strong_consistency_failures_total"))
+
+				// Now the WaitReadConsistencyUntilLastProducedOffset() should return soon.
+				err = reader.WaitReadConsistencyUntilLastProducedOffset(createTestContextWithTimeout(t, time.Second))
+				require.NoError(t, err)
+			})
+		}
 	})
 
 	t.Run("should block until the configured wait timeout is exceeded if produced records are not consumed", func(t *testing.T) {
 		t.Parallel()
 
-		// Create a consumer with no buffer capacity.
-		consumer := newTestConsumer(0)
+		for _, withOffset := range []bool{false, true} {
+			withOffset := withOffset
 
-		reader, writeClient, reg := setup(t, consumer, withWaitStrongReadConsistencyTimeout(time.Second))
+			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
+				t.Parallel()
 
-		// Produce some records.
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
-		t.Log("produced 1 record")
+				// Create a consumer with no buffer capacity.
+				consumer := newTestConsumer(0)
 
-		ctx := context.Background()
-		err := reader.WaitReadConsistency(ctx)
-		require.ErrorIs(t, err, context.DeadlineExceeded)
-		require.ErrorIs(t, err, errWaitStrongReadConsistencyTimeoutExceeded)
+				reader, writeClient, reg := setup(t, consumer, withWaitStrongReadConsistencyTimeout(time.Second))
 
-		// Consume the records.
-		records, err := consumer.waitRecords(1, 2*time.Second, 0)
-		assert.NoError(t, err)
-		assert.Equal(t, [][]byte{[]byte("record-1")}, records)
+				// Produce some records.
+				lastRecordOffset := produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+				t.Logf("produced 1 record (last record offset: %d)", lastRecordOffset)
 
-		// Now the WaitReadConsistency() should return soon.
-		err = reader.WaitReadConsistency(ctx)
-		require.NoError(t, err)
+				ctx := context.Background()
+				var err error
 
-		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
-			# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-			cortex_ingest_storage_strong_consistency_requests_total 2
+				if withOffset {
+					err = reader.WaitReadConsistencyUntilOffset(ctx, lastRecordOffset)
+				} else {
+					err = reader.WaitReadConsistencyUntilLastProducedOffset(ctx)
+				}
 
-			# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
-			# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-			cortex_ingest_storage_strong_consistency_failures_total 1
-		`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
+				require.ErrorIs(t, err, context.DeadlineExceeded)
+				require.ErrorIs(t, err, errWaitStrongReadConsistencyTimeoutExceeded)
+
+				// Consume the records.
+				records, err := consumer.waitRecords(1, 2*time.Second, 0)
+				assert.NoError(t, err)
+				assert.Equal(t, [][]byte{[]byte("record-1")}, records)
+
+				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
+					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 0
+		
+					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
+					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 1
+				`, withOffset, !withOffset)),
+					"cortex_ingest_storage_strong_consistency_requests_total",
+					"cortex_ingest_storage_strong_consistency_failures_total"))
+
+				// Now the WaitReadConsistencyUntilLastProducedOffset() should return soon.
+				err = reader.WaitReadConsistencyUntilLastProducedOffset(ctx)
+				require.NoError(t, err)
+			})
+		}
 	})
 
 	t.Run("should return if no records have been produced yet", func(t *testing.T) {
 		t.Parallel()
 
-		reader, _, reg := setup(t, newTestConsumer(0))
+		for _, withOffset := range []bool{false, true} {
+			withOffset := withOffset
 
-		err := reader.WaitReadConsistency(createTestContextWithTimeout(t, time.Second))
-		require.NoError(t, err)
+			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
+				t.Parallel()
 
-		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
-			# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-			cortex_ingest_storage_strong_consistency_requests_total 1
+				reader, _, reg := setup(t, newTestConsumer(0))
+				waitCtx := createTestContextWithTimeout(t, time.Second)
+				createTestContextWithTimeout(t, time.Second)
 
-			# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
-			# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-			cortex_ingest_storage_strong_consistency_failures_total 0
-		`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
+				if withOffset {
+					require.NoError(t, reader.WaitReadConsistencyUntilOffset(waitCtx, -1))
+				} else {
+					require.NoError(t, reader.WaitReadConsistencyUntilLastProducedOffset(waitCtx))
+				}
+
+				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
+					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 0
+		
+					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
+					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 0
+				`, withOffset, !withOffset)),
+					"cortex_ingest_storage_strong_consistency_requests_total",
+					"cortex_ingest_storage_strong_consistency_failures_total"))
+			})
+		}
 	})
 
 	t.Run("should return an error if the PartitionReader is not running", func(t *testing.T) {
 		t.Parallel()
 
-		reader, _, reg := setup(t, newTestConsumer(0))
+		for _, withOffset := range []bool{false, true} {
+			withOffset := withOffset
 
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
+				t.Parallel()
 
-		err := reader.WaitReadConsistency(createTestContextWithTimeout(t, time.Second))
-		require.ErrorContains(t, err, "partition reader service is not running")
+				reader, _, reg := setup(t, newTestConsumer(0))
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
 
-		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
-			# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-			cortex_ingest_storage_strong_consistency_requests_total 1
+				waitCtx := createTestContextWithTimeout(t, time.Second)
+				var err error
 
-			# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
-			# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-			cortex_ingest_storage_strong_consistency_failures_total 1
-		`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
+				if withOffset {
+					err = reader.WaitReadConsistencyUntilOffset(waitCtx, -1)
+				} else {
+					err = reader.WaitReadConsistencyUntilLastProducedOffset(waitCtx)
+				}
+
+				require.ErrorContains(t, err, "partition reader service is not running")
+
+				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
+					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 0
+
+					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
+					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 1
+				`, withOffset, !withOffset)),
+					"cortex_ingest_storage_strong_consistency_requests_total",
+					"cortex_ingest_storage_strong_consistency_failures_total"))
+			})
+		}
 	})
 }
 
@@ -351,7 +502,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		)
 
 		// Create and start the reader. We expect the reader to start even if partition is empty.
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second), withRegistry(reg))
 		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
 
@@ -363,7 +514,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		`), "cortex_ingest_storage_reader_last_consumed_offset"))
 	})
 
-	t.Run("should immediately switch to Running state if configured max lag is 0", func(t *testing.T) {
+	t.Run("should immediately switch to Running state if configured target / max lag is 0", func(t *testing.T) {
 		t.Parallel()
 
 		var (
@@ -386,7 +537,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		t.Log("produced 2 records")
 
 		// Create and start the reader. We expect the reader to start even if Fetch is failing.
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(0), withRegistry(reg))
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withTargetAndMaxConsumerLagAtStartup(0, 0), withRegistry(reg))
 		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
 
@@ -398,7 +549,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		`), "cortex_ingest_storage_reader_last_consumed_offset"))
 	})
 
-	t.Run("should consume partition from start if last committed offset is missing and wait until max lag is honored", func(t *testing.T) {
+	t.Run("should consume partition from start if last committed offset is missing and wait until target lag is honored", func(t *testing.T) {
 		t.Parallel()
 
 		var (
@@ -432,7 +583,11 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 		// Create and start the reader.
 		reg := prometheus.NewPedanticRegistry()
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
+		logs := &concurrency.SyncBuffer{}
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
+			withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
+			withRegistry(reg),
+			withLogger(log.NewLogfmtLogger(logs)))
 		require.NoError(t, reader.StartAsync(ctx))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -456,6 +611,9 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 			return reader.State()
 		})
 
+		// We expect the reader to have switched to running because target consumer lag has been honored.
+		assert.Contains(t, logs.String(), "partition reader consumed partition and current lag is lower than configured target consumer lag")
+
 		assert.Equal(t, int64(2), consumedRecordsCount.Load())
 
 		// We expect the last consumed offset to be tracked in a metric.
@@ -468,7 +626,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		})
 	})
 
-	t.Run("should consume partition from start if last committed offset is missing and wait until max lag is honored and retry if a failure occurs when fetching last produced offset", func(t *testing.T) {
+	t.Run("should consume partition from start if last committed offset is missing and wait until target lag is honored and retry if a failure occurs when fetching last produced offset", func(t *testing.T) {
 		t.Parallel()
 
 		var (
@@ -502,7 +660,11 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 		// Create and start the reader.
 		reg := prometheus.NewPedanticRegistry()
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
+		logs := &concurrency.SyncBuffer{}
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
+			withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
+			withRegistry(reg),
+			withLogger(log.NewLogfmtLogger(logs)))
 		require.NoError(t, reader.StartAsync(ctx))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -526,6 +688,9 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 			return reader.State()
 		})
 
+		// We expect the reader to have switched to running because target consumer lag has been honored.
+		assert.Contains(t, logs.String(), "partition reader consumed partition and current lag is lower than configured target consumer lag")
+
 		assert.Equal(t, int64(2), consumedRecordsCount.Load())
 
 		// We expect the last consumed offset to be tracked in a metric.
@@ -538,7 +703,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		})
 	})
 
-	t.Run("should consume partition from end if position=end, and skip honoring max lag", func(t *testing.T) {
+	t.Run("should consume partition from end if position=end, and skip honoring target / max lag", func(t *testing.T) {
 		t.Parallel()
 
 		var (
@@ -578,7 +743,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		t.Log("produced 2 records before starting the reader")
 
 		// Create and start the reader.
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withConsumeFromPositionAtStartup(consumeFromEnd), withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withConsumeFromPositionAtStartup(consumeFromEnd), withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second), withRegistry(reg))
 		require.NoError(t, reader.StartAsync(ctx))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -620,7 +785,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		})
 	})
 
-	t.Run("should consume partition from start if position=start, and wait until max lag is honored", func(t *testing.T) {
+	t.Run("should consume partition from start if position=start, and wait until target lag is honored", func(t *testing.T) {
 		t.Parallel()
 
 		var (
@@ -670,7 +835,12 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 				// Create and start the reader.
 				reg := prometheus.NewPedanticRegistry()
-				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withConsumeFromPositionAtStartup(consumeFromStart), withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
+				logs := &concurrency.SyncBuffer{}
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
+					withConsumeFromPositionAtStartup(consumeFromStart),
+					withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
+					withRegistry(reg),
+					withLogger(log.NewLogfmtLogger(logs)))
 				require.NoError(t, reader.StartAsync(ctx))
 				t.Cleanup(func() {
 					require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -693,6 +863,9 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					return reader.State()
 				})
 
+				// We expect the reader to have switched to running because target consumer lag has been honored.
+				assert.Contains(t, logs.String(), "partition reader consumed partition and current lag is lower than configured target consumer lag")
+
 				// We expect the reader to have consumed the partition from start.
 				test.Poll(t, time.Second, []string{"record-1", "record-2"}, func() interface{} {
 					consumedRecordsMx.Lock()
@@ -712,7 +885,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		}
 	})
 
-	t.Run("should consume partition from the timestamp if position=timestamp, and wait until max lag is honored", func(t *testing.T) {
+	t.Run("should consume partition from the timestamp if position=timestamp, and wait until target lag is honored", func(t *testing.T) {
 		t.Parallel()
 
 		var (
@@ -764,7 +937,12 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		consumedRecordsMx.Unlock()
 
 		reg := prometheus.NewPedanticRegistry()
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withConsumeFromTimestampAtStartup(consumeFromTs.UnixMilli()), withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
+		logs := &concurrency.SyncBuffer{}
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
+			withConsumeFromTimestampAtStartup(consumeFromTs.UnixMilli()),
+			withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
+			withRegistry(reg),
+			withLogger(log.NewLogfmtLogger(logs)))
 		require.NoError(t, reader.StartAsync(ctx))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -787,6 +965,9 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 			return reader.State()
 		})
 
+		// We expect the reader to have switched to running because target consumer lag has been honored.
+		assert.Contains(t, logs.String(), "partition reader consumed partition and current lag is lower than configured target consumer lag")
+
 		// We expect the reader to have consumed the partition from the third record.
 		test.Poll(t, time.Second, []string{"record-3", "record-4"}, func() interface{} {
 			consumedRecordsMx.Lock()
@@ -805,7 +986,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		})
 	})
 
-	t.Run("should consume partition from last committed offset if position=last-offset, and wait until max lag is honored", func(t *testing.T) {
+	t.Run("should consume partition from last committed offset if position=last-offset, and wait until target lag is honored", func(t *testing.T) {
 		t.Parallel()
 
 		var (
@@ -854,7 +1035,12 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 				// Create and start the reader.
 				reg := prometheus.NewPedanticRegistry()
-				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withConsumeFromPositionAtStartup(consumeFromLastOffset), withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
+				logs := &concurrency.SyncBuffer{}
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
+					withConsumeFromPositionAtStartup(consumeFromLastOffset),
+					withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
+					withRegistry(reg),
+					withLogger(log.NewLogfmtLogger(logs)))
 				require.NoError(t, reader.StartAsync(ctx))
 				t.Cleanup(func() {
 					require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -897,6 +1083,99 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		}
 	})
 
+	t.Run("should consume partition from last committed offset if position=last-offset, and wait until max lag is honored if can't honor target lag", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+			writeClient          = newKafkaProduceClient(t, clusterAddr)
+			nextRecordID         = atomic.NewInt32(0)
+			targetLag            = 500 * time.Millisecond
+			maxLag               = 2 * time.Second
+		)
+
+		// Wait until all goroutines used in this test have done.
+		testRoutines := sync.WaitGroup{}
+		t.Cleanup(testRoutines.Wait)
+
+		// Create a channel to signal goroutines once the test has done.
+		testDone := make(chan struct{})
+		t.Cleanup(func() {
+			close(testDone)
+		})
+
+		consumer := consumerFunc(func(_ context.Context, _ []record) error {
+			return nil
+		})
+
+		cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+
+			// Slow down each ListOffsets request to take longer than the target lag.
+			req := kreq.(*kmsg.ListOffsetsRequest)
+			if len(req.Topics) > 0 && len(req.Topics[0].Partitions) > 0 && req.Topics[0].Partitions[0].Timestamp == kafkaOffsetEnd {
+				cluster.SleepControl(func() {
+					testRoutines.Add(1)
+					defer testRoutines.Done()
+
+					delay := time.Duration(float64(targetLag) * 1.1)
+					t.Logf("artificially slowing down OffsetFetch request by %s", delay.String())
+
+					select {
+					case <-testDone:
+					case <-time.After(delay):
+					}
+				})
+			}
+
+			return nil, nil, false
+		})
+
+		// Produce a record.
+		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte(fmt.Sprintf("record-%d", nextRecordID.Inc())))
+		t.Log("produced 1 record")
+
+		// Continue to produce records at a high pace, so that we simulate the case there are always new
+		// records to fetch.
+		testRoutines.Add(1)
+		go func() {
+			defer testRoutines.Done()
+
+			for {
+				select {
+				case <-testDone:
+					return
+
+				case <-time.After(targetLag / 2):
+					produceRecord(ctx, t, writeClient, topicName, partitionID, []byte(fmt.Sprintf("record-%d", nextRecordID.Inc())))
+					t.Log("produced 1 record")
+				}
+			}
+		}()
+
+		// Create and start the reader.
+		reg := prometheus.NewPedanticRegistry()
+		logs := &concurrency.SyncBuffer{}
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
+			withConsumeFromPositionAtStartup(consumeFromLastOffset),
+			withTargetAndMaxConsumerLagAtStartup(targetLag, maxLag),
+			withRegistry(reg),
+			withLogger(log.NewLogfmtLogger(logs)))
+		require.NoError(t, reader.StartAsync(ctx))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+		})
+
+		// We expect the reader to catch up, and then switch to Running state.
+		test.Poll(t, maxLag*5, services.Running, func() interface{} {
+			return reader.State()
+		})
+
+		// We expect the reader to have switched to running because max consumer lag has been honored
+		// but target lag has not.
+		assert.Contains(t, logs.String(), "partition reader consumed partition and current lag is lower than configured max consumer lag but higher than target consumer lag")
+	})
+
 	t.Run("should not wait indefinitely if context is cancelled while fetching last produced offset", func(t *testing.T) {
 		t.Parallel()
 
@@ -915,7 +1194,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		})
 
 		// Create and start the reader.
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
 
 		readerCtx, cancelReaderCtx := context.WithCancel(ctx)
 		require.NoError(t, reader.StartAsync(readerCtx))
@@ -958,7 +1237,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		t.Log("produced 2 records")
 
 		// Create and start the reader.
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
 
 		readerCtx, cancelReaderCtx := context.WithCancel(ctx)
 		require.NoError(t, reader.StartAsync(readerCtx))
@@ -1033,7 +1312,8 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 				reg := prometheus.NewPedanticRegistry()
 				reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
 					withConsumeFromPositionAtStartup(consumeFromPosition),
-					withMaxConsumerLagAtStartup(time.Second),
+					withConsumeFromTimestampAtStartup(time.Now().UnixMilli()), // For the test where position=timestamp.
+					withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second),
 					withRegistry(reg))
 
 				require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
@@ -1072,7 +1352,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 		var (
 			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
 			consumer             = consumerFunc(func(context.Context, []record) error { return nil })
-			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
 		)
 
 		cluster.ControlKey(int16(kmsg.OffsetFetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
@@ -1103,7 +1383,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 		var (
 			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
 			consumer             = consumerFunc(func(context.Context, []record) error { return nil })
-			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
 		)
 
 		cluster.ControlKey(int16(kmsg.OffsetFetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
@@ -1144,7 +1424,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 		var (
 			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
 			consumer             = consumerFunc(func(context.Context, []record) error { return nil })
-			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
 		)
 
 		cluster.ControlKey(int16(kmsg.OffsetFetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
@@ -1370,7 +1650,7 @@ func newKafkaProduceClient(t *testing.T, addrs string) *kgo.Client {
 	return writeClient
 }
 
-func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte) {
+func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte) int64 {
 	rec := &kgo.Record{
 		Value:     content,
 		Topic:     topicName,
@@ -1378,6 +1658,8 @@ func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, t
 	}
 	produceResult := writeClient.ProduceSync(ctx, rec)
 	require.NoError(t, produceResult.FirstErr())
+
+	return rec.Offset
 }
 
 type readerTestCfg struct {
@@ -1402,8 +1684,9 @@ func withLastProducedOffsetPollInterval(i time.Duration) func(cfg *readerTestCfg
 	}
 }
 
-func withMaxConsumerLagAtStartup(maxLag time.Duration) func(cfg *readerTestCfg) {
+func withTargetAndMaxConsumerLagAtStartup(targetLag, maxLag time.Duration) func(cfg *readerTestCfg) {
 	return func(cfg *readerTestCfg) {
+		cfg.kafka.TargetConsumerLagAtStartup = targetLag
 		cfg.kafka.MaxConsumerLagAtStartup = maxLag
 	}
 }
@@ -1433,6 +1716,12 @@ func withRegistry(reg *prometheus.Registry) func(cfg *readerTestCfg) {
 	}
 }
 
+func withLogger(logger log.Logger) func(cfg *readerTestCfg) {
+	return func(cfg *readerTestCfg) {
+		cfg.logger = logger
+	}
+}
+
 func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer) *readerTestCfg {
 	return &readerTestCfg{
 		registry:    prometheus.NewPedanticRegistry(),
@@ -1448,6 +1737,10 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 	for _, o := range opts {
 		o(cfg)
 	}
+
+	// Ensure the config is valid.
+	require.NoError(t, cfg.kafka.Validate())
+
 	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 

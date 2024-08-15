@@ -1,17 +1,13 @@
 package notify
 
 import (
-	"bytes"
 	"context"
-	tmplhtml "html/template"
 	"net/url"
 	tmpltext "text/template"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/templates"
-	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/template"
-	"github.com/prometheus/common/model"
 )
 
 type TestTemplatesConfigBodyParams struct {
@@ -26,27 +22,27 @@ type TestTemplatesConfigBodyParams struct {
 }
 
 type TestTemplatesResults struct {
-	Results []TestTemplatesResult
-	Errors  []TestTemplatesErrorResult
+	Results []TestTemplatesResult      `json:"results"`
+	Errors  []TestTemplatesErrorResult `json:"errors"`
 }
 
 type TestTemplatesResult struct {
 	// Name of the associated template definition for this result.
-	Name string
+	Name string `json:"name"`
 
 	// Interpolated value of the template.
-	Text string
+	Text string `json:"text"`
 }
 
 type TestTemplatesErrorResult struct {
 	// Name of the associated template for this error. Will be empty if the Kind is "invalid_template".
-	Name string
+	Name string `json:"name"`
 
 	// Kind of template error that occurred.
-	Kind TemplateErrorKind
+	Kind TemplateErrorKind `json:"kind"`
 
 	// Error cause.
-	Error error
+	Error string `json:"error"`
 }
 
 type TemplateErrorKind string
@@ -65,72 +61,12 @@ const (
 // TestTemplate tests the given template string against the given alerts. Existing templates are used to provide context for the test.
 // If an existing template of the same filename as the one being tested is found, it will not be used as context.
 func (am *GrafanaAlertmanager) TestTemplate(ctx context.Context, c TestTemplatesConfigBodyParams) (*TestTemplatesResults, error) {
-	definitions, err := parseTestTemplate(c.Name, c.Template)
-	if err != nil {
-		return &TestTemplatesResults{
-			Errors: []TestTemplatesErrorResult{{
-				Kind:  InvalidTemplate,
-				Error: err,
-			}},
-		}, nil
-	}
+	am.reloadConfigMtx.RLock()
+	tmpls := make([]templates.TemplateDefinition, len(am.templates))
+	copy(tmpls, am.templates)
+	am.reloadConfigMtx.RUnlock()
 
-	// Recreate the current template replacing the definition blocks that are being tested. This is so that any blocks that were removed don't get defined.
-	var found bool
-	templateContents := make([]string, 0, len(am.templates)+1)
-	for _, td := range am.templates {
-		if td.Name == c.Name {
-			// Template already exists, test with the new definition replacing the old one.
-			templateContents = append(templateContents, c.Template)
-			found = true
-			continue
-		}
-		templateContents = append(templateContents, td.Template)
-	}
-
-	if !found {
-		// Template is a new one, add it to the list.
-		templateContents = append(templateContents, c.Template)
-	}
-
-	// Capture the underlying text template so we can use ExecuteTemplate.
-	var newTextTmpl *tmpltext.Template
-	var captureTemplate template.Option = func(text *tmpltext.Template, _ *tmplhtml.Template) {
-		newTextTmpl = text
-	}
-	newTmpl, err := templateFromContent(templateContents, am.ExternalURL(), captureTemplate)
-	if err != nil {
-		return nil, err
-	}
-
-	// Prepare the context.
-	alerts := OpenAPIAlertsToAlerts(c.Alerts)
-	ctx = notify.WithReceiverName(ctx, DefaultReceiverName)
-	ctx = notify.WithGroupLabels(ctx, model.LabelSet{DefaultGroupLabel: DefaultGroupLabelValue})
-
-	promTmplData := notify.GetTemplateData(ctx, newTmpl, alerts, am.logger)
-	data := templates.ExtendData(promTmplData, am.logger)
-
-	// Iterate over each definition in the template and evaluate it.
-	var results TestTemplatesResults
-	for _, def := range definitions {
-		var buf bytes.Buffer
-		err := newTextTmpl.ExecuteTemplate(&buf, def, data)
-		if err != nil {
-			results.Errors = append(results.Errors, TestTemplatesErrorResult{
-				Name:  def,
-				Kind:  ExecutionError,
-				Error: err,
-			})
-		} else {
-			results.Results = append(results.Results, TestTemplatesResult{
-				Name: def,
-				Text: buf.String(),
-			})
-		}
-	}
-
-	return &results, nil
+	return TestTemplate(ctx, c, tmpls, am.ExternalURL(), am.logger)
 }
 
 func (am *GrafanaAlertmanager) GetTemplate() (*template.Template, error) {

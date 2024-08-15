@@ -160,6 +160,7 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 	if err != nil {
 		return nil, mapEngineError(err)
 	}
+	warn, info := res.Warnings.AsStrings("", 0, 0)
 	return &PrometheusResponse{
 		Status: statusSuccess,
 		Data: &PrometheusData{
@@ -170,7 +171,8 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 		// Note that the positions based on the original query may be wrong as the rewritten
 		// query which is actually used is different, but the user does not see the rewritten
 		// query, so we pass in an empty string as the query so the positions will be hidden.
-		Warnings: res.Warnings.AsStrings("", 0),
+		Warnings: warn,
+		Infos:    info,
 	}, nil
 }
 
@@ -251,10 +253,11 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 	ctx, cancel := context.WithTimeout(ctx, shardingTimeout)
 	defer cancel()
 
-	mapper, err := astmapper.NewSharding(ctx, totalShards, s.logger, stats)
+	summer, err := astmapper.NewQueryShardSummer(ctx, totalShards, astmapper.VectorSquasher, s.logger, stats)
 	if err != nil {
 		return "", nil, err
 	}
+	mapper := astmapper.NewSharding(summer)
 
 	// The mapper can modify the input expression in-place, so we must re-parse the original query
 	// each time before passing it to the mapper.

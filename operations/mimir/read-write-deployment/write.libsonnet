@@ -80,6 +80,7 @@
     local replicas = std.ceil($._config.mimir_write_replicas / 3);
 
     $.newMimirStatefulSet(name, replicas, container, mimir_write_data_pvc) +
+    $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     statefulSet.mixin.metadata.withLabels({ 'rollout-group': 'mimir-write' }) +
     statefulSet.mixin.metadata.withAnnotations({ 'rollout-max-unavailable': std.toString($._config.mimir_write_max_unavailable) }) +
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name, 'rollout-group': 'mimir-write' }) +

@@ -81,6 +81,8 @@ const (
 	// metaLabelTenantID is the name of the metric_relabel_configs label with tenant ID.
 	metaLabelTenantID = model.MetaLabelPrefix + "tenant_id"
 
+	maxOTLPRequestSizeFlag = "distributor.max-otlp-request-size"
+
 	instanceIngestionRateTickInterval = time.Second
 
 	// Size of "slab" when using pooled buffers for marshaling write requests. When handling single Push request
@@ -135,7 +137,6 @@ type Distributor struct {
 	nonHASamples                     *prometheus.CounterVec
 	dedupedSamples                   *prometheus.CounterVec
 	labelsHistogram                  prometheus.Histogram
-	sampleDelayHistogram             prometheus.Histogram
 	incomingSamplesPerRequest        *prometheus.HistogramVec
 	incomingExemplarsPerRequest      *prometheus.HistogramVec
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
@@ -186,6 +187,7 @@ type Config struct {
 	HATrackerConfig HATrackerConfig `yaml:"ha_tracker"`
 
 	MaxRecvMsgSize           int           `yaml:"max_recv_msg_size" category:"advanced"`
+	MaxOTLPRequestSize       int           `yaml:"max_otlp_request_size" category:"experimental"`
 	MaxRequestPoolBufferSize int           `yaml:"max_request_pool_buffer_size" category:"experimental"`
 	RemoteTimeout            time.Duration `yaml:"remote_timeout" category:"advanced"`
 
@@ -237,6 +239,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.RetryConfig.RegisterFlags(f)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
+	f.IntVar(&cfg.MaxOTLPRequestSize, maxOTLPRequestSizeFlag, 100<<20, "Maximum OTLP request size in bytes that the distributors accept. Requests exceeding this limit are rejected.")
 	f.IntVar(&cfg.MaxRequestPoolBufferSize, "distributor.max-request-pool-buffer-size", 0, "Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
 	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", true, "Enable pooling of buffers used for marshaling write requests.")
@@ -308,7 +311,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
-			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics, log)
+			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics)
 		})
 	}
 
@@ -390,27 +393,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name:    "cortex_labels_per_sample",
 			Help:    "Number of labels per sample.",
 			Buckets: []float64{5, 10, 15, 20, 25},
-		}),
-		sampleDelayHistogram: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name: "cortex_distributor_sample_delay_seconds",
-			Help: "Number of seconds by which a sample came in late wrt wallclock.",
-			Buckets: []float64{
-				-60 * 1,      // 1 min early
-				-15,          // 15s early
-				-5,           // 5s early
-				30,           // 30s
-				60 * 1,       // 1 min
-				60 * 2,       // 2 min
-				60 * 4,       // 4 min
-				60 * 8,       // 8 min
-				60 * 10,      // 10 min
-				60 * 30,      // 30 min
-				60 * 60,      // 1h
-				60 * 60 * 2,  // 2h
-				60 * 60 * 3,  // 3h
-				60 * 60 * 6,  // 6h
-				60 * 60 * 24, // 24h
-			},
 		}),
 		incomingSamplesPerRequest: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_distributor_samples_per_request",
@@ -735,20 +717,13 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 	now := model.TimeFromUnixNano(nowt.UnixNano())
 
 	for _, s := range ts.Samples {
-
-		delta := now - model.Time(s.TimestampMs)
-		d.sampleDelayHistogram.Observe(float64(delta) / 1000)
-
 		if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s); err != nil {
 			return err
 		}
 	}
 
 	histogramsUpdated := false
-	for i, h := range ts.Histograms {
-		delta := now - model.Time(h.Timestamp)
-		d.sampleDelayHistogram.Observe(float64(delta) / 1000)
-
+	for i := range ts.Histograms {
 		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[i])
 		if err != nil {
 			return err
@@ -1399,13 +1374,6 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 	}
 
 	if errors.Is(pushErr, context.DeadlineExceeded) {
-		return pushErr
-	}
-
-	// This code is needed for backwards compatibility, since ingesters may still return errors
-	// created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate it.
-	_, ok := httpgrpc.HTTPResponseFromError(pushErr)
-	if ok {
 		return pushErr
 	}
 

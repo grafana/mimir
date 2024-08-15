@@ -34,29 +34,32 @@ import (
 
 const defaultZeroThreshold = 1e-128
 
+// addExponentialHistogramDataPoints adds OTel exponential histogram data points to the corresponding time series
+// as native histogram samples.
 func (c *MimirConverter) addExponentialHistogramDataPoints(ctx context.Context, dataPoints pmetric.ExponentialHistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, baseName string) error {
+	resource pcommon.Resource, settings Settings, promName string) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
 		}
 
 		pt := dataPoints.At(x)
-		lbls := createAttributes(
-			resource,
-			pt.Attributes(),
-			settings.ExternalLabels,
-			nil,
-			true,
-			model.MetricNameLabel,
-			baseName,
-		)
-		ts, _ := c.getOrCreateTimeSeries(lbls)
 
 		histogram, err := exponentialToNativeHistogram(pt)
 		if err != nil {
 			return err
 		}
+
+		lbls := createAttributes(
+			resource,
+			pt.Attributes(),
+			settings,
+			nil,
+			true,
+			model.MetricNameLabel,
+			promName,
+		)
+		ts, _ := c.getOrCreateTimeSeries(lbls)
 		ts.Histograms = append(ts.Histograms, histogram)
 
 		exemplars, err := getPromExemplars[pmetric.ExponentialHistogramDataPoint](ctx, &c.everyN, pt)

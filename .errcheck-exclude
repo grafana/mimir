@@ -1,8 +1,0 @@
-(*github.com/grafana/dskit/spanlogger.SpanLogger).Error
-(github.com/go-kit/kit/log.Logger).Log
-(github.com/go-kit/log.Logger).Log
-(github.com/mitchellh/colorstring).Println
-(github.com/opentracing/opentracing-go.Tracer).Inject
-io.Copy
-io/ioutil.ReadFile
-io/ioutil.WriteFile

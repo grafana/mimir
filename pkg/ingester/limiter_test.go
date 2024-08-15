@@ -922,15 +922,13 @@ func (m *ringCountMock) InstancesCount() int {
 	return m.instancesCount
 }
 
-func (m *ringCountMock) InstancesWithTokensCount() int {
-	return m.instancesCount
-}
-
 func (m *ringCountMock) InstancesInZoneCount(_ string) int {
 	return m.instancesInZoneCount
 }
 
-func (m *ringCountMock) InstancesWithTokensInZoneCount(_ string) int {
+func (m *ringCountMock) WritableInstancesWithTokensCount() int { return m.instancesCount }
+
+func (m *ringCountMock) WritableInstancesWithTokensInZoneCount(_ string) int {
 	return m.instancesInZoneCount
 }
 

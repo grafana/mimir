@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
+	promtestutil "github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -970,7 +971,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
-				_, _, err = q.LabelNames(ctx, matchers...)
+				_, _, err = q.LabelNames(ctx, &storage.LabelHints{}, matchers...)
 				require.NoError(t, err)
 
 				if !testData.expectedSkipped {
@@ -998,7 +999,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
-				_, _, err = q.LabelValues(ctx, labels.MetricName)
+				_, _, err = q.LabelValues(ctx, labels.MetricName, &storage.LabelHints{})
 				require.NoError(t, err)
 
 				if !testData.expectedSkipped {
@@ -1114,7 +1115,7 @@ func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q
 
 	require.Len(t, m, 1)
 	series := m[0]
-	require.Equal(t, q.labels, series.Metric)
+	promtestutil.RequireEqual(t, q.labels, series.Metric)
 	require.Equal(t, q.samples(from, through, step), len(series.Floats)+len(series.Histograms))
 	var ts int64
 	for _, point := range series.Floats {
@@ -1513,13 +1514,13 @@ func (m *mockBlocksStorageQuerier) Select(ctx context.Context, sortSeries bool, 
 	return args.Get(0).(storage.SeriesSet)
 }
 
-func (m *mockBlocksStorageQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	args := m.Called(ctx, name, matchers)
+func (m *mockBlocksStorageQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	args := m.Called(ctx, name, hints, matchers)
 	return args.Get(0).([]string), args.Get(1).(annotations.Annotations), args.Error(2)
 }
 
-func (m *mockBlocksStorageQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	args := m.Called(ctx, matchers)
+func (m *mockBlocksStorageQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	args := m.Called(ctx, matchers, hints)
 	return args.Get(0).([]string), args.Get(1).(annotations.Annotations), args.Error(2)
 }
 

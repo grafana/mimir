@@ -1,5 +1,8 @@
 ---
-description: Technical documentation for Grafana Mimir
+description: A guide to different sections of the documentation for Grafana Mimir.
+labels:
+  products:
+    - OSS
 keywords:
   - Grafana Mimir
   - Grafana metrics
@@ -10,20 +13,53 @@ keywords:
   - metrics storage
   - metrics datastore
   - observability
+cascade:
+  ALLOY_VERSION: "latest"
 menuTitle: Grafana Mimir
 title: Grafana Mimir documentation
-weight: 1
+hero:
+  title: Grafana Mimir
+  level: 1
+  image: /media/docs/mimir/GrafanaLogo_Mimir_icon.png
+  width: 100
+  height: 100
+  description: Grafana Mimir is an open source software project that provides horizontally scalable, highly available, multi-tenant, long-term storage for Prometheus and OpenTelemetry metrics.
+cards:
+  title_class: pt-0 lh-1s
+  items:
+    - title: Get started
+      href: ./get-started/
+      description: Get started quickly with Grafana Mimir's extensive documentation, tutorials, and deployment tooling. Use the monolithic mode to get up and running with just one binary and no added dependencies.
+      height: 24
+    - title: Set up and configure
+      href: ./set-up/
+      description: Set up Grafana Mimir with Helm, Puppet, or Jsonnet and Tanka. Then, Configure Grafana Mimir through a YAML-based configuration file or CLI flags.
+      height: 24
+    - title: Send metric data
+      href: ./send/
+      description: Configure your data sources to write data to Grafana Mimir. These include such sources as Prometheus, the OpenTelemetry Collector, and Grafana Agent.
+      height: 24
+    - title: Manage
+      href: ./manage/
+      description: Whether you're an operator or user, you have some decisions to make and actions to take. Read about exemplars, tools, runbooks, and more to help you take the right decisions and actions for your operation.
+    - title: Query metric labels
+      href: ./query/
+      description: Query metric data from Grafana Mimir through the use of Grafana or the Grafana Mimir HTTP API. Learn how to query Prometheus data from within Mimir.
+      height: 24
+    - title: Visualize data
+      href: ./visualize/
+      description: Query, visualize, and explore your metrics using Grafana, an open platform for metrics visualization. It supports multiple data stores including Prometheus. You can also visualize native histograms through Grafana Mimir since they are a Prometheus data type.
+      height: 24
 ---
 
-# Grafana Mimir documentation
+{{< docs/hero-simple key="hero" >}}
 
-![Grafana Mimir](mimir-logo.png)
+---
 
-Grafana Mimir is an open source software project that provides a scalable long-term storage for [Prometheus](https://prometheus.io). Some of the core strengths of Grafana Mimir include:
+## Overview
 
-- **Easy to install and maintain:** Grafana Mimir’s extensive documentation, tutorials, and deployment tooling make it quick to get started. Using its monolithic mode, you can get Grafana Mimir up and running with just one binary and no additional dependencies. Once deployed, the best-practice dashboards, alerts, and runbooks packaged with Grafana Mimir make it easy to monitor the health of the system.
-- **Massive scalability:** You can run Grafana Mimir's horizontally-scalable architecture across multiple machines, resulting in the ability to process orders of magnitude more time series than a single Prometheus instance. Internal testing shows that Grafana Mimir handles up to 1 billion active time series.
-- **Global view of metrics:** Grafana Mimir enables you to run queries that aggregate series from multiple Prometheus instances, giving you a global view of your systems. Its query engine extensively parallelizes query execution, so that even the highest-cardinality queries complete with blazing speed.
-- **Cheap, durable metric storage:** Grafana Mimir uses object storage for long-term data storage, allowing it to take advantage of this ubiquitous, cost-effective, high-durability technology. It is compatible with multiple object store implementations, including AWS S3, Google Cloud Storage, Azure Blob Storage, OpenStack Swift, as well as any S3-compatible object storage.
-- **High availability:** Grafana Mimir replicates incoming metrics, ensuring that no data is lost in the event of machine failure. Its horizontally scalable architecture also means that it can be restarted, upgraded, or downgraded with zero downtime, which means no interruptions to metrics ingestion or querying.
-- **Natively multi-tenant:** Grafana Mimir’s multi-tenant architecture enables you to isolate data and queries from independent teams or business units, making it possible for these groups to share the same cluster. Advanced limits and quality-of-service controls ensure that capacity is shared fairly among tenants.
+Grafana Mimir enables users to ingest Prometheus or OpenTelemetry metrics, run queries, create new data through the use of recording rules, and set up alerting rules across multiple tenants to leverage tenant federation. Once deployed, the best-practice dashboards, alerts, and runbooks packaged with Grafana Mimir make it easy to monitor the health of the system.
+
+## Explore
+
+{{< card-grid key="cards" type="simple" >}}

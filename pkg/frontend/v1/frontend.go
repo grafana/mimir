@@ -231,8 +231,12 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 		return err
 	}
 
-	f.requestQueue.SubmitRegisterQuerierConnection(querierID)
-	defer f.requestQueue.SubmitUnregisterQuerierConnection(querierID)
+	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(server.Context(), queue.QuerierID(querierID))
+	err = f.requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn)
+	if err != nil {
+		return err
+	}
+	defer f.requestQueue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
 
 	lastTenantIndex := queue.FirstTenant()
 
@@ -251,7 +255,7 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 
 		/*
 		  We want to dequeue the next unexpired request from the chosen tenant queue.
-		  The chance of choosing a particular tenant for dequeueing is (1/active_tenants).
+		  The chance of choosing a particular tenant for dequeuing is (1/active_tenants).
 		  This is problematic under load, especially with other middleware enabled such as
 		  querier.split-by-interval, where one request may fan out into many.
 		  If expired requests aren't exhausted before checking another tenant, it would take
@@ -315,9 +319,9 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 	}
 }
 
-func (f *Frontend) NotifyClientShutdown(_ context.Context, req *frontendv1pb.NotifyClientShutdownRequest) (*frontendv1pb.NotifyClientShutdownResponse, error) {
+func (f *Frontend) NotifyClientShutdown(ctx context.Context, req *frontendv1pb.NotifyClientShutdownRequest) (*frontendv1pb.NotifyClientShutdownResponse, error) {
 	level.Info(f.log).Log("msg", "received shutdown notification from querier", "querier", req.GetClientID())
-	f.requestQueue.SubmitNotifyQuerierShutdown(req.GetClientID())
+	f.requestQueue.SubmitNotifyQuerierShutdown(ctx, queue.QuerierID(req.GetClientID()))
 
 	return &frontendv1pb.NotifyClientShutdownResponse{}, nil
 }

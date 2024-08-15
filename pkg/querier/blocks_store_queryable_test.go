@@ -1787,7 +1787,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 			close(continueExecution)
 		}()
 
-		_, _, err := q.LabelNames(ctx, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
+		_, _, err := q.LabelNames(ctx, &storage.LabelHints{}, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
 
 		// We expect the returned error to be context.Canceled and not a gRPC error.
 		assert.ErrorIs(t, err, context.Canceled)
@@ -1835,7 +1835,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 			close(continueExecution)
 		}()
 
-		_, _, err := q.LabelValues(ctx, labels.MetricName)
+		_, _, err := q.LabelValues(ctx, labels.MetricName, &storage.LabelHints{})
 
 		// We expect the returned error to be context.Canceled and not a gRPC error.
 		assert.ErrorIs(t, err, context.Canceled)
@@ -2441,7 +2441,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				}
 
 				if testFunc == "LabelNames" {
-					names, warnings, err := q.LabelNames(ctx)
+					names, warnings, err := q.LabelNames(ctx, &storage.LabelHints{})
 					if testData.expectedErr != "" {
 						require.Equal(t, testData.expectedErr, err.Error())
 						continue
@@ -2458,7 +2458,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				}
 
 				if testFunc == "LabelValues" {
-					values, warnings, err := q.LabelValues(ctx, labels.MetricName)
+					values, warnings, err := q.LabelValues(ctx, labels.MetricName, &storage.LabelHints{})
 					if testData.expectedErr != "" {
 						require.Equal(t, testData.expectedErr, err.Error())
 						continue
@@ -2514,9 +2514,9 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				var err error
 				switch testFunc {
 				case "LabelNames":
-					_, _, err = q.LabelNames(ctx)
+					_, _, err = q.LabelNames(ctx, &storage.LabelHints{})
 				case "LabelValues":
-					_, _, err = q.LabelValues(ctx, labels.MetricName)
+					_, _, err = q.LabelValues(ctx, labels.MetricName, &storage.LabelHints{})
 				}
 
 				require.Error(t, err)
@@ -2661,13 +2661,13 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 				},
 			}
 
-			_, _, err := q.LabelNames(ctx)
+			_, _, err := q.LabelNames(ctx, &storage.LabelHints{})
 			require.NoError(t, err)
 			require.Len(t, finder.Calls, 1)
 			assert.Equal(t, testData.expectedMinT, finder.Calls[0].Arguments.Get(2))
 			assert.Equal(t, testData.expectedMaxT, finder.Calls[0].Arguments.Get(3))
 
-			_, _, err = q.LabelValues(ctx, "foo")
+			_, _, err = q.LabelValues(ctx, "foo", &storage.LabelHints{})
 			require.Len(t, finder.Calls, 2)
 			require.NoError(t, err)
 			assert.Equal(t, testData.expectedMinT, finder.Calls[1].Arguments.Get(2))
@@ -3243,84 +3243,96 @@ func TestStoreConsistencyCheckFailedErr(t *testing.T) {
 	})
 }
 
-func TestShouldStopQueryFunc(t *testing.T) {
+func TestShouldRetry(t *testing.T) {
 	tests := map[string]struct {
 		err      error
 		expected bool
 	}{
-		"should return true on context canceled": {
+		"should not retry on context canceled": {
 			err:      context.Canceled,
-			expected: true,
+			expected: false,
 		},
-		"should return true on wrapped context canceled": {
+		"should not retry on wrapped context canceled": {
 			err:      errors.Wrap(context.Canceled, "test"),
-			expected: true,
+			expected: false,
 		},
-		"should return true on deadline exceeded": {
+		"should not retry on deadline exceeded": {
 			err:      context.DeadlineExceeded,
-			expected: true,
+			expected: false,
 		},
-		"should return true on wrapped deadline exceeded": {
+		"should not retry on wrapped deadline exceeded": {
 			err:      errors.Wrap(context.DeadlineExceeded, "test"),
-			expected: true,
+			expected: false,
 		},
-		"should return true on gRPC error with status code = 422": {
+		"should not retry on gRPC error with status code = 422": {
 			err:      status.Error(http.StatusUnprocessableEntity, "test"),
-			expected: true,
+			expected: false,
 		},
-		"should return true on wrapped gRPC error with status code = 422": {
+		"should not retry on wrapped gRPC error with status code = 422": {
 			err:      errors.Wrap(status.Error(http.StatusUnprocessableEntity, "test"), "test"),
-			expected: true,
+			expected: false,
 		},
-		"should return true on gogo error with status code = 422": {
+		"should not retry on gogo error with status code = 422": {
 			err:      gogoStatus.Error(http.StatusUnprocessableEntity, "test"),
-			expected: true,
+			expected: false,
 		},
-		"should return true on wrapped gogo error with status code = 422": {
+		"should not retry on wrapped gogo error with status code = 422": {
 			err:      errors.Wrap(gogoStatus.Error(http.StatusUnprocessableEntity, "test"), "test"),
+			expected: false,
+		},
+		"should retry on gRPC error with status code != 422": {
+			err:      status.Error(http.StatusInternalServerError, "test"),
 			expected: true,
 		},
-		"should return false on gRPC error with status code != 422": {
-			err:      status.Error(http.StatusInternalServerError, "test"),
-			expected: false,
+		"should retry on grpc.ErrClientConnClosing": {
+			// Ignore deprecation warning for now
+			// nolint:staticcheck
+			err:      grpc.ErrClientConnClosing,
+			expected: true,
 		},
-		"should return false on generic error": {
+		"should retry on wrapped grpc.ErrClientConnClosing": {
+			// Ignore deprecation warning for now
+			// nolint:staticcheck
+			err:      globalerror.WrapGRPCErrorWithContextError(grpc.ErrClientConnClosing),
+			expected: true,
+		},
+		"should retry on generic error": {
 			err:      errors.New("test"),
-			expected: false,
+			expected: true,
 		},
-		"should not stop query on store-gateway instance limit": {
+		"should retry stop query on store-gateway instance limit": {
 			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Aborted, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT}).Err(),
-			expected: false,
+			expected: true,
 		},
-		"should not stop query on store-gateway instance limit; shouldn't look at the gRPC code, only Mimir error cause": {
+		"should retry on store-gateway instance limit; shouldn't look at the gRPC code, only Mimir error cause": {
 			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT}).Err(),
-			expected: false,
+			expected: true,
 		},
-		"should not stop query on any other mimirpb error": {
+		"should retry on any other mimirpb error": {
 			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.TOO_BUSY}).Err(),
-			expected: false,
+			expected: true,
 		},
-		"should not stop query on any unknown error detail": {
+		"should retry on any unknown error detail": {
 			err: func() error {
 				st, createErr := status.New(codes.Internal, "test").WithDetails(&hintspb.Block{Id: "123"})
 				require.NoError(t, createErr)
 				return st.Err()
 			}(),
-			expected: false,
+			expected: true,
 		},
-		"should not stop query on multiple error details": {
+		"should retry on multiple error details": {
 			err: func() error {
 				st, createErr := status.New(codes.Internal, "test").WithDetails(&hintspb.Block{Id: "123"}, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT})
 				require.NoError(t, createErr)
 				return st.Err()
 			}(),
-			expected: false,
+			expected: true,
 		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			assert.Equal(t, testData.expected, shouldStopQueryFunc(testData.err))
+			assert.Equal(t, testData.expected, shouldRetry(testData.err))
 		})
 	}
 }

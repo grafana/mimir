@@ -24,11 +24,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-var errMinBackends = errors.New("at least 1 backend is required")
-
 type ProxyConfig struct {
 	ServerHTTPServiceAddress            string
 	ServerHTTPServicePort               int
+	ServerGracefulShutdownTimeout       time.Duration
 	ServerGRPCServiceAddress            string
 	ServerGRPCServicePort               int
 	BackendEndpoints                    string
@@ -42,11 +41,13 @@ type ProxyConfig struct {
 	SkipRecentSamples                   time.Duration
 	BackendSkipTLSVerify                bool
 	AddMissingTimeParamToInstantQueries bool
+	SecondaryBackendsRequestProportion  float64
 }
 
 func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.ServerHTTPServiceAddress, "server.http-service-address", "", "Bind address for server where query-tee service listens for HTTP requests.")
 	f.IntVar(&cfg.ServerHTTPServicePort, "server.http-service-port", 80, "The HTTP port where the query-tee service listens for HTTP requests.")
+	f.DurationVar(&cfg.ServerGracefulShutdownTimeout, "server.graceful-shutdown-timeout", 30*time.Second, "Time to wait for inflight requests to complete when shutting down. Setting this to 0 will terminate all inflight requests immediately when a shutdown signal is received.")
 	f.StringVar(&cfg.ServerGRPCServiceAddress, "server.grpc-service-address", "", "Bind address for server where query-tee service listens for HTTP over gRPC requests.")
 	f.IntVar(&cfg.ServerGRPCServicePort, "server.grpc-service-port", 9095, "The GRPC port where the query-tee service listens for HTTP over gRPC messages.")
 	f.StringVar(&cfg.BackendEndpoints, "backend.endpoints", "",
@@ -65,6 +66,7 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.SkipRecentSamples, "proxy.compare-skip-recent-samples", 2*time.Minute, "The window from now to skip comparing samples. 0 to disable.")
 	f.BoolVar(&cfg.PassThroughNonRegisteredRoutes, "proxy.passthrough-non-registered-routes", false, "Passthrough requests for non-registered routes to preferred backend.")
 	f.BoolVar(&cfg.AddMissingTimeParamToInstantQueries, "proxy.add-missing-time-parameter-to-instant-queries", true, "Add a 'time' parameter to proxied instant query requests if they do not have one.")
+	f.Float64Var(&cfg.SecondaryBackendsRequestProportion, "proxy.secondary-backends-request-proportion", 1.0, "Proportion of requests to send to secondary backends. Must be between 0 and 1 (inclusive), and if not 1, then -backend.preferred must be set.")
 }
 
 type Route struct {
@@ -102,6 +104,14 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 
 	if cfg.PassThroughNonRegisteredRoutes && cfg.PreferredBackend == "" {
 		return nil, fmt.Errorf("when enabling passthrough for non-registered routes -backend.preferred flag must be set to hostname of backend where those requests needs to be passed")
+	}
+
+	if cfg.SecondaryBackendsRequestProportion < 0 || cfg.SecondaryBackendsRequestProportion > 1 {
+		return nil, errors.New("secondary request proportion must be between 0 and 1 (inclusive)")
+	}
+
+	if cfg.SecondaryBackendsRequestProportion < 1 && cfg.PreferredBackend == "" {
+		return nil, errors.New("preferred backend must be set when secondary backends request proportion is not 1")
 	}
 
 	p := &Proxy{
@@ -143,7 +153,7 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 
 	// At least 1 backend is required
 	if len(p.backends) < 1 {
-		return nil, errMinBackends
+		return nil, errors.New("at least 1 backend is required")
 	}
 
 	// If the preferred backend is configured, then it must exist among the actual backends.
@@ -181,7 +191,7 @@ func (p *Proxy) Start() error {
 		HTTPListenPort:                p.cfg.ServerHTTPServicePort,
 		HTTPServerReadTimeout:         1 * time.Minute,
 		HTTPServerWriteTimeout:        2 * time.Minute,
-		ServerGracefulShutdownTimeout: 0,
+		ServerGracefulShutdownTimeout: p.cfg.ServerGracefulShutdownTimeout,
 
 		// gRPC configs
 		GRPCListenAddress: p.cfg.ServerGRPCServiceAddress,
@@ -220,7 +230,7 @@ func (p *Proxy) Start() error {
 		if p.cfg.CompareResponses {
 			comparator = route.ResponseComparator
 		}
-		router.Path(route.Path).Methods(route.Methods...).Handler(NewProxyEndpoint(p.backends, route, p.metrics, p.logger, comparator, p.cfg.LogSlowQueryResponseThreshold))
+		router.Path(route.Path).Methods(route.Methods...).Handler(NewProxyEndpoint(p.backends, route, p.metrics, p.logger, comparator, p.cfg.LogSlowQueryResponseThreshold, p.cfg.SecondaryBackendsRequestProportion))
 	}
 
 	if p.cfg.PassThroughNonRegisteredRoutes {
