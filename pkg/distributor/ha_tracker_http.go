@@ -27,12 +27,13 @@ type haTrackerStatusPageContents struct {
 }
 
 type haTrackerReplica struct {
-	UserID       string        `json:"userID"`
-	Cluster      string        `json:"cluster"`
-	Replica      string        `json:"replica"`
-	ElectedAt    time.Time     `json:"electedAt"`
-	UpdateTime   time.Duration `json:"updateDuration"`
-	FailoverTime time.Duration `json:"failoverDuration"`
+	UserID              string        `json:"userID"`
+	Cluster             string        `json:"cluster"`
+	Replica             string        `json:"replica"`
+	LastElectionTime    time.Time     `json:"lastElectionTime"`
+	ElectedLastSeenTime time.Time     `json:"electedLastSeenTime"`
+	UpdateTime          time.Duration `json:"updateDuration"`
+	FailoverTime        time.Duration `json:"failoverDuration"`
 }
 
 func (h *haTracker) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -43,12 +44,13 @@ func (h *haTracker) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		for cluster, entry := range clusters {
 			desc := &entry.elected
 			electedReplicas = append(electedReplicas, haTrackerReplica{
-				UserID:       userID,
-				Cluster:      cluster,
-				Replica:      desc.Replica,
-				ElectedAt:    timestamp.Time(desc.ReceivedAt),
-				UpdateTime:   time.Until(timestamp.Time(desc.ReceivedAt).Add(h.cfg.UpdateTimeout)),
-				FailoverTime: time.Until(timestamp.Time(desc.ReceivedAt).Add(h.cfg.FailoverTimeout)),
+				UserID:              userID,
+				Cluster:             cluster,
+				Replica:             desc.Replica,
+				LastElectionTime:    timestamp.Time(desc.ElectedAt),
+				ElectedLastSeenTime: timestamp.Time(desc.ReceivedAt),
+				UpdateTime:          time.Until(timestamp.Time(desc.ReceivedAt).Add(h.cfg.UpdateTimeout)),
+				FailoverTime:        time.Until(timestamp.Time(desc.ReceivedAt).Add(h.cfg.FailoverTimeout)),
 			})
 		}
 	}

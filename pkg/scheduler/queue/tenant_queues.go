@@ -38,19 +38,7 @@ func newQueueBroker(
 	useMultiAlgoTreeQueue bool,
 	forgetDelay time.Duration,
 ) *queueBroker {
-	currentQuerier := QuerierID("")
-	tqas := &tenantQuerierAssignments{
-		queriersByID:       map[QuerierID]*querierConn{},
-		querierIDsSorted:   nil,
-		querierForgetDelay: forgetDelay,
-		tenantIDOrder:      nil,
-		tenantsByID:        map[TenantID]*queueTenant{},
-		tenantQuerierIDs:   map[TenantID]map[QuerierID]struct{}{},
-		tenantNodes:        map[string][]*Node{},
-		currentQuerier:     currentQuerier,
-		tenantOrderIndex:   localQueueIndex,
-	}
-
+	tqas := newTenantQuerierAssignments(forgetDelay)
 	var tree Tree
 	var err error
 	if useMultiAlgoTreeQueue {
@@ -217,12 +205,15 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 	return request, tenant, qb.tenantQuerierAssignments.tenantOrderIndex, nil
 }
 
-func (qb *queueBroker) addQuerierConnection(querierID QuerierID) (resharded bool) {
-	return qb.tenantQuerierAssignments.addQuerierConnection(querierID)
+// below methods simply pass through to the queueBroker's tenantQuerierAssignments; this layering could be skipped
+// but there is no reason to make consumers know that they need to call through to the tenantQuerierAssignments.
+
+func (qb *queueBroker) addQuerierWorkerConn(conn *QuerierWorkerConn) (resharded bool) {
+	return qb.tenantQuerierAssignments.addQuerierWorkerConn(conn)
 }
 
-func (qb *queueBroker) removeQuerierConnection(querierID QuerierID, now time.Time) (resharded bool) {
-	return qb.tenantQuerierAssignments.removeQuerierConnection(querierID, now)
+func (qb *queueBroker) removeQuerierWorkerConn(conn *QuerierWorkerConn, now time.Time) (resharded bool) {
+	return qb.tenantQuerierAssignments.removeQuerierWorkerConn(conn, now)
 }
 
 func (qb *queueBroker) notifyQuerierShutdown(querierID QuerierID) (resharded bool) {

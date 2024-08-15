@@ -22,8 +22,11 @@
 * [CHANGE] Ingester client: experimental support for client-side circuit breakers, their configuration options (`-ingester.client.circuit-breaker.*`) and metrics (`cortex_ingester_client_circuit_breaker_results_total`, `cortex_ingester_client_circuit_breaker_transitions_total`) were removed. #8802
 * [CHANGE] Ingester: circuit breakers do not open in case of per-instance limit errors anymore. Opening can be triggered only in case of push and pull requests exceeding the configured duration. #8854
 * [CHANGE] Query-frontend: Return `413 Request Entity Too Large` if a response shard for an `/active_series` request is too large. #8861
+* [CHANGE] Distributor: Promote replying with `Retry-After` header on retryable errors to stable and set `-distributor.retry-after-header.enabled=true` by default. #8694
+* [CHANGE] Distributor: Replace `-distributor.retry-after-header.max-backoff-exponent` and `-distributor.retry-after-header.base-seconds` with `-distributor.retry-after-header.min-backoff` and `-distributor.retry-after-header.max-backoff` for easier configuration. #8694
+* [CHANGE] Ingester: increase the default inactivity timeout of active series (`-ingester.active-series-metrics-idle-timeout`) from `10m` to `20m`. #8975
 * [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.query-engine=mimir`. #8422 #8430 #8454 #8455 #8360 #8490 #8508 #8577 #8660 #8671 #8677 #8747 #8850 #8872 #8838 #8911 #8909 #8923 #8924 #8925 #8932 #8933 #8934 #8962 #8986 #8993 #8995
-* [FEATURE] Experimental Kafka-based ingest storage. #6888 #6894 #6929 #6940 #6951 #6974 #6982 #7029 #7030 #7091 #7142 #7147 #7148 #7153 #7160 #7193 #7349 #7376 #7388 #7391 #7393 #7394 #7402 #7404 #7423 #7424 #7437 #7486 #7503 #7508 #7540 #7621 #7682 #7685 #7694 #7695 #7696 #7697 #7701 #7733 #7734 #7741 #7752 #7838 #7851 #7871 #7877 #7880 #7882 #7887 #7891 #7925 #7955 #7967 #8031 #8063 #8077 #8088 #8135 #8176 #8184 #8194 #8216 #8217 #8222 #8233 #8503 #8542 #8579 #8657 #8686 #8688 #8703 #8706 #8708 #8738 #8750 #8778 #8808 #8809 #8841 #8842 #8845 #8853 #8886
+* [FEATURE] Experimental Kafka-based ingest storage. #6888 #6894 #6929 #6940 #6951 #6974 #6982 #7029 #7030 #7091 #7142 #7147 #7148 #7153 #7160 #7193 #7349 #7376 #7388 #7391 #7393 #7394 #7402 #7404 #7423 #7424 #7437 #7486 #7503 #7508 #7540 #7621 #7682 #7685 #7694 #7695 #7696 #7697 #7701 #7733 #7734 #7741 #7752 #7838 #7851 #7871 #7877 #7880 #7882 #7887 #7891 #7925 #7955 #7967 #8031 #8063 #8077 #8088 #8135 #8176 #8184 #8194 #8216 #8217 #8222 #8233 #8503 #8542 #8579 #8657 #8686 #8688 #8703 #8706 #8708 #8738 #8750 #8778 #8808 #8809 #8841 #8842 #8845 #8853 #8886 #8988
   * What it is:
     * When the new ingest storage architecture is enabled, distributors write incoming write requests to a Kafka-compatible backend, and the ingesters asynchronously replay ingested data from Kafka. In this architecture, the write and read path are de-coupled through a Kafka-compatible backend. The write path and Kafka load is a function of the incoming write traffic, the read path load is a function of received queries. Whatever the load on the read path, it doesn't affect the write path.
   * New configuration options:
@@ -43,9 +46,10 @@
 * [ENHANCEMENT] Query-frontend: added `remote_read` to `op` supported label values for the `cortex_query_frontend_queries_total` metric. #8412
 * [ENHANCEMENT] Query-frontend: log the overall length and start, end time offset from current time for remote read requests. The start and end times are calculated as the miminum and maximum times of the individual queries in the remote read request. #8404
 * [ENHANCEMENT] Storage Provider: Added option `-<prefix>.s3.dualstack-enabled` that allows disabling S3 client from resolving AWS S3 endpoint into dual-stack IPv4/IPv6 endpoint. Defaults to true. #8405
+* [ENHANCEMENT] HA Tracker: Added reporting of most recent elected replica change via `cortex_ha_tracker_last_election_timestamp_seconds` gauge, logging, and a new column in the HA Tracker status page. #8507
 * [ENHANCEMENT] Use sd_notify to send events to systemd at start and stop of mimir services. Default systemd mimir.service config now wait for those events with a configurable timeout `TimeoutStartSec` default is 3 min to handle long start time (ex. store-gateway). #8220 #8555 #8658
 * [ENHANCEMENT] Alertmanager: Reloading config and templates no longer needs to hit the disk. #4967
-* [ENHANCEMENT] Compactor: Added experimantal `-compactor.in-memory-tenant-meta-cache-size` option to set size of in-memory cache (in number of items) for parsed meta.json files. This can help when tenant has many meta.json files and their parsing before each compaction cycle is using a lot of CPU time. #8544
+* [ENHANCEMENT] Compactor: Added experimental `-compactor.in-memory-tenant-meta-cache-size` option to set size of in-memory cache (in number of items) for parsed meta.json files. This can help when a tenant has many meta.json files and their parsing before each compaction cycle is using a lot of CPU time. #8544
 * [ENHANCEMENT] Distributor: Interrupt OTLP write request translation when context is canceled or has timed out. #8524
 * [ENHANCEMENT] Ingester, store-gateway: optimised regular expression matching for patterns like `1.*|2.*|3.*|...|1000.*`. #8632
 * [ENHANCEMENT] Query-frontend: Add `header_cache_control` to query stats. #8590
@@ -62,6 +66,7 @@
     * `cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total`
 * [ENHANCEMENT] Expose a new `s3.session-token` configuration option to enable using temporary security credentials. #8952
 * [ENHANCEMENT] Make `-query-frontend.additional-query-queue-dimensions-enabled` and `-query-scheduler.additional-query-queue-dimensions-enabled` non-operational flags in preparation for removal. #8984
+* [ENHANCEMENT] Add a new ingester endpoint to prepare instances to downscale. #8956
 * [BUGFIX] Ruler: add support for draining any outstanding alert notifications before shutting down. This can be enabled with the `-ruler.drain-notification-queue-on-shutdown=true` CLI flag. #8346
 * [BUGFIX] Query-frontend: fix `-querier.max-query-lookback` enforcement when `-compactor.blocks-retention-period` is not set, and viceversa. #8388
 * [BUGFIX] Ingester: fix sporadic `not found` error causing an internal server error if label names are queried with matchers during head compaction. #8391
@@ -109,6 +114,7 @@
 * [ENHANCEMENT] Dashboards: remove "All" option for namespace dropdown in dashboards. #8829
 * [ENHANCEMENT] Dashboards: add Kafka end-to-end latency outliers panel in the "Mimir / Writes" dashboard. #8948
 * [ENHANCEMENT] Dashboards: add "Out-of-order samples appended" panel to "Mimir / Tenants" dashboard. #8939
+* [ENHANCEMENT] Alerts: `RequestErrors` and `RulerRemoteEvaluationFailing` have been enriched with a native histogram version. #9004
 * [BUGFIX] Dashboards: fix "current replicas" in autoscaling panels when HPA is not active. #8566
 * [BUGFIX] Alerts: do not fire `MimirRingMembersMismatch` during the migration to experimental ingest storage. #8727
 
@@ -169,11 +175,18 @@
 
 * [ENHANCEMENT] Specify in which component the configuration flags `-compactor.blocks-retention-period`, `-querier.max-query-lookback`, `-query-frontend.max-total-query-length`, `-query-frontend.max-query-expression-size-bytes` are applied and that they are applied to remote read as well. #8433
 * [ENHANCEMENT] Provide more detailed recommendations on how to migrate from classic to native histograms. #8864
+* [ENHANCEMENT] Clarify that `{namespace}` and `{groupName}` path segments in the ruler config API should be URL-escaped. #8969
 
 ### Tools
 
 * [CHANGE] `wal-reader`: Renamed `-series-entries` to `-print-series`. Renamed `-print-series-with-samples` to `-print-samples`. #8568
 * [FEATURE] `query-bucket-index`: add new tool to query a bucket index file and print the blocks that would be used for a given query time range. #8818
+* [FEATURE] `kafkatool`: add new CLI tool to operate Kafka. Supported commands: #9000
+  * `brokers list-leaders-by-partition`
+  * `consumer-group commit-offset`
+  * `consumer-group copy-offset`
+  * `consumer-group list-offsets`
+  * `create-partitions`
 * [ENHANCEMENT] `wal-reader`: References to unknown series from Samples, Exemplars, histogram or tombstones records are now always logged. #8568
 * [ENHANCEMENT] `tsdb-series`: added `-stats` option to print min/max time of chunks, total number of samples and DPM for each series. #8420
 * [ENHANCEMENT] `tsdb-print-chunk`: print counter reset information for native histograms. #8812

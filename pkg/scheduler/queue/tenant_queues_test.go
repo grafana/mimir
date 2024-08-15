@@ -86,8 +86,8 @@ func TestQueues_NoShuffleSharding(t *testing.T) {
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
-			qb.addQuerierConnection("querier-1")
-			qb.addQuerierConnection("querier-2")
+			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1"))
+			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2"))
 
 			req, tenant, lastTenantIndexQuerierOne, err := qb.dequeueRequestForQuerier(-1, "querier-1")
 			assert.Nil(t, req)
@@ -287,7 +287,7 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 			}
 
 			// dequeue a request
-			qb.addQuerierConnection("querier-1")
+			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1"))
 			dequeuedTenantReq, _, _, err := qb.dequeueRequestForQuerier(-1, "querier-1")
 			assert.NoError(t, err)
 			assert.NotNil(t, dequeuedTenantReq)
@@ -312,8 +312,8 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
-			qb.addQuerierConnection("querier-1")
-			qb.addQuerierConnection("querier-2")
+			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1"))
+			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2"))
 
 			// Add queues: [one two]
 			err := qb.tenantQuerierAssignments.createOrUpdateTenant("one", 0)
@@ -393,10 +393,10 @@ func TestQueues_QuerierDistribution(t *testing.T) {
 			// Add some queriers.
 			for ix := 0; ix < queriers; ix++ {
 				qid := QuerierID(fmt.Sprintf("querier-%d", ix))
-				qb.addQuerierConnection(qid)
+				qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), qid))
 
 				// No querier has any queues yet.
-				req, tenant, _, err := qb.dequeueRequestForQuerier(-1, qid)
+				req, tenant, _, err := qb.dequeueRequestForQuerier(-1, QuerierID(qid))
 				assert.Nil(t, req)
 				assert.Nil(t, tenant)
 				assert.NoError(t, err)
@@ -470,7 +470,8 @@ func TestQueuesConsistency(t *testing.T) {
 
 					lastTenantIndexes := map[QuerierID]int{}
 
-					conns := map[QuerierID]int{}
+					// track active querier-worker connections to use worker IDs for removal
+					conns := map[QuerierID][]*QuerierWorkerConn{}
 
 					for i := 0; i < 100; i++ {
 						switch r.Int() % 6 {
@@ -484,14 +485,18 @@ func TestQueuesConsistency(t *testing.T) {
 						case 2:
 							qb.removeTenantQueue(generateTenant(r))
 						case 3:
-							q := generateQuerier(r)
-							qb.addQuerierConnection(q)
-							conns[q]++
+							querierID := generateQuerier(r)
+							conn := NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
+							qb.addQuerierWorkerConn(conn)
+							conns[querierID] = append(conns[querierID], conn)
 						case 4:
-							q := generateQuerier(r)
-							if conns[q] > 0 {
-								qb.removeQuerierConnection(q, time.Now())
-								conns[q]--
+							querierID := generateQuerier(r)
+							if len(conns[querierID]) > 0 {
+								// does not matter which connection is removed; just choose the last one in the list
+								conn := conns[querierID][len(conns[querierID])-1]
+								qb.removeQuerierWorkerConn(conn, time.Now())
+								// slice removed connection off end of tracking list
+								conns[querierID] = conns[querierID][:len(conns[querierID])-1]
 							}
 						case 5:
 							q := generateQuerier(r)
@@ -523,10 +528,20 @@ func TestQueues_ForgetDelay(t *testing.T) {
 			assert.NoError(t, isConsistent(qb))
 
 			// 3 queriers open 2 connections each.
-			for i := 1; i <= 3; i++ {
-				qb.addQuerierConnection(QuerierID(fmt.Sprintf("querier-%d", i)))
-				qb.addQuerierConnection(QuerierID(fmt.Sprintf("querier-%d", i)))
-			}
+			querier1Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
+			qb.addQuerierWorkerConn(querier1Conn1)
+			querier1Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
+			qb.addQuerierWorkerConn(querier1Conn2)
+
+			querier2Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
+			qb.addQuerierWorkerConn(querier2Conn1)
+			querier2Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
+			qb.addQuerierWorkerConn(querier2Conn2)
+
+			querier3Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-3")
+			qb.addQuerierWorkerConn(querier3Conn1)
+			querier3Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-3")
+			qb.addQuerierWorkerConn(querier3Conn2)
 
 			// Add tenant queues.
 			for i := 0; i < numTenants; i++ {
@@ -544,8 +559,8 @@ func TestQueues_ForgetDelay(t *testing.T) {
 			require.NotEmpty(t, querier1Tenants)
 
 			// Gracefully shutdown querier-1.
-			qb.removeQuerierConnection("querier-1", now.Add(20*time.Second))
-			qb.removeQuerierConnection("querier-1", now.Add(21*time.Second))
+			qb.removeQuerierWorkerConn(querier1Conn1, now.Add(20*time.Second))
+			qb.removeQuerierWorkerConn(querier1Conn2, now.Add(21*time.Second))
 			qb.notifyQuerierShutdown("querier-1")
 
 			// We expect querier-1 has been removed.
@@ -558,8 +573,8 @@ func TestQueues_ForgetDelay(t *testing.T) {
 			}
 
 			// Querier-1 reconnects.
-			qb.addQuerierConnection("querier-1")
-			qb.addQuerierConnection("querier-1")
+			qb.addQuerierWorkerConn(querier1Conn1)
+			qb.addQuerierWorkerConn(querier1Conn2)
 
 			// We expect the initial querier-1 tenants have got back to querier-1.
 			for _, tenantID := range querier1Tenants {
@@ -569,8 +584,8 @@ func TestQueues_ForgetDelay(t *testing.T) {
 			}
 
 			// Querier-1 abruptly terminates (no shutdown notification received).
-			qb.removeQuerierConnection("querier-1", now.Add(40*time.Second))
-			qb.removeQuerierConnection("querier-1", now.Add(41*time.Second))
+			qb.removeQuerierWorkerConn(querier1Conn1, now.Add(40*time.Second))
+			qb.removeQuerierWorkerConn(querier1Conn2, now.Add(41*time.Second))
 
 			// We expect querier-1 has NOT been removed.
 			assert.Contains(t, qb.tenantQuerierAssignments.queriersByID, QuerierID("querier-1"))
@@ -626,10 +641,20 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 			assert.NoError(t, isConsistent(qb))
 
 			// 3 queriers open 2 connections each.
-			for i := 1; i <= 3; i++ {
-				qb.addQuerierConnection(QuerierID(fmt.Sprintf("querier-%d", i)))
-				qb.addQuerierConnection(QuerierID(fmt.Sprintf("querier-%d", i)))
-			}
+			querier1Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
+			qb.addQuerierWorkerConn(querier1Conn1)
+			querier1Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1")
+			qb.addQuerierWorkerConn(querier1Conn2)
+
+			querier2Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
+			qb.addQuerierWorkerConn(querier2Conn1)
+			querier2Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
+			qb.addQuerierWorkerConn(querier2Conn2)
+
+			querier3Conn1 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-3")
+			qb.addQuerierWorkerConn(querier3Conn1)
+			querier3Conn2 := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-3")
+			qb.addQuerierWorkerConn(querier3Conn2)
 
 			// Add tenant queues.
 			for i := 0; i < numTenants; i++ {
@@ -647,8 +672,8 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 			require.NotEmpty(t, querier1Tenants)
 
 			// Querier-1 abruptly terminates (no shutdown notification received).
-			qb.removeQuerierConnection("querier-1", now.Add(40*time.Second))
-			qb.removeQuerierConnection("querier-1", now.Add(41*time.Second))
+			qb.removeQuerierWorkerConn(querier1Conn1, now.Add(40*time.Second))
+			qb.removeQuerierWorkerConn(querier1Conn2, now.Add(41*time.Second))
 
 			// We expect querier-1 has NOT been removed.
 			assert.Contains(t, qb.tenantQuerierAssignments.queriersByID, QuerierID("querier-1"))
@@ -665,8 +690,8 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 			qb.forgetDisconnectedQueriers(now.Add(90 * time.Second))
 
 			// Querier-1 reconnects.
-			qb.addQuerierConnection("querier-1")
-			qb.addQuerierConnection("querier-1")
+			qb.addQuerierWorkerConn(querier1Conn1)
+			qb.addQuerierWorkerConn(querier1Conn2)
 
 			assert.Contains(t, qb.tenantQuerierAssignments.queriersByID, QuerierID("querier-1"))
 			assert.NoError(t, isConsistent(qb))

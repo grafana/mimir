@@ -45,10 +45,15 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add support for setting namespace for dashboard config maps. #8813
 * [ENHANCEMENT] Add support for string `extraObjects` for better support with templating. #8825
 * [ENHANCEMENT] Helm : allow setting a read and write urls to continous-test. #7674
+* [ENHANCEMENT] Alerts: `RequestErrors` and `RulerRemoteEvaluationFailing` have been enriched with a native histogram version. #9004
 * [BUGFIX] Add missing container security context to run `continuous-test` under the restricted security policy. #8653
 * [BUGFIX] Add `global.extraVolumeMounts` to the exporter container on memcached statefulsets #8787
 * [BUGFIX] Fix helm releases failing when `querier.kedaAutoscaling.predictiveScalingEnabled=true`. #8731
+* [BUGFIX] Alertmanager: Set -server.http-idle-timeout to avoid EOF errors in ruler. #8192
 
+## 5.4.1
+
+* [CHANGE] Upgrade GEM version to v2.13.1.
 
 ## 5.4.0
 
@@ -79,7 +84,6 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Helm: Allowed setting static NodePort for nginx gateway via `gateway.service.nodePort`. #6966
 * [BUGFIX] Helm: Expose AM configs in the `gateway` NGINX configuration. #8248
 * [BUGFIX] Helm: fix ServiceMonitor and PVC template to not show diff in ArgoCD. #8829
-* [BUGFIX] Alertmanager: Set -server.http-idle-timeout to avoid EOF errors in ruler. #8192
 
 ## 5.3.0
 

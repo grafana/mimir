@@ -1007,7 +1007,7 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 	)
 
 	// Start the query-frontend.
-	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags)
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.Start(queryFrontend))
 	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
@@ -1140,7 +1140,7 @@ func TestRulerRemoteEvaluation_ShouldEnforceStrongReadConsistencyForDependentRul
 	require.NoError(t, s.StartAndWaitReady(minio, consul, kafka))
 
 	// Start the query-frontend.
-	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags)
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.Start(queryFrontend))
 	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
@@ -1160,13 +1160,13 @@ func TestRulerRemoteEvaluation_ShouldEnforceStrongReadConsistencyForDependentRul
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 
 	// Wait until partitions are ACTIVE in the ring.
-	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
-		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
-		labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
+	for _, service := range []*e2emimir.MimirService{distributor, queryFrontend, querier} {
+		require.NoError(t, service.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
+			labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
+			labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
+	}
 
-	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
-		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
-		labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
+	waitQueryFrontendToSuccessfullyFetchLastProducedOffsets(t, queryFrontend)
 
 	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)

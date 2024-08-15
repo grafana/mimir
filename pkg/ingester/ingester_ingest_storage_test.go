@@ -140,7 +140,9 @@ func TestIngester_Start(t *testing.T) {
 				cfg.IngesterRing.InstanceZone,
 				cfg.IngesterRing.customTokenGenerator().GenerateTokens(512, nil),
 				ring.LEAVING,
-				time.Now())
+				time.Now(),
+				false,
+				time.Time{})
 
 			return desc, true, nil
 		}))
