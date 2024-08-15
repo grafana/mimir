@@ -19,8 +19,10 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -49,6 +51,7 @@ type BinaryOperation struct {
 	opFunc          binaryOperationFunc
 
 	expressionPosition posrange.PositionRange
+	emitAnnotation     functions.EmitAnnotationFunc
 }
 
 var _ types.InstantVectorOperator = &BinaryOperation{}
@@ -78,6 +81,7 @@ func NewBinaryOperation(
 	vectorMatching parser.VectorMatching,
 	op parser.ItemType,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*BinaryOperation, error) {
 	opFunc := arithmeticOperationFuncs[op]
@@ -85,7 +89,7 @@ func NewBinaryOperation(
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
 	}
 
-	return &BinaryOperation{
+	b := &BinaryOperation{
 		Left:                     left,
 		Right:                    right,
 		leftIterator:             types.InstantVectorSeriesDataIterator{},
@@ -96,7 +100,13 @@ func NewBinaryOperation(
 
 		opFunc:             opFunc,
 		expressionPosition: expressionPosition,
-	}, nil
+	}
+
+	b.emitAnnotation = func(generator functions.AnnotationGenerator) {
+		annotations.Add(generator("", expressionPosition))
+	}
+
+	return b, nil
 }
 
 func (b *BinaryOperation) ExpressionPosition() posrange.PositionRange {
@@ -812,7 +822,13 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 			// Timestamps match at this step
 			resultFloat, resultHist, ok, err := b.opFunc(lF, rF, lH, rH)
 			if err != nil {
-				return types.InstantVectorSeriesData{}, err
+				err = functions.NativeHistogramErrorToAnnotation(err, b.emitAnnotation)
+				if err == nil {
+					// Error was converted to an annotation, continue without emitting a sample here.
+					ok = false
+				} else {
+					return types.InstantVectorSeriesData{}, err
+				}
 			}
 			if ok {
 				if resultHist != nil {

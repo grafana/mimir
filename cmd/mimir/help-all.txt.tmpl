@@ -1368,7 +1368,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.active-series-metrics-enabled
     	Enable tracking of active series and export them as metrics. (default true)
   -ingester.active-series-metrics-idle-timeout duration
-    	After what time a series is considered to be inactive. (default 10m0s)
+    	After what time a series is considered to be inactive. (default 20m0s)
   -ingester.active-series-metrics-update-period duration
     	How often to update active series metrics. (default 1m0s)
   -ingester.client.backoff-max-period duration
@@ -1901,6 +1901,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.mimir-query-engine.enable-binary-operations
     	[experimental] Enable support for binary operations in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
+  -querier.mimir-query-engine.enable-offset-modifier
+    	[experimental] Enable support for offset modifier in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
   -querier.mimir-query-engine.enable-over-time-functions
     	[experimental] Enable support for ..._over_time functions in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
   -querier.minimize-ingester-requests
@@ -1990,7 +1992,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.active-series-write-timeout duration
     	[experimental] Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used. (default 5m0s)
   -query-frontend.additional-query-queue-dimensions-enabled
-    	[experimental] Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)
+    	[experimental] Non-operational: Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)
   -query-frontend.align-queries-with-step
     	Mutate incoming queries to align their start and end with their step to improve result caching.
   -query-frontend.cache-results
@@ -2204,7 +2206,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.use-active-series-decoder
     	[experimental] Set to true to use the zero-allocation response decoder for active series queries.
   -query-scheduler.additional-query-queue-dimensions-enabled
-    	[experimental] Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)
+    	[experimental] Non-operational: Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)
   -query-scheduler.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -query-scheduler.grpc-client-config.backoff-min-period duration

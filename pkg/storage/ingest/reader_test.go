@@ -155,40 +155,54 @@ func TestPartitionReader_ConsumerStopping(t *testing.T) {
 
 	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 
-	invocations := atomic.NewInt64(0)
-	blockingConsumer := newTestConsumer(0)
-	consumer := consumerFunc(func(ctx context.Context, records []record) error {
-		invocations.Inc()
-		return blockingConsumer.consume(ctx, records)
+	// consumerErrs will store the last error returned by the consumer; its initial value doesn't matter, but it must be non-nil.
+	consumerErrs := atomic.NewError(errors.New("dummy error"))
+	type consumerCall struct {
+		f    func() []record
+		resp chan error
+	}
+	consumeCalls := make(chan consumerCall)
+	consumer := consumerFunc(func(ctx context.Context, records []record) (err error) {
+		defer consumerErrs.Store(err)
+
+		call := consumerCall{
+			f:    func() []record { return records },
+			resp: make(chan error),
+		}
+		consumeCalls <- call
+		err = <-call.resp
+		// The service is about to transition into its stopping phase. But the consumer must not observe it via the parent context.
+		assert.NoError(t, ctx.Err())
+
+		return err
 	})
 	reader := createReader(t, clusterAddr, topicName, partitionID, consumer)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 
 	// Write to Kafka.
 	writeClient := newKafkaProduceClient(t, clusterAddr)
-
 	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("1"))
-	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("2"))
 
-	// Because the blockingConsumer blocks, after this point we know that the reader is in the in-flight.
-	assert.Eventually(t, func() bool { return invocations.Load() > 0 }, 5*time.Second, 100*time.Millisecond)
+	// After this point, we know that the consumer is in the in-flight.
+	call := <-consumeCalls
+	// Explicitly begin to stop the service while it's still consuming the records. This shouldn't cancel the in-flight consumption.
+	reader.StopAsync()
 
-	done := make(chan struct{})
 	go func() {
-		defer close(done)
-
-		// Simulate a slow consumer, that blocks reader from stopping (see below).
+		// Simulate a slow consumer, that blocks reader from stopping.
 		time.Sleep(time.Second)
 
-		records, err := blockingConsumer.waitRecords(1, time.Second, 0)
-		assert.NoError(t, err)
-		assert.Equal(t, [][]byte{[]byte("1")}, records)
+		defer close(call.resp)
+
+		records := call.f()
+		require.Len(t, records, 1)
+		require.Equal(t, []byte("1"), records[0].content)
 	}()
 
-	// Stopping the reader shouldn't stop the in-flight consumption.
+	// Wait for the reader to stop completely.
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-
-	<-done
+	// Checks the consumer returned a non-errored result.
+	require.NoError(t, consumerErrs.Load())
 }
 
 func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitReadConsistencyUntilOffset(t *testing.T) {

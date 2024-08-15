@@ -881,7 +881,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 	require.NoError(t, err)
 	t.Cleanup(readClient.Close)
 
-	offsetsReader := ingest.NewTopicOffsetsReader(readClient, topic, 100*time.Millisecond, nil, logger)
+	offsetsReader := ingest.NewTopicOffsetsReaderForAllPartitions(readClient, topic, 100*time.Millisecond, nil, logger)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, offsetsReader))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, offsetsReader))

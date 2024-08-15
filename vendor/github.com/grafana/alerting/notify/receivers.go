@@ -48,21 +48,21 @@ var (
 )
 
 type TestReceiversResult struct {
-	Alert     types.Alert
-	Receivers []TestReceiverResult
-	NotifedAt time.Time
+	Alert     types.Alert          `json:"alert"`
+	Receivers []TestReceiverResult `json:"receivers"`
+	NotifedAt time.Time            `json:"notifiedAt"`
 }
 
 type TestReceiverResult struct {
-	Name    string
-	Configs []TestIntegrationConfigResult
+	Name    string                        `json:"name"`
+	Configs []TestIntegrationConfigResult `json:"configs"`
 }
 
 type TestIntegrationConfigResult struct {
-	Name   string
-	UID    string
-	Status string
-	Error  error
+	Name   string `json:"name"`
+	UID    string `json:"uid"`
+	Status string `json:"status"`
+	Error  string `json:"error"`
 }
 
 type GrafanaIntegrationConfig struct {
@@ -104,7 +104,7 @@ func (e IntegrationTimeoutError) Error() string {
 	return fmt.Sprintf("the receiver timed out: %s", e.Err)
 }
 
-func (am *GrafanaAlertmanager) TestReceivers(ctx context.Context, c TestReceiversConfigBodyParams) (*TestReceiversResult, error) {
+func (am *GrafanaAlertmanager) TestReceivers(ctx context.Context, c TestReceiversConfigBodyParams) (*TestReceiversResult, int, error) {
 	am.reloadConfigMtx.RLock()
 
 	tmpls := make([]string, 0, len(am.templates))

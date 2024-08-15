@@ -219,8 +219,8 @@ func TestEncodeOffsets(t *testing.T) {
 		assert.ElementsMatch(t, []string{"1:1", "2:2", "10:9", "123:456"}, strings.Split(string(EncodeOffsets(map[int32]int64{1: 1, 2: 2, 10: 9, 123: 456})[3:]), ","))
 	})
 
-	t.Run("should skip empty partitions", func(t *testing.T) {
-		assert.ElementsMatch(t, []string{"123:321"}, strings.Split(string(EncodeOffsets(map[int32]int64{123: 321, 456: -1})[3:]), ","))
+	t.Run("should not skip empty partitions", func(t *testing.T) {
+		assert.ElementsMatch(t, []string{"123:321", "456:-1"}, strings.Split(string(EncodeOffsets(map[int32]int64{123: 321, 456: -1})[3:]), ","))
 	})
 
 	t.Run("should allocate only once", func(t *testing.T) {

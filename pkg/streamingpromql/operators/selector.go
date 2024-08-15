@@ -22,6 +22,7 @@ type Selector struct {
 	End       int64  // Milliseconds since Unix epoch
 	Timestamp *int64 // Milliseconds since Unix epoch, only set if selector uses @ modifier (eg. metric{...} @ 123)
 	Interval  int64  // In milliseconds
+	Offset    int64  // In milliseconds
 	Matchers  []*labels.Matcher
 
 	ExpressionPosition posrange.PositionRange
@@ -51,15 +52,18 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 	endTimestamp := s.End
 
 	if s.Timestamp != nil {
+		// Timestamp from @ modifier takes precedence over query evaluation timestamp.
 		startTimestamp = *s.Timestamp
 		endTimestamp = *s.Timestamp
 	}
 
+	// Apply lookback delta, range and offset after adjusting for timestamp from @ modifier.
 	rangeMilliseconds := s.Range.Milliseconds()
-	start := startTimestamp - s.LookbackDelta.Milliseconds() - rangeMilliseconds
+	startTimestamp = startTimestamp - s.LookbackDelta.Milliseconds() - rangeMilliseconds - s.Offset
+	endTimestamp = endTimestamp - s.Offset
 
 	hints := &storage.SelectHints{
-		Start: start,
+		Start: startTimestamp,
 		End:   endTimestamp,
 		Step:  s.Interval,
 		Range: rangeMilliseconds,
@@ -75,7 +79,7 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 	}
 
 	var err error
-	s.querier, err = s.Queryable.Querier(start, endTimestamp)
+	s.querier, err = s.Queryable.Querier(startTimestamp, endTimestamp)
 	if err != nil {
 		return nil, err
 	}

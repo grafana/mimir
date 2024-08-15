@@ -1201,7 +1201,7 @@ partition_ring:
 
 # (advanced) After what time a series is considered to be inactive.
 # CLI flag: -ingester.active-series-metrics-idle-timeout
-[active_series_metrics_idle_timeout: <duration> | default = 10m]
+[active_series_metrics_idle_timeout: <duration> | default = 20m]
 
 # (experimental) Period with which to update the per-tenant TSDB configuration.
 # CLI flag: -ingester.tsdb-config-update-period
@@ -1526,6 +1526,11 @@ mimir_query_engine:
   # engine. Only applies if the Mimir query engine is in use.
   # CLI flag: -querier.mimir-query-engine.enable-over-time-functions
   [enable_over_time_functions: <boolean> | default = true]
+
+  # (experimental) Enable support for offset modifier in Mimir's query engine.
+  # Only applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-offset-modifier
+  [enable_offset_modifier: <boolean> | default = true]
 ```
 
 ### frontend
@@ -1612,11 +1617,11 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.instance-port
 [port: <int> | default = 0]
 
-# (experimental) Enqueue query requests with additional queue dimensions to
-# split tenant request queues into subqueues. This enables separate requests to
-# proceed from a tenant's subqueues even when other subqueues are blocked on
-# slow query requests. Must be set on both query-frontend and scheduler to take
-# effect. (default false)
+# (experimental) Non-operational: Enqueue query requests with additional queue
+# dimensions to split tenant request queues into subqueues. This enables
+# separate requests to proceed from a tenant's subqueues even when other
+# subqueues are blocked on slow query requests. Must be set on both
+# query-frontend and scheduler to take effect. (default false)
 # CLI flag: -query-frontend.additional-query-queue-dimensions-enabled
 [additional_query_queue_dimensions_enabled: <boolean> | default = false]
 
@@ -1703,11 +1708,11 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
 [max_outstanding_requests_per_tenant: <int> | default = 100]
 
-# (experimental) Enqueue query requests with additional queue dimensions to
-# split tenant request queues into subqueues. This enables separate requests to
-# proceed from a tenant's subqueues even when other subqueues are blocked on
-# slow query requests. Must be set on both query-frontend and scheduler to take
-# effect. (default false)
+# (experimental) Non-operational: Enqueue query requests with additional queue
+# dimensions to split tenant request queues into subqueues. This enables
+# separate requests to proceed from a tenant's subqueues even when other
+# subqueues are blocked on slow query requests. Must be set on both
+# query-frontend and scheduler to take effect. (default false)
 # CLI flag: -query-scheduler.additional-query-queue-dimensions-enabled
 [additional_query_queue_dimensions_enabled: <boolean> | default = false]
 

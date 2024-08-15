@@ -29,11 +29,9 @@ func (a *frontendToSchedulerAdapter) frontendToSchedulerEnqueueRequest(
 ) (*schedulerpb.FrontendToScheduler, error) {
 	var addlQueueDims []string
 	var err error
-	if a.cfg.AdditionalQueryQueueDimensionsEnabled {
-		addlQueueDims, err = a.extractAdditionalQueueDimensions(req.ctx, req.request, time.Now())
-		if err != nil {
-			return nil, err
-		}
+	addlQueueDims, err = a.extractAdditionalQueueDimensions(req.ctx, req.request, time.Now())
+	if err != nil {
+		return nil, err
 	}
 
 	return &schedulerpb.FrontendToScheduler{

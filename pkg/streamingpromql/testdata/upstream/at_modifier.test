@@ -23,55 +23,45 @@ eval instant at 10s metric @ 1m40s
   metric{job="1"} 10
   metric{job="2"} 20
 
-# Unsupported by streaming engine.
-# eval instant at 10s metric @ 100 offset 50s
-#   metric{job="1"} 5
-#   metric{job="2"} 10
+eval instant at 10s metric @ 100 offset 50s
+  metric{job="1"} 5
+  metric{job="2"} 10
 
-# Unsupported by streaming engine.
-# eval instant at 10s metric @ 100 offset 50
-#   metric{job="1"} 5
-#   metric{job="2"} 10
+eval instant at 10s metric @ 100 offset 50
+  metric{job="1"} 5
+  metric{job="2"} 10
 
-# Unsupported by streaming engine.
-# eval instant at 10s metric offset 50s @ 100
-#   metric{job="1"} 5
-#   metric{job="2"} 10
+eval instant at 10s metric offset 50s @ 100
+  metric{job="1"} 5
+  metric{job="2"} 10
 
-# Unsupported by streaming engine.
-# eval instant at 10s metric offset 50 @ 100
-#   metric{job="1"} 5
-#   metric{job="2"} 10
+eval instant at 10s metric offset 50 @ 100
+  metric{job="1"} 5
+  metric{job="2"} 10
 
-# Unsupported by streaming engine.
-# eval instant at 10s metric @ 0 offset -50s
-#   metric{job="1"} 5
-#   metric{job="2"} 10
+eval instant at 10s metric @ 0 offset -50s
+  metric{job="1"} 5
+  metric{job="2"} 10
 
-# Unsupported by streaming engine.
-# eval instant at 10s metric @ 0 offset -50
-#   metric{job="1"} 5
-#   metric{job="2"} 10
+eval instant at 10s metric @ 0 offset -50
+  metric{job="1"} 5
+  metric{job="2"} 10
 
-# Unsupported by streaming engine.
-# eval instant at 10s metric offset -50s @ 0
-#   metric{job="1"} 5
-#   metric{job="2"} 10
+eval instant at 10s metric offset -50s @ 0
+  metric{job="1"} 5
+  metric{job="2"} 10
 
-# Unsupported by streaming engine.
-# eval instant at 10s metric offset -50 @ 0
-#   metric{job="1"} 5
-#   metric{job="2"} 10
+eval instant at 10s metric offset -50 @ 0
+  metric{job="1"} 5
+  metric{job="2"} 10
 
-# Unsupported by streaming engine.
-# eval instant at 10s metric @ 0 offset -50s
-#   metric{job="1"} 5
-#   metric{job="2"} 10
+eval instant at 10s metric @ 0 offset -50s
+  metric{job="1"} 5
+  metric{job="2"} 10
 
-# Unsupported by streaming engine.
-# eval instant at 10s metric @ 0 offset -50
-#   metric{job="1"} 5
-#   metric{job="2"} 10
+eval instant at 10s metric @ 0 offset -50
+  metric{job="1"} 5
+  metric{job="2"} 10
 
 # Unsupported by streaming engine.
 # eval instant at 10s -metric @ 100
@@ -91,21 +81,17 @@ eval instant at 100s metric_ms @ 1.234
 eval instant at 25s sum_over_time(metric{job="1"}[100s] @ 100)
   {job="1"} 55
 
-# Unsupported by streaming engine.
-# eval instant at 25s sum_over_time(metric{job="1"}[100s] @ 100 offset 50s)
-#   {job="1"} 15
+eval instant at 25s sum_over_time(metric{job="1"}[100s] @ 100 offset 50s)
+  {job="1"} 15
 
-# Unsupported by streaming engine.
-# eval instant at 25s sum_over_time(metric{job="1"}[100s] offset 50s @ 100)
-#   {job="1"} 15
+eval instant at 25s sum_over_time(metric{job="1"}[100s] offset 50s @ 100)
+  {job="1"} 15
 
-# Unsupported by streaming engine.
-# eval instant at 25s sum_over_time(metric{job="1"}[100] @ 100 offset 50)
-#   {job="1"} 15
+eval instant at 25s sum_over_time(metric{job="1"}[100] @ 100 offset 50)
+  {job="1"} 15
 
-# Unsupported by streaming engine.
-# eval instant at 25s sum_over_time(metric{job="1"}[100] offset 50s @ 100)
-#   {job="1"} 15
+eval instant at 25s sum_over_time(metric{job="1"}[100] offset 50s @ 100)
+  {job="1"} 15
 
 # Different timestamps.
 # Unsupported by streaming engine.
