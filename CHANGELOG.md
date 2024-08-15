@@ -46,9 +46,10 @@
 * [ENHANCEMENT] Query-frontend: added `remote_read` to `op` supported label values for the `cortex_query_frontend_queries_total` metric. #8412
 * [ENHANCEMENT] Query-frontend: log the overall length and start, end time offset from current time for remote read requests. The start and end times are calculated as the miminum and maximum times of the individual queries in the remote read request. #8404
 * [ENHANCEMENT] Storage Provider: Added option `-<prefix>.s3.dualstack-enabled` that allows disabling S3 client from resolving AWS S3 endpoint into dual-stack IPv4/IPv6 endpoint. Defaults to true. #8405
+* [ENHANCEMENT] HA Tracker: Added reporting of most recent elected replica change via `cortex_ha_tracker_last_election_timestamp_seconds` gauge, logging, and a new column in the HA Tracker status page. #8507
 * [ENHANCEMENT] Use sd_notify to send events to systemd at start and stop of mimir services. Default systemd mimir.service config now wait for those events with a configurable timeout `TimeoutStartSec` default is 3 min to handle long start time (ex. store-gateway). #8220 #8555 #8658
 * [ENHANCEMENT] Alertmanager: Reloading config and templates no longer needs to hit the disk. #4967
-* [ENHANCEMENT] Compactor: Added experimantal `-compactor.in-memory-tenant-meta-cache-size` option to set size of in-memory cache (in number of items) for parsed meta.json files. This can help when tenant has many meta.json files and their parsing before each compaction cycle is using a lot of CPU time. #8544
+* [ENHANCEMENT] Compactor: Added experimental `-compactor.in-memory-tenant-meta-cache-size` option to set size of in-memory cache (in number of items) for parsed meta.json files. This can help when a tenant has many meta.json files and their parsing before each compaction cycle is using a lot of CPU time. #8544
 * [ENHANCEMENT] Distributor: Interrupt OTLP write request translation when context is canceled or has timed out. #8524
 * [ENHANCEMENT] Ingester, store-gateway: optimised regular expression matching for patterns like `1.*|2.*|3.*|...|1000.*`. #8632
 * [ENHANCEMENT] Query-frontend: Add `header_cache_control` to query stats. #8590
