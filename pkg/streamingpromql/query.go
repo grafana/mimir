@@ -171,7 +171,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			e.PosRange,
 		), nil
 	case *parser.Call:
-		return q.convertFunctionCallToOperator(e)
+		return q.convertFunctionCallToInstantVectorOperator(e)
 	case *parser.BinaryExpr:
 		if !q.engine.featureToggles.EnableBinaryOperations {
 			return nil, compat.NewNotSupportedError("binary expressions")
@@ -202,11 +202,11 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 	case *parser.ParenExpr:
 		return q.convertToInstantVectorOperator(e.Expr)
 	default:
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T", e))
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T for instant vectors", e))
 	}
 }
 
-func (q *Query) convertFunctionCallToOperator(e *parser.Call) (types.InstantVectorOperator, error) {
+func (q *Query) convertFunctionCallToInstantVectorOperator(e *parser.Call) (types.InstantVectorOperator, error) {
 	if !q.engine.featureToggles.EnableOverTimeFunctions && slices.Contains(overTimeFunctionNames, e.Func.Name) {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
 	}
@@ -267,7 +267,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (types.RangeVecto
 	case *parser.ParenExpr:
 		return q.convertToRangeVectorOperator(e.Expr)
 	default:
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T", e))
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T for range vectors", e))
 	}
 }
 
@@ -306,7 +306,7 @@ func (q *Query) convertToScalarOperator(expr parser.Expr) (types.ScalarOperator,
 	case *parser.BinaryExpr:
 		return nil, compat.NewNotSupportedError("binary expression between two scalars")
 	default:
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T", e))
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T for scalars", e))
 	}
 }
 
