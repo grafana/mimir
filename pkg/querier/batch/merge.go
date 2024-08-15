@@ -79,9 +79,9 @@ found:
 	for c.batches.len() > 0 {
 		batch := c.batches.curr()
 		// The first sample in the batch can be after the seek time.
-		if t <= batch.Timestamps[batch.Length-1] {
+		if batch.Timestamps[batch.Length-1] >= t {
 			batch.Index = 0
-			for batch.Index < batch.Length && t > batch.Timestamps[batch.Index] {
+			for batch.Index < batch.Length && batch.Timestamps[batch.Index] < t {
 				batch.Index++
 			}
 			break found

@@ -64,8 +64,8 @@ func TestMergeHarder(t *testing.T) {
 	}
 }
 
-// TestBugInMergeIterator tests a bug while calling Seek() on mergeIterator.
-func TestBugInMergeIteratorSeek(t *testing.T) {
+// TestMergeIteratorSeek tests a bug while calling Seek() on mergeIterator.
+func TestMergeIteratorSeek(t *testing.T) {
 	// Samples for 3 chunks.
 	chunkSamples := [][]int64{
 		{10, 20, 30, 40},
