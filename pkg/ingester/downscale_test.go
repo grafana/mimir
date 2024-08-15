@@ -74,6 +74,16 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 			require.NoError(t, err)
 			return inst.ReadOnly && inst.ReadOnlyUpdatedTimestamp == resp.Timestamp
 		})
+
+		// Second call to POST will not update the entry.
+		res2 := httptest.NewRecorder()
+		ingester.PrepareInstanceRingDownscaleHandler(res2, httptest.NewRequest(http.MethodPost, target, nil))
+		require.Equal(t, http.StatusOK, res.Code)
+
+		resp2 := response{}
+		require.NoError(t, json.Unmarshal(res2.Body.Bytes(), &resp2))
+		// Verify that timestamps hasn't changed
+		require.Equal(t, resp.Timestamp, resp2.Timestamp)
 	})
 
 	t.Run("DELETE request should switch the instance ring entry to not read-only", func(t *testing.T) {
