@@ -44,6 +44,10 @@ type Query struct {
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	annotations              *annotations.Annotations
 
+	startT     int64 // Start timestamp, in milliseconds since Unix epoch.
+	endT       int64 // End timestamp, in milliseconds since Unix epoch.
+	intervalMs int64 // Range query interval, or 1 for instant queries. Note that this is deliberately different to statement.Interval for instant queries (where it is 0) to simplify some loop conditions.
+
 	result *promql.Result
 }
 
@@ -76,9 +80,17 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 			Expr:          expr,
 			Start:         start,
 			End:           end,
-			Interval:      interval,
+			Interval:      interval, // 0 for instant queries
 			LookbackDelta: opts.LookbackDelta(),
 		},
+
+		startT:     timestamp.FromTime(start),
+		endT:       timestamp.FromTime(end),
+		intervalMs: interval.Milliseconds(), // 1 for instant queries (set below)
+	}
+
+	if q.IsInstant() {
+		q.intervalMs = 1
 	}
 
 	if !q.IsInstant() {
@@ -112,12 +124,6 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 		return nil, fmt.Errorf("cannot create instant vector operator for expression that produces a %s", parser.DocumentedType(expr.Type()))
 	}
 
-	interval := q.statement.Interval
-
-	if q.IsInstant() {
-		interval = time.Millisecond
-	}
-
 	switch e := expr.(type) {
 	case *parser.VectorSelector:
 		lookbackDelta := q.opts.LookbackDelta()
@@ -133,10 +139,10 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			MemoryConsumptionTracker: q.memoryConsumptionTracker,
 			Selector: &operators.Selector{
 				Queryable:     q.queryable,
-				Start:         timestamp.FromTime(q.statement.Start),
-				End:           timestamp.FromTime(q.statement.End),
+				Start:         q.startT,
+				End:           q.endT,
 				Timestamp:     e.Timestamp,
-				Interval:      interval.Milliseconds(),
+				Interval:      q.intervalMs,
 				Offset:        e.OriginalOffset.Milliseconds(),
 				LookbackDelta: lookbackDelta,
 				Matchers:      e.LabelMatchers,
@@ -161,9 +167,9 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 
 		return operators.NewAggregation(
 			inner,
-			q.statement.Start,
-			q.statement.End,
-			interval,
+			q.startT,
+			q.endT,
+			q.intervalMs,
 			e.Grouping,
 			e.Without,
 			q.memoryConsumptionTracker,
@@ -241,19 +247,13 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (types.RangeVecto
 			return nil, compat.NewNotSupportedError("range vector selector with 'offset'")
 		}
 
-		interval := q.statement.Interval
-
-		if q.IsInstant() {
-			interval = time.Millisecond
-		}
-
 		return &operators.RangeVectorSelector{
 			Selector: &operators.Selector{
 				Queryable: q.queryable,
-				Start:     timestamp.FromTime(q.statement.Start),
-				End:       timestamp.FromTime(q.statement.End),
+				Start:     q.startT,
+				End:       q.endT,
 				Timestamp: vectorSelector.Timestamp,
-				Interval:  interval.Milliseconds(),
+				Interval:  q.intervalMs,
 				Offset:    vectorSelector.OriginalOffset.Milliseconds(),
 				Range:     e.Range,
 				Matchers:  vectorSelector.LabelMatchers,
@@ -282,22 +282,19 @@ func (q *Query) convertToScalarOperator(expr parser.Expr) (types.ScalarOperator,
 
 	switch e := expr.(type) {
 	case *parser.NumberLiteral:
-		interval := q.statement.Interval
-
-		if q.IsInstant() {
-			interval = time.Millisecond
-		}
-
 		o := operators.NewScalarConstant(
 			e.Val,
-			timestamp.FromTime(q.statement.Start),
-			timestamp.FromTime(q.statement.End),
-			interval.Milliseconds(),
+			q.startT,
+			q.endT,
+			q.intervalMs,
 			q.memoryConsumptionTracker,
 			e.PositionRange(),
 		)
 
 		return o, nil
+
+	case *parser.Call:
+		return q.convertFunctionCallToScalarOperator(e)
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
 		return q.convertToScalarOperator(e.Expr)
@@ -308,6 +305,24 @@ func (q *Query) convertToScalarOperator(expr parser.Expr) (types.ScalarOperator,
 	default:
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T for scalars", e))
 	}
+}
+
+func (q *Query) convertFunctionCallToScalarOperator(e *parser.Call) (types.ScalarOperator, error) {
+	factory, ok := scalarFunctionOperatorFactories[e.Func.Name]
+	if !ok {
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
+	}
+
+	args := make([]types.Operator, len(e.Args))
+	for i := range e.Args {
+		a, err := q.convertToOperator(e.Args[i])
+		if err != nil {
+			return nil, err
+		}
+		args[i] = a
+	}
+
+	return factory(args, q.memoryConsumptionTracker, q.annotations, e.PosRange, q.startT, q.endT, q.intervalMs)
 }
 
 func (q *Query) IsInstant() bool {

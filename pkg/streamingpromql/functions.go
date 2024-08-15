@@ -4,6 +4,7 @@ package streamingpromql
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -14,7 +15,20 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-type InstantVectorFunctionOperatorFactory func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange) (types.InstantVectorOperator, error)
+type InstantVectorFunctionOperatorFactory func(
+	args []types.Operator,
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	annotations *annotations.Annotations,
+	expressionPosition posrange.PositionRange,
+) (types.InstantVectorOperator, error)
+
+type ScalarFunctionOperatorFactory func(
+	args []types.Operator,
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	annotations *annotations.Annotations,
+	expressionPosition posrange.PositionRange,
+	start, end, interval int64,
+) (types.ScalarOperator, error)
 
 // SingleInputVectorFunctionOperatorFactory creates an InstantVectorFunctionOperatorFactory for functions
 // that have exactly 1 argument (v instant-vector).
@@ -134,4 +148,28 @@ func RegisterInstantVectorFunctionOperatorFactory(functionName string, factory I
 
 	instantVectorFunctionOperatorFactories[functionName] = factory
 	return nil
+}
+
+// These functions return a scalar.
+var scalarFunctionOperatorFactories = map[string]ScalarFunctionOperatorFactory{
+	// Please keep this list sorted alphabetically.
+	"pi": piOperatorFactory,
+}
+
+func RegisterScalarFunctionOperatorFactory(functionName string, factory ScalarFunctionOperatorFactory) error {
+	if _, exists := scalarFunctionOperatorFactories[functionName]; exists {
+		return fmt.Errorf("function '%s' has already been registered", functionName)
+	}
+
+	scalarFunctionOperatorFactories[functionName] = factory
+	return nil
+}
+
+func piOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, start, end, interval int64) (types.ScalarOperator, error) {
+	if len(args) != 0 {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected exactly 0 arguments for pi, got %v", len(args))
+	}
+
+	return operators.NewScalarConstant(math.Pi, start, end, interval, memoryConsumptionTracker, expressionPosition), nil
 }
