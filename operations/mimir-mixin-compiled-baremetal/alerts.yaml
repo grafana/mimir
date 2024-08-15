@@ -20,12 +20,31 @@ groups:
             # - 529: used by distributor rate limiting (using 529 instead of 429 to let the client retry)
             # - 598: used by GEM gateway when the client is very slow to send the request and the gateway times out reading the request body
             (
-              sum by (cluster, namespace, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..",status_code!~"529|598",route!~"ready|debug_pprof"}[1m]))
+              sum by (cluster, namespace, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..", status_code!~"529|598", route!~"ready|debug_pprof"}[1m]))
               /
               sum by (cluster, namespace, job, route) (rate(cortex_request_duration_seconds_count{route!~"ready|debug_pprof"}[1m]))
             ) * 100 > 1
           for: 15m
           labels:
+            histogram: classic
+            severity: critical
+        - alert: MimirRequestErrors
+          annotations:
+            message: |
+                The route {{ $labels.route }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% errors.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrequesterrors
+          expr: |
+            # The following 5xx errors considered as non-error:
+            # - 529: used by distributor rate limiting (using 529 instead of 429 to let the client retry)
+            # - 598: used by GEM gateway when the client is very slow to send the request and the gateway times out reading the request body
+            (
+              sum by (cluster, namespace, job, route) (histogram_count(rate(cortex_request_duration_seconds{status_code=~"5..", status_code!~"529|598", route!~"ready|debug_pprof"}[1m])))
+              /
+              sum by (cluster, namespace, job, route) (histogram_count(rate(cortex_request_duration_seconds{route!~"ready|debug_pprof"}[1m])))
+            ) * 100 > 1
+          for: 15m
+          labels:
+            histogram: native
             severity: critical
         - alert: MimirRequestLatency
           annotations:
@@ -463,13 +482,29 @@ groups:
                 Mimir rulers in {{ $labels.cluster }}/{{ $labels.namespace }} are failing to perform {{ printf "%.2f" $value }}% of remote evaluations through the ruler-query-frontend.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulerremoteevaluationfailing
           expr: |
-            100 * (
-            sum by (cluster, namespace) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", status_code=~"5..", job=~".*/(ruler-query-frontend.*)"}[5m]))
+            (
+              sum by (cluster, namespace) (rate(cortex_request_duration_seconds_count{status_code=~"5..", route="/httpgrpc.HTTP/Handle", job=~".*/(ruler-query-frontend.*)"}[5m]))
               /
-            sum by (cluster, namespace) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", job=~".*/(ruler-query-frontend.*)"}[5m]))
-            ) > 1
+              sum by (cluster, namespace) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", job=~".*/(ruler-query-frontend.*)"}[5m]))
+            ) * 100 > 1
           for: 5m
           labels:
+            histogram: classic
+            severity: warning
+        - alert: MimirRulerRemoteEvaluationFailing
+          annotations:
+            message: |
+                Mimir rulers in {{ $labels.cluster }}/{{ $labels.namespace }} are failing to perform {{ printf "%.2f" $value }}% of remote evaluations through the ruler-query-frontend.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulerremoteevaluationfailing
+          expr: |
+            (
+              sum by (cluster, namespace) (histogram_count(rate(cortex_request_duration_seconds{status_code=~"5..", route="/httpgrpc.HTTP/Handle", job=~".*/(ruler-query-frontend.*)"}[5m])))
+              /
+              sum by (cluster, namespace) (histogram_count(rate(cortex_request_duration_seconds{route="/httpgrpc.HTTP/Handle", job=~".*/(ruler-query-frontend.*)"}[5m])))
+            ) * 100 > 1
+          for: 5m
+          labels:
+            histogram: native
             severity: warning
     - name: gossip_alerts
       rules:
