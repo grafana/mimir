@@ -1474,7 +1474,7 @@ func TestMultitenantAlertmanager_InitialSync(t *testing.T) {
 			if tt.existing {
 				require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 					ringDesc := ring.GetOrCreateRingDesc(in)
-					ringDesc.AddIngester(amConfig.ShardingRing.Common.InstanceID, amConfig.ShardingRing.Common.InstanceAddr, "", tt.initialTokens, tt.initialState, time.Now())
+					ringDesc.AddIngester(amConfig.ShardingRing.Common.InstanceID, amConfig.ShardingRing.Common.InstanceAddr, "", tt.initialTokens, tt.initialState, time.Now(), false, time.Time{})
 					return ringDesc, true, nil
 				}))
 			}
@@ -1636,18 +1636,18 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 		{
 			name: "when an instance is added to the ring",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			expected: true,
 		},
 		{
 			name: "when an instance is removed from the ring",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
 				desc.RemoveIngester("alertmanager-1")
@@ -1657,8 +1657,8 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 		{
 			name: "should sync when an instance changes state",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.JOINING, registeredAt)
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.JOINING, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
 				instance := desc.Ingesters["alertmanager-2"]
@@ -1670,8 +1670,8 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 		{
 			name: "should sync when an healthy instance becomes unhealthy",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
 				instance := desc.Ingesters["alertmanager-1"]
@@ -1683,9 +1683,9 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 		{
 			name: "should sync when an unhealthy instance becomes healthy",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
 
-				instance := desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				instance := desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 				instance.Timestamp = time.Now().Add(-time.Hour).Unix()
 				desc.Ingesters["alertmanager-2"] = instance
 			},
@@ -1699,8 +1699,8 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 		{
 			name: "should NOT sync when an instance updates the heartbeat",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
 				instance := desc.Ingesters["alertmanager-1"]
@@ -1712,8 +1712,8 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 		{
 			name: "should NOT sync when an instance is auto-forgotten in the ring but was already unhealthy in the previous state",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 
 				instance := desc.Ingesters["alertmanager-2"]
 				instance.Timestamp = time.Now().Add(-time.Hour).Unix()
@@ -1797,7 +1797,7 @@ func TestMultitenantAlertmanager_RingLifecyclerShouldAutoForgetUnhealthyInstance
 
 	require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 		ringDesc := ring.GetOrCreateRingDesc(in)
-		instance := ringDesc.AddIngester(unhealthyInstanceID, "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(RingNumTokens, nil), ring.ACTIVE, time.Now())
+		instance := ringDesc.AddIngester(unhealthyInstanceID, "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(RingNumTokens, nil), ring.ACTIVE, time.Now(), false, time.Time{})
 		instance.Timestamp = time.Now().Add(-(ringAutoForgetUnhealthyPeriods + 1) * heartbeatTimeout).Unix()
 		ringDesc.Ingesters[unhealthyInstanceID] = instance
 
@@ -1857,7 +1857,7 @@ func TestAlertmanager_ReplicasPosition(t *testing.T) {
 
 	// First, create the alertmanager instances, we'll use a replication factor of 3 and create 3 instances so that we can get the tenant on each replica.
 	for i := 1; i <= 3; i++ {
-		//instanceIDs = append(instanceIDs, fmt.Sprintf("alertmanager-%d", i))
+		// instanceIDs = append(instanceIDs, fmt.Sprintf("alertmanager-%d", i))
 		instanceID := fmt.Sprintf("alertmanager-%d", i)
 
 		amConfig := mockAlertmanagerConfig(t)
