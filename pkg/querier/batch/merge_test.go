@@ -65,13 +65,12 @@ func TestMergeHarder(t *testing.T) {
 }
 
 // TestBugInMergeIterator tests a bug while calling Seek() on mergeIterator.
-// The samples used for testing is from a live Mimir cluster where the bug was first observed.
 func TestBugInMergeIteratorSeek(t *testing.T) {
 	// Samples for 3 chunks.
 	chunkSamples := [][]int64{
-		{1723419966795, 1723420626795, 1723420686795, 1723420746795},
-		{1723420806795, 1723420866795, 1723420926795, 1723427346795, 1723427406795, 1723427946795},
-		{1723428006795, 1723428546795},
+		{10, 20, 30, 40},
+		{50, 60, 70, 80, 90, 100},
+		{110, 120},
 	}
 
 	var genericChunks []GenericChunk
@@ -93,18 +92,18 @@ func TestBugInMergeIteratorSeek(t *testing.T) {
 
 	c3It := NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), genericChunks)
 
-	c3It.Seek(1723420500000)
+	c3It.Seek(15)
 	// These Next() calls are necessary to reproduce the bug.
 	c3It.Next()
 	c3It.Next()
 	c3It.Next()
-	c3It.Seek(1723421700000)
+	c3It.Seek(75)
 	// Without the bug fix, this Seek() call skips an additional sample than desired.
-	// Instead of stopping at 1723427946795, which is the last sample of chunk 2,
-	// it would go to 1723428006795, which is the first sample of chunk 3.
+	// Instead of stopping at 100, which is the last sample of chunk 2,
+	// it would go to 110, which is the first sample of chunk 3.
 	// This was happening because in the Seek() method we were discarding the current
 	// batch from mergeIterator if the batch's first sample was after the seek time.
-	c3It.Seek(1723427700000)
+	c3It.Seek(95)
 
-	require.Equal(t, int64(1723427946795), c3It.AtT())
+	require.Equal(t, int64(100), c3It.AtT())
 }
