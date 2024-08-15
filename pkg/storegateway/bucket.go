@@ -303,7 +303,7 @@ func (s *BucketStore) SyncBlocks(ctx context.Context) error {
 	return s.syncBlocks(ctx)
 }
 func CallerName() string {
-	pc, _, _, ok := runtime.Caller(1)
+	pc, _, _, ok := runtime.Caller(2)
 	if !ok {
 		return "unknown"
 	}
