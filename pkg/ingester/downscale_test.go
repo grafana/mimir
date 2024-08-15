@@ -4,6 +4,7 @@ package ingester
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,6 +18,10 @@ import (
 
 func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 	const target = "/ingester/prepare-instance-ring-downscale"
+
+	type response struct {
+		Timestamp int64 `json:"timestamp"`
+	}
 
 	setup := func(startIngester bool) (*Ingester, *ring.Ring) {
 		cfg := defaultIngesterTestConfig(t)
@@ -55,20 +60,25 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 		ingester.PrepareInstanceRingDownscaleHandler(res, httptest.NewRequest(http.MethodPost, target, nil))
 		require.Equal(t, http.StatusOK, res.Code)
 
+		resp := response{}
+		require.NoError(t, json.Unmarshal(res.Body.Bytes(), &resp))
+		require.InDelta(t, time.Now().Unix(), resp.Timestamp, 10)
+
 		// Post-condition: entry is read only.
 		test.Poll(t, time.Second, true, func() interface{} {
 			inst, err := r.GetInstance(ingester.lifecycler.ID)
 			require.NoError(t, err)
-			return inst.ReadOnly
+			return inst.ReadOnly && inst.ReadOnlyUpdatedTimestamp == resp.Timestamp
 		})
 	})
 
 	t.Run("DELETE request should switch the instance ring entry to not read-only", func(t *testing.T) {
 		t.Parallel()
 
-		// Pre-condition: entry is read-only.
 		ingester, r := setup(true)
 		res := httptest.NewRecorder()
+
+		// Switch entry to read-only.
 		ingester.PrepareInstanceRingDownscaleHandler(res, httptest.NewRequest(http.MethodPost, target, nil))
 		require.Equal(t, http.StatusOK, res.Code)
 		test.Poll(t, time.Second, true, func() interface{} {
@@ -77,8 +87,14 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 			return inst.ReadOnly
 		})
 
+		// Now switch back to read-write.
+		res = httptest.NewRecorder()
 		ingester.PrepareInstanceRingDownscaleHandler(res, httptest.NewRequest(http.MethodDelete, target, nil))
 		require.Equal(t, http.StatusOK, res.Code)
+
+		resp := response{}
+		require.NoError(t, json.Unmarshal(res.Body.Bytes(), &resp))
+		require.Equal(t, int64(0), resp.Timestamp)
 
 		// Post-condition: entry is not read only.
 		test.Poll(t, time.Second, false, func() interface{} {
