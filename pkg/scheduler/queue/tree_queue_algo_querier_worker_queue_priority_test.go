@@ -9,6 +9,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Test for the expected behavior of the queue algorithm when there is only a single worker.
+// Having a number of active workers less than the number of queue nodes is the worst-case scenario
+// for the algorithm, potentially resulting in complete queue starvation for some nodes.
+// Workers will keep coming back to their assigned queue as long as the queue is not empty,
+// and any queues without assigned workers may wait indefinitely until other queue nodes are empty.
 func TestQuerierWorkerQueuePriority_SingleWorkerBehavior(t *testing.T) {
 	type opType string
 	enqueue := opType("enqueue")
@@ -71,6 +76,10 @@ func TestQuerierWorkerQueuePriority_SingleWorkerBehavior(t *testing.T) {
 	}
 }
 
+// Test for the expected behavior of the queue algorithm when there are multiple workers
+// and when the querier-worker queue priority algorithm is used only at the highest layer of the tree.
+// When at the highest layer of the tree, the global node count for any existing node is always 1,
+// so the queue algorithm will always delete the node from the global node order rotation after it is emptied.
 func TestQuerierWorkerQueuePriority_StartPositionByWorker(t *testing.T) {
 	querierWorkerPrioritizationQueueAlgo := NewQuerierWorkerQueuePriorityAlgo()
 
@@ -126,7 +135,7 @@ func TestQuerierWorkerQueuePriority_StartPositionByWorker(t *testing.T) {
 	assert.Equal(t, "obj-5", obj)
 
 	// only 1 item left in each queue; as queue nodes are emptied and deleted,
-	// worker IDs will be shuffled to different queues by the modulo operation
+	// worker IDs will be remapped to different node types by the modulo operation
 	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(0)
 	path, obj = tree.Dequeue()
 	assert.Equal(t, QueuePath{ingesterQueueDimension}, path)
@@ -145,6 +154,189 @@ func TestQuerierWorkerQueuePriority_StartPositionByWorker(t *testing.T) {
 	path, obj = tree.Dequeue()
 	assert.Equal(t, QueuePath{storeGatewayQueueDimension}, path)
 	assert.Equal(t, "obj-8", obj)
+
+	path, obj = tree.Dequeue()
+	assert.Equal(t, QueuePath{}, path)
+	// tree is now empty
+	assert.Nil(t, obj)
+}
+
+// Test for the expected behavior of the queue algorithm when there are multiple workers
+// and when the querier-worker queue priority algorithm is used at a layer of the tree below the highest layer.
+//
+// The node types managed by this queue algorithm can have many instances created within a tree layer,
+// as multiple nodes in the parent tree layer can each have a child node of each type.
+//
+// The algorithm must only add the node type to the global node order rotation
+// if the node is the first of its type created in the tree layer.
+// The algorithm must only remove the node type from the global node order rotation
+// once all instances of the node type are emptied and removed from the tree layer.
+func TestQuerierWorkerQueuePriority_StartPositionByWorker_MultipleNodeCountsInTree(t *testing.T) {
+	querierWorkerPrioritizationQueueAlgo := NewQuerierWorkerQueuePriorityAlgo()
+
+	tree, err := NewTree(&roundRobinState{}, querierWorkerPrioritizationQueueAlgo, &roundRobinState{})
+	require.NoError(t, err)
+
+	// enqueue 2 objects each to 2 different children, each with 3 different grandchildren;
+	// the highest layer is managed by a vanilla round-robin rotation
+	// and the second-highest layer is managed by the querier-worker queue priority algorithm.
+	// The global node order rotation for the querier-worker queue priority algorithm is only affected
+	// when the first node of a type is created in the tree layer or the last node of a type is emptied and removed.
+	// To keep things brief "i", "sg", and "isg" are used for "ingester", "store-gateway", and "ingester-and-store-gateway".
+
+	// first creation of an ingester node anywhere adds ingester node to global node order
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"a", ingesterQueueDimension}, "obj-a-i-1"))
+	// same for store-gateway node
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"b", storeGatewayQueueDimension}, "obj-b-sg-1"))
+	// same for ingester-and-store-gateway node
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"b", ingesterAndStoreGatewayQueueDimension}, "obj-b-isg-1"))
+	// further node creation of those same types does not affect the global order
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"b", ingesterQueueDimension}, "obj-b-i-1"))
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"a", storeGatewayQueueDimension}, "obj-a-sg-1"))
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"a", ingesterAndStoreGatewayQueueDimension}, "obj-a-isg-1"))
+
+	// fill in a second object for each of the 6 paths created above
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"a", ingesterQueueDimension}, "obj-a-i-2"))
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"a", storeGatewayQueueDimension}, "obj-a-sg-2"))
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"a", ingesterAndStoreGatewayQueueDimension}, "obj-a-isg-2"))
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"b", ingesterQueueDimension}, "obj-b-i-2"))
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"b", storeGatewayQueueDimension}, "obj-b-sg-2"))
+	require.NoError(t, tree.EnqueueBackByPath(QueuePath{"b", ingesterAndStoreGatewayQueueDimension}, "obj-b-isg-2"))
+
+	/* balanced tree structure before dequeuing:
+		root
+		├── a
+		│   ├── ingester
+		│	│	├── obj-a-i-1
+	    │   │   ├── obj-a-i-2
+		│   ├── store-gateway
+		│	│	├── obj-a-sg-1
+	    │   │   ├── obj-a-sg-2
+		│   └── ingester-and-store-gateway
+		│	 	├── obj-a-isg-1
+	    │       ├── obj-a-isg-2
+		├── b
+		│   ├── ingester
+		│	│	├── obj-b-i-1
+	    │   │   ├── obj-b-i-2
+		│   ├── store-gateway
+		│	│	├── obj-b-sg-1
+	    │   │   ├── obj-b-sg-2
+		│   └── ingester-and-store-gateway
+		│	 	├── obj-b-isg-1
+	    │       ├── obj-b-isg-2
+	*/
+
+	// node order was set by initial enqueue order;
+	assert.Equal(t,
+		[]string{ingesterQueueDimension, storeGatewayQueueDimension, ingesterAndStoreGatewayQueueDimension},
+		querierWorkerPrioritizationQueueAlgo.nodeOrder,
+	)
+
+	// show two-layer behavior (with top layer as vanilla round-robin) before any nodes are deleted
+	// with 3 queues present, first node to be dequeued from is determined by worker ID % 3
+	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(0)
+	path, obj := tree.Dequeue()
+	assert.Equal(t, QueuePath{"a", ingesterQueueDimension}, path)
+	assert.Equal(t, "obj-a-i-1", obj)
+
+	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(1)
+	path, obj = tree.Dequeue()
+	assert.Equal(t, QueuePath{"b", storeGatewayQueueDimension}, path)
+	assert.Equal(t, "obj-b-sg-1", obj)
+
+	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(2)
+	path, obj = tree.Dequeue()
+	assert.Equal(t, QueuePath{"a", ingesterAndStoreGatewayQueueDimension}, path)
+	assert.Equal(t, "obj-a-isg-1", obj)
+
+	// worker IDs can come in "out of order" to dequeue, and they will still start at the correct queue
+	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(5)
+	path, obj = tree.Dequeue()
+	assert.Equal(t, QueuePath{"b", ingesterAndStoreGatewayQueueDimension}, path)
+	assert.Equal(t, "obj-b-isg-1", obj)
+
+	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(4)
+	path, obj = tree.Dequeue()
+	assert.Equal(t, QueuePath{"a", storeGatewayQueueDimension}, path)
+	assert.Equal(t, "obj-a-sg-1", obj)
+
+	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(3)
+	path, obj = tree.Dequeue()
+	assert.Equal(t, QueuePath{"b", ingesterQueueDimension}, path)
+	assert.Equal(t, "obj-b-i-1", obj)
+
+	// only 1 item left in each queue but there are still two queues of each type in the layer;
+	// as queue nodes are emptied and deleted, worker IDs will *only* be remapped to different node types
+	// when the last node of each type is deleted and the node type is removed from the global order.
+
+	// dequeue with a worker ID mapped to the ingester node type
+	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(0)
+	path, obj = tree.Dequeue()
+	assert.Equal(t, QueuePath{"a", ingesterQueueDimension}, path)
+	assert.Equal(t, "obj-a-i-2", obj)
+	// node at path "a/ingester" is now empty and deleted but "ingester" is still in the global order
+	assert.Equal(t,
+		[]string{ingesterQueueDimension, storeGatewayQueueDimension, ingesterAndStoreGatewayQueueDimension},
+		querierWorkerPrioritizationQueueAlgo.nodeOrder,
+	)
+
+	// dequeue again with a worker ID mapped to the ingester node type
+	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(3)
+	path, obj = tree.Dequeue()
+	assert.Equal(t, QueuePath{"b", ingesterQueueDimension}, path)
+	assert.Equal(t, "obj-b-i-2", obj)
+	// the last node of the "ingester" type is empty and deleted, it is removed from the global order
+	assert.Equal(t,
+		[]string{storeGatewayQueueDimension, ingesterAndStoreGatewayQueueDimension},
+		querierWorkerPrioritizationQueueAlgo.nodeOrder,
+	)
+
+	// subsequent dequeues demonstrate that worker IDs are remapped to the remaining node types
+
+	// dequeue with a worker ID mapped to the ingester-and-store-gateway node type
+	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(1)
+	path, obj = tree.Dequeue()
+	assert.Equal(t, QueuePath{"a", ingesterAndStoreGatewayQueueDimension}, path)
+	assert.Equal(t, "obj-a-isg-2", obj)
+	// node at path "a/ingester-and-store-gateway" is now empty and deleted but "ingester-and-store-gateway" is still in the global order
+	assert.Equal(t,
+		[]string{storeGatewayQueueDimension, ingesterAndStoreGatewayQueueDimension},
+		querierWorkerPrioritizationQueueAlgo.nodeOrder,
+	)
+
+	// dequeue with a worker ID mapped to the store-gateway node type
+	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(2)
+	path, obj = tree.Dequeue()
+	assert.Equal(t, QueuePath{"b", storeGatewayQueueDimension}, path)
+	assert.Equal(t, "obj-b-sg-2", obj)
+	// node at path "b/store-gateway" is now empty and deleted but "store-gateway" is still in the global order
+	assert.Equal(t,
+		[]string{storeGatewayQueueDimension, ingesterAndStoreGatewayQueueDimension},
+		querierWorkerPrioritizationQueueAlgo.nodeOrder,
+	)
+
+	// dequeue with a worker ID mapped to the ingester-and-store-gateway node type
+	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(1)
+	path, obj = tree.Dequeue()
+	assert.Equal(t, QueuePath{"b", ingesterAndStoreGatewayQueueDimension}, path)
+	assert.Equal(t, "obj-b-isg-2", obj)
+	// the last node of the "ingester-and-store-gateway" type is empty and deleted, it is removed from the global order
+	assert.Equal(t,
+		[]string{storeGatewayQueueDimension},
+		querierWorkerPrioritizationQueueAlgo.nodeOrder,
+	)
+
+	// no need to re-assign the current querier-worker ID; there is only 1 node type left
+	// so any worker ID will dequeue from the same node type
+	path, obj = tree.Dequeue()
+	assert.Equal(t, QueuePath{"a", storeGatewayQueueDimension}, path)
+	assert.Equal(t, "obj-a-sg-2", obj)
+	// the last node of the "store-gateway" type is empty and deleted, it is removed from the global order
+	assert.Equal(t,
+		[]string{},
+		querierWorkerPrioritizationQueueAlgo.nodeOrder,
+	)
 
 	path, obj = tree.Dequeue()
 	assert.Equal(t, QueuePath{}, path)
