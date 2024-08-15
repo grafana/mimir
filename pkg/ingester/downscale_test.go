@@ -14,9 +14,13 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/stretchr/testify/require"
+
+	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
+	util_test.VerifyNoLeak(t)
+
 	const target = "/ingester/prepare-instance-ring-downscale"
 
 	type response struct {
@@ -29,11 +33,11 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 
 		i, err := prepareIngesterWithBlocksStorage(t, cfg, ingestersRing, nil)
 		require.NoError(t, err)
-		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
-		})
 		if startIngester {
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
+			})
 
 			// Wait until it's healthy
 			test.Poll(t, 5*time.Second, 1, func() interface{} {
@@ -112,6 +116,17 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 		res := httptest.NewRecorder()
 		ingester.PrepareInstanceRingDownscaleHandler(res, httptest.NewRequest(http.MethodPost, target, nil))
 		require.Equal(t, http.StatusServiceUnavailable, res.Code)
+
+		// Following is not part of the test, but a workaround for hanging listener goroutines (started when ingester is created, even before starting)
+		// By stopping services watched by ingester.subservicesWatcher, we make sure that all listeners (goroutines) attached to those services
+		// are stopped.
+		ingester.lifecycler.StopAsync()
+		if ingester.ownedSeriesService != nil {
+			ingester.ownedSeriesService.StopAsync()
+		}
+		ingester.compactionService.StopAsync()
+		ingester.metricsUpdaterService.StopAsync()
+		ingester.metadataPurgerService.StopAsync()
 	})
 
 	t.Run("should return MethodNotAllowed when ingest storage is enabled", func(t *testing.T) {
