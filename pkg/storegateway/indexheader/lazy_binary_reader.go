@@ -10,6 +10,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -330,18 +333,25 @@ func (r *LazyBinaryReader) unloadIfIdleSince(tsNano int64) error {
 	case r.unloadReq <- req:
 		return <-req.response
 	case <-r.done:
+		prefix := fmt.Sprintf("%d %p", getGoroutineID(), r)
+		fmt.Printf("%s reader is already closed\n", prefix)
 		return nil // if the control loop has returned we can't do much other than return.
 	}
 }
 
 func (r *LazyBinaryReader) controlLoop() {
 	var loaded loadedReader
+	prefix := fmt.Sprintf("%d %p", getGoroutineID(), r)
+	fmt.Printf("%s starting control loop\n", prefix)
 
 	for {
 		select {
 		case <-r.done:
+			fmt.Printf("%s exiting control loop\n", prefix)
 			return
 		case readerReq := <-r.loadedReader:
+			fmt.Printf("%s loading reader\n", prefix)
+
 			if loaded.reader == nil {
 				// Try to load the reader if it hasn't been loaded before or if the previous loading failed.
 				loaded = loadedReader{}
@@ -357,7 +367,10 @@ func (r *LazyBinaryReader) controlLoop() {
 			readerReq.response <- loaded
 
 		case unloadPromise := <-r.unloadReq:
+			fmt.Printf("%s trying to unload reader\n", prefix)
 			if loaded.reader == nil {
+				fmt.Printf("%s reader is already unloaded\n", prefix)
+
 				// Nothing to do if already unloaded.
 				unloadPromise.response <- nil
 				continue
@@ -365,6 +378,8 @@ func (r *LazyBinaryReader) controlLoop() {
 
 			// Do not unloadIfIdleSince if not idle.
 			if ts := unloadPromise.idleSinceNanos; ts > 0 && r.usedAt.Load() > ts {
+				fmt.Printf("%s reader isn't idle since X\n", prefix)
+
 				unloadPromise.response <- errNotIdle
 				continue
 			}
@@ -375,15 +390,28 @@ func (r *LazyBinaryReader) controlLoop() {
 			r.metrics.unloadCount.Inc()
 			if err := loaded.reader.Close(); err != nil {
 				r.metrics.unloadFailedCount.Inc()
+				fmt.Printf("%s failed to close reader\n", prefix)
 				unloadPromise.response <- fmt.Errorf("closing binary reader: %w", err)
 				continue
 			}
+			fmt.Printf("%s unloaded reader\n", prefix)
 
 			loaded = loadedReader{}
 			r.usedAt.Store(0)
 			unloadPromise.response <- nil
 		}
 	}
+}
+
+func getGoroutineID() int {
+	var buf [64]byte
+	n := runtime.Stack(buf[:], false)
+	idField := strings.Fields(strings.TrimPrefix(string(buf[:n]), "goroutine "))[0]
+	id, err := strconv.Atoi(idField)
+	if err != nil {
+		panic(fmt.Sprintf("cannot get goroutine id: %v", err))
+	}
+	return id
 }
 
 func waitReadersOrPanic(wg *sync.WaitGroup) {

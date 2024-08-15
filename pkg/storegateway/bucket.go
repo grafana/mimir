@@ -14,6 +14,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"sync"
@@ -301,8 +302,24 @@ func (s *BucketStore) Stats() BucketStoreStats {
 func (s *BucketStore) SyncBlocks(ctx context.Context) error {
 	return s.syncBlocks(ctx)
 }
+func CallerName() string {
+	pc, _, _, ok := runtime.Caller(1)
+	if !ok {
+		return "unknown"
+	}
+
+	fn := runtime.FuncForPC(pc)
+	if fn == nil {
+		return "unknown"
+	}
+
+	return fn.Name()
+}
 
 func (s *BucketStore) syncBlocks(ctx context.Context) error {
+	fmt.Printf("bucketStore %p start syncBlocks from %s\n", s, CallerName())
+	defer fmt.Printf("bucketStore %p end syncBlocks\n", s)
+
 	metas, _, metaFetchErr := s.fetcher.Fetch(ctx)
 	// For partial view allow adding new blocks at least.
 	if metaFetchErr != nil && metas == nil {
@@ -330,6 +347,10 @@ func (s *BucketStore) syncBlocks(ctx context.Context) error {
 		}
 		select {
 		case <-ctx.Done():
+			fmt.Printf("bucketStore %p blockSet %p context done; waiting for all addBlocks to finish\n", s, s.blockSet)
+			close(blockc)
+			wg.Wait()
+			return nil
 		case blockc <- meta:
 		}
 	}
@@ -497,6 +518,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 	if err = s.blockSet.add(b); err != nil {
 		return errors.Wrap(err, "add block to set")
 	}
+	fmt.Printf("bucketStore %p blockSet %p indexHeaderReader %p added block %p\n", s, s.blockSet, indexHeaderReader, b)
 
 	return nil
 }
@@ -527,6 +549,8 @@ func (s *BucketStore) removeBlock(id ulid.ULID) (returnErr error) {
 }
 
 func (s *BucketStore) closeAllBlocks() error {
+	defer fmt.Printf("bucketStore %p blockSet %p closed all blocks\n", s, s.blockSet)
+	fmt.Printf("bucketStore %p blockSet %p starting to close blocks\n", s, s.blockSet)
 	return s.blockSet.closeAll()
 }
 
@@ -1903,6 +1927,8 @@ func (s *bucketBlockSet) closeAll() error {
 	errs := multierror.New()
 	s.blockSet.Range(func(_, val any) bool {
 		errs.Add(val.(*bucketBlock).Close())
+		fmt.Printf("blockSet %p closed block %p\n", s, val.(*bucketBlock))
+
 		return true
 	})
 	return errs.Err()
@@ -2118,6 +2144,8 @@ func (b *bucketBlock) Close() error {
 	b.closedMtx.Unlock()
 
 	b.pendingReaders.Wait()
+
+	fmt.Printf("bucketBlock %p indexHeaderReader %p closing bucket block\n", b, b.indexHeaderReader)
 
 	return b.indexHeaderReader.Close()
 }
