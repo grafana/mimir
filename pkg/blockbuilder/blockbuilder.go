@@ -176,11 +176,6 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	return nil
 }
 
-const (
-	// kafkaOffsetStart is a special offset value that means the beginning of the partition.
-	kafkaOffsetStart = int64(-2)
-)
-
 func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context, metrics *kprom.Metrics) (map[int32]kgo.Offset, int64, error) {
 	// We use an ephemeral client to fetch the offset and then create a new client with this offset.
 	// The reason for this is that changing the offset of an existing client requires to have used this client for fetching at least once.

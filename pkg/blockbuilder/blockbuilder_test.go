@@ -7,7 +7,6 @@ import (
 	"errors"
 	"os"
 	"path"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -710,7 +710,7 @@ func TestBlockBuilder_LongCatchupWithNoRecordsProcessed(t *testing.T) {
 
 	bb, err := New(cfg, logger, prometheus.NewPedanticRegistry(), overrides)
 	require.NoError(t, err)
-	var compactCalled atomic.Int32
+	compactCalled := atomic.NewInt64(0)
 	bb.tsdbBuilder = func() builder {
 		testBuilder := newTestTSDBBuilder(cfg, overrides)
 		testBuilder.compactFunc = func() {
