@@ -36,7 +36,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       selector='route!~"%s"' % std.join('|', ['ready'] + $._config.alert_excluded_routes),
       // Note if alert_aggregation_labels is "job", this will repeat the label. But
       // prometheus seems to tolerate that.
-      error_selector='status_code=~"5..",status_code!~"529|598"',
+      error_selector='status_code=~"5..", status_code!~"529|598"',
       rate_interval=$.alertRangeInterval(1),
       sum_by=[$._config.alert_aggregation_labels, $._config.per_job_label, 'route'],
       comment=|||
