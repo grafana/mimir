@@ -390,11 +390,10 @@ func TestHATrackerCheckReplicaUpdateTimeout(t *testing.T) {
 	c.updateKVStoreAll(context.Background(), updateTime)
 
 	// Timestamp stored in KV should be time when we have received a request (called "checkReplica"), not current time (updateTime).
-	checkReplicaTimestamp(t, time.Second, c, user, cluster, replica, receivedAt)
+	checkReplicaTimestamp(t, time.Second, c, user, cluster, replica, receivedAt, receivedAt)
 
 	err = c.checkReplica(context.Background(), user, cluster, replica, updateTime)
 	assert.NoError(t, err)
-	checkReplicaTimestamp(t, time.Second, c, user, cluster, replica, updateTime, updateTime)
 }
 
 // Test that writes only happen every write timeout.
@@ -924,8 +923,8 @@ func TestHATrackerChangeInElectedReplicaClearsLastSeenTimestamp(t *testing.T) {
 
 	assert.NoError(t, t1.checkReplica(context.Background(), userID, cluster, firstReplica, now))
 	// Both trackers will see "first" replica as current.
-	checkReplicaTimestamp(t, time.Second, t1, userID, cluster, firstReplica, now)
-	checkReplicaTimestamp(t, time.Second, t2, userID, cluster, firstReplica, now)
+	checkReplicaTimestamp(t, time.Second, t1, userID, cluster, firstReplica, now, now)
+	checkReplicaTimestamp(t, time.Second, t2, userID, cluster, firstReplica, now, now)
 
 	// Ten seconds later, t1 receives request from first replica again
 	now = now.Add(10 * time.Second)
@@ -939,7 +938,7 @@ func TestHATrackerChangeInElectedReplicaClearsLastSeenTimestamp(t *testing.T) {
 	t2.updateKVStoreAll(context.Background(), now)
 
 	// t1 is reading updates from KV store, and should see second replica being the elected one.
-	checkReplicaTimestamp(t, time.Second, t1, userID, cluster, secondReplica, secondReplicaReceivedAtT2)
+	checkReplicaTimestamp(t, time.Second, t1, userID, cluster, secondReplica, secondReplicaReceivedAtT2, secondReplicaReceivedAtT2)
 
 	// Furthermore, t1 has never seen "second" replica, so it should not have "electedLastSeenTimestamp" set.
 	{
@@ -963,7 +962,7 @@ func TestHATrackerChangeInElectedReplicaClearsLastSeenTimestamp(t *testing.T) {
 	t1.updateKVStoreAll(context.Background(), now)
 
 	// t2 is reading updates from KV store, and should see "second" replica being the elected one.
-	checkReplicaTimestamp(t, time.Second, t2, userID, cluster, firstReplica, firstReceivedAtT1)
+	checkReplicaTimestamp(t, time.Second, t2, userID, cluster, firstReplica, firstReceivedAtT1, firstReceivedAtT1)
 
 	// Since t2 has seen new elected replica too, we should have non-zero "electedLastSeenTimestamp".
 	{
