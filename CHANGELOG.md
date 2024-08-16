@@ -121,8 +121,6 @@
 
 ### Jsonnet
 
-* [ENHANCEMENT] Update rollout-operator to `v0.18.0`. #9021
-* [ENHANCEMENT] Store-gateways configured in multi-zone deployment will only scale up once the preceding zones replicas are all ready. #9021
 * [CHANGE] Changed the following config options when the experimental ingest storage is enabled: #8874
   * `ingest_storage_ingester_autoscaling_min_replicas` changed to `ingest_storage_ingester_autoscaling_min_replicas_per_zone`
   * `ingest_storage_ingester_autoscaling_max_replicas` changed to `ingest_storage_ingester_autoscaling_max_replicas_per_zone`
