@@ -150,3 +150,45 @@ eval range from 0 to 2m step 1m pi()
 
 eval range from 0 to 2m step 1m vector(12.34)
   {} 12.34 12.34 12.34
+
+clear
+
+load 6m
+  single_series 1 2 _ 3 stale 4 {{schema:3 sum:4 count:4 buckets:[1 2 1]}} 5
+  multiple_series{series="1"} 1 2 _  3  stale 4  {{schema:3 sum:4 count:4 buckets:[1 2 1]}} 5  6 _ NaN NaN 7
+  multiple_series{series="2"} _ _ 10 20 30    40 50                                         60 _ _ 70  NaN _
+
+# scalar() on float value
+eval instant at 0m scalar(single_series)
+  1
+
+# scalar() on missing value
+eval instant at 12m scalar(single_series)
+  NaN
+
+# scalar() on stale value
+eval instant at 24m scalar(single_series)
+  NaN
+
+# scalar() on histogram
+eval instant at 36m scalar(single_series)
+  NaN
+
+# Same cases as above, but for a range query.
+eval range from 0 to 42m step 6m scalar(single_series)
+  {} 1 2 NaN 3 NaN 4 NaN 5
+
+eval range from 0 to 42m step 6m vector(scalar(single_series))
+  {} 1 2 NaN 3 NaN 4 NaN 5
+
+# scalar() combining multiple series
+eval range from 0 to 72m step 6m scalar(multiple_series)
+  {} 1 2 10 NaN 30 NaN 50 NaN 6 NaN NaN NaN 7
+
+# scalar() over no input series
+eval range from 0 to 1m step 1m scalar(no_matching_series)
+  {} NaN NaN
+
+# scalar() over multiple series with no points at the query time
+eval instant at 54m scalar(multiple_series)
+  NaN
