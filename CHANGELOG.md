@@ -65,6 +65,7 @@
     * `cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total`
     * `cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total`
 * [ENHANCEMENT] Expose a new `s3.session-token` configuration option to enable using temporary security credentials. #8952
+* [ENHANCEMENT] Add HA deduplication features to the `mimir-microservices-mode` development environment. #9012
 * [ENHANCEMENT] Make `-query-frontend.additional-query-queue-dimensions-enabled` and `-query-scheduler.additional-query-queue-dimensions-enabled` non-operational flags in preparation for removal. #8984
 * [ENHANCEMENT] Add a new ingester endpoint to prepare instances to downscale. #8956
 * [BUGFIX] Ruler: add support for draining any outstanding alert notifications before shutting down. This can be enabled with the `-ruler.drain-notification-queue-on-shutdown=true` CLI flag. #8346

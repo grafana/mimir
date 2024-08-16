@@ -1,6 +1,10 @@
 multitenancy_enabled: false
 
 distributor:
+  ha_tracker:
+    enable_ha_tracker: true
+    kvstore:
+      store: consul
   pool:
     health_check_ingesters: true
   ring:
@@ -171,6 +175,11 @@ limits:
   native_histograms_ingestion_enabled: true
   cardinality_analysis_enabled: true
   query_ingesters_within: 20m
+  # HA tracker configuration
+  accept_ha_samples: true
+  ha_cluster_label: ha_cluster
+  ha_replica_label: ha_replica
+  ha_max_clusters: 10
 
 runtime_config:
   file: ./config/runtime.yaml
