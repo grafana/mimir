@@ -142,3 +142,8 @@ eval range from 0 to 2m step 1m avg_over_time(some_nhcb_metric[3m])
 
 eval range from 0 to 16m step 1m avg_over_time(some_inf_and_nan_metric[3m])
   {foo="baz"} 0 0.5 1 1.5 Inf Inf Inf NaN NaN NaN NaN NaN NaN NaN 7 6.5 6
+
+clear
+
+eval range from 0 to 2m step 1m pi()
+  {} 3.141592653589793 3.141592653589793 3.141592653589793

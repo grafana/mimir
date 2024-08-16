@@ -95,3 +95,10 @@ type RangeVectorStepData struct {
 	// RangeEnd is inclusive (ie. points with timestamp <= RangeEnd are included in the range).
 	RangeEnd int64
 }
+
+type ScalarData struct {
+	// Samples contains floating point samples for this series.
+	// Samples must be sorted in timestamp order, earliest timestamps first.
+	// Samples must not have duplicate timestamps.
+	Samples []promql.FPoint
+}

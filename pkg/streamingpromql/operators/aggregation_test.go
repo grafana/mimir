@@ -5,7 +5,6 @@ package operators
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -233,7 +232,7 @@ func TestAggregation_GroupLabelling(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			aggregator := NewAggregation(nil, time.Time{}, time.Time{}, time.Minute, testCase.grouping, testCase.without, nil, nil, posrange.PositionRange{})
+			aggregator := NewAggregation(nil, 0, 0, 1, testCase.grouping, testCase.without, nil, nil, posrange.PositionRange{})
 			bytesFunc, labelsFunc := aggregator.seriesToGroupFuncs()
 
 			actualLabels := labelsFunc(testCase.inputSeries)

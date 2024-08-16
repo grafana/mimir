@@ -1531,6 +1531,11 @@ mimir_query_engine:
   # Only applies if the Mimir query engine is in use.
   # CLI flag: -querier.mimir-query-engine.enable-offset-modifier
   [enable_offset_modifier: <boolean> | default = true]
+
+  # (experimental) Enable support for scalars in Mimir's query engine. Only
+  # applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-scalars
+  [enable_scalars: <boolean> | default = true]
 ```
 
 ### frontend
