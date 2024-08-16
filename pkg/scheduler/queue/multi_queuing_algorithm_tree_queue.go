@@ -73,7 +73,7 @@ func (t *MultiQueuingAlgorithmTreeQueue[D]) IsEmpty() bool {
 // Nodes that empty down to the leaf after being dequeued from (or which are found to be empty leaf
 // nodes during the dequeue operation) are deleted as the recursion returns up the stack. This
 // maintains structural guarantees relied upon to make IsEmpty() non-recursive.
-func (t *MultiQueuingAlgorithmTreeQueue[D]) Dequeue(dequeueReq D) (QueuePath, any) {
+func (t *MultiQueuingAlgorithmTreeQueue[D]) Dequeue(_ D) (QueuePath, any) {
 	path, v := t.rootNode.dequeue()
 	// The returned node dequeue path includes the root node; exclude
 	// this so that the return path can be used if needed to enqueue.
