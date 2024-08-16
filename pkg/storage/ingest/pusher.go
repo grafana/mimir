@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/user"
@@ -109,7 +110,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 	recordsChannel := make(chan parsedRecord)
 
 	// Create a cancellable context to let the unmarshalling goroutine know when to stop.
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancelCause(ctx)
 
 	// Now, unmarshal the records into the channel.
 	go func(unmarshalCtx context.Context, records []record, ch chan<- parsedRecord) {
@@ -155,12 +156,12 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 		// If we get an error at any point, we need to stop processing the records. They will be retried at some point.
 		err := c.pushToStorage(r.ctx, r.tenantID, r.WriteRequest)
 		if err != nil {
-			cancel() // Stop the unmarshalling goroutine.
+			cancel(cancellation.NewErrorf("error while pushing to storage")) // Stop the unmarshalling goroutine.
 			return fmt.Errorf("consuming record at index %d for tenant %s: %w", r.index, r.tenantID, err)
 		}
 	}
 
-	cancel()
+	cancel(cancellation.NewErrorf("done unmarshalling records"))
 	return nil
 }
 

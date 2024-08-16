@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
-	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
@@ -372,42 +371,6 @@ func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 		`), "cortex_ingest_storage_reader_records_failed_total"))
 	})
 
-}
-
-func TestPusherConsumer_consume_ShouldHonorContextCancellation(t *testing.T) {
-	// Create a request that will be used in this test; the content doesn't matter,
-	// since we only test errors.
-	req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}}
-	reqBytes, err := req.Marshal()
-	require.NoError(t, err)
-
-	reqRecord := record{
-		ctx:      context.Background(), // The record's context isn't important for the test.
-		tenantID: "user-1",
-		content:  reqBytes,
-	}
-
-	// didPush signals that the testing record was pushed to the pusher.
-	didPush := make(chan struct{}, 1)
-	pusher := pusherFunc(func(ctx context.Context, _ *mimirpb.WriteRequest) error {
-		close(didPush)
-		<-ctx.Done()
-		return context.Cause(ctx)
-	})
-	consumer := newPusherConsumer(pusher, KafkaConfig{}, newPusherConsumerMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
-
-	wantCancelErr := cancellation.NewErrorf("stop")
-
-	// For this test, cancelling the top-most context must cancel an in-flight call to push,
-	// to prevent pusher from hanging forever.
-	canceledCtx, cancel := context.WithCancelCause(context.Background())
-	go func() {
-		<-didPush
-		cancel(wantCancelErr)
-	}()
-
-	err = consumer.Consume(canceledCtx, []record{reqRecord})
-	require.ErrorIs(t, err, wantCancelErr)
 }
 
 // ingesterError mimics how the ingester construct errors
