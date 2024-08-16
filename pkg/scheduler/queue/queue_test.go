@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"math/rand"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -20,7 +19,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -47,6 +45,19 @@ func buildTreeTestsStruct() []struct {
 
 func TestMain(m *testing.M) {
 	util_test.VerifyNoLeakTestMain(m)
+}
+
+func testQuerierInflightRequestsMetric() *prometheus.SummaryVec {
+	return promauto.With(prometheus.NewPedanticRegistry()).NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "test_cortex_query_scheduler_querier_inflight_requests",
+			Help:       "[test] Number of inflight requests being processed on all querier-scheduler connections. Quantile buckets keep track of inflight requests over the last 60s.",
+			Objectives: map[float64]float64{0.5: 0.05, 0.75: 0.02, 0.8: 0.02, 0.9: 0.01, 0.95: 0.01, 0.99: 0.001},
+			MaxAge:     time.Minute,
+			AgeBuckets: 6,
+		},
+		[]string{"query_component"},
+	)
 }
 
 var secondQueueDimensionOptions = []string{
@@ -93,156 +104,6 @@ func makeSchedulerRequest(tenantID string, additionalQueueDimensions []string) *
 	}
 }
 
-// TestMultiDimensionalQueueFairnessSlowConsumerEffects emulates a simplified queue slowdown scenario
-// which the scheduler's additional queue dimensions features are intended to solve for.
-//
-// In this scenario, one category of queue item causes the queue consumer to slow down, introducing a
-// significant delay while the queue consumer processes it and before the consumer can dequeue the next item.
-// This simulates a situation where one of the query components - the ingesters or store-gateways - is under load.
-//
-// If queue items belonging to the slow category are in the same queue ("normal-channel") in front of the normal queue
-// items, the normal queue items must wait for all slow queue items to be cleared before they can be serviced.
-// In this way, the degraded performance of the slow query component equally degrades the performance of the
-// queries which *could* be serviced quickly, but are waiting behind the slow queries in the queue.
-//
-// When using multiple queue dimensions, the queues are split by which "component" the query will utilize -- in this
-// test, those components are called "normal-channel" and "slow-channel" for clarity. The queue broker then
-// round-robins between the multiple queues, which has the effect of alternately dequeuing from the slow queries
-// and normal queries rather than blocking normal queries behind slow queries.
-func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
-	for _, tt := range buildTreeTestsStruct() {
-		// Only test allowed combinations of these configs
-		t.Run(tt.name, func(t *testing.T) {
-			promRegistry := prometheus.NewPedanticRegistry()
-
-			maxQueriersPerTenant := 0 // disable shuffle sharding
-			forgetQuerierDelay := time.Duration(0)
-			maxOutstandingRequestsPerTenant := 1000
-
-			totalRequests := 100
-			numTenants := 1
-			numProducers := 10
-			numConsumers := 1
-
-			normalQueueDimension := "normal-request"
-			slowConsumerLatency := 20 * time.Millisecond
-			slowConsumerQueueDimension := "slow-request"
-			normalQueueDimensionFunc := func(_ bool) []string { return []string{"normal-channel"} }
-			slowQueueDimensionFunc := func(usingMultipleDimensions bool) []string {
-				if usingMultipleDimensions {
-					return []string{"slow-channel"}
-				}
-				return []string{"normal-channel"}
-			}
-
-			useMultipleDimensions := []bool{false, true}
-			queueDurationTotals := map[bool]map[string]float64{
-				false: {normalQueueDimension: 0.0, slowConsumerQueueDimension: 0.0},
-				true:  {normalQueueDimension: 0.0, slowConsumerQueueDimension: 0.0},
-			}
-
-			for _, multipleDimensionsUsed := range useMultipleDimensions {
-
-				// Scheduler code uses a histogram for queue duration, but a counter is a more direct metric
-				// for this test, as we are concerned with the total or average wait time for all queue items.
-				// Prometheus histograms also lack support for test assertions via prometheus/testutil.
-				queueDuration := promauto.With(promRegistry).NewCounterVec(prometheus.CounterOpts{
-					Name: "test_query_scheduler_queue_duration_total_seconds",
-					Help: "[test] total time spent by items in queue before getting picked up by a consumer",
-				}, []string{"additional_queue_dimensions"})
-
-				queue, err := NewRequestQueue(
-					log.NewNopLogger(),
-					maxOutstandingRequestsPerTenant,
-					tt.useMultiAlgoTreeQueue,
-					tt.prioritizeQueryComponents,
-					forgetQuerierDelay,
-					promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
-					promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
-					promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-					promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
-				)
-				require.NoError(t, err)
-
-				ctx := context.Background()
-				require.NoError(t, queue.starting(ctx))
-				t.Cleanup(func() {
-					require.NoError(t, queue.stop(nil))
-				})
-
-				// fill queue first with the slow queries, then the normal queries
-				for _, queueDimensionFunc := range []func(bool) []string{slowQueueDimensionFunc, normalQueueDimensionFunc} {
-					startProducersChan := make(chan struct{})
-					producersErrGroup, _ := errgroup.WithContext(ctx)
-
-					runProducer := runQueueProducerIters(
-						queue, maxQueriersPerTenant, totalRequests/2, numProducers, numTenants, startProducersChan, multipleDimensionsUsed, queueDimensionFunc,
-					)
-					for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
-						producerIdx := producerIdx
-						producersErrGroup.Go(func() error {
-							return runProducer(producerIdx)
-						})
-					}
-					close(startProducersChan)
-					err := producersErrGroup.Wait()
-					require.NoError(t, err)
-				}
-
-				// emulate delay when consuming the slow queries
-				consumeFunc := func(request Request) error {
-					schedulerRequest := request.(*SchedulerRequest)
-					if schedulerRequest.AdditionalQueueDimensions[0] == slowConsumerQueueDimension {
-						time.Sleep(slowConsumerLatency)
-					}
-
-					queueTime := time.Since(schedulerRequest.EnqueueTime)
-					additionalQueueDimensionLabels := strings.Join(schedulerRequest.AdditionalQueueDimensions, ":")
-					queueDuration.With(prometheus.Labels{"additional_queue_dimensions": additionalQueueDimensionLabels}).Add(queueTime.Seconds())
-					return nil
-				}
-
-				// consume queries
-				queueConsumerErrGroup, ctx := errgroup.WithContext(ctx)
-				startConsumersChan := make(chan struct{})
-				runConsumer := runQueueConsumerIters(ctx, queue, totalRequests, numConsumers, startConsumersChan, consumeFunc)
-
-				for consumerIdx := 0; consumerIdx < numConsumers; consumerIdx++ {
-					consumerIdx := consumerIdx
-					queueConsumerErrGroup.Go(func() error {
-						return runConsumer(consumerIdx)
-					})
-				}
-
-				close(startConsumersChan)
-				err = queueConsumerErrGroup.Wait()
-				require.NoError(t, err)
-
-				// record total queue duration by queue dimensions and whether the queue splitting was enabled
-				for _, queueDimension := range []string{normalQueueDimension, slowConsumerQueueDimension} {
-					queueDurationTotals[multipleDimensionsUsed][queueDimension] = promtest.ToFloat64(
-						queueDuration.With(prometheus.Labels{"additional_queue_dimensions": queueDimension}),
-					)
-				}
-
-				promRegistry.Unregister(queueDuration)
-			}
-
-			// total or average time in queue for a normal queue item should be roughly cut in half
-			// when queue splitting is enabled, as the average normal queue item waits behind
-			// half of the slow queue items, instead of waiting behind all the slow queue items.
-			expected := queueDurationTotals[false][normalQueueDimension] / 2
-			actual := queueDurationTotals[true][normalQueueDimension]
-			// some variance allowed due to actual time processing needed beyond the slow consumer delay;
-			// variance is also a function of the number of consumers and the consumer delay chosen.
-			// variance can be tighter if the test runs longer but there is a tradeoff for testing and CI speed
-			delta := expected * 0.10
-			require.InDelta(t, expected, actual, delta)
-		})
-	}
-
-}
-
 func BenchmarkConcurrentQueueOperations(b *testing.B) {
 	treeTypes := buildTreeTestsStruct()
 
@@ -285,7 +146,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 									})
 
 									runProducer := runQueueProducerIters(
-										queue, maxQueriersPerTenant, b.N, numProducers, numTenants, startSignalChan, true, nil,
+										queue, maxQueriersPerTenant, b.N, numProducers, numTenants, startSignalChan, nil,
 									)
 
 									for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
@@ -346,8 +207,7 @@ func runQueueProducerIters(
 	numProducers int,
 	numTenants int,
 	start chan struct{},
-	usingMultipleDimensions bool,
-	additionalQueueDimensionFunc func(bool) []string,
+	additionalQueueDimensionFunc func(tenantID string) []string,
 ) func(producerIdx int) error {
 	return func(producerIdx int) error {
 		producerIters := queueActorIterationCount(totalIters, numProducers, producerIdx)
@@ -356,7 +216,7 @@ func runQueueProducerIters(
 		<-start
 
 		for i := 0; i < producerIters; i++ {
-			err := queueProduce(queue, maxQueriersPerTenant, tenantIDStr, usingMultipleDimensions, additionalQueueDimensionFunc)
+			err := queueProduce(queue, maxQueriersPerTenant, tenantIDStr, additionalQueueDimensionFunc)
 			if err != nil {
 				return err
 			}
@@ -372,12 +232,11 @@ func queueProduce(
 	queue *RequestQueue,
 	maxQueriersPerTenant int,
 	tenantID string,
-	usingMultipleDimensions bool,
-	additionalQueueDimensionFunc func(bool) []string,
+	additionalQueueDimensionFunc func(tenantID string) []string,
 ) error {
 	var additionalQueueDimensions []string
 	if additionalQueueDimensionFunc != nil {
-		additionalQueueDimensions = additionalQueueDimensionFunc(usingMultipleDimensions)
+		additionalQueueDimensions = additionalQueueDimensionFunc(tenantID)
 	}
 	req := makeSchedulerRequest(tenantID, additionalQueueDimensions)
 	for {
@@ -415,7 +274,7 @@ func runQueueConsumerIters(
 		<-start
 
 		for i := 0; i < consumerIters; i++ {
-			idx, err := queueConsume(ctx, queue, querierID, lastTenantIndex, consumeFunc)
+			idx, err := queueConsume(ctx, queue, querierID, consumerIdx, lastTenantIndex, consumeFunc)
 			if err != nil {
 				return err
 			}
@@ -427,12 +286,84 @@ func runQueueConsumerIters(
 	}
 }
 
+func makeQueueConsumerGroup(
+	ctx context.Context,
+	queue *RequestQueue,
+	totalRequests int,
+	numConsumers int,
+	consumeFunc consumeRequest,
+) (*errgroup.Group, chan struct{}) {
+	queueConsumerErrGroup, ctx := errgroup.WithContext(ctx)
+	consumedRequestsCounter := make(chan struct{}, totalRequests)
+	startConsumersChan := make(chan struct{})
+	stopConsumersChan := make(chan struct{})
+	runConsumer := runQueueConsumerUntilEmpty(ctx, totalRequests, queue, consumeFunc, consumedRequestsCounter, startConsumersChan, stopConsumersChan)
+
+	for consumerIdx := 0; consumerIdx < numConsumers; consumerIdx++ {
+		consumerIdx := consumerIdx
+		queueConsumerErrGroup.Go(func() error {
+			return runConsumer(consumerIdx)
+		})
+	}
+	return queueConsumerErrGroup, startConsumersChan
+}
+
+func runQueueConsumerUntilEmpty(
+	ctx context.Context,
+	totalRequests int,
+	requestQueue *RequestQueue,
+	consumeFunc consumeRequest,
+	consumedRequestsCounter chan struct{},
+	start chan struct{},
+	stop chan struct{},
+) func(consumerIdx int) error {
+	return func(consumerIdx int) error {
+		lastTenantIndex := FirstTenant()
+		querierID := fmt.Sprintf("consumer-%v", consumerIdx)
+		querierWorkerConn := NewUnregisteredQuerierWorkerConn(context.Background(), QuerierID(querierID))
+		err := requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn)
+		if err != nil {
+			return err
+		}
+		defer requestQueue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
+
+		consumedRequest := make(chan struct{})
+		loopQueueConsume := func() error {
+			for {
+				idx, err := queueConsume(ctx, requestQueue, querierID, consumerIdx, lastTenantIndex, consumeFunc)
+				if err != nil {
+					return err
+				}
+
+				consumedRequest <- struct{}{}
+				lastTenantIndex = idx
+			}
+		}
+		loopQueueConsumeErrGroup, _ := errgroup.WithContext(ctx)
+
+		<-start
+		loopQueueConsumeErrGroup.Go(loopQueueConsume)
+
+		for {
+			select {
+			case <-stop:
+				return nil
+			case <-consumedRequest:
+				consumedRequestsCounter <- struct{}{}
+				if len(consumedRequestsCounter) == totalRequests {
+					close(stop)
+				}
+			}
+		}
+	}
+}
+
 type consumeRequest func(request Request) error
 
 func queueConsume(
-	ctx context.Context, queue *RequestQueue, querierID string, lastTenantIndex TenantIndex, consumeFunc consumeRequest,
+	ctx context.Context, queue *RequestQueue, querierID string, workerID int, lastTenantIndex TenantIndex, consumeFunc consumeRequest,
 ) (TenantIndex, error) {
-	request, idx, err := queue.WaitForRequestForQuerier(ctx, lastTenantIndex, querierID)
+	request, idx, err := queue.WaitForRequestForQuerier(ctx, lastTenantIndex, querierID, workerID)
 	if err != nil {
 		return lastTenantIndex, err
 	}
@@ -580,7 +511,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 			querier2wg.Add(1)
 			go func() {
 				defer querier2wg.Done()
-				_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), "querier-2")
+				_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), "querier-2", 0)
 				require.NoError(t, err)
 			}()
 
@@ -675,7 +606,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 			querier2wg.Add(1)
 			go func() {
 				defer querier2wg.Done()
-				_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), "querier-2")
+				_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), "querier-2", 0)
 				require.NoError(t, err)
 			}()
 
@@ -744,7 +675,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 			// Calling WaitForRequestForQuerier with a context that is already cancelled should fail immediately.
 			deadCtx, cancel := context.WithCancel(context.Background())
 			cancel()
-			r, tenant, err := queue.WaitForRequestForQuerier(deadCtx, FirstTenant(), querierID)
+			r, tenant, err := queue.WaitForRequestForQuerier(deadCtx, FirstTenant(), querierID, 0)
 			assert.Nil(t, r)
 			assert.Equal(t, FirstTenant(), tenant)
 			assert.ErrorIs(t, err, context.Canceled)
@@ -754,7 +685,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 			ctx, cancel := context.WithCancel(context.Background())
 
 			go func() {
-				_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), querierID)
+				_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), querierID, 0)
 				errChan <- err
 			}()
 
@@ -805,7 +736,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 
 			queue.SubmitNotifyQuerierShutdown(ctx, querierID)
 
-			_, _, err = queue.WaitForRequestForQuerier(context.Background(), FirstTenant(), querierID)
+			_, _, err = queue.WaitForRequestForQuerier(context.Background(), FirstTenant(), querierID, 0)
 			require.EqualError(t, err, "querier has informed the scheduler it is shutting down")
 		})
 	}
