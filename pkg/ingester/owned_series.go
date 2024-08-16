@@ -290,10 +290,13 @@ func (ir *ownedSeriesIngesterRingStrategy) shardSizeForUser(userID string) int {
 }
 
 func (ir *ownedSeriesIngesterRingStrategy) tokenRangesForUser(userID string, shardSize int) (ring.TokenRanges, error) {
+	all, _ := ir.ingestersRing.GetAllHealthy(ring.Read)
+	fmt.Println("all instances in the ring:", "addresses:", all.GetAddresses(), "ids:", all.GetIDs(), "total ring instances", ir.ingestersRing.InstancesCount())
+
 	subring := ir.ingestersRing.ShuffleShard(userID, shardSize)
 
-	all, _ := subring.GetAllHealthy(ring.Read)
-	fmt.Println("subring for userID", subring.InstancesCount(), "addresses", all.GetAddresses(), "ids", all.GetIDs())
+	subringInstances, _ := subring.GetAllHealthy(ring.Read)
+	fmt.Println("subring for userID", userID, "shard size", shardSize, "instances:", subring.InstancesCount(), "addresses:", subringInstances.GetAddresses(), "ids:", subringInstances.GetIDs())
 
 	ranges, err := subring.GetTokenRangesForInstance(ir.instanceID)
 	if errors.Is(err, ring.ErrInstanceNotFound) {
