@@ -89,6 +89,7 @@
 * [BUGFIX] Compactor: fix a race condition between different compactor replicas that may cause a deleted block to be still referenced as non-deleted in the bucket index. #8905
 * [BUGFIX] Querier: fix issue where some native histogram-related warnings were not emitted when `rate()` was used over native histograms. #8918
 * [BUGFIX] Ruler: map invalid org-id errors to 400 status code. #8935
+* [BUGFIX] Querier: Fix invalid query results when multiple chunks are being merged. #8992
 
 ### Mixin
 

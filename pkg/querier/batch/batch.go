@@ -38,7 +38,7 @@ func (c GenericChunk) Iterator(reuse chunk.Iterator) chunk.Iterator {
 
 // iterator iterates over batches.
 type iterator interface {
-	// Seek to the batch at (or after) time t.
+	// Seek to the batch with sample at (or after) time t.
 	Seek(t int64, size int) chunkenc.ValueType
 
 	// Next moves to the next batch.

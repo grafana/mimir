@@ -43,7 +43,7 @@ func (i *chunkIterator) Seek(t int64, size int) chunkenc.ValueType {
 
 	// If the seek is to the middle of the current batch, and size fits, we can
 	// shortcut.
-	if i.batch.Length > 0 && t >= i.batch.Timestamps[0] && t <= i.batch.Timestamps[i.batch.Length-1] {
+	if i.batch.Length > 0 && t <= i.batch.Timestamps[i.batch.Length-1] {
 		i.batch.Index = 0
 		for i.batch.Index < i.batch.Length && t > i.batch.Timestamps[i.batch.Index] {
 			i.batch.Index++
