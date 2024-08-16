@@ -9,14 +9,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"sort"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/zeropool"
-	"slices"
-	"sort"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/floats"
 	"github.com/grafana/mimir/pkg/streamingpromql/functions"
