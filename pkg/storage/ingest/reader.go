@@ -986,7 +986,8 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 				w = handleKafkaFetchErr(f, w, errBackoff, newRecordsProducedBackoff, attemptLogger)
 			}
 			if len(f.Records) == 0 {
-				// TODO proper handling of NotLeaderForPartition ReplicaNotAvailable UnknownLeaderEpoch FencedLeaderEpoch; we need to be able to select the right broker to handle those
+				// Typically if we had an error, then there wouldn't eb any records.
+				// But it's hard to verify this from the Kafka API docs, so just to be sure, we process any records we might have received.
 				continue
 			}
 			// We reset the backoff if we received any records whatsoever. A received record means _some_ success.
