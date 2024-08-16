@@ -45,8 +45,16 @@
   ingest_storage_kafka_producer_address:: 'kafka.%(namespace)s.svc.%(cluster_domain)s:9092' % $._config,
   ingest_storage_kafka_consumer_address:: 'kafka.%(namespace)s.svc.%(cluster_domain)s:9092' % $._config,
 
-  ingest_storage_kafka_producer_client_id:: null,
-  ingest_storage_kafka_consumer_client_id:: null,
+  // The default Kafka client ID settings to use for producers and consumers.
+  // These key-value settings get serialised into a comma-separated string.
+  ingest_storage_kafka_producer_client_id_default_settings:: {},
+  ingest_storage_kafka_consumer_client_id_default_settings:: {},
+
+  // The per-component Kafka client ID settings overrides.
+  ingest_storage_distributor_kafka_client_id_settings:: {},
+  ingest_storage_ingester_kafka_client_id_settings:: {},
+  ingest_storage_query_frontend_kafka_client_id_settings:: {},
+  ingest_storage_ruler_kafka_client_id_settings:: {},
 
   // The configuration that should be applied to Mimir components either producing to or consuming from Kafka.
   ingest_storage_kafka_client_args:: {
@@ -54,16 +62,16 @@
     'ingest-storage.kafka.auto-create-topic-default-partitions': 1000,
   },
 
-  // The configuration that should be applied to Mimir components producing to Kafka.
+  // The configuration that should be applied to all Mimir components producing to Kafka.
   ingest_storage_kafka_producer_args:: {
     'ingest-storage.kafka.address': $.ingest_storage_kafka_producer_address,
-    'ingest-storage.kafka.client-id': $.ingest_storage_kafka_producer_client_id,
+    'ingest-storage.kafka.client-id': buildKafkaClientID($.ingest_storage_kafka_producer_client_id_default_settings),
   },
 
-  // The configuration that should be applied to Mimir components consuming from Kafka.
+  // The configuration that should be applied to all Mimir components consuming from Kafka.
   ingest_storage_kafka_consumer_args:: {
     'ingest-storage.kafka.address': $.ingest_storage_kafka_consumer_address,
-    'ingest-storage.kafka.client-id': $.ingest_storage_kafka_consumer_client_id,
+    'ingest-storage.kafka.client-id': buildKafkaClientID($.ingest_storage_kafka_consumer_client_id_default_settings),
   },
 
   //
@@ -85,12 +93,24 @@
     $.ingest_storage_query_frontend_args,
 
   ingest_storage_distributor_args+:: {
+    // Custom Kafka client ID.
+    'ingest-storage.kafka.client-id': buildKafkaClientID(
+      $.ingest_storage_kafka_producer_client_id_default_settings +
+      $.ingest_storage_distributor_kafka_client_id_settings
+    ),
+
     // Increase the default remote write timeout (applied to writing to Kafka too) because writing
     // to Kafka-compatible backend may be slower than writing to ingesters.
     'distributor.remote-timeout': '5s',
   },
 
   ingest_storage_ruler_args+:: {
+    // Custom Kafka client ID.
+    'ingest-storage.kafka.client-id': buildKafkaClientID(
+      $.ingest_storage_kafka_producer_client_id_default_settings +
+      $.ingest_storage_ruler_kafka_client_id_settings
+    ),
+
     // No need to increase -distributor.remote-timeout because the ruler's default is higher.
   },
 
@@ -104,6 +124,12 @@
     // Reduce the OffsetCommit pressure, at the cost of replaying few seconds of already-ingested data in case an ingester abruptly terminates
     // (in case of a graceful shutdown, the ingester will commit the offset at shutdown too).
     'ingest-storage.kafka.consumer-group-offset-commit-interval': '5s',
+
+    // Custom Kafka client ID.
+    'ingest-storage.kafka.client-id': buildKafkaClientID(
+      $.ingest_storage_kafka_consumer_client_id_default_settings +
+      $.ingest_storage_ingester_kafka_client_id_settings
+    ),
   },
 
   ingest_storage_partition_ring_client_args+:: {
@@ -123,6 +149,12 @@
     // the logic to fetch the last produced offsets.
     $.ingest_storage_partition_ring_client_args
     {
+      // Custom Kafka client ID.
+      'ingest-storage.kafka.client-id': buildKafkaClientID(
+        $.ingest_storage_kafka_consumer_client_id_default_settings +
+        $.ingest_storage_query_frontend_kafka_client_id_settings
+      ),
+
       // Reduce the LPO polling interval to improve latency of strong consistency reads.
       'ingest-storage.kafka.last-produced-offset-poll-interval': '500ms',
     },
@@ -142,4 +174,29 @@
     if $._config.ingest_storage_enabled && $._config.ingest_storage_ingester_zones < 3
     then null
     else super.ingester_zone_c_service,
+
+  //
+  // Utilities.
+  //
+
+  local buildKafkaClientID(settings) =
+    // Remove all null values from the settings. There could be null values because we use null as override
+    // value to remove a setting from the map.
+    local cleanSettings = {
+      [key]: settings[key]
+      for key in std.objectFields(settings)
+      if settings[key] != null
+    };
+
+    if std.length(cleanSettings) > 0 then
+      // Build the Kafka client ID from settings. Sort the key-value pairs to get a stable output.
+      std.join(',', std.sort(
+        [
+          key + '=' + cleanSettings[key]
+          for key in std.objectFields(cleanSettings)
+        ]
+      ))
+    else
+      // Explicitly use null so that the CLI flag will not be set at all (instead of getting set to an empty string).
+      null,
 }
