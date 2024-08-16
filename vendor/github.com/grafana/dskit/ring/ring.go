@@ -770,6 +770,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 		numInstancesPerZone = size
 		actualZones = []string{""}
 	}
+	fmt.Println("shuffle shard: size", size, "numInstancesPerZone", numInstancesPerZone, "actualZones", actualZones)
 
 	shard := make(map[string]InstanceDesc, min(len(r.ringDesc.Ingesters), size))
 
