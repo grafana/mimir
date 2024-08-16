@@ -16037,7 +16037,7 @@
           "kind": "field",
           "name": "prioritize_query_components",
           "required": false,
-          "desc": "When enabled, the query scheduler will primarily prioritize dequeuing fairly from queue components, and secondarily prioritize dequeuing fairly across tenants. When disabled, tenant fairness is primarily prioritized. `query-scheduler.use-multi-algorithm-query-queue` must be enabled in order to use this flag.",
+          "desc": "When enabled, the query scheduler primarily prioritizes dequeuing fairly from queue components and secondarily prioritizes dequeuing fairly across tenants. When disabled, the query scheduler primarily prioritizes tenant fairness. You must enable the `query-scheduler.use-multi-algorithm-query-queue` setting to use this flag.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-scheduler.prioritize-query-components",

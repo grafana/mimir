@@ -1722,11 +1722,11 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.use-multi-algorithm-query-queue
 [use_multi_algorithm_query_queue: <boolean> | default = false]
 
-# (experimental) When enabled, the query scheduler will primarily prioritize
-# dequeuing fairly from queue components, and secondarily prioritize dequeuing
-# fairly across tenants. When disabled, tenant fairness is primarily
-# prioritized. `query-scheduler.use-multi-algorithm-query-queue` must be enabled
-# in order to use this flag.
+# (experimental) When enabled, the query scheduler primarily prioritizes
+# dequeuing fairly from queue components and secondarily prioritizes dequeuing
+# fairly across tenants. When disabled, the query scheduler primarily
+# prioritizes tenant fairness. You must enable the
+# `query-scheduler.use-multi-algorithm-query-queue` setting to use this flag.
 # CLI flag: -query-scheduler.prioritize-query-components
 [prioritize_query_components: <boolean> | default = false]
 
