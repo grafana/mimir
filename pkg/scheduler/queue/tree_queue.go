@@ -18,17 +18,17 @@ import (
 // from its own local queue and dequeuing recursively from its list of child TreeQueues.
 // No queue at a given level of the tree is dequeued from consecutively unless all others
 // at the same level of the tree are empty down to the leaf node.
-type TreeQueue struct {
+type TreeQueue[D DequeueReq] struct {
 	// name of the tree node will be set to its segment of the queue path
 	name                   string
 	localQueue             *list.List
 	currentChildQueueIndex int
 	childQueueOrder        []string
-	childQueueMap          map[string]*TreeQueue
+	childQueueMap          map[string]*TreeQueue[D]
 }
 
-func NewTreeQueue(name string) *TreeQueue {
-	return &TreeQueue{
+func NewTreeQueue[D DequeueReq](name string) *TreeQueue[D] {
+	return &TreeQueue[D]{
 		name:                   name,
 		localQueue:             nil,
 		currentChildQueueIndex: localQueueIndex,
@@ -37,7 +37,7 @@ func NewTreeQueue(name string) *TreeQueue {
 	}
 }
 
-func (q *TreeQueue) IsEmpty() bool {
+func (q *TreeQueue[D]) IsEmpty() bool {
 	// avoid recursion to make this a cheap operation
 	//
 	// Because we dereference empty child nodes during dequeuing,
@@ -51,7 +51,7 @@ func (q *TreeQueue) IsEmpty() bool {
 }
 
 // NodeCount counts the TreeQueue node and all its children, recursively.
-func (q *TreeQueue) NodeCount() int {
+func (q *TreeQueue[D]) NodeCount() int {
 	count := 1 // count self
 	for _, childQueue := range q.childQueueMap {
 		count += childQueue.NodeCount()
@@ -60,7 +60,7 @@ func (q *TreeQueue) NodeCount() int {
 }
 
 // ItemCount counts the queue items in the TreeQueue node and in all its children, recursively.
-func (q *TreeQueue) ItemCount() int {
+func (q *TreeQueue[D]) ItemCount() int {
 	count := q.LocalQueueLen() // count self
 	for _, childQueue := range q.childQueueMap {
 		count += childQueue.ItemCount()
@@ -68,7 +68,7 @@ func (q *TreeQueue) ItemCount() int {
 	return count
 }
 
-func (q *TreeQueue) LocalQueueLen() int {
+func (q *TreeQueue[D]) LocalQueueLen() int {
 	localQueueLen := 0
 	if q.localQueue != nil {
 		localQueueLen = q.localQueue.Len()
@@ -81,7 +81,7 @@ func (q *TreeQueue) LocalQueueLen() int {
 //
 // childPath must be relative to the receiver node; providing a QueuePath beginning with
 // the receiver/parent node name will create a child node of the same name as the parent.
-func (q *TreeQueue) EnqueueBackByPath(childPath QueuePath, v any) error {
+func (q *TreeQueue[D]) EnqueueBackByPath(childPath QueuePath, v any) error {
 	childQueue, err := q.getOrAddNode(childPath)
 	if err != nil {
 		return err
@@ -106,7 +106,7 @@ func (q *TreeQueue) EnqueueBackByPath(childPath QueuePath, v any) error {
 //
 // childPath must be relative to the receiver node; providing a QueuePath beginning with
 // the receiver/parent node name will create a child node of the same name as the parent.
-func (q *TreeQueue) EnqueueFrontByPath(childPath QueuePath, v any) error {
+func (q *TreeQueue[D]) EnqueueFrontByPath(childPath QueuePath, v any) error {
 	childQueue, err := q.getOrAddNode(childPath)
 	if err != nil {
 		return err
@@ -122,21 +122,21 @@ func (q *TreeQueue) EnqueueFrontByPath(childPath QueuePath, v any) error {
 //
 // childPath must be relative to the receiver node; providing a QueuePath beginning with
 // the receiver/parent node name will create a child node of the same name as the parent.
-func (q *TreeQueue) getOrAddNode(childPath QueuePath) (*TreeQueue, error) {
+func (q *TreeQueue[D]) getOrAddNode(childPath QueuePath) (*TreeQueue[D], error) {
 	if len(childPath) == 0 {
 		return q, nil
 	}
 
 	if q.childQueueMap == nil {
-		q.childQueueMap = make(map[string]*TreeQueue, 1)
+		q.childQueueMap = make(map[string]*TreeQueue[D], 1)
 	}
 
-	var childQueue *TreeQueue
+	var childQueue *TreeQueue[D]
 	var ok bool
 	if childQueue, ok = q.childQueueMap[childPath[0]]; !ok {
 		// no child node matches next path segment
 		// create next child before recurring
-		childQueue = NewTreeQueue(childPath[0])
+		childQueue = NewTreeQueue[D](childPath[0])
 
 		// add new child queue to ordered list for round-robining;
 		// in order to maintain round-robin order as nodes are created and deleted,
@@ -166,7 +166,7 @@ func (q *TreeQueue) getOrAddNode(childPath QueuePath) (*TreeQueue, error) {
 	return childQueue.getOrAddNode(childPath[1:])
 }
 
-func (q *TreeQueue) getNode(childPath QueuePath) *TreeQueue {
+func (q *TreeQueue[D]) getNode(childPath QueuePath) *TreeQueue[D] {
 	if len(childPath) == 0 {
 		return q
 	}
@@ -190,13 +190,13 @@ func (q *TreeQueue) getNode(childPath QueuePath) *TreeQueue {
 // This maintains structural guarantees relied on to make IsEmpty() non-recursive.
 //
 // childPath is relative to the receiver node; pass a zero-length path to refer to the node itself.
-func (q *TreeQueue) DequeueByPath(childPath QueuePath) any {
+func (q *TreeQueue[D]) DequeueByPath(dequeueReq D, childPath QueuePath) any {
 	childQueue := q.getNode(childPath)
 	if childQueue == nil {
 		return nil
 	}
 
-	_, v := childQueue.Dequeue()
+	_, v := childQueue.Dequeue(dequeueReq)
 
 	if childQueue.IsEmpty() {
 		// child node will recursively clean up its own empty children during dequeue,
@@ -216,7 +216,7 @@ func (q *TreeQueue) DequeueByPath(childPath QueuePath) any {
 //
 // Nodes that empty down to the leaf after being dequeued from are deleted as the recursion returns
 // up the stack. This maintains structural guarantees relied on to make IsEmpty() non-recursive.
-func (q *TreeQueue) Dequeue() (QueuePath, any) {
+func (q *TreeQueue[D]) Dequeue(dequeueReq D) (QueuePath, any) {
 	var childPath QueuePath
 	var v any
 	initialLen := len(q.childQueueOrder)
@@ -239,7 +239,7 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 			// pick the child node whose turn it is and recur
 			childQueueName := q.childQueueOrder[q.currentChildQueueIndex]
 			childQueue := q.childQueueMap[childQueueName]
-			childPath, v = childQueue.Dequeue()
+			childPath, v = childQueue.Dequeue(dequeueReq)
 
 			// perform cleanup if child node is empty after dequeuing recursively
 			if childQueue.IsEmpty() {
@@ -254,7 +254,7 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 }
 
 // deleteNode removes a child node from the tree and the childQueueOrder and corrects the indices.
-func (q *TreeQueue) deleteNode(childPath QueuePath) bool {
+func (q *TreeQueue[D]) deleteNode(childPath QueuePath) bool {
 	if len(childPath) == 0 {
 		// node cannot delete itself
 		return false
@@ -279,7 +279,7 @@ func (q *TreeQueue) deleteNode(childPath QueuePath) bool {
 	return true
 }
 
-func (q *TreeQueue) wrapIndex(increment bool) {
+func (q *TreeQueue[D]) wrapIndex(increment bool) {
 	if increment {
 		q.currentChildQueueIndex++
 	}

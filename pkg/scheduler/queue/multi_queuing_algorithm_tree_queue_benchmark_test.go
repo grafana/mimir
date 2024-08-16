@@ -29,8 +29,8 @@ const maxOutStandingPerTenant = 1000000
 // newBenchmarkRequestQueue mirrors the constructor for RequestQueue, but with the ability to pass in a Tree
 func newBenchmarkRequestQueue(
 	queryComponentUtilization *QueryComponentUtilization,
-	tenantQuerierAssignments *tenantQuerierAssignments,
-	tree Tree,
+	tenantQuerierAssignments *tenantQuerierAssignments[any],
+	tree Tree[any],
 	prioritizeQueryComponents bool,
 ) (*RequestQueue, error) {
 
@@ -58,15 +58,29 @@ func newBenchmarkRequestQueue(
 		waitingQuerierConnsToDispatch: list.New(),
 
 		QueryComponentUtilization: queryComponentUtilization,
-		queueBroker: &queueBroker{
-			tree:                      tree,
-			tenantQuerierAssignments:  tenantQuerierAssignments,
-			maxTenantQueueSize:        maxOutStandingPerTenant,
-			prioritizeQueryComponents: prioritizeQueryComponents,
-		},
+		queueBroker: newQueueBrokerWithTree[any](
+			tree, maxOutStandingPerTenant, tenantQuerierAssignments, prioritizeQueryComponents,
+		),
 	}
 	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")
 	return q, nil
+}
+
+func newQueueBrokerWithTree[D DequeueReq](
+	tree Tree[D],
+	maxTenantQueueSize int,
+	tenantQuerierAssignments *tenantQuerierAssignments[D],
+	prioritizeQueryComponents bool,
+) *queueBroker[D] {
+
+	qb := &queueBroker[D]{
+		tree:                      tree,
+		tenantQuerierAssignments:  tenantQuerierAssignments,
+		maxTenantQueueSize:        maxTenantQueueSize,
+		prioritizeQueryComponents: prioritizeQueryComponents,
+	}
+
+	return qb
 }
 
 func weightedRandAdditionalQueueDimension(dimensionWeights map[string]float64) string {
@@ -370,17 +384,17 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 		queryComponentUtilization, err := NewQueryComponentUtilization(testQuerierInflightRequestsMetric())
 		require.NoError(t, err)
 
-		tqa := newTenantQuerierAssignments(0)
+		tqa := newTenantQuerierAssignments[any](0)
 
-		nonFlippedRoundRobinTree, err := NewTree(tqa, &roundRobinState{}, &roundRobinState{})
+		nonFlippedRoundRobinTree, err := NewTree[any](tqa, &roundRobinState[any]{}, &roundRobinState[any]{})
 		require.NoError(t, err)
 
-		querierWorkerPrioritizationTree, err := NewTree(NewQuerierWorkerQueuePriorityAlgo(), tqa, &roundRobinState{})
+		querierWorkerPrioritizationTree, err := NewTree[any](NewQuerierWorkerQueuePriorityAlgo[any](), tqa, &roundRobinState[any]{})
 		require.NoError(t, err)
 
 		trees := []struct {
 			name string
-			tree Tree
+			tree Tree[any]
 		}{
 			// keeping these names the same length keeps logged results aligned
 			{
@@ -454,7 +468,8 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				testCaseReports[testCaseName] = report
 
 				// ensure everything was dequeued
-				path, val := tree.tree.Dequeue()
+				var deqeueReq any
+				path, val := tree.tree.Dequeue(deqeueReq)
 				assert.Nil(t, val)
 				assert.Equal(t, path, QueuePath{})
 			})

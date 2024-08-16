@@ -155,7 +155,7 @@ type RequestQueue struct {
 	// Unlike schedulerInflightRequests, tracking begins only when the request is sent to a querier.
 	QueryComponentUtilization *QueryComponentUtilization
 
-	queueBroker *queueBroker
+	queueBroker *queueBroker[any]
 }
 
 type querierOperationType int
@@ -273,7 +273,7 @@ func NewRequestQueue(
 		waitingQuerierConnsToDispatch: list.New(),
 
 		QueryComponentUtilization: queryComponentCapacity,
-		queueBroker:               newQueueBroker(maxOutstandingPerTenant, useMultiAlgoQueue, forgetDelay),
+		queueBroker:               newQueueBroker[any](maxOutstandingPerTenant, useMultiAlgoQueue, false, forgetDelay),
 	}
 
 	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")
@@ -416,15 +416,15 @@ func (q *RequestQueue) enqueueRequestInternal(r requestToEnqueue) error {
 // b) an ErrQuerierShuttingDown indicating the querier has been placed in a graceful shutdown state.
 func (q *RequestQueue) trySendNextRequestForQuerier(waitingConn *waitingQuerierConn) (done bool) {
 	// TODO: This is a temporary solution to set the current querier-worker for the QuerierWorkerQueuePriorityAlgo.
-	if itq, ok := q.queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+	if itq, ok := q.queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue[any]); ok {
 		for _, algoState := range itq.algosByDepth {
-			if qwpAlgo, ok := algoState.(*QuerierWorkerQueuePriorityAlgo); ok {
-				qwpAlgo.SetCurrentQuerierWorker(waitingConn.workerID)
+			if qwpAlgo, ok := algoState.(*QuerierWorkerQueuePriorityAlgo[any]); ok {
+				qwpAlgo.SetCurrentQuerierWorker(waitingConn.WorkerID)
 			}
 		}
 	}
 
-	req, tenant, idx, err := q.queueBroker.dequeueRequestForQuerier(waitingConn.lastTenantIndex.last, waitingConn.querierID)
+	req, tenant, idx, err := q.queueBroker.dequeueRequestForQuerier(waitingConn.lastTenantIndex.last, waitingConn.QuerierID)
 	if err != nil {
 		// If this querier has told us it's shutting down, terminate WaitForRequestForQuerier with an error now...
 		waitingConn.sendError(err)
@@ -453,7 +453,7 @@ func (q *RequestQueue) trySendNextRequestForQuerier(waitingConn *waitingQuerierC
 		if err != nil {
 			level.Error(q.log).Log(
 				"msg", "failed to re-enqueue query request after dequeue",
-				"err", err, "tenant", tenant.tenantID, "querier", waitingConn.querierID,
+				"err", err, "tenant", tenant.tenantID, "querier", waitingConn.QuerierID,
 			)
 		}
 	}
@@ -502,9 +502,11 @@ func (q *RequestQueue) SubmitRequestToEnqueue(tenantID string, req Request, maxQ
 // Newly-connected querier-workers should pass FirstTenant as the TenantIndex to start iteration from the beginning.
 func (q *RequestQueue) WaitForRequestForQuerier(ctx context.Context, last TenantIndex, querierID string, workerID int) (Request, TenantIndex, error) {
 	waitingConn := &waitingQuerierConn{
-		querierConnCtx:  ctx,
-		querierID:       QuerierID(querierID),
-		workerID:        workerID,
+		QuerierWorkerConn: &QuerierWorkerConn{
+			ctx:       ctx,
+			QuerierID: QuerierID(querierID),
+			WorkerID:  workerID,
+		},
 		lastTenantIndex: last,
 		recvChan:        make(chan requestForQuerier),
 	}
@@ -579,7 +581,7 @@ func (q *RequestQueue) submitForgetDisconnectedQueriers(ctx context.Context) {
 // are submitted from the querier to an endpoint, separate from any specific querier-worker connection.
 func (q *RequestQueue) SubmitNotifyQuerierShutdown(ctx context.Context, querierID QuerierID) {
 	// Create a generic querier-worker connection to submit the operation.
-	conn := NewUnregisteredQuerierWorkerConn(ctx, querierID) // querierID matters but workerID does not
+	conn := NewUnregisteredQuerierWorkerConn(ctx, querierID) // QuerierID matters but WorkerID does not
 	q.submitQuerierWorkerOperation(conn, notifyShutdown)
 }
 
@@ -668,9 +670,10 @@ func FirstTenant() TenantIndex {
 // It embeds the unbuffered `recvChan` to receive the requestForQuerier "response" from the RequestQueue.
 // The request/response terminology is avoided in naming to disambiguate with the actual query requests.
 type waitingQuerierConn struct {
-	querierConnCtx  context.Context
-	querierID       QuerierID
-	workerID        int
+	*QuerierWorkerConn
+	//ctx       context.Context
+	//QuerierID       QuerierID
+	//WorkerID        int
 	lastTenantIndex TenantIndex
 	recvChan        chan requestForQuerier
 }
@@ -696,7 +699,7 @@ func (wqc *waitingQuerierConn) send(req requestForQuerier) bool {
 	select {
 	case wqc.recvChan <- req:
 		return true
-	case <-wqc.querierConnCtx.Done():
+	case <-wqc.ctx.Done():
 		// context done case serves as a default case to bail out
 		// if the waiting querier-worker connection's context times out or is canceled,
 		// allowing the dispatcherLoop to proceed with its next iteration
