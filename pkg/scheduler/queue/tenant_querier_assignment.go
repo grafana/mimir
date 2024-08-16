@@ -434,7 +434,7 @@ func (tqa *tenantQuerierAssignments[D]) shuffleTenantQueriers(tenantID TenantID,
 	return true
 }
 
-// dequeueSelectNode chooses the next node to dequeue from based on tenantIDOrder and tenantOrderIndex, which are
+// DequeueSelectNode chooses the next node to dequeue from based on tenantIDOrder and tenantOrderIndex, which are
 // shared across all nodes to maintain an O(n) (where n = # tenants) time-to-dequeue for each tenant.
 // If tenant order were maintained by individual nodes, we would end up with O(mn) (where m = # query components)
 // time-to-dequeue for a given tenant.
@@ -503,7 +503,7 @@ func (tqa *tenantQuerierAssignments[D]) DequeueSelectNode(node *Node[D]) (*Node[
 	return nil, checkedAllNodes
 }
 
-// dequeueUpdateState deletes the dequeued-from node from the following locations if it is empty:
+// DequeueUpdateState deletes the dequeued-from node from the following locations if it is empty:
 //   - parent's queueMap,
 //   - tenantNodes
 //   - tenantIDOrder iff there are no other nodes by the same name in tenantNodes. If the child is at the end of
@@ -550,7 +550,7 @@ func (tqa *tenantQuerierAssignments[D]) DequeueUpdateState(node *Node[D], dequeu
 	}
 }
 
-// addChildNode adds a child to:
+// AddChildNode adds a child to:
 //   - the node's own queueMap
 //   - tenantNodes, which maintains a slice of all nodes with the same name. tenantNodes is checked on node deletion
 //     to ensure that we only remove a tenant from tenantIDOrder if _all_ nodes with the same name have been removed.
