@@ -45,6 +45,7 @@ type BlockBuilder struct {
 
 	parts []int32
 	// fallbackOffset is the low watermark from where a partition which doesn't have a commit will be consumed.
+	// It can be either a timestamp or the kafkaStartOffset.
 	// TODO(v): to support for setting it to kafkaStartOffset we need to rework how a lagging cycle is chopped into time frames.
 	fallbackOffset int64
 
@@ -176,6 +177,9 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	return nil
 }
 
+// kafkaOffsetStart is a special offset value that means the beginning of the partition.
+const kafkaOffsetStart = int64(-2)
+
 func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context, metrics *kprom.Metrics) (map[int32]kgo.Offset, int64, error) {
 	// We use an ephemeral client to fetch the offset and then create a new client with this offset.
 	// The reason for this is that changing the offset of an existing client requires to have used this client for fetching at least once.
@@ -188,14 +192,25 @@ func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context, metrics *kprom.
 
 	admClient := kadm.NewClient(cl)
 
-	fallbackOffset := int64(b.cfg.LookbackOnNoCommit)
+	var fallbackOffset int64
 	defaultKOffset := kgo.NewOffset()
-	if fallbackOffset < 0 {
-		defaultKOffset = defaultKOffset.At(fallbackOffset)
-	} else {
+
+	// When LookbackOnNoCommit is positive, its value is used to calculate the timestamp after which the consumption starts,
+	// otherwise it is a special offset for the "start" of the partition.
+	if b.cfg.LookbackOnNoCommit > 0 {
 		ts := time.Now().Add(-b.cfg.LookbackOnNoCommit)
 		fallbackOffset = ts.UnixMilli()
 		defaultKOffset = defaultKOffset.AfterMilli(fallbackOffset)
+	} else {
+		fallbackOffset = int64(b.cfg.LookbackOnNoCommit)
+		switch fallbackOffset {
+		case kafkaOffsetStart:
+			defaultKOffset = defaultKOffset.AtStart()
+		default:
+			// We don't support consuming from the "end" of the partition because starting a cycle from the end always results to a zero lag.
+			// This may be done later.
+			return nil, -1, fmt.Errorf("unexpected fallback offset value %v", b.cfg.LookbackOnNoCommit)
+		}
 	}
 
 	fetchOffsets := func(ctx context.Context) (offsets map[int32]kgo.Offset, err error) {
