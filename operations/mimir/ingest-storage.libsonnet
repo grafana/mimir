@@ -47,15 +47,15 @@
 
   // The default Kafka client ID settings to use for producers and consumers.
   // These key-value settings get serialised into a comma-separated string.
-  ingest_storage_kafka_producer_client_id_default_settings:: {},
-  ingest_storage_kafka_consumer_client_id_default_settings:: {},
+  ingest_storage_kafka_producer_client_id_settings:: {},
+  ingest_storage_kafka_consumer_client_id_settings:: {},
 
   // The per-component Kafka client ID settings overrides.
-  ingest_storage_distributor_kafka_client_id_settings:: $.ingest_storage_kafka_producer_client_id_default_settings,
-  ingest_storage_ruler_kafka_client_id_settings:: $.ingest_storage_kafka_producer_client_id_default_settings,
+  ingest_storage_distributor_kafka_client_id_settings:: $.ingest_storage_kafka_producer_client_id_settings,
+  ingest_storage_ruler_kafka_client_id_settings:: $.ingest_storage_kafka_producer_client_id_settings,
 
-  ingest_storage_ingester_kafka_client_id_settings:: $.ingest_storage_kafka_consumer_client_id_default_settings,
-  ingest_storage_query_frontend_kafka_client_id_settings:: $.ingest_storage_kafka_consumer_client_id_default_settings,
+  ingest_storage_ingester_kafka_client_id_settings:: $.ingest_storage_kafka_consumer_client_id_settings,
+  ingest_storage_query_frontend_kafka_client_id_settings:: $.ingest_storage_kafka_consumer_client_id_settings,
 
   // The configuration that should be applied to Mimir components either producing to or consuming from Kafka.
   ingest_storage_kafka_client_args:: {
@@ -66,13 +66,13 @@
   // The configuration that should be applied to all Mimir components producing to Kafka.
   ingest_storage_kafka_producer_args:: {
     'ingest-storage.kafka.address': $.ingest_storage_kafka_producer_address,
-    'ingest-storage.kafka.client-id': $.mimirKafkaClientID($.ingest_storage_kafka_producer_client_id_default_settings),
+    'ingest-storage.kafka.client-id': $.mimirKafkaClientID($.ingest_storage_kafka_producer_client_id_settings),
   },
 
   // The configuration that should be applied to all Mimir components consuming from Kafka.
   ingest_storage_kafka_consumer_args:: {
     'ingest-storage.kafka.address': $.ingest_storage_kafka_consumer_address,
-    'ingest-storage.kafka.client-id': $.mimirKafkaClientID($.ingest_storage_kafka_consumer_client_id_default_settings),
+    'ingest-storage.kafka.client-id': $.mimirKafkaClientID($.ingest_storage_kafka_consumer_client_id_settings),
   },
 
   //
