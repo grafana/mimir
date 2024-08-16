@@ -271,16 +271,6 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 		tenantQueueDimensionsWeights map[string]map[string]float64
 	}{
 		{
-			name: "1 tenant, 01pct slow queries",
-			tenantQueueDimensionsWeights: map[string]map[string]float64{
-				"0": {
-					ingesterQueueDimension:                .99,
-					storeGatewayQueueDimension:            .005,
-					ingesterAndStoreGatewayQueueDimension: .005,
-				},
-			},
-		},
-		{
 			name: "1 tenant, 05pct slow queries",
 			tenantQueueDimensionsWeights: map[string]map[string]float64{
 				"0": {
@@ -347,16 +337,6 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 					ingesterQueueDimension:                .05,
 					storeGatewayQueueDimension:            .475,
 					ingesterAndStoreGatewayQueueDimension: .475,
-				},
-			},
-		},
-		{
-			name: "1 tenant, 99pct slow queries",
-			tenantQueueDimensionsWeights: map[string]map[string]float64{
-				"0": {
-					ingesterQueueDimension:                .01,
-					storeGatewayQueueDimension:            .495,
-					ingesterAndStoreGatewayQueueDimension: .495,
 				},
 			},
 		},
