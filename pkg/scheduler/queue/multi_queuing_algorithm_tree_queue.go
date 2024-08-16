@@ -12,10 +12,12 @@ type QueueIndex int     //nolint:revive // disallows types beginning with packag
 
 const localQueueIndex = -1
 
-type Tree interface {
+type DequeueReq any
+
+type Tree[D DequeueReq] interface {
 	EnqueueFrontByPath(QueuePath, any) error
 	EnqueueBackByPath(QueuePath, any) error
-	Dequeue() (QueuePath, any)
+	Dequeue(D) (QueuePath, any)
 	ItemCount() int
 	IsEmpty() bool
 }
@@ -34,30 +36,30 @@ type Tree interface {
 // or a child node to dequeue from recursively (i.e., a child Node will use its own QueuingAlgorithm
 // to determine how to proceed). MultiQueuingAlgorithmTreeQueue will not dequeue from two different Nodes at the same depth
 // consecutively, unless the previously-checked Node was empty down to the leaf node.
-type MultiQueuingAlgorithmTreeQueue struct {
-	rootNode     *Node
-	algosByDepth []QueuingAlgorithm
+type MultiQueuingAlgorithmTreeQueue[D DequeueReq] struct {
+	rootNode     *Node[D]
+	algosByDepth []QueuingAlgorithm[D]
 }
 
-func NewTree(queuingAlgorithms ...QueuingAlgorithm) (*MultiQueuingAlgorithmTreeQueue, error) {
+func NewTree[D DequeueReq](queuingAlgorithms ...QueuingAlgorithm[D]) (*MultiQueuingAlgorithmTreeQueue[D], error) {
 	if len(queuingAlgorithms) == 0 {
 		return nil, fmt.Errorf("cannot create a tree without defined QueuingAlgorithm")
 	}
-	root, err := newNode("root", len(queuingAlgorithms)-1, queuingAlgorithms[0])
+	root, err := newNode[D]("root", len(queuingAlgorithms)-1, queuingAlgorithms[0])
 	if err != nil {
 		return nil, err
 	}
-	return &MultiQueuingAlgorithmTreeQueue{
+	return &MultiQueuingAlgorithmTreeQueue[D]{
 		rootNode:     root,
 		algosByDepth: queuingAlgorithms,
 	}, nil
 }
 
-func (t *MultiQueuingAlgorithmTreeQueue) ItemCount() int {
+func (t *MultiQueuingAlgorithmTreeQueue[D]) ItemCount() int {
 	return t.rootNode.ItemCount()
 }
 
-func (t *MultiQueuingAlgorithmTreeQueue) IsEmpty() bool {
+func (t *MultiQueuingAlgorithmTreeQueue[D]) IsEmpty() bool {
 	return t.rootNode.IsEmpty()
 }
 
@@ -71,7 +73,7 @@ func (t *MultiQueuingAlgorithmTreeQueue) IsEmpty() bool {
 // Nodes that empty down to the leaf after being dequeued from (or which are found to be empty leaf
 // nodes during the dequeue operation) are deleted as the recursion returns up the stack. This
 // maintains structural guarantees relied upon to make IsEmpty() non-recursive.
-func (t *MultiQueuingAlgorithmTreeQueue) Dequeue() (QueuePath, any) {
+func (t *MultiQueuingAlgorithmTreeQueue[D]) Dequeue(dequeueReq D) (QueuePath, any) {
 	path, v := t.rootNode.dequeue()
 	// The returned node dequeue path includes the root node; exclude
 	// this so that the return path can be used if needed to enqueue.
@@ -83,7 +85,7 @@ func (t *MultiQueuingAlgorithmTreeQueue) Dequeue() (QueuePath, any) {
 //
 // path is relative to the root node; providing a QueuePath beginning with "root"
 // will create a child node of the root node which is also named "root."
-func (t *MultiQueuingAlgorithmTreeQueue) EnqueueBackByPath(path QueuePath, v any) error {
+func (t *MultiQueuingAlgorithmTreeQueue[D]) EnqueueBackByPath(path QueuePath, v any) error {
 	if len(path) != len(t.algosByDepth)-1 {
 		return fmt.Errorf("can't enqueue object to non-leaf node")
 	}
@@ -104,11 +106,11 @@ func (t *MultiQueuingAlgorithmTreeQueue) EnqueueBackByPath(path QueuePath, v any
 //
 // path must be relative to the root node; providing a QueuePath beginning with "root"
 // will create a child node of root which is also named "root."
-func (t *MultiQueuingAlgorithmTreeQueue) EnqueueFrontByPath(path QueuePath, v any) error {
+func (t *MultiQueuingAlgorithmTreeQueue[D]) EnqueueFrontByPath(path QueuePath, v any) error {
 	return t.rootNode.enqueueFrontByPath(t, path, v)
 }
 
-func (t *MultiQueuingAlgorithmTreeQueue) GetNode(path QueuePath) *Node {
+func (t *MultiQueuingAlgorithmTreeQueue[D]) GetNode(path QueuePath) *Node[D] {
 	return t.rootNode.getNode(path)
 }
 
@@ -117,18 +119,18 @@ func (t *MultiQueuingAlgorithmTreeQueue) GetNode(path QueuePath) *Node {
 // Note that the tenantQuerierAssignments QueuingAlgorithm largely disregards Node's queueOrder and
 // queuePosition, managing analogous state instead, because shuffle-sharding + fairness  requirements
 // necessitate input from the querier.
-type Node struct {
+type Node[D DequeueReq] struct {
 	name             string
 	localQueue       *list.List
 	queuePosition    int      // next index in queueOrder to dequeue from
 	queueOrder       []string // order for dequeuing from self/children
-	queueMap         map[string]*Node
+	queueMap         map[string]*Node[D]
 	height           int
-	queuingAlgorithm QueuingAlgorithm
+	queuingAlgorithm QueuingAlgorithm[D]
 	childrenChecked  int
 }
 
-func newNode(name string, height int, da QueuingAlgorithm) (*Node, error) {
+func newNode[D DequeueReq](name string, height int, da QueuingAlgorithm[D]) (*Node[D], error) {
 	if height < 0 {
 		return nil, fmt.Errorf("cannot create a node at negative height")
 	}
@@ -136,7 +138,7 @@ func newNode(name string, height int, da QueuingAlgorithm) (*Node, error) {
 	if da == nil {
 		return nil, fmt.Errorf("cannot create a node without a defined QueuingAlgorithm")
 	}
-	n := &Node{
+	n := &Node[D]{
 		name:             name,
 		localQueue:       nil,
 		queuePosition:    localQueueIndex,
@@ -148,13 +150,13 @@ func newNode(name string, height int, da QueuingAlgorithm) (*Node, error) {
 		n.localQueue = list.New()
 	} else {
 		// any other kind of node is allowed to have children, but not a local queue
-		n.queueMap = make(map[string]*Node, 1)
+		n.queueMap = make(map[string]*Node[D], 1)
 		n.queueOrder = make([]string, 0)
 	}
 	return n, nil
 }
 
-func (n *Node) IsEmpty() bool {
+func (n *Node[D]) IsEmpty() bool {
 	// avoid recursion to make this a cheap operation
 	//
 	// Because we dereference empty child nodes during dequeuing,
@@ -173,12 +175,12 @@ func (n *Node) IsEmpty() bool {
 	return len(n.queueMap) == 0
 }
 
-func (n *Node) isLeaf() bool {
+func (n *Node[D]) isLeaf() bool {
 	return n.height == 0
 }
 
 // ItemCount counts the queue items in the Node and in all its children, recursively.
-func (n *Node) ItemCount() int {
+func (n *Node[D]) ItemCount() int {
 	if n.isLeaf() {
 		return n.localQueue.Len()
 	}
@@ -189,15 +191,15 @@ func (n *Node) ItemCount() int {
 	return items
 }
 
-func (n *Node) Name() string {
+func (n *Node[D]) Name() string {
 	return n.name
 }
 
-func (n *Node) getLocalQueue() *list.List {
+func (n *Node[D]) getLocalQueue() *list.List {
 	return n.localQueue
 }
 
-func (n *Node) enqueueFrontByPath(tree *MultiQueuingAlgorithmTreeQueue, pathFromNode QueuePath, v any) error {
+func (n *Node[D]) enqueueFrontByPath(tree *MultiQueuingAlgorithmTreeQueue[D], pathFromNode QueuePath, v any) error {
 	childNode, err := n.getOrAddNode(pathFromNode, tree)
 	if err != nil {
 		return err
@@ -206,7 +208,7 @@ func (n *Node) enqueueFrontByPath(tree *MultiQueuingAlgorithmTreeQueue, pathFrom
 	return nil
 }
 
-func (n *Node) enqueueBackByPath(tree *MultiQueuingAlgorithmTreeQueue, pathFromNode QueuePath, v any) error {
+func (n *Node[D]) enqueueBackByPath(tree *MultiQueuingAlgorithmTreeQueue[D], pathFromNode QueuePath, v any) error {
 	childNode, err := n.getOrAddNode(pathFromNode, tree)
 	if err != nil {
 		return err
@@ -215,14 +217,14 @@ func (n *Node) enqueueBackByPath(tree *MultiQueuingAlgorithmTreeQueue, pathFromN
 	return nil
 }
 
-func (n *Node) dequeue() (QueuePath, any) {
+func (n *Node[D]) dequeue() (QueuePath, any) {
 	var v any
 	var childPath QueuePath
 
 	path := QueuePath{n.name}
 
 	var checkedAllNodes bool
-	var dequeueNode *Node
+	var dequeueNode *Node[D]
 	// continue until we've found a value or checked all nodes that need checking
 	for v == nil && !checkedAllNodes {
 		if n.IsEmpty() {
@@ -262,7 +264,7 @@ func (n *Node) dequeue() (QueuePath, any) {
 	return append(path, childPath...), v
 }
 
-func (n *Node) getNode(pathFromNode QueuePath) *Node {
+func (n *Node[D]) getNode(pathFromNode QueuePath) *Node[D] {
 	if len(pathFromNode) == 0 {
 		return n
 	}
@@ -285,12 +287,12 @@ func (n *Node) getNode(pathFromNode QueuePath) *Node {
 //
 // pathFromNode must be relative to the receiver node; providing a QueuePath beginning with
 // the receiver/parent node name will create a child node of the same name as the parent.
-func (n *Node) getOrAddNode(pathFromNode QueuePath, tree *MultiQueuingAlgorithmTreeQueue) (*Node, error) {
+func (n *Node[D]) getOrAddNode(pathFromNode QueuePath, tree *MultiQueuingAlgorithmTreeQueue[D]) (*Node[D], error) {
 	if len(pathFromNode) == 0 {
 		return n, nil
 	}
 
-	var childNode *Node
+	var childNode *Node[D]
 	var ok bool
 	var err error
 	if childNode, ok = n.queueMap[pathFromNode[0]]; !ok {
@@ -298,7 +300,7 @@ func (n *Node) getOrAddNode(pathFromNode QueuePath, tree *MultiQueuingAlgorithmT
 		childHeight := n.height - 1
 		// calculate child depth to properly assign queuing algorithm
 		childDepth := len(tree.algosByDepth) - childHeight - 1
-		childNode, err = newNode(pathFromNode[0], childHeight, tree.algosByDepth[childDepth])
+		childNode, err = newNode[D](pathFromNode[0], childHeight, tree.algosByDepth[childDepth])
 		if err != nil {
 			return nil, err
 		}

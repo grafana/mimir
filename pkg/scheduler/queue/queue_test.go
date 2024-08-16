@@ -755,7 +755,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 
 			// bypassing queue dispatcher loop for direct usage of the queueBroker and
 			// passing a waitingQuerierConn for a canceled querier connection
-			queueBroker := newQueueBroker(queue.maxOutstandingPerTenant, false, queue.forgetDelay)
+			queueBroker := newQueueBroker[any](queue.maxOutstandingPerTenant, false, false, queue.forgetDelay)
 			queueBroker.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), querierID))
 
 			tenantMaxQueriers := 0 // no sharding
@@ -770,11 +770,11 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 			}
 
 			// TODO (casie): Clean this up when deprecating legacy tree queue
-			if tq, ok := queueBroker.tree.(*TreeQueue); ok {
+			if tq, ok := queueBroker.tree.(*TreeQueue[any]); ok {
 				require.Nil(t, tq.getNode(QueuePath{"tenant-1"}))
 				require.NoError(t, queueBroker.enqueueRequestBack(&tr, tenantMaxQueriers))
 				require.False(t, tq.getNode(QueuePath{"tenant-1"}).IsEmpty())
-			} else if itq, ok := queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+			} else if itq, ok := queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue[any]); ok {
 				require.Nil(t, itq.GetNode(QueuePath{"tenant-1"}))
 				require.NoError(t, queueBroker.enqueueRequestBack(&tr, tenantMaxQueriers))
 				require.False(t, itq.GetNode(QueuePath{"tenant-1"}).IsEmpty())
@@ -782,8 +782,11 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 
 			ctx, cancel := context.WithCancel(context.Background())
 			call := &waitingQuerierConn{
-				querierConnCtx:  ctx,
-				querierID:       QuerierID(querierID),
+				QuerierWorkerConn: &QuerierWorkerConn{
+					ctx:       ctx,
+					QuerierID: QuerierID(querierID),
+					WorkerID:  0,
+				},
 				lastTenantIndex: FirstTenant(),
 				recvChan:        make(chan requestForQuerier),
 			}
@@ -794,9 +797,9 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 			require.True(t, queue.trySendNextRequestForQuerier(call))
 			// assert request was re-enqueued for tenant after failed send
 			// TODO (casie): Clean this up when deprecating legacy tree queue
-			if tq, ok := queueBroker.tree.(*TreeQueue); ok {
+			if tq, ok := queueBroker.tree.(*TreeQueue[any]); ok {
 				require.False(t, tq.getNode(QueuePath{"tenant-1"}).IsEmpty())
-			} else if itq, ok := queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+			} else if itq, ok := queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue[any]); ok {
 				require.False(t, itq.GetNode(QueuePath{"tenant-1"}).IsEmpty())
 			}
 

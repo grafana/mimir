@@ -96,7 +96,7 @@ func (s querierIDSlice) Search(x QuerierID) int {
 
 // tenantQuerierAssignments implements QueuingAlgorithm. In the context of a MultiQueuingAlgorithmTreeQueue, it maintains a mapping of
 // tenants to queriers in order to support dequeuing from an appropriate tenant if shuffle-sharding is enabled.
-type tenantQuerierAssignments struct {
+type tenantQuerierAssignments[D DequeueReq] struct {
 	// a tenant has many queriers
 	// a tenant has *all* queriers if:
 	//  - sharding is disabled (max-queriers-per-tenant=0)
@@ -128,7 +128,7 @@ type tenantQuerierAssignments struct {
 	// can be returned to the querier. Newly connected queriers should pass -1 to start at the
 	// beginning of tenantIDOrder.
 	tenantOrderIndex int
-	tenantNodes      map[string][]*Node
+	tenantNodes      map[string][]*Node[D]
 
 	// Tenant assigned querier ID set as determined by shuffle sharding.
 	// If tenant querier ID set is not nil, only those queriers can handle the tenant's requests,
@@ -137,15 +137,15 @@ type tenantQuerierAssignments struct {
 	currentQuerier   QuerierID
 }
 
-func newTenantQuerierAssignments(forgetDelay time.Duration) *tenantQuerierAssignments {
-	return &tenantQuerierAssignments{
+func newTenantQuerierAssignments[D DequeueReq](forgetDelay time.Duration) *tenantQuerierAssignments[D] {
+	return &tenantQuerierAssignments[D]{
 		queriersByID:       map[QuerierID]*querierConns{},
 		querierIDsSorted:   nil,
 		querierForgetDelay: forgetDelay,
 		tenantIDOrder:      nil,
 		tenantsByID:        map[TenantID]*queueTenant{},
 		tenantQuerierIDs:   map[TenantID]map[QuerierID]struct{}{},
-		tenantNodes:        map[string][]*Node{},
+		tenantNodes:        map[string][]*Node[D]{},
 		currentQuerier:     "",
 		tenantOrderIndex:   localQueueIndex,
 	}
@@ -158,7 +158,7 @@ func newTenantQuerierAssignments(forgetDelay time.Duration) *tenantQuerierAssign
 // starting just after the last tenant the querier received a request for, until a tenant
 // is found that is assigned to the given querier according to the querier shuffle sharding.
 // A newly connected querier provides lastTenantIndex of -1 in order to start at the beginning.
-func (tqa *tenantQuerierAssignments) getNextTenantForQuerier(lastTenantIndex int, querierID QuerierID) (*queueTenant, int, error) {
+func (tqa *tenantQuerierAssignments[D]) getNextTenantForQuerier(lastTenantIndex int, querierID QuerierID) (*queueTenant, int, error) {
 	// check if querier is registered and is not shutting down
 	if q := tqa.queriersByID[querierID]; q == nil || q.shuttingDown {
 		return nil, lastTenantIndex, ErrQuerierShuttingDown
@@ -197,7 +197,7 @@ func (tqa *tenantQuerierAssignments) getNextTenantForQuerier(lastTenantIndex int
 //
 // New tenants are added to the tenant order list and tenant-querier shards are shuffled if needed.
 // Existing tenants have the tenant-querier shards shuffled only if their maxQueriers has changed.
-func (tqa *tenantQuerierAssignments) createOrUpdateTenant(tenantID TenantID, maxQueriers int) error {
+func (tqa *tenantQuerierAssignments[D]) createOrUpdateTenant(tenantID TenantID, maxQueriers int) error {
 	if tenantID == emptyTenantID {
 		// empty tenantID is not allowed; "" is used for free spot
 		return ErrInvalidTenantID
@@ -248,7 +248,7 @@ func (tqa *tenantQuerierAssignments) createOrUpdateTenant(tenantID TenantID, max
 	return nil
 }
 
-func (tqa *tenantQuerierAssignments) addQuerierWorkerConn(conn *QuerierWorkerConn) (resharded bool) {
+func (tqa *tenantQuerierAssignments[D]) addQuerierWorkerConn(conn *QuerierWorkerConn) (resharded bool) {
 	if conn.IsRegistered() {
 		panic("received request to register a querier-worker which was already registered")
 	}
@@ -278,7 +278,7 @@ func (tqa *tenantQuerierAssignments) addQuerierWorkerConn(conn *QuerierWorkerCon
 // tenant deletion (e.g., from tenantIDOrder, or tenantNodes) is done during the dequeue operation,
 // as we cannot remove from those things arbitrarily; we must check whether other tenant
 // queues exist for the same tenant before removing.
-func (tqa *tenantQuerierAssignments) removeTenant(tenantID TenantID) {
+func (tqa *tenantQuerierAssignments[D]) removeTenant(tenantID TenantID) {
 	tenant := tqa.tenantsByID[tenantID]
 	if tenant == nil {
 		return
@@ -302,7 +302,7 @@ func (tqa *tenantQuerierAssignments) removeTenant(tenantID TenantID) {
 	}
 }
 
-func (tqa *tenantQuerierAssignments) removeQuerierWorkerConn(conn *QuerierWorkerConn, now time.Time) (resharded bool) {
+func (tqa *tenantQuerierAssignments[D]) removeQuerierWorkerConn(conn *QuerierWorkerConn, now time.Time) (resharded bool) {
 	querier := tqa.queriersByID[conn.QuerierID]
 	if querier == nil || !querier.IsActive() {
 		panic("unexpected number of connections for querier")
@@ -332,7 +332,7 @@ func (tqa *tenantQuerierAssignments) removeQuerierWorkerConn(conn *QuerierWorker
 
 // removeQuerier deletes a querier from the tenant-querier assignments.
 // Returns true if tenant-querier reshard was triggered.
-func (tqa *tenantQuerierAssignments) removeQuerier(querierID QuerierID) (resharded bool) {
+func (tqa *tenantQuerierAssignments[D]) removeQuerier(querierID QuerierID) (resharded bool) {
 	delete(tqa.queriersByID, querierID)
 
 	ix := tqa.querierIDsSorted.Search(querierID)
@@ -347,7 +347,7 @@ func (tqa *tenantQuerierAssignments) removeQuerier(querierID QuerierID) (reshard
 
 // notifyQuerierShutdown handles a graceful shutdown notification from a querier.
 // Returns true if tenant-querier reshard was triggered.
-func (tqa *tenantQuerierAssignments) notifyQuerierShutdown(querierID QuerierID) (resharded bool) {
+func (tqa *tenantQuerierAssignments[D]) notifyQuerierShutdown(querierID QuerierID) (resharded bool) {
 	querier := tqa.queriersByID[querierID]
 	if querier == nil {
 		// The querier may have already been removed, so we just ignore it.
@@ -369,7 +369,7 @@ func (tqa *tenantQuerierAssignments) notifyQuerierShutdown(querierID QuerierID) 
 
 // forgetDisconnectedQueriers removes all queriers which have had zero connections for longer than the forget delay.
 // Returns true if tenant-querier reshard was triggered.
-func (tqa *tenantQuerierAssignments) forgetDisconnectedQueriers(now time.Time) (resharded bool) {
+func (tqa *tenantQuerierAssignments[D]) forgetDisconnectedQueriers(now time.Time) (resharded bool) {
 	// if forget delay is disabled, removal is done immediately on querier disconnect or shutdown; do nothing
 	if tqa.querierForgetDelay == 0 {
 		return false
@@ -387,7 +387,7 @@ func (tqa *tenantQuerierAssignments) forgetDisconnectedQueriers(now time.Time) (
 	return resharded
 }
 
-func (tqa *tenantQuerierAssignments) recomputeTenantQueriers() (resharded bool) {
+func (tqa *tenantQuerierAssignments[D]) recomputeTenantQueriers() (resharded bool) {
 	var scratchpad querierIDSlice
 	for tenantID, tenant := range tqa.tenantsByID {
 		if tenant.maxQueriers > 0 && tenant.maxQueriers < len(tqa.querierIDsSorted) && scratchpad == nil {
@@ -402,7 +402,7 @@ func (tqa *tenantQuerierAssignments) recomputeTenantQueriers() (resharded bool) 
 	return resharded
 }
 
-func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID TenantID, scratchpad querierIDSlice) (resharded bool) {
+func (tqa *tenantQuerierAssignments[D]) shuffleTenantQueriers(tenantID TenantID, scratchpad querierIDSlice) (resharded bool) {
 	tenant := tqa.tenantsByID[tenantID]
 	if tenant == nil {
 		return false
@@ -445,7 +445,7 @@ func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID TenantID, sc
 //
 // Note that because we use the shared  tenantIDOrder and tenantOrderIndex to manage the queue, we functionally
 // ignore each Node's individual queueOrder and queuePosition.
-func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) (*Node, bool) {
+func (tqa *tenantQuerierAssignments[D]) dequeueSelectNode(node *Node[D]) (*Node[D], bool) {
 	// can't get a tenant if no querier set
 	if tqa.currentQuerier == "" {
 		return nil, true
@@ -511,7 +511,7 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) (*Node, bool)
 //
 // dequeueUpdateState would normally also handle incrementing the queue position after performing a dequeue, but
 // tenantQuerierAssignments currently expects the caller to handle this by having the querier set tenantOrderIndex.
-func (tqa *tenantQuerierAssignments) dequeueUpdateState(node *Node, dequeuedFrom *Node) {
+func (tqa *tenantQuerierAssignments[D]) dequeueUpdateState(node *Node[D], dequeuedFrom *Node[D]) {
 	// if dequeuedFrom is nil or is not empty, we don't need to do anything;
 	// position updates will be handled by the caller, and we don't need to remove any nodes.
 	if dequeuedFrom == nil || !dequeuedFrom.IsEmpty() {
@@ -556,7 +556,7 @@ func (tqa *tenantQuerierAssignments) dequeueUpdateState(node *Node, dequeuedFrom
 //     to ensure that we only remove a tenant from tenantIDOrder if _all_ nodes with the same name have been removed.
 //   - tenantIDOrder iff the node did not already exist in tenantNodes or tenantIDOrder. addChildNode will place
 //     a new tenant in the first empty ("") element it finds in tenantIDOrder, or at the end if no empty elements exist.
-func (tqa *tenantQuerierAssignments) addChildNode(parent, child *Node) {
+func (tqa *tenantQuerierAssignments[D]) addChildNode(parent, child *Node[D]) {
 	childName := child.Name()
 	_, tenantHasAnyQueue := tqa.tenantNodes[childName]
 
@@ -591,7 +591,7 @@ func (tqa *tenantQuerierAssignments) addChildNode(parent, child *Node) {
 // updateQueuingAlgorithmState should be called before attempting to dequeue, and updates inputs required by this
 // QueuingAlgorithm to dequeue the appropriate value for the given querier. In some test cases, it need not be called
 // before consecutive dequeues for the same querier, but in all operating cases, it should be called ahead of a dequeue.
-func (tqa *tenantQuerierAssignments) updateQueuingAlgorithmState(querierID QuerierID, tenantOrderIndex int) {
+func (tqa *tenantQuerierAssignments[D]) updateQueuingAlgorithmState(querierID QuerierID, tenantOrderIndex int) {
 	tqa.currentQuerier = querierID
 	tqa.tenantOrderIndex = tenantOrderIndex
 }

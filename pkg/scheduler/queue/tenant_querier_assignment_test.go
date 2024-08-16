@@ -18,7 +18,7 @@ import (
 
 func TestShuffleQueriers(t *testing.T) {
 	allQueriers := querierIDSlice{"a", "b", "c", "d", "e"}
-	tqs := tenantQuerierAssignments{
+	tqs := tenantQuerierAssignments[any]{
 		querierIDsSorted: allQueriers,
 		tenantsByID: map[TenantID]*queueTenant{
 			"team-a": {
@@ -65,7 +65,7 @@ func TestShuffleQueriersCorrectness(t *testing.T) {
 	}
 	slices.Sort(allSortedQueriers)
 
-	tqs := tenantQuerierAssignments{
+	tqs := tenantQuerierAssignments[any]{
 		querierIDsSorted: allSortedQueriers,
 		tenantsByID: map[TenantID]*queueTenant{
 			"team-a": {
@@ -103,7 +103,7 @@ func TestShuffleQueriersCorrectness(t *testing.T) {
 }
 
 func TestQueues_QuerierWorkerIDAssignment(t *testing.T) {
-	tqa := newTenantQuerierAssignments(0)
+	tqa := newTenantQuerierAssignments[any](0)
 
 	// 2 queriers open 3 connections each.
 	// Each querier's worker IDs should be assigned in order,
@@ -154,7 +154,7 @@ func TestQueues_QuerierWorkerIDAssignment(t *testing.T) {
 func TestQueues_QuerierWorkerIDAssignment_Panics(t *testing.T) {
 	// test with forget delay so the querier is not removed when its last connection is deregistered;
 	// a registered querier with no registered connections allows the test to reach some panic cases
-	tqa := newTenantQuerierAssignments(10 * time.Second)
+	tqa := newTenantQuerierAssignments[any](10 * time.Second)
 
 	querierConn := NewUnregisteredQuerierWorkerConn(context.Background(), "")
 
