@@ -109,6 +109,5 @@ eval instant at 5m deg(trig)
 
 clear
 
-# Unsupported by streaming engine.
-# eval instant at 0s pi()
-# 	3.141592653589793
+eval instant at 0s pi()
+	3.141592653589793

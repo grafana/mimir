@@ -41,18 +41,17 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"1 + 2":                      "scalar value as top-level expression",
-		"1 + metric{}":               "binary expression with scalars",
-		"metric{} + 1":               "binary expression with scalars",
+		"1 + 2":                      "binary expression between two scalars",
+		"1 + metric{}":               "binary expression between scalar and instant vector",
+		"metric{} + 1":               "binary expression between scalar and instant vector",
 		"metric{} < other_metric{}":  "binary expression with '<'",
 		"metric{} or other_metric{}": "binary expression with many-to-many matching",
 		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
 		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
-		"1":                                     "scalar value as top-level expression",
 		"avg(metric{})":                         "'avg' aggregation",
-		"rate(metric{}[5m:1m])":                 "PromQL expression type *parser.SubqueryExpr",
+		"rate(metric{}[5m:1m])":                 "PromQL expression type *parser.SubqueryExpr for range vectors",
 		"quantile_over_time(0.4, metric{}[5m])": "'quantile_over_time' function",
-		"-sum(metric{})":                        "PromQL expression type *parser.UnaryExpr",
+		"-sum(metric{})":                        "PromQL expression type *parser.UnaryExpr for instant vectors",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
@@ -65,7 +64,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// These expressions are also unsupported, but are only valid as instant queries.
 	unsupportedInstantQueryExpressions := map[string]string{
 		"'a'":             "string value as top-level expression",
-		"metric{}[5m:1m]": "PromQL expression type *parser.SubqueryExpr",
+		"metric{}[5m:1m]": "PromQL expression type *parser.SubqueryExpr for range vectors",
 	}
 
 	for expression, expectedError := range unsupportedInstantQueryExpressions {
@@ -102,6 +101,14 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 
 		requireRangeQueryIsUnsupported(t, featureToggles, "rate(metric[2m] offset 1m)", "range vector selector with 'offset'")
 		requireInstantQueryIsUnsupported(t, featureToggles, "rate(metric[2m] offset 1m)", "range vector selector with 'offset'")
+	})
+
+	t.Run("scalars", func(t *testing.T) {
+		featureToggles := EnableAllFeatures
+		featureToggles.EnableScalars = false
+
+		requireRangeQueryIsUnsupported(t, featureToggles, "2", "scalar values")
+		requireInstantQueryIsUnsupported(t, featureToggles, "2", "scalar values")
 	})
 }
 

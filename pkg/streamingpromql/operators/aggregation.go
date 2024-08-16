@@ -11,11 +11,9 @@ import (
 	"fmt"
 	"slices"
 	"sort"
-	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -53,17 +51,15 @@ type Aggregation struct {
 
 func NewAggregation(
 	inner types.InstantVectorOperator,
-	start time.Time,
-	end time.Time,
-	interval time.Duration,
+	startT int64,
+	endT int64,
+	intervalMs int64,
 	grouping []string,
 	without bool,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) *Aggregation {
-	s, e, i := timestamp.FromTime(start), timestamp.FromTime(end), interval.Milliseconds()
-
 	if without {
 		labelsToDrop := make([]string, 0, len(grouping)+1)
 		labelsToDrop = append(labelsToDrop, labels.MetricName)
@@ -75,10 +71,10 @@ func NewAggregation(
 
 	a := &Aggregation{
 		Inner:                    inner,
-		Start:                    s,
-		End:                      e,
-		Interval:                 i,
-		Steps:                    stepCount(s, e, i),
+		Start:                    startT,
+		End:                      endT,
+		Interval:                 intervalMs,
+		Steps:                    stepCount(startT, endT, intervalMs),
 		Grouping:                 grouping,
 		Without:                  without,
 		MemoryConsumptionTracker: memoryConsumptionTracker,

@@ -440,9 +440,8 @@ load 5m
 clear
 
 # Tests for vector.
-# Unsupported by streaming engine.
-# eval instant at 0m vector(1)
-#   {} 1
+eval instant at 0m vector(1)
+  {} 1
 
 # Unsupported by streaming engine.
 # eval instant at 0s vector(time())

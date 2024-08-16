@@ -44,6 +44,10 @@ type Query struct {
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	annotations              *annotations.Annotations
 
+	startT     int64 // Start timestamp, in milliseconds since Unix epoch.
+	endT       int64 // End timestamp, in milliseconds since Unix epoch.
+	intervalMs int64 // Range query interval, or 1 for instant queries. Note that this is deliberately different to statement.Interval for instant queries (where it is 0) to simplify some loop conditions.
+
 	result *promql.Result
 }
 
@@ -76,9 +80,17 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 			Expr:          expr,
 			Start:         start,
 			End:           end,
-			Interval:      interval,
+			Interval:      interval, // 0 for instant queries
 			LookbackDelta: opts.LookbackDelta(),
 		},
+
+		startT:     timestamp.FromTime(start),
+		endT:       timestamp.FromTime(end),
+		intervalMs: interval.Milliseconds(), // 1 for instant queries (set below)
+	}
+
+	if q.IsInstant() {
+		q.intervalMs = 1
 	}
 
 	if !q.IsInstant() {
@@ -100,6 +112,8 @@ func (q *Query) convertToOperator(expr parser.Expr) (types.Operator, error) {
 		return q.convertToRangeVectorOperator(expr)
 	case parser.ValueTypeVector:
 		return q.convertToInstantVectorOperator(expr)
+	case parser.ValueTypeScalar:
+		return q.convertToScalarOperator(expr)
 	default:
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("%s value as top-level expression", parser.DocumentedType(expr.Type())))
 	}
@@ -108,12 +122,6 @@ func (q *Query) convertToOperator(expr parser.Expr) (types.Operator, error) {
 func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantVectorOperator, error) {
 	if expr.Type() != parser.ValueTypeVector {
 		return nil, fmt.Errorf("cannot create instant vector operator for expression that produces a %s", parser.DocumentedType(expr.Type()))
-	}
-
-	interval := q.statement.Interval
-
-	if q.IsInstant() {
-		interval = time.Millisecond
 	}
 
 	switch e := expr.(type) {
@@ -131,10 +139,10 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			MemoryConsumptionTracker: q.memoryConsumptionTracker,
 			Selector: &operators.Selector{
 				Queryable:     q.queryable,
-				Start:         timestamp.FromTime(q.statement.Start),
-				End:           timestamp.FromTime(q.statement.End),
+				Start:         q.startT,
+				End:           q.endT,
 				Timestamp:     e.Timestamp,
-				Interval:      interval.Milliseconds(),
+				Interval:      q.intervalMs,
 				Offset:        e.OriginalOffset.Milliseconds(),
 				LookbackDelta: lookbackDelta,
 				Matchers:      e.LabelMatchers,
@@ -159,9 +167,9 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 
 		return operators.NewAggregation(
 			inner,
-			q.statement.Start,
-			q.statement.End,
-			interval,
+			q.startT,
+			q.endT,
+			q.intervalMs,
 			e.Grouping,
 			e.Without,
 			q.memoryConsumptionTracker,
@@ -169,14 +177,14 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			e.PosRange,
 		), nil
 	case *parser.Call:
-		return q.convertFunctionCallToOperator(e)
+		return q.convertFunctionCallToInstantVectorOperator(e)
 	case *parser.BinaryExpr:
 		if !q.engine.featureToggles.EnableBinaryOperations {
 			return nil, compat.NewNotSupportedError("binary expressions")
 		}
 
 		if e.LHS.Type() != parser.ValueTypeVector || e.RHS.Type() != parser.ValueTypeVector {
-			return nil, compat.NewNotSupportedError("binary expression with scalars")
+			return nil, compat.NewNotSupportedError("binary expression between scalar and instant vector")
 		}
 
 		if e.VectorMatching.Card != parser.CardOneToOne {
@@ -200,11 +208,11 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 	case *parser.ParenExpr:
 		return q.convertToInstantVectorOperator(e.Expr)
 	default:
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T", e))
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T for instant vectors", e))
 	}
 }
 
-func (q *Query) convertFunctionCallToOperator(e *parser.Call) (types.InstantVectorOperator, error) {
+func (q *Query) convertFunctionCallToInstantVectorOperator(e *parser.Call) (types.InstantVectorOperator, error) {
 	if !q.engine.featureToggles.EnableOverTimeFunctions && slices.Contains(overTimeFunctionNames, e.Func.Name) {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
 	}
@@ -239,19 +247,13 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (types.RangeVecto
 			return nil, compat.NewNotSupportedError("range vector selector with 'offset'")
 		}
 
-		interval := q.statement.Interval
-
-		if q.IsInstant() {
-			interval = time.Millisecond
-		}
-
 		return &operators.RangeVectorSelector{
 			Selector: &operators.Selector{
 				Queryable: q.queryable,
-				Start:     timestamp.FromTime(q.statement.Start),
-				End:       timestamp.FromTime(q.statement.End),
+				Start:     q.startT,
+				End:       q.endT,
 				Timestamp: vectorSelector.Timestamp,
-				Interval:  interval.Milliseconds(),
+				Interval:  q.intervalMs,
 				Offset:    vectorSelector.OriginalOffset.Milliseconds(),
 				Range:     e.Range,
 				Matchers:  vectorSelector.LabelMatchers,
@@ -265,8 +267,62 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr) (types.RangeVecto
 	case *parser.ParenExpr:
 		return q.convertToRangeVectorOperator(e.Expr)
 	default:
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T", e))
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T for range vectors", e))
 	}
+}
+
+func (q *Query) convertToScalarOperator(expr parser.Expr) (types.ScalarOperator, error) {
+	if expr.Type() != parser.ValueTypeScalar {
+		return nil, fmt.Errorf("cannot create scalar operator for expression that produces a %s", parser.DocumentedType(expr.Type()))
+	}
+
+	if !q.engine.featureToggles.EnableScalars {
+		return nil, compat.NewNotSupportedError("scalar values")
+	}
+
+	switch e := expr.(type) {
+	case *parser.NumberLiteral:
+		o := operators.NewScalarConstant(
+			e.Val,
+			q.startT,
+			q.endT,
+			q.intervalMs,
+			q.memoryConsumptionTracker,
+			e.PositionRange(),
+		)
+
+		return o, nil
+
+	case *parser.Call:
+		return q.convertFunctionCallToScalarOperator(e)
+	case *parser.StepInvariantExpr:
+		// One day, we'll do something smarter here.
+		return q.convertToScalarOperator(e.Expr)
+	case *parser.ParenExpr:
+		return q.convertToScalarOperator(e.Expr)
+	case *parser.BinaryExpr:
+		return nil, compat.NewNotSupportedError("binary expression between two scalars")
+	default:
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T for scalars", e))
+	}
+}
+
+func (q *Query) convertFunctionCallToScalarOperator(e *parser.Call) (types.ScalarOperator, error) {
+	factory, ok := scalarFunctionOperatorFactories[e.Func.Name]
+	if !ok {
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
+	}
+
+	args := make([]types.Operator, len(e.Args))
+	for i := range e.Args {
+		a, err := q.convertToOperator(e.Args[i])
+		if err != nil {
+			return nil, err
+		}
+		args[i] = a
+	}
+
+	return factory(args, q.memoryConsumptionTracker, q.annotations, e.PosRange, q.startT, q.endT, q.intervalMs)
 }
 
 func (q *Query) IsInstant() bool {
@@ -305,36 +361,57 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes))
 	}()
 
-	series, err := q.root.SeriesMetadata(ctx)
-	if err != nil {
-		return &promql.Result{Err: err}
-	}
-	defer types.PutSeriesMetadataSlice(series)
-
 	switch q.statement.Expr.Type() {
 	case parser.ValueTypeMatrix:
-		v, err := q.populateMatrixFromRangeVectorOperator(ctx, q.root.(types.RangeVectorOperator), series)
+		root := q.root.(types.RangeVectorOperator)
+		series, err := root.SeriesMetadata(ctx)
+		if err != nil {
+			return &promql.Result{Err: err}
+		}
+		defer types.PutSeriesMetadataSlice(series)
+
+		v, err := q.populateMatrixFromRangeVectorOperator(ctx, root, series)
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
 
 		q.result = &promql.Result{Value: v}
 	case parser.ValueTypeVector:
+		root := q.root.(types.InstantVectorOperator)
+		series, err := root.SeriesMetadata(ctx)
+		if err != nil {
+			return &promql.Result{Err: err}
+		}
+		defer types.PutSeriesMetadataSlice(series)
+
 		if q.IsInstant() {
-			v, err := q.populateVectorFromInstantVectorOperator(ctx, q.root.(types.InstantVectorOperator), series)
+			v, err := q.populateVectorFromInstantVectorOperator(ctx, root, series)
 			if err != nil {
 				return &promql.Result{Err: err}
 			}
 
 			q.result = &promql.Result{Value: v}
 		} else {
-			v, err := q.populateMatrixFromInstantVectorOperator(ctx, q.root.(types.InstantVectorOperator), series)
+			v, err := q.populateMatrixFromInstantVectorOperator(ctx, root, series)
 			if err != nil {
 				return &promql.Result{Err: err}
 			}
 
 			q.result = &promql.Result{Value: v}
 		}
+	case parser.ValueTypeScalar:
+		root := q.root.(types.ScalarOperator)
+		d, err := root.GetValues(ctx)
+		if err != nil {
+			return &promql.Result{Err: err}
+		}
+
+		if q.IsInstant() {
+			q.result = &promql.Result{Value: q.populateScalarFromScalarOperator(d)}
+		} else {
+			q.result = &promql.Result{Value: q.populateMatrixFromScalarOperator(d)}
+		}
+
 	default:
 		// This should be caught in newQuery above.
 		return &promql.Result{Err: compat.NewNotSupportedError(fmt.Sprintf("unsupported result type %s", parser.DocumentedType(q.statement.Expr.Type())))}
@@ -473,6 +550,26 @@ func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o typ
 	return m, nil
 }
 
+func (q *Query) populateMatrixFromScalarOperator(d types.ScalarData) promql.Matrix {
+	return promql.Matrix{
+		{
+			Metric: labels.EmptyLabels(),
+			Floats: d.Samples,
+		},
+	}
+}
+
+func (q *Query) populateScalarFromScalarOperator(d types.ScalarData) promql.Scalar {
+	defer types.FPointSlicePool.Put(d.Samples, q.memoryConsumptionTracker)
+
+	p := d.Samples[0]
+
+	return promql.Scalar{
+		T: p.T,
+		V: p.F,
+	}
+}
+
 func (q *Query) Close() {
 	if q.cancel != nil {
 		q.cancel(errQueryClosed)
@@ -492,6 +589,8 @@ func (q *Query) Close() {
 		types.PutMatrix(v)
 	case promql.Vector:
 		types.VectorPool.Put(v, q.memoryConsumptionTracker)
+	case promql.Scalar:
+		// Nothing to do, we already returned the slice in populateScalarFromScalarOperator.
 	default:
 		panic(fmt.Sprintf("unknown result value type %T", q.result.Value))
 	}
