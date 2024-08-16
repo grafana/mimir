@@ -471,27 +471,28 @@ func getGroupLag(ctx context.Context, admClient *kadm.Client, topic, group strin
 		return nil, err
 	}
 
-	listOffsetsAfterMilli := sync.OnceValues(func() (kadm.ListedOffsets, error) {
-		return admClient.ListOffsetsAfterMilli(ctx, fallbackOffset, topic)
+	resolveFallbackOffsets := sync.OnceValues(func() (kadm.ListedOffsets, error) {
+		if fallbackOffset == kafkaOffsetStart {
+			return startOffsets, nil
+		}
+		if fallbackOffset > 0 {
+			return admClient.ListOffsetsAfterMilli(ctx, fallbackOffset, topic)
+		}
+		// This should not happen because fallbackOffset already went through the validation by this point.
+		return nil, fmt.Errorf("cannot resolve fallback offset for value %v", fallbackOffset)
 	})
 	// If the group-partition in offsets doesn't have a commit, fall back depending on where fallbackOffset points at.
 	for topic, pt := range startOffsets.Offsets() {
-		for part, o := range pt {
+		for part := range pt {
 			if _, ok := offsets.Lookup(topic, part); ok {
 				continue
 			}
-			// If fallback is not a timestamp, it's the kafkaOffsetStart value.
-			if fallbackOffset < 0 {
-				offsets.Add(kadm.OffsetResponse{Offset: o})
-				continue
-			}
-			fallbackOffsets, err := listOffsetsAfterMilli()
+			fallbackOffsets, err := resolveFallbackOffsets()
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("resolve fallback offsets: %w", err)
 			}
 			o, ok := fallbackOffsets.Lookup(topic, part)
 			if !ok {
-				// This should not happen.
 				return nil, fmt.Errorf("partition %d not found in fallback offsets for topic %s", part, topic)
 			}
 			offsets.Add(kadm.OffsetResponse{Offset: kadm.Offset{
