@@ -147,3 +147,6 @@ clear
 
 eval range from 0 to 2m step 1m pi()
   {} 3.141592653589793 3.141592653589793 3.141592653589793
+
+eval range from 0 to 2m step 1m vector(12.34)
+  {} 12.34 12.34 12.34

@@ -102,6 +102,21 @@ func FunctionOverRangeVectorOperatorFactory(
 	}
 }
 
+func scalarToInstantVectorOperatorFactory(args []types.Operator, _ *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange) (types.InstantVectorOperator, error) {
+	if len(args) != 1 {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected exactly 1 argument for vector, got %v", len(args))
+	}
+
+	inner, ok := args[0].(types.ScalarOperator)
+	if !ok {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected a scalar argument for vector, got %T", args[0])
+	}
+
+	return operators.NewScalarToInstantVector(inner, expressionPosition), nil
+}
+
 // These functions return an instant-vector.
 var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOperatorFactory{
 	// Please keep this list sorted alphabetically.
@@ -139,6 +154,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"sum_over_time":     FunctionOverRangeVectorOperatorFactory("sum_over_time", functions.SumOverTime),
 	"tan":               InstantVectorTransformationFunctionOperatorFactory("tan", functions.Tan),
 	"tanh":              InstantVectorTransformationFunctionOperatorFactory("tanh", functions.Tanh),
+	"vector":            scalarToInstantVectorOperatorFactory,
 }
 
 func RegisterInstantVectorFunctionOperatorFactory(functionName string, factory InstantVectorFunctionOperatorFactory) error {
