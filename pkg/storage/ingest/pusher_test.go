@@ -209,7 +209,7 @@ func TestPusherConsumer(t *testing.T) {
 
 			logs := &concurrency.SyncBuffer{}
 			c := newPusherConsumer(pusher, KafkaConfig{}, newPusherConsumerMetrics(prometheus.NewPedanticRegistry()), log.NewLogfmtLogger(logs))
-			err := c.consume(context.Background(), tc.records)
+			err := c.Consume(context.Background(), tc.records)
 			if tc.expErr == "" {
 				assert.NoError(t, err)
 			} else {
@@ -318,7 +318,7 @@ func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 		consumer, logs, reg := setupTest(pusherErr)
 
 		// Should return no error on client errors.
-		require.NoError(t, consumer.consume(context.Background(), []record{reqRecord}))
+		require.NoError(t, consumer.Consume(context.Background(), []record{reqRecord}))
 
 		assert.Contains(t, logs.String(), pusherErr.Error())
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -340,7 +340,7 @@ func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 		consumer, logs, reg := setupTest(pusherErr)
 
 		// Should return no error on client errors.
-		require.NoError(t, consumer.consume(context.Background(), []record{reqRecord}))
+		require.NoError(t, consumer.Consume(context.Background(), []record{reqRecord}))
 
 		assert.Contains(t, logs.String(), fmt.Sprintf("%s (sampled 1/100)", pusherErr.Error()))
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -361,7 +361,7 @@ func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 		consumer, logs, reg := setupTest(pusherErr)
 
 		// Should return no error on client errors.
-		require.NoError(t, consumer.consume(context.Background(), []record{reqRecord}))
+		require.NoError(t, consumer.Consume(context.Background(), []record{reqRecord}))
 
 		assert.Empty(t, logs.String())
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -406,7 +406,7 @@ func TestPusherConsumer_consume_ShouldHonorContextCancellation(t *testing.T) {
 		cancel(wantCancelErr)
 	}()
 
-	err = consumer.consume(canceledCtx, []record{reqRecord})
+	err = consumer.Consume(canceledCtx, []record{reqRecord})
 	require.ErrorIs(t, err, wantCancelErr)
 }
 
