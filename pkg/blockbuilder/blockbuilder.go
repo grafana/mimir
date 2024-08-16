@@ -131,6 +131,9 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 		return fmt.Errorf("creating tsdb dir: %w", err)
 	}
 
+	// TODO: add a test to test the case where the consumption on startup happens
+	// after the LookbackOnNoCommit with records before the after the consumption
+	// start point.
 	startAtOffsets, fallbackOffset, err := b.findOffsetsToStartAt(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("find offsets to start at: %w", err)
