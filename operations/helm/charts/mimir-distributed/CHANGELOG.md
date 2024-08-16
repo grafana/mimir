@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Update rollout-operator to `v0.18.0`. #9024
 * [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards.
   * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric. #7674
   * Writes dashboard: `cortex_request_duration_seconds` metric. #8757
