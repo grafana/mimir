@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
@@ -39,10 +38,11 @@ type pusherConsumer struct {
 
 type parsedRecord struct {
 	*mimirpb.WriteRequest
-	// Context holds the tracing and cancellation data for this record/request.
+	// ctx holds the tracing baggage for this record/request.
 	ctx      context.Context
 	tenantID string
 	err      error
+	index    int
 }
 
 func newPusherConsumer(p Pusher, fallbackClientErrSampler *util_log.Sampler, reg prometheus.Registerer, l log.Logger) *pusherConsumer {
@@ -72,32 +72,82 @@ func newPusherConsumer(p Pusher, fallbackClientErrSampler *util_log.Sampler, reg
 	}
 }
 
-func (c pusherConsumer) consume(ctx context.Context, records []record) error {
-	ctx, cancel := context.WithCancelCause(ctx)
-	defer cancel(cancellation.NewErrorf("done consuming records"))
+func newPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *pusherConsumerMetrics, logger log.Logger) *pusherConsumer {
+	return &pusherConsumer{
+		metrics:                  metrics,
+		logger:                   logger,
+		fallbackClientErrSampler: util_log.NewSampler(kafkaCfg.FallbackClientErrorSampleRate),
 
-	recC := make(chan parsedRecord)
-
-	// Speed up consumption by unmarhsalling the next request while the previous one is being pushed.
-	go c.unmarshalRequests(ctx, records, recC)
-	return c.pushRequests(recC)
+		pusher: p,
+	}
 }
 
-func (c pusherConsumer) pushRequests(reqC <-chan parsedRecord) error {
-	recordIdx := -1
-	for wr := range reqC {
-		recordIdx++
-		if wr.err != nil {
-			level.Error(c.logger).Log("msg", "failed to parse write request; skipping", "err", wr.err)
+// Consume implements the recordConsumer interface.
+// It'll use a separate goroutine to unmarshal the next record while we push the current record to storage.
+func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
+	recordsChannel := make(chan parsedRecord)
+
+	// Create a cancellable context to let the unmarshalling goroutine know when to stop.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Now, unmarshal the records into the channel.
+	go func(unmarshalCtx context.Context, records []record) {
+		defer close(recordsChannel)
+
+		for index, r := range records {
+			select {
+			case <-unmarshalCtx.Done():
+				// No more processing is needed, so we need to abort.
+				return
+			default:
+				parsed := parsedRecord{
+					ctx:          r.ctx,
+					tenantID:     r.tenantID,
+					WriteRequest: &mimirpb.WriteRequest{},
+					index:        index,
+				}
+
+				// We don't free the WriteRequest slices because they are being freed by a level below.
+				err := parsed.WriteRequest.Unmarshal(r.content)
+				if err != nil {
+					parsed.err = fmt.Errorf("parsing ingest consumer write request: %w", err)
+				}
+				recordsChannel <- parsed
+			}
+		}
+	}(ctx, records)
+
+	for r := range recordsChannel {
+		if r.err != nil {
+			level.Error(c.logger).Log("msg", "failed to parse write request; skipping", "err", r.err)
 			continue
 		}
 
-		err := c.pushToStorage(wr.ctx, wr.tenantID, wr.WriteRequest)
+		// If we get an error at any point, we need to stop processing the records. They will be retried at some point.
+		err := c.pushToStorage(r.ctx, r.tenantID, r.WriteRequest)
 		if err != nil {
-			return fmt.Errorf("consuming record at index %d for tenant %s: %w", recordIdx, wr.tenantID, err)
+			cancel() // Stop the unmarshalling goroutine.
+			return fmt.Errorf("consuming record at index %d for tenant %s: %w", r.index, r.tenantID, err)
 		}
 	}
+
 	return nil
+}
+
+func (c pusherConsumer) Close(ctx context.Context) error {
+	spanLog := spanlogger.FromContext(ctx, log.NewNopLogger())
+	errs := c.pusher.Close()
+	for eIdx := 0; eIdx < len(errs); eIdx++ {
+		err := errs[eIdx]
+		isServerErr := c.handlePushErr(ctx, "TODO", err, spanLog)
+		if !isServerErr {
+			errs[len(errs)-1], errs[eIdx] = errs[eIdx], errs[len(errs)-1]
+			errs = errs[:len(errs)-1]
+			eIdx--
+		}
+	}
+	return multierror.New(errs...).Err()
 }
 
 func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req *mimirpb.WriteRequest) error {
@@ -150,34 +200,163 @@ func (c pusherConsumer) shouldLogClientError(ctx context.Context, err error) (bo
 	return optional.ShouldLog(ctx)
 }
 
-// The passed context is expected to be cancelled after all items in records were fully processed and are ready
-// to be released. This so to guaranty the release of resources associated with each parsedRecord context.
-func (c pusherConsumer) unmarshalRequests(ctx context.Context, records []record, recC chan<- parsedRecord) {
-	defer close(recC)
-	done := ctx.Done()
+type multiTenantPusher struct {
+	metrics *pusherConsumerMetrics
 
-	for _, rec := range records {
-		// rec.ctx contains the tracing baggage for this record, which we propagate down the call tree.
-		// Since rec.ctx cancellation is disjointed from the context passed to unmarshalRequests(), the context.AfterFunc below,
-		// fuses the two lifetimes together.
-		recCtx, cancelRecCtx := context.WithCancelCause(rec.ctx)
-		context.AfterFunc(ctx, func() {
-			cancelRecCtx(context.Cause(ctx))
-		})
-		pRecord := parsedRecord{
-			ctx:          recCtx,
-			tenantID:     rec.tenantID,
-			WriteRequest: &mimirpb.WriteRequest{},
+	pushers        map[string]*shardingPusher
+	upstreamPusher Pusher
+	numShards      int
+	batchSize      int
+}
+
+func (c multiTenantPusher) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
+	user, _ := user.ExtractOrgID(ctx)
+	return c.pusher(user).PushToStorage(ctx, request)
+}
+
+// TODO dimitarvdimitrov rename because this is multi-tenant sharding pusher
+func newMultiTenantPusher(metrics *pusherConsumerMetrics, upstream Pusher, numShards int, batchSize int) *multiTenantPusher {
+	return &multiTenantPusher{
+		pushers:        make(map[string]*shardingPusher),
+		upstreamPusher: upstream,
+		numShards:      numShards,
+		batchSize:      batchSize,
+		metrics:        metrics,
+	}
+}
+
+func (c multiTenantPusher) pusher(userID string) *shardingPusher {
+	if p := c.pushers[userID]; p != nil {
+		return p
+	}
+	const shardingPusherBuffer = 2000                                                                                         // TODO dimitarvdimitrov 2000 is arbitrary; the idea is that we don't block the goroutine calling PushToStorage while we're flushing. A linked list with a sync.Cond or something different would also work
+	p := newShardingPusher(c.metrics.numTimeSeriesPerFlush, c.numShards, c.batchSize, shardingPusherBuffer, c.upstreamPusher) // TODO dimitarvdimitrov this ok or do we need to inject a factory here too?
+	c.pushers[userID] = p
+	return p
+}
+
+func (c multiTenantPusher) Close() []error {
+	var errs multierror.MultiError
+	for _, p := range c.pushers {
+		errs.Add(p.close())
+	}
+	clear(c.pushers)
+	return errs
+}
+
+type shardingPusher struct {
+	numShards             int
+	shards                []chan flushableWriteRequest
+	unfilledShards        []flushableWriteRequest
+	upstream              Pusher
+	wg                    *sync.WaitGroup
+	errs                  chan error
+	batchSize             int
+	numTimeSeriesPerFlush prometheus.Histogram
+}
+
+// TODO dimitarvdimitrov if this is expensive, consider having this long-lived and not Close()-ing and recreating it on every fetch, but instead calling something like Flush() on it.
+func newShardingPusher(numTimeSeriesPerFlush prometheus.Histogram, numShards int, batchSize int, buffer int, upstream Pusher) *shardingPusher {
+	pusher := &shardingPusher{
+		numShards:             numShards,
+		upstream:              upstream,
+		numTimeSeriesPerFlush: numTimeSeriesPerFlush,
+		batchSize:             batchSize,
+		wg:                    &sync.WaitGroup{},
+		errs:                  make(chan error, numShards),
+		unfilledShards:        make([]flushableWriteRequest, numShards),
+	}
+	shards := make([]chan flushableWriteRequest, numShards)
+	pusher.wg.Add(numShards)
+	for i := range shards {
+		pusher.unfilledShards[i].WriteRequest = &mimirpb.WriteRequest{Timeseries: mimirpb.PreallocTimeseriesSliceFromPool()}
+		shards[i] = make(chan flushableWriteRequest, buffer)
+		go pusher.runShard(shards[i])
+	}
+	go func() {
+		pusher.wg.Wait()
+		close(pusher.errs)
+	}()
+
+	pusher.shards = shards
+	return pusher
+}
+
+func (p *shardingPusher) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
+	var (
+		builder         labels.ScratchBuilder
+		nonCopiedLabels labels.Labels
+		errs            multierror.MultiError
+	)
+	for _, ts := range request.Timeseries {
+		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, ts.Labels, &nonCopiedLabels)
+		shard := nonCopiedLabels.Hash() % uint64(p.numShards)
+
+		s := p.unfilledShards[shard]
+		// TODO dimitarvdimitrov support metadata and the rest of the fields; perhaps cut a new request for different values of SkipLabelNameValidation?
+		s.Timeseries = append(s.Timeseries, ts)
+		s.Context = ctx // retain the last context in case we have to flush it when closing shardingPusher
+
+		if len(s.Timeseries) < p.batchSize {
+			continue
 		}
-		// We don't free the WriteRequest slices because they are being freed by the Pusher.
-		err := pRecord.WriteRequest.Unmarshal(rec.content)
-		if err != nil {
-			pRecord.err = fmt.Errorf("parsing ingest consumer write request: %w", err)
+		p.unfilledShards[shard] = flushableWriteRequest{
+			WriteRequest: &mimirpb.WriteRequest{Timeseries: mimirpb.PreallocTimeseriesSliceFromPool()},
 		}
-		select {
-		case <-done:
-			return
-		case recC <- pRecord:
+
+	tryPush:
+		for {
+			select {
+			case p.shards[shard] <- s:
+				break tryPush
+			case err := <-p.errs:
+				// we might have to first unblock the shard before we can flush to it
+				errs.Add(err)
+			}
+		}
+
+		// drain errors to avoid blocking the shard loop
+	drainErrs:
+		for {
+			select {
+			case err := <-p.errs:
+				errs.Add(err)
+			default:
+				break drainErrs
+			}
 		}
 	}
+	return errs.Err()
+}
+
+type flushableWriteRequest struct {
+	*mimirpb.WriteRequest
+	context.Context
+}
+
+func (p *shardingPusher) runShard(toFlush chan flushableWriteRequest) {
+	defer p.wg.Done()
+	for wr := range toFlush {
+		p.numTimeSeriesPerFlush.Observe(float64(len(wr.WriteRequest.Timeseries)))
+		err := p.upstream.PushToStorage(wr.Context, wr.WriteRequest)
+		if err != nil {
+			p.errs <- err
+		}
+	}
+}
+
+func (p *shardingPusher) close() error {
+	for shard, wr := range p.unfilledShards {
+		if len(wr.Timeseries) > 0 {
+			p.shards[shard] <- wr
+		}
+	}
+	for _, shard := range p.shards {
+		close(shard)
+	}
+	var errs multierror.MultiError
+	for err := range p.errs {
+		errs.Add(err)
+	}
+	return errs.Err()
 }
