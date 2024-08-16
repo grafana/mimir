@@ -77,6 +77,7 @@ func (c *ownedSeriesTestContextBase) checkActiveSeriesCount(t *testing.T, expect
 func (c *ownedSeriesTestContextBase) updateOwnedSeriesAndCheckResult(t *testing.T, ringChanged bool, expectedUpdatedTenants int, expectedReason string) {
 	c.buf.Reset()
 	require.Equal(t, expectedUpdatedTenants, c.ownedSeries.updateAllTenants(context.Background(), ringChanged), c.buf.String())
+	t.Log(c.buf.String())
 	require.Contains(t, c.buf.String(), expectedReason)
 }
 
