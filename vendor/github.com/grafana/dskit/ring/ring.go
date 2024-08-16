@@ -764,17 +764,12 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 	var actualZones []string
 
 	if r.cfg.ZoneAwarenessEnabled {
-		if size == math.MaxInt {
-			numInstancesPerZone = math.MaxInt
-		} else {
 		numInstancesPerZone = shardUtil.ShuffleShardExpectedInstancesPerZone(size, len(r.ringZones))
-		}
 		actualZones = r.ringZones
 	} else {
 		numInstancesPerZone = size
 		actualZones = []string{""}
 	}
-	fmt.Println("shuffle shard: size", size, "numInstancesPerZone", numInstancesPerZone, "actualZones", actualZones)
 
 	shard := make(map[string]InstanceDesc, min(len(r.ringDesc.Ingesters), size))
 
