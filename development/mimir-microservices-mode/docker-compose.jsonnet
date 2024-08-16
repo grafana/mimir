@@ -28,12 +28,14 @@ std.manifestYamlDoc({
     // If true, start and enable scraping by these components.
     // Note that if more than one component is enabled, the dashboards shown in Grafana may contain duplicate series or aggregates may be doubled or tripled.
     enable_grafana_agent: false,
+    // If true, start a base prometheus that scrapes the Mimir component metrics and remote writes to distributor-1.
+    // Two additional Prometheus instances are started that scrape the same memcached-exporter and load-generator
+    // targets and remote write to distributor-2.
     enable_prometheus: true,  // If Prometheus is disabled, recording rules will not be evaluated and so dashboards in Grafana that depend on these recorded series will display no data.
     enable_otel_collector: false,
 
     // If true, a query-tee instance with a single backend is started.
     enable_query_tee: false,
-    enable_ha_tracker: true,
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -47,8 +49,7 @@ std.manifestYamlDoc({
     self.alertmanagers(3) +
     self.nginx +
     self.minio +
-    (if $._config.enable_prometheus then self.prometheus else {}) +
-    (if $._config.enable_ha_tracker then self.prompair1 + self.prompair2 else {}) +
+    (if $._config.enable_prometheus then self.prometheus + self.prompair1 + self.prompair2 else {}) +
     self.grafana +
     (if $._config.enable_grafana_agent then self.grafana_agent else {}) +
     (if $._config.enable_otel_collector then self.otel_collector else {}) +
