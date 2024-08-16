@@ -124,7 +124,6 @@ eval instant at 50m SUM(http_requests) BY (job, group)
 # 	{job="app-server"} 500
 
 # Unsupported by streaming engine.
-# Unsupported by streaming engine.
 # eval instant at 50m MAX(http_requests) BY (job)
 # 	{job="api-server"} 400
 # 	{job="app-server"} 800
@@ -250,10 +249,9 @@ load 5m
   label_grouping_test{a="aa", b="bb"} 0+10x10
   label_grouping_test{a="a", b="abb"} 0+20x10
 
-# Unsupported by streaming engine.
-# eval instant at 50m sum(label_grouping_test) by (a, b)
-#   {a="a", b="abb"} 200
-#   {a="aa", b="bb"} 100
+eval instant at 50m sum(label_grouping_test) by (a, b)
+  {a="a", b="abb"} 200
+  {a="aa", b="bb"} 100
 
 
 

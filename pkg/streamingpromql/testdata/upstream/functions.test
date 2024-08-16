@@ -242,9 +242,8 @@ load 5m
 	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
 
 # deriv should return the same as rate in simple cases.
-# Unsupported by streaming engine.
-# eval instant at 50m rate(http_requests{group="canary", instance="1", job="app-server"}[50m])
-# 	{group="canary", instance="1", job="app-server"} 0.26666666666666666
+eval instant at 50m rate(http_requests{group="canary", instance="1", job="app-server"}[50m])
+	{group="canary", instance="1", job="app-server"} 0.26666666666666666
 
 # Unsupported by streaming engine.
 # eval instant at 50m deriv(http_requests{group="canary", instance="1", job="app-server"}[50m])
