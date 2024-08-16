@@ -980,11 +980,12 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 
 	for w := range wants {
 		for attempt := 0; errBackoff.Ongoing() && w.endOffset > w.startOffset; attempt++ {
-			f := r.fetchSingle(ctx, w, log.With(logger, "attempt", attempt))
-
-			w = adjustedFetchWantFromErr(f, w)
+			attemptLogger := log.With(logger, "attempt", attempt)
+			f := r.fetchSingle(ctx, w, attemptLogger)
+			if f.Err != nil {
+				w = handleKafkaFetchErr(f, w, errBackoff, newRecordsProducedBackoff, attemptLogger)
+			}
 			if len(f.Records) == 0 {
-				backoffFromKafkaFetchErr(f, w, errBackoff, newRecordsProducedBackoff)
 				// TODO proper handling of NotLeaderForPartition ReplicaNotAvailable UnknownLeaderEpoch FencedLeaderEpoch; we need to be able to select the right broker to handle those
 				continue
 			}
@@ -1065,48 +1066,62 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 	}
 }
 
-func backoffFromKafkaFetchErr(fr fetchResult, fw fetchWant, shortBackoff, longBackoff *backoff.Backoff) {
-	if fr.Err == nil {
-		return
-	}
-	if errors.Is(fr.Err, kerr.OffsetOutOfRange) {
-		// Note that Kafka might return -1 for HWM and LSO if those are unknown (around startup or leader changes).
-		// They can also be equal when the partition is empty. So be careful how you use those.
-		if fw.startOffset < fr.LogStartOffset {
-			// If we're fetching from before the start waiting won't help.
-			return
-		}
-		// If the broker is behind or if we are requesting offsets which have not yet been produced, we end up here.
-		// We set a MaxWaitMillis on fetch requests, but even then there may be no records for some time.
-		// Wait for a short time to allow the broker to catch up or for new records to be produced.
-		shortBackoff.Wait()
-		return
-	}
-	longBackoff.Wait()
-}
-
-func adjustedFetchWantFromErr(fr fetchResult, fw fetchWant) fetchWant {
-	if len(fr.Records) > 0 {
-		fw.startOffset = fr.Records[len(fr.Records)-1].Offset + 1
-	}
-	if errors.Is(fr.Err, kerr.OffsetOutOfRange) {
-		// This error also implies that there are no fetched records.
+// handleKafkaFetchErr handles all the errors listed in the franz-go documentation as possible errors when fetching records.
+// For most of them we just apply a backoff. They are listed here so we can be explicit in what we're handling and how.
+// handleKafkaFetchErr returns an adjusted fetchWant in case the error indicated we were consuming not yet produced records or records already deleted due to retention.
+func handleKafkaFetchErr(fr fetchResult, fw fetchWant, shortBackoff, longBackoff *backoff.Backoff, logger log.Logger) fetchWant {
+	err := fr.Err
+	switch {
+	case err == nil:
+	case errors.Is(err, kerr.OffsetOutOfRange):
 		// Note that Kafka might return -1 for HWM and LSO if those are unknown (around startup or leader changes).
 		// They can also be equal when the partition is empty. So be careful how you use those.
 		// In those cases it's also safe to retry.
 		if fw.startOffset < fr.LogStartOffset {
 			// We're too far behind.
 			if fr.LogStartOffset >= fw.endOffset {
-				// The next fetch want is responsible for this range. We can finish this one.
+				// The next fetch want is responsible for this range. We set startOffset=endOffset to effectively mark this fetch as complete.
+				// If we're fetching from before the start waiting won't help.
 				fw.startOffset = fw.endOffset
-				return fw
+				break
 			}
 			// Only some of the offsets of our want are out of range, so let's fast-forward.
 			fw.startOffset = fr.LogStartOffset
-			return fw
+			// If the broker is behind or if we are requesting offsets which have not yet been produced, we end up here.
+			// We set a MaxWaitMillis on fetch requests, but even then there may be no records for some time.
+			// Wait for a short time to allow the broker to catch up or for new records to be produced.
+			shortBackoff.Wait()
 		}
 		// If the broker is behind or if we are requesting offsets which have not yet been produced, we end up here.
 		// In these cases we can continue fetching from the same offset because it should eventually become available.
+	case errors.Is(err, kerr.TopicAuthorizationFailed):
+		longBackoff.Wait()
+	case errors.Is(err, kerr.UnknownTopicOrPartition):
+		longBackoff.Wait()
+	case errors.Is(err, kerr.UnsupportedCompressionType):
+		level.Error(logger).Log("msg", "received UNSUPPORTED_COMPRESSION_TYPE from kafka; this shouldn't happen; please report this as a bug", "err", err)
+		longBackoff.Wait() // this shouldn't happen - only happens when the request version was under 10, but we always use 13 - log error and backoff - we can't afford to lose records
+	case errors.Is(err, kerr.UnsupportedVersion):
+		level.Error(logger).Log("msg", "received UNSUPPORTED_VERSION from kafka; the Kafka cluster is probably too old", "err", err)
+		longBackoff.Wait() // in this case our client is too old, not much we can do. This will probably continue logging the error until someone upgrades their Kafka cluster.
+	case errors.Is(err, kerr.KafkaStorageError):
+		longBackoff.Wait() // server-side error, effectively same as HTTP 500
+	case errors.Is(err, kerr.UnknownTopicID):
+		longBackoff.Wait() // Maybe it wasn't created by the producers yet.
+	case errors.Is(err, kerr.OffsetMovedToTieredStorage):
+		level.Error(logger).Log("msg", "received OFFSET_MOVED_TO_TIERED_STORAGE from kafka; this shouldn't happen; please report this as a bug", "err", err)
+		longBackoff.Wait() // This should be only intra-broker error, and we shouldn't get it.
+	case errors.Is(err, kerr.NotLeaderForPartition):
+		longBackoff.Wait() // our metadata is out of date, we should refresh and try again with a leader who is up to date // TODO this current doesn't happen
+	case errors.Is(err, kerr.ReplicaNotAvailable):
+		longBackoff.Wait() // our metadata is out of date, we should refresh and try again with a leader who is up to date // TODO this current doesn't happen
+	case errors.Is(err, kerr.UnknownLeaderEpoch):
+		longBackoff.Wait() // our metadata is out of date, we should refresh and try again with a leader who is up to date // TODO this current doesn't happen
+	case errors.Is(err, kerr.FencedLeaderEpoch):
+		longBackoff.Wait() // our metadata is out of date, we should refresh and try again with a leader who is up to date // TODO this current doesn't happen
+	default:
+		level.Error(logger).Log("msg", "received an error we're not prepared to handle; this shouldn't happen; please report this as a bug", "err", err)
+		longBackoff.Wait()
 	}
 	return fw
 }
