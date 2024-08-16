@@ -1072,7 +1072,7 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 
 // handleKafkaFetchErr handles all the errors listed in the franz-go documentation as possible errors when fetching records.
 // For most of them we just apply a backoff. They are listed here so we can be explicit in what we're handling and how.
-// handleKafkaFetchErr returns an adjusted fetchWant in case the error indicated we were consuming not yet produced records or records already deleted due to retention.
+// It may also return an adjusted fetchWant in case the error indicated, we were consuming not yet produced records or records already deleted due to retention.
 func handleKafkaFetchErr(fr fetchResult, fw fetchWant, shortBackoff, longBackoff *backoff.Backoff, logger log.Logger) fetchWant {
 	err := fr.Err
 	switch {
