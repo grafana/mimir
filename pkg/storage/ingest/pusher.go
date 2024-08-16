@@ -27,15 +27,6 @@ type Pusher interface {
 	PushToStorage(context.Context, *mimirpb.WriteRequest) error
 }
 
-type parsedRecord struct {
-	*mimirpb.WriteRequest
-	// ctx holds the tracing baggage for this record/request.
-	ctx      context.Context
-	tenantID string
-	err      error
-	index    int
-}
-
 type PusherCloser interface {
 	Pusher
 	Close() []error
@@ -106,38 +97,55 @@ func newPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *pusherConsu
 // Consume implements the recordConsumer interface.
 // It'll use a separate goroutine to unmarshal the next record while we push the current record to storage.
 func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
+	type parsedRecord struct {
+		*mimirpb.WriteRequest
+		// ctx holds the tracing baggage for this record/request.
+		ctx      context.Context
+		tenantID string
+		err      error
+		index    int
+	}
+
 	recordsChannel := make(chan parsedRecord)
 
 	// Create a cancellable context to let the unmarshalling goroutine know when to stop.
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 
 	// Now, unmarshal the records into the channel.
-	go func(unmarshalCtx context.Context, records []record) {
-		defer close(recordsChannel)
+	go func(unmarshalCtx context.Context, records []record, ch chan<- parsedRecord) {
+		defer close(ch)
 
 		for index, r := range records {
+			// Before we being unmarshalling the write request check if the context was cancelled.
 			select {
 			case <-unmarshalCtx.Done():
 				// No more processing is needed, so we need to abort.
 				return
 			default:
-				parsed := parsedRecord{
-					ctx:          r.ctx,
-					tenantID:     r.tenantID,
-					WriteRequest: &mimirpb.WriteRequest{},
-					index:        index,
-				}
+			}
 
-				// We don't free the WriteRequest slices because they are being freed by a level below.
-				err := parsed.WriteRequest.Unmarshal(r.content)
-				if err != nil {
-					parsed.err = fmt.Errorf("parsing ingest consumer write request: %w", err)
-				}
-				recordsChannel <- parsed
+			parsed := parsedRecord{
+				ctx:          r.ctx,
+				tenantID:     r.tenantID,
+				WriteRequest: &mimirpb.WriteRequest{},
+				index:        index,
+			}
+
+			// We don't free the WriteRequest slices because they are being freed by a level below.
+			err := parsed.WriteRequest.Unmarshal(r.content)
+			if err != nil {
+				parsed.err = fmt.Errorf("parsing ingest consumer write request: %w", err)
+			}
+
+			// Now that we're done, check again before we send it to the channel.
+			select {
+			case <-unmarshalCtx.Done():
+				return
+			default:
+				ch <- parsed
 			}
 		}
-	}(ctx, records)
+	}(ctx, records, recordsChannel)
 
 	for r := range recordsChannel {
 		if r.err != nil {
@@ -148,11 +156,12 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 		// If we get an error at any point, we need to stop processing the records. They will be retried at some point.
 		err := c.pushToStorage(r.ctx, r.tenantID, r.WriteRequest)
 		if err != nil {
-			cancel() // Stop the unmarshalling goroutine.
+			cancel()
 			return fmt.Errorf("consuming record at index %d for tenant %s: %w", r.index, r.tenantID, err)
 		}
 	}
 
+	cancel()
 	return nil
 }
 
