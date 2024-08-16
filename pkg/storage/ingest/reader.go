@@ -987,9 +987,12 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 			}
 			if len(f.Records) == 0 {
 				// Typically if we had an error, then there wouldn't eb any records.
-				// But it's hard to verify this from the Kafka API docs, so just to be sure, we process any records we might have received.
+				// But it's hard to verify this for all errors from the Kafka API docs, so just to be sure, we process any records we might have received.
 				continue
 			}
+			// Next attempt will be from the last record onwards.
+			w.startOffset = f.Records[len(f.Records)-1].Offset + 1
+
 			// We reset the backoff if we received any records whatsoever. A received record means _some_ success.
 			// We don't want to slow down until we hit a larger error.
 			errBackoff.Reset()
