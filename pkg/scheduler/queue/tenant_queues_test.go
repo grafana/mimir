@@ -804,7 +804,7 @@ func (n *Node[D]) deleteNode(pathFromNode QueuePath) bool {
 		// empty the node so that update state properly deletes it
 		deleteNode.queueMap = map[string]*Node[D]{}
 		deleteNode.localQueue = list.New()
-		parentNode.queuingAlgorithm.dequeueUpdateState(parentNode, deleteNode)
+		parentNode.queuingAlgorithm.DequeueUpdateState(parentNode, deleteNode)
 		return true
 	}
 	return false

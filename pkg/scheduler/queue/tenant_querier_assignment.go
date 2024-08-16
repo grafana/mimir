@@ -445,7 +445,7 @@ func (tqa *tenantQuerierAssignments[D]) shuffleTenantQueriers(tenantID TenantID,
 //
 // Note that because we use the shared  tenantIDOrder and tenantOrderIndex to manage the queue, we functionally
 // ignore each Node's individual queueOrder and queuePosition.
-func (tqa *tenantQuerierAssignments[D]) dequeueSelectNode(node *Node[D]) (*Node[D], bool) {
+func (tqa *tenantQuerierAssignments[D]) DequeueSelectNode(node *Node[D]) (*Node[D], bool) {
 	// can't get a tenant if no querier set
 	if tqa.currentQuerier == "" {
 		return nil, true
@@ -511,7 +511,7 @@ func (tqa *tenantQuerierAssignments[D]) dequeueSelectNode(node *Node[D]) (*Node[
 //
 // dequeueUpdateState would normally also handle incrementing the queue position after performing a dequeue, but
 // tenantQuerierAssignments currently expects the caller to handle this by having the querier set tenantOrderIndex.
-func (tqa *tenantQuerierAssignments[D]) dequeueUpdateState(node *Node[D], dequeuedFrom *Node[D]) {
+func (tqa *tenantQuerierAssignments[D]) DequeueUpdateState(node *Node[D], dequeuedFrom *Node[D]) {
 	// if dequeuedFrom is nil or is not empty, we don't need to do anything;
 	// position updates will be handled by the caller, and we don't need to remove any nodes.
 	if dequeuedFrom == nil || !dequeuedFrom.IsEmpty() {
@@ -556,7 +556,7 @@ func (tqa *tenantQuerierAssignments[D]) dequeueUpdateState(node *Node[D], dequeu
 //     to ensure that we only remove a tenant from tenantIDOrder if _all_ nodes with the same name have been removed.
 //   - tenantIDOrder iff the node did not already exist in tenantNodes or tenantIDOrder. addChildNode will place
 //     a new tenant in the first empty ("") element it finds in tenantIDOrder, or at the end if no empty elements exist.
-func (tqa *tenantQuerierAssignments[D]) addChildNode(parent, child *Node[D]) {
+func (tqa *tenantQuerierAssignments[D]) AddChildNode(parent, child *Node[D]) {
 	childName := child.Name()
 	_, tenantHasAnyQueue := tqa.tenantNodes[childName]
 

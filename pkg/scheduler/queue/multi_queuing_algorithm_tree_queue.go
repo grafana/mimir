@@ -231,7 +231,7 @@ func (n *Node[D]) dequeue() (QueuePath, any) {
 			// we can't dequeue a value from an empty node; return early
 			return path, nil
 		}
-		dequeueNode, checkedAllNodes = n.queuingAlgorithm.dequeueSelectNode(n)
+		dequeueNode, checkedAllNodes = n.queuingAlgorithm.DequeueSelectNode(n)
 		switch dequeueNode {
 		case n:
 			if n.isLeaf() {
@@ -257,7 +257,7 @@ func (n *Node[D]) dequeue() (QueuePath, any) {
 			n.childrenChecked++
 		}
 
-		n.queuingAlgorithm.dequeueUpdateState(n, dequeueNode)
+		n.queuingAlgorithm.DequeueUpdateState(n, dequeueNode)
 	}
 	// reset childrenChecked to 0 before completing this dequeue
 	n.childrenChecked = 0
@@ -305,7 +305,7 @@ func (n *Node[D]) getOrAddNode(pathFromNode QueuePath, tree *MultiQueuingAlgorit
 			return nil, err
 		}
 		// add the newly created child to the node
-		n.queuingAlgorithm.addChildNode(n, childNode)
+		n.queuingAlgorithm.AddChildNode(n, childNode)
 
 	}
 	return childNode.getOrAddNode(pathFromNode[1:], tree)

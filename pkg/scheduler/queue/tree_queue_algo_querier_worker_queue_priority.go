@@ -39,7 +39,7 @@ func (qa *QuerierWorkerQueuePriorityAlgo[D]) checkedAllNodes() bool {
 	return qa.nodesChecked == len(qa.nodeOrder)
 }
 
-func (qa *QuerierWorkerQueuePriorityAlgo[D]) addChildNode(parent, child *Node[D]) {
+func (qa *QuerierWorkerQueuePriorityAlgo[D]) AddChildNode(parent, child *Node[D]) {
 	// add child node to its parent's queueMap
 	parent.queueMap[child.Name()] = child
 
@@ -70,7 +70,7 @@ func (qa *QuerierWorkerQueuePriorityAlgo[D]) addChildNode(parent, child *Node[D]
 	qa.nodeCounts[child.Name()]++
 }
 
-func (qa *QuerierWorkerQueuePriorityAlgo[D]) dequeueSelectNode(node *Node[D]) (*Node[D], bool) {
+func (qa *QuerierWorkerQueuePriorityAlgo[D]) DequeueSelectNode(node *Node[D]) (*Node[D], bool) {
 	currentNodeName := qa.nodeOrder[qa.currentNodeOrderIndex]
 	if node, ok := node.queueMap[currentNodeName]; ok {
 		qa.nodesChecked++
@@ -79,7 +79,7 @@ func (qa *QuerierWorkerQueuePriorityAlgo[D]) dequeueSelectNode(node *Node[D]) (*
 	return nil, qa.checkedAllNodes()
 }
 
-func (qa *QuerierWorkerQueuePriorityAlgo[D]) dequeueUpdateState(node *Node[D], dequeuedFrom *Node[D]) {
+func (qa *QuerierWorkerQueuePriorityAlgo[D]) DequeueUpdateState(node *Node[D], dequeuedFrom *Node[D]) {
 	// if the child node is nil, we haven't done anything to the tree; return early
 	if dequeuedFrom == nil {
 		return

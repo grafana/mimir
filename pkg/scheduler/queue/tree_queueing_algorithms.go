@@ -6,14 +6,14 @@ package queue
 // applied at the layer-level -- every Node at the same depth in a MultiQueuingAlgorithmTreeQueue shares the same QueuingAlgorithm,
 // including any state in structs that implement QueuingAlgorithm.
 type QueuingAlgorithm[D DequeueReq] interface {
-	// addChildNode updates a parent's queueMap and other child-tracking structures with a new child Node. QueuePaths
+	// AddChildNode updates a parent's queueMap and other child-tracking structures with a new child Node. QueuePaths
 	// passed to enqueue functions are allowed to contain node names for nodes which do not yet exist; in those cases,
 	// we create the missing nodes. Implementers are responsible for adding the newly-created node to whatever state(s)
 	// keep track of nodes in the subtree, as well as updating any positional pointers that have been shifted by the
 	// addition of a new node.
-	addChildNode(parent, child *Node[D])
+	AddChildNode(parent, child *Node[D])
 
-	// dequeueSelectNode uses information in the given node and/or the QueuingAlgorithm state to select and return
+	// DequeueSelectNode uses information in the given node and/or the QueuingAlgorithm state to select and return
 	// the node which an element will be dequeued from next, as well as a bool representing whether the passed node
 	// and all its children have been checked for dequeue-ability. The returned node may be one of the following:
 	//	- the given node: this triggers the base case for the recursive Node.dequeue, and results in dequeuing from
@@ -22,13 +22,13 @@ type QueuingAlgorithm[D DequeueReq] interface {
 	// The Tree uses the bool returned to determine when no dequeue-able value can be found at this child. If all
 	// children in the subtree have been checked, but no dequeue-able value is found, the Tree traverses to the next
 	// child in the given node's order. dequeueSelectNode does *not* update any Node fields.
-	dequeueSelectNode(node *Node[D]) (*Node[D], bool)
+	DequeueSelectNode(node *Node[D]) (*Node[D], bool)
 
-	// dequeueUpdateState is called after we have finished dequeuing from a node. When a child is left empty after the
+	// DequeueUpdateState is called after we have finished dequeuing from a node. When a child is left empty after the
 	// dequeue operation, dequeueUpdateState should perform cleanup by deleting that child from the Node and update
 	// any other necessary state to reflect the child's removal. It should also update the relevant position to point
 	// to the next node to dequeue from.
-	dequeueUpdateState(node *Node[D], dequeuedFrom *Node[D])
+	DequeueUpdateState(node *Node[D], dequeuedFrom *Node[D])
 }
 
 // roundRobinState is the simplest type of QueuingAlgorithm; nodes which use this QueuingAlgorithm and are at
@@ -39,11 +39,11 @@ type QueuingAlgorithm[D DequeueReq] interface {
 type roundRobinState[D DequeueReq] struct {
 }
 
-// addChildNode adds a child Node to the "end" of the parent's queueOrder from the perspective
+// AddChildNode adds a child Node to the "end" of the parent's queueOrder from the perspective
 // of the parent's queuePosition. Thus, If queuePosition is localQueueIndex, the new child is added to the end of
 // queueOrder. Otherwise, the new child is added at queuePosition - 1, and queuePosition is incremented to keep
 // it pointed to the same child.
-func (rrs *roundRobinState[D]) addChildNode(parent, child *Node[D]) {
+func (rrs *roundRobinState[D]) AddChildNode(parent, child *Node[D]) {
 	// add childNode to n.queueMap
 	parent.queueMap[child.Name()] = child
 
@@ -56,9 +56,9 @@ func (rrs *roundRobinState[D]) addChildNode(parent, child *Node[D]) {
 	}
 }
 
-// dequeueSelectNode returns the node at the node's queuePosition. queuePosition represents the position of
-// the next node to dequeue from, and is incremented in dequeueUpdateState.
-func (rrs *roundRobinState[D]) dequeueSelectNode(node *Node[D]) (*Node[D], bool) {
+// DequeueSelectNode returns the node at the node's queuePosition. queuePosition represents the position of
+// the next node to dequeue from, and is incremented in DequeueUpdateState.
+func (rrs *roundRobinState[D]) DequeueSelectNode(node *Node[D]) (*Node[D], bool) {
 	checkedAllNodes := node.childrenChecked == len(node.queueOrder)+1 // must check local queue as well
 	if node.queuePosition == localQueueIndex {
 		return node, checkedAllNodes
@@ -71,10 +71,10 @@ func (rrs *roundRobinState[D]) dequeueSelectNode(node *Node[D]) (*Node[D], bool)
 	return nil, checkedAllNodes
 }
 
-// dequeueUpdateState does the following:
+// DequeueUpdateState does the following:
 //   - deletes the dequeued-from child node if it is empty after the dequeue operation
 //   - increments queuePosition if no child was deleted
-func (rrs *roundRobinState[D]) dequeueUpdateState(node *Node[D], dequeuedFrom *Node[D]) {
+func (rrs *roundRobinState[D]) DequeueUpdateState(node *Node[D], dequeuedFrom *Node[D]) {
 	// if the child node is nil, we haven't done anything to the tree; return early
 	if dequeuedFrom == nil {
 		return
