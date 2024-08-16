@@ -54,7 +54,7 @@ std.manifestYamlDoc({
     (if $._config.enable_grafana_agent then self.grafana_agent else {}) +
     (if $._config.enable_otel_collector then self.otel_collector else {}) +
     self.jaeger +
-    (if $._config.ring == 'consul' || $._config.ring == 'multi' || $._config.enable_ha_tracker then self.consul else {}) +
+    self.consul +
     (if $._config.cache_backend == 'redis' then self.redis else self.memcached + self.memcached_exporter) +
     (if $._config.enable_load_generator then self.load_generator else {}) +
     (if $._config.enable_query_tee then self.query_tee else {}) +
