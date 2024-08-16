@@ -51,10 +51,11 @@
   ingest_storage_kafka_consumer_client_id_default_settings:: {},
 
   // The per-component Kafka client ID settings overrides.
-  ingest_storage_distributor_kafka_client_id_settings:: {},
-  ingest_storage_ingester_kafka_client_id_settings:: {},
-  ingest_storage_query_frontend_kafka_client_id_settings:: {},
-  ingest_storage_ruler_kafka_client_id_settings:: {},
+  ingest_storage_distributor_kafka_client_id_settings:: $.ingest_storage_kafka_producer_client_id_default_settings,
+  ingest_storage_ruler_kafka_client_id_settings:: $.ingest_storage_kafka_producer_client_id_default_settings,
+
+  ingest_storage_ingester_kafka_client_id_settings:: $.ingest_storage_kafka_consumer_client_id_default_settings,
+  ingest_storage_query_frontend_kafka_client_id_settings:: $.ingest_storage_kafka_consumer_client_id_default_settings,
 
   // The configuration that should be applied to Mimir components either producing to or consuming from Kafka.
   ingest_storage_kafka_client_args:: {
@@ -93,11 +94,8 @@
     $.ingest_storage_query_frontend_args,
 
   ingest_storage_distributor_args+:: {
-    // Custom Kafka client ID.
-    'ingest-storage.kafka.client-id': $.mimirKafkaClientID(
-      $.ingest_storage_kafka_producer_client_id_default_settings +
-      $.ingest_storage_distributor_kafka_client_id_settings
-    ),
+    // Apply per-component overrides to Kafka client ID.
+    'ingest-storage.kafka.client-id': $.mimirKafkaClientID($.ingest_storage_distributor_kafka_client_id_settings),
 
     // Increase the default remote write timeout (applied to writing to Kafka too) because writing
     // to Kafka-compatible backend may be slower than writing to ingesters.
@@ -105,11 +103,8 @@
   },
 
   ingest_storage_ruler_args+:: {
-    // Custom Kafka client ID.
-    'ingest-storage.kafka.client-id': $.mimirKafkaClientID(
-      $.ingest_storage_kafka_producer_client_id_default_settings +
-      $.ingest_storage_ruler_kafka_client_id_settings
-    ),
+    // Apply per-component overrides to Kafka client ID.
+    'ingest-storage.kafka.client-id': $.mimirKafkaClientID($.ingest_storage_ruler_kafka_client_id_settings),
 
     // No need to increase -distributor.remote-timeout because the ruler's default is higher.
   },
@@ -125,11 +120,8 @@
     // (in case of a graceful shutdown, the ingester will commit the offset at shutdown too).
     'ingest-storage.kafka.consumer-group-offset-commit-interval': '5s',
 
-    // Custom Kafka client ID.
-    'ingest-storage.kafka.client-id': $.mimirKafkaClientID(
-      $.ingest_storage_kafka_consumer_client_id_default_settings +
-      $.ingest_storage_ingester_kafka_client_id_settings
-    ),
+    // Apply per-component overrides to Kafka client ID.
+    'ingest-storage.kafka.client-id': $.mimirKafkaClientID($.ingest_storage_ingester_kafka_client_id_settings),
   },
 
   ingest_storage_partition_ring_client_args+:: {
@@ -149,11 +141,8 @@
     // the logic to fetch the last produced offsets.
     $.ingest_storage_partition_ring_client_args
     {
-      // Custom Kafka client ID.
-      'ingest-storage.kafka.client-id': $.mimirKafkaClientID(
-        $.ingest_storage_kafka_consumer_client_id_default_settings +
-        $.ingest_storage_query_frontend_kafka_client_id_settings
-      ),
+      // Apply per-component overrides to Kafka client ID.
+      'ingest-storage.kafka.client-id': $.mimirKafkaClientID($.ingest_storage_query_frontend_kafka_client_id_settings),
 
       // Reduce the LPO polling interval to improve latency of strong consistency reads.
       'ingest-storage.kafka.last-produced-offset-poll-interval': '500ms',
