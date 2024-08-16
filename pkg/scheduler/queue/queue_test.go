@@ -859,10 +859,9 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 				if queueDim == nil {
 					queueDim = []string{unknownQueueDimension}
 				}
-				switch queueBroker.prioritizeQueryComponents {
-				case true:
+				if queueBroker.prioritizeQueryComponents {
 					path = append(append(path, queueDim...), "tenant-1")
-				default:
+				} else {
 					path = append([]string{"tenant-1"}, queueDim...)
 				}
 				require.Nil(t, itq.GetNode(path))

@@ -277,10 +277,9 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 				if v == nil {
 					v = []string{unknownQueueDimension}
 				}
-				switch qb.prioritizeQueryComponents {
-				case true:
+				if qb.prioritizeQueryComponents {
 					checkPath = append(append(checkPath, v...), "tenant-1")
-				default:
+				} else {
 					checkPath = append(QueuePath{"tenant-1"}, v...)
 				}
 
