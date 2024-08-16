@@ -292,11 +292,16 @@ func (ir *ownedSeriesIngesterRingStrategy) shardSizeForUser(userID string) int {
 func (ir *ownedSeriesIngesterRingStrategy) tokenRangesForUser(userID string, shardSize int) (ring.TokenRanges, error) {
 	subring := ir.ingestersRing.ShuffleShard(userID, shardSize)
 
+	all, _ := subring.GetAllHealthy(ring.Read)
+	fmt.Println("subring for userID", subring.InstancesCount(), "addresses", all.GetAddresses(), "ids", all.GetIDs())
+
 	ranges, err := subring.GetTokenRangesForInstance(ir.instanceID)
 	if errors.Is(err, ring.ErrInstanceNotFound) {
 		// Not an error because it means the ingester doesn't own the tenant.
 		return nil, nil
 	}
+
+	fmt.Println("ranges", ranges)
 
 	return ranges, err
 }
