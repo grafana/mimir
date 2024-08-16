@@ -141,8 +141,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 			select {
 			case <-unmarshalCtx.Done():
 				return
-			default:
-				ch <- parsed
+			case ch <- parsed:
 			}
 		}
 	}(ctx, records, recordsChannel)
