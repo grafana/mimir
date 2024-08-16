@@ -65,13 +65,13 @@
   // The configuration that should be applied to all Mimir components producing to Kafka.
   ingest_storage_kafka_producer_args:: {
     'ingest-storage.kafka.address': $.ingest_storage_kafka_producer_address,
-    'ingest-storage.kafka.client-id': buildKafkaClientID($.ingest_storage_kafka_producer_client_id_default_settings),
+    'ingest-storage.kafka.client-id': $.mimirKafkaClientID($.ingest_storage_kafka_producer_client_id_default_settings),
   },
 
   // The configuration that should be applied to all Mimir components consuming from Kafka.
   ingest_storage_kafka_consumer_args:: {
     'ingest-storage.kafka.address': $.ingest_storage_kafka_consumer_address,
-    'ingest-storage.kafka.client-id': buildKafkaClientID($.ingest_storage_kafka_consumer_client_id_default_settings),
+    'ingest-storage.kafka.client-id': $.mimirKafkaClientID($.ingest_storage_kafka_consumer_client_id_default_settings),
   },
 
   //
@@ -94,7 +94,7 @@
 
   ingest_storage_distributor_args+:: {
     // Custom Kafka client ID.
-    'ingest-storage.kafka.client-id': buildKafkaClientID(
+    'ingest-storage.kafka.client-id': $.mimirKafkaClientID(
       $.ingest_storage_kafka_producer_client_id_default_settings +
       $.ingest_storage_distributor_kafka_client_id_settings
     ),
@@ -106,7 +106,7 @@
 
   ingest_storage_ruler_args+:: {
     // Custom Kafka client ID.
-    'ingest-storage.kafka.client-id': buildKafkaClientID(
+    'ingest-storage.kafka.client-id': $.mimirKafkaClientID(
       $.ingest_storage_kafka_producer_client_id_default_settings +
       $.ingest_storage_ruler_kafka_client_id_settings
     ),
@@ -126,7 +126,7 @@
     'ingest-storage.kafka.consumer-group-offset-commit-interval': '5s',
 
     // Custom Kafka client ID.
-    'ingest-storage.kafka.client-id': buildKafkaClientID(
+    'ingest-storage.kafka.client-id': $.mimirKafkaClientID(
       $.ingest_storage_kafka_consumer_client_id_default_settings +
       $.ingest_storage_ingester_kafka_client_id_settings
     ),
@@ -150,7 +150,7 @@
     $.ingest_storage_partition_ring_client_args
     {
       // Custom Kafka client ID.
-      'ingest-storage.kafka.client-id': buildKafkaClientID(
+      'ingest-storage.kafka.client-id': $.mimirKafkaClientID(
         $.ingest_storage_kafka_consumer_client_id_default_settings +
         $.ingest_storage_query_frontend_kafka_client_id_settings
       ),
@@ -179,7 +179,7 @@
   // Utilities.
   //
 
-  local buildKafkaClientID(settings) =
+  mimirKafkaClientID(settings)::
     // Remove all null values from the settings. There could be null values because we use null as override
     // value to remove a setting from the map.
     local cleanSettings = {
