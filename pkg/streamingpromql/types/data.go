@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/promql/value.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Prometheus Authors
 
 package types
 
@@ -101,4 +104,37 @@ type ScalarData struct {
 	// Samples must be sorted in timestamp order, earliest timestamps first.
 	// Samples must not have duplicate timestamps.
 	Samples []promql.FPoint
+}
+
+func HasDuplicateSeries(metadata []SeriesMetadata) (bool, labels.Labels) {
+	switch len(metadata) {
+	case 0, 1:
+		return false, labels.EmptyLabels()
+	case 2:
+		if metadata[0].Labels.Hash() == metadata[1].Labels.Hash() {
+			return true, metadata[0].Labels
+		}
+
+		return false, labels.EmptyLabels()
+
+	default:
+		// Note that there's a risk here that we incorrectly flag two series as duplicates when in reality they're different
+		// due to hash collisions.
+		// However, the hashes are 64-bit integers, so the likelihood of collisions is very small, and this is the same method
+		// that Prometheus' engine uses, so we'll at least be consistent with that.
+
+		seen := make(map[uint64]struct{}, len(metadata))
+
+		for _, m := range metadata {
+			hash := m.Labels.Hash()
+
+			if _, alreadySeen := seen[hash]; alreadySeen {
+				return true, m.Labels
+			}
+
+			seen[hash] = struct{}{}
+		}
+
+		return false, labels.EmptyLabels()
+	}
 }

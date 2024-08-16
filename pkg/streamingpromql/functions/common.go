@@ -3,6 +3,8 @@
 package functions
 
 import (
+	"fmt"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
@@ -20,6 +22,11 @@ func PassthroughSeriesMetadata(seriesMetadata []types.SeriesMetadata, _ *limitin
 func DropSeriesName(seriesMetadata []types.SeriesMetadata, _ *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
 	for i := range seriesMetadata {
 		seriesMetadata[i].Labels = seriesMetadata[i].Labels.DropMetricName()
+	}
+
+	if hasDuplicate, example := types.HasDuplicateSeries(seriesMetadata); hasDuplicate {
+		types.PutSeriesMetadataSlice(seriesMetadata)
+		return nil, fmt.Errorf("vector cannot contain metrics with the same labelset: multiple series with labels %v", example.String())
 	}
 
 	return seriesMetadata, nil

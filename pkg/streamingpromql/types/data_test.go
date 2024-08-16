@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 )
@@ -146,6 +147,95 @@ func TestInstantVectorSeriesDataIterator(t *testing.T) {
 				require.Equal(t, exp.F, floatVal)
 				require.Equal(t, exp.H, hist)
 				require.Equal(t, exp.HasNext, hasNext)
+			}
+		})
+	}
+}
+
+func TestHasDuplicateSeries(t *testing.T) {
+	testCases := map[string]struct {
+		input           []SeriesMetadata
+		hasDuplicate    bool
+		expectedExample labels.Labels
+	}{
+		"no series": {
+			input:        []SeriesMetadata{},
+			hasDuplicate: false,
+		},
+		"one series": {
+			input: []SeriesMetadata{
+				{Labels: labels.FromStrings(labels.MetricName, "foo")},
+			},
+			hasDuplicate: false,
+		},
+		"two series, both different": {
+			input: []SeriesMetadata{
+				{Labels: labels.FromStrings(labels.MetricName, "foo")},
+				{Labels: labels.FromStrings(labels.MetricName, "bar")},
+			},
+			hasDuplicate: false,
+		},
+		"two series, some common labels but not completely the same": {
+			input: []SeriesMetadata{
+				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
+				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "2")},
+			},
+			hasDuplicate: false,
+		},
+		"two series, both the same": {
+			input: []SeriesMetadata{
+				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
+				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
+			},
+			hasDuplicate:    true,
+			expectedExample: labels.FromStrings(labels.MetricName, "foo", "bar", "1"),
+		},
+		"three series, all different": {
+			input: []SeriesMetadata{
+				{Labels: labels.FromStrings(labels.MetricName, "foo")},
+				{Labels: labels.FromStrings(labels.MetricName, "bar")},
+				{Labels: labels.FromStrings(labels.MetricName, "baz")},
+			},
+			hasDuplicate: false,
+		},
+		"three series, some with common labels but none completely the same": {
+			input: []SeriesMetadata{
+				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
+				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "2")},
+				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "3")},
+			},
+			hasDuplicate: false,
+		},
+		"three series, some the same": {
+			input: []SeriesMetadata{
+				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
+				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
+				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "3")},
+			},
+			hasDuplicate:    true,
+			expectedExample: labels.FromStrings(labels.MetricName, "foo", "bar", "1"),
+		},
+		"three series, all the same": {
+			input: []SeriesMetadata{
+				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
+				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
+				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
+			},
+			hasDuplicate:    true,
+			expectedExample: labels.FromStrings(labels.MetricName, "foo", "bar", "1"),
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			actualHasDuplicate, actualExample := HasDuplicateSeries(testCase.input)
+
+			require.Equal(t, testCase.hasDuplicate, actualHasDuplicate)
+
+			if testCase.hasDuplicate {
+				require.Equal(t, testCase.expectedExample, actualExample)
+			} else {
+				require.Equal(t, labels.EmptyLabels(), actualExample)
 			}
 		})
 	}
