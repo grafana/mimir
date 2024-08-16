@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -40,8 +41,13 @@ type BlockBuilder struct {
 	register    prometheus.Registerer
 	limits      *validation.Overrides
 	kafkaClient *kgo.Client
-	parts       []int32
 	bucket      objstore.Bucket
+
+	parts []int32
+	// fallbackOffset is the low watermark from where a partition which doesn't have a commit will be consumed.
+	// It can be either a timestamp or the kafkaStartOffset.
+	// TODO(v): to support for setting it to kafkaStartOffset we need to rework how a lagging cycle is chopped into time frames.
+	fallbackOffset int64
 
 	metrics blockBuilderMetrics
 
@@ -125,10 +131,15 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 		return fmt.Errorf("creating tsdb dir: %w", err)
 	}
 
-	startAtOffsets, err := b.findOffsetsToStartAt(ctx, nil)
+	// TODO: add a test to test the case where the consumption on startup happens
+	// after the LookbackOnNoCommit with records before the after the consumption
+	// start point.
+	startAtOffsets, fallbackOffset, err := b.findOffsetsToStartAt(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("find offsets to start at: %w", err)
 	}
+	b.fallbackOffset = fallbackOffset
+
 	opts := []kgo.Opt{
 		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
 			b.cfg.Kafka.Topic: startAtOffsets,
@@ -169,25 +180,41 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	return nil
 }
 
-const (
-	// kafkaOffsetStart is a special offset value that means the beginning of the partition.
-	kafkaOffsetStart = int64(-2)
+// kafkaOffsetStart is a special offset value that means the beginning of the partition.
+const kafkaOffsetStart = int64(-2)
 
-	// kafkaOffsetEnd is a special offset value that means the end of the partition.
-	//kafkaOffsetEnd = int64(-1)
-)
-
-func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context, metrics *kprom.Metrics) (map[int32]kgo.Offset, error) {
+func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context, metrics *kprom.Metrics) (map[int32]kgo.Offset, int64, error) {
 	// We use an ephemeral client to fetch the offset and then create a new client with this offset.
 	// The reason for this is that changing the offset of an existing client requires to have used this client for fetching at least once.
 	// We don't want to do noop fetches just to warm up the client, so we create a new client instead.
 	cl, err := kgo.NewClient(commonKafkaClientOptions(b.cfg.Kafka, b.logger, metrics)...)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create bootstrap client: %w", err)
+		return nil, -1, fmt.Errorf("unable to create bootstrap client: %w", err)
 	}
 	defer cl.Close()
 
 	admClient := kadm.NewClient(cl)
+
+	var fallbackOffset int64
+	defaultKOffset := kgo.NewOffset()
+
+	// When LookbackOnNoCommit is positive, its value is used to calculate the timestamp after which the consumption starts,
+	// otherwise it is a special offset for the "start" of the partition.
+	if b.cfg.LookbackOnNoCommit > 0 {
+		ts := time.Now().Add(-b.cfg.LookbackOnNoCommit)
+		fallbackOffset = ts.UnixMilli()
+		defaultKOffset = defaultKOffset.AfterMilli(fallbackOffset)
+	} else {
+		fallbackOffset = int64(b.cfg.LookbackOnNoCommit)
+		switch fallbackOffset {
+		case kafkaOffsetStart:
+			defaultKOffset = defaultKOffset.AtStart()
+		default:
+			// We don't support consuming from the "end" of the partition because starting a cycle from the end always results to a zero lag.
+			// This may be done later.
+			return nil, -1, fmt.Errorf("unexpected fallback offset value %v", b.cfg.LookbackOnNoCommit)
+		}
+	}
 
 	fetchOffsets := func(ctx context.Context) (offsets map[int32]kgo.Offset, err error) {
 		resp, err := admClient.FetchOffsets(ctx, b.cfg.Kafka.ConsumerGroup)
@@ -195,12 +222,12 @@ func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context, metrics *kprom.
 			err = resp.Error()
 		}
 		// Either success or the requested group does not exist.
-		if err == nil {
-			offsets = resp.KOffsets()[b.cfg.Kafka.Topic]
-		} else if errors.Is(err, kerr.GroupIDNotFound) || errors.Is(err, kerr.UnknownTopicOrPartition) {
+		if errors.Is(err, kerr.GroupIDNotFound) || errors.Is(err, kerr.UnknownTopicOrPartition) {
 			offsets = make(map[int32]kgo.Offset)
 		} else if err != nil {
 			return nil, fmt.Errorf("unable to fetch group offsets: %w", err)
+		} else {
+			offsets = resp.KOffsets()[b.cfg.Kafka.Topic]
 		}
 
 		// Look over the assigned partitions and fallback to the ConsumerResetOffset if a partition doesn't have any commit for the configured group.
@@ -208,8 +235,8 @@ func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context, metrics *kprom.
 			if _, ok := offsets[part]; ok {
 				level.Info(b.logger).Log("msg", "consuming from last consumed offset", "consumer_group", b.cfg.Kafka.ConsumerGroup, "part", part, "offset", offsets[part].String())
 			} else {
-				offsets[part] = kgo.NewOffset().At(kafkaOffsetStart)
-				level.Info(b.logger).Log("msg", "consuming from partition start because no offset has been found", "consumer_group", b.cfg.Kafka.ConsumerGroup, "part", part, "offset", offsets[part].String())
+				offsets[part] = defaultKOffset
+				level.Info(b.logger).Log("msg", "consuming from partition look back because no offset has been found", "consumer_group", b.cfg.Kafka.ConsumerGroup, "part", part, "offset", offsets[part].String())
 			}
 		}
 		return offsets, nil
@@ -224,7 +251,7 @@ func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context, metrics *kprom.
 		var offsets map[int32]kgo.Offset
 		offsets, err = fetchOffsets(ctx)
 		if err == nil {
-			return offsets, nil
+			return offsets, fallbackOffset, nil
 		}
 		level.Warn(b.logger).Log("msg", "failed to fetch startup offsets", "err", err)
 		boff.Wait()
@@ -233,7 +260,7 @@ func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context, metrics *kprom.
 	if err == nil {
 		err = boff.Err()
 	}
-	return nil, err
+	return nil, -1, err
 }
 
 func commonKafkaClientOptions(cfg KafkaConfig, logger log.Logger, metrics *kprom.Metrics) []kgo.Opt {
@@ -346,6 +373,8 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 
 		level.Debug(b.logger).Log("msg", "next consume cycle", "part", part)
 
+		// TODO(v): calculating lag for each individual partition is redundant, as it requests the data for the whole group all the time.
+		// Since we don't have a rebalance in the middle of the cycle now, can we do it once in the beginning of the cycle?
 		lag, err := b.getLagForPartition(ctx, kadm.NewClient(b.kafkaClient), part)
 		if err != nil {
 			level.Error(b.logger).Log("msg", "failed to get partition lag", "err", err, "part", part)
@@ -405,7 +434,7 @@ func (b *BlockBuilder) getLagForPartition(ctx context.Context, admClient *kadm.C
 		if lastErr != nil {
 			level.Error(b.logger).Log("msg", "failed to get consumer group lag", "err", lastErr, "part", part)
 		}
-		groupLag, err := getGroupLag(ctx, admClient, b.cfg.Kafka.Topic, b.cfg.Kafka.ConsumerGroup)
+		groupLag, err := getGroupLag(ctx, admClient, b.cfg.Kafka.Topic, b.cfg.Kafka.ConsumerGroup, b.fallbackOffset)
 		if err != nil {
 			lastErr = fmt.Errorf("get consumer group lag: %w", err)
 			continue
@@ -425,13 +454,17 @@ func (b *BlockBuilder) getLagForPartition(ctx context.Context, admClient *kadm.C
 // getGroupLag is the inlined version of `kadm.Client.Lag` but updated to work with when the group
 // doesn't have live participants.
 // Similar to `kadm.CalculateGroupLagWithStartOffsets`, it takes into account that the group may not have any commits.
-func getGroupLag(ctx context.Context, admClient *kadm.Client, topic, group string) (kadm.GroupLag, error) {
-	offsets, err := admClient.FetchOffsetsForTopics(ctx, group, topic)
+func getGroupLag(ctx context.Context, admClient *kadm.Client, topic, group string, fallbackOffset int64) (kadm.GroupLag, error) {
+	offsets, err := admClient.FetchOffsets(ctx, group)
 	if err != nil {
 		if !errors.Is(err, kerr.GroupIDNotFound) {
 			return nil, fmt.Errorf("fetch offsets: %w", err)
 		}
 	}
+	if err := offsets.Error(); err != nil {
+		return nil, fmt.Errorf("fetch offsets got error in response: %w", err)
+	}
+
 	startOffsets, err := admClient.ListStartOffsets(ctx, topic)
 	if err != nil {
 		return nil, err
@@ -441,17 +474,36 @@ func getGroupLag(ctx context.Context, admClient *kadm.Client, topic, group strin
 		return nil, err
 	}
 
-	// For now, if the group doesn't have any commits, we use startOffsets as the starting point.
-	if len(offsets) == 0 {
-		offsets = make(kadm.OffsetResponses)
-		for t, pt := range startOffsets.Offsets() {
-			resp := make(map[int32]kadm.OffsetResponse)
-			for _, o := range pt {
-				resp[o.Partition] = kadm.OffsetResponse{
-					Offset: o,
-				}
+	resolveFallbackOffsets := sync.OnceValues(func() (kadm.ListedOffsets, error) {
+		if fallbackOffset == kafkaOffsetStart {
+			return startOffsets, nil
+		}
+		if fallbackOffset > 0 {
+			return admClient.ListOffsetsAfterMilli(ctx, fallbackOffset, topic)
+		}
+		// This should not happen because fallbackOffset already went through the validation by this point.
+		return nil, fmt.Errorf("cannot resolve fallback offset for value %v", fallbackOffset)
+	})
+	// If the group-partition in offsets doesn't have a commit, fall back depending on where fallbackOffset points at.
+	for topic, pt := range startOffsets.Offsets() {
+		for part := range pt {
+			if _, ok := offsets.Lookup(topic, part); ok {
+				continue
 			}
-			offsets[t] = resp
+			fallbackOffsets, err := resolveFallbackOffsets()
+			if err != nil {
+				return nil, fmt.Errorf("resolve fallback offsets: %w", err)
+			}
+			o, ok := fallbackOffsets.Lookup(topic, part)
+			if !ok {
+				return nil, fmt.Errorf("partition %d not found in fallback offsets for topic %s", part, topic)
+			}
+			offsets.Add(kadm.OffsetResponse{Offset: kadm.Offset{
+				Topic:       o.Topic,
+				Partition:   o.Partition,
+				At:          o.Offset,
+				LeaderEpoch: o.LeaderEpoch,
+			}})
 		}
 	}
 
@@ -602,20 +654,17 @@ type partitionInfo struct {
 }
 
 func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, client *kgo.Client, pl partitionInfo, cycleEnd time.Time) error {
-	// TODO(codesome): Add an option to block builder to start consuming from the end for the first rollout.
 	var commitRecTime time.Time
-	var skipRecordsBefore time.Time
 	if pl.CommitRecTs > 0 {
 		commitRecTime = time.UnixMilli(pl.CommitRecTs)
 	}
-	if commitRecTime.IsZero() {
+	if commitRecTime.IsZero() && b.fallbackOffset > 0 {
 		// If there is no commit metadata, we use the lookback config to replay a set amount of
 		// records because it is non-trivial to peek at the first record in a partition to determine
 		// the range of replay required. Without knowing the range, we might end up trying to consume
 		// a lot of records in a single partition consumption call and end up in an OOM loop.
 		// TODO(codesome): add a test for this.
-		commitRecTime = time.Now().Add(-b.cfg.LookbackOnNoCommit).Truncate(b.cfg.ConsumeInterval)
-		skipRecordsBefore = commitRecTime
+		commitRecTime = time.UnixMilli(b.fallbackOffset).Truncate(b.cfg.ConsumeInterval)
 	}
 
 	lagging := cycleEnd.Sub(commitRecTime) > 3*b.cfg.ConsumeInterval/2
@@ -624,7 +673,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, client *kgo.Client,
 		// more than 1.5 times the consume interval.
 		// When there is no kafka commit, we play safe and assume seenTillOffset and
 		// lastBlockEnd was 0 to not discard any samples unnecessarily.
-		_, err := b.consumePartition(ctx, client, pl, cycleEnd, skipRecordsBefore)
+		_, err := b.consumePartition(ctx, client, pl, cycleEnd)
 		if err != nil {
 			return fmt.Errorf("consume partition %d: %w", pl.Partition, err)
 		}
@@ -640,7 +689,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, client *kgo.Client,
 		// Instead of looking for the commit metadata for each iteration, we use the data returned by consumePartition
 		// in the next iteration.
 		var err error
-		pl, err = b.consumePartition(ctx, client, pl, ce, skipRecordsBefore)
+		pl, err = b.consumePartition(ctx, client, pl, ce)
 		if err != nil {
 			return fmt.Errorf("consume partition %d: %w", pl.Partition, err)
 		}
@@ -665,7 +714,6 @@ func (b *BlockBuilder) consumePartition(
 	client *kgo.Client,
 	pl partitionInfo,
 	cycleEnd time.Time,
-	skipRecordsBefore time.Time,
 ) (retPl partitionInfo, retErr error) {
 	var (
 		part           = pl.Partition
@@ -715,7 +763,6 @@ func (b *BlockBuilder) consumePartition(
 	var (
 		done                         bool
 		commitRec, firstRec, lastRec *kgo.Record
-		lastDiscardedBeforeFirstRec  *kgo.Record // Record that is discarded to be before the lookback, and right before firstRec.
 	)
 	for !done {
 		if err := context.Cause(ctx); err != nil {
@@ -750,13 +797,6 @@ func (b *BlockBuilder) consumePartition(
 		recIter := fetches.RecordIter()
 		for !recIter.Done() {
 			rec := recIter.Next()
-			if rec.Timestamp.Before(skipRecordsBefore) {
-				lag--
-				if firstRec == nil {
-					lastDiscardedBeforeFirstRec = rec
-				}
-				continue
-			}
 
 			if firstRec == nil {
 				firstRec = rec
@@ -811,29 +851,23 @@ func (b *BlockBuilder) consumePartition(
 	b.metrics.compactAndUploadDuration.WithLabelValues(fmt.Sprintf("%d", part)).Observe(compactionDur.Seconds())
 
 	// Nothing was processed, including that there was not discarded record.
-	if lastRec == nil && firstRec == nil && lastDiscardedBeforeFirstRec == nil {
+	if lastRec == nil && firstRec == nil {
 		level.Info(b.logger).Log("msg", "no records were processed in consumePartition", "part", part)
 		return pl, nil
 	}
 
 	// No records were for this cycle.
 	if lastRec == nil {
-		if lastDiscardedBeforeFirstRec != nil {
-			// We have a record that was beyond the lookback and was discarded.
-			// We must commit the last discarded.
-			commitRec = lastDiscardedBeforeFirstRec
-		} else {
-			// First record fetched was from the next cycle.
-			// Rewind partition's offset and re-consume this record again on the next cycle.
-			// No need to re-commit since the commit point did not change.
-			level.Info(b.logger).Log("msg", "skip commit record due to first record fetched is from next cycle", "part", part, "first_rec_offset", firstRec.Offset)
-			rec := kgo.EpochOffset{
-				Epoch:  firstRec.LeaderEpoch,
-				Offset: firstRec.Offset,
-			}
-			b.seekPartition(client, part, rec)
-			return pl, nil
+		// The first record fetched was from the next cycle.
+		// Rewind partition's offset and re-consume this record again on the next cycle.
+		// No need to re-commit since the commit point did not change.
+		level.Info(b.logger).Log("msg", "skip commit record due to first record fetched is from next cycle", "part", part, "first_rec_offset", firstRec.Offset)
+		rec := kgo.EpochOffset{
+			Epoch:  firstRec.LeaderEpoch,
+			Offset: firstRec.Offset,
 		}
+		b.seekPartition(client, part, rec)
+		return pl, nil
 	}
 
 	// All samples in all records were processed. We can commit the last record's offset.
