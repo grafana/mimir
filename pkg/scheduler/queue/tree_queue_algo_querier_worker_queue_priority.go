@@ -3,7 +3,7 @@
 package queue
 
 type QuerierWorkerQueuePriorityAlgo struct {
-	currentQuerierWorker  int32
+	currentQuerierWorker  int
 	currentNodeOrderIndex int
 	nodeOrder             []string
 	nodeCounts            map[string]int
@@ -16,7 +16,7 @@ func NewQuerierWorkerQueuePriorityAlgo() *QuerierWorkerQueuePriorityAlgo {
 	}
 }
 
-func (qa *QuerierWorkerQueuePriorityAlgo) SetCurrentQuerierWorker(workerID int32) {
+func (qa *QuerierWorkerQueuePriorityAlgo) SetCurrentQuerierWorker(workerID int) {
 	qa.currentQuerierWorker = workerID
 	if len(qa.nodeOrder) == 0 {
 		qa.currentNodeOrderIndex = 0
