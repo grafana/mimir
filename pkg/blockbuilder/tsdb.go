@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/grafana/dskit/multierror"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -261,11 +262,36 @@ type blockUploader func(_ context.Context, tenantID, dbDir string, blockIDs []st
 
 // CompactAndUpload compacts the blocks of all the TSDBs and uploads them.
 // uploadBlocks is a function that uploads the blocks to the required storage.
-// If the functions returns an error, the DBs that are not successfully compacted or
-// uploaded will not be cleared from the TSDBBuilder.
-func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUploader) (int, error) {
+// All the DBs are closed and directories cleared irrespective of success or failure of this function.
+func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUploader) (_ int, err error) {
+	var (
+		numBlocks atomic.Int64
+		doneDBsMu sync.Mutex
+		doneDBs   = make(map[*userTSDB]bool)
+	)
+
 	b.tsdbsMu.Lock()
-	defer b.tsdbsMu.Unlock()
+	defer func() {
+		b.tsdbsMu.Unlock()
+
+		merr := multierror.MultiError{}
+		merr.Add(err)
+		// If some TSDB was not compacted or uploaded, it will be re-tried in the next cycle, so we remove it here.
+		for _, db := range b.tsdbs {
+			if doneDBs[db] {
+				continue
+			}
+			dbDir := db.Dir()
+			merr.Add(db.Close())
+			merr.Add(os.RemoveAll(dbDir))
+		}
+
+		err = merr.Err()
+
+		// Clear the map so that it can be released from the memory. Not setting to nil in case
+		// we want to reuse the TSDBBuilder.
+		b.tsdbs = make(map[tsdbTenant]*userTSDB)
+	}()
 
 	level.Info(b.logger).Log("msg", "compacting and uploading blocks", "num_tsdb", len(b.tsdbs))
 
@@ -277,7 +303,7 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 	if b.config.TSDB.ShipConcurrency > 0 {
 		eg.SetLimit(b.config.TSDB.ShipConcurrency)
 	}
-	var numBlocks atomic.Int64
+
 	for tenant, db := range b.tsdbs {
 		// Change scope of for loop variables.
 		tenant := tenant
@@ -303,21 +329,15 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 				return err
 			}
 
-			delete(b.tsdbs, tenant)
+			doneDBsMu.Lock()
+			doneDBs[db] = true
+			doneDBsMu.Unlock()
 
 			// Clear the DB from the disk. Don't need it anymore.
 			return os.RemoveAll(dbDir)
 		})
 	}
-	err := eg.Wait()
-
-	// Clear the map so that it can be released from the memory. Not setting to nil in case
-	// we want to reuse the TSDBBuilder.
-	// If the map is not empty, it means some tenants failed to upload the blocks. In that case we do not
-	// remove the tenant in case the caller wants to retry.
-	if len(b.tsdbs) == 0 {
-		b.tsdbs = make(map[tsdbTenant]*userTSDB)
-	}
+	err = eg.Wait()
 	return int(numBlocks.Load()), err
 }
 
@@ -328,24 +348,17 @@ func (b *TSDBBuilder) Close() error {
 	b.tsdbsMu.Lock()
 	defer b.tsdbsMu.Unlock()
 
-	var firstErr error
+	merr := multierror.MultiError{}
 	for _, db := range b.tsdbs {
 		dbDir := db.Dir()
-
-		if err := db.Close(); err != nil && firstErr == nil {
-			firstErr = err
-		}
-
-		// Remove any artifacts of this TSDB. We don't need them anymore.
-		if err := os.RemoveAll(dbDir); err != nil && firstErr == nil {
-			firstErr = err
-		}
+		merr.Add(db.Close())
+		merr.Add(os.RemoveAll(dbDir))
 	}
 
 	// Clear the map so that it can be released from the memory. Not setting to nil in case
 	// we want to reuse the TSDBBuilder.
 	b.tsdbs = make(map[tsdbTenant]*userTSDB)
-	return firstErr
+	return merr.Err()
 }
 
 type extendedAppender interface {
