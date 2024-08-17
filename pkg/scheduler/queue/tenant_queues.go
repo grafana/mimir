@@ -36,20 +36,34 @@ type queueBroker struct {
 func newQueueBroker(
 	maxTenantQueueSize int,
 	useMultiAlgoTreeQueue bool,
+	prioritizeQueryComponents bool,
 	forgetDelay time.Duration,
 ) *queueBroker {
 	tqas := newTenantQuerierAssignments(forgetDelay)
 	var tree Tree
 	var err error
 	if useMultiAlgoTreeQueue {
-		algos := []QueuingAlgorithm{
-			tqas,               // root; QueuingAlgorithm selects tenants
-			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
-			&roundRobinState{}, // query components; QueuingAlgorithm selects query from local queue
+		var algos []QueuingAlgorithm
+		if prioritizeQueryComponents {
+			algos = []QueuingAlgorithm{
+				&roundRobinState{}, // root; QueuingAlgorithm selects query component
+				tqas,               // query components; QueuingAlgorithm selects tenants
+				&roundRobinState{}, // tenant queues; QueuingAlgorithm selects from local queue
+
+			}
+		} else {
+			algos = []QueuingAlgorithm{
+				tqas,               // root; QueuingAlgorithm selects tenants
+				&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
+				&roundRobinState{}, // query components; QueuingAlgorithm selects query from local queue
+			}
 		}
 		tree, err = NewTree(algos...)
 	} else {
 		// by default, use the legacy tree queue
+		if prioritizeQueryComponents {
+			panic("cannot prioritize query components for legacy tree queue")
+		}
 		tree = NewTreeQueue("root")
 	}
 
@@ -58,9 +72,10 @@ func newQueueBroker(
 		panic(fmt.Sprintf("error creating the tree queue: %v", err))
 	}
 	qb := &queueBroker{
-		tree:                     tree,
-		tenantQuerierAssignments: tqas,
-		maxTenantQueueSize:       maxTenantQueueSize,
+		tree:                      tree,
+		tenantQuerierAssignments:  tqas,
+		maxTenantQueueSize:        maxTenantQueueSize,
+		prioritizeQueryComponents: prioritizeQueryComponents,
 	}
 
 	return qb

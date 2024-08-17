@@ -238,6 +238,7 @@ func NewRequestQueue(
 	log log.Logger,
 	maxOutstandingPerTenant int,
 	useMultiAlgoQueue bool,
+	prioritizeQueryComponents bool,
 	forgetDelay time.Duration,
 	queueLength *prometheus.GaugeVec,
 	discardedRequests *prometheus.CounterVec,
@@ -273,7 +274,7 @@ func NewRequestQueue(
 		waitingQuerierConnsToDispatch: list.New(),
 
 		QueryComponentUtilization: queryComponentCapacity,
-		queueBroker:               newQueueBroker(maxOutstandingPerTenant, useMultiAlgoQueue, forgetDelay),
+		queueBroker:               newQueueBroker(maxOutstandingPerTenant, useMultiAlgoQueue, prioritizeQueryComponents, forgetDelay),
 	}
 
 	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")
