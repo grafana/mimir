@@ -849,24 +849,25 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 				req:      req,
 			}
 
+			var multiAlgorithmTreeQueuePath QueuePath
+			if queueDim == nil {
+				queueDim = []string{unknownQueueDimension}
+			}
+			if queueBroker.prioritizeQueryComponents {
+				multiAlgorithmTreeQueuePath = append(append(multiAlgorithmTreeQueuePath, queueDim...), "tenant-1")
+			} else {
+				multiAlgorithmTreeQueuePath = append([]string{"tenant-1"}, queueDim...)
+			}
+
 			// TODO (casie): Clean this up when deprecating legacy tree queue
 			if tq, ok := queueBroker.tree.(*TreeQueue); ok {
 				require.Nil(t, tq.getNode(QueuePath{"tenant-1"}))
 				require.NoError(t, queueBroker.enqueueRequestBack(&tr, tenantMaxQueriers))
 				require.False(t, tq.getNode(QueuePath{"tenant-1"}).IsEmpty())
 			} else if itq, ok := queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-				var path QueuePath
-				if queueDim == nil {
-					queueDim = []string{unknownQueueDimension}
-				}
-				if queueBroker.prioritizeQueryComponents {
-					path = append(append(path, queueDim...), "tenant-1")
-				} else {
-					path = append([]string{"tenant-1"}, queueDim...)
-				}
-				require.Nil(t, itq.GetNode(path))
+				require.Nil(t, itq.GetNode(multiAlgorithmTreeQueuePath))
 				require.NoError(t, queueBroker.enqueueRequestBack(&tr, tenantMaxQueriers))
-				require.False(t, itq.GetNode(path).IsEmpty())
+				require.False(t, itq.GetNode(multiAlgorithmTreeQueuePath).IsEmpty())
 
 			}
 
@@ -887,8 +888,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 			if tq, ok := queueBroker.tree.(*TreeQueue); ok {
 				require.False(t, tq.getNode(QueuePath{"tenant-1"}).IsEmpty())
 			} else if itq, ok := queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-				path := queueBroker.makeQueuePathForTests("tenant-1")
-				require.False(t, itq.GetNode(path).IsEmpty())
+				require.False(t, itq.GetNode(multiAlgorithmTreeQueuePath).IsEmpty())
 			}
 
 		})
