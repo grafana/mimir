@@ -2,7 +2,7 @@
 # We use different base images for mimir and mimir race images since race-detector needs glibc packages.
 # See difference between distroless static and base-nossl at https://github.com/GoogleContainerTools/distroless/blob/main/base/README.md.
 
-ARG        BASEIMG=gcr.io/distroless/static-debian12
+ARG        BASEIMG=gcr.io/distroless/static-debian12:debug
 FROM       ${BASEIMG}
 # Expose TARGETOS and TARGETARCH variables. These are supported by Docker when using BuildKit, but must be "enabled" using ARG.
 ARG        TARGETOS
@@ -11,6 +11,7 @@ ARG        BINARY_SUFFIX="_${TARGETOS}_${TARGETARCH}"
 # Set to non-empty value to use ${BINARY_SUFFIX} when copying mimir binary, leave unset to use no suffix.
 ARG        USE_BINARY_SUFFIX
 COPY       mimir${USE_BINARY_SUFFIX:+${BINARY_SUFFIX}} /bin/mimir
+RUN        [ "/busybox/sh", "-c", "ln -s /busybox/sh /bin/sh" ]
 EXPOSE     8080
 ENTRYPOINT [ "/bin/mimir" ]
 

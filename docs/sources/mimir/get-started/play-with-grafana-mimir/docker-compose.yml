@@ -70,6 +70,11 @@ services:
     hostname: mimir-1
     depends_on:
       - minio
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/ready || exit 1
+      interval: 1m
+      timeout: 5s
+      retries: 5
     volumes:
       - ./config/mimir.yaml:/etc/mimir.yaml
       - ./config/alertmanager-fallback-config.yaml:/etc/alertmanager-fallback-config.yaml
@@ -81,6 +86,11 @@ services:
     hostname: mimir-2
     depends_on:
       - minio
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/ready || exit 1
+      interval: 1m
+      timeout: 5s
+      retries: 5
     volumes:
       - ./config/mimir.yaml:/etc/mimir.yaml
       - ./config/alertmanager-fallback-config.yaml:/etc/alertmanager-fallback-config.yaml
@@ -92,6 +102,11 @@ services:
     hostname: mimir-3
     depends_on:
       - minio
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/ready || exit 1
+      interval: 1m
+      timeout: 5s
+      retries: 5
     volumes:
       - ./config/mimir.yaml:/etc/mimir.yaml
       - ./config/alertmanager-fallback-config.yaml:/etc/alertmanager-fallback-config.yaml
