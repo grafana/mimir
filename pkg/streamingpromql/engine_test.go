@@ -75,6 +75,14 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 }
 
 func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
+	t.Run("aggregation operations", func(t *testing.T) {
+		featureToggles := EnableAllFeatures
+		featureToggles.EnableAggregationOperations = false
+
+		requireRangeQueryIsUnsupported(t, featureToggles, "sum by (label) (metric)", "aggregation operations")
+		requireInstantQueryIsUnsupported(t, featureToggles, "sum by (label) (metric)", "aggregation operations")
+	})
+
 	t.Run("binary expressions", func(t *testing.T) {
 		featureToggles := EnableAllFeatures
 		featureToggles.EnableBinaryOperations = false

@@ -151,6 +151,10 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			},
 		}, nil
 	case *parser.AggregateExpr:
+		if !q.engine.featureToggles.EnableAggregationOperations {
+			return nil, compat.NewNotSupportedError("aggregation operations")
+		}
+
 		if e.Op != parser.SUM {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' aggregation", e.Op))
 		}
