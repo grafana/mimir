@@ -17,6 +17,7 @@ import (
 	"github.com/twmb/franz-go/plugin/kotel"
 	"github.com/twmb/franz-go/plugin/kprom"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -38,6 +39,18 @@ func IngesterPartitionID(ingesterID string) (int32, error) {
 	}
 
 	return int32(ingesterSeq), nil
+}
+
+type onlySampledTraces struct {
+	propagation.TextMapPropagator
+}
+
+func (o onlySampledTraces) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
+	sc := trace.SpanContextFromContext(ctx)
+	if !sc.IsSampled() {
+		return
+	}
+	o.TextMapPropagator.Inject(ctx, carrier)
 }
 
 func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Logger) []kgo.Opt {
@@ -85,7 +98,7 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 	}
 
 	tracer := kotel.NewTracer(
-		kotel.TracerPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{})),
+		kotel.TracerPropagator(propagation.NewCompositeTextMapPropagator(onlySampledTraces{propagation.TraceContext{}})),
 	)
 	opts = append(opts, kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(tracer)).Hooks()...))
 
