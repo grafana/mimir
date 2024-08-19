@@ -53,7 +53,6 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-
 			metrics := NewReaderPoolMetrics(nil)
 			indexHeaderConfig := Config{
 				LazyLoadingEnabled:     testData.lazyReaderEnabled,

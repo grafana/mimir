@@ -8,23 +8,18 @@ package indexheader
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/gate"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 )
 
@@ -73,7 +68,6 @@ func NewLazyBinaryReaderMetrics(reg prometheus.Registerer) *LazyBinaryReaderMetr
 // the first Reader function is called.
 type LazyBinaryReader struct {
 	logger          log.Logger
-	filepath        string
 	metrics         *LazyBinaryReaderMetrics
 	onClosed        func(*LazyBinaryReader)
 	lazyLoadingGate gate.Gate
@@ -121,36 +115,15 @@ type unloadRequest struct {
 // (mmap or streaming read) the index-header; it will be loaded at first Reader function call.
 func NewLazyBinaryReader(
 	ctx context.Context,
-	readerFactory func() (Reader, error),
 	logger log.Logger,
-	bkt objstore.BucketReader,
-	dir string,
+	readerFactory func() (Reader, error),
 	id ulid.ULID,
 	metrics *LazyBinaryReaderMetrics,
 	onClosed func(*LazyBinaryReader),
 	lazyLoadingGate gate.Gate,
 ) (*LazyBinaryReader, error) {
-	path := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
-
-	// If the index-header doesn't exist we should download it.
-	if _, err := os.Stat(path); err != nil {
-		if !os.IsNotExist(err) {
-			return nil, errors.Wrap(err, "read index header")
-		}
-
-		level.Debug(logger).Log("msg", "the index-header doesn't exist on disk; recreating", "path", path)
-
-		start := time.Now()
-		if err := WriteBinary(ctx, bkt, id, path); err != nil {
-			return nil, errors.Wrap(err, "write index header")
-		}
-
-		level.Debug(logger).Log("msg", "built index-header file", "path", path, "elapsed", time.Since(start))
-	}
-
 	reader := &LazyBinaryReader{
 		logger:          logger,
-		filepath:        path,
 		metrics:         metrics,
 		usedAt:          atomic.NewInt64(0),
 		onClosed:        onClosed,
@@ -293,20 +266,16 @@ func (r *LazyBinaryReader) loadReader() (Reader, error) {
 	}
 	defer r.lazyLoadingGate.Done()
 
-	level.Debug(r.logger).Log("msg", "lazy loading index-header file", "path", r.filepath)
 	r.metrics.loadCount.Inc()
 	startTime := time.Now()
 
 	reader, err := r.readerFactory()
 	if err != nil {
 		r.metrics.loadFailedCount.Inc()
-		return nil, errors.Wrapf(err, "lazy load index-header file at %s", r.filepath)
+		return nil, errors.Wrapf(err, "lazy load index-header for block %s", r.blockID)
 	}
 
-	elapsed := time.Since(startTime)
-
-	level.Debug(r.logger).Log("msg", "lazy loaded index-header file", "path", r.filepath, "elapsed", elapsed)
-	r.metrics.loadDuration.Observe(elapsed.Seconds())
+	r.metrics.loadDuration.Observe(time.Since(startTime).Seconds())
 
 	return reader, nil
 }

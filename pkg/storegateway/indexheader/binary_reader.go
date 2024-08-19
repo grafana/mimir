@@ -22,7 +22,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
@@ -69,7 +68,7 @@ type BinaryTOC struct {
 }
 
 // WriteBinary build index-header file from the pieces of index in object storage.
-func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, filename string) (err error) {
+func WriteBinary(ctx context.Context, bkt bucketRangeReader, id ulid.ULID, filename string) (err error) {
 	ir, indexVersion, err := newChunkedIndexReader(ctx, bkt, id)
 	if err != nil {
 		return errors.Wrap(err, "new index reader")
@@ -129,11 +128,11 @@ type chunkedIndexReader struct {
 	ctx  context.Context
 	path string
 	size uint64
-	bkt  objstore.BucketReader
+	bkt  bucketRangeReader
 	toc  *index.TOC
 }
 
-func newChunkedIndexReader(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID) (*chunkedIndexReader, int, error) {
+func newChunkedIndexReader(ctx context.Context, bkt bucketRangeReader, id ulid.ULID) (*chunkedIndexReader, int, error) {
 	indexFilepath := filepath.Join(id.String(), block.IndexFilename)
 	attrs, err := bkt.Attributes(ctx, indexFilepath)
 	if err != nil {
