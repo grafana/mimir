@@ -1,16 +1,14 @@
 ---
 aliases:
   - ../configuring/configuring-ingester-circuit-breakers/
-description: Learn how to configure ingester circuit breakers.
-menuTitle: Configure ingester circuit breakers
-title: Configure Grafana Mimir ingester circuit breakers
+description: Learn about ingester circuit breakers.
+menuTitle: Ingester circuit breakers
+title: About Grafana Mimir ingester circuit breakers
 ---
 
-# Configure Grafana Mimir ingester circuit breakers
+# About Grafana Mimir ingester circuit breakers
 
-## Background
-
-Use circuit breakers to prevent an application from repeatedly trying to run an operation that is likely to fail.
+You can use circuit breakers to prevent an application from repeatedly trying to run an operation that is likely to fail.
 A circuit breaker monitors the number of recent failures and then uses this information to decide whether to allow a new operation to proceed, or to simply return an exception immediately.
 In the case of a failing operation, a circuit breaker allows an application to proceed, without waiting for you to resolve the failure cause.
 Because the failing operation is immediately rejected, the application doesn't retry it. This reduces the application's CPU usage.
@@ -57,7 +55,7 @@ Read requests circuit breakers follow these conditions:
   Otherwise, the ingester tries to acquire a read requests circuit breaker permit.
 - A read request that acquires a read requests circuit breaker permit meets the read requests circuit breaker failure condition if its duration is longer than the configured read request maximum duration.
 
-## Grafana Mimir Ingester circuit breakers configuration
+## Configure Grafana Mimir ingester circuit breakers
 
 To enable Grafana Mimir ingester push and read circuit breakers, set `-ingester.push-circuit-breaker.enabled=true` and `-ingester.read-circuit-breaker.enabled=true`.
 You can enable the circuit breakers independently. Enabling one of them does not require enabling the other one.
