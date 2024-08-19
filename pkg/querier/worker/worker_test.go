@@ -125,46 +125,46 @@ func TestResetConcurrency(t *testing.T) {
 		expectedConcurrency int
 	}{
 		{
-			name:                "Create at least one processor per target if max concurrent = 0, with all targets in use",
+			name:                "Create at least the minimum processors per target if max concurrent = 0, with all targets in use",
 			maxConcurrent:       0,
 			numTargets:          2,
 			numInUseTargets:     2,
-			expectedConcurrency: 2,
+			expectedConcurrency: 8,
 		},
 		{
-			name:                "Create at least one processor per target if max concurrent = 0, with some targets in use",
+			name:                "Create at least the minimum processors per target if max concurrent = 0, with some targets in use",
 			maxConcurrent:       0,
 			numTargets:          2,
 			numInUseTargets:     1,
-			expectedConcurrency: 2,
+			expectedConcurrency: 8,
 		},
 		{
 			name:                "Max concurrent dividing with a remainder, with all targets in use",
-			maxConcurrent:       7,
+			maxConcurrent:       19,
 			numTargets:          4,
 			numInUseTargets:     4,
-			expectedConcurrency: 7,
+			expectedConcurrency: 19,
 		},
 		{
 			name:            "Max concurrent dividing with a remainder, with some targets in use",
-			maxConcurrent:   7,
+			maxConcurrent:   19,
 			numTargets:      4,
 			numInUseTargets: 2,
-			expectedConcurrency:/* in use:  */ 7 + /* not in use : */ 2,
+			expectedConcurrency:/* in use:  */ 8 + /* not in use : */ 11,
 		},
 		{
 			name:                "Max concurrent dividing evenly, with all targets in use",
-			maxConcurrent:       6,
+			maxConcurrent:       12,
 			numTargets:          2,
 			numInUseTargets:     2,
-			expectedConcurrency: 6,
+			expectedConcurrency: 12,
 		},
 		{
 			name:            "Max concurrent dividing evenly, with some targets in use",
-			maxConcurrent:   6,
+			maxConcurrent:   20,
 			numTargets:      4,
 			numInUseTargets: 2,
-			expectedConcurrency:/* in use:  */ 6 + /* not in use : */ 2,
+			expectedConcurrency:/* in use:  */ 8 + /* not in use : */ 12,
 		},
 	}
 
