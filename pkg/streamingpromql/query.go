@@ -155,10 +155,6 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, compat.NewNotSupportedError("aggregation operations")
 		}
 
-		if e.Op != parser.SUM {
-			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' aggregation", e.Op))
-		}
-
 		if e.Param != nil {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("unexpected parameter for %s aggregation: %s", e.Op, e.Param)

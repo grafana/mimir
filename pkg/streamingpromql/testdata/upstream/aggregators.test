@@ -123,10 +123,9 @@ eval instant at 50m SUM(http_requests) BY (job, group)
 # 	{job="api-server"} 100
 # 	{job="app-server"} 500
 
-# Unsupported by streaming engine.
-# eval instant at 50m MAX(http_requests) BY (job)
-# 	{job="api-server"} 400
-# 	{job="app-server"} 800
+eval instant at 50m MAX(http_requests) BY (job)
+	{job="api-server"} 400
+	{job="app-server"} 800
 
 # Unsupported by streaming engine.
 # eval instant at 50m abs(-1 * http_requests{group="production",job="api-server"})
@@ -264,18 +263,16 @@ load 5m
   http_requests{job="api-server", instance="1", group="canary"}		3
   http_requests{job="api-server", instance="2", group="canary"}		4
 
-# Unsupported by streaming engine.
-# eval instant at 0m max(http_requests)
-#   {} 4
+eval instant at 0m max(http_requests)
+  {} 4
 
 # Unsupported by streaming engine.
 # eval instant at 0m min(http_requests)
 #   {} 1
 
-# Unsupported by streaming engine.
-# eval instant at 0m max by (group) (http_requests)
-#   {group="production"} 2
-#   {group="canary"} 4
+eval instant at 0m max by (group) (http_requests)
+  {group="production"} 2
+  {group="canary"} 4
 
 # Unsupported by streaming engine.
 # eval instant at 0m min by (group) (http_requests)
