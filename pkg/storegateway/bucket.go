@@ -563,7 +563,7 @@ func (s *BucketStore) removeBlock(id ulid.ULID) (returnErr error) {
 
 func (s *BucketStore) closeAllBlocks() error {
 	defer fmt.Printf("bucketStore %p blockSet %p closed all blocks\n", s, s.blockSet)
-	fmt.Printf("bucketStore %p blockSet %p starting to close blocks\n", s, s.blockSet)
+	fmt.Printf("bucketStore %p blockSet %p starting to close blocks %q\n", s, s.blockSet, CallStack())
 	return s.blockSet.closeAll()
 }
 
