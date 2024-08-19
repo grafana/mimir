@@ -2,7 +2,7 @@
 aliases:
   - ../configuring/configuring-ingester-circuit-breakers/
 description: Learn how to configure ingester circuit breakers.
-menuTitle: Configure ingester circuit breakers
+menuTitle: Ingester circuit breakers
 title: Configure Grafana Mimir ingester circuit breakers
 ---
 
