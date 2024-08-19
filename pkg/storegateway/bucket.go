@@ -318,7 +318,7 @@ func CallerName() string {
 
 func (s *BucketStore) syncBlocks(ctx context.Context) error {
 	fmt.Printf("bucketStore %p start syncBlocks from %s\n", s, CallerName())
-	defer fmt.Printf("bucketStore %p end syncBlocks\n", s)
+	defer fmt.Printf("bucketStore %p end syncBlocks from %s\n", s, CallerName())
 
 	metas, _, metaFetchErr := s.fetcher.Fetch(ctx)
 	// For partial view allow adding new blocks at least.
