@@ -3,6 +3,8 @@
 package aggregations
 
 import (
+	"github.com/prometheus/prometheus/promql/parser"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -14,4 +16,10 @@ type AggregationFunction interface {
 	AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error
 	// ComputeOutputSeries does any final calculations and returns the grouped series data
 	ComputeOutputSeries(start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error)
+}
+
+type AggregationFunctionFactory func() AggregationFunction
+
+var AggregationFunctionFactories = map[parser.ItemType]AggregationFunctionFactory{
+	parser.SUM: func() AggregationFunction { return &SumAggregationFunction{} },
 }

@@ -176,10 +176,11 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			q.intervalMs,
 			e.Grouping,
 			e.Without,
+			e.Op,
 			q.memoryConsumptionTracker,
 			q.annotations,
 			e.PosRange,
-		), nil
+		)
 	case *parser.Call:
 		return q.convertFunctionCallToInstantVectorOperator(e)
 	case *parser.BinaryExpr:

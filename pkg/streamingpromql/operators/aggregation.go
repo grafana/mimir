@@ -13,11 +13,13 @@ import (
 	"sort"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/zeropool"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/aggregations"
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -32,6 +34,8 @@ type Aggregation struct {
 	Grouping                 []string // If this is a 'without' aggregation, NewAggregation will ensure that this slice contains __name__.
 	Without                  bool
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+
+	aggregationFuncFactory aggregations.AggregationFunctionFactory
 
 	Annotations *annotations.Annotations
 
@@ -54,10 +58,16 @@ func NewAggregation(
 	intervalMs int64,
 	grouping []string,
 	without bool,
+	op parser.ItemType,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
-) *Aggregation {
+) (*Aggregation, error) {
+	opFuncFactory := aggregations.AggregationFunctionFactories[op]
+	if opFuncFactory == nil {
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("aggregation operation with '%s'", op))
+	}
+
 	if without {
 		labelsToDrop := make([]string, 0, len(grouping)+1)
 		labelsToDrop = append(labelsToDrop, labels.MetricName)
@@ -79,11 +89,12 @@ func NewAggregation(
 		Annotations:              annotations,
 		metricNames:              &MetricNames{},
 		expressionPosition:       expressionPosition,
+		aggregationFuncFactory:   opFuncFactory,
 	}
 
 	a.emitAnnotationFunc = a.emitAnnotation // This is an optimisation to avoid creating the EmitAnnotationFunc instance on every usage.
 
-	return a
+	return a, nil
 }
 
 type groupWithLabels struct {
@@ -143,7 +154,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		if !groupExists {
 			g.labels = groupLabelsFunc(series.Labels)
 			g.group = groupPool.Get()
-			g.group.aggregationFunction = &aggregations.SumAggregationFunction{}
+			g.group.aggregationFunction = a.aggregationFuncFactory()
 			g.group.remainingSeriesCount = 0
 
 			groups[string(groupLabelsString)] = g
