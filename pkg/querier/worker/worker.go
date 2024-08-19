@@ -349,10 +349,12 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 		inUseIndex = 0
 	)
 
+	level.Warn(w.log).Log("msg", "instances", "instances", fmt.Sprintf("%#v", w.instances))
 	// new adjusted minimum to ensure that each instance has at least minConcurrencyPerRequestQueue connections.
 	maxConcurrentWithMinPerInstance := math.Max(
 		w.maxConcurrentRequests, minConcurrencyPerRequestQueue*len(w.instances),
 	)
+	level.Warn(w.log).Log("msg", "max concurrency with minimum per instance", "max_concurrent_with_min_per_instance", maxConcurrentWithMinPerInstance)
 	if maxConcurrentWithMinPerInstance > w.maxConcurrentRequests {
 		level.Warn(w.log).Log("msg", "max concurrency does not meet the minimum required per request queue instance, increasing to minimum")
 	}
@@ -360,6 +362,7 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 	// not-in-use instances wil only receive minConcurrencyPerRequestQueue;
 	// determine size of remaining pool to be divided across the in-use instances
 	maxConcurrentForInUseInstances := maxConcurrentWithMinPerInstance - minConcurrencyPerRequestQueue*(len(w.instances)-numInUse)
+	level.Warn(w.log).Log("msg", "max concurrency for in use instances", "max_concurrent_for_in_use_instances", maxConcurrentForInUseInstances)
 
 	// Compute the number of desired connections for each discovered instance.
 	for address, instance := range w.instances {
@@ -372,6 +375,7 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 		}
 
 		concurrency := maxConcurrentForInUseInstances / numInUse
+		level.Warn(w.log).Log("msg", "desired concurrency", "addr", address, "concurrency", concurrency)
 
 		// If max concurrency does not evenly divide into in-use instances, then a subset will be chosen
 		// to receive an extra connection. Since we're iterating a map (whose iteration order is not guaranteed),
