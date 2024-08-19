@@ -12,14 +12,12 @@ import (
 	"slices"
 	"sort"
 
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/zeropool"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/floats"
+	"github.com/grafana/mimir/pkg/streamingpromql/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -101,12 +99,8 @@ type group struct {
 	// Used to sort groups in the order that they'll be completed in.
 	lastSeriesIndex int
 
-	// Sum, presence, and histograms for each step.
-	floatSums              []float64
-	floatCompensatingMeans []float64 // Mean, or "compensating value" for Kahan summation.
-	floatPresent           []bool
-	histogramSums          []*histogram.FloatHistogram
-	histogramPointCount    int
+	// The AggregationFunction to perform over this group of series.
+	aggregationFunction aggregations.AggregationFunction
 }
 
 var _ types.InstantVectorOperator = &Aggregation{}
@@ -149,6 +143,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		if !groupExists {
 			g.labels = groupLabelsFunc(series.Labels)
 			g.group = groupPool.Get()
+			g.group.aggregationFunction = &aggregations.SumAggregationFunction{}
 			g.group.remainingSeriesCount = 0
 
 			groups[string(groupLabelsString)] = g
@@ -264,9 +259,17 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	}
 
 	// Construct the group and return it
-	seriesData, err := a.constructSeriesData(thisGroup, a.Start, a.Interval)
+	seriesData, hasMixedData, err := thisGroup.aggregationFunction.ComputeOutputSeries(a.Start, a.Interval, a.MemoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
+	}
+
+	if hasMixedData && !a.haveEmittedMixedFloatsAndHistogramsWarning {
+		a.Annotations.Add(annotations.NewMixedFloatsHistogramsAggWarning(a.Inner.ExpressionPosition()))
+
+		// The warning description only varies based on the position of the expression this operator represents, so only emit it
+		// once, to avoid unnecessary work if there are many instances of floats and histograms conflicting.
+		a.haveEmittedMixedFloatsAndHistogramsWarning = true
 	}
 
 	groupPool.Put(thisGroup)
@@ -286,187 +289,13 @@ func (a *Aggregation) accumulateUntilGroupComplete(ctx context.Context, g *group
 
 		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
 		a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
-		if err := a.accumulateSeriesIntoGroup(s, thisSeriesGroup, a.Steps, a.Start, a.Interval); err != nil {
+		if err := thisSeriesGroup.aggregationFunction.AccumulateSeries(s, a.Steps, a.Start, a.Interval, a.MemoryConsumptionTracker, a.emitAnnotation); err != nil {
 			return err
 		}
+		thisSeriesGroup.remainingSeriesCount--
 
 		a.currentSeriesIndex++
 	}
-	return nil
-}
-
-// Sentinel value used to indicate a sample has seen an invalid combination of histograms and should be ignored.
-//
-// Invalid combinations include exponential and custom buckets, and histograms with incompatible custom buckets.
-var invalidCombinationOfHistograms = &histogram.FloatHistogram{}
-
-func (a *Aggregation) constructSeriesData(thisGroup *group, start int64, interval int64) (types.InstantVectorSeriesData, error) {
-	floatPointCount := a.reconcileAndCountFloatPoints(thisGroup)
-	var floatPoints []promql.FPoint
-	var err error
-	if floatPointCount > 0 {
-		floatPoints, err = types.FPointSlicePool.Get(floatPointCount, a.MemoryConsumptionTracker)
-		if err != nil {
-			return types.InstantVectorSeriesData{}, err
-		}
-
-		for i, havePoint := range thisGroup.floatPresent {
-			if havePoint {
-				t := start + int64(i)*interval
-				f := thisGroup.floatSums[i] + thisGroup.floatCompensatingMeans[i]
-				floatPoints = append(floatPoints, promql.FPoint{T: t, F: f})
-			}
-		}
-	}
-
-	var histogramPoints []promql.HPoint
-	if thisGroup.histogramPointCount > 0 {
-		histogramPoints, err = types.HPointSlicePool.Get(thisGroup.histogramPointCount, a.MemoryConsumptionTracker)
-		if err != nil {
-			return types.InstantVectorSeriesData{}, err
-		}
-
-		for i, h := range thisGroup.histogramSums {
-			if h != nil && h != invalidCombinationOfHistograms {
-				t := start + int64(i)*interval
-				histogramPoints = append(histogramPoints, promql.HPoint{T: t, H: thisGroup.histogramSums[i]})
-			}
-		}
-	}
-
-	types.Float64SlicePool.Put(thisGroup.floatSums, a.MemoryConsumptionTracker)
-	types.Float64SlicePool.Put(thisGroup.floatCompensatingMeans, a.MemoryConsumptionTracker)
-	types.BoolSlicePool.Put(thisGroup.floatPresent, a.MemoryConsumptionTracker)
-	types.HistogramSlicePool.Put(thisGroup.histogramSums, a.MemoryConsumptionTracker)
-	thisGroup.floatSums = nil
-	thisGroup.floatCompensatingMeans = nil
-	thisGroup.floatPresent = nil
-	thisGroup.histogramSums = nil
-	thisGroup.histogramPointCount = 0
-
-	return types.InstantVectorSeriesData{Floats: floatPoints, Histograms: histogramPoints}, nil
-}
-
-// reconcileAndCountFloatPoints will return the number of points with a float present.
-// It also takes the opportunity whilst looping through the floats to check if there
-// is a conflicting Histogram present. If both are present, an empty vector should
-// be returned. So this method removes the float+histogram where they conflict.
-func (a *Aggregation) reconcileAndCountFloatPoints(g *group) int {
-	// It would be possible to calculate the number of points when constructing
-	// the series groups. However, it requires checking each point at each input
-	// series which is more costly than looping again here and just checking each
-	// point of the already grouped series.
-	// See: https://github.com/grafana/mimir/pull/8442
-	// We also take two different approaches here: One with extra checks if we
-	// have both Floats and Histograms present, and one without these checks
-	// so we don't have to do it at every point.
-	floatPointCount := 0
-	if len(g.floatPresent) > 0 && len(g.histogramSums) > 0 {
-		for idx, present := range g.floatPresent {
-			if present {
-				if g.histogramSums[idx] != nil {
-					// If a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely
-					// and a warning annotation is emitted.
-					g.floatPresent[idx] = false
-					g.histogramSums[idx] = nil
-					g.histogramPointCount--
-
-					if !a.haveEmittedMixedFloatsAndHistogramsWarning {
-						a.Annotations.Add(annotations.NewMixedFloatsHistogramsAggWarning(a.Inner.ExpressionPosition()))
-
-						// The warning description only varies based on the position of the expression this operator represents, so only emit it
-						// once, to avoid unnecessary work if there are many instances of floats and histograms conflicting.
-						a.haveEmittedMixedFloatsAndHistogramsWarning = true
-					}
-				} else {
-					floatPointCount++
-				}
-			}
-		}
-	} else {
-		for _, p := range g.floatPresent {
-			if p {
-				floatPointCount++
-			}
-		}
-	}
-	return floatPointCount
-}
-
-func (a *Aggregation) accumulateSeriesIntoGroup(s types.InstantVectorSeriesData, seriesGroup *group, steps int, start int64, interval int64) error {
-	var err error
-	if len(s.Floats) > 0 && seriesGroup.floatSums == nil {
-		// First series with float values for this group, populate it.
-		seriesGroup.floatSums, err = types.Float64SlicePool.Get(steps, a.MemoryConsumptionTracker)
-		if err != nil {
-			return err
-		}
-
-		seriesGroup.floatCompensatingMeans, err = types.Float64SlicePool.Get(steps, a.MemoryConsumptionTracker)
-		if err != nil {
-			return err
-		}
-
-		seriesGroup.floatPresent, err = types.BoolSlicePool.Get(steps, a.MemoryConsumptionTracker)
-		if err != nil {
-			return err
-		}
-		seriesGroup.floatSums = seriesGroup.floatSums[:steps]
-		seriesGroup.floatCompensatingMeans = seriesGroup.floatCompensatingMeans[:steps]
-		seriesGroup.floatPresent = seriesGroup.floatPresent[:steps]
-	}
-
-	if len(s.Histograms) > 0 && seriesGroup.histogramSums == nil {
-		// First series with histogram values for this group, populate it.
-		seriesGroup.histogramSums, err = types.HistogramSlicePool.Get(steps, a.MemoryConsumptionTracker)
-		if err != nil {
-			return err
-		}
-		seriesGroup.histogramSums = seriesGroup.histogramSums[:steps]
-	}
-
-	for _, p := range s.Floats {
-		idx := (p.T - start) / interval
-		seriesGroup.floatSums[idx], seriesGroup.floatCompensatingMeans[idx] = floats.KahanSumInc(p.F, seriesGroup.floatSums[idx], seriesGroup.floatCompensatingMeans[idx])
-		seriesGroup.floatPresent[idx] = true
-	}
-
-	var lastUncopiedHistogram *histogram.FloatHistogram
-
-	for _, p := range s.Histograms {
-		idx := (p.T - start) / interval
-
-		if seriesGroup.histogramSums[idx] == invalidCombinationOfHistograms {
-			// We've already seen an invalid combination of histograms at this timestamp. Ignore this point.
-			continue
-		} else if seriesGroup.histogramSums[idx] != nil {
-			seriesGroup.histogramSums[idx], err = seriesGroup.histogramSums[idx].Add(p.H)
-			if err != nil {
-				// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
-				seriesGroup.histogramSums[idx] = invalidCombinationOfHistograms
-				seriesGroup.histogramPointCount--
-
-				if err := functions.NativeHistogramErrorToAnnotation(err, a.emitAnnotationFunc); err != nil {
-					// Unknown error: we couldn't convert the error to an annotation. Give up.
-					return err
-				}
-			}
-		} else if lastUncopiedHistogram == p.H {
-			// We've already used this histogram for a previous point due to lookback.
-			// Make a copy of it so we don't modify the other point.
-			seriesGroup.histogramSums[idx] = p.H.Copy()
-			seriesGroup.histogramPointCount++
-		} else {
-			// This is the first time we have seen this histogram.
-			// It is safe to store it and modify it later without copying, as we'll make copies above if the same histogram is used for subsequent points.
-			seriesGroup.histogramSums[idx] = p.H
-			seriesGroup.histogramPointCount++
-			lastUncopiedHistogram = p.H
-		}
-	}
-
-	types.PutInstantVectorSeriesData(s, a.MemoryConsumptionTracker)
-	seriesGroup.remainingSeriesCount--
 	return nil
 }
 
