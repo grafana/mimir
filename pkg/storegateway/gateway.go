@@ -289,19 +289,25 @@ func (g *StoreGateway) running(ctx context.Context) error {
 	for {
 		select {
 		case <-syncTicker.C:
+			fmt.Printf("StoreGateway %p starting periodic sync for all stores\n", g)
 			g.syncStores(ctx, syncReasonPeriodic)
+			fmt.Printf("StoreGateway %p ended periodic sync for all stores\n", g)
 		case <-ringTicker.C:
 			// We ignore the error because in case of error it will return an empty
 			// replication set which we use to compare with the previous state.
 			currRingState, _ := g.ring.GetAllHealthy(BlocksOwnerSync) // nolint:errcheck
 
 			if ring.HasReplicationSetChanged(ringLastState, currRingState) {
+				fmt.Printf("StoreGateway %p starting ring change synching\n", g)
 				ringLastState = currRingState
 				g.syncStores(ctx, syncReasonRingChange)
+				fmt.Printf("StoreGateway %p ended ring change synching\n", g)
 			}
 		case <-ctx.Done():
+			fmt.Printf("StoreGateway %p context done, exiting main store-gateway running funcs\n", g)
 			return nil
 		case err := <-g.subservicesWatcher.Chan():
+			fmt.Printf("StoreGateway %p store gateway subservice failed %v\n", g, err)
 			return errors.Wrap(err, "store gateway subservice failed")
 		}
 	}
