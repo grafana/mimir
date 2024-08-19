@@ -39,7 +39,7 @@ func runTestQuerySchedulerWithMaxUsedInstances(t *testing.T, seriesName string, 
 			"-query-scheduler.service-discovery-mode": "ring",
 			"-query-scheduler.ring.store":             "consul",
 			"-query-scheduler.max-used-instances":     "1",
-			"-querier.max-concurrent":                 "4",
+			"-querier.max-concurrent":                 "12",
 		},
 	)
 
@@ -86,9 +86,9 @@ func runTestQuerySchedulerWithMaxUsedInstances(t *testing.T, seriesName string, 
 	inUseScheduler := schedulers[0]
 	notInUseScheduler := schedulers[1]
 
-	// We expect the querier to open 4 connections to the in-use scheduler, and 1 connection to the not-in-use one.
-	require.NoError(t, inUseScheduler.WaitSumMetricsWithOptions(e2e.Equals(4), []string{"cortex_query_scheduler_connected_querier_clients"}))
-	require.NoError(t, notInUseScheduler.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_query_scheduler_connected_querier_clients"}))
+	// We expect the querier to open 8 connections to the in-use scheduler, and 4 connection to the not-in-use one.
+	require.NoError(t, inUseScheduler.WaitSumMetricsWithOptions(e2e.Equals(8), []string{"cortex_query_scheduler_connected_querier_clients"}))
+	require.NoError(t, notInUseScheduler.WaitSumMetricsWithOptions(e2e.Equals(4), []string{"cortex_query_scheduler_connected_querier_clients"}))
 
 	// We expect the query-frontend to only open connections to the in-use scheduler.
 	require.NoError(t, inUseScheduler.WaitSumMetricsWithOptions(e2e.Greater(0), []string{"cortex_query_scheduler_connected_frontend_clients"}))
