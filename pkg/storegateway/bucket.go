@@ -302,6 +302,19 @@ func (s *BucketStore) Stats() BucketStoreStats {
 func (s *BucketStore) SyncBlocks(ctx context.Context) error {
 	return s.syncBlocks(ctx)
 }
+
+func CallStack() string {
+	var pcs [32]uintptr
+	n := runtime.Callers(2, pcs[:])
+	var b bytes.Buffer
+	for _, pc := range pcs[:n] {
+		fn := runtime.FuncForPC(pc)
+		file, line := fn.FileLine(pc)
+		b.WriteString(fmt.Sprintf("%s:%d %s\n", file, line, fn.Name()))
+	}
+	return b.String()
+}
+
 func CallerName() string {
 	pc, _, _, ok := runtime.Caller(2)
 	if !ok {
@@ -317,8 +330,8 @@ func CallerName() string {
 }
 
 func (s *BucketStore) syncBlocks(ctx context.Context) error {
-	fmt.Printf("bucketStore %p start syncBlocks from %s\n", s, CallerName())
-	defer fmt.Printf("bucketStore %p end syncBlocks from %s\n", s, CallerName())
+	fmt.Printf("bucketStore %p start syncBlocks from %s %q\n", s, CallerName(), CallStack())
+	defer fmt.Printf("bucketStore %p end syncBlocks from %s %q\n", s, CallerName(), CallStack())
 
 	metas, _, metaFetchErr := s.fetcher.Fetch(ctx)
 	// For partial view allow adding new blocks at least.

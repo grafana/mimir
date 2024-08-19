@@ -322,9 +322,11 @@ func (g *StoreGateway) stopping(_ error) error {
 
 	g.unsetPrepareShutdownMarker()
 
+	fmt.Printf("StoreGateway %p stopping stores %p\n", g, g.stores)
 	if err := services.StopAndAwaitTerminated(context.Background(), g.stores); err != nil {
 		level.Warn(g.logger).Log("msg", "failed to stop store-gateway stores", "err", err)
 	}
+	fmt.Printf("StoreGateway %p stopped stores %p\n", g, g.stores)
 	return nil
 }
 

@@ -180,12 +180,18 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 func (u *BucketStores) stopBucketStores(error) error {
 	u.storesMu.Lock()
 	defer u.storesMu.Unlock()
+
+	fmt.Printf("BucketStores %p stopping stores\n", u)
+	defer fmt.Printf("BucketStores %p stopped stores\n", u)
+
 	errs := multierror.New()
 	for userID, bs := range u.stores {
+		fmt.Printf("BucketStores %p stopping bucketStore %p\n", u, bs)
 		err := services.StopAndAwaitTerminated(context.Background(), bs)
 		if err != nil {
 			errs.Add(fmt.Errorf("closing bucket store for user %s: %w", userID, err))
 		}
+		fmt.Printf("BucketStores %p stopped bucketStore %p\n", u, bs)
 	}
 	return errs.Err()
 }
