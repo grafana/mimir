@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
+	"github.com/grafana/mimir/pkg/util/math"
 )
 
 type Config struct {
@@ -307,6 +308,13 @@ func (w *querierWorker) InstanceChanged(instance servicediscovery.Instance) {
 	w.resetConcurrency()
 }
 
+// minConcurrencyPerRequestQueue prevents RequestQueue starvation in query-frontend or query-scheduler instances.
+// When the RequestQueue utilizes the querier-worker queue prioritization algorithm, querier-workers connections
+// are partitioned across up to 4 queue dimensions representing the 4 possible assignments for expected query component:
+// ingester, store-gateway, ingester-and-store-gateway, and unknown.
+// Failure to assign any querier-worker connections to a queue dimension can result in starvation of that queue dimension.
+const minConcurrencyPerRequestQueue = 4
+
 // Must be called with lock.
 func (w *querierWorker) resetConcurrency() {
 	desiredConcurrency := w.getDesiredConcurrency()
@@ -341,31 +349,36 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 		inUseIndex = 0
 	)
 
+	// new adjusted minimum to ensure that each instance has at least minConcurrencyPerRequestQueue connections.
+	maxConcurrentWithMinPerInstance := math.Max(
+		w.maxConcurrentRequests, minConcurrencyPerRequestQueue*len(w.instances),
+	)
+	if maxConcurrentWithMinPerInstance > w.maxConcurrentRequests {
+		level.Warn(w.log).Log("msg", "max concurrency does not meet the minimum required per request queue instance, increasing to minimum")
+	}
+
+	// not-in-use instances wil only receive minConcurrencyPerRequestQueue;
+	// determine size of remaining pool to be divided across the in-use instances
+	maxConcurrentForInUseInstances := maxConcurrentWithMinPerInstance - minConcurrencyPerRequestQueue*(len(w.instances)-numInUse)
+
 	// Compute the number of desired connections for each discovered instance.
 	for address, instance := range w.instances {
-		// Run only 1 worker for each instance not in-use, to allow for the queues
-		// to be drained when the in-use instances change or if, for any reason,
-		// queries are enqueued on the ones not in-use.
+		// Run only minConcurrencyPerRequestQueue worker for each instance not in-use,
+		// to allow for the queues to be drained when the in-use instances change or if
+		// for any reason queries are enqueued on the ones not in-use.
 		if !instance.InUse {
-			desired[address] = 1
+			desired[address] = minConcurrencyPerRequestQueue
 			continue
 		}
 
-		concurrency := w.maxConcurrentRequests / numInUse
+		concurrency := maxConcurrentForInUseInstances / numInUse
 
 		// If max concurrency does not evenly divide into in-use instances, then a subset will be chosen
 		// to receive an extra connection. Since we're iterating a map (whose iteration order is not guaranteed),
-		// then this should pratically select a random address for the extra connection.
-		if inUseIndex < w.maxConcurrentRequests%numInUse {
-			level.Warn(w.log).Log("msg", "max concurrency is not evenly divisible across targets, adding an extra connection", "addr", address)
+		// then this should practically select a random address for the extra connection.
+		if inUseIndex < maxConcurrentForInUseInstances%numInUse {
+			level.Warn(w.log).Log("msg", "max concurrency is not evenly divisible across request queue instances, adding an extra connection", "addr", address)
 			concurrency++
-		}
-
-		// If concurrency is 0 then maxConcurrentRequests is less than the total number of
-		// frontends/schedulers. In order to prevent accidentally starving a frontend or scheduler we are just going to
-		// always connect once to every target.
-		if concurrency == 0 {
-			concurrency = 1
 		}
 
 		desired[address] = concurrency
