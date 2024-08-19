@@ -6,16 +6,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/grafana/dskit/multierror"
 	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/multierror"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -23,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -265,7 +265,6 @@ type blockUploader func(_ context.Context, tenantID, dbDir string, blockIDs []st
 // All the DBs are closed and directories cleared irrespective of success or failure of this function.
 func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUploader) (_ int, err error) {
 	var (
-		numBlocks atomic.Int64
 		doneDBsMu sync.Mutex
 		doneDBs   = make(map[*userTSDB]bool)
 	)
@@ -274,7 +273,7 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 	defer func() {
 		b.tsdbsMu.Unlock()
 
-		merr := multierror.MultiError{}
+		var merr multierror.MultiError
 		merr.Add(err)
 		// If some TSDB was not compacted or uploaded, it will be re-tried in the next cycle, so we remove it here.
 		for _, db := range b.tsdbs {
@@ -299,11 +298,12 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 		return 0, nil
 	}
 
+	numBlocks := atomic.NewInt64(0)
+
 	eg, ctx := errgroup.WithContext(ctx)
 	if b.config.TSDB.ShipConcurrency > 0 {
 		eg.SetLimit(b.config.TSDB.ShipConcurrency)
 	}
-
 	for tenant, db := range b.tsdbs {
 		// Change scope of for loop variables.
 		tenant := tenant
@@ -349,7 +349,7 @@ func (b *TSDBBuilder) Close() error {
 	b.tsdbsMu.Lock()
 	defer b.tsdbsMu.Unlock()
 
-	merr := multierror.MultiError{}
+	var merr multierror.MultiError
 	for _, db := range b.tsdbs {
 		dbDir := db.Dir()
 		merr.Add(db.Close())
