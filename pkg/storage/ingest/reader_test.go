@@ -120,7 +120,7 @@ func TestPartitionReader_ConsumerError(t *testing.T) {
 	consumer := consumerFunc(func(ctx context.Context, records []record) error {
 		invocations.Inc()
 		if !returnErrors.Load() {
-			return trackingConsumer.consume(ctx, records)
+			return trackingConsumer.Consume(ctx, records)
 		}
 		// There may be more records, but we only care that the one we failed to consume in the first place is still there.
 		assert.Equal(t, "1", string(records[0].content))
@@ -159,7 +159,7 @@ func TestPartitionReader_ConsumerStopping(t *testing.T) {
 	blockingConsumer := newTestConsumer(0)
 	consumer := consumerFunc(func(ctx context.Context, records []record) error {
 		invocations.Inc()
-		return blockingConsumer.consume(ctx, records)
+		return blockingConsumer.Consume(ctx, records)
 	})
 	reader := createReader(t, clusterAddr, topicName, partitionID, consumer)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
@@ -1980,7 +1980,7 @@ func (t testConsumer) Close(context.Context) error {
 	return nil
 }
 
-func (t testConsumer) consume(ctx context.Context, records []record) error {
+func (t testConsumer) Consume(ctx context.Context, records []record) error {
 	for _, r := range records {
 		select {
 		case <-ctx.Done():
@@ -2025,7 +2025,7 @@ func (consumerFunc) Close(context.Context) error {
 	return nil
 }
 
-func (c consumerFunc) consume(ctx context.Context, records []record) error {
+func (c consumerFunc) Consume(ctx context.Context, records []record) error {
 	return c(ctx, records)
 }
 

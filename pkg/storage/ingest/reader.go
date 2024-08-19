@@ -61,8 +61,11 @@ type record struct {
 
 type recordConsumer interface {
 	Close(context.Context) error
-	// consume should return an error only if there is a recoverable error. Returning an error will cause consumption to slow down.
-	consume(context.Context, []record) error
+
+	// Consume consumes the given records in the order they are provided. We need this as samples that will be ingested,
+	// are also needed to be in order to avoid ingesting samples out of order.
+	// The function is expected to be idempotent and incremental, meaning that it can be called multiple times with the same records, and it won't respond to context cancellation.
+	Consume(context.Context, []record) error
 }
 
 type fetcher interface {
@@ -490,7 +493,7 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		// There is an edge-case when the processing gets stuck and doesn't let the stopping process. In such a case,
 		// we expect the infrastructure (e.g. k8s) to eventually kill the process.
 		consumeCtx := context.WithoutCancel(ctx)
-		err := consumer.consume(consumeCtx, records)
+		err := consumer.Consume(consumeCtx, records)
 		if err == nil {
 			err = consumer.Close(consumeCtx)
 			if err == nil {

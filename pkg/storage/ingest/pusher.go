@@ -28,14 +28,6 @@ type Pusher interface {
 	PushToStorage(context.Context, *mimirpb.WriteRequest) error
 }
 
-type parsedRecord struct {
-	*mimirpb.WriteRequest
-	// Context holds the tracing and cancellation data for this record/request.
-	ctx      context.Context
-	tenantID string
-	err      error
-}
-
 type PusherCloser interface {
 	Pusher
 	Close() []error
@@ -103,15 +95,74 @@ func newPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *pusherConsu
 	}
 }
 
-func (c pusherConsumer) consume(ctx context.Context, records []record) error {
+// Consume implements the recordConsumer interface.
+// It'll use a separate goroutine to unmarshal the next record while we push the current record to storage.
+func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
+	type parsedRecord struct {
+		*mimirpb.WriteRequest
+		// ctx holds the tracing baggage for this record/request.
+		ctx      context.Context
+		tenantID string
+		err      error
+		index    int
+	}
+
+	recordsChannel := make(chan parsedRecord)
+
+	// Create a cancellable context to let the unmarshalling goroutine know when to stop.
 	ctx, cancel := context.WithCancelCause(ctx)
-	defer cancel(cancellation.NewErrorf("done consuming records"))
 
-	recC := make(chan parsedRecord)
+	// Now, unmarshal the records into the channel.
+	go func(unmarshalCtx context.Context, records []record, ch chan<- parsedRecord) {
+		defer close(ch)
 
-	// Speed up consumption by unmarhsalling the next request while the previous one is being pushed.
-	go c.unmarshalRequests(ctx, records, recC)
-	return c.pushRequests(recC)
+		for index, r := range records {
+			// Before we being unmarshalling the write request check if the context was cancelled.
+			select {
+			case <-unmarshalCtx.Done():
+				// No more processing is needed, so we need to abort.
+				return
+			default:
+			}
+
+			parsed := parsedRecord{
+				ctx:          r.ctx,
+				tenantID:     r.tenantID,
+				WriteRequest: &mimirpb.WriteRequest{},
+				index:        index,
+			}
+
+			// We don't free the WriteRequest slices because they are being freed by a level below.
+			err := parsed.WriteRequest.Unmarshal(r.content)
+			if err != nil {
+				parsed.err = fmt.Errorf("parsing ingest consumer write request: %w", err)
+			}
+
+			// Now that we're done, check again before we send it to the channel.
+			select {
+			case <-unmarshalCtx.Done():
+				return
+			case ch <- parsed:
+			}
+		}
+	}(ctx, records, recordsChannel)
+
+	for r := range recordsChannel {
+		if r.err != nil {
+			level.Error(c.logger).Log("msg", "failed to parse write request; skipping", "err", r.err)
+			continue
+		}
+
+		// If we get an error at any point, we need to stop processing the records. They will be retried at some point.
+		err := c.pushToStorage(r.ctx, r.tenantID, r.WriteRequest)
+		if err != nil {
+			cancel(cancellation.NewErrorf("error while pushing to storage")) // Stop the unmarshalling goroutine.
+			return fmt.Errorf("consuming record at index %d for tenant %s: %w", r.index, r.tenantID, err)
+		}
+	}
+
+	cancel(cancellation.NewErrorf("done unmarshalling records"))
+	return nil
 }
 
 func (c pusherConsumer) Close(ctx context.Context) error {
@@ -127,23 +178,6 @@ func (c pusherConsumer) Close(ctx context.Context) error {
 		}
 	}
 	return multierror.New(errs...).Err()
-}
-
-func (c pusherConsumer) pushRequests(reqC <-chan parsedRecord) error {
-	recordIdx := -1
-	for wr := range reqC {
-		recordIdx++
-		if wr.err != nil {
-			level.Error(c.logger).Log("msg", "failed to parse write request; skipping", "err", wr.err)
-			continue
-		}
-
-		err := c.pushToStorage(wr.ctx, wr.tenantID, wr.WriteRequest)
-		if err != nil {
-			return fmt.Errorf("consuming record at index %d for tenant %s: %w", recordIdx, wr.tenantID, err)
-		}
-	}
-	return nil
 }
 
 func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req *mimirpb.WriteRequest) error {
@@ -205,38 +239,6 @@ func (c pusherConsumer) shouldLogClientError(ctx context.Context, err error) (bo
 	}
 
 	return optional.ShouldLog(ctx)
-}
-
-// The passed context is expected to be cancelled after all items in records were fully processed and are ready
-// to be released. This so to guaranty the release of resources associated with each parsedRecord context.
-func (c pusherConsumer) unmarshalRequests(ctx context.Context, records []record, recC chan<- parsedRecord) {
-	defer close(recC)
-	done := ctx.Done()
-
-	for _, rec := range records {
-		// rec.ctx contains the tracing baggage for this record, which we propagate down the call tree.
-		// Since rec.ctx cancellation is disjointed from the context passed to unmarshalRequests(), the context.AfterFunc below,
-		// fuses the two lifetimes together.
-		recCtx, cancelRecCtx := context.WithCancelCause(rec.ctx)
-		context.AfterFunc(ctx, func() {
-			cancelRecCtx(context.Cause(ctx))
-		})
-		pRecord := parsedRecord{
-			ctx:          recCtx,
-			tenantID:     rec.tenantID,
-			WriteRequest: &mimirpb.WriteRequest{},
-		}
-		// We don't free the WriteRequest slices because they are being freed by the Pusher.
-		err := pRecord.WriteRequest.Unmarshal(rec.content)
-		if err != nil {
-			pRecord.err = fmt.Errorf("parsing ingest consumer write request: %w", err)
-		}
-		select {
-		case <-done:
-			return
-		case recC <- pRecord:
-		}
-	}
 }
 
 type multiTenantPusher struct {
