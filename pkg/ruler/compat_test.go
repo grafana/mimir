@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
@@ -527,8 +528,8 @@ func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			}
 
 			// Ensure the result has been written.
-			require.Eventually(t, func() bool {
-				return len(pusher.Calls) > 0
+			require.EventuallyWithT(t, func(collect *assert.CollectT) {
+				pusher.AssertCalled(&collectWithLogf{collect}, "Push", mock.Anything, mock.Anything)
 			}, 5*time.Second, 100*time.Millisecond)
 
 			manager.Stop()
@@ -593,13 +594,13 @@ func TestDefaultManagerFactory_ShouldNotWriteRecordingRuleResultsWhenDisabled(t 
 
 			if writeEnabled {
 				// Ensure the result has been written.
-				require.Eventually(t, func() bool {
-					return len(pusher.Calls) > 0
+				require.EventuallyWithT(t, func(collect *assert.CollectT) {
+					pusher.AssertCalled(&collectWithLogf{collect}, "Push", mock.Anything, mock.Anything)
 				}, 5*time.Second, 100*time.Millisecond)
 			} else {
 				// Ensure no write occurred within a reasonable amount of time.
 				time.Sleep(time.Second)
-				assert.Len(t, pusher.Calls, 0)
+				pusher.AssertNumberOfCalls(t, "Push", 0)
 			}
 
 			manager.Stop()
@@ -847,3 +848,9 @@ func mustStatusWithDetails(code codes.Code, cause mimirpb.ErrorCause) *status.St
 	}
 	return s
 }
+
+type collectWithLogf struct {
+	*assert.CollectT
+}
+
+func (c *collectWithLogf) Logf(_ string, _ ...interface{}) {}
