@@ -218,9 +218,9 @@ func TestQuerierWorker_getDesiredConcurrency(t *testing.T) {
 			maxConcurrent: 12,
 			expected: map[string]int{
 				"1.1.1.1": 6,
-				"2.2.2.2": 4,
+				"2.2.2.2": MinConcurrencyPerRequestQueue,
 				"3.3.3.3": 6,
-				"4.4.4.4": 4,
+				"4.4.4.4": MinConcurrencyPerRequestQueue,
 			},
 		},
 		"should create the minimum connections for each instance if max concurrency is set to 0": {
