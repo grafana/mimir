@@ -330,9 +330,6 @@ func (s *BucketStore) syncBlocks(ctx context.Context) error {
 		}
 		select {
 		case <-ctx.Done():
-			close(blockc)
-			wg.Wait()
-			return nil
 		case blockc <- meta:
 		}
 	}
