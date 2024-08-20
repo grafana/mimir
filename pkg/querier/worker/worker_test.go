@@ -232,10 +232,10 @@ func TestQuerierWorker_getDesiredConcurrency(t *testing.T) {
 			},
 			maxConcurrent: 0,
 			expected: map[string]int{
-				"1.1.1.1": minConcurrencyPerRequestQueue,
-				"2.2.2.2": minConcurrencyPerRequestQueue,
-				"3.3.3.3": minConcurrencyPerRequestQueue,
-				"4.4.4.4": minConcurrencyPerRequestQueue,
+				"1.1.1.1": MinConcurrencyPerRequestQueue,
+				"2.2.2.2": MinConcurrencyPerRequestQueue,
+				"3.3.3.3": MinConcurrencyPerRequestQueue,
+				"4.4.4.4": MinConcurrencyPerRequestQueue,
 			},
 		},
 		"should create the minimum connections for each instance if max concurrency is less than the minimum": {
@@ -247,10 +247,10 @@ func TestQuerierWorker_getDesiredConcurrency(t *testing.T) {
 			},
 			maxConcurrent: 2,
 			expected: map[string]int{
-				"1.1.1.1": minConcurrencyPerRequestQueue,
-				"2.2.2.2": minConcurrencyPerRequestQueue,
-				"3.3.3.3": minConcurrencyPerRequestQueue,
-				"4.4.4.4": minConcurrencyPerRequestQueue,
+				"1.1.1.1": MinConcurrencyPerRequestQueue,
+				"2.2.2.2": MinConcurrencyPerRequestQueue,
+				"3.3.3.3": MinConcurrencyPerRequestQueue,
+				"4.4.4.4": MinConcurrencyPerRequestQueue,
 			},
 		},
 		"should create the minimum connections for each instance if max concurrency is greater than the minimum but less than the min times the number of instances": {
@@ -262,10 +262,10 @@ func TestQuerierWorker_getDesiredConcurrency(t *testing.T) {
 			},
 			maxConcurrent: 12,
 			expected: map[string]int{
-				"1.1.1.1": minConcurrencyPerRequestQueue,
-				"2.2.2.2": minConcurrencyPerRequestQueue,
-				"3.3.3.3": minConcurrencyPerRequestQueue,
-				"4.4.4.4": minConcurrencyPerRequestQueue,
+				"1.1.1.1": MinConcurrencyPerRequestQueue,
+				"2.2.2.2": MinConcurrencyPerRequestQueue,
+				"3.3.3.3": MinConcurrencyPerRequestQueue,
+				"4.4.4.4": MinConcurrencyPerRequestQueue,
 			},
 		},
 	}

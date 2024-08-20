@@ -308,12 +308,12 @@ func (w *querierWorker) InstanceChanged(instance servicediscovery.Instance) {
 	w.resetConcurrency()
 }
 
-// minConcurrencyPerRequestQueue prevents RequestQueue starvation in query-frontend or query-scheduler instances.
+// MinConcurrencyPerRequestQueue prevents RequestQueue starvation in query-frontend or query-scheduler instances.
 // When the RequestQueue utilizes the querier-worker queue prioritization algorithm, querier-workers connections
 // are partitioned across up to 4 queue dimensions representing the 4 possible assignments for expected query component:
 // ingester, store-gateway, ingester-and-store-gateway, and unknown.
 // Failure to assign any querier-worker connections to a queue dimension can result in starvation of that queue dimension.
-const minConcurrencyPerRequestQueue = 4
+const MinConcurrencyPerRequestQueue = 4
 
 // Must be called with lock.
 func (w *querierWorker) resetConcurrency() {
@@ -350,27 +350,27 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 	)
 
 	level.Warn(w.log).Log("msg", "instances", "instances", fmt.Sprintf("%#v", w.instances))
-	// new adjusted minimum to ensure that each instance has at least minConcurrencyPerRequestQueue connections.
+	// new adjusted minimum to ensure that each instance has at least MinConcurrencyPerRequestQueue connections.
 	maxConcurrentWithMinPerInstance := math.Max(
-		w.maxConcurrentRequests, minConcurrencyPerRequestQueue*len(w.instances),
+		w.maxConcurrentRequests, MinConcurrencyPerRequestQueue*len(w.instances),
 	)
 	level.Warn(w.log).Log("msg", "max concurrency with minimum per instance", "max_concurrent_with_min_per_instance", maxConcurrentWithMinPerInstance)
 	if maxConcurrentWithMinPerInstance > w.maxConcurrentRequests {
 		level.Warn(w.log).Log("msg", "max concurrency does not meet the minimum required per request queue instance, increasing to minimum")
 	}
 
-	// not-in-use instances wil only receive minConcurrencyPerRequestQueue;
+	// not-in-use instances wil only receive MinConcurrencyPerRequestQueue;
 	// determine size of remaining pool to be divided across the in-use instances
-	maxConcurrentForInUseInstances := maxConcurrentWithMinPerInstance - minConcurrencyPerRequestQueue*(len(w.instances)-numInUse)
+	maxConcurrentForInUseInstances := maxConcurrentWithMinPerInstance - MinConcurrencyPerRequestQueue*(len(w.instances)-numInUse)
 	level.Warn(w.log).Log("msg", "max concurrency for in use instances", "max_concurrent_for_in_use_instances", maxConcurrentForInUseInstances)
 
 	// Compute the number of desired connections for each discovered instance.
 	for address, instance := range w.instances {
-		// Run only minConcurrencyPerRequestQueue worker for each instance not in-use,
+		// Run only MinConcurrencyPerRequestQueue worker for each instance not in-use,
 		// to allow for the queues to be drained when the in-use instances change or if
 		// for any reason queries are enqueued on the ones not in-use.
 		if !instance.InUse {
-			desired[address] = minConcurrencyPerRequestQueue
+			desired[address] = MinConcurrencyPerRequestQueue
 			continue
 		}
 
