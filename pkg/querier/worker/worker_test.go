@@ -147,10 +147,10 @@ func TestResetConcurrency(t *testing.T) {
 		},
 		{
 			name:            "Max concurrent dividing with a remainder, with some targets in use",
-			maxConcurrent:   19,
+			maxConcurrent:   9,
 			numTargets:      4,
 			numInUseTargets: 2,
-			expectedConcurrency:/* in use:  */ 8 + /* not in use : */ 11,
+			expectedConcurrency:/* in use:  */ 9 + /* not in use : */ 8,
 		},
 		{
 			name:                "Max concurrent dividing evenly, with all targets in use",
@@ -161,10 +161,10 @@ func TestResetConcurrency(t *testing.T) {
 		},
 		{
 			name:            "Max concurrent dividing evenly, with some targets in use",
-			maxConcurrent:   20,
+			maxConcurrent:   12,
 			numTargets:      4,
 			numInUseTargets: 2,
-			expectedConcurrency:/* in use:  */ 8 + /* not in use : */ 12,
+			expectedConcurrency:/* in use:  */ 12 + /* not in use : */ 8,
 		},
 	}
 
@@ -215,7 +215,7 @@ func TestQuerierWorker_getDesiredConcurrency(t *testing.T) {
 				{Address: "3.3.3.3", InUse: true},
 				{Address: "4.4.4.4", InUse: false},
 			},
-			maxConcurrent: 20,
+			maxConcurrent: 12,
 			expected: map[string]int{
 				"1.1.1.1": 6,
 				"2.2.2.2": 4,
@@ -238,7 +238,7 @@ func TestQuerierWorker_getDesiredConcurrency(t *testing.T) {
 				"4.4.4.4": MinConcurrencyPerRequestQueue,
 			},
 		},
-		"should create the minimum connections for each instance if max concurrency is less than the minimum": {
+		"should create the minimum connections for each instance if max concurrency is less than the minimum min times the number of in-use instances": {
 			instances: []servicediscovery.Instance{
 				{Address: "1.1.1.1", InUse: true},
 				{Address: "2.2.2.2", InUse: false},
@@ -246,21 +246,6 @@ func TestQuerierWorker_getDesiredConcurrency(t *testing.T) {
 				{Address: "4.4.4.4", InUse: false},
 			},
 			maxConcurrent: 2,
-			expected: map[string]int{
-				"1.1.1.1": MinConcurrencyPerRequestQueue,
-				"2.2.2.2": MinConcurrencyPerRequestQueue,
-				"3.3.3.3": MinConcurrencyPerRequestQueue,
-				"4.4.4.4": MinConcurrencyPerRequestQueue,
-			},
-		},
-		"should create the minimum connections for each instance if max concurrency is greater than the minimum but less than the min times the number of instances": {
-			instances: []servicediscovery.Instance{
-				{Address: "1.1.1.1", InUse: true},
-				{Address: "2.2.2.2", InUse: false},
-				{Address: "3.3.3.3", InUse: true},
-				{Address: "4.4.4.4", InUse: false},
-			},
-			maxConcurrent: 12,
 			expected: map[string]int{
 				"1.1.1.1": MinConcurrencyPerRequestQueue,
 				"2.2.2.2": MinConcurrencyPerRequestQueue,
