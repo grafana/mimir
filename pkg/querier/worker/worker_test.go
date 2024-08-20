@@ -238,7 +238,7 @@ func TestQuerierWorker_getDesiredConcurrency(t *testing.T) {
 				"4.4.4.4": MinConcurrencyPerRequestQueue,
 			},
 		},
-		"should create the minimum connections for each instance if max concurrency is less than the minimum min times the number of in-use instances": {
+		"should create the minimum connections for each instance if max concurrency is less than (instances * minimum connections per instance)": {
 			instances: []servicediscovery.Instance{
 				{Address: "1.1.1.1", InUse: true},
 				{Address: "2.2.2.2", InUse: false},
