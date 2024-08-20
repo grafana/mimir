@@ -12642,6 +12642,17 @@
           "fieldFlag": "ruler.independent-rule-evaluation-concurrency-min-duration-percentage",
           "fieldType": "float",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "rule_evaluation_write_enabled",
+          "required": false,
+          "desc": "False to disable writing the result of rule evaluation to ingesters. This option can be used for testing purposes.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "ruler.rule-evaluation-write-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

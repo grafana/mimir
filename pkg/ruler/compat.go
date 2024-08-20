@@ -141,6 +141,47 @@ func (t *PusherAppendable) Appender(ctx context.Context) storage.Appender {
 	}
 }
 
+type noopAppender struct{}
+
+func (a *noopAppender) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	return 0, nil
+}
+
+func (a *noopAppender) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
+	return 0, errors.New("exemplars are unsupported")
+}
+
+func (a *noopAppender) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
+	return 0, errors.New("metadata updates are unsupported")
+}
+
+func (a *noopAppender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return 0, nil
+}
+
+func (a *noopAppender) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+	return 0, errors.New("CT zero samples are unsupported")
+}
+
+func (a *noopAppender) Commit() error {
+	return nil
+}
+
+func (a *noopAppender) Rollback() error {
+	return nil
+}
+
+type noopAppendable struct{}
+
+func newNoopAppendable() *noopAppendable {
+	return &noopAppendable{}
+}
+
+// Appender returns a storage.Appender.
+func (t *noopAppendable) Appender(ctx context.Context) storage.Appender {
+	return &noopAppender{}
+}
+
 // RulesLimits defines limits used by Ruler.
 type RulesLimits interface {
 	EvaluationDelay(userID string) time.Duration
@@ -267,7 +308,7 @@ type ManagerFactory func(ctx context.Context, userID string, notifier *notifier.
 
 func DefaultTenantManagerFactory(
 	cfg Config,
-	p Pusher,
+	pusher Pusher,
 	queryable storage.Queryable,
 	queryFunc rules.QueryFunc,
 	concurrencyController MultiTenantRuleConcurrencyController,
@@ -319,8 +360,15 @@ func DefaultTenantManagerFactory(
 		// Wrap the queryable with our custom logic.
 		wrappedQueryable := WrapQueryableWithReadConsistency(queryable, logger)
 
+		var appendeable storage.Appendable
+		if cfg.RuleEvaluationWriteEnabled {
+			appendeable = NewPusherAppendable(pusher, userID, totalWrites, failedWrites)
+		} else {
+			appendeable = newNoopAppendable()
+		}
+
 		return rules.NewManager(&rules.ManagerOptions{
-			Appendable:                 NewPusherAppendable(p, userID, totalWrites, failedWrites),
+			Appendable:                 appendeable,
 			Queryable:                  wrappedQueryable,
 			QueryFunc:                  wrappedQueryFunc,
 			Context:                    user.InjectOrgID(ctx, userID),

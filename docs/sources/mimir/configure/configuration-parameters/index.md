@@ -2118,6 +2118,11 @@ tenant_federation:
 # group runtime duration must exceed 50.0% of the evaluation interval.
 # CLI flag: -ruler.independent-rule-evaluation-concurrency-min-duration-percentage
 [independent_rule_evaluation_concurrency_min_duration_percentage: <float> | default = 50]
+
+# (experimental) False to disable writing the result of rule evaluation to
+# ingesters. This option can be used for testing purposes.
+# CLI flag: -ruler.rule-evaluation-write-enabled
+[rule_evaluation_write_enabled: <boolean> | default = true]
 ```
 
 ### ruler_storage
