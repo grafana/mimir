@@ -38,7 +38,10 @@ func (c GenericChunk) Iterator(reuse chunk.Iterator) chunk.Iterator {
 
 // iterator iterates over batches.
 type iterator interface {
-	// Seek advances the iterator forward to the sample at or after the given timestamp.
+	// Seek advances the iterator forward to batch containing the sample at or after the given timestamp.
+	// If the current batch contains a sample at or after the given timestamp, then Seek retains the current batch.
+	//
+	// The batch's Index is advanced to point to the sample at or after the given timestamp.
 	Seek(t int64, size int) chunkenc.ValueType
 
 	// Next moves to the next batch.

@@ -238,7 +238,7 @@ func TestChunkIterator_SeekBeforeCurrentBatch(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, chk.UnmarshalFromBuf(ch.Bytes()))
 
-		// We should never need to reset this iterator, as the Seek call below should be able to be satisfied by the initial batch.
+		// We should never need to reset this iterator, as the Seek call below should be satisfiable by the initial batch.
 		return &chunkIteratorThatForbidsFindAtOrAfter{chk.NewIterator(reuse)}
 	})
 
