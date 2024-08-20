@@ -326,7 +326,7 @@ func (w *querierWorker) resetConcurrency() {
 			level.Error(w.log).Log("msg", "a querier worker is connected to an unknown remote endpoint", "addr", m.address)
 
 			// Consider it as not in-use.
-			concurrency = 1
+			concurrency = MinConcurrencyPerRequestQueue
 		}
 
 		m.concurrency(concurrency, "resetting worker concurrency")
@@ -349,20 +349,17 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 		inUseIndex = 0
 	)
 
-	level.Warn(w.log).Log("msg", "instances", "instances", fmt.Sprintf("%#v", w.instances))
 	// new adjusted minimum to ensure that each instance has at least MinConcurrencyPerRequestQueue connections.
 	maxConcurrentWithMinPerInstance := math.Max(
 		w.maxConcurrentRequests, MinConcurrencyPerRequestQueue*len(w.instances),
 	)
-	level.Warn(w.log).Log("msg", "max concurrency with minimum per instance", "max_concurrent_with_min_per_instance", maxConcurrentWithMinPerInstance)
 	if maxConcurrentWithMinPerInstance > w.maxConcurrentRequests {
 		level.Warn(w.log).Log("msg", "max concurrency does not meet the minimum required per request queue instance, increasing to minimum")
 	}
 
-	// not-in-use instances wil only receive MinConcurrencyPerRequestQueue;
+	// not-in-use instances will only receive MinConcurrencyPerRequestQueue;
 	// determine size of remaining pool to be divided across the in-use instances
 	maxConcurrentForInUseInstances := maxConcurrentWithMinPerInstance - MinConcurrencyPerRequestQueue*(len(w.instances)-numInUse)
-	level.Warn(w.log).Log("msg", "max concurrency for in use instances", "max_concurrent_for_in_use_instances", maxConcurrentForInUseInstances)
 
 	// Compute the number of desired connections for each discovered instance.
 	for address, instance := range w.instances {
@@ -375,7 +372,6 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 		}
 
 		concurrency := maxConcurrentForInUseInstances / numInUse
-		level.Warn(w.log).Log("msg", "desired concurrency", "addr", address, "concurrency", concurrency)
 
 		// If max concurrency does not evenly divide into in-use instances, then a subset will be chosen
 		// to receive an extra connection. Since we're iterating a map (whose iteration order is not guaranteed),
