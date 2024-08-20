@@ -152,12 +152,12 @@
 ### Mimir Continuous Test
 
 * [CHANGE] Use test metrics that do not pass through 0 to make identifying incorrect results easier. #8630
+* [CHANGE] Allowed authenticatication to Mimir using both Tenant ID and basic/bearer auth. #9038
 * [FEATURE] Experimental support for the `-tests.send-chunks-debugging-header` boolean flag to send the `X-Mimir-Chunk-Info-Logger: series_id` header with queries. #8599
 * [ENHANCEMENT] Include human-friendly timestamps in diffs logged when a test fails. #8630
 * [ENHANCEMENT] Add histograms to measure latency of read and write requests. #8583
 * [ENHANCEMENT] Log successful test runs in addition to failed test runs. #8817
 * [BUGFIX] Initialize test result metrics to 0 at startup so that alerts can correctly identify the first failure after startup. #8630
-* [CHANGE] Allowed authenticatication to Mimir using both Tenant ID and basic/bearer auth. #9038
 
 ### Query-tee
 
