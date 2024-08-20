@@ -157,6 +157,7 @@
 * [ENHANCEMENT] Add histograms to measure latency of read and write requests. #8583
 * [ENHANCEMENT] Log successful test runs in addition to failed test runs. #8817
 * [BUGFIX] Initialize test result metrics to 0 at startup so that alerts can correctly identify the first failure after startup. #8630
+* [CHANGE] Allowed authenticatication to Mimir using both Tenant ID and basic/bearer auth. #9038
 
 ### Query-tee
 
@@ -364,7 +365,7 @@
 
 * [CHANGE] `mimir-continuous-test` has been deprecated and replaced by a Mimir module that can be run as a target from the `mimir` binary using `mimir -target=continuous-test`. #7753
 * [CHANGE] `-server.metrics-port` flag is no longer available for use in the module run of mimir-continuous-test, including the grafana/mimir-continuous-test Docker image which uses the new module. Configuring this port is still possible in the binary, which is deprecated. #7747
-* [CHANGE] Allowed authenticatication to Mimir using both Tenant ID and basic/bearer auth. #7619 #9038
+* [CHANGE] Allowed authenticatication to Mimir using both Tenant ID and basic/bearer auth #7619.
 * [BUGFIX] Set `User-Agent` header for all requests sent from the testing client. #7607
 
 ### Query-tee
