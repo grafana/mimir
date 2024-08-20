@@ -143,7 +143,7 @@ func (t *PusherAppendable) Appender(ctx context.Context) storage.Appender {
 
 type NoopAppender struct{}
 
-func (a *NoopAppender) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (a *NoopAppender) Append(_ storage.SeriesRef, _ labels.Labels, _ int64, _ float64) (storage.SeriesRef, error) {
 	return 0, nil
 }
 
@@ -155,7 +155,7 @@ func (a *NoopAppender) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ me
 	return 0, errors.New("metadata updates are unsupported")
 }
 
-func (a *NoopAppender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a *NoopAppender) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	return 0, nil
 }
 
@@ -178,7 +178,7 @@ func NewNoopAppendable() *NoopAppendable {
 }
 
 // Appender returns a storage.Appender.
-func (t *NoopAppendable) Appender(ctx context.Context) storage.Appender {
+func (t *NoopAppendable) Appender(_ context.Context) storage.Appender {
 	return &NoopAppender{}
 }
 
