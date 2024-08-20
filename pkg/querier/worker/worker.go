@@ -309,7 +309,7 @@ func (w *querierWorker) InstanceChanged(instance servicediscovery.Instance) {
 }
 
 // MinConcurrencyPerRequestQueue prevents RequestQueue starvation in query-frontend or query-scheduler instances.
-// When the RequestQueue utilizes the querier-worker queue prioritization algorithm, querier-workers connections
+// When the RequestQueue utilizes the querier-worker queue prioritization algorithm, querier-worker connections
 // are partitioned across up to 4 queue dimensions representing the 4 possible assignments for expected query component:
 // ingester, store-gateway, ingester-and-store-gateway, and unknown.
 // Failure to assign any querier-worker connections to a queue dimension can result in starvation of that queue dimension.
@@ -359,10 +359,11 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 
 	// Compute the number of desired connections for each discovered instance.
 	for address, instance := range w.instances {
-		// Run only MinConcurrencyPerRequestQueue worker for each instance not in-use,
-		// to allow for the queues to be drained when the in-use instances change or if
-		// for any reason queries are enqueued on the ones not in-use.
 		if !instance.InUse {
+			// We expect that a not-in-use instance is either empty or being drained and will be removed soon
+			// and therefore these connections will not contribute to the overall steady-state query concurrency.
+			// As the state is expected to be temporary, we allocate the minimum number of connections
+			// and do not count them against the connection pool size for the in-use instances.
 			desired[address] = MinConcurrencyPerRequestQueue
 			continue
 		}
