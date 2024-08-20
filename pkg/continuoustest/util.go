@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	maxComparisonDeltaFloat     = 0.001
+	MaxComparisonDeltaFloat     = 0.001
 	maxComparisonDeltaHistogram = 0.01
 
 	floatMetricName = "mimir_continuous_test_sine_wave_v2"
@@ -26,9 +26,10 @@ const (
 )
 
 type generateHistogramFunc func(t time.Time) prompb.Histogram
-type generateSeriesFunc func(name string, t time.Time, numSeries int) []prompb.TimeSeries
+type generateSeriesFunc func(t time.Time, numSeries int) []prompb.TimeSeries
 type generateValueFunc func(t time.Time) float64
 type generateSampleHistogramFunc func(t time.Time, numSeries int) *model.SampleHistogram
+type verifySamplesSumFunc func(matrix model.Matrix, step time.Duration) (lastMatchingIdx int, err error)
 
 type histogramProfile struct {
 	metricName              string
@@ -92,15 +93,15 @@ func init() {
 	for i, histProfile := range histogramProfiles {
 		histProfile := histProfile // shadowing it to ensure it's properly updated in the closure
 		histogramProfiles[i].generateValue = nil
-		histogramProfiles[i].generateSeries = func(name string, t time.Time, numSeries int) []prompb.TimeSeries {
-			return generateHistogramSeriesInner(name, t, numSeries, histProfile.generateHistogram)
+		histogramProfiles[i].generateSeries = func(t time.Time, numSeries int) []prompb.TimeSeries {
+			return generateHistogramSeriesInner(histProfile.metricName, t, numSeries, histProfile.generateHistogram)
 		}
 	}
 }
 
 type querySumFunc func(metricName string) string
 
-func querySumFloat(metricName string) string {
+func QuerySumFloat(metricName string) string {
 	// We use max_over_time() with a 1s range selector in order to fetch only the samples we previously
 	// wrote and ensure the PromQL lookback period doesn't influence query results. This help to avoid
 	// false positives when finding the last written sample, or when restarting the testing tool with
@@ -225,7 +226,7 @@ func generateFloatHistogram(value float64, numSeries int, gauge bool) *histogram
 
 func generateSineWaveSeries(name string, t time.Time, numSeries int) []prompb.TimeSeries {
 	out := make([]prompb.TimeSeries, 0, numSeries)
-	value := generateSineWaveValue(t)
+	value := GenerateSineWaveValue(t)
 	ts := t.UnixMilli()
 
 	for i := 0; i < numSeries; i++ {
@@ -266,7 +267,7 @@ func generateHistogramSeriesInner(name string, t time.Time, numSeries int, histo
 	return out
 }
 
-func generateSineWaveValue(t time.Time) float64 {
+func GenerateSineWaveValue(t time.Time) float64 {
 	period := 10 * time.Minute
 	radians := 2 * math.Pi * float64(t.UnixNano()) / float64(period.Nanoseconds())
 	return math.Sin(radians) + 2
@@ -274,14 +275,14 @@ func generateSineWaveValue(t time.Time) float64 {
 
 func generateHistogramIntValue(t time.Time, gauge bool) int64 {
 	if gauge {
-		return int64(generateSineWaveValue(t) * 100)
+		return int64(GenerateSineWaveValue(t) * 100)
 	}
 	return t.Unix()
 }
 
 func generateHistogramFloatValue(t time.Time, gauge bool) float64 {
 	if gauge {
-		return generateSineWaveValue(t) / 10
+		return GenerateSineWaveValue(t) / 10
 	}
 	return float64(t.Unix()) / 500000
 }
@@ -343,7 +344,7 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 
 		// Assert on value.
 		expectedValue := generateValue(ts) * float64(expectedSeries)
-		if !compareFloatValues(float64(sample.Value), expectedValue, maxComparisonDeltaFloat) {
+		if !CompareFloatValues(float64(sample.Value), expectedValue, MaxComparisonDeltaFloat) {
 			comparison := formatExpectedAndActualValuesComparison(matrix, expectedSeries, generateValue)
 			return lastMatchingIdx, fmt.Errorf("sample at timestamp %d (%s) has value %f while was expecting %f, full result comparison:\n%s", sample.Timestamp, ts.String(), sample.Value, expectedValue, comparison)
 		}
@@ -365,13 +366,13 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 }
 
 // accounts for float imprecision
-func compareFloatValues(actual, expected, tolerance float64) bool {
+func CompareFloatValues(actual, expected, tolerance float64) bool {
 	delta := math.Abs((actual - expected) / tolerance)
 	return delta < tolerance
 }
 
 func compareHistogramValues(actual, expected *model.SampleHistogram, tolerance float64) bool {
-	return compareFloatValues(float64(actual.Count), float64(expected.Count), tolerance) && compareFloatValues(float64(actual.Sum), float64(expected.Sum), tolerance) && compareHistogramBuckets(actual.Buckets, expected.Buckets, tolerance)
+	return CompareFloatValues(float64(actual.Count), float64(expected.Count), tolerance) && CompareFloatValues(float64(actual.Sum), float64(expected.Sum), tolerance) && compareHistogramBuckets(actual.Buckets, expected.Buckets, tolerance)
 }
 
 func compareHistogramBuckets(actual, expected model.HistogramBuckets, tolerance float64) bool {
@@ -389,7 +390,7 @@ func compareHistogramBuckets(actual, expected model.HistogramBuckets, tolerance 
 
 func compareHistogramBucketValues(actual, expected *model.HistogramBucket, tolerance float64) bool {
 	// the precision of lower/upper shouldn't change based on the range of the histogram counts/sums unlike the count
-	return actual.Boundaries == expected.Boundaries && compareFloatValues(float64(actual.Lower), float64(expected.Lower), maxComparisonDeltaFloat) && compareFloatValues(float64(actual.Upper), float64(expected.Upper), maxComparisonDeltaFloat) && compareFloatValues(float64(actual.Count), float64(expected.Count), tolerance)
+	return actual.Boundaries == expected.Boundaries && CompareFloatValues(float64(actual.Lower), float64(expected.Lower), MaxComparisonDeltaFloat) && CompareFloatValues(float64(actual.Upper), float64(expected.Upper), MaxComparisonDeltaFloat) && CompareFloatValues(float64(actual.Count), float64(expected.Count), tolerance)
 }
 
 func minTime(first, second time.Time) time.Time {
@@ -427,7 +428,7 @@ func formatExpectedAndActualValuesComparison(matrix model.Matrix, expectedSeries
 	for _, sample := range samples {
 		actual := float64(sample.Value)
 		expected := float64(expectedSeries) * generateValue(sample.Timestamp.Time())
-		match := compareFloatValues(actual, expected, maxComparisonDeltaFloat)
+		match := CompareFloatValues(actual, expected, MaxComparisonDeltaFloat)
 
 		builder.WriteString(strconv.FormatInt(int64(sample.Timestamp), 10))
 		builder.WriteString(" (")

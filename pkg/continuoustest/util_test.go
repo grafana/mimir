@@ -50,7 +50,7 @@ func TestGetQueryStep(t *testing.T) {
 }
 
 func TestVerifySamplesSum(t *testing.T) {
-	testVerifySamplesSumFloats(t, generateSineWaveValue, "generateSineWaveValue")
+	testVerifySamplesSumFloats(t, GenerateSineWaveValue, "GenerateSineWaveValue")
 	for _, histProfile := range histogramProfiles {
 		testVerifySamplesSumHistograms(t, histProfile.generateValue, histProfile.generateSampleHistogram, fmt.Sprintf("generateHistogramValue for %s", histProfile.typeLabel))
 	}
@@ -264,7 +264,7 @@ func TestCompareSampleValues(t *testing.T) {
 		"histogram_float_counter shouldn't work with float tolerance": {
 			actual:    336157191.999972,
 			expected:  336157192.000000,
-			tolerance: maxComparisonDeltaFloat,
+			tolerance: MaxComparisonDeltaFloat,
 			result:    false,
 		},
 		"histogram_float_counter should work with histogram tolerance": {
@@ -277,7 +277,7 @@ func TestCompareSampleValues(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			res := compareFloatValues(testData.actual, testData.expected, testData.tolerance)
+			res := CompareFloatValues(testData.actual, testData.expected, testData.tolerance)
 			assert.Equal(t, testData.result, res)
 		})
 	}
@@ -331,9 +331,9 @@ func TestFormatExpectedAndActualValuesComparison(t *testing.T) {
 	}{
 		"all values match, one expected series": {
 			samples: []model.SamplePair{
-				newSamplePair(now.Add(10*time.Second), generateSineWaveValue(now.Add(10*time.Second))),
-				newSamplePair(now.Add(20*time.Second), generateSineWaveValue(now.Add(20*time.Second))),
-				newSamplePair(now.Add(30*time.Second), generateSineWaveValue(now.Add(30*time.Second))),
+				newSamplePair(now.Add(10*time.Second), GenerateSineWaveValue(now.Add(10*time.Second))),
+				newSamplePair(now.Add(20*time.Second), GenerateSineWaveValue(now.Add(20*time.Second))),
+				newSamplePair(now.Add(30*time.Second), GenerateSineWaveValue(now.Add(30*time.Second))),
 			},
 			series: 1,
 			expectedOutput: `Timestamp      Expected  Actual
@@ -344,9 +344,9 @@ func TestFormatExpectedAndActualValuesComparison(t *testing.T) {
 		},
 		"all values match, multiple expected series": {
 			samples: []model.SamplePair{
-				newSamplePair(now.Add(10*time.Second), 3*generateSineWaveValue(now.Add(10*time.Second))),
-				newSamplePair(now.Add(20*time.Second), 3*generateSineWaveValue(now.Add(20*time.Second))),
-				newSamplePair(now.Add(30*time.Second), 3*generateSineWaveValue(now.Add(30*time.Second))),
+				newSamplePair(now.Add(10*time.Second), 3*GenerateSineWaveValue(now.Add(10*time.Second))),
+				newSamplePair(now.Add(20*time.Second), 3*GenerateSineWaveValue(now.Add(20*time.Second))),
+				newSamplePair(now.Add(30*time.Second), 3*GenerateSineWaveValue(now.Add(30*time.Second))),
 			},
 			series: 3,
 			expectedOutput: `Timestamp      Expected  Actual
@@ -357,9 +357,9 @@ func TestFormatExpectedAndActualValuesComparison(t *testing.T) {
 		},
 		"one value differs": {
 			samples: []model.SamplePair{
-				newSamplePair(now.Add(10*time.Second), 3*generateSineWaveValue(now.Add(10*time.Second))),
-				newSamplePair(now.Add(20*time.Second), 3*generateSineWaveValue(now.Add(20*time.Second))+1),
-				newSamplePair(now.Add(30*time.Second), 3*generateSineWaveValue(now.Add(30*time.Second))),
+				newSamplePair(now.Add(10*time.Second), 3*GenerateSineWaveValue(now.Add(10*time.Second))),
+				newSamplePair(now.Add(20*time.Second), 3*GenerateSineWaveValue(now.Add(20*time.Second))+1),
+				newSamplePair(now.Add(30*time.Second), 3*GenerateSineWaveValue(now.Add(30*time.Second))),
 			},
 			series: 3,
 			expectedOutput: `Timestamp      Expected  Actual
@@ -370,9 +370,9 @@ func TestFormatExpectedAndActualValuesComparison(t *testing.T) {
 		},
 		"multiple values differ": {
 			samples: []model.SamplePair{
-				newSamplePair(now.Add(10*time.Second), 3*generateSineWaveValue(now.Add(10*time.Second))),
-				newSamplePair(now.Add(20*time.Second), 3*generateSineWaveValue(now.Add(20*time.Second))+1),
-				newSamplePair(now.Add(30*time.Second), 3*generateSineWaveValue(now.Add(30*time.Second))-1),
+				newSamplePair(now.Add(10*time.Second), 3*GenerateSineWaveValue(now.Add(10*time.Second))),
+				newSamplePair(now.Add(20*time.Second), 3*GenerateSineWaveValue(now.Add(20*time.Second))+1),
+				newSamplePair(now.Add(30*time.Second), 3*GenerateSineWaveValue(now.Add(30*time.Second))-1),
 			},
 			series: 3,
 			expectedOutput: `Timestamp      Expected  Actual
@@ -386,7 +386,7 @@ func TestFormatExpectedAndActualValuesComparison(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			matrix := model.Matrix{{Values: testCase.samples}}
-			output := formatExpectedAndActualValuesComparison(matrix, testCase.series, generateSineWaveValue)
+			output := formatExpectedAndActualValuesComparison(matrix, testCase.series, GenerateSineWaveValue)
 			require.Equal(t, testCase.expectedOutput, output)
 		})
 	}
