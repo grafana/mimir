@@ -1484,8 +1484,8 @@ store_gateway_client:
 [enable_query_engine_fallback: <boolean> | default = true]
 
 # The number of workers running in each querier process. This setting limits the
-# maximum number of concurrent queries in each querier. Minimum 4; lower values
-# will be ignored and set to the minimum.
+# maximum number of concurrent queries in each querier. The minimum value is four; lower values
+# are ignored and set to the minimum.
 # CLI flag: -querier.max-concurrent
 [max_concurrent: <int> | default = 20]
 
