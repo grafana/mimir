@@ -202,7 +202,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Int64Var(&cfg.MaxIndependentRuleEvaluationConcurrency, "ruler.max-independent-rule-evaluation-concurrency", 0, "Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.")
 	f.Float64Var(&cfg.IndependentRuleEvaluationConcurrencyMinDurationPercentage, "ruler.independent-rule-evaluation-concurrency-min-duration-percentage", 50.0, "Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval.")
 
-	f.BoolVar(&cfg.RuleEvaluationWriteEnabled, "ruler.rule-evaluation-write-enabled", true, "False to disable writing the result of rule evaluation to ingesters. Use this option for testing purposes.")
+	f.BoolVar(&cfg.RuleEvaluationWriteEnabled, "ruler.rule-evaluation-write-enabled", true, "Writes the results of rule evaluation to ingesters or ingest storage when enabled. Use this option for testing purposes. To disable, set to false.")
 
 	cfg.RingCheckPeriod = 5 * time.Second
 }

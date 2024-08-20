@@ -12647,7 +12647,7 @@
           "kind": "field",
           "name": "rule_evaluation_write_enabled",
           "required": false,
-          "desc": "False to disable writing the result of rule evaluation to ingesters. Use this option for testing purposes.",
+          "desc": "Writes the results of rule evaluation to ingesters or ingest storage when enabled. Use this option for testing purposes. To disable, set to false.",
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "ruler.rule-evaluation-write-enabled",
