@@ -3,8 +3,6 @@
 package functions
 
 import (
-	"fmt"
-
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
@@ -15,14 +13,12 @@ import (
 // SeriesMetadataFunction is a function to operate on the metadata across series.
 type SeriesMetadataFunction func(seriesMetadata []types.SeriesMetadata, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error)
 
+// DropSeriesName is a SeriesMetadataFunc that removes the __name__ label from all series in seriesMetadata.
+//
+// It does not check that the list of returned series is free of duplicates.
 func DropSeriesName(seriesMetadata []types.SeriesMetadata, _ *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
 	for i := range seriesMetadata {
 		seriesMetadata[i].Labels = seriesMetadata[i].Labels.DropMetricName()
-	}
-
-	if hasDuplicate, example := types.HasDuplicateSeries(seriesMetadata); hasDuplicate {
-		types.PutSeriesMetadataSlice(seriesMetadata)
-		return nil, fmt.Errorf("vector cannot contain metrics with the same labelset: multiple series with labels %v", example.String())
 	}
 
 	return seriesMetadata, nil

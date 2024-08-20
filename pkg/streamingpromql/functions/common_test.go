@@ -14,7 +14,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func TestDropSeriesName_HappyPath(t *testing.T) {
+func TestDropSeriesName(t *testing.T) {
 	seriesMetadata := []types.SeriesMetadata{
 		{Labels: labels.FromStrings("__name__", "metric_name", "label1", "value1")},
 		{Labels: labels.FromStrings("__name__", "another_metric", "label2", "value2")},
@@ -28,16 +28,6 @@ func TestDropSeriesName_HappyPath(t *testing.T) {
 	modifiedMetadata, err := DropSeriesName(seriesMetadata, limiting.NewMemoryConsumptionTracker(0, nil))
 	require.NoError(t, err)
 	require.Equal(t, expected, modifiedMetadata)
-}
-
-func TestDropSeriesName_DuplicateSeries(t *testing.T) {
-	seriesMetadata := []types.SeriesMetadata{
-		{Labels: labels.FromStrings("__name__", "metric_name", "label1", "value1")},
-		{Labels: labels.FromStrings("__name__", "another_metric", "label1", "value1")},
-	}
-
-	_, err := DropSeriesName(seriesMetadata, limiting.NewMemoryConsumptionTracker(0, nil))
-	require.EqualError(t, err, `vector cannot contain metrics with the same labelset: multiple series with labels {label1="value1"}`)
 }
 
 func TestFloatTransformationFunc(t *testing.T) {

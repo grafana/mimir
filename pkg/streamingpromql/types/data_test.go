@@ -154,9 +154,8 @@ func TestInstantVectorSeriesDataIterator(t *testing.T) {
 
 func TestHasDuplicateSeries(t *testing.T) {
 	testCases := map[string]struct {
-		input           []SeriesMetadata
-		hasDuplicate    bool
-		expectedExample labels.Labels
+		input        []SeriesMetadata
+		hasDuplicate bool
 	}{
 		"no series": {
 			input:        []SeriesMetadata{},
@@ -187,8 +186,7 @@ func TestHasDuplicateSeries(t *testing.T) {
 				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
 				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
 			},
-			hasDuplicate:    true,
-			expectedExample: labels.FromStrings(labels.MetricName, "foo", "bar", "1"),
+			hasDuplicate: true,
 		},
 		"three series, all different": {
 			input: []SeriesMetadata{
@@ -212,8 +210,7 @@ func TestHasDuplicateSeries(t *testing.T) {
 				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
 				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "3")},
 			},
-			hasDuplicate:    true,
-			expectedExample: labels.FromStrings(labels.MetricName, "foo", "bar", "1"),
+			hasDuplicate: true,
 		},
 		"three series, all the same": {
 			input: []SeriesMetadata{
@@ -221,22 +218,15 @@ func TestHasDuplicateSeries(t *testing.T) {
 				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
 				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
 			},
-			hasDuplicate:    true,
-			expectedExample: labels.FromStrings(labels.MetricName, "foo", "bar", "1"),
+			hasDuplicate: true,
 		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			actualHasDuplicate, actualExample := HasDuplicateSeries(testCase.input)
+			actualHasDuplicate := HasDuplicateSeries(testCase.input)
 
 			require.Equal(t, testCase.hasDuplicate, actualHasDuplicate)
-
-			if testCase.hasDuplicate {
-				require.Equal(t, testCase.expectedExample, actualExample)
-			} else {
-				require.Equal(t, labels.EmptyLabels(), actualExample)
-			}
 		})
 	}
 }

@@ -106,16 +106,16 @@ type ScalarData struct {
 	Samples []promql.FPoint
 }
 
-func HasDuplicateSeries(metadata []SeriesMetadata) (bool, labels.Labels) {
+func HasDuplicateSeries(metadata []SeriesMetadata) bool {
 	switch len(metadata) {
 	case 0, 1:
-		return false, labels.EmptyLabels()
+		return false
 	case 2:
 		if metadata[0].Labels.Hash() == metadata[1].Labels.Hash() {
-			return true, metadata[0].Labels
+			return true
 		}
 
-		return false, labels.EmptyLabels()
+		return false
 
 	default:
 		// Note that there's a risk here that we incorrectly flag two series as duplicates when in reality they're different
@@ -129,12 +129,12 @@ func HasDuplicateSeries(metadata []SeriesMetadata) (bool, labels.Labels) {
 			hash := m.Labels.Hash()
 
 			if _, alreadySeen := seen[hash]; alreadySeen {
-				return true, m.Labels
+				return true
 			}
 
 			seen[hash] = struct{}{}
 		}
 
-		return false, labels.EmptyLabels()
+		return false
 	}
 }
