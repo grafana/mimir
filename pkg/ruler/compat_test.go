@@ -525,9 +525,88 @@ func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			case <-time.NewTimer(time.Second).C:
 				require.Fail(t, "neither of the queryables was called within the timeout")
 			}
+
+			// Ensure the result has been written.
+			require.Eventually(t, func() bool {
+				return len(pusher.Calls) > 0
+			}, 5*time.Second, 100*time.Millisecond)
+
 			manager.Stop()
 		})
 	}
+}
+
+func TestDefaultManagerFactory_ShouldNotWriteRecordingRuleResultsWhenDisabled(t *testing.T) {
+	const userID = "tenant-1"
+
+	for _, writeEnabled := range []bool{false, true} {
+		writeEnabled := writeEnabled
+
+		t.Run(fmt.Sprintf("write enabled: %t", writeEnabled), func(t *testing.T) {
+			t.Parallel()
+
+			// Create a test recording rule.
+			ruleGroup := rulespb.RuleGroupDesc{
+				Name:     "test",
+				Interval: time.Second,
+				Rules: []*rulespb.RuleDesc{{
+					Record: "test",
+					Expr:   "1",
+				}},
+			}
+
+			// Setup ruler with writes disabled.
+			cfg := defaultRulerConfig(t)
+			cfg.RuleEvaluationWriteEnabled = writeEnabled
+
+			var (
+				options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
+				notifierManager = notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, options.logger)
+				ruleFiles       = writeRuleGroupToFiles(t, cfg.RulePath, options.logger, userID, ruleGroup)
+				queryable       = newMockQueryable()
+				tracker         = promql.NewActiveQueryTracker(t.TempDir(), 20, log.NewNopLogger())
+				eng             = promql.NewEngine(promql.EngineOpts{
+					MaxSamples:         1e6,
+					ActiveQueryTracker: tracker,
+					Timeout:            2 * time.Minute,
+				})
+				queryFunc = rules.EngineQueryFunc(eng, queryable)
+			)
+
+			pusher := newPusherMock()
+			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
+
+			factory := DefaultTenantManagerFactory(cfg, pusher, queryable, queryFunc, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+			manager := factory(context.Background(), userID, notifierManager, options.logger, nil)
+
+			// Load rules into manager and start it.
+			require.NoError(t, manager.Update(time.Millisecond, ruleFiles, labels.EmptyLabels(), "", nil))
+			go manager.Run()
+
+			// Wait until the query has been executed.
+			select {
+			case <-queryable.called:
+				t.Log("query executed")
+			case <-time.NewTimer(time.Second).C:
+				require.Fail(t, "no query executed")
+			}
+
+			if writeEnabled {
+				// Ensure the result has been written.
+				require.Eventually(t, func() bool {
+					return len(pusher.Calls) > 0
+				}, 5*time.Second, 100*time.Millisecond)
+			} else {
+				// Ensure no write occurred within a reasonable amount of time.
+				time.Sleep(time.Second)
+				assert.Len(t, pusher.Calls, 0)
+			}
+
+			manager.Stop()
+
+		})
+	}
+
 }
 
 func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDetail(t *testing.T) {
