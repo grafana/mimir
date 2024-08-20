@@ -89,7 +89,7 @@ func runTestQuerySchedulerWithMaxUsedInstances(t *testing.T, seriesName string, 
 	// The minimum number of connections per scheduler is 4 in order to avoid queue starvation
 	// when the RequestQueue utilizes the querier-worker queue prioritization algorithm.
 	// Although the max-concurrent is set to 8, the querier will create an extra 4 connections
-	// per not-in-use scheduler meet the minimum requirements per connected RequestQueue instance.
+	// per not-in-use to scheduler meet the minimum requirements per connected RequestQueue instance.
 	require.NoError(t, inUseScheduler.WaitSumMetricsWithOptions(e2e.Equals(8), []string{"cortex_query_scheduler_connected_querier_clients"}))
 	require.NoError(t, notInUseScheduler.WaitSumMetricsWithOptions(e2e.Equals(4), []string{"cortex_query_scheduler_connected_querier_clients"}))
 
