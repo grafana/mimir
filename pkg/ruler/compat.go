@@ -141,45 +141,45 @@ func (t *PusherAppendable) Appender(ctx context.Context) storage.Appender {
 	}
 }
 
-type noopAppender struct{}
+type NoopAppender struct{}
 
-func (a *noopAppender) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (a *NoopAppender) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	return 0, nil
 }
 
-func (a *noopAppender) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
+func (a *NoopAppender) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
 	return 0, errors.New("exemplars are unsupported")
 }
 
-func (a *noopAppender) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
+func (a *NoopAppender) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
 	return 0, errors.New("metadata updates are unsupported")
 }
 
-func (a *noopAppender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a *NoopAppender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	return 0, nil
 }
 
-func (a *noopAppender) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+func (a *NoopAppender) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
 	return 0, errors.New("CT zero samples are unsupported")
 }
 
-func (a *noopAppender) Commit() error {
+func (a *NoopAppender) Commit() error {
 	return nil
 }
 
-func (a *noopAppender) Rollback() error {
+func (a *NoopAppender) Rollback() error {
 	return nil
 }
 
-type noopAppendable struct{}
+type NoopAppendable struct{}
 
-func newNoopAppendable() *noopAppendable {
-	return &noopAppendable{}
+func NewNoopAppendable() *NoopAppendable {
+	return &NoopAppendable{}
 }
 
 // Appender returns a storage.Appender.
-func (t *noopAppendable) Appender(ctx context.Context) storage.Appender {
-	return &noopAppender{}
+func (t *NoopAppendable) Appender(ctx context.Context) storage.Appender {
+	return &NoopAppender{}
 }
 
 // RulesLimits defines limits used by Ruler.
@@ -364,7 +364,7 @@ func DefaultTenantManagerFactory(
 		if cfg.RuleEvaluationWriteEnabled {
 			appendeable = NewPusherAppendable(pusher, userID, totalWrites, failedWrites)
 		} else {
-			appendeable = newNoopAppendable()
+			appendeable = NewNoopAppendable()
 		}
 
 		return rules.NewManager(&rules.ManagerOptions{
