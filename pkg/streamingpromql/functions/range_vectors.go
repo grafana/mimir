@@ -33,7 +33,7 @@ func countOverTime(step types.RangeVectorStepData, _ float64, fPoints *types.FPo
 }
 
 var LastOverTime = FunctionOverRangeVector{
-	SeriesMetadataFunc: PassthroughSeriesMetadata,
+	SeriesMetadataFunc: nil, // We want to use the input series as-is.
 	StepFunc:           lastOverTime,
 }
 

@@ -15,10 +15,6 @@ import (
 // SeriesMetadataFunction is a function to operate on the metadata across series.
 type SeriesMetadataFunction func(seriesMetadata []types.SeriesMetadata, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error)
 
-func PassthroughSeriesMetadata(seriesMetadata []types.SeriesMetadata, _ *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
-	return seriesMetadata, nil
-}
-
 func DropSeriesName(seriesMetadata []types.SeriesMetadata, _ *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
 	for i := range seriesMetadata {
 		seriesMetadata[i].Labels = seriesMetadata[i].Labels.DropMetricName()
@@ -113,6 +109,8 @@ type FunctionOverRangeVector struct {
 	SeriesValidationFuncFactory RangeVectorSeriesValidationFunctionFactory
 
 	// SeriesMetadataFunc is the function that computes the output series for this function based on the given input series.
+	//
+	// If SeriesMetadataFunc is nil, the input series are used as-is.
 	SeriesMetadataFunc SeriesMetadataFunction
 
 	// NeedsSeriesNamesForAnnotations indicates that this function uses the names of input series when emitting annotations.

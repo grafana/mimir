@@ -60,7 +60,11 @@ func (m *FunctionOverInstantVector) SeriesMetadata(ctx context.Context) ([]types
 		return nil, err
 	}
 
-	return m.SeriesMetadataFunc(metadata, m.MemoryConsumptionTracker)
+	if m.SeriesMetadataFunc != nil {
+		return m.SeriesMetadataFunc(metadata, m.MemoryConsumptionTracker)
+	}
+
+	return metadata, nil
 }
 
 func (m *FunctionOverInstantVector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
