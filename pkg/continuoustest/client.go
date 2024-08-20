@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	maxErrMsgLen = 256
+	maxErrMsgLen  = 256
 	defaultTenant = "anonymous"
 )
 

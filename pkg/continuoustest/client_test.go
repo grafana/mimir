@@ -336,8 +336,8 @@ func TestClient_QueryHeaders(t *testing.T) {
 		flagext.DefaultValues(&cfg)
 		require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
 		require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
-		cfg.BasicAuthUser = "mimir-user" 
-		cfg.BasicAuthPassword = "guest" 
+		cfg.BasicAuthUser = "mimir-user"
+		cfg.BasicAuthPassword = "guest"
 
 		c, err := NewClient(cfg, log.NewNopLogger())
 		require.NoError(t, err)
@@ -357,7 +357,7 @@ func TestClient_QueryHeaders(t *testing.T) {
 		flagext.DefaultValues(&cfg)
 		require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
 		require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
-		cfg.BearerToken = "mimir-token" 
+		cfg.BearerToken = "mimir-token"
 
 		c, err := NewClient(cfg, log.NewNopLogger())
 		require.NoError(t, err)
@@ -377,9 +377,9 @@ func TestClient_QueryHeaders(t *testing.T) {
 		flagext.DefaultValues(&cfg)
 		require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
 		require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
-		cfg.BasicAuthUser = "mimir-user" 
-		cfg.BasicAuthPassword = "guest" 
-		cfg.TenantID = "tenant1" 
+		cfg.BasicAuthUser = "mimir-user"
+		cfg.BasicAuthPassword = "guest"
+		cfg.TenantID = "tenant1"
 
 		c, err := NewClient(cfg, log.NewNopLogger())
 		require.NoError(t, err)
@@ -399,8 +399,8 @@ func TestClient_QueryHeaders(t *testing.T) {
 		flagext.DefaultValues(&cfg)
 		require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
 		require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
-		cfg.BearerToken = "mimir-token" 
-		cfg.TenantID = "tenant1" 
+		cfg.BearerToken = "mimir-token"
+		cfg.TenantID = "tenant1"
 
 		c, err := NewClient(cfg, log.NewNopLogger())
 		require.NoError(t, err)
@@ -414,7 +414,7 @@ func TestClient_QueryHeaders(t *testing.T) {
 		assert.Equal(t, "tenant1", receivedRequests[0].Header.Get("X-Scope-OrgID"))
 		assert.NotEmpty(t, receivedRequests[0].Header.Get("Authorization"))
 	})
-	
+
 }
 
 // ClientMock mocks MimirClient.
