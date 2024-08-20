@@ -2120,7 +2120,7 @@ tenant_federation:
 [independent_rule_evaluation_concurrency_min_duration_percentage: <float> | default = 50]
 
 # (experimental) False to disable writing the result of rule evaluation to
-# ingesters. This option can be used for testing purposes.
+# ingesters. Use this option for testing purposes.
 # CLI flag: -ruler.rule-evaluation-write-enabled
 [rule_evaluation_write_enabled: <boolean> | default = true]
 ```
