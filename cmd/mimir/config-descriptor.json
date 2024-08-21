@@ -1935,7 +1935,7 @@
           "kind": "field",
           "name": "max_concurrent",
           "required": false,
-          "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier.",
+          "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. The minimum value is four; lower values are ignored and set to the minimum",
           "fieldValue": null,
           "fieldDefaultValue": 20,
           "fieldFlag": "querier.max-concurrent",

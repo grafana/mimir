@@ -7,6 +7,7 @@
 * [CHANGE] Store-gateway / querier: enable streaming chunks from store-gateways to queriers by default. #6646
 * [CHANGE] Querier: honor the start/end time range specified in the read hints when executing a remote read request. #8431
 * [CHANGE] Querier: return only samples within the queried start/end time range when executing a remote read request using "SAMPLES" mode. Previously, samples outside of the range could have been returned. Samples outside of the queried time range may still be returned when executing a remote read request using "STREAMED_XOR_CHUNKS" mode. #8463
+* [CHANGE] Querier: Set minimum for `-querier.max-concurrent` to four to prevent queue starvation with querier-worker queue prioritization algorithm; values below the minimum four are ignored and set to the minimum. #9054
 * [CHANGE] Store-gateway: enabled `-blocks-storage.bucket-store.max-concurrent-queue-timeout` by default with a timeout of 5 seconds. #8496
 * [CHANGE] Store-gateway: enabled `-blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout` by default with a timeout of 5 seconds . #8667
 * [CHANGE] Distributor: Incoming OTLP requests were previously size-limited by using limit from `-distributor.max-recv-msg-size` option. We have added option `-distributor.max-otlp-request-size` for limiting OTLP requests, with default value of 100 MiB. #8574

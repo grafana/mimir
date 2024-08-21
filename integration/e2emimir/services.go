@@ -123,7 +123,7 @@ func NewQuerier(name string, consulAddress string, flags map[string]string, opti
 			"-querier.frontend-client.backoff-min-period": "100ms",
 			"-querier.frontend-client.backoff-max-period": "100ms",
 			"-querier.frontend-client.backoff-retries":    "1",
-			"-querier.max-concurrent":                     "1",
+			"-querier.max-concurrent":                     "4",
 			// Quickly detect query-frontend and query-scheduler when running it.
 			"-querier.dns-lookup-period": "1s",
 			// Store-gateway ring backend.
