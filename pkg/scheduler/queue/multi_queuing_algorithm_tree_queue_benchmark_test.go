@@ -84,9 +84,10 @@ func makeQueueProducerGroup(
 	return startProducersChan, producersErrGroup
 }
 
+const slowConsumerQueueDimension = storeGatewayQueueDimension
+
 func makeQueueConsumeFuncWithSlowQueryComponent(
 	queue *RequestQueue,
-	slowConsumerQueueDimension string,
 	slowConsumerLatency time.Duration,
 	normalConsumerLatency time.Duration,
 	report *testScenarioQueueDurationObservations,
@@ -95,6 +96,10 @@ func makeQueueConsumeFuncWithSlowQueryComponent(
 		schedulerRequest := request.(*SchedulerRequest)
 		queryComponent := schedulerRequest.ExpectedQueryComponentName()
 		if queryComponent == ingesterAndStoreGatewayQueueDimension {
+			// we expect the latency of a query hitting both a normal and a slowed-down query component
+			// will be constrained by the latency of the slowest query component;
+			// we enqueued with the "both" query component to observe the queue algorithm behavior
+			// but we re-assign query component here for simplicity in logic & reporting
 			queryComponent = storeGatewayQueueDimension
 		}
 		report.Observe(schedulerRequest.UserID, queryComponent, time.Since(schedulerRequest.EnqueueTime).Seconds())
@@ -122,12 +127,20 @@ func (o *testScenarioQueueDurationObservations) Observe(tenantID, queryComponent
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
-	o.tenantIDQueueDurationObservations[tenantID] = append(
-		o.tenantIDQueueDurationObservations[tenantID], queueDuration,
-	)
 	o.queryComponentQueueDurationObservations[queryComponent] = append(
 		o.queryComponentQueueDurationObservations[queryComponent], queueDuration,
 	)
+
+	if queryComponent != slowConsumerQueueDimension {
+		// when analyzing the statistics for the tenant-specific experience of queue duration,
+		// we only care about the queue duration for the non-slowed-down query component,
+		// as in the real-world scenario, queries to a severely slowed-down query component are expected
+		// to be a lost cause, largely timing out before they can be fully serviced.
+		o.tenantIDQueueDurationObservations[tenantID] = append(
+			o.tenantIDQueueDurationObservations[tenantID], queueDuration,
+		)
+	}
+
 }
 
 func (o *testScenarioQueueDurationObservations) Report() *testScenarioQueueDurationReport {
@@ -158,15 +171,30 @@ func (o *testScenarioQueueDurationObservations) Report() *testScenarioQueueDurat
 			},
 		)
 	}
+
+	for _, tenantID := range tenantIDs {
+		meanDur := mean(o.tenantIDQueueDurationObservations[tenantID])
+		stdDevDur := stddev(o.tenantIDQueueDurationObservations[tenantID], meanDur)
+		report.tenantIDReports = append(
+			report.tenantIDReports,
+			testDimensionReport{
+				dimensionName:        "tenant-" + tenantID,
+				meanSecondsInQueue:   meanDur,
+				stdDevSecondsInQueue: stdDevDur,
+			},
+		)
+	}
+
 	return report
 }
 
 type testScenarioQueueDurationReport struct {
 	testCaseName          string
 	queryComponentReports []testDimensionReport
+	tenantIDReports       []testDimensionReport
 }
 
-func (r *testScenarioQueueDurationReport) String() string {
+func (r *testScenarioQueueDurationReport) QueryComponentReportString() string {
 	var queryComponentReports []string
 	for _, queryComponentReport := range r.queryComponentReports {
 		queryComponentReports = append(
@@ -180,6 +208,23 @@ func (r *testScenarioQueueDurationReport) String() string {
 	}
 	return fmt.Sprintf(
 		"seconds in queue: %v", queryComponentReports,
+	)
+}
+
+func (r *testScenarioQueueDurationReport) TenantIDReportString() string {
+	var tenantIDReports []string
+	for _, tenantIDReport := range r.tenantIDReports {
+		tenantIDReports = append(
+			tenantIDReports,
+			fmt.Sprintf(
+				"%s: mean: %.4f stddev: %.2f",
+				tenantIDReport.dimensionName,
+				tenantIDReport.meanSecondsInQueue,
+				tenantIDReport.stdDevSecondsInQueue),
+		)
+	}
+	return fmt.Sprintf(
+		"seconds in queue:%v", tenantIDReports,
 	)
 }
 
@@ -224,6 +269,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 		name                         string
 		tenantQueueDimensionsWeights map[string]map[string]float64
 	}{
+		// single-tenant scenarios
 		{
 			name: "1 tenant, 05pct slow queries",
 			tenantQueueDimensionsWeights: map[string]map[string]float64{
@@ -294,6 +340,68 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				},
 			},
 		},
+
+		// multi-tenant scenarios
+		{
+			name: "2 tenants, first with 5pct slow queries, second with 95pct slow queries",
+			tenantQueueDimensionsWeights: map[string]map[string]float64{
+				"0": {
+					ingesterQueueDimension:                .95,
+					storeGatewayQueueDimension:            .025,
+					ingesterAndStoreGatewayQueueDimension: .025,
+				},
+				"1": {
+					ingesterQueueDimension:                .05,
+					storeGatewayQueueDimension:            .475,
+					ingesterAndStoreGatewayQueueDimension: .475,
+				},
+			},
+		},
+		{
+			name: "2 tenants, first with 10pct slow queries, second with 90pct slow queries",
+			tenantQueueDimensionsWeights: map[string]map[string]float64{
+				"0": {
+					ingesterQueueDimension:                .90,
+					storeGatewayQueueDimension:            .05,
+					ingesterAndStoreGatewayQueueDimension: .05,
+				},
+				"1": {
+					ingesterQueueDimension:                .10,
+					storeGatewayQueueDimension:            .45,
+					ingesterAndStoreGatewayQueueDimension: .45,
+				},
+			},
+		},
+		{
+			name: "2 tenants, first with 25pct slow queries, second with 75pct slow queries",
+			tenantQueueDimensionsWeights: map[string]map[string]float64{
+				"0": {
+					ingesterQueueDimension:                .75,
+					storeGatewayQueueDimension:            .125,
+					ingesterAndStoreGatewayQueueDimension: .125,
+				},
+				"1": {
+					ingesterQueueDimension:                .25,
+					storeGatewayQueueDimension:            .375,
+					ingesterAndStoreGatewayQueueDimension: .375,
+				},
+			},
+		},
+		{
+			name: "2 tenants, first with 50pct slow queries, second with 50pct slow queries",
+			tenantQueueDimensionsWeights: map[string]map[string]float64{
+				"0": {
+					ingesterQueueDimension:                .50,
+					storeGatewayQueueDimension:            .25,
+					ingesterAndStoreGatewayQueueDimension: .25,
+				},
+				"1": {
+					ingesterQueueDimension:                .50,
+					storeGatewayQueueDimension:            .25,
+					ingesterAndStoreGatewayQueueDimension: .25,
+				},
+			},
+		},
 	}
 
 	maxQueriersPerTenant := 0 // disable shuffle sharding
@@ -309,7 +417,6 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	numConsumers := 12
 
 	normalConsumerLatency := 1 * time.Millisecond
-	slowConsumerQueueDimension := storeGatewayQueueDimension
 	// slow request approximately 100x longer than the fast request seems fair;
 	// an ingester can respond in 0.3 seconds while a slow store-gateway query can take 30 seconds
 	slowConsumerLatency := 100 * time.Millisecond
@@ -325,6 +432,9 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 		nonFlippedRoundRobinTree, err := NewTree(tqa, &roundRobinState{}, &roundRobinState{})
 		require.NoError(t, err)
 
+		flippedRoundRobinTree, err := NewTree(&roundRobinState{}, tqa, &roundRobinState{})
+		require.NoError(t, err)
+
 		querierWorkerPrioritizationTree, err := NewTree(NewQuerierWorkerQueuePriorityAlgo(), tqa, &roundRobinState{})
 		require.NoError(t, err)
 
@@ -336,6 +446,10 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 			{
 				"non-flipped round-robin tree",
 				nonFlippedRoundRobinTree,
+			},
+			{
+				"new flipped round-robin tree",
+				flippedRoundRobinTree,
 			},
 			{
 				"querier-worker priority tree",
@@ -394,7 +508,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				// configure queue consumers with respective latencies for processing requests
 				// which were assigned the "normal" or "slow" query component
 				consumeFunc := makeQueueConsumeFuncWithSlowQueryComponent(
-					queue, slowConsumerQueueDimension, slowConsumerLatency, normalConsumerLatency, testCaseObservations,
+					queue, slowConsumerLatency, normalConsumerLatency, testCaseObservations,
 				)
 				queueConsumerErrGroup, startConsumersChan := makeQueueConsumerGroup(
 					context.Background(), queue, totalRequests, numConsumers, consumeFunc,
@@ -413,7 +527,8 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				require.NoError(t, err)
 
 				report := testCaseObservations.Report()
-				t.Logf(testCaseName + ": " + report.String())
+				t.Logf(testCaseName + ": " + report.QueryComponentReportString())
+				t.Logf(testCaseName + ": " + report.TenantIDReportString())
 				// collect results in order
 				testCaseNames = append(testCaseNames, testCaseName)
 				testCaseReports[testCaseName] = report
@@ -425,9 +540,15 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 			})
 		}
 	}
-	// log results in order
+
+	t.Log("Results by query component:")
 	for _, testCaseName := range testCaseNames {
-		t.Logf("%s: %s", testCaseName, testCaseReports[testCaseName])
+		t.Logf("%s: %s", testCaseName, testCaseReports[testCaseName].QueryComponentReportString())
+	}
+
+	t.Log("Results for ingester-only queries by tenant ID:")
+	for _, testCaseName := range testCaseNames {
+		t.Logf("%s: %s", testCaseName, testCaseReports[testCaseName].TenantIDReportString())
 	}
 
 }
