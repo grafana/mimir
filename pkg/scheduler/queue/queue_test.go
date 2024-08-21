@@ -47,19 +47,6 @@ func TestMain(m *testing.M) {
 	util_test.VerifyNoLeakTestMain(m)
 }
 
-func testQuerierInflightRequestsMetric() *prometheus.SummaryVec {
-	return promauto.With(prometheus.NewPedanticRegistry()).NewSummaryVec(
-		prometheus.SummaryOpts{
-			Name:       "test_cortex_query_scheduler_querier_inflight_requests",
-			Help:       "[test] Number of inflight requests being processed on all querier-scheduler connections. Quantile buckets keep track of inflight requests over the last 60s.",
-			Objectives: map[float64]float64{0.5: 0.05, 0.75: 0.02, 0.8: 0.02, 0.9: 0.01, 0.95: 0.01, 0.99: 0.001},
-			MaxAge:     time.Minute,
-			AgeBuckets: 6,
-		},
-		[]string{"query_component"},
-	)
-}
-
 var secondQueueDimensionOptions = []string{
 	ingesterQueueDimension,
 	storeGatewayQueueDimension,
