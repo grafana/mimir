@@ -187,6 +187,22 @@ func (s *Stats) LoadQueueTime() time.Duration {
 	return time.Duration(atomic.LoadInt64((*int64)(&s.QueueTime)))
 }
 
+func (s *Stats) AddEncodeTime(t time.Duration) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddInt64((*int64)(&s.EncodeTime), int64(t))
+}
+
+func (s *Stats) LoadEncodeTime() time.Duration {
+	if s == nil {
+		return 0
+	}
+
+	return time.Duration(atomic.LoadInt64((*int64)(&s.EncodeTime)))
+}
+
 // Merge the provided Stats into this one.
 func (s *Stats) Merge(other *Stats) {
 	if s == nil || other == nil {

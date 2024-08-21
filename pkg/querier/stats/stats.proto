@@ -34,4 +34,6 @@ message Stats {
   uint64 estimated_series_count = 8;
   // The sum of durations that the query spent in the queue, before it was handled by querier.
   google.protobuf.Duration queue_time = 9 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
+  // The time spent encoding the query's results for returning from the frontend.
+  google.protobuf.Duration encode_time = 10 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
 }
