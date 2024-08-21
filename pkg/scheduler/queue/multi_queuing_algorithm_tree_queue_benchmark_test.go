@@ -3,7 +3,6 @@
 package queue
 
 import (
-	"container/list"
 	"context"
 	"fmt"
 	"math"
@@ -14,60 +13,15 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 )
 
 const querierForgetDelay = 0
 const maxOutStandingPerTenant = 1000000
-
-// newBenchmarkRequestQueue mirrors the constructor for RequestQueue, but with the ability to pass in a Tree
-func newBenchmarkRequestQueue(
-	queryComponentUtilization *QueryComponentUtilization,
-	tenantQuerierAssignments *tenantQuerierAssignments,
-	tree Tree,
-	prioritizeQueryComponents bool,
-) (*RequestQueue, error) {
-
-	q := &RequestQueue{
-		// settings
-		log:                     log.NewNopLogger(),
-		maxOutstandingPerTenant: maxOutStandingPerTenant,
-		forgetDelay:             time.Duration(querierForgetDelay),
-
-		// metrics for reporting
-		connectedQuerierWorkers: atomic.NewInt64(0),
-		queueLength:             promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
-		discardedRequests:       promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
-		enqueueDuration:         promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-
-		// channels must not be buffered so that we can detect when dispatcherLoop() has finished.
-		stopRequested: make(chan struct{}),
-		stopCompleted: make(chan struct{}),
-
-		requestsToEnqueue:             make(chan requestToEnqueue),
-		requestsSent:                  make(chan *SchedulerRequest),
-		requestsCompleted:             make(chan *SchedulerRequest),
-		querierWorkerOperations:       make(chan *querierWorkerOperation),
-		waitingQuerierConns:           make(chan *waitingQuerierConn),
-		waitingQuerierConnsToDispatch: list.New(),
-
-		QueryComponentUtilization: queryComponentUtilization,
-		queueBroker: &queueBroker{
-			tree:                      tree,
-			tenantQuerierAssignments:  tenantQuerierAssignments,
-			maxTenantQueueSize:        maxOutStandingPerTenant,
-			prioritizeQueryComponents: prioritizeQueryComponents,
-		},
-	}
-	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")
-	return q, nil
-}
 
 func weightedRandAdditionalQueueDimension(dimensionWeights map[string]float64) string {
 	totalWeight := float64(0)
@@ -366,10 +320,6 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	for _, weightedQueueDimensionTestCase := range weightedQueueDimensionTestCases {
 		numTenants := len(weightedQueueDimensionTestCase.tenantQueueDimensionsWeights)
 
-		var err error
-		queryComponentUtilization, err := NewQueryComponentUtilization(testQuerierInflightRequestsMetric())
-		require.NoError(t, err)
-
 		tqa := newTenantQuerierAssignments(0)
 
 		nonFlippedRoundRobinTree, err := NewTree(tqa, &roundRobinState{}, &roundRobinState{})
@@ -408,8 +358,23 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 			prioritizeQueryComponents := tree.tree != nonFlippedRoundRobinTree
 
 			t.Run(testCaseName, func(t *testing.T) {
-				queue, err := newBenchmarkRequestQueue(queryComponentUtilization, tqa, tree.tree, prioritizeQueryComponents)
+				queue, err := NewRequestQueue(
+					log.NewNopLogger(),
+					maxOutStandingPerTenant,
+					true,
+					prioritizeQueryComponents,
+					querierForgetDelay,
+					promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+					promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+					promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+					promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+				)
 				require.NoError(t, err)
+
+				// NewRequestQueue constructor does not allow passing in a tree or tenantQuerierAssignments
+				// so we have to override here to use the same structures as the test case
+				queue.queueBroker.tenantQuerierAssignments = tqa
+				queue.queueBroker.tree = tree.tree
 
 				ctx := context.Background()
 				require.NoError(t, queue.starting(ctx))
