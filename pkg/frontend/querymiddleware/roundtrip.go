@@ -39,10 +39,6 @@ const (
 	labelNamesPathSuffix                              = "/api/v1/labels"
 	remoteReadPathSuffix                              = "/api/v1/read"
 
-	// DefaultDeprecatedAlignQueriesWithStep is the default value for the deprecated querier frontend config DeprecatedAlignQueriesWithStep
-	// which has been moved to a per-tenant limit; TODO remove in Mimir 2.14
-	DefaultDeprecatedAlignQueriesWithStep = false
-
 	queryTypeInstant                      = "query"
 	queryTypeRange                        = "query_range"
 	queryTypeRemoteRead                   = "remote_read"

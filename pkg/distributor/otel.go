@@ -56,7 +56,6 @@ func OTLPHandler(
 	maxRecvMsgSize int,
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
-	enableOtelMetadataStorage bool,
 	limits OTLPHandlerLimits,
 	retryCfg RetryConfig,
 	push PushFunc,
@@ -200,11 +199,7 @@ func OTLPHandler(
 		)
 
 		req.Timeseries = metrics
-
-		if enableOtelMetadataStorage {
-			metadata := otelMetricsToMetadata(addSuffixes, otlpReq.Metrics())
-			req.Metadata = metadata
-		}
+		req.Metadata = otelMetricsToMetadata(addSuffixes, otlpReq.Metrics())
 
 		return nil
 	})
