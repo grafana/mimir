@@ -92,7 +92,7 @@ func makeQueueConsumeFuncWithSlowQueryComponent(
 	normalConsumerLatency time.Duration,
 	report *testScenarioQueueDurationObservations,
 ) consumeRequest {
-	return func(request Request) error {
+	return func(request QueryRequest) error {
 		schedulerRequest := request.(*SchedulerRequest)
 		queryComponent := schedulerRequest.ExpectedQueryComponentName()
 		if queryComponent == ingesterAndStoreGatewayQueueDimension {

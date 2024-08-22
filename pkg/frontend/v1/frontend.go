@@ -239,14 +239,15 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 	}
 	defer f.requestQueue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
 
-	lastTenantIndex := queue.FirstTenant()
+	lastTenantIdx := queue.FirstTenant()
 
 	for {
-		reqWrapper, idx, err := f.requestQueue.WaitForRequestForQuerier(server.Context(), lastTenantIndex, querierID, querierWorkerConn.WorkerID)
+		dequeueReq := queue.NewQuerierWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
+		reqWrapper, idx, err := f.requestQueue.AwaitRequestForQuerier(dequeueReq)
 		if err != nil {
 			return err
 		}
-		lastTenantIndex = idx
+		lastTenantIdx = idx
 
 		req := reqWrapper.(*request)
 
@@ -266,7 +267,7 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 		  it's possible that it's own queue would perpetually contain only expired requests.
 		*/
 		if req.originalCtx.Err() != nil {
-			lastTenantIndex = lastTenantIndex.ReuseLastTenant()
+			lastTenantIdx = lastTenantIdx.ReuseLastTenant()
 			continue
 		}
 

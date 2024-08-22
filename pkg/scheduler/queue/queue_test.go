@@ -249,8 +249,10 @@ func runQueueConsumerIters(
 ) func(consumerIdx int) error {
 	return func(consumerIdx int) error {
 		consumerIters := queueActorIterationCount(totalIters, numConsumers, consumerIdx)
+
 		lastTenantIndex := FirstTenant()
 		querierID := fmt.Sprintf("consumer-%v", consumerIdx)
+
 		querierWorkerConn := NewUnregisteredQuerierWorkerConn(context.Background(), QuerierID(querierID))
 		err := queue.AwaitRegisterQuerierWorkerConn(querierWorkerConn)
 		if err != nil {
@@ -261,7 +263,7 @@ func runQueueConsumerIters(
 		<-start
 
 		for i := 0; i < consumerIters; i++ {
-			idx, err := queueConsume(ctx, queue, querierID, consumerIdx, lastTenantIndex, consumeFunc)
+			idx, err := queueConsume(queue, querierWorkerConn, lastTenantIndex, consumeFunc)
 			if err != nil {
 				return err
 			}
@@ -307,6 +309,7 @@ func runQueueConsumerUntilEmpty(
 	return func(consumerIdx int) error {
 		lastTenantIndex := FirstTenant()
 		querierID := fmt.Sprintf("consumer-%v", consumerIdx)
+
 		querierWorkerConn := NewUnregisteredQuerierWorkerConn(context.Background(), QuerierID(querierID))
 		err := requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn)
 		if err != nil {
@@ -317,7 +320,7 @@ func runQueueConsumerUntilEmpty(
 		consumedRequest := make(chan struct{})
 		loopQueueConsume := func() error {
 			for {
-				idx, err := queueConsume(ctx, requestQueue, querierID, consumerIdx, lastTenantIndex, consumeFunc)
+				idx, err := queueConsume(requestQueue, querierWorkerConn, lastTenantIndex, consumeFunc)
 				if err != nil {
 					return err
 				}
@@ -345,21 +348,22 @@ func runQueueConsumerUntilEmpty(
 	}
 }
 
-type consumeRequest func(request Request) error
+type consumeRequest func(request QueryRequest) error
 
 func queueConsume(
-	ctx context.Context, queue *RequestQueue, querierID string, workerID int, lastTenantIndex TenantIndex, consumeFunc consumeRequest,
+	queue *RequestQueue, querierWorkerConn *QuerierWorkerConn, lastTenantIdx TenantIndex, consumeFunc consumeRequest,
 ) (TenantIndex, error) {
-	request, idx, err := queue.WaitForRequestForQuerier(ctx, lastTenantIndex, querierID, workerID)
+	dequeueReq := NewQuerierWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
+	request, idx, err := queue.AwaitRequestForQuerier(dequeueReq)
 	if err != nil {
-		return lastTenantIndex, err
+		return lastTenantIdx, err
 	}
-	lastTenantIndex = idx
+	lastTenantIdx = idx
 
 	if consumeFunc != nil {
 		err = consumeFunc(request)
 	}
-	return lastTenantIndex, err
+	return lastTenantIdx, err
 }
 
 func TestRequestQueue_RegisterAndUnregisterQuerierWorkerConnections(t *testing.T) {
@@ -498,7 +502,8 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 			querier2wg.Add(1)
 			go func() {
 				defer querier2wg.Done()
-				_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), "querier-2", 0)
+				dequeueReq := NewQuerierWorkerDequeueRequest(querier2Conn, FirstTenant())
+				_, _, err := queue.AwaitRequestForQuerier(dequeueReq)
 				require.NoError(t, err)
 			}()
 
@@ -593,7 +598,8 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 			querier2wg.Add(1)
 			go func() {
 				defer querier2wg.Done()
-				_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), "querier-2", 0)
+				dequeueReq := NewQuerierWorkerDequeueRequest(querier2Conn, FirstTenant())
+				_, _, err := queue.AwaitRequestForQuerier(dequeueReq)
 				require.NoError(t, err)
 			}()
 
@@ -659,24 +665,29 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 			querier1Conn := NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
 			require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier1Conn))
 
-			// Calling WaitForRequestForQuerier with a context that is already cancelled should fail immediately.
+			// Calling AwaitRequestForQuerier with a context that is already cancelled should fail immediately.
 			deadCtx, cancel := context.WithCancel(context.Background())
 			cancel()
-			r, tenant, err := queue.WaitForRequestForQuerier(deadCtx, FirstTenant(), querierID, 0)
+			querier1Conn.ctx = deadCtx
+
+			dequeueReq := NewQuerierWorkerDequeueRequest(querier1Conn, FirstTenant())
+			r, tenant, err := queue.AwaitRequestForQuerier(dequeueReq)
 			assert.Nil(t, r)
 			assert.Equal(t, FirstTenant(), tenant)
 			assert.ErrorIs(t, err, context.Canceled)
 
-			// Further, a context canceled after WaitForRequestForQuerier publishes a request should also fail.
+			// Further, a context canceled after AwaitRequestForQuerier publishes a request should also fail.
 			errChan := make(chan error)
 			ctx, cancel := context.WithCancel(context.Background())
+			querier1Conn.ctx = ctx
 
 			go func() {
-				_, _, err := queue.WaitForRequestForQuerier(ctx, FirstTenant(), querierID, 0)
+				dequeueReq := NewQuerierWorkerDequeueRequest(querier1Conn, FirstTenant())
+				_, _, err := queue.AwaitRequestForQuerier(dequeueReq)
 				errChan <- err
 			}()
 
-			time.Sleep(20 * time.Millisecond) // Wait for WaitForRequestForQuerier to be waiting for a query.
+			time.Sleep(20 * time.Millisecond) // Wait for AwaitRequestForQuerier to be waiting for a query.
 			cancel()
 
 			select {
@@ -723,7 +734,8 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 
 			queue.SubmitNotifyQuerierShutdown(ctx, querierID)
 
-			_, _, err = queue.WaitForRequestForQuerier(context.Background(), FirstTenant(), querierID, 0)
+			dequeueReq := NewQuerierWorkerDequeueRequest(querierConn, FirstTenant())
+			_, _, err = queue.AwaitRequestForQuerier(dequeueReq)
 			require.EqualError(t, err, "querier has informed the scheduler it is shutting down")
 		})
 	}
@@ -751,7 +763,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 			require.NoError(t, err)
 
 			// bypassing queue dispatcher loop for direct usage of the queueBroker and
-			// passing a waitingQuerierConn for a canceled querier connection
+			// passing a QuerierWorkerDequeueRequest for a canceled querier connection
 			queueBroker := newQueueBroker(queue.maxOutstandingPerTenant, tt.useMultiAlgoTreeQueue, tt.prioritizeQueryComponents, queue.forgetDelay)
 			queueBroker.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), querierID))
 
@@ -790,16 +802,19 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 			}
 
 			ctx, cancel := context.WithCancel(context.Background())
-			call := &waitingQuerierConn{
-				querierConnCtx:  ctx,
-				querierID:       QuerierID(querierID),
+			call := &QuerierWorkerDequeueRequest{
+				QuerierWorkerConn: &QuerierWorkerConn{
+					ctx:       ctx,
+					QuerierID: QuerierID(querierID),
+					WorkerID:  0,
+				},
 				lastTenantIndex: FirstTenant(),
-				recvChan:        make(chan requestForQuerier),
+				recvChan:        make(chan querierWorkerDequeueResponse),
 			}
 			cancel() // ensure querier context done before send is attempted
 
 			// send to querier will fail but method returns true,
-			// indicating not to re-submit a request for waitingQuerierConn for the querier
+			// indicating not to re-submit a request for QuerierWorkerDequeueRequest for the querier
 			require.True(t, queue.trySendNextRequestForQuerier(call))
 			// assert request was re-enqueued for tenant after failed send
 			// TODO (casie): Clean this up when deprecating legacy tree queue
