@@ -46,7 +46,5 @@ echo "This group will run the following tests:"
 echo "$GROUP_TESTS"
 echo ""
 
-set -euxo pipefail
-
 # shellcheck disable=SC2086 # we *want* word splitting of GROUP_TESTS.
-exec go test -v -tags=netgo,stringlabels -timeout 30m -race -count 1 ${GROUP_TESTS}
+exec go test -tags=netgo,stringlabels -timeout 30m -race -count 1 ${GROUP_TESTS}

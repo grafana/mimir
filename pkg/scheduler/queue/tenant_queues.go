@@ -198,9 +198,6 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 	var tenant *queueTenant
 	if tenantID != "" {
 		tenant = qb.tenantQuerierAssignments.tenantsByID[tenantID]
-		if tenant == nil {
-			panic(fmt.Sprintf("tenant %s not found in tenantsByID: %#v", tenantID, qb.tenantQuerierAssignments.tenantsByID))
-		}
 	}
 
 	// TODO (casie): When deprecating TreeQueue, clean this up.
