@@ -50,6 +50,7 @@ func (g *MaxAggregationFunction) AccumulateSeries(data types.InstantVectorSeries
 	}
 
 	// If a histogram exists max treats it as 0. We have to detect this here so that we return a 0 value instead of nothing.
+	// This is consistent with prometheus but may not be desired value: https://github.com/prometheus/prometheus/issues/14711
 	for _, p := range data.Histograms {
 		idx := (p.T - start) / interval
 		if !g.floatPresent[idx] || g.floatPresent[idx] && 0 > g.floatValues[idx] {
