@@ -16,7 +16,6 @@ import (
 )
 
 type MaxAggregationFunction struct {
-	// Sum, presence, and histograms for each step.
 	floatValues  []float64
 	floatPresent []bool
 }
