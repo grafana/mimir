@@ -458,6 +458,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				// NewRequestQueue constructor does not allow passing in a tree or tenantQuerierAssignments
 				// so we have to override here to use the same structures as the test case
 				queue.queueBroker.tenantQuerierAssignments = tqa
+				queue.queueBroker.prioritizeQueryComponents = prioritizeQueryComponents
 				queue.queueBroker.tree = tree.tree
 
 				ctx := context.Background()
