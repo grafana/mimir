@@ -806,12 +806,14 @@ type amConfig struct {
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
 func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
-	// Instead of using "config" as the origin, as in Prometheus Alertmanager, we use "tenant".
-	// The reason for this that the config.Load function uses the origin "config",
-	// which is correct, but Mimir uses config.Load to validate both API requests and tenant
-	// configurations. This means metrics from API requests are confused with metrics from
-	// tenant configurations. To avoid this confusion, we use a different origin.
-	validateMatchersInConfigDesc(am.logger, "tenant", cfg.AlertConfigDesc)
+	if !am.cfg.UTF8StrictMode {
+		// Instead of using "config" as the origin, as in Prometheus Alertmanager, we use "tenant".
+		// The reason for this that the config.Load function uses the origin "config",
+		// which is correct, but Mimir uses config.Load to validate both API requests and tenant
+		// configurations. This means metrics from API requests are confused with metrics from
+		// tenant configurations. To avoid this confusion, we use a different origin.
+		validateMatchersInConfigDesc(am.logger, "tenant", cfg.AlertConfigDesc)
+	}
 
 	level.Debug(am.logger).Log("msg", "setting config", "user", cfg.User)
 

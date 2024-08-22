@@ -147,7 +147,7 @@ func (am *MultitenantAlertmanager) SetUserConfig(w http.ResponseWriter, r *http.
 	}
 
 	cfgDesc := alertspb.ToProto(cfg.AlertmanagerConfig, cfg.TemplateFiles, userID)
-	if err := validateUserConfig(logger, cfgDesc, am.limits, userID); err != nil {
+	if err := validateUserConfig(logger, cfgDesc, am.limits, userID, am.cfg.UTF8StrictMode); err != nil {
 		level.Warn(logger).Log("msg", errValidatingConfig, "err", err.Error())
 		http.Error(w, fmt.Sprintf("%s: %s", errValidatingConfig, err.Error()), http.StatusBadRequest)
 		return
@@ -185,8 +185,10 @@ func (am *MultitenantAlertmanager) DeleteUserConfig(w http.ResponseWriter, r *ht
 }
 
 // Partially copied from: https://github.com/prometheus/alertmanager/blob/8e861c646bf67599a1704fc843c6a94d519ce312/cli/check_config.go#L65-L96
-func validateUserConfig(logger log.Logger, cfg alertspb.AlertConfigDesc, limits Limits, user string) error {
-	validateMatchersInConfigDesc(logger, "api", cfg)
+func validateUserConfig(logger log.Logger, cfg alertspb.AlertConfigDesc, limits Limits, user string, utf8StrictMode bool) error {
+	if !utf8StrictMode {
+		validateMatchersInConfigDesc(logger, "api", cfg)
+	}
 
 	// We don't have a valid use case for empty configurations. If a tenant does not have a
 	// configuration set and issue a request to the Alertmanager, we'll a) upload an empty
