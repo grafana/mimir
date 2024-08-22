@@ -22,8 +22,8 @@ type MaxAggregationFunction struct {
 }
 
 func (g *MaxAggregationFunction) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ functions.EmitAnnotationFunc) error {
-	var err error
 	if len(data.Floats) > 0 && g.floatValues == nil {
+		var err error
 		// First series with float values for this group, populate it.
 		g.floatValues, err = types.Float64SlicePool.Get(steps, memoryConsumptionTracker)
 		if err != nil {
