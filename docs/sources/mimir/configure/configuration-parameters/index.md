@@ -141,11 +141,6 @@ api:
   # CLI flag: -api.skip-label-name-validation-header-enabled
   [skip_label_name_validation_header_enabled: <boolean> | default = false]
 
-  # (deprecated) If true, store metadata when ingesting metrics via OTLP. This
-  # makes metric descriptions and types available for metrics ingested via OTLP.
-  # CLI flag: -distributor.enable-otlp-metadata-storage
-  [enable_otel_metadata_translation: <boolean> | default = true]
-
   # (deprecated) Enable GET requests to the /ingester/shutdown endpoint to
   # trigger an ingester shutdown. This is a potentially dangerous operation and
   # should only be enabled consciously.
