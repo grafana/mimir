@@ -300,7 +300,7 @@ func (a *Aggregation) accumulateUntilGroupComplete(ctx context.Context, g *group
 
 		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
 		a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
-		if err := thisSeriesGroup.aggregationGroup.AccumulateSeries(s, a.Steps, a.Start, a.Interval, a.MemoryConsumptionTracker, a.emitAnnotation); err != nil {
+		if err := thisSeriesGroup.aggregationGroup.AccumulateSeries(s, a.Steps, a.Start, a.Interval, a.MemoryConsumptionTracker, a.emitAnnotationFunc); err != nil {
 			return err
 		}
 		thisSeriesGroup.remainingSeriesCount--
