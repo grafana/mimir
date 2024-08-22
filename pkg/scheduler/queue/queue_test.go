@@ -124,40 +124,30 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 									)
 									require.NoError(b, err)
 
-									startSignalChan := make(chan struct{})
-									queueActorsErrGroup, ctx := errgroup.WithContext(context.Background())
+									ctx := context.Background()
 
 									require.NoError(b, queue.starting(ctx))
 									b.Cleanup(func() {
 										require.NoError(b, queue.stop(nil))
 									})
 
-									runProducer := runQueueProducerIters(
-										queue, maxQueriersPerTenant, b.N, numProducers, numTenants, startSignalChan, nil,
+									startProducersChan, producersErrGroup := makeQueueProducerGroup(
+										queue, maxQueriersPerTenant, b.N, numProducers, numTenants, nil,
 									)
 
-									for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
-										producerIdx := producerIdx
-										queueActorsErrGroup.Go(func() error {
-											return runProducer(producerIdx)
-										})
-									}
-
-									runConsumer := runQueueConsumerIters(ctx, queue, b.N, numConsumers, startSignalChan, nil)
-
-									for consumerIdx := 0; consumerIdx < numConsumers; consumerIdx++ {
-										consumerIdx := consumerIdx
-										queueActorsErrGroup.Go(func() error {
-											return runConsumer(consumerIdx)
-										})
-									}
+									queueConsumerErrGroup, startConsumersChan := makeQueueConsumerGroup(
+										context.Background(), queue, b.N, numConsumers, nil,
+									)
 
 									b.ResetTimer()
-									close(startSignalChan)
-									err = queueActorsErrGroup.Wait()
-									if err != nil {
-										require.NoError(b, err)
-									}
+									close(startProducersChan) // run producers
+									close(startConsumersChan) // run consumers
+
+									err = producersErrGroup.Wait()
+									require.NoError(b, err)
+
+									err = queueConsumerErrGroup.Wait()
+									require.NoError(b, err)
 								})
 							}
 						})
@@ -185,6 +175,35 @@ func queueActorIterationCount(totalIters int, numActors int, actorIdx int) int {
 	}
 
 	return actorIters
+}
+
+func makeQueueProducerGroup(
+	queue *RequestQueue,
+	maxQueriersPerTenant int,
+	totalRequests int,
+	numProducers int,
+	numTenants int,
+	queueDimensionFunc func(string) []string,
+) (chan struct{}, *errgroup.Group) {
+	startProducersChan := make(chan struct{})
+	producersErrGroup, _ := errgroup.WithContext(context.Background())
+
+	runProducer := runQueueProducerIters(
+		queue,
+		maxQueriersPerTenant,
+		totalRequests,
+		numProducers,
+		numTenants,
+		startProducersChan,
+		queueDimensionFunc,
+	)
+	for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
+		producerIdx := producerIdx
+		producersErrGroup.Go(func() error {
+			return runProducer(producerIdx)
+		})
+	}
+	return startProducersChan, producersErrGroup
 }
 
 func runQueueProducerIters(
@@ -237,42 +256,6 @@ func queueProduce(
 		}
 	}
 	return nil
-}
-
-func runQueueConsumerIters(
-	ctx context.Context,
-	queue *RequestQueue,
-	totalIters int,
-	numConsumers int,
-	start chan struct{},
-	consumeFunc consumeRequest,
-) func(consumerIdx int) error {
-	return func(consumerIdx int) error {
-		consumerIters := queueActorIterationCount(totalIters, numConsumers, consumerIdx)
-
-		lastTenantIndex := FirstTenant()
-		querierID := fmt.Sprintf("consumer-%v", consumerIdx)
-
-		querierWorkerConn := NewUnregisteredQuerierWorkerConn(context.Background(), QuerierID(querierID))
-		err := queue.AwaitRegisterQuerierWorkerConn(querierWorkerConn)
-		if err != nil {
-			return err
-		}
-		defer queue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
-
-		<-start
-
-		for i := 0; i < consumerIters; i++ {
-			idx, err := queueConsume(queue, querierWorkerConn, lastTenantIndex, consumeFunc)
-			if err != nil {
-				return err
-			}
-
-			lastTenantIndex = idx
-		}
-
-		return nil
-	}
 }
 
 func makeQueueConsumerGroup(

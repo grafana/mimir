@@ -17,7 +17,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 )
 
 const querierForgetDelay = 0
@@ -53,35 +52,6 @@ func makeWeightedRandAdditionalQueueDimensionFunc(
 	return func(tenantID string) []string {
 		return []string{weightedRandAdditionalQueueDimension(tenantDimensionWeights[tenantID])}
 	}
-}
-
-func makeQueueProducerGroup(
-	queue *RequestQueue,
-	maxQueriersPerTenant int,
-	totalRequests int,
-	numProducers int,
-	numTenants int,
-	queueDimensionFunc func(string) []string,
-) (chan struct{}, *errgroup.Group) {
-	startProducersChan := make(chan struct{})
-	producersErrGroup, _ := errgroup.WithContext(context.Background())
-
-	runProducer := runQueueProducerIters(
-		queue,
-		maxQueriersPerTenant,
-		totalRequests,
-		numProducers,
-		numTenants,
-		startProducersChan,
-		queueDimensionFunc,
-	)
-	for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
-		producerIdx := producerIdx
-		producersErrGroup.Go(func() error {
-			return runProducer(producerIdx)
-		})
-	}
-	return startProducersChan, producersErrGroup
 }
 
 const slowConsumerQueueDimension = storeGatewayQueueDimension
