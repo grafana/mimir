@@ -23,18 +23,18 @@ type MinMaxAggregationGroup struct {
 	max bool
 }
 
-func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ functions.EmitAnnotationFunc) error {
+func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ functions.EmitAnnotationFunc) (bool, error) {
 	if len(data.Floats) > 0 && g.floatValues == nil {
 		var err error
 		// First series with float values for this group, populate it.
 		g.floatValues, err = types.Float64SlicePool.Get(steps, memoryConsumptionTracker)
 		if err != nil {
-			return err
+			return false, err
 		}
 
 		g.floatPresent, err = types.BoolSlicePool.Get(steps, memoryConsumptionTracker)
 		if err != nil {
-			return err
+			return false, err
 		}
 		g.floatValues = g.floatValues[:steps]
 		g.floatPresent = g.floatPresent[:steps]
@@ -64,10 +64,10 @@ func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeries
 	}
 
 	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
-	return nil
+	return false, nil
 }
 
-func (g *MinMaxAggregationGroup) ComputeOutputSeries(start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
+func (g *MinMaxAggregationGroup) ComputeOutputSeries(start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	floatPointCount := 0
 	for _, p := range g.floatPresent {
 		if p {
@@ -79,7 +79,7 @@ func (g *MinMaxAggregationGroup) ComputeOutputSeries(start int64, interval int64
 	if floatPointCount > 0 {
 		floatPoints, err = types.FPointSlicePool.Get(floatPointCount, memoryConsumptionTracker)
 		if err != nil {
-			return types.InstantVectorSeriesData{}, false, err
+			return types.InstantVectorSeriesData{}, err
 		}
 
 		for i, havePoint := range g.floatPresent {
@@ -94,5 +94,5 @@ func (g *MinMaxAggregationGroup) ComputeOutputSeries(start int64, interval int64
 	types.Float64SlicePool.Put(g.floatValues, memoryConsumptionTracker)
 	types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
 
-	return types.InstantVectorSeriesData{Floats: floatPoints}, false, nil
+	return types.InstantVectorSeriesData{Floats: floatPoints}, nil
 }

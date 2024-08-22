@@ -270,17 +270,9 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	}
 
 	// Construct the group and return it
-	seriesData, hasMixedData, err := thisGroup.aggregationGroup.ComputeOutputSeries(a.Start, a.Interval, a.MemoryConsumptionTracker)
+	seriesData, err := thisGroup.aggregationGroup.ComputeOutputSeries(a.Start, a.Interval, a.MemoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
-	}
-
-	if hasMixedData && !a.haveEmittedMixedFloatsAndHistogramsWarning {
-		a.Annotations.Add(annotations.NewMixedFloatsHistogramsAggWarning(a.Inner.ExpressionPosition()))
-
-		// The warning description only varies based on the position of the expression this operator represents, so only emit it
-		// once, to avoid unnecessary work if there are many instances of floats and histograms conflicting.
-		a.haveEmittedMixedFloatsAndHistogramsWarning = true
 	}
 
 	groupPool.Put(thisGroup)
@@ -300,9 +292,19 @@ func (a *Aggregation) accumulateUntilGroupComplete(ctx context.Context, g *group
 
 		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
 		a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
-		if err := thisSeriesGroup.aggregationGroup.AccumulateSeries(s, a.Steps, a.Start, a.Interval, a.MemoryConsumptionTracker, a.emitAnnotationFunc); err != nil {
+		hasMixedData, err := thisSeriesGroup.aggregationGroup.AccumulateSeries(s, a.Steps, a.Start, a.Interval, a.MemoryConsumptionTracker, a.emitAnnotationFunc)
+		if err != nil {
 			return err
 		}
+
+		if hasMixedData && !a.haveEmittedMixedFloatsAndHistogramsWarning {
+			a.Annotations.Add(annotations.NewMixedFloatsHistogramsAggWarning(a.Inner.ExpressionPosition()))
+
+			// The warning description only varies based on the position of the expression this operator represents, so only emit it
+			// once, to avoid unnecessary work if there are many instances of floats and histograms conflicting.
+			a.haveEmittedMixedFloatsAndHistogramsWarning = true
+		}
+
 		thisSeriesGroup.remainingSeriesCount--
 
 		a.currentSeriesIndex++
