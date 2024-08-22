@@ -35,7 +35,7 @@ type Aggregation struct {
 	Without                  bool
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 
-	aggregationFuncFactory aggregations.AggregationFunctionFactory
+	aggregationGroupFactory aggregations.AggregationGroupFactory
 
 	Annotations *annotations.Annotations
 
@@ -63,8 +63,8 @@ func NewAggregation(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*Aggregation, error) {
-	opFuncFactory := aggregations.AggregationFunctionFactories[op]
-	if opFuncFactory == nil {
+	opGroupFactory := aggregations.AggregationGroupFactories[op]
+	if opGroupFactory == nil {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("aggregation operation with '%s'", op))
 	}
 
@@ -89,7 +89,7 @@ func NewAggregation(
 		Annotations:              annotations,
 		metricNames:              &MetricNames{},
 		expressionPosition:       expressionPosition,
-		aggregationFuncFactory:   opFuncFactory,
+		aggregationGroupFactory:  opGroupFactory,
 	}
 
 	a.emitAnnotationFunc = a.emitAnnotation // This is an optimisation to avoid creating the EmitAnnotationFunc instance on every usage.
@@ -110,8 +110,8 @@ type group struct {
 	// Used to sort groups in the order that they'll be completed in.
 	lastSeriesIndex int
 
-	// The AggregationFunction to perform over this group of series.
-	aggregationFunction aggregations.AggregationFunction
+	// The AggregationGroup to perform over this group of series.
+	aggregationGroup aggregations.AggregationGroup
 }
 
 var _ types.InstantVectorOperator = &Aggregation{}
@@ -154,7 +154,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		if !groupExists {
 			g.labels = groupLabelsFunc(series.Labels)
 			g.group = groupPool.Get()
-			g.group.aggregationFunction = a.aggregationFuncFactory()
+			g.group.aggregationGroup = a.aggregationGroupFactory()
 			g.group.remainingSeriesCount = 0
 
 			groups[string(groupLabelsString)] = g
@@ -270,7 +270,7 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	}
 
 	// Construct the group and return it
-	seriesData, hasMixedData, err := thisGroup.aggregationFunction.ComputeOutputSeries(a.Start, a.Interval, a.MemoryConsumptionTracker)
+	seriesData, hasMixedData, err := thisGroup.aggregationGroup.ComputeOutputSeries(a.Start, a.Interval, a.MemoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -300,7 +300,7 @@ func (a *Aggregation) accumulateUntilGroupComplete(ctx context.Context, g *group
 
 		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
 		a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
-		if err := thisSeriesGroup.aggregationFunction.AccumulateSeries(s, a.Steps, a.Start, a.Interval, a.MemoryConsumptionTracker, a.emitAnnotation); err != nil {
+		if err := thisSeriesGroup.aggregationGroup.AccumulateSeries(s, a.Steps, a.Start, a.Interval, a.MemoryConsumptionTracker, a.emitAnnotation); err != nil {
 			return err
 		}
 		thisSeriesGroup.remainingSeriesCount--

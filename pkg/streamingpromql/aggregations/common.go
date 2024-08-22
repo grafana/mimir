@@ -10,17 +10,17 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-// AggregationFunction accumulates series that have been grouped together and computes the output series data.
-type AggregationFunction interface {
+// AggregationGroup accumulates series that have been grouped together and computes the output series data.
+type AggregationGroup interface {
 	// AccumulateSeries takes in a series as part of the group
 	AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error
 	// ComputeOutputSeries does any final calculations and returns the grouped series data
 	ComputeOutputSeries(start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error)
 }
 
-type AggregationFunctionFactory func() AggregationFunction
+type AggregationGroupFactory func() AggregationGroup
 
-var AggregationFunctionFactories = map[parser.ItemType]AggregationFunctionFactory{
-	parser.MAX: func() AggregationFunction { return &MaxAggregationFunction{} },
-	parser.SUM: func() AggregationFunction { return &SumAggregationFunction{} },
+var AggregationGroupFactories = map[parser.ItemType]AggregationGroupFactory{
+	parser.MAX: func() AggregationGroup { return &MaxAggregationFunction{} },
+	parser.SUM: func() AggregationGroup { return &SumAggregationFunction{} },
 }

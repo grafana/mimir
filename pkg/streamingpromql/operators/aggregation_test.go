@@ -78,10 +78,10 @@ func TestAggregation_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			aggregator := &Aggregation{
-				Inner:                  &testOperator{series: testCase.inputSeries},
-				Grouping:               testCase.grouping,
-				metricNames:            &MetricNames{},
-				aggregationFuncFactory: func() aggregations.AggregationFunction { return &aggregations.SumAggregationFunction{} },
+				Inner:                   &testOperator{series: testCase.inputSeries},
+				Grouping:                testCase.grouping,
+				metricNames:             &MetricNames{},
+				aggregationGroupFactory: func() aggregations.AggregationGroup { return &aggregations.SumAggregationFunction{} },
 			}
 
 			outputSeries, err := aggregator.SeriesMetadata(context.Background())
