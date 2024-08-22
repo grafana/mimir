@@ -38,25 +38,25 @@ func (g *MaxAggregationFunction) AccumulateSeries(data types.InstantVectorSeries
 		g.floatPresent = g.floatPresent[:steps]
 	}
 
+	accumulatePoint := func(t int64, f float64) {
+		idx := (t - start) / interval
+		if !g.floatPresent[idx] || g.floatPresent[idx] && f > g.floatValues[idx] {
+			g.floatValues[idx] = f
+			g.floatPresent[idx] = true
+		}
+	}
+
 	for _, p := range data.Floats {
 		if math.IsNaN(p.F) {
 			continue
 		}
-		idx := (p.T - start) / interval
-		if !g.floatPresent[idx] || g.floatPresent[idx] && p.F > g.floatValues[idx] {
-			g.floatValues[idx] = p.F
-			g.floatPresent[idx] = true
-		}
+		accumulatePoint(p.T, p.F)
 	}
 
 	// If a histogram exists max treats it as 0. We have to detect this here so that we return a 0 value instead of nothing.
 	// This is consistent with prometheus but may not be desired value: https://github.com/prometheus/prometheus/issues/14711
 	for _, p := range data.Histograms {
-		idx := (p.T - start) / interval
-		if !g.floatPresent[idx] || g.floatPresent[idx] && 0 > g.floatValues[idx] {
-			g.floatValues[idx] = 0
-			g.floatPresent[idx] = true
-		}
+		accumulatePoint(p.T, 0)
 	}
 
 	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
