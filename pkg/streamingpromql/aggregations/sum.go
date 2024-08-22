@@ -184,11 +184,6 @@ func (g *SumAggregationFunction) ComputeOutputSeries(start int64, interval int64
 	types.Float64SlicePool.Put(g.floatCompensatingMeans, memoryConsumptionTracker)
 	types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
 	types.HistogramSlicePool.Put(g.histogramSums, memoryConsumptionTracker)
-	g.floatSums = nil
-	g.floatCompensatingMeans = nil
-	g.floatPresent = nil
-	g.histogramSums = nil
-	g.histogramPointCount = 0
 
 	return types.InstantVectorSeriesData{Floats: floatPoints, Histograms: histogramPoints}, hasMixedData, nil
 }
