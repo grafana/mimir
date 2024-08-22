@@ -15,12 +15,15 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-type MaxAggregationGroup struct {
+type MinMaxAggregationGroup struct {
 	floatValues  []float64
 	floatPresent []bool
+
+	// max represents whether this aggregation is `max` (true), or `min` (false)
+	max bool
 }
 
-func (g *MaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ functions.EmitAnnotationFunc) error {
+func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ functions.EmitAnnotationFunc) error {
 	if len(data.Floats) > 0 && g.floatValues == nil {
 		var err error
 		// First series with float values for this group, populate it.
@@ -39,7 +42,9 @@ func (g *MaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 
 	accumulatePoint := func(t int64, f float64) {
 		idx := (t - start) / interval
-		if !g.floatPresent[idx] || g.floatPresent[idx] && f > g.floatValues[idx] {
+		if !g.floatPresent[idx] ||
+			(g.max && g.floatPresent[idx] && f > g.floatValues[idx]) ||
+			(!g.max && g.floatPresent[idx] && f < g.floatValues[idx]) {
 			g.floatValues[idx] = f
 			g.floatPresent[idx] = true
 		}
@@ -62,7 +67,7 @@ func (g *MaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 	return nil
 }
 
-func (g *MaxAggregationGroup) ComputeOutputSeries(start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
+func (g *MinMaxAggregationGroup) ComputeOutputSeries(start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	floatPointCount := 0
 	for _, p := range g.floatPresent {
 		if p {

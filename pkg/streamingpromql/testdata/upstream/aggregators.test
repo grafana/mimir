@@ -266,18 +266,16 @@ load 5m
 eval instant at 0m max(http_requests)
   {} 4
 
-# Unsupported by streaming engine.
-# eval instant at 0m min(http_requests)
-#   {} 1
+eval instant at 0m min(http_requests)
+  {} 1
 
 eval instant at 0m max by (group) (http_requests)
   {group="production"} 2
   {group="canary"} 4
 
-# Unsupported by streaming engine.
-# eval instant at 0m min by (group) (http_requests)
-#   {group="production"} 1
-#   {group="canary"} 3
+eval instant at 0m min by (group) (http_requests)
+  {group="production"} 1
+  {group="canary"} 3
 
 clear
 
