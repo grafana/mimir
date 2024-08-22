@@ -21,6 +21,6 @@ type AggregationGroup interface {
 type AggregationGroupFactory func() AggregationGroup
 
 var AggregationGroupFactories = map[parser.ItemType]AggregationGroupFactory{
-	parser.MAX: func() AggregationGroup { return &MaxAggregationFunction{} },
-	parser.SUM: func() AggregationGroup { return &SumAggregationFunction{} },
+	parser.MAX: func() AggregationGroup { return &MaxAggregationGroup{} },
+	parser.SUM: func() AggregationGroup { return &SumAggregationGroup{} },
 }

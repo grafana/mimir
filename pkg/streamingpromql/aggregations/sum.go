@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-type SumAggregationFunction struct {
+type SumAggregationGroup struct {
 	// Sum, presence, and histograms for each step.
 	floatSums              []float64
 	floatCompensatingMeans []float64 // Mean, or "compensating value" for Kahan summation.
@@ -29,7 +29,7 @@ type SumAggregationFunction struct {
 // Invalid combinations include exponential and custom buckets, and histograms with incompatible custom buckets.
 var invalidCombinationOfHistograms = &histogram.FloatHistogram{}
 
-func (g *SumAggregationFunction) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
+func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
 	var err error
 	if len(data.Floats) > 0 && g.floatSums == nil {
 		// First series with float values for this group, populate it.
@@ -109,7 +109,7 @@ func (g *SumAggregationFunction) AccumulateSeries(data types.InstantVectorSeries
 // It also takes the opportunity whilst looping through the floats to check if there
 // is a conflicting Histogram present. If both are present, an empty vector should
 // be returned. So this method removes the float+histogram where they conflict.
-func (g *SumAggregationFunction) reconcileAndCountFloatPoints() (int, bool) {
+func (g *SumAggregationGroup) reconcileAndCountFloatPoints() (int, bool) {
 	// It would be possible to calculate the number of points when constructing
 	// the series groups. However, it requires checking each point at each input
 	// series which is more costly than looping again here and just checking each
@@ -146,7 +146,7 @@ func (g *SumAggregationFunction) reconcileAndCountFloatPoints() (int, bool) {
 	return floatPointCount, haveEmittedMixedFloatsAndHistogramsWarning
 }
 
-func (g *SumAggregationFunction) ComputeOutputSeries(start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
+func (g *SumAggregationGroup) ComputeOutputSeries(start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	floatPointCount, hasMixedData := g.reconcileAndCountFloatPoints()
 	var floatPoints []promql.FPoint
 	var err error

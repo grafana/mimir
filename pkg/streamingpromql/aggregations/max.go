@@ -15,12 +15,12 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-type MaxAggregationFunction struct {
+type MaxAggregationGroup struct {
 	floatValues  []float64
 	floatPresent []bool
 }
 
-func (g *MaxAggregationFunction) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ functions.EmitAnnotationFunc) error {
+func (g *MaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ functions.EmitAnnotationFunc) error {
 	if len(data.Floats) > 0 && g.floatValues == nil {
 		var err error
 		// First series with float values for this group, populate it.
@@ -62,7 +62,7 @@ func (g *MaxAggregationFunction) AccumulateSeries(data types.InstantVectorSeries
 	return nil
 }
 
-func (g *MaxAggregationFunction) ComputeOutputSeries(start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
+func (g *MaxAggregationGroup) ComputeOutputSeries(start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	floatPointCount := 0
 	for _, p := range g.floatPresent {
 		if p {
