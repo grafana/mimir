@@ -24,11 +24,6 @@ type SumAggregationGroup struct {
 	histogramPointCount    int
 }
 
-// Sentinel value used to indicate a sample has seen an invalid combination of histograms and should be ignored.
-//
-// Invalid combinations include exponential and custom buckets, and histograms with incompatible custom buckets.
-var invalidCombinationOfHistograms = &histogram.FloatHistogram{}
-
 func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) (bool, error) {
 	var err error
 	if len(data.Floats) > 0 && g.floatSums == nil {

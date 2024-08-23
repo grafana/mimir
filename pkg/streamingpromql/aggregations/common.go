@@ -3,6 +3,7 @@
 package aggregations
 
 import (
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/functions"
@@ -21,7 +22,13 @@ type AggregationGroup interface {
 type AggregationGroupFactory func() AggregationGroup
 
 var AggregationGroupFactories = map[parser.ItemType]AggregationGroupFactory{
+	parser.AVG: func() AggregationGroup { return &AvgAggregationGroup{} },
 	parser.MAX: func() AggregationGroup { return &MinMaxAggregationGroup{max: true} },
 	parser.MIN: func() AggregationGroup { return &MinMaxAggregationGroup{max: false} },
 	parser.SUM: func() AggregationGroup { return &SumAggregationGroup{} },
 }
+
+// Sentinel value used to indicate a sample has seen an invalid combination of histograms and should be ignored.
+//
+// Invalid combinations include exponential and custom buckets, and histograms with incompatible custom buckets.
+var invalidCombinationOfHistograms = &histogram.FloatHistogram{}
