@@ -101,44 +101,6 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 		}
 	}()
 
-	mapAppendError := func(err error) error {
-		if err == nil {
-			return nil
-		}
-
-		// Check if error is one of the "soft errors" we can proceed on without terminating.
-		// Same as https://github.com/grafana/mimir/blob/1eb4b8e1e3293df100d7fc4df0c94712c31a0930/pkg/ingester/ingester.go#L1283-L1284
-		switch {
-		case errors.Is(err, storage.ErrOutOfBounds):
-			return nil
-		case errors.Is(err, storage.ErrOutOfOrderSample):
-			return nil
-		case errors.Is(err, storage.ErrTooOldSample):
-			return nil
-		case errors.Is(err, globalerror.SampleTooFarInFuture):
-			return nil
-		case errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
-			return nil
-		case errors.Is(err, globalerror.MaxSeriesPerUser):
-			return nil
-		case errors.Is(err, globalerror.MaxSeriesPerMetric):
-			return nil
-
-		// Map TSDB native histogram validation errors to soft errors.
-		case errors.Is(err, histogram.ErrHistogramCountMismatch):
-			return nil
-		case errors.Is(err, histogram.ErrHistogramCountNotBigEnough):
-			return nil
-		case errors.Is(err, histogram.ErrHistogramNegativeBucketCount):
-			return nil
-		case errors.Is(err, histogram.ErrHistogramSpanNegativeOffset):
-			return nil
-		case errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch):
-			return nil
-		}
-		return err
-	}
-
 	var (
 		labelsBuilder       labels.ScratchBuilder
 		nonCopiedLabels     labels.Labels
@@ -176,7 +138,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 			}
 
 			// Only abort the processing on a terminal error.
-			if err := mapAppendError(err); err != nil {
+			if err := checkTSDBAppendError(err); err != nil {
 				return false, err
 			}
 		}
@@ -217,7 +179,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 			}
 
 			// Only abort the processing on a terminal error.
-			if err := mapAppendError(err); err != nil {
+			if err := checkTSDBAppendError(err); err != nil {
 				return false, err
 			}
 		}
@@ -226,6 +188,45 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 	}
 
 	return allSamplesProcessed, app.Commit()
+}
+
+// checkTSDBAppendError checks if err is a non-terminal error, that should not block processing other series in the batch.
+func checkTSDBAppendError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	// Check if error is one of the "soft errors" we can proceed on without terminating.
+	// Same as https://github.com/grafana/mimir/blob/1eb4b8e1e3293df100d7fc4df0c94712c31a0930/pkg/ingester/ingester.go#L1283-L1284
+	switch {
+	case errors.Is(err, storage.ErrOutOfBounds):
+		return nil
+	case errors.Is(err, storage.ErrOutOfOrderSample):
+		return nil
+	case errors.Is(err, storage.ErrTooOldSample):
+		return nil
+	case errors.Is(err, globalerror.SampleTooFarInFuture):
+		return nil
+	case errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
+		return nil
+	case errors.Is(err, globalerror.MaxSeriesPerUser):
+		return nil
+	case errors.Is(err, globalerror.MaxSeriesPerMetric):
+		return nil
+
+	// Map TSDB native histogram validation errors to soft errors.
+	case errors.Is(err, histogram.ErrHistogramCountMismatch):
+		return nil
+	case errors.Is(err, histogram.ErrHistogramCountNotBigEnough):
+		return nil
+	case errors.Is(err, histogram.ErrHistogramNegativeBucketCount):
+		return nil
+	case errors.Is(err, histogram.ErrHistogramSpanNegativeOffset):
+		return nil
+	case errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch):
+		return nil
+	}
+	return err
 }
 
 func (b *TSDBBuilder) getOrCreateTSDB(tenant tsdbTenant) (*userTSDB, error) {
