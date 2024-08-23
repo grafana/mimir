@@ -229,7 +229,7 @@ func otlpHandler(
 			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
 				// Check for httpgrpc error, default to client error if parsing failed
 				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
-					err = httpgrpc.Errorf(http.StatusBadRequest, err.Error())
+					err = httpgrpc.Errorf(http.StatusBadRequest, "%s", err.Error())
 				}
 
 				rb.CleanUp()

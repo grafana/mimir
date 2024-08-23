@@ -721,7 +721,7 @@ func TestShardActiveNativeHistogramMetricsMiddlewareMergeResponseContextCancella
 	}()
 
 	cancelCause := "request canceled while streaming response"
-	cancel(fmt.Errorf(cancelCause))
+	cancel(fmt.Errorf("%s", cancelCause))
 
 	g.Wait()
 
