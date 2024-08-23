@@ -218,10 +218,10 @@ It's rare to find cases of disagreement in a tenant configuration, as most tenan
 
 1. After identifying and fixing all affected tenant configurations, check the Mimir server logs again to make sure you haven't missed any tenant configurations.
 
-2. You can now enable UTF-8 by setting [`utf8-strict-mode-enabled`]({{< relref "./../../../configure/configuration-parameters#alertmanager" >}}) to `true`. You will need to restart Mimir for the changes to take effect.
+1. To enable UTF-8, set [`utf8-strict-mode-enabled`]({{< relref "./../../../configure/configuration-parameters#alertmanager" >}}) to `true`. You will need to restart Mimir for the changes to take effect.
 
-3. To confirm UTF-8 is enabled, search for `Starting Alertmanager in UTF-8 strict mode` in Mimir server logs.
+1. To confirm UTF-8 is enabled, search for `Starting Alertmanager in UTF-8 strict mode` in the Mimir server logs.
 
-4. Any incompatible tenant configurations will fail to load. You can identify if any tenant configurations are failing to load by searching the Mimir server logs for lines containing `error applying config`, or querying the `alertmanager_config_last_reload_successful` gauage for `0`.
+1. Any incompatible tenant configurations will fail to load. You can identify if any tenant configurations are failing to load by searching the Mimir server logs for lines containing `error applying config`, or querying the `alertmanager_config_last_reload_successful` gauage for `0`.
 
-5. You can disable debug-level logging.
+1. You can disable debug-level logging.
