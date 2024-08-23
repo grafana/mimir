@@ -68,7 +68,7 @@ func histogramSample(ts int64) []mimirpb.Histogram {
 func TestTSDBBuilder(t *testing.T) {
 	userID := strconv.Itoa(rand.Int())
 
-	// Set OOO window and other overrides for the tenant.
+	// Set OOO window and other overrides for testing tenant.
 	limits := map[string]*validation.Limits{
 		userID: {
 			OutOfOrderTimeWindow:             model.Duration(30 * time.Minute),
@@ -78,7 +78,7 @@ func TestTSDBBuilder(t *testing.T) {
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 	require.NoError(t, err)
 
-	// Add a sample for all the cases and check for correctness.
+	// Hold samples for all cases and check for the correctness.
 	var expSamples []mimirpb.Sample
 	var expHistograms []mimirpb.Histogram
 
@@ -110,7 +110,8 @@ func TestTSDBBuilder(t *testing.T) {
 
 	processingRange := time.Hour.Milliseconds()
 	blockRange := 2 * time.Hour.Milliseconds()
-	for _, tc := range []struct {
+
+	testCases := []struct {
 		name                        string
 		lastEnd, currEnd            int64
 		verifyBlocksAfterCompaction func(blocks []*tsdb.Block)
@@ -150,7 +151,9 @@ func TestTSDBBuilder(t *testing.T) {
 				require.Equal(t, currEnd, blocks[1].MaxTime())
 			},
 		},
-	} {
+	}
+
+	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			expSamples = expSamples[:0]
 			expHistograms = expHistograms[:0]
@@ -194,19 +197,6 @@ func TestTSDBBuilder(t *testing.T) {
 				// B. Before current range and out of order w.r.t. the previous sample. Already covered above, but this
 				// exists to explicitly state the case.
 				addFloatSample(builder, lastEnd-20, 1, lastEnd, currEnd, false, true)
-
-				// 4. Out of order sample with no OOO window configured.
-				oooUserID := "test-ooo-tenant"
-				rec := createRequest(oooUserID, floatSample(lastEnd+20, 1), nil, false)
-				allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false)
-				require.NoError(t, err)
-				require.True(t, allProcessed)
-
-				// A. "ErrOutOfOrderSample" (soft error)
-				rec = createRequest(oooUserID, floatSample(lastEnd-20, 1), nil, false)
-				allProcessed, err = builder.Process(context.Background(), rec, lastEnd, currEnd, false)
-				require.NoError(t, err)
-				require.True(t, allProcessed)
 			}
 			{ // Add native histogram samples.
 				// 1.A from above.
@@ -230,6 +220,35 @@ func TestTSDBBuilder(t *testing.T) {
 
 				// 3.A and 3.B not done. TODO: do it when out-of-order histograms are supported.
 			}
+			{
+				// Out of order sample with no OOO window configured for the tenant.
+				userID := "test-ooo-tenant"
+
+				// This one goes into the block.
+				samples := floatSample(lastEnd+20, 1)
+				rec := createRequest(userID, samples, nil, false)
+				allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false)
+				require.NoError(t, err)
+				require.True(t, allProcessed)
+				expOOOSamples := append([]mimirpb.Sample(nil), samples...)
+
+				// This one doesn't go into the block because of "ErrOutOfOrderSample" (soft error)
+				samples = floatSample(lastEnd-20, 1)
+				rec = createRequest(userID, samples, nil, false)
+				allProcessed, err = builder.Process(context.Background(), rec, lastEnd, currEnd, false)
+				require.NoError(t, err)
+				require.True(t, allProcessed)
+
+				tenant := tsdbTenant{
+					partitionID: rec.Partition,
+					tenantID:    userID,
+				}
+				db, err := builder.getOrCreateTSDB(tenant)
+				require.NoError(t, err)
+
+				// Check expected out of order samples in the DB.
+				compareQuery(t, db.DB, expOOOSamples, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
+			}
 
 			// Query the TSDB for the expected samples.
 			tenant := tsdbTenant{
@@ -251,7 +270,7 @@ func TestTSDBBuilder(t *testing.T) {
 			newDB, err := tsdb.Open(shipperDir, log.NewNopLogger(), nil, nil, nil)
 			require.NoError(t, err)
 
-			// One for the in-order current range. Two for the out-of-order blocks: ont for current range
+			// One for the in-order current range. Two for the out-of-order blocks: one for the current range
 			// and one for the previous range.
 			blocks := newDB.Blocks()
 			tc.verifyBlocksAfterCompaction(blocks)
