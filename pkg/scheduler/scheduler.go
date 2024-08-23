@@ -405,7 +405,7 @@ func (s *Scheduler) cancelRequestAndRemoveFromPending(key queue.RequestKey, reas
 
 	req := s.schedulerInflightRequests[key]
 	if req != nil {
-		req.CancelFunc(cancellation.NewErrorf("%s", reason))
+		req.CancelFunc(cancellation.NewError(errors.New(reason)))
 	}
 
 	delete(s.schedulerInflightRequests, key)
