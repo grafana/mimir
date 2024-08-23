@@ -33,18 +33,18 @@ func main() {
 
 	finfo, err := os.Stat(filepath)
 	if err != nil {
-		log.Fatalf("%w", err)
+		log.Fatalf("%s", err.Error())
 	}
 	indexSize := finfo.Size()
 
 	f, err := fileutil.OpenMmapFile(filepath)
 	if err != nil {
-		log.Fatalf("%w", err)
+		log.Fatalf("%s", err.Error())
 	}
 
 	toc, err := index.NewTOCFromByteSlice(realByteSlice(f.Bytes()))
 	if err != nil {
-		log.Fatalf("%w", err)
+		log.Fatalf("%s", err.Error())
 	}
 
 	// See https://github.com/prometheus/prometheus/blob/main/tsdb/docs/format/index.md on the index format.
