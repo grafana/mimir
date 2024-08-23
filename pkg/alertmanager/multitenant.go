@@ -835,11 +835,13 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 		rawCfg = am.fallbackConfig
 	} else {
 		userAmConfig, err = definition.LoadCompat([]byte(cfg.RawConfig))
-		if err != nil && hasExisting {
-			// This means that if a user has a working config and
-			// they submit a broken one, the Manager will keep running the last known
-			// working configuration.
-			return fmt.Errorf("invalid Alertmanager configuration for %v: %v", cfg.User, err)
+		if err != nil {
+			if hasExisting {
+				// This means that if a user has a working config and they submit a broken one,
+				// the Manager will keep running the last known working configuration.
+				return fmt.Errorf("invalid Alertmanager configuration for %v: %v", cfg.User, err)
+			}
+			err = fmt.Errorf("invalid Alertmanager configuration: %v", err)
 		}
 	}
 
@@ -848,6 +850,9 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 	// 2) then, submitted a non-working configuration (and we kept running the prev working config)
 	// 3) finally, the cortex AM instance is restarted and the running version is no longer present
 	if userAmConfig == nil {
+		if err != nil {
+			return fmt.Errorf("no usable Alertmanager configuration for %v: %v", cfg.User, err)
+		}
 		return fmt.Errorf("no usable Alertmanager configuration for %v", cfg.User)
 	}
 
