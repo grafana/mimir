@@ -48,7 +48,7 @@ package queue
 // We say the queue nodes are "prioritized" for a worker rather than "assigned" to a worker
 // because the same worker ID is mapped to *start* at a certain queue node, but will move on to other nodes
 // if it cannot dequeue a request from any of the child queue nodes of its first prioritized queue node.
-// This is possible when this queue algorithm is placed at the highest layer of the tree and
+// This can occur when this queue algorithm is placed at the highest layer of the tree and
 // the tenant-querier-shuffle-shard queue algorithm is placed at the second, leaf layer of the tree.
 // Ex:
 //
@@ -65,9 +65,10 @@ package queue
 //
 //  4. (b) Otherwise, if none of those tenants are sharded to this querier, the tree traversal algorithm will return
 //     back up to the parent level and ask the QuerierWorkerQueuePriorityAlgo to select its next node.
+//     We continue to step 5.
 //
 //  5. The QuerierWorkerQueuePriorityAlgo will select the next node in the nodeOrder, "store-gateway".
-//     Then steps 3 and 4 repeat as necessary until a request is dequeued for the querier-worker.
+//     We return to step 3 and continue through steps 3, 4b, and 5, until we reach step 4a and exit.
 //
 // This process of continuing to search for requests to dequeue helps prevent querier-worker capacity from sitting idle
 // when there are no requests to dequeue for the query component node that the querier-worker was originally mapped to.
