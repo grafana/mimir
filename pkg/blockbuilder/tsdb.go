@@ -138,6 +138,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 			}
 
 			// Only abort the processing on a terminal error.
+			// TODO(v): add metrics for non-terminal errors
 			if err := checkTSDBAppendError(err); err != nil {
 				return false, err
 			}
@@ -179,6 +180,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 			}
 
 			// Only abort the processing on a terminal error.
+			// TODO(v): add metrics for non-terminal errors
 			if err := checkTSDBAppendError(err); err != nil {
 				return false, err
 			}
