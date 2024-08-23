@@ -23,7 +23,7 @@ Runtime configuration values take precedence over command-line options.
 
 If multiple runtime configuration files are specified the runtime configuration files will be merged in a left to right order.
 
-If a runtime configuration file has the `.gz` extension, it will be decompressed before being read.
+Add a `.gz` extension to the configuration files that should be decompressed before parsing YAML.
 
 ## Enable runtime configuration
 
