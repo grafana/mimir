@@ -506,8 +506,8 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				require.NoError(t, err)
 
 				report := testCaseObservations.Report()
-				t.Logf(testCaseName + ": " + report.QueryComponentReportString())
-				t.Logf(testCaseName + ": " + report.TenantIDReportString())
+				t.Logf("%s: %s", testCaseName, report.QueryComponentReportString())
+				t.Logf("%s: %s", testCaseName, report.TenantIDReportString())
 				// collect results in order
 				testCaseNames = append(testCaseNames, testCaseName)
 				testCaseReports[testCaseName] = report
