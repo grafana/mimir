@@ -2974,7 +2974,7 @@ func TestSyncStates(t *testing.T) {
 				usingGrafanaConfig: true,
 			},
 			parts:  map[string][]byte{"notifications": grafanaNflog},
-			expErr: fmt.Sprintf("error creating new Alertmanager for user %[1]s: no usable Alertmanager configuration for %[1]s", user),
+			expErr: fmt.Sprintf("error creating new Alertmanager for user %[1]s: no usable Alertmanager configuration for %[1]s: invalid Alertmanager configuration: yaml: unmarshal errors:\n  line 1: cannot unmarshal !!str `invalid` into definition.plain", user),
 		},
 		{
 			name: "invalid part key",
