@@ -605,14 +605,14 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 		},
 		{
 			name:                 "a gRPC error with a status during push gets translated into HTTP error without DoNotLogError header",
-			err:                  httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "%s", errMsg),
+			err:                  httpgrpc.Error(http.StatusRequestEntityTooLarge, errMsg),
 			expectedHTTPStatus:   http.StatusRequestEntityTooLarge,
 			expectedErrorMessage: errMsg,
 			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = this is an error" insight=true`},
 		},
 		{
 			name:                        "a DoNotLogError of a gRPC error with a status during push gets translated into HTTP error without DoNotLogError header",
-			err:                         middleware.DoNotLogError{Err: httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "%s", errMsg)},
+			err:                         middleware.DoNotLogError{Err: httpgrpc.Error(http.StatusRequestEntityTooLarge, errMsg)},
 			expectedHTTPStatus:          http.StatusRequestEntityTooLarge,
 			expectedErrorMessage:        errMsg,
 			expectedDoNotLogErrorHeader: true,
@@ -627,7 +627,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 		},
 		{
 			name:                 "StatusBadRequest is logged with insight=true",
-			err:                  httpgrpc.Errorf(http.StatusBadRequest, "limits reached"),
+			err:                  httpgrpc.Error(http.StatusBadRequest, "limits reached"),
 			expectedHTTPStatus:   http.StatusBadRequest,
 			expectedErrorMessage: "limits reached",
 			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=400 err="rpc error: code = Code(400) desc = limits reached" insight=true`},

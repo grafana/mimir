@@ -98,7 +98,7 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				// Non-retryable error.
 				1: testkafka.CreateProduceResponseError(0, kafkaTopic, 1, kerr.InvalidTopicException),
 			},
-			expectedErr: fmt.Errorf("%s %d", failedPushingToPartitionMessage, 1),
+			expectedErr: fmt.Errorf("%s 1", failedPushingToPartitionMessage),
 			expectedSeriesByPartition: map[int32][]string{
 				// Partition 1 is missing because it failed.
 				0: {"series_four", "series_one", "series_three"},
