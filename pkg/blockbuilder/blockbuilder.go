@@ -408,7 +408,7 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 			level.Warn(b.logger).Log("msg", "error unmarshalling commit metadata", "err", err, "part", part, "offset", offset.At, "metadata", offset.Metadata)
 		}
 
-		pl := &partitionInfo{
+		pinf := &partitionInfo{
 			Partition:      part,
 			Lag:            lag.Lag,
 			Commit:         offset,
@@ -416,7 +416,7 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 			SeenTillOffset: seenTillOffset,
 			LastBlockEnd:   lastBlockEnd,
 		}
-		if err := b.nextConsumeCycle(ctx, b.kafkaClient, pl, cycleEnd); err != nil {
+		if err := b.nextConsumeCycle(ctx, b.kafkaClient, pinf, cycleEnd); err != nil {
 			level.Error(b.logger).Log("msg", "failed to consume partition", "err", err, "part", part)
 		}
 	}
@@ -653,10 +653,10 @@ type partitionInfo struct {
 	LastBlockEnd   int64
 }
 
-func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, client *kgo.Client, pl *partitionInfo, cycleEnd time.Time) error {
+func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, client *kgo.Client, pinf *partitionInfo, cycleEnd time.Time) error {
 	var commitRecTime time.Time
-	if pl.CommitRecTs > 0 {
-		commitRecTime = time.UnixMilli(pl.CommitRecTs)
+	if pinf.CommitRecTs > 0 {
+		commitRecTime = time.UnixMilli(pinf.CommitRecTs)
 	}
 	if commitRecTime.IsZero() && b.fallbackOffset > 0 {
 		// If there is no commit metadata, we use the lookback config to replay a set amount of
@@ -673,9 +673,9 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, client *kgo.Client,
 		// more than 1.5 times the consume interval.
 		// When there is no kafka commit, we play safe and assume seenTillOffset and
 		// lastBlockEnd was 0 to not discard any samples unnecessarily.
-		err := b.consumePartition(ctx, client, pl, cycleEnd)
+		err := b.consumePartition(ctx, client, pinf, cycleEnd)
 		if err != nil {
-			return fmt.Errorf("consume partition %d: %w", pl.Partition, err)
+			return fmt.Errorf("consume partition %d: %w", pinf.Partition, err)
 		}
 
 		return nil
@@ -684,13 +684,13 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, client *kgo.Client,
 	// We are lagging behind. We need to consume the partition in parts.
 	// We iterate through all the cycleEnds starting from the first one after commit until the cycleEnd.
 	cycleEndStartAt := commitRecTime.Truncate(b.cfg.ConsumeInterval).Add(b.cfg.ConsumeInterval + b.cfg.ConsumeIntervalBuffer)
-	level.Info(b.logger).Log("msg", "partition is lagging behind", "part", pl.Partition, "lag", pl.Lag, "cycle_end_start", cycleEndStartAt, "cycle_end", cycleEnd, "last_commit_rec_time", commitRecTime, "last_commit_rec_ts", pl.CommitRecTs)
+	level.Info(b.logger).Log("msg", "partition is lagging behind", "part", pinf.Partition, "lag", pinf.Lag, "cycle_end_start", cycleEndStartAt, "cycle_end", cycleEnd, "last_commit_rec_time", commitRecTime, "last_commit_rec_ts", pinf.CommitRecTs)
 	for ce := cycleEndStartAt; cycleEnd.Sub(ce) >= 0; ce = ce.Add(b.cfg.ConsumeInterval) {
 		// Instead of looking for the commit metadata for each iteration, we use the data returned by consumePartition
 		// in the next iteration.
-		err := b.consumePartition(ctx, client, pl, ce)
+		err := b.consumePartition(ctx, client, pinf, ce)
 		if err != nil {
-			return fmt.Errorf("consume partition %d: %w", pl.Partition, err)
+			return fmt.Errorf("consume partition %d: %w", pinf.Partition, err)
 		}
 
 		// If adding the ConsumeInterval takes it beyond the cycleEnd, we set it to the cycleEnd to not
@@ -704,19 +704,14 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, client *kgo.Client,
 }
 
 // consumePartition consumes records from the given partition until the cycleEnd timestamp.
-// If the partition is lagging behind, the caller of consumePartition needs to take care of
-// calling consumePartition in parts.
-func (b *BlockBuilder) consumePartition(
-	ctx context.Context,
-	client *kgo.Client,
-	pl *partitionInfo,
-	cycleEnd time.Time,
-) (retErr error) {
+// It modifies pinf in-place, tracking the consumption progress. If the partition is lagging behind, the caller needs to take care
+// of calling consumePartition in parts.
+func (b *BlockBuilder) consumePartition(ctx context.Context, client *kgo.Client, pinf *partitionInfo, cycleEnd time.Time) (retErr error) {
 	var (
-		part           = pl.Partition
-		seenTillOffset = pl.SeenTillOffset
-		lastBlockEnd   = pl.LastBlockEnd
-		lastCommit     = pl.Commit
+		part           = pinf.Partition
+		seenTillOffset = pinf.SeenTillOffset
+		lastBlockEnd   = pinf.LastBlockEnd
+		lastCommit     = pinf.Commit
 
 		blockEndAt = cycleEnd.Truncate(b.cfg.ConsumeInterval)
 		blockEnd   = blockEndAt.UnixMilli()
@@ -737,28 +732,28 @@ func (b *BlockBuilder) consumePartition(
 	defer func(t time.Time, startingLag int64) {
 		dur := time.Since(t)
 		if retErr != nil {
-			level.Error(b.logger).Log("msg", "partition consumption failed", "part", part, "dur", dur, "start_lag", startingLag, "end_lag", pl.Lag, "err", retErr)
+			level.Error(b.logger).Log("msg", "partition consumption failed", "part", part, "dur", dur, "start_lag", startingLag, "end_lag", pinf.Lag, "err", retErr)
 			return
 		}
 		b.metrics.processPartitionDuration.WithLabelValues(fmt.Sprintf("%d", part)).Observe(dur.Seconds())
 		level.Info(b.logger).Log("msg", "done consuming partition", "part", part, "dur", dur,
-			"start_lag", startingLag, "end_lag", pl.Lag, "cycle_end", cycleEnd,
-			"last_block_end", time.UnixMilli(lastBlockEnd), "curr_block_end", time.UnixMilli(pl.LastBlockEnd),
-			"last_seen_till", seenTillOffset, "curr_seen_till", pl.SeenTillOffset,
+			"start_lag", startingLag, "end_lag", pinf.Lag, "cycle_end", cycleEnd,
+			"last_block_end", time.UnixMilli(lastBlockEnd), "curr_block_end", time.UnixMilli(pinf.LastBlockEnd),
+			"last_seen_till", seenTillOffset, "curr_seen_till", pinf.SeenTillOffset,
 			"num_blocks", numBlocks, "compact_and_upload_dur", compactionDur)
-	}(time.Now(), pl.Lag)
+	}(time.Now(), pinf.Lag)
 
 	builder := b.tsdbBuilder()
 	defer builder.close() // TODO: handle error
 
 	level.Info(b.logger).Log(
-		"msg", "consuming partition", "part", part, "lag", pl.Lag,
+		"msg", "consuming partition", "part", part, "lag", pinf.Lag,
 		"cycle_end", cycleEnd, "last_block_end", time.UnixMilli(lastBlockEnd), "curr_block_end", blockEndAt,
 		"last_seen_till", seenTillOffset)
 
 	var firstRec, lastRec, commitRec *kgo.Record
 consumerLoop:
-	for remaining := pl.Lag; remaining > 0; {
+	for remaining := pinf.Lag; remaining > 0; {
 		if err := context.Cause(ctx); err != nil {
 			return err
 		}
@@ -810,7 +805,7 @@ consumerLoop:
 				// this is the commit point.
 				if commitRec == nil {
 					commitRec = &kgo.Record{
-						Timestamp:   time.UnixMilli(pl.CommitRecTs),
+						Timestamp:   time.UnixMilli(pinf.CommitRecTs),
 						Topic:       lastCommit.Topic,
 						Partition:   lastCommit.Partition,
 						LeaderEpoch: lastCommit.LeaderEpoch,
@@ -869,28 +864,36 @@ consumerLoop:
 		b.seekPartition(client, part, rec)
 	}()
 
-	// The new lag is the distance between fully processed offsets.
-	pl.Lag -= commitRecOffset - firstRec.Offset
-
 	// We should take the max of "seen till" offset. If the partition was lagging
 	// due to some record not being processed because of a future sample, we might be
 	// coming back to the same consume cycle again.
-	if pl.SeenTillOffset < lastRec.Offset {
-		pl.SeenTillOffset = lastRec.Offset
+	if seenTillOffset < lastRec.Offset {
+		seenTillOffset = lastRec.Offset
 	}
 	// Take the max of block max times because of same reasons above.
-	pl.LastBlockEnd = max(blockEnd, lastBlockEnd)
+	lastBlockEnd = max(blockEnd, lastBlockEnd)
 
-	pl.Commit = kadm.Offset{
+	commit := kadm.Offset{
 		Topic:       commitRec.Topic,
 		Partition:   commitRec.Partition,
 		At:          commitRecOffset,
 		LeaderEpoch: commitRec.LeaderEpoch,
-		Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), pl.SeenTillOffset, pl.LastBlockEnd),
+		Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), seenTillOffset, lastBlockEnd),
 	}
-	pl.CommitRecTs = commitRec.Timestamp.UnixMilli()
+	if err := commitOffset(ctx, b.logger, client, b.cfg.Kafka.ConsumerGroup, commit); err != nil {
+		return err
+	}
 
-	return commitOffset(ctx, b.logger, client, b.cfg.Kafka.ConsumerGroup, pl.Commit)
+	// The new lag is the distance between fully processed offsets. If the partition's cycle was chopped into due to lagging,
+	// the cycle will continue consuming the next portion of the lag.
+	pinf.Lag -= commitRecOffset - firstRec.Offset
+
+	pinf.SeenTillOffset = seenTillOffset
+	pinf.LastBlockEnd = lastBlockEnd
+	pinf.Commit = commit
+	pinf.CommitRecTs = commitRec.Timestamp.UnixMilli()
+
+	return nil
 }
 
 func (b *BlockBuilder) seekPartition(client *kgo.Client, part int32, rec kgo.EpochOffset) {
