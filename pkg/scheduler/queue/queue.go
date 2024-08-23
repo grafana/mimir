@@ -114,20 +114,20 @@ func (qwc *QuerierWorkerConn) IsRegistered() bool {
 
 // RequestQueue holds incoming requests in queues, split by multiple dimensions based on properties of the request.
 // Dequeuing selects the next request from an appropriate queue given the state of the system.
-// Two separate system states are managed by the RequestQueue and used to select the next request:
-//  1. Tenant-Querier Assignments
-//     Tenants with shuffle-sharding enabled by setting maxQueriers > 0 are assigned a subset of queriers.
-//     The RequestQueue receives QuerierWorkerDequeueRequest messages with QuerierIDs
-//     in order to dequeue requests from a tenant assigned to that querier.
-//  2. Querier-Worker Queue Priority
-//     TODO fix this comment
-//     Requests sent to queriers are tracked per query component until the requests are completed or failed.
-//     The RequestQueue will dequeue requests such that one query component does not utilize
-//     all querier-worker connections while requests for the other query component are waiting.
+// Two layers of QueueAlgorithms are used by the RequestQueue to select the next queue to dequeue a request from:
 //
-// If no specific behavior is required by TenantQuerierAssignments and QueryComponentUtilization,
-// such as when shuffle-sharding is disabled or query component utilization is not a concern,
-// requests are dequeued in a fair round-robin fashion across all tenants and query components.
+//   - Tenant-Querier Assignments
+//     Tenants with shuffle-sharding enabled by setting maxQueriers > 0 are assigned a subset of queriers.
+//     The RequestQueue utilizes the querier assignments to only dequeue requests for a tenant assigned to that querier.
+//     If shuffle-sharding is disabled, requests are dequeued in a fair round-robin fashion across all tenants.
+//
+//   - Querier-Worker Queue Priority
+//     Querier-worker connections are distributed across queue partitions which separate query requests
+//     based on the query component expected to be utilized to service the query.
+//     This division prevents a query component experiencing high latency from dominating the utilization
+//     of querier-worker connections and preventing requests for other query components from being serviced.
+//
+// See each QueueAlgorithm implementation for more details.
 type RequestQueue struct {
 	services.Service
 	log log.Logger

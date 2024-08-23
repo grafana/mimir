@@ -233,6 +233,14 @@ func stddev(numbers []float64, mean float64) float64 {
 // the normal queue items must wait for all slow queue items to be cleared before they can be serviced.
 // In this way, the degraded performance of the slow query component equally degrades the performance of the
 // queries which *could* be serviced quickly, but are waiting behind the slow queries in the queue.
+//
+// In this benchmark, queries for the store-gateway query component are artificially slowed down.,
+// We assume that in such a slowdown scenario that queries hitting both query components (ingester and store-gateway)
+// will be constrained by the latency of the slowest query component, so we treat them as store-gateway queries.
+// The goal of the queueing algorithms is to enable ingester-only queries to continue to be serviced quickly
+// when the store-gateway queries are slow; we are not concerned with de-loading the store-gateways
+// or otherwise improving the performance for the store-gateway queries.
+// Benchmark results should be interpreted primarily in terms of the performance of the ingester-only queries.
 func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 
 	weightedQueueDimensionTestCases := []struct {
