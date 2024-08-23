@@ -33,8 +33,6 @@ package queue
 // nodes for paths through the tree which lead to an empty leaf node after a dequeue operation.
 // Nodes for paths through the tree are then re-created when a new request is enqueued which requires that path.
 // This means that a tree will not always have all 4 node types for the 4 possible query component assignments.
-// The QuerierWorkerQueuePriorityAlgo only adds a node to its global nodeOrder if it is not already present,
-// and only removes a node from its global nodeOrder when there are no longer any instances of it in the tree.
 //
 // This has two implications for the distribution of workers across queue nodes:
 //  1. The modulo operation may modulo the worker ID by 1, 2, 3, or 4 depending on the number of node types
