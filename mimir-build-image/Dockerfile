@@ -9,6 +9,10 @@ FROM golang:1.22.5-bookworm
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
+# Override toolchain directive in go.mod, to ensure the image's Go version is used.
+# Be aware that the official Go Dockerfiles already do this, but let's be explicit.
+# https://github.com/docker-library/golang/issues/472
+RUN go env -w GOTOOLCHAIN=local
 RUN apt-get update && apt-get install -y curl python3-requests python3-yaml file jq zip unzip protobuf-compiler libprotobuf-dev shellcheck libpcap-dev $SKOPEO_DEPS && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 RUN go install golang.org/x/tools/cmd/goimports@3fce476f0a782aeb5034d592c189e63be4ba6c9e

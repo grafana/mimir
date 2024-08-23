@@ -2,6 +2,8 @@ module github.com/grafana/mimir
 
 go 1.21.0
 
+// Please note that this directive is ignored when building with the Mimir build image,
+// that will always use its bundled toolchain.
 toolchain go1.22.5
 
 require (
