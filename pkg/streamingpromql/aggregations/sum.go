@@ -157,7 +157,7 @@ func (g *SumAggregationGroup) ComputeOutputSeries(start int64, interval int64, m
 		for i, h := range g.histogramSums {
 			if h != nil && h != invalidCombinationOfHistograms {
 				t := start + int64(i)*interval
-				histogramPoints = append(histogramPoints, promql.HPoint{T: t, H: g.histogramSums[i]})
+				histogramPoints = append(histogramPoints, promql.HPoint{T: t, H: g.histogramSums[i].Compact(0)})
 			}
 		}
 	}
