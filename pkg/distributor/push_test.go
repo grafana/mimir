@@ -534,14 +534,14 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 	}{
 		{
 			name:                 "a generic error during request parsing gets an HTTP 400",
-			err:                  fmt.Errorf("%s", errMsg),
+			err:                  errors.New(errMsg),
 			expectedHTTPStatus:   http.StatusBadRequest,
 			expectedErrorMessage: errMsg,
 			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=400 err="rpc error: code = Code(400) desc = this is an error" insight=true`},
 		},
 		{
 			name:                 "a gRPC error with a status during request parsing gets translated into HTTP error without DoNotLogError header",
-			err:                  httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "%s", errMsg),
+			err:                  httpgrpc.Error(http.StatusRequestEntityTooLarge, errMsg),
 			expectedHTTPStatus:   http.StatusRequestEntityTooLarge,
 			expectedErrorMessage: errMsg,
 			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = this is an error" insight=true`},
@@ -590,14 +590,14 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 		},
 		{
 			name:                 "a generic error during push gets a HTTP 500 without DoNotLogError header",
-			err:                  fmt.Errorf("%s", errMsg),
+			err:                  errors.New(errMsg),
 			expectedHTTPStatus:   http.StatusInternalServerError,
 			expectedErrorMessage: errMsg,
 			expectedLogs:         []string{`level=error user=testuser msg="detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)" httpCode=500 err="this is an error"`},
 		},
 		{
 			name:                        "a DoNotLogError of a generic error during push gets a HTTP 500 with DoNotLogError header",
-			err:                         middleware.DoNotLogError{Err: fmt.Errorf("%s", errMsg)},
+			err:                         middleware.DoNotLogError{Err: errors.New(errMsg)},
 			expectedHTTPStatus:          http.StatusInternalServerError,
 			expectedErrorMessage:        errMsg,
 			expectedDoNotLogErrorHeader: true,
