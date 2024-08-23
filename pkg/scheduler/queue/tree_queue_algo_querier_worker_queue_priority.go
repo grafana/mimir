@@ -61,7 +61,7 @@ package queue
 //
 //  3. The tree traversal algorithm recurs down to select child queue nodes of the "ingester" node,
 //     where each child queue node is a non-empty tenant-specific queue of ingester-only queries.
-//     The tenant-querier-shuffle-shard queue algorithm checks each tenant node for if is sharded to this querier.
+//     The tenant-querier-shuffle-shard queue algorithm checks each tenant node for if it is sharded to this querier.
 //
 //  4. (a) The first tenant queue node found which is sharded to this querier will be dequeued from, and we are done.
 //
@@ -71,8 +71,8 @@ package queue
 //  5. The QuerierWorkerQueuePriorityAlgo will select the next node in the nodeOrder, "store-gateway".
 //     Then steps 3 and 4 repeat as necessary until a request is dequeued for the querier-worker.
 //
-// This process prevents querier-worker capacity from sitting idle when there are no requests to dequeue
-// for the query component node that the querier-worker was originally prioritized for.
+// This process of continuing to search for requests to dequeue helps prevent querier-worker capacity from sitting idle
+// when there are no requests to dequeue for the query component node that the querier-worker was originally mapped to.
 type QuerierWorkerQueuePriorityAlgo struct {
 	currentQuerierWorker  int
 	currentNodeOrderIndex int
