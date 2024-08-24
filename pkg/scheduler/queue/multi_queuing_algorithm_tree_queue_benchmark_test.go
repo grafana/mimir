@@ -388,15 +388,15 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 		}{
 			// keeping these names the same length keeps logged results aligned
 			{
-				"non-flipped round-robin tree",
+				"tenant-querier -> query component round-robin tree",
 				nonFlippedRoundRobinTree,
 			},
 			{
-				"new flipped round-robin tree",
+				"tenant-querier -> query component round-robin tree",
 				flippedRoundRobinTree,
 			},
 			{
-				"querier-worker priority tree",
+				"worker-queue prioritization -> tenant-querier tree",
 				querierWorkerPrioritizationTree,
 			},
 		}
