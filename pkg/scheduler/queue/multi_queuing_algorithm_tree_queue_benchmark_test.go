@@ -392,7 +392,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				nonFlippedRoundRobinTree,
 			},
 			{
-				"tenant-querier -> query component round-robin tree",
+				"query component -> tenant-querier round-robin tree",
 				flippedRoundRobinTree,
 			},
 			{
