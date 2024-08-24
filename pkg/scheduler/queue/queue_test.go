@@ -136,7 +136,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 									)
 
 									queueConsumerErrGroup, startConsumersChan := makeQueueConsumerGroup(
-										context.Background(), queue, b.N, numConsumers, nil,
+										context.Background(), queue, b.N, numConsumers, 1, nil,
 									)
 
 									b.ResetTimer()
@@ -263,6 +263,7 @@ func makeQueueConsumerGroup(
 	queue *RequestQueue,
 	totalRequests int,
 	numConsumers int,
+	numWorkersPerConsumer int,
 	consumeFunc consumeRequest,
 ) (*errgroup.Group, chan struct{}) {
 	queueConsumerErrGroup, ctx := errgroup.WithContext(ctx)
@@ -272,10 +273,12 @@ func makeQueueConsumerGroup(
 	runConsumer := runQueueConsumerUntilEmpty(ctx, totalRequests, queue, consumeFunc, consumedRequestsCounter, startConsumersChan, stopConsumersChan)
 
 	for consumerIdx := 0; consumerIdx < numConsumers; consumerIdx++ {
-		consumerIdx := consumerIdx
-		queueConsumerErrGroup.Go(func() error {
-			return runConsumer(consumerIdx)
-		})
+		for workerIdx := 0; workerIdx < numWorkersPerConsumer; workerIdx++ {
+			consumerIdx := consumerIdx
+			queueConsumerErrGroup.Go(func() error {
+				return runConsumer(consumerIdx)
+			})
+		}
 	}
 	return queueConsumerErrGroup, startConsumersChan
 }

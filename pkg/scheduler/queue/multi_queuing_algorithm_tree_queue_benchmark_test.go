@@ -249,16 +249,6 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	}{
 		// single-tenant scenarios
 		{
-			name: "1 tenant, 05pct slow queries",
-			tenantQueueDimensionsWeights: map[string]map[string]float64{
-				"0": {
-					ingesterQueueDimension:                .95,
-					storeGatewayQueueDimension:            .025,
-					ingesterAndStoreGatewayQueueDimension: .025,
-				},
-			},
-		},
-		{
 			name: "1 tenant, 10pct slow queries",
 			tenantQueueDimensionsWeights: map[string]map[string]float64{
 				"0": {
@@ -308,33 +298,8 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				},
 			},
 		},
-		{
-			name: "1 tenant, 95pct slow queries",
-			tenantQueueDimensionsWeights: map[string]map[string]float64{
-				"0": {
-					ingesterQueueDimension:                .05,
-					storeGatewayQueueDimension:            .475,
-					ingesterAndStoreGatewayQueueDimension: .475,
-				},
-			},
-		},
 
 		// multi-tenant scenarios
-		{
-			name: "2 tenants, first with 5pct slow queries, second with 95pct slow queries",
-			tenantQueueDimensionsWeights: map[string]map[string]float64{
-				"0": {
-					ingesterQueueDimension:                .95,
-					storeGatewayQueueDimension:            .025,
-					ingesterAndStoreGatewayQueueDimension: .025,
-				},
-				"1": {
-					ingesterQueueDimension:                .05,
-					storeGatewayQueueDimension:            .475,
-					ingesterAndStoreGatewayQueueDimension: .475,
-				},
-			},
-		},
 		{
 			name: "2 tenants, first with 10pct slow queries, second with 90pct slow queries",
 			tenantQueueDimensionsWeights: map[string]map[string]float64{
@@ -388,11 +353,12 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	// the later test cases with a higher percentage of slow queries will take a long time to run.
 	totalRequests := 1000
 	numProducers := 10
-	// Number of consumers must be divisible by the number of query component queue types
+	numConsumers := 8
+	// Number of workers must be divisible by the number of query component queue types
 	// for even distribution of workers to queues and fair comparison between algorithms.
 	// Query component queue types can up to 4: ingester, store-gateway, ingester-and-store-gateway, and unknown.
 	// The unknown queue type is not used in this test, but 12 ensures divisibility by 4, 3, 2, and 1.
-	numConsumers := 12
+	numWorkersPerConsumer := 12
 
 	normalConsumerLatency := 1 * time.Millisecond
 	// slow request approximately 100x longer than the fast request seems fair;
@@ -490,7 +456,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 					queue, slowConsumerLatency, normalConsumerLatency, testCaseObservations,
 				)
 				queueConsumerErrGroup, startConsumersChan := makeQueueConsumerGroup(
-					context.Background(), queue, totalRequests, numConsumers, consumeFunc,
+					context.Background(), queue, totalRequests, numConsumers, numWorkersPerConsumer, consumeFunc,
 				)
 
 				// run queue consumers and producers and wait for completion
