@@ -234,7 +234,7 @@ func stddev(numbers []float64, mean float64) float64 {
 // In this way, the degraded performance of the slow query component equally degrades the performance of the
 // queries which *could* be serviced quickly, but are waiting behind the slow queries in the queue.
 //
-// In this benchmark, queries for the store-gateway query component are artificially slowed down.,
+// In this benchmark, queries for the store-gateway query component are artificially slowed down.
 // We assume that in such a slowdown scenario that queries hitting both query components (ingester and store-gateway)
 // will be constrained by the latency of the slowest query component, so we treat them as store-gateway queries.
 // The goal of the queueing algorithms is to enable ingester-only queries to continue to be serviced quickly
