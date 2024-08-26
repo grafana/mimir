@@ -74,7 +74,7 @@ func TestBlockBuilder_StartupFailures(t *testing.T) {
 		cfg, overrides := blockBuilderConfig(t, addr)
 		cfg.InstanceID = "block-builder-0"
 		// Instance 0 isn't present in the assignment
-		cfg.Kafka.PartitionAssignment = map[int][]int32{
+		cfg.PartitionAssignment = map[int][]int32{
 			1:   {0},
 			100: {1},
 		}
@@ -85,7 +85,7 @@ func TestBlockBuilder_StartupFailures(t *testing.T) {
 
 	t.Run("unsupported lookback_on_no_commit", func(t *testing.T) {
 		cfg, overrides := blockBuilderConfig(t, addr)
-		cfg.Kafka.PartitionAssignment = map[int][]int32{
+		cfg.PartitionAssignment = map[int][]int32{
 			0: {0},
 		}
 		// Cannot consume from partition's end (offset=-1) because "the end" doesn't have anything to consume.
@@ -112,7 +112,7 @@ func TestBlockBuilder_NextConsumeCycle(t *testing.T) {
 	produceRecords(ctx, t, kafkaClient, time.Now().Add(-time.Hour), "1", testTopic, 0, []byte(`test value`))
 
 	cfg, overrides := blockBuilderConfig(t, addr)
-	cfg.Kafka.PartitionAssignment = map[int][]int32{
+	cfg.PartitionAssignment = map[int][]int32{
 		0: {0, 1}, // instance 0 -> partitions 0, 1
 	}
 

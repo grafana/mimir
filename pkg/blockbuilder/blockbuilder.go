@@ -25,7 +25,8 @@ import (
 	"github.com/twmb/franz-go/plugin/kprom"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/ingest"
+	storagetsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -39,8 +40,7 @@ type BlockBuilder struct {
 	kafkaClient *kgo.Client
 	bucket      objstore.Bucket
 
-	instanceID int
-	parts      []int32
+	parts []int32
 	// fallbackOffset is the low watermark from where a partition which doesn't have a commit will be consumed.
 	// It can be either a timestamp or the kafkaStartOffset (the latter isn't supported still).
 	// TODO(v): to support setting it to kafkaStartOffset we need to rework how a lagging cycle is chopped into time frames.
@@ -63,21 +63,18 @@ func New(
 		metrics:  newBlockBuilderMetrics(reg),
 	}
 
-	id, err := parseIDFromInstance(b.cfg.InstanceID)
+	instanceID, err := parseIDFromInstance(b.cfg.InstanceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse instance id: %w", err)
 	}
 
-	b.instanceID = id
-	level.Info(b.logger).Log("msg", "initialising block builder", "id", b.instanceID)
-
 	var ok bool
-	b.parts, ok = b.cfg.Kafka.PartitionAssignment[b.instanceID]
+	b.parts, ok = b.cfg.PartitionAssignment[instanceID]
 	if !ok {
-		return nil, fmt.Errorf("instance id %d must be present in partition assignment", b.instanceID)
+		return nil, fmt.Errorf("instance id %d must be present in partition assignment", instanceID)
 	}
 
-	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorageConfig.Bucket, "blockbuilder", logger, reg)
+	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorageConfig.Bucket, "block-builder", logger, reg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create the bucket client: %w", err)
 	}
@@ -144,12 +141,7 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 		kgo.BrokerMaxReadBytes(2 * fetchMaxBytes),
 	}
 
-	// TODO: metrics without clashes
-	metrics := kprom.NewMetrics(
-		"cortex_blockbuilder_kafka",
-		kprom.Registerer(b.register),
-		kprom.FetchAndProduceDetail(kprom.ByNode, kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes),
-	)
+	metrics := ingest.NewKafkaReaderClientMetrics("block-builder", b.register)
 	opts = append(
 		commonKafkaClientOptions(b.cfg.Kafka, b.logger, metrics),
 		opts...,
@@ -157,12 +149,6 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	b.kafkaClient, err = kgo.NewClient(opts...)
 	if err != nil {
 		return fmt.Errorf("creating kafka client: %w", err)
-	}
-
-	level.Info(b.logger).Log("msg", "waiting until kafka brokers are reachable", "parts", fmt.Sprintf("%v", b.parts))
-	err = b.waitKafka(ctx)
-	if err != nil {
-		return err
 	}
 
 	// Immediately pause fetching all assigned partitions. We control the order and the pace of partition fetching within the cycles.
@@ -224,10 +210,10 @@ func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context) (map[int32]kgo.
 		// Look over the assigned partitions and fallback to the ConsumerResetOffset if a partition doesn't have any commit for the configured group.
 		for _, part := range b.parts {
 			if _, ok := offsets[part]; ok {
-				level.Info(b.logger).Log("msg", "consuming from last consumed offset", "consumer_group", b.cfg.Kafka.ConsumerGroup, "part", part, "offset", offsets[part].String())
+				level.Info(b.logger).Log("msg", "consuming from last consumed offset", "consumer_group", b.cfg.Kafka.ConsumerGroup, "partition", part, "offset", offsets[part].String())
 			} else {
 				offsets[part] = defaultKOffset
-				level.Info(b.logger).Log("msg", "consuming from partition look back because no offset has been found", "consumer_group", b.cfg.Kafka.ConsumerGroup, "part", part, "offset", offsets[part].String())
+				level.Info(b.logger).Log("msg", "consuming from partition lookback because no offset has been found", "consumer_group", b.cfg.Kafka.ConsumerGroup, "partition", part, "offset", offsets[part].String())
 			}
 		}
 		return offsets, nil
@@ -254,6 +240,7 @@ func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context) (map[int32]kgo.
 	return nil, -1, err
 }
 
+// TODO(v): consider exposing storage/ingest.commonKafkaClientOptions
 func commonKafkaClientOptions(cfg KafkaConfig, logger log.Logger, metrics *kprom.Metrics) []kgo.Opt {
 	opts := []kgo.Opt{
 		kgo.ClientID(cfg.ClientID),
@@ -267,28 +254,6 @@ func commonKafkaClientOptions(cfg KafkaConfig, logger log.Logger, metrics *kprom
 		opts = append(opts, kgo.WithHooks(metrics))
 	}
 	return opts
-}
-
-func (b *BlockBuilder) waitKafka(ctx context.Context) error {
-	boff := backoff.New(ctx, backoff.Config{
-		MinBackoff: 100 * time.Millisecond,
-		MaxBackoff: time.Second,
-		MaxRetries: 0,
-	})
-	for boff.Ongoing() {
-		err := b.kafkaClient.Ping(ctx)
-		if err == nil {
-			return nil
-		}
-
-		level.Error(b.logger).Log(
-			"msg", "waiting for kafka ping to succeed",
-			"part", fmt.Sprintf("%v", b.parts),
-			"num_retries", boff.NumRetries(),
-		)
-		boff.Wait()
-	}
-	return boff.Err()
 }
 
 func (b *BlockBuilder) stopping(_ error) error {
@@ -369,7 +334,7 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 		// in the beginning of the cycle.
 		lag, err := b.getLagForPartition(ctx, part)
 		if err != nil {
-			level.Error(b.logger).Log("msg", "failed to get partition lag", "err", err, "part", part, "cycle_end", cycleEnd)
+			level.Error(b.logger).Log("msg", "failed to get partition lag", "err", err, "partition", part, "cycle_end", cycleEnd)
 			continue
 		}
 
@@ -377,11 +342,11 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 
 		if lag.Lag <= 0 {
 			if err := lag.Err; err != nil {
-				level.Error(b.logger).Log("msg", "failed to get partition lag", "err", err, "part", part, "cycle_end", cycleEnd)
+				level.Error(b.logger).Log("msg", "failed to get partition lag", "err", err, "partition", part, "cycle_end", cycleEnd)
 			} else {
 				level.Info(b.logger).Log(
 					"msg", "nothing to consume in partition",
-					"part", part,
+					"partition", part,
 					"offset", lag.Commit.At,
 					"end_offset", lag.End.Offset,
 					"lag", lag.Lag,
@@ -403,7 +368,7 @@ func (b *BlockBuilder) getLagForPartition(ctx context.Context, part int32) (kadm
 	var lastErr error
 	for boff.Ongoing() {
 		if lastErr != nil {
-			level.Error(b.logger).Log("msg", "failed to get consumer group lag", "err", lastErr, "part", part)
+			level.Error(b.logger).Log("msg", "failed to get consumer group lag", "err", lastErr, "partition", part)
 		}
 		groupLag, err := getGroupLag(ctx, kadm.NewClient(b.kafkaClient), b.cfg.Kafka.Topic, b.cfg.Kafka.ConsumerGroup, b.fallbackOffset)
 		if err != nil {
@@ -423,13 +388,15 @@ func (b *BlockBuilder) getLagForPartition(ctx context.Context, part int32) (kadm
 }
 
 type Config struct {
-	InstanceID            string        `yaml:"instance_id" doc:"default=<hostname>" category:"advanced"`
+	InstanceID          string          `yaml:"instance_id" doc:"default=<hostname>" category:"advanced"`
+	PartitionAssignment map[int][]int32 `yaml:"partition_assignment" category:"experimental"`
+
 	ConsumeInterval       time.Duration `yaml:"consume_interval"`
 	ConsumeIntervalBuffer time.Duration `yaml:"consume_interval_buffer"`
 	LookbackOnNoCommit    time.Duration `yaml:"lookback_on_no_commit" category:"advanced"`
 
-	Kafka               KafkaConfig                    `yaml:"kafka"`
-	BlocksStorageConfig mimir_tsdb.BlocksStorageConfig `yaml:"-"`
+	Kafka               KafkaConfig                     `yaml:"kafka"`
+	BlocksStorageConfig storagetsdb.BlocksStorageConfig `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -442,14 +409,19 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.Kafka.RegisterFlagsWithPrefix("block-builder.", f)
 
 	f.StringVar(&cfg.InstanceID, "block-builder.instance-id", hostname, "Instance id.")
-	f.DurationVar(&cfg.ConsumeInterval, "block-builder.consume-interval", time.Hour, "Interval between block consumption cycles.")
-	f.DurationVar(&cfg.ConsumeIntervalBuffer, "block-builder.consume-interval-buffer", 15*time.Minute, "Extra buffer between subsequent block consumption cycles to avoid small blocks.")
+	f.Var(newPartitionAssignmentVar(&cfg.PartitionAssignment), "block-builder.partition-assignment", "Static partition assignment. Format map[instance-id][]partitions).")
+	f.DurationVar(&cfg.ConsumeInterval, "block-builder.consume-interval", time.Hour, "Interval between consumption cycles.")
+	f.DurationVar(&cfg.ConsumeIntervalBuffer, "block-builder.consume-interval-buffer", 15*time.Minute, "Extra buffer between subsequent consumption cycles. To avoid small blocks the block-builder consumes until the last hour boundary of the consumption interval, plus the buffer.")
 	f.DurationVar(&cfg.LookbackOnNoCommit, "block-builder.lookback-on-no-commit", 12*time.Hour, "How much of the historical records to look back when there is no kafka commit for a partition.")
 }
 
 func (cfg *Config) Validate() error {
 	if err := cfg.Kafka.Validate(); err != nil {
 		return err
+	}
+
+	if len(cfg.PartitionAssignment) == 0 {
+		return fmt.Errorf("partition assignment is required")
 	}
 	// TODO(codesome): validate the consumption interval. Must be <=2h and can divide 2h into an integer.
 	if cfg.ConsumeInterval < 0 {
@@ -460,12 +432,11 @@ func (cfg *Config) Validate() error {
 }
 
 type KafkaConfig struct {
-	Address             string          `yaml:"address"`
-	Topic               string          `yaml:"topic"`
-	ClientID            string          `yaml:"client_id"`
-	DialTimeout         time.Duration   `yaml:"dial_timeout"`
-	ConsumerGroup       string          `yaml:"consumer_group"`
-	PartitionAssignment map[int][]int32 `yaml:"partition_assignment" category:"experimental"`
+	Address       string        `yaml:"address"`
+	Topic         string        `yaml:"topic"`
+	ClientID      string        `yaml:"client_id"`
+	DialTimeout   time.Duration `yaml:"dial_timeout"`
+	ConsumerGroup string        `yaml:"consumer_group"`
 }
 
 func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
@@ -473,14 +444,10 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.StringVar(&cfg.Topic, prefix+"kafka.topic", "", "The Kafka topic name.")
 	f.StringVar(&cfg.ClientID, prefix+"kafka.client-id", "", "The Kafka client ID.")
 	f.DurationVar(&cfg.DialTimeout, prefix+"kafka.dial-timeout", 5*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
-	f.StringVar(&cfg.ConsumerGroup, prefix+"kafka.consumer-group", "", "The consumer group used by the consumer to track the last consumed offset.")
-	f.Var(newPartitionAssignmentVar(&cfg.PartitionAssignment), prefix+"kafka.partition-assignment", "Static partition assignment map.")
+	f.StringVar(&cfg.ConsumerGroup, prefix+"kafka.consumer-group", "block-builder", "The consumer group used by the consumer.")
 }
 
 func (cfg *KafkaConfig) Validate() error {
-	if len(cfg.PartitionAssignment) == 0 {
-		return fmt.Errorf("partition assignment is required")
-	}
 	return nil
 }
 
@@ -497,7 +464,7 @@ func (v *partitionAssignmentVar) Set(s string) error {
 	val := make(map[int][]int32)
 	err := json.Unmarshal([]byte(s), &val)
 	if err != nil {
-		return err
+		return fmt.Errorf("unmarshal partition assignment: %w", err)
 	}
 	*v = val
 	return nil
