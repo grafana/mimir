@@ -18,7 +18,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/index"
 )
 
 const (
@@ -59,7 +58,7 @@ func (c *config) registerFlags(f *flag.FlagSet) {
 	f.IntVar(&c.maxTotalGapTime, "max-total-gap-time", defaultMaxTotalGapTime, "Maximum total gap time in seconds for a series")
 	f.IntVar(&c.minSingleGapTime, "min-single-gap-time", defaultMinSingleGapTime, "Minimum gap time in seconds for a single gap")
 	f.IntVar(&c.maxSingleGapTime, "max-single-gap-time", defaultMaxSingleGapTime, "Maximum gap time in seconds for a single gap")
-	f.IntVar(&c.scrapeInterval, "scrape-interval", defaultScrapeInterval, "Threshold for gap detection in seconds, set to 0 for automatic interval detection)")
+	f.IntVar(&c.scrapeInterval, "scrape-interval", defaultScrapeInterval, "Threshold for gap detection in seconds, set to 0 for automatic interval detection")
 	f.StringVar(&c.selector, "select", "", "PromQL metric selector (e.g. '{__name__=~\"some_metric_prefix_.*\"}'")
 }
 
@@ -165,12 +164,12 @@ func main() {
 	}
 
 	if len(args) == 0 {
-		fmt.Println("No block directory specified.")
+		level.Error(logger).Log("msg", "no block directory specified")
 		return
 	}
 
 	if err := cfg.validate(); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
+		level.Error(logger).Log("msg", err.Error())
 		os.Exit(1)
 	}
 
@@ -222,21 +221,9 @@ func analyzeBlockForGaps(ctx context.Context, cfg config, blockDir string, match
 
 	// Get the block's min and max time and compare to the configured range limits
 	meta := b.Meta()
-	var rangeStart, rangeEnd int64
-	cfgStart := time.Time(cfg.minTime)
-	cfgEnd := time.Time(cfg.maxTime)
-	if cfgStart.IsZero() {
-		rangeStart = meta.MinTime
-	} else {
-		if cfgStart.Unix() >= meta.MaxTime {
-			return blockStats, fmt.Errorf("configured minimum timestamp is greater than block max time")
-		}
-		rangeStart = cfgStart.UnixMilli()
-	}
-	if cfgEnd.IsZero() {
-		rangeEnd = meta.MaxTime
-	} else {
-		rangeEnd = cfgEnd.UnixMilli()
+	rangeStart, rangeEnd, err := calcRange(time.Time(cfg.minTime), time.Time(cfg.maxTime), &meta)
+	if err != nil {
+		return blockStats, err
 	}
 	blockStats.MinTime = meta.MinTime
 	blockStats.MaxTime = meta.MaxTime
@@ -249,19 +236,7 @@ func analyzeBlockForGaps(ctx context.Context, cfg config, blockDir string, match
 	}
 	defer idx.Close()
 
-	k, v := index.AllPostingsKey()
-
-	// If there is any "equal" matcher, we can use it for getting postings instead,
-	// it can massively speed up iteration over the index, especially for large blocks.
-	for _, m := range matchers {
-		if m.Type == labels.MatchEqual {
-			k = m.Name
-			v = m.Value
-			break
-		}
-	}
-
-	p, err := idx.Postings(ctx, k, v)
+	p, err := idx.PostingsForMatchers(ctx, true, matchers...)
 	if err != nil {
 		return blockStats, err
 	}
@@ -271,7 +246,7 @@ func analyzeBlockForGaps(ctx context.Context, cfg config, blockDir string, match
 		chks := []chunks.Meta(nil)
 		err := idx.Series(p.At(), &builder, &chks)
 		if err != nil {
-			level.Error(logger).Log("msg", "error getting series", "seriesID", p.At(), "err", err)
+			level.Error(logger).Log("msg", "series skipped, error getting series", "block", meta.ULID.String(), "seriesID", p.At(), "err", err)
 			continue
 		}
 
@@ -297,14 +272,8 @@ func analyzeBlockForGaps(ctx context.Context, cfg config, blockDir string, match
 		}
 		defer cr.Close()
 
-		var it chunkenc.Iterator
-		var timestamps []int64
-		var minTime, maxTime int64
-		intervalCounts := map[int64]int64{}
-		var minDiff, maxDiff int64
-		minDiff = 1<<63 - 1
-		maxDiff = -1
-		minTime = 1<<63 - 1
+		minTime, maxTime, minDiff, maxDiff, intervalCounts, timestamps := chunkGaps(cr, chks, rangeStart, rangeEnd)
+
 		minSingleGap := int64(cfg.minSingleGapTime) * 1000
 		maxSingleGap := int64(cfg.maxSingleGapTime) * 1000
 		minTotalGap := int64(cfg.minTotalGapTime) * 1000
@@ -313,46 +282,6 @@ func analyzeBlockForGaps(ctx context.Context, cfg config, blockDir string, match
 		maxSingleMissedSamples := int64(cfg.maxSingleMissedSamples)
 		minTotalMissedSamples := int64(cfg.minTotalMissedSamples)
 		maxTotalMissedSamples := int64(cfg.maxTotalMissedSamples)
-		var lastT int64
-		for _, meta := range chks {
-			ch, iter, err := cr.ChunkOrIterable(meta)
-			if meta.MinTime < minTime {
-				minTime = meta.MinTime
-			}
-			maxTime = meta.MaxTime
-			if err != nil {
-				level.Error(logger).Log("msg", "failed to open chunk", "ref", meta.Ref, "err", err)
-				continue
-			}
-			if iter != nil {
-				level.Error(logger).Log("msg", "got iterable from ChunkOrIterable", "ref", meta.Ref)
-				continue
-			}
-			it = ch.Iterator(nil)
-			for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-				t, _ := it.At()
-				if t < rangeStart {
-					lastT = t
-					continue
-				}
-				if t > rangeEnd {
-					break
-				}
-				if lastT != 0 {
-					diff := t - lastT
-					if diff < minDiff {
-						minDiff = diff
-					}
-					if diff > maxDiff {
-						maxDiff = diff
-					}
-					timestamps = append(timestamps, t)
-					seconds := roundToNearestSecond(diff)
-					intervalCounts[seconds]++
-				}
-				lastT = t
-			}
-		}
 		var mostCommonInterval int64
 		for interval, count := range intervalCounts {
 			if count > mostCommonInterval {
@@ -360,6 +289,7 @@ func analyzeBlockForGaps(ctx context.Context, cfg config, blockDir string, match
 			}
 		}
 		var gapsPresent bool
+		// an interval difference should be more than 1.5x the expected interval difference to be a gap
 		gapThreshold := int64(3*cfg.scrapeInterval/2) * 1000
 		if gapThreshold == 0 {
 			if maxDiff >= 2*minDiff {
@@ -375,43 +305,43 @@ func analyzeBlockForGaps(ctx context.Context, cfg config, blockDir string, match
 				gapsPresent = true
 			}
 		}
-		if gapsPresent {
-			var seriesStats seriesGapStats
-			seriesStats.SeriesLabels = lbls.String()
-			seriesStats.GapThreshold = int(gapThreshold)
-			var totalGapTime int64
-			var totalMissedSamples int64
-			for i := 0; i < len(timestamps)-1; i++ {
-				diff := timestamps[i+1] - timestamps[i]
-				// the diff should be more than 1.5x the expected interval difference to be a gap
-				if diff > gapThreshold {
-					missedSamples := diff / gapThreshold
-					totalGapTime += diff
-					totalMissedSamples += missedSamples
-					// evaluate single gap filters
-					if diff > maxSingleGap || diff < minSingleGap || missedSamples > maxSingleMissedSamples || missedSamples < minSingleMissedSamples {
-						continue
-					}
-					seriesStats.Gaps = append(seriesStats.Gaps, gap{
-						Start:     timestamps[i],
-						End:       timestamps[i+1],
-						Intervals: int(missedSamples),
-					})
-					seriesStats.MissedSamples += uint64(missedSamples)
+		if !gapsPresent {
+			continue
+		}
+		var seriesStats seriesGapStats
+		seriesStats.SeriesLabels = lbls.String()
+		seriesStats.GapThreshold = int(gapThreshold)
+		var totalGapTime int64
+		var totalMissedSamples int64
+		for i := 0; i < len(timestamps)-1; i++ {
+			diff := timestamps[i+1] - timestamps[i]
+			if diff > gapThreshold {
+				missedSamples := diff / gapThreshold
+				totalGapTime += diff
+				totalMissedSamples += missedSamples
+				// evaluate single gap filters
+				if diff > maxSingleGap || diff < minSingleGap || missedSamples > maxSingleMissedSamples || missedSamples < minSingleMissedSamples {
+					continue
 				}
+				seriesStats.Gaps = append(seriesStats.Gaps, gap{
+					Start:     timestamps[i],
+					End:       timestamps[i+1],
+					Intervals: int(missedSamples),
+				})
+				seriesStats.MissedSamples += uint64(missedSamples)
 			}
-			// evaluate total gap filters
-			if len(seriesStats.Gaps) > 0 && totalGapTime >= minTotalGap && totalGapTime <= maxTotalGap && totalMissedSamples >= minTotalMissedSamples && totalMissedSamples <= maxTotalMissedSamples {
-				seriesStats.MinTime = minTime
-				seriesStats.MaxTime = maxTime
-				seriesStats.TotalSamples = uint64(len(timestamps))
-				seriesStats.MinIntervalDiffMillis = minDiff
-				seriesStats.MaxIntervalDiffMillis = maxDiff
-				seriesStats.MostCommonIntervalSeconds = int(mostCommonInterval)
-				blockStats.TotalMissedSamples += seriesStats.MissedSamples
-				blockStats.GapStats = append(blockStats.GapStats, seriesStats)
-				blockStats.TotalSeriesWithGaps++
-			}
+		}
+		// evaluate total gap filters
+		if len(seriesStats.Gaps) > 0 && totalGapTime >= minTotalGap && totalGapTime <= maxTotalGap && totalMissedSamples >= minTotalMissedSamples && totalMissedSamples <= maxTotalMissedSamples {
+			seriesStats.MinTime = minTime
+			seriesStats.MaxTime = maxTime
+			seriesStats.TotalSamples = uint64(len(timestamps))
+			seriesStats.MinIntervalDiffMillis = minDiff
+			seriesStats.MaxIntervalDiffMillis = maxDiff
+			seriesStats.MostCommonIntervalSeconds = int(mostCommonInterval)
+			blockStats.TotalMissedSamples += seriesStats.MissedSamples
+			blockStats.GapStats = append(blockStats.GapStats, seriesStats)
+			blockStats.TotalSeriesWithGaps++
 		}
 	}
 	if p.Err() != nil {
@@ -424,4 +354,76 @@ func analyzeBlockForGaps(ctx context.Context, cfg config, blockDir string, match
 // this is used to estimate the scrape interval, which is configured in seconds
 func roundToNearestSecond(t int64) int64 {
 	return (t + 500) / 1000
+}
+
+// calcRange calculates the start and end of the range to analyze based on the block metadata
+func calcRange(cfgStart, cfgEnd time.Time, meta *tsdb.BlockMeta) (int64, int64, error) {
+	var rangeStart, rangeEnd int64
+	if cfgStart.IsZero() {
+		rangeStart = meta.MinTime
+	} else {
+		if cfgStart.Unix() >= meta.MaxTime {
+			return rangeStart, rangeEnd, fmt.Errorf("configured minimum timestamp is greater than block max time")
+		}
+		rangeStart = cfgStart.UnixMilli()
+	}
+	if cfgEnd.IsZero() {
+		rangeEnd = meta.MaxTime
+	} else {
+		rangeEnd = cfgEnd.UnixMilli()
+	}
+	return rangeStart, rangeEnd, nil
+}
+
+// chunkGaps reads chunks from a series and calculates the gaps between timestamps
+func chunkGaps(cr tsdb.ChunkReader, chks []chunks.Meta, rangeStart, rangeEnd int64) (int64, int64, int64, int64, map[int64]int64, []int64) {
+	var it chunkenc.Iterator
+	var timestamps []int64
+	var minTime, maxTime int64
+	intervalCounts := map[int64]int64{}
+	var minDiff, maxDiff int64
+	minDiff = 1<<63 - 1
+	maxDiff = -1
+	minTime = 1<<63 - 1
+	var lastT int64
+	for _, meta := range chks {
+		ch, iter, err := cr.ChunkOrIterable(meta)
+		if meta.MinTime < minTime {
+			minTime = meta.MinTime
+		}
+		maxTime = meta.MaxTime
+		if err != nil {
+			level.Error(logger).Log("msg", "failed to open chunk", "ref", meta.Ref, "err", err)
+			continue
+		}
+		if iter != nil {
+			level.Error(logger).Log("msg", "got iterable from ChunkOrIterable", "ref", meta.Ref)
+			continue
+		}
+		it = ch.Iterator(nil)
+		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+			t, _ := it.At()
+			if t < rangeStart {
+				lastT = t
+				continue
+			}
+			if t > rangeEnd {
+				break
+			}
+			if lastT != 0 {
+				diff := t - lastT
+				if diff < minDiff {
+					minDiff = diff
+				}
+				if diff > maxDiff {
+					maxDiff = diff
+				}
+				timestamps = append(timestamps, t)
+				seconds := roundToNearestSecond(diff)
+				intervalCounts[seconds]++
+			}
+			lastT = t
+		}
+	}
+	return minTime, maxTime, minDiff, maxDiff, intervalCounts, timestamps
 }
