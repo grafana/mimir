@@ -2814,7 +2814,7 @@ nginx:
     # -- The nginx image repository
     repository: nginxinc/nginx-unprivileged
     # -- The nginx image tag
-    tag: 1.25-alpine
+    tag: 1.27-alpine
     # -- The nginx image pull policy
     pullPolicy: IfNotPresent
   # -- The name of the PriorityClass for nginx pods
@@ -3341,7 +3341,7 @@ gateway:
       # -- The nginx image repository
       repository: nginxinc/nginx-unprivileged
       # -- The nginx image tag
-      tag: 1.25-alpine
+      tag: 1.27-alpine
 
     # -- Basic auth configuration
     basicAuth:
