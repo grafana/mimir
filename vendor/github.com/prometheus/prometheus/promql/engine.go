@@ -2779,19 +2779,15 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 }
 
 type groupedAggregation struct {
-	floatValue     float64
-	histogramValue *histogram.FloatHistogram
-	floatMean      float64
-	floatKahanC    float64 // "Compensating value" for Kahan summation.
-	groupCount     float64
-	heap           vectorByValueHeap
-
-	// All bools together for better packing within the struct.
 	seen              bool // Was this output groups seen in the input at this timestamp.
 	hasFloat          bool // Has at least 1 float64 sample aggregated.
 	hasHistogram      bool // Has at least 1 histogram sample aggregated.
-	groupAggrComplete bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group.
-	incrementalMean   bool // True after reverting to incremental calculation of the mean value.
+	floatValue        float64
+	histogramValue    *histogram.FloatHistogram
+	floatMean         float64 // Mean, or "compensating value" for Kahan summation.
+	groupCount        int
+	groupAggrComplete bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group
+	heap              vectorByValueHeap
 }
 
 // aggregation evaluates sum, avg, count, stdvar, stddev or quantile at one timestep on inputMatrix.
@@ -2817,11 +2813,13 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			*group = groupedAggregation{
 				seen:       true,
 				floatValue: f,
-				floatMean:  f,
 				groupCount: 1,
 			}
 			switch op {
-			case parser.AVG, parser.SUM:
+			case parser.AVG:
+				group.floatMean = f
+				fallthrough
+			case parser.SUM:
 				if h == nil {
 					group.hasFloat = true
 				} else {
@@ -2829,6 +2827,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					group.hasHistogram = true
 				}
 			case parser.STDVAR, parser.STDDEV:
+				group.floatMean = f
 				group.floatValue = 0
 			case parser.QUANTILE:
 				group.heap = make(vectorByValueHeap, 1)
@@ -2854,7 +2853,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
-				group.floatValue, group.floatKahanC = kahanSumInc(f, group.floatValue, group.floatKahanC)
+				group.floatValue, group.floatMean = kahanSumInc(f, group.floatValue, group.floatMean)
 			}
 
 		case parser.AVG:
@@ -2862,8 +2861,8 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			if h != nil {
 				group.hasHistogram = true
 				if group.histogramValue != nil {
-					left := h.Copy().Div(group.groupCount)
-					right := group.histogramValue.Copy().Div(group.groupCount)
+					left := h.Copy().Div(float64(group.groupCount))
+					right := group.histogramValue.Copy().Div(float64(group.groupCount))
 					toAdd, err := left.Sub(right)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
@@ -2878,22 +2877,6 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
-				if !group.incrementalMean {
-					newV, newC := kahanSumInc(f, group.floatValue, group.floatKahanC)
-					if !math.IsInf(newV, 0) {
-						// The sum doesn't overflow, so we propagate it to the
-						// group struct and continue with the regular
-						// calculation of the mean value.
-						group.floatValue, group.floatKahanC = newV, newC
-						break
-					}
-					// If we are here, we know that the sum _would_ overflow. So
-					// instead of continue to sum up, we revert to incremental
-					// calculation of the mean value from here on.
-					group.incrementalMean = true
-					group.floatMean = group.floatValue / (group.groupCount - 1)
-					group.floatKahanC /= group.groupCount - 1
-				}
 				if math.IsInf(group.floatMean, 0) {
 					if math.IsInf(f, 0) && (group.floatMean > 0) == (f > 0) {
 						// The `floatMean` and `s.F` values are `Inf` of the same sign.  They
@@ -2911,13 +2894,8 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 						break
 					}
 				}
-				currentMean := group.floatMean + group.floatKahanC
-				group.floatMean, group.floatKahanC = kahanSumInc(
-					// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
-					f/group.groupCount-currentMean/group.groupCount,
-					group.floatMean,
-					group.floatKahanC,
-				)
+				// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
+				group.floatMean += f/float64(group.groupCount) - group.floatMean/float64(group.groupCount)
 			}
 
 		case parser.GROUP:
@@ -2940,7 +2918,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			if h == nil { // Ignore native histograms.
 				group.groupCount++
 				delta := f - group.floatMean
-				group.floatMean += delta / group.groupCount
+				group.floatMean += delta / float64(group.groupCount)
 				group.floatValue += delta * (f - group.floatMean)
 			}
 
@@ -2966,23 +2944,20 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				annos.Add(annotations.NewMixedFloatsHistogramsAggWarning(e.Expr.PositionRange()))
 				continue
 			}
-			switch {
-			case aggr.hasHistogram:
+			if aggr.hasHistogram {
 				aggr.histogramValue = aggr.histogramValue.Compact(0)
-			case aggr.incrementalMean:
-				aggr.floatValue = aggr.floatMean + aggr.floatKahanC
-			default:
-				aggr.floatValue = (aggr.floatValue + aggr.floatKahanC) / aggr.groupCount
+			} else {
+				aggr.floatValue = aggr.floatMean
 			}
 
 		case parser.COUNT:
-			aggr.floatValue = aggr.groupCount
+			aggr.floatValue = float64(aggr.groupCount)
 
 		case parser.STDVAR:
-			aggr.floatValue /= aggr.groupCount
+			aggr.floatValue /= float64(aggr.groupCount)
 
 		case parser.STDDEV:
-			aggr.floatValue = math.Sqrt(aggr.floatValue / aggr.groupCount)
+			aggr.floatValue = math.Sqrt(aggr.floatValue / float64(aggr.groupCount))
 
 		case parser.QUANTILE:
 			aggr.floatValue = quantile(q, aggr.heap)
@@ -2996,7 +2971,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			if aggr.hasHistogram {
 				aggr.histogramValue.Compact(0)
 			} else {
-				aggr.floatValue += aggr.floatKahanC
+				aggr.floatValue += aggr.floatMean // Add Kahan summation compensating term.
 			}
 		default:
 			// For other aggregations, we already have the right value.
