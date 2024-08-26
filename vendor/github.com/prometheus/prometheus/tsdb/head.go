@@ -2149,11 +2149,11 @@ type memSeries struct {
 
 	ooo *memSeriesOOOFields
 
+	mmMaxTime int64 // Max time of any mmapped chunk, only used during WAL replay.
+
 	// chunkEndTimeVariance is how much variance (between 0 and 1) should be applied to the chunk end time,
 	// to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 to disable variance.
 	chunkEndTimeVariance float64
-
-	mmMaxTime int64 // Max time of any mmapped chunk, only used during WAL replay.
 
 	nextAt                           int64 // Timestamp at which to cut the next chunk.
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
