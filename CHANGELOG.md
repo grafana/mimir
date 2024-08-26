@@ -201,6 +201,7 @@
 * [ENHANCEMENT] `tsdb-series`: added `-stats` option to print min/max time of chunks, total number of samples and DPM for each series. #8420
 * [ENHANCEMENT] `tsdb-print-chunk`: print counter reset information for native histograms. #8812
 * [ENHANCEMENT] `grpcurl-query-ingesters`: print counter reset information for native histograms. #8820
+* [ENHANCEMENT] `grpcurl-query-ingesters`: concurrently query ingesters. #9102
 * [ENHANCEMENT] `tsdb-series`: Added `-json` option to generate JSON output for easier post-processing. #8844
 * [ENHANCEMENT] `tsdb-series`: Added `-min-time` and `-max-time` options to filter samples that are used for computing data-points per minute. #8844
 
