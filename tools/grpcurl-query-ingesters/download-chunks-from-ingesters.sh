@@ -89,8 +89,6 @@ done
 # Wait for all background jobs to finish
 wait
 
-# Check if a
-
 # Print final report.
 echo ""
 echo ""
