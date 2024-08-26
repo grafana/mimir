@@ -60,7 +60,7 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 
 	m.consumerLag = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Name: "cortex_blockbuilder_consumer_lag",
-		Help: "The per-partition lag instance needs to work through each cycle.",
+		Help: "The per-topic-partition lag, in number of records, instance needs to work through each cycle.",
 	}, []string{"topic", "partition"})
 
 	return m
