@@ -321,7 +321,7 @@ func (r *Ring) starting(ctx context.Context) error {
 func (r *Ring) loop(ctx context.Context) error {
 	// Update the ring metrics at start of the main loop.
 	r.mtx.Lock()
-	r.updateRingMetrics(Different)
+	r.updateRingMetrics()
 	r.mtx.Unlock()
 
 	r.KVClient.WatchKey(ctx, r.key, func(value interface{}) bool {
@@ -362,11 +362,17 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 		// when watching the ring for updates).
 		r.mtx.Lock()
 		r.ringDesc = ringDesc
-		r.updateRingMetrics(rc)
+		if rc != Equal {
+			r.updateRingMetrics()
+		}
 		r.mtx.Unlock()
 		return
 	}
 
+	r.setRingStateFromDesc(ringDesc, true, true, true)
+}
+
+func (r *Ring) setRingStateFromDesc(ringDesc *Desc, updateMetrics, updateRegisteredTimestampCache, updateReadOnlyInstances bool) {
 	now := time.Now()
 	ringTokens := ringDesc.GetTokens()
 	ringTokensByZone := ringDesc.getTokensByZone()
@@ -392,10 +398,14 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 	r.instancesWithTokensCountPerZone = instancesWithTokensCountPerZone
 	r.writableInstancesWithTokensCount = writableInstancesWithTokensCount
 	r.writableInstancesWithTokensCountPerZone = writableInstancesWithTokensCountPerZone
-	r.oldestRegisteredTimestamp = oldestRegisteredTimestamp
+	if updateRegisteredTimestampCache {
+		r.oldestRegisteredTimestamp = oldestRegisteredTimestamp
+	}
 	r.lastTopologyChange = now
-	r.readOnlyInstances = &readOnlyInstances
-	r.oldestReadOnlyUpdatedTimestamp = &oldestReadOnlyUpdatedTimestamp
+	if updateReadOnlyInstances {
+		r.readOnlyInstances = &readOnlyInstances
+		r.oldestReadOnlyUpdatedTimestamp = &oldestReadOnlyUpdatedTimestamp
+	}
 
 	// Invalidate all cached subrings.
 	if r.shuffledSubringCache != nil {
@@ -405,7 +415,9 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 		r.shuffledSubringWithLookbackCache = make(map[subringCacheKey]cachedSubringWithLookback[*Ring])
 	}
 
-	r.updateRingMetrics(rc)
+	if updateMetrics {
+		r.updateRingMetrics()
+	}
 }
 
 // Get returns n (or more) instances which form the replicas for the given key.
@@ -645,11 +657,7 @@ func (r *Desc) CountTokens() map[string]int64 {
 }
 
 // updateRingMetrics updates ring metrics. Caller must be holding the Write lock!
-func (r *Ring) updateRingMetrics(compareResult CompareResult) {
-	if compareResult == Equal {
-		return
-	}
-
+func (r *Ring) updateRingMetrics() {
 	numByState := map[string]int{}
 	oldestTimestampByState := map[string]int64{}
 
@@ -675,10 +683,6 @@ func (r *Ring) updateRingMetrics(compareResult CompareResult) {
 	}
 	for state, timestamp := range oldestTimestampByState {
 		r.oldestTimestampGaugeVec.WithLabelValues(state).Set(float64(timestamp))
-	}
-
-	if compareResult == EqualButStatesAndTimestamps {
-		return
 	}
 
 	r.totalTokensGauge.Set(float64(len(r.ringTokens)))
