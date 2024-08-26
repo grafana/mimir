@@ -230,7 +230,7 @@ func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context) (map[int32]kgo.
 		if err == nil {
 			return offsets, fallbackOffset, nil
 		}
-		level.Warn(b.logger).Log("msg", "failed to fetch startup offsets", "err", err)
+		level.Warn(b.logger).Log("msg", "failed to fetch startup offsets; will retry", "err", err)
 		boff.Wait()
 	}
 	// Handle the case the context was canceled before the first attempt.
@@ -287,19 +287,19 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 		select {
 		case <-time.After(waitTime):
 			cycleEnd := nextCycleTime
-			level.Info(b.logger).Log("msg", "triggering next consume from running", "cycle_end", cycleEnd, "cycle_time", nextCycleTime)
+			level.Info(b.logger).Log("msg", "triggering next consume cycle", "cycle_end", cycleEnd)
 			err := b.NextConsumeCycle(ctx, cycleEnd)
 			if err != nil {
 				b.metrics.consumeCycleFailures.Inc()
 				level.Error(b.logger).Log("msg", "consume cycle failed", "cycle_end", cycleEnd, "err", err)
 			}
 
-			// If we took more than consumptionItvl time to consume the records, this will immediately start the next consumption.
+			// If we took more than ConsumeInterval to consume the records, this will immediately start the next consumption.
 			// TODO(codesome): track waitTime < 0, which is the time we ran over. Should have an alert on this.
 			nextCycleTime = nextCycleTime.Add(b.cfg.ConsumeInterval)
 			waitTime = time.Until(nextCycleTime)
 		case <-ctx.Done():
-			level.Info(b.logger).Log("msg", "context cancelled, stopping block builder")
+			level.Info(b.logger).Log("msg", "context cancelled, stopping")
 			return nil
 		}
 	}
