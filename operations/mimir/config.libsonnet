@@ -582,7 +582,10 @@
     configMap.new($._config.overrides_configmap) +
     configMap.withData({
       'overrides.yaml': $.util.manifestYaml(
-        { overrides: $._config.overrides }
+        {
+          // Recursively remove fields with zero values, so that we use "null" value to remove a field.
+          overrides: std.prune($._config.overrides),
+        }
         + (if std.length($._config.multi_kv_config) > 0 then { multi_kv_config: $._config.multi_kv_config } else {})
         + (if !$._config.ingester_stream_chunks_when_using_blocks then { ingester_stream_chunks_when_using_blocks: false } else {})
         + (if $._config.ingester_instance_limits != null then { ingester_limits: $._config.ingester_instance_limits } else {})
