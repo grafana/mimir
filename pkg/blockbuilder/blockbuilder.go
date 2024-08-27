@@ -332,6 +332,10 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 		// TODO(v): calculating lag for each individual partition requests data for the whole group every time. This is redundant.
 		// Since we no longer expect a rebalance in the middle of the cycle, we may calculate the lag once for all assigned partitions
 		// in the beginning of the cycle.
+
+		// Lag is the upperbound number of records we'll have to consume from Kafka to build the blocks.
+		// It's the upperbound because the consumption may be stopped earlier if we get records containing
+		// samples with timestamp greater than the end timestamp of this cycle.
 		lag, err := b.getLagForPartition(ctx, part)
 		if err != nil {
 			level.Error(b.logger).Log("msg", "failed to get partition lag", "err", err, "partition", part, "cycle_end", cycleEnd)
@@ -444,7 +448,7 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.StringVar(&cfg.Topic, prefix+"kafka.topic", "", "The Kafka topic name.")
 	f.StringVar(&cfg.ClientID, prefix+"kafka.client-id", "", "The Kafka client ID.")
 	f.DurationVar(&cfg.DialTimeout, prefix+"kafka.dial-timeout", 5*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
-	f.StringVar(&cfg.ConsumerGroup, prefix+"kafka.consumer-group", "block-builder", "The consumer group used by the consumer.")
+	f.StringVar(&cfg.ConsumerGroup, prefix+"kafka.consumer-group", "block-builder", "The consumer group used to keep track of the consumed offsets for each partition.")
 }
 
 func (cfg *KafkaConfig) Validate() error {

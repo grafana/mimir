@@ -14,6 +14,12 @@ import (
 
 // getGroupLag is similar to `kadm.Client.Lag` but works when the group doesn't have live participants.
 // Similar to `kadm.CalculateGroupLagWithStartOffsets`, it takes into account that the group may not have any commits.
+//
+// The lag is the difference between the last produced offset (high watermark) and an offset in the "past".
+// If the block builder committed an offset for a given partition to the consumer group at least once, then
+// the lag is the difference between the last produced offset and the offset committed in the consumer group.+
+// Otherwise, if the block builder didn't commit an offset for a given partition yet (e.g. block builder is
+// running for the first time), then the lag is the difference between the last produced offset and fallbackOffset.
 func getGroupLag(ctx context.Context, admClient *kadm.Client, topic, group string, fallbackOffset int64) (kadm.GroupLag, error) {
 	offsets, err := admClient.FetchOffsets(ctx, group)
 	if err != nil {
