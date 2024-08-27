@@ -14,9 +14,9 @@ local filename = 'mimir-queries.json';
     // (e.g. cortex_query_frontend_* metrics are only exposed by query-frontend) or on metrics
     // that have other labels that allow to distinguish the component (e.g. component="query-frontend").
     .addCustomTemplate('Read path', 'read_path_matcher', [
-      { label: 'All', value: $.jobMatcher(std.uniq(std.sort($._config.job_names.standard_read_path + $._config.job_names.ruler_read_path))) },
-      { label: 'Standard', value: $.jobMatcher($._config.job_names.standard_read_path) },
-      { label: 'Remote ruler', value: $.jobMatcher($._config.job_names.ruler_read_path) },
+      { label: 'All', value: $.jobMatcher(std.uniq(std.sort($._config.job_names.main_read_path + $._config.job_names.remote_ruler_read_path))) },
+      { label: 'Main', value: $.jobMatcher($._config.job_names.main_read_path) },
+      { label: 'Remote ruler', value: $.jobMatcher($._config.job_names.remote_ruler_read_path) },
     ])
     .addRow(
       $.row('Query-frontend')

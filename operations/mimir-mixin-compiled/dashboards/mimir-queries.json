@@ -2545,7 +2545,7 @@
                   },
                   {
                      "selected": false,
-                     "text": "Standard",
+                     "text": "Main",
                      "value": "cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|mimir-backend.*|mimir-read.*|querier.*|query-frontend.*|query-scheduler.*))\""
                   },
                   {
@@ -2554,7 +2554,7 @@
                      "value": "cluster=~\"$cluster\"\\, job=~\"($namespace)/((ruler-querier.*|ruler-query-frontend.*|ruler-query-scheduler.*))\""
                   }
                ],
-               "query": "All : cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|mimir-backend.*|mimir-read.*|querier.*|query-frontend.*|query-scheduler.*|ruler-querier.*|ruler-query-frontend.*|ruler-query-scheduler.*))\",Standard : cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|mimir-backend.*|mimir-read.*|querier.*|query-frontend.*|query-scheduler.*))\",Remote ruler : cluster=~\"$cluster\"\\, job=~\"($namespace)/((ruler-querier.*|ruler-query-frontend.*|ruler-query-scheduler.*))\"",
+               "query": "All : cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|mimir-backend.*|mimir-read.*|querier.*|query-frontend.*|query-scheduler.*|ruler-querier.*|ruler-query-frontend.*|ruler-query-scheduler.*))\",Main : cluster=~\"$cluster\"\\, job=~\"($namespace)/((cortex|mimir|mimir-backend.*|mimir-read.*|querier.*|query-frontend.*|query-scheduler.*))\",Remote ruler : cluster=~\"$cluster\"\\, job=~\"($namespace)/((ruler-querier.*|ruler-query-frontend.*|ruler-query-scheduler.*))\"",
                "skipUrlSync": false,
                "type": "custom",
                "useTags": false
