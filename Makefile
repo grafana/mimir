@@ -300,7 +300,7 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin check-mixin-jb check-mixin-mixtool check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
 
@@ -586,6 +586,26 @@ check-mixin-tests: ## Test the mixin files.
 format-mixin: ## Format the mixin files.
 	@find $(MIXIN_PATH) -type f -name '*.libsonnet' | xargs jsonnetfmt -i
 
+check-mixin: ## Build, format and check the mixin files.
+check-mixin: build-mixin format-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks
+	@echo "Checking diff:"
+	@for suffix in $(MIXIN_OUT_PATH_SUFFIXES); do \
+		./tools/find-diff-or-untracked.sh $(MIXIN_PATH) "$(MIXIN_OUT_PATH)$$suffix" || (echo "Please build and format mixin by running 'make build-mixin format-mixin'" && false); \
+	done
+
+	@echo "Running mixtool version $$(mixtool --version)"
+	@cd $(MIXIN_PATH) && \
+	jb install && \
+	mixtool lint mixin.libsonnet
+
+check-mixin-jb:
+	@cd $(MIXIN_PATH) && \
+	jb install
+
+check-mixin-mixtool: check-mixin-jb
+	@cd $(MIXIN_PATH) && \
+	mixtool lint mixin.libsonnet
+
 # Helm static tests
 
 HELM_SCRIPTS_PATH=operations/helm/scripts
@@ -674,24 +694,6 @@ check-white-noise: ## Check the white noise in the markdown files.
 check-white-noise: clean-white-noise
 	@git diff --exit-code -- '*.md' || (echo "Please remove trailing whitespaces running 'make clean-white-noise'" && false)
 
-check-mixin: ## Build, format and check the mixin files.
-check-mixin: build-mixin format-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks
-	@echo "Checking diff:"
-	@for suffix in $(MIXIN_OUT_PATH_SUFFIXES); do \
-		./tools/find-diff-or-untracked.sh $(MIXIN_PATH) "$(MIXIN_OUT_PATH)$$suffix" || (echo "Please build and format mixin by running 'make build-mixin format-mixin'" && false); \
-	done
-
-	@cd $(MIXIN_PATH) && \
-	jb install && \
-	mixtool lint mixin.libsonnet
-
-check-mixin-jb:
-	@cd $(MIXIN_PATH) && \
-	jb install
-
-check-mixin-mixtool: check-mixin-jb
-	@cd $(MIXIN_PATH) && \
-	mixtool lint mixin.libsonnet
 
 check-mixin-runbooks: build-mixin
 	@tools/lint-runbooks.sh
