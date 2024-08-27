@@ -583,8 +583,9 @@
     configMap.withData({
       'overrides.yaml': $.util.manifestYaml(
         {
-          // Recursively remove fields with zero values, so that we use "null" value to remove a field.
-          overrides: std.prune($._config.overrides),
+          // Recursively remove fields whose value has been explicitly set to "null". This technique allow us
+          // us to easily remove fields using jsonnet overrides.
+          overrides: $.util.removeNulls($._config.overrides),
         }
         + (if std.length($._config.multi_kv_config) > 0 then { multi_kv_config: $._config.multi_kv_config } else {})
         + (if !$._config.ingester_stream_chunks_when_using_blocks then { ingester_stream_chunks_when_using_blocks: false } else {})
