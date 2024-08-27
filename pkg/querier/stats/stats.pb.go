@@ -48,7 +48,7 @@ type Stats struct {
 	EstimatedSeriesCount uint64 `protobuf:"varint,8,opt,name=estimated_series_count,json=estimatedSeriesCount,proto3" json:"estimated_series_count,omitempty"`
 	// The sum of durations that the query spent in the queue, before it was handled by querier.
 	QueueTime time.Duration `protobuf:"bytes,9,opt,name=queue_time,json=queueTime,proto3,stdduration" json:"queue_time"`
-	// The time spent encoding the query's results for returning from the frontend.
+	// The time spent at the frontend encoding the query's final results. Does not include time spent serializing results at the querier.
 	EncodeTime time.Duration `protobuf:"bytes,10,opt,name=encode_time,json=encodeTime,proto3,stdduration" json:"encode_time"`
 }
 

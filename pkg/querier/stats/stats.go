@@ -218,6 +218,7 @@ func (s *Stats) Merge(other *Stats) {
 	s.AddFetchedIndexBytes(other.LoadFetchedIndexBytes())
 	s.AddEstimatedSeriesCount(other.LoadEstimatedSeriesCount())
 	s.AddQueueTime(other.LoadQueueTime())
+	s.AddEncodeTime(other.LoadEncodeTime())
 }
 
 // Copy returns a copy of the stats. Use this rather than regular struct assignment

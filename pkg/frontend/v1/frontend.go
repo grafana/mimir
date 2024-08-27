@@ -263,7 +263,7 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 		  n_active_tenants * n_expired_requests_at_front_of_queue requests being processed
 		  before an active request was handled for the tenant in question.
 		  If this tenant meanwhile continued to queue requests,
-		  it's possible that it's own queue would perpetually contain only expired requests.
+		  it's possible that its own queue would perpetually contain only expired requests.
 		*/
 		if req.originalCtx.Err() != nil {
 			lastTenantIndex = lastTenantIndex.ReuseLastTenant()
@@ -271,7 +271,7 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 		}
 
 		// Handle the stream sending & receiving on a goroutine so we can
-		// monitoring the contexts in a select and cancel things appropriately.
+		// monitor the contexts in a select and cancel things appropriately.
 		resps := make(chan *frontendv1pb.ClientToFrontend, 1)
 		errs := make(chan error, 1)
 		go func() {
