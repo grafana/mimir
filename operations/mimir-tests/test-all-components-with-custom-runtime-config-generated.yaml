@@ -177,8 +177,14 @@ data:
   overrides.yaml: |
     overrides:
         tenant-1:
+            max_global_series_per_metric: 1000
             max_global_series_per_user: 100000
         tenant-3: {}
+        tenant-4:
+            max_global_series_per_metric: 0
+            max_global_series_per_user: 400000
+        tenant-5:
+            max_global_series_per_user: 500000
 kind: ConfigMap
 metadata:
   name: overrides
