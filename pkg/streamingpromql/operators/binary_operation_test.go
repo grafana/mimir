@@ -1130,7 +1130,7 @@ func TestBinaryOperationSeriesBuffer(t *testing.T) {
 	}
 
 	seriesUsed := []bool{true, false, true, true, true}
-	buffer := newBinaryOperationSeriesBuffer(inner, seriesUsed, limiting.NewMemoryConsumptionTracker(0, nil))
+	buffer := newInstantVectorOperatorBuffer(inner, seriesUsed, limiting.NewMemoryConsumptionTracker(0, nil))
 	ctx := context.Background()
 
 	// Read first series.

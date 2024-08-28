@@ -44,8 +44,8 @@ type BinaryOperation struct {
 	rightMetadata []types.SeriesMetadata
 
 	remainingSeries []*binaryOperationOutputSeries
-	leftBuffer      *binaryOperationSeriesBuffer
-	rightBuffer     *binaryOperationSeriesBuffer
+	leftBuffer      *InstantVectorOperatorBuffer
+	rightBuffer     *InstantVectorOperatorBuffer
 	leftIterator    types.InstantVectorSeriesDataIterator
 	rightIterator   types.InstantVectorSeriesDataIterator
 	opFunc          binaryOperationFunc
@@ -143,8 +143,8 @@ func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMet
 	b.sortSeries(allMetadata, allSeries)
 	b.remainingSeries = allSeries
 
-	b.leftBuffer = newBinaryOperationSeriesBuffer(b.Left, leftSeriesUsed, b.MemoryConsumptionTracker)
-	b.rightBuffer = newBinaryOperationSeriesBuffer(b.Right, rightSeriesUsed, b.MemoryConsumptionTracker)
+	b.leftBuffer = newInstantVectorOperatorBuffer(b.Left, leftSeriesUsed, b.MemoryConsumptionTracker)
+	b.rightBuffer = newInstantVectorOperatorBuffer(b.Right, rightSeriesUsed, b.MemoryConsumptionTracker)
 
 	return allMetadata, nil
 }
@@ -906,12 +906,12 @@ func (b *BinaryOperation) Close() {
 	}
 }
 
-// binaryOperationSeriesBuffer buffers series data until it is needed by BinaryOperation.
+// InstantVectorOperatorBuffer buffers series data until it is needed by BinaryOperation.
 //
-// For example, if the source operator produces series in order A, B, C, but their corresponding output series from the
-// binary operation are in order B, A, C, binaryOperationSeriesBuffer will buffer the data for series A while series B is
-// produced, then return series A when needed.
-type binaryOperationSeriesBuffer struct {
+// For example, if this buffer is being used for a binary operation and the source operator produces series in order A, B, C,
+// but their corresponding output series from the binary operation are in order B, A, C, InstantVectorOperatorBuffer
+// will buffer the data for series A while series B is produced, then return series A when needed.
+type InstantVectorOperatorBuffer struct {
 	source          types.InstantVectorOperator
 	nextIndexToRead int
 
@@ -929,8 +929,8 @@ type binaryOperationSeriesBuffer struct {
 	output []types.InstantVectorSeriesData
 }
 
-func newBinaryOperationSeriesBuffer(source types.InstantVectorOperator, seriesUsed []bool, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *binaryOperationSeriesBuffer {
-	return &binaryOperationSeriesBuffer{
+func newInstantVectorOperatorBuffer(source types.InstantVectorOperator, seriesUsed []bool, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *InstantVectorOperatorBuffer {
+	return &InstantVectorOperatorBuffer{
 		source:                   source,
 		seriesUsed:               seriesUsed,
 		memoryConsumptionTracker: memoryConsumptionTracker,
@@ -941,7 +941,7 @@ func newBinaryOperationSeriesBuffer(source types.InstantVectorOperator, seriesUs
 // getSeries returns the data for the series in seriesIndices.
 // The returned slice is only safe to use until getSeries is called again.
 // seriesIndices should be sorted in ascending order to avoid unnecessary buffering.
-func (b *binaryOperationSeriesBuffer) getSeries(ctx context.Context, seriesIndices []int) ([]types.InstantVectorSeriesData, error) {
+func (b *InstantVectorOperatorBuffer) getSeries(ctx context.Context, seriesIndices []int) ([]types.InstantVectorSeriesData, error) {
 	if cap(b.output) < len(seriesIndices) {
 		b.output = make([]types.InstantVectorSeriesData, len(seriesIndices))
 	}
@@ -961,7 +961,7 @@ func (b *binaryOperationSeriesBuffer) getSeries(ctx context.Context, seriesIndic
 	return b.output, nil
 }
 
-func (b *binaryOperationSeriesBuffer) getSingleSeries(ctx context.Context, seriesIndex int) (types.InstantVectorSeriesData, error) {
+func (b *InstantVectorOperatorBuffer) getSingleSeries(ctx context.Context, seriesIndex int) (types.InstantVectorSeriesData, error) {
 	for seriesIndex > b.nextIndexToRead {
 		d, err := b.source.NextSeries(ctx)
 		if err != nil {
@@ -991,7 +991,7 @@ func (b *binaryOperationSeriesBuffer) getSingleSeries(ctx context.Context, serie
 	return d, nil
 }
 
-func (b *binaryOperationSeriesBuffer) close() {
+func (b *InstantVectorOperatorBuffer) close() {
 	if b.seriesUsed != nil {
 		types.BoolSlicePool.Put(b.seriesUsed, b.memoryConsumptionTracker)
 	}
