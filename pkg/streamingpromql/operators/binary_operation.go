@@ -451,48 +451,66 @@ func (b *BinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSe
 //
 // mergeOneSide is optimised for the case where there is only one source series, or the source series do not overlap, as in the example above.
 //
-// NOTE: mergeOneSide has the side-effect of re-ordering both data and sourceSeriesIndices.
+// NOTE: mergeOneSide has the side effect of re-ordering both data and sourceSeriesIndices.
 //
 // FIXME: for many-to-one / one-to-many matching, we could avoid re-merging each time for the side used multiple times
 func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []types.SeriesMetadata, side string) (types.InstantVectorSeriesData, error) {
+	merged, conflict, err := mergeSeries(data, sourceSeriesIndices, b.MemoryConsumptionTracker)
+
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	if conflict != nil {
+		return types.InstantVectorSeriesData{}, b.mergeConflictToError(conflict, sourceSeriesMetadata, side)
+	}
+
+	return merged, nil
+}
+
+// mergeSeries merges the series in data into a single InstantVectorSeriesData, or returns information about a conflict between series.
+//
+// mergeSeries is optimised for the case where there is only one source series, or the source series do not overlap, as in the example above.
+//
+// mergeSeries re-orders both data and sourceSeriesIndices.
+func mergeSeries(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, *mergeConflict, error) {
 	if len(data) == 1 {
 		// Fast path: if there's only one series on this side, there's no merging required.
-		return data[0], nil
+		return data[0], nil, nil
 	}
 
 	if len(data) == 0 {
-		return types.InstantVectorSeriesData{}, nil
+		return types.InstantVectorSeriesData{}, nil, nil
 	}
 
 	// Merge floats and histograms individually.
 	// After which we check if there are any duplicate points in either the floats or histograms.
 
-	floats, conflict, err := mergeOneSideFloats(data, sourceSeriesIndices, b.MemoryConsumptionTracker)
-	if err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
-	if conflict != nil {
-		return types.InstantVectorSeriesData{}, b.mergeConflictToError(conflict, sourceSeriesMetadata, side)
+	floats, conflict, err := mergeOneSideFloats(data, sourceSeriesIndices, memoryConsumptionTracker)
+	if err != nil || conflict != nil {
+		return types.InstantVectorSeriesData{}, conflict, err
 	}
 
-	histograms, conflict, err := mergeOneSideHistograms(data, sourceSeriesIndices, b.MemoryConsumptionTracker)
-	if err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
-	if conflict != nil {
-		return types.InstantVectorSeriesData{}, b.mergeConflictToError(conflict, sourceSeriesMetadata, side)
+	histograms, conflict, err := mergeOneSideHistograms(data, sourceSeriesIndices, memoryConsumptionTracker)
+	if err != nil || conflict != nil {
+		return types.InstantVectorSeriesData{}, conflict, err
 	}
 
 	// Check for any conflicts between floats and histograms
 	idxFloats, idxHistograms := 0, 0
 	for idxFloats < len(floats) && idxHistograms < len(histograms) {
 		if floats[idxFloats].T == histograms[idxHistograms].T {
-			// Conflict found
-			firstConflictingSeriesLabels := sourceSeriesMetadata[0].Labels
-			groupLabels := b.groupLabelsFunc()(firstConflictingSeriesLabels)
+			// Histogram and float at the same timestamp: we have a conflict.
+			conflict := &mergeConflict{
+				firstConflictingSeriesIndex:  sourceSeriesIndices[0],
+				secondConflictingSeriesIndex: -1,
+				description:                  "both float and histogram samples",
+				timestamp:                    floats[idxFloats].T,
+			}
 
-			return types.InstantVectorSeriesData{}, fmt.Errorf("found both float and histogram samples for the match group %s on the %s side of the operation at timestamp %s", groupLabels, side, timestamp.Time(floats[idxFloats].T).Format(time.RFC3339Nano))
+			return types.InstantVectorSeriesData{}, conflict, nil
 		}
+
 		if floats[idxFloats].T < histograms[idxHistograms].T {
 			idxFloats++
 		} else {
@@ -500,13 +518,24 @@ func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sou
 		}
 	}
 
-	return types.InstantVectorSeriesData{Floats: floats, Histograms: histograms}, nil
+	return types.InstantVectorSeriesData{Floats: floats, Histograms: histograms}, nil, nil
 }
 
 func (b *BinaryOperation) mergeConflictToError(conflict *mergeConflict, sourceSeriesMetadata []types.SeriesMetadata, side string) error {
 	firstConflictingSeriesLabels := sourceSeriesMetadata[conflict.firstConflictingSeriesIndex].Labels
-	secondConflictingSeriesLabels := sourceSeriesMetadata[conflict.secondConflictingSeriesIndex].Labels
 	groupLabels := b.groupLabelsFunc()(firstConflictingSeriesLabels)
+
+	if conflict.secondConflictingSeriesIndex == -1 {
+		return fmt.Errorf(
+			"found %s for the match group %s on the %s side of the operation at timestamp %s",
+			conflict.description,
+			groupLabels,
+			side,
+			timestamp.Time(conflict.timestamp).Format(time.RFC3339Nano),
+		)
+	}
+
+	secondConflictingSeriesLabels := sourceSeriesMetadata[conflict.secondConflictingSeriesIndex].Labels
 
 	return fmt.Errorf(
 		"found %s for the match group %s on the %s side of the operation at timestamp %s: %s and %s",
@@ -769,8 +798,8 @@ func mergeOneSideHistograms(data []types.InstantVectorSeriesData, sourceSeriesIn
 }
 
 type mergeConflict struct {
-	firstConflictingSeriesIndex  int
-	secondConflictingSeriesIndex int
+	firstConflictingSeriesIndex  int // Will be the index of any input series in the case of a mixed float / histogram conflict.
+	secondConflictingSeriesIndex int // Will be -1 in the case of a mixed float / histogram conflict.
 	description                  string
 	timestamp                    int64
 }
