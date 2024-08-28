@@ -1513,20 +1513,25 @@ store_gateway_client:
 [promql_experimental_functions_enabled: <boolean> | default = false]
 
 mimir_query_engine:
+  # (experimental) Enable support for aggregation operations in Mimir's query
+  # engine. Only applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-aggregation-operations
+  [enable_aggregation_operations: <boolean> | default = true]
+
   # (experimental) Enable support for binary operations in Mimir's query engine.
   # Only applies if the Mimir query engine is in use.
   # CLI flag: -querier.mimir-query-engine.enable-binary-operations
   [enable_binary_operations: <boolean> | default = true]
 
-  # (experimental) Enable support for ..._over_time functions in Mimir's query
-  # engine. Only applies if the Mimir query engine is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-over-time-functions
-  [enable_over_time_functions: <boolean> | default = true]
-
   # (experimental) Enable support for offset modifier in Mimir's query engine.
   # Only applies if the Mimir query engine is in use.
   # CLI flag: -querier.mimir-query-engine.enable-offset-modifier
   [enable_offset_modifier: <boolean> | default = true]
+
+  # (experimental) Enable support for ..._over_time functions in Mimir's query
+  # engine. Only applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-over-time-functions
+  [enable_over_time_functions: <boolean> | default = true]
 
   # (experimental) Enable support for scalars in Mimir's query engine. Only
   # applies if the Mimir query engine is in use.

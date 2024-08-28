@@ -48,7 +48,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		"metric{} or other_metric{}": "binary expression with many-to-many matching",
 		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
 		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
-		"avg(metric{})":                         "'avg' aggregation",
+		"avg(metric{})":                         "aggregation operation with 'avg'",
 		"rate(metric{}[5m:1m])":                 "PromQL expression type *parser.SubqueryExpr for range vectors",
 		"quantile_over_time(0.4, metric{}[5m])": "'quantile_over_time' function",
 		"-sum(metric{})":                        "PromQL expression type *parser.UnaryExpr for instant vectors",
@@ -75,6 +75,14 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 }
 
 func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
+	t.Run("aggregation operations", func(t *testing.T) {
+		featureToggles := EnableAllFeatures
+		featureToggles.EnableAggregationOperations = false
+
+		requireRangeQueryIsUnsupported(t, featureToggles, "sum by (label) (metric)", "aggregation operations")
+		requireInstantQueryIsUnsupported(t, featureToggles, "sum by (label) (metric)", "aggregation operations")
+	})
+
 	t.Run("binary expressions", func(t *testing.T) {
 		featureToggles := EnableAllFeatures
 		featureToggles.EnableBinaryOperations = false

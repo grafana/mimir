@@ -58,7 +58,7 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 
 	maxEstimatedMemoryConsumptionPerQuery, err := engine.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
 	}
 
 	expr, err := parser.ParseExpr(qs)
@@ -151,8 +151,8 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			},
 		}, nil
 	case *parser.AggregateExpr:
-		if e.Op != parser.SUM {
-			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' aggregation", e.Op))
+		if !q.engine.featureToggles.EnableAggregationOperations {
+			return nil, compat.NewNotSupportedError("aggregation operations")
 		}
 
 		if e.Param != nil {
@@ -172,10 +172,11 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			q.intervalMs,
 			e.Grouping,
 			e.Without,
+			e.Op,
 			q.memoryConsumptionTracker,
 			q.annotations,
 			e.PosRange,
-		), nil
+		)
 	case *parser.Call:
 		return q.convertFunctionCallToInstantVectorOperator(e)
 	case *parser.BinaryExpr:
@@ -593,6 +594,12 @@ func (q *Query) Close() {
 		// Nothing to do, we already returned the slice in populateScalarFromScalarOperator.
 	default:
 		panic(fmt.Sprintf("unknown result value type %T", q.result.Value))
+	}
+
+	if q.engine.pedantic && q.result.Err == nil {
+		if q.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes > 0 {
+			panic("Memory consumption tracker still estimates > 0 bytes used. This indicates something has not been returned to a pool.")
+		}
 	}
 }
 

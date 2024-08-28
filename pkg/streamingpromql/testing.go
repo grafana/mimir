@@ -21,5 +21,6 @@ func NewTestEngineOpts() EngineOpts {
 		},
 
 		FeatureToggles: EnableAllFeatures,
+		Pedantic:       true,
 	}
 }

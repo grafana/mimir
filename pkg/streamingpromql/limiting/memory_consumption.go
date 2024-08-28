@@ -51,5 +51,8 @@ func (l *MemoryConsumptionTracker) IncreaseMemoryConsumption(b uint64) error {
 
 // DecreaseMemoryConsumption decreases the current memory consumption by b bytes.
 func (l *MemoryConsumptionTracker) DecreaseMemoryConsumption(b uint64) {
+	if b > l.CurrentEstimatedMemoryConsumptionBytes {
+		panic("Estimated memory consumption of this query is negative. This indicates something has been returned to a pool more than once, which is a bug.")
+	}
 	l.CurrentEstimatedMemoryConsumptionBytes -= b
 }
