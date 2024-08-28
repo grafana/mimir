@@ -912,6 +912,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		Retention:                         am.cfg.Retention,
 		MaxConcurrentGetRequestsPerTenant: am.cfg.MaxConcurrentGetRequestsPerTenant,
 		ExternalURL:                       am.cfg.ExternalURL.URL,
+		TmplExternalURL:                   tmplExternalURL,
 		Replicator:                        am,
 		ReplicationFactor:                 am.cfg.ShardingRing.ReplicationFactor,
 		Store:                             am.store,

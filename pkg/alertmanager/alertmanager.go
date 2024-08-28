@@ -92,6 +92,7 @@ type Config struct {
 	Retention                         time.Duration
 	MaxConcurrentGetRequestsPerTenant int
 	ExternalURL                       *url.URL
+	TmplExternalURL                   *url.URL
 	Limits                            Limits
 	Features                          featurecontrol.Flagger
 
@@ -399,7 +400,7 @@ func (am *Alertmanager) TestReceiversHandler(w http.ResponseWriter, r *http.Requ
 	}
 	am.templatesMtx.RUnlock()
 
-	response, status, err := alertingNotify.TestReceivers(r.Context(), c, tmpls, am.buildGrafanaReceiverIntegrations, am.cfg.ExternalURL.String())
+	response, status, err := alertingNotify.TestReceivers(r.Context(), c, tmpls, am.buildGrafanaReceiverIntegrations, am.cfg.TmplExternalURL.String())
 	if err != nil {
 		http.Error(w,
 			fmt.Sprintf("error testing receivers: %s", err.Error()),
