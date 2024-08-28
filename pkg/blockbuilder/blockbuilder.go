@@ -40,7 +40,7 @@ type BlockBuilder struct {
 	kafkaClient *kgo.Client
 	bucket      objstore.Bucket
 
-	parts []int32
+	assignedPartitionIDs []int32
 	// fallbackOffset is the low watermark from where a partition which doesn't have a commit will be consumed.
 	// It can be either a timestamp or the kafkaStartOffset (the latter isn't supported still).
 	// TODO(v): to support setting it to kafkaStartOffset we need to rework how a lagging cycle is chopped into time frames.
@@ -69,7 +69,7 @@ func New(
 	}
 
 	var ok bool
-	b.parts, ok = b.cfg.PartitionAssignment[instanceID]
+	b.assignedPartitionIDs, ok = b.cfg.PartitionAssignment[instanceID]
 	if !ok {
 		return nil, fmt.Errorf("instance id %d must be present in partition assignment", instanceID)
 	}
@@ -152,7 +152,7 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	}
 
 	// Immediately pause fetching all assigned partitions. We control the order and the pace of partition fetching within the cycles.
-	b.kafkaClient.PauseFetchPartitions(map[string][]int32{b.cfg.Kafka.Topic: b.parts})
+	b.kafkaClient.PauseFetchPartitions(map[string][]int32{b.cfg.Kafka.Topic: b.assignedPartitionIDs})
 
 	return nil
 }
@@ -208,12 +208,12 @@ func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context) (map[int32]kgo.
 		}
 
 		// Look over the assigned partitions and fallback to the ConsumerResetOffset if a partition doesn't have any commit for the configured group.
-		for _, part := range b.parts {
-			if _, ok := offsets[part]; ok {
-				level.Info(b.logger).Log("msg", "consuming from last consumed offset", "consumer_group", b.cfg.Kafka.ConsumerGroup, "partition", part, "offset", offsets[part].String())
+		for _, partition := range b.assignedPartitionIDs {
+			if _, ok := offsets[partition]; ok {
+				level.Info(b.logger).Log("msg", "consuming from last consumed offset", "consumer_group", b.cfg.Kafka.ConsumerGroup, "partition", partition, "offset", offsets[partition].String())
 			} else {
-				offsets[part] = defaultKOffset
-				level.Info(b.logger).Log("msg", "consuming from partition lookback because no offset has been found", "consumer_group", b.cfg.Kafka.ConsumerGroup, "partition", part, "offset", offsets[part].String())
+				offsets[partition] = defaultKOffset
+				level.Info(b.logger).Log("msg", "consuming from partition lookback because no offset has been found", "consumer_group", b.cfg.Kafka.ConsumerGroup, "partition", partition, "offset", offsets[partition].String())
 			}
 		}
 		return offsets, nil
@@ -321,24 +321,20 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 		b.metrics.consumeCycleDuration.Observe(time.Since(t).Seconds())
 	}(time.Now())
 
-	for _, part := range b.parts {
+	for _, partition := range b.assignedPartitionIDs {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if part < 0 {
-			return nil
-		}
 
 		// TODO(v): calculating lag for each individual partition requests data for the whole group every time. This is redundant.
-		// Since we no longer expect a rebalance in the middle of the cycle, we may calculate the lag once for all assigned partitions
+		// As, currently, we don't expect rebalance (re-assignment) happening in the middle of the cycle, we could calculate the lag once for all assigned partitions
 		// in the beginning of the cycle.
-
 		// Lag is the upperbound number of records we'll have to consume from Kafka to build the blocks.
-		// It's the upperbound because the consumption may be stopped earlier if we get records containing
-		// samples with timestamp greater than the end timestamp of this cycle.
-		lag, err := b.getLagForPartition(ctx, part)
+		// It's the "upperbound" because the consumption may be stopped earlier if we get records containing
+		// samples with timestamp greater than the cycleEnd timestamp.
+		lag, err := b.getLagForPartition(ctx, partition)
 		if err != nil {
-			level.Error(b.logger).Log("msg", "failed to get partition lag", "err", err, "partition", part, "cycle_end", cycleEnd)
+			level.Error(b.logger).Log("msg", "failed to get partition lag", "err", err, "partition", partition, "cycle_end", cycleEnd)
 			continue
 		}
 
@@ -346,11 +342,11 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 
 		if lag.Lag <= 0 {
 			if err := lag.Err; err != nil {
-				level.Error(b.logger).Log("msg", "failed to get partition lag", "err", err, "partition", part, "cycle_end", cycleEnd)
+				level.Error(b.logger).Log("msg", "failed to get partition lag", "err", err, "partition", partition, "cycle_end", cycleEnd)
 			} else {
 				level.Info(b.logger).Log(
 					"msg", "nothing to consume in partition",
-					"partition", part,
+					"partition", partition,
 					"offset", lag.Commit.At,
 					"end_offset", lag.End.Offset,
 					"lag", lag.Lag,
@@ -363,7 +359,7 @@ func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time)
 	return nil
 }
 
-func (b *BlockBuilder) getLagForPartition(ctx context.Context, part int32) (kadm.GroupMemberLag, error) {
+func (b *BlockBuilder) getLagForPartition(ctx context.Context, partition int32) (kadm.GroupMemberLag, error) {
 	boff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 100 * time.Millisecond,
 		MaxBackoff: time.Second,
@@ -372,7 +368,7 @@ func (b *BlockBuilder) getLagForPartition(ctx context.Context, part int32) (kadm
 	var lastErr error
 	for boff.Ongoing() {
 		if lastErr != nil {
-			level.Error(b.logger).Log("msg", "failed to get consumer group lag", "err", lastErr, "partition", part)
+			level.Error(b.logger).Log("msg", "failed to get consumer group lag", "err", lastErr, "partition", partition)
 		}
 		groupLag, err := getGroupLag(ctx, kadm.NewClient(b.kafkaClient), b.cfg.Kafka.Topic, b.cfg.Kafka.ConsumerGroup, b.fallbackOffset)
 		if err != nil {
@@ -380,11 +376,11 @@ func (b *BlockBuilder) getLagForPartition(ctx context.Context, part int32) (kadm
 			continue
 		}
 
-		lag, ok := groupLag.Lookup(b.cfg.Kafka.Topic, part)
+		lag, ok := groupLag.Lookup(b.cfg.Kafka.Topic, partition)
 		if ok {
 			return lag, nil
 		}
-		lastErr = fmt.Errorf("partition %d not found in lag response", part)
+		lastErr = fmt.Errorf("partition %d not found in lag response", partition)
 		boff.Wait()
 	}
 

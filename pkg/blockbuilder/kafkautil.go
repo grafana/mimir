@@ -52,17 +52,17 @@ func getGroupLag(ctx context.Context, admClient *kadm.Client, topic, group strin
 	})
 	// If the group-partition in offsets doesn't have a commit, fall back depending on where fallbackOffset points at.
 	for topic, pt := range startOffsets.Offsets() {
-		for part := range pt {
-			if _, ok := offsets.Lookup(topic, part); ok {
+		for partition := range pt {
+			if _, ok := offsets.Lookup(topic, partition); ok {
 				continue
 			}
 			fallbackOffsets, err := resolveFallbackOffsets()
 			if err != nil {
 				return nil, fmt.Errorf("resolve fallback offsets: %w", err)
 			}
-			o, ok := fallbackOffsets.Lookup(topic, part)
+			o, ok := fallbackOffsets.Lookup(topic, partition)
 			if !ok {
-				return nil, fmt.Errorf("partition %d not found in fallback offsets for topic %s", part, topic)
+				return nil, fmt.Errorf("partition %d not found in fallback offsets for topic %s", partition, topic)
 			}
 			offsets.Add(kadm.OffsetResponse{Offset: kadm.Offset{
 				Topic:       o.Topic,
@@ -74,7 +74,7 @@ func getGroupLag(ctx context.Context, admClient *kadm.Client, topic, group strin
 	}
 
 	descrGroup := kadm.DescribedGroup{
-		// "Empty" is the state that indicates that the group doesn't have active consumer members; this is always the case of block-builder,
+		// "Empty" is the state that indicates that the group doesn't have active consumer members; this is always the case for block-builder,
 		// because we don't use group consumption.
 		State: "Empty",
 	}
