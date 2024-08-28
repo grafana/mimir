@@ -628,10 +628,25 @@ type tenantQueryLimitsProvider struct {
 }
 
 func (p *tenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx context.Context) (uint64, error) {
-	tenantID, err := tenant.TenantID(ctx)
+	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return 0, err
 	}
 
-	return p.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID), nil
+	totalLimit := uint64(0)
+
+	for _, tenantID := range tenantIDs {
+		tenantLimit := p.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID)
+
+		if tenantLimit == 0 {
+			// If any tenant is unlimited, then treat whole query as unlimited.
+			return 0, nil
+		}
+
+		// Given we'll enforce limits like the max chunks limit on a per-tenant basis (and therefore effectively allow the
+		// query to consume the sum of all tenants' limits), emulate equivalent behaviour with the memory consumption limit.
+		totalLimit += tenantLimit
+	}
+
+	return totalLimit, nil
 }

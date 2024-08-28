@@ -58,7 +58,7 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 
 	maxEstimatedMemoryConsumptionPerQuery, err := engine.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
 	}
 
 	expr, err := parser.ParseExpr(qs)
