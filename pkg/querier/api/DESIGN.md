@@ -30,7 +30,6 @@ context, the ingester will fallback to the last produced offset fetched by itsel
 strategy of the query-frontend, which is waiting for the result of the next last produce offset periodic request that
 will be issued.
 
-
 ## Strong read consistency offsets serialization format
 
 We experimented with different formats to serialise the partition offsets. The comparison took in account:
