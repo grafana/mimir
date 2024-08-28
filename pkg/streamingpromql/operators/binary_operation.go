@@ -143,8 +143,8 @@ func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMet
 	b.sortSeries(allMetadata, allSeries)
 	b.remainingSeries = allSeries
 
-	b.leftBuffer = newInstantVectorOperatorBuffer(b.Left, leftSeriesUsed, b.MemoryConsumptionTracker)
-	b.rightBuffer = newInstantVectorOperatorBuffer(b.Right, rightSeriesUsed, b.MemoryConsumptionTracker)
+	b.leftBuffer = NewInstantVectorOperatorBuffer(b.Left, leftSeriesUsed, b.MemoryConsumptionTracker)
+	b.rightBuffer = NewInstantVectorOperatorBuffer(b.Right, rightSeriesUsed, b.MemoryConsumptionTracker)
 
 	return allMetadata, nil
 }
@@ -416,7 +416,7 @@ func (b *BinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSe
 	thisSeries := b.remainingSeries[0]
 	b.remainingSeries = b.remainingSeries[1:]
 
-	allLeftSeries, err := b.leftBuffer.getSeries(ctx, thisSeries.leftSeriesIndices)
+	allLeftSeries, err := b.leftBuffer.GetSeries(ctx, thisSeries.leftSeriesIndices)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -426,7 +426,7 @@ func (b *BinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSe
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	allRightSeries, err := b.rightBuffer.getSeries(ctx, thisSeries.rightSeriesIndices)
+	allRightSeries, err := b.rightBuffer.GetSeries(ctx, thisSeries.rightSeriesIndices)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -898,102 +898,11 @@ func (b *BinaryOperation) Close() {
 	}
 
 	if b.leftBuffer != nil {
-		b.leftBuffer.close()
+		b.leftBuffer.Close()
 	}
 
 	if b.rightBuffer != nil {
-		b.rightBuffer.close()
-	}
-}
-
-// InstantVectorOperatorBuffer buffers series data until it is needed by BinaryOperation.
-//
-// For example, if this buffer is being used for a binary operation and the source operator produces series in order A, B, C,
-// but their corresponding output series from the binary operation are in order B, A, C, InstantVectorOperatorBuffer
-// will buffer the data for series A while series B is produced, then return series A when needed.
-type InstantVectorOperatorBuffer struct {
-	source          types.InstantVectorOperator
-	nextIndexToRead int
-
-	// If seriesUsed[i] == true, then the series at index i is needed for this operation and should be buffered if not used immediately.
-	// If seriesUsed[i] == false, then the series at index i is never used and can be immediately discarded.
-	// FIXME: could use a bitmap here to save some memory
-	seriesUsed []bool
-
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
-
-	// Stores series read but required for later series.
-	buffer map[int]types.InstantVectorSeriesData
-
-	// Reused to avoid allocating on every call to getSeries.
-	output []types.InstantVectorSeriesData
-}
-
-func newInstantVectorOperatorBuffer(source types.InstantVectorOperator, seriesUsed []bool, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *InstantVectorOperatorBuffer {
-	return &InstantVectorOperatorBuffer{
-		source:                   source,
-		seriesUsed:               seriesUsed,
-		memoryConsumptionTracker: memoryConsumptionTracker,
-		buffer:                   map[int]types.InstantVectorSeriesData{},
-	}
-}
-
-// getSeries returns the data for the series in seriesIndices.
-// The returned slice is only safe to use until getSeries is called again.
-// seriesIndices should be sorted in ascending order to avoid unnecessary buffering.
-func (b *InstantVectorOperatorBuffer) getSeries(ctx context.Context, seriesIndices []int) ([]types.InstantVectorSeriesData, error) {
-	if cap(b.output) < len(seriesIndices) {
-		b.output = make([]types.InstantVectorSeriesData, len(seriesIndices))
-	}
-
-	b.output = b.output[:len(seriesIndices)]
-
-	for i, seriesIndex := range seriesIndices {
-		d, err := b.getSingleSeries(ctx, seriesIndex)
-
-		if err != nil {
-			return nil, err
-		}
-
-		b.output[i] = d
-	}
-
-	return b.output, nil
-}
-
-func (b *InstantVectorOperatorBuffer) getSingleSeries(ctx context.Context, seriesIndex int) (types.InstantVectorSeriesData, error) {
-	for seriesIndex > b.nextIndexToRead {
-		d, err := b.source.NextSeries(ctx)
-		if err != nil {
-			return types.InstantVectorSeriesData{}, err
-		}
-
-		if b.seriesUsed[b.nextIndexToRead] {
-			// We need this series later, but not right now. Store it for later.
-			b.buffer[b.nextIndexToRead] = d
-		} else {
-			// We don't need this series at all, return the slice to the pool now.
-			types.PutInstantVectorSeriesData(d, b.memoryConsumptionTracker)
-		}
-
-		b.nextIndexToRead++
-	}
-
-	if seriesIndex == b.nextIndexToRead {
-		// Don't bother buffering data if we can return it directly.
-		b.nextIndexToRead++
-		return b.source.NextSeries(ctx)
-	}
-
-	d := b.buffer[seriesIndex]
-	delete(b.buffer, seriesIndex)
-
-	return d, nil
-}
-
-func (b *InstantVectorOperatorBuffer) close() {
-	if b.seriesUsed != nil {
-		types.BoolSlicePool.Put(b.seriesUsed, b.memoryConsumptionTracker)
+		b.rightBuffer.Close()
 	}
 }
 
