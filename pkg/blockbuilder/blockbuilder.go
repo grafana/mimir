@@ -289,9 +289,9 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 			cycleEnd := nextCycleTime
 			level.Info(b.logger).Log("msg", "triggering next consume cycle", "cycle_end", cycleEnd)
 			err := b.NextConsumeCycle(ctx, cycleEnd)
-			if err != nil {
-				b.metrics.consumeCycleFailures.Inc()
-				level.Error(b.logger).Log("msg", "consume cycle failed", "cycle_end", cycleEnd, "err", err)
+			if err != nil && !errors.Is(err, context.Canceled) {
+				// Fail the whole service in case of a non-recoverable error.
+				return fmt.Errorf("consume next cycle until cycle_end %s: %w", cycleEnd, err)
 			}
 
 			// If we took more than ConsumeInterval to consume the records, this will immediately start the next consumption.
