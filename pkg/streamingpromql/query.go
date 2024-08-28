@@ -595,6 +595,12 @@ func (q *Query) Close() {
 	default:
 		panic(fmt.Sprintf("unknown result value type %T", q.result.Value))
 	}
+
+	if q.engine.pedantic {
+		if q.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes > 0 {
+			panic("Memory consumption tracker still estimates > 0 bytes used. This indicates something has not been returned to a pool.")
+		}
+	}
 }
 
 func (q *Query) Statement() parser.Statement {

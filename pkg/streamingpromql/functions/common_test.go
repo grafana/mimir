@@ -33,6 +33,7 @@ func TestDropSeriesName(t *testing.T) {
 func TestFloatTransformationFunc(t *testing.T) {
 	transform := func(f float64) float64 { return f * 2 }
 	transformFunc := floatTransformationFunc(transform)
+	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
 
 	seriesData := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{
@@ -43,6 +44,8 @@ func TestFloatTransformationFunc(t *testing.T) {
 			{H: &histogram.FloatHistogram{Count: 1, Sum: 2}},
 		},
 	}
+	// Increase the memory tracker for 2 FPoints, and 1 HPoint
+	memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*2 + types.HPointSize*1)
 
 	expected := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{
@@ -54,14 +57,16 @@ func TestFloatTransformationFunc(t *testing.T) {
 		},
 	}
 
-	modifiedSeriesData, err := transformFunc(seriesData, limiting.NewMemoryConsumptionTracker(0, nil))
+	modifiedSeriesData, err := transformFunc(seriesData, memoryConsumptionTracker)
 	require.NoError(t, err)
 	require.Equal(t, expected, modifiedSeriesData)
+	require.Equal(t, types.FPointSize*2+types.HPointSize*1, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
 }
 
 func TestFloatTransformationDropHistogramsFunc(t *testing.T) {
 	transform := func(f float64) float64 { return f * 2 }
 	transformFunc := FloatTransformationDropHistogramsFunc(transform)
+	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
 
 	seriesData := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{
@@ -72,6 +77,8 @@ func TestFloatTransformationDropHistogramsFunc(t *testing.T) {
 			{H: &histogram.FloatHistogram{Count: 1, Sum: 2}},
 		},
 	}
+	// Increase the memory tracker for 2 FPoints, and 1 HPoint
+	memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*2 + types.HPointSize*1)
 
 	expected := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{
@@ -81,7 +88,8 @@ func TestFloatTransformationDropHistogramsFunc(t *testing.T) {
 		Histograms: nil, // Histograms should be dropped
 	}
 
-	modifiedSeriesData, err := transformFunc(seriesData, limiting.NewMemoryConsumptionTracker(0, nil))
+	modifiedSeriesData, err := transformFunc(seriesData, memoryConsumptionTracker)
 	require.NoError(t, err)
 	require.Equal(t, expected, modifiedSeriesData)
+	require.Equal(t, types.FPointSize*2, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
 }
