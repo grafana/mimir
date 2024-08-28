@@ -322,20 +322,20 @@ func (b *BlockBuilder) getLagForPartition(ctx context.Context, partition int32) 
 	})
 	var lastErr error
 	for boff.Ongoing() {
-		if lastErr != nil {
-			level.Error(b.logger).Log("msg", "failed to get consumer group lag", "err", lastErr, "partition", partition)
-		}
 		groupLag, err := getGroupLag(ctx, kadm.NewClient(b.kafkaClient), b.cfg.Kafka.Topic, b.cfg.Kafka.ConsumerGroup, b.fallbackOffsetMillis)
 		if err != nil {
 			lastErr = fmt.Errorf("get consumer group lag: %w", err)
-			continue
+		} else {
+			lag, ok := groupLag.Lookup(b.cfg.Kafka.Topic, partition)
+			if ok {
+				return lag, nil
+			}
+			// This should not happen with the recent implementation of getGroupLag, that handles a case when the group doesn't have live participants;
+			// leaving the check here for completeness.
+			lastErr = fmt.Errorf("partition %d not found in lag response", partition)
 		}
 
-		lag, ok := groupLag.Lookup(b.cfg.Kafka.Topic, partition)
-		if ok {
-			return lag, nil
-		}
-		lastErr = fmt.Errorf("partition %d not found in lag response", partition)
+		level.Warn(b.logger).Log("msg", "failed to get consumer group lag; will retry", "err", lastErr, "partition", partition)
 		boff.Wait()
 	}
 
