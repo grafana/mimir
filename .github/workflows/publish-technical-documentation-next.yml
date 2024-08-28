@@ -24,7 +24,7 @@ jobs:
       - uses: grafana/writers-toolkit/publish-technical-documentation@publish-technical-documentation/v1
         with:
           source_directory: docs/sources/mimir
-          website_directory: content/docs/<REPO>/next
+          website_directory: content/docs/mimir/next
       - uses: grafana/writers-toolkit/publish-technical-documentation@publish-technical-documentation/v1
         with:
           source_directory: docs/sources/helm-charts/mimir-distributed
