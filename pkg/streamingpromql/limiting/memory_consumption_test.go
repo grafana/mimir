@@ -46,13 +46,7 @@ func TestMemoryConsumptionTracker_Unlimited(t *testing.T) {
 	assertRejectedQueriesCount(t, reg, 0)
 
 	// Test reducing memory consumption to a negative panics
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("We did not panic on negative memory consumption")
-		}
-	}()
-
-	tracker.DecreaseMemoryConsumption(150)
+	require.Panics(t, func() { tracker.DecreaseMemoryConsumption(150) })
 }
 
 func TestMemoryConsumptionTracker_Limited(t *testing.T) {
@@ -104,13 +98,7 @@ func TestMemoryConsumptionTracker_Limited(t *testing.T) {
 	assertRejectedQueriesCount(t, reg, 1)
 
 	// Test reducing memory consumption to a negative panics
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("We did not panic on negative memory consumption")
-		}
-	}()
-
-	tracker.DecreaseMemoryConsumption(150)
+	require.Panics(t, func() { tracker.DecreaseMemoryConsumption(150) })
 }
 
 func assertRejectedQueriesCount(t *testing.T, reg *prometheus.Registry, expectedRejectionCount int) {
