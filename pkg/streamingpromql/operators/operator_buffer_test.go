@@ -4,12 +4,14 @@ package operators
 
 import (
 	"context"
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"testing"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
-	"testing"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 func TestInstantVectorOperatorBuffer(t *testing.T) {

@@ -4,6 +4,7 @@ package operators
 
 import (
 	"context"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
