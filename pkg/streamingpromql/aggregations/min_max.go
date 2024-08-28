@@ -22,8 +22,8 @@ type MinMaxAggregationGroup struct {
 	accumulatePoint func(idx int64, f float64)
 }
 
+// max represents whether this aggregation is `max` (true), or `min` (false)
 func NewMinMaxAggregationGroup(max bool) *MinMaxAggregationGroup {
-	// max represents whether this aggregation is `max` (true), or `min` (false)
 	g := &MinMaxAggregationGroup{}
 	if max {
 		g.accumulatePoint = g.maxAccumulatePoint

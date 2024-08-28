@@ -110,7 +110,7 @@ type group struct {
 	// Used to sort groups in the order that they'll be completed in.
 	lastSeriesIndex int
 
-	// The AggregationGroup to perform over this group of series.
+	// The aggregation for this group of series.
 	aggregation aggregations.AggregationGroup
 }
 

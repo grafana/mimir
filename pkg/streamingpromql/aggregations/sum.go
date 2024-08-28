@@ -114,7 +114,7 @@ func (g *SumAggregationGroup) reconcileAndCountFloatPoints() (int, bool) {
 	// have both Floats and Histograms present, and one without these checks
 	// so we don't have to do it at every point.
 	floatPointCount := 0
-	haveEmittedMixedFloatsAndHistogramsWarning := false
+	haveMixedFloatsAndHistograms := false
 	if len(g.floatPresent) > 0 && len(g.histogramSums) > 0 {
 		for idx, present := range g.floatPresent {
 			if present {
@@ -125,7 +125,7 @@ func (g *SumAggregationGroup) reconcileAndCountFloatPoints() (int, bool) {
 					g.histogramSums[idx] = nil
 					g.histogramPointCount--
 
-					haveEmittedMixedFloatsAndHistogramsWarning = true
+					haveMixedFloatsAndHistograms = true
 				} else {
 					floatPointCount++
 				}
@@ -138,7 +138,7 @@ func (g *SumAggregationGroup) reconcileAndCountFloatPoints() (int, bool) {
 			}
 		}
 	}
-	return floatPointCount, haveEmittedMixedFloatsAndHistogramsWarning
+	return floatPointCount, haveMixedFloatsAndHistograms
 }
 
 func (g *SumAggregationGroup) ComputeOutputSeries(start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
