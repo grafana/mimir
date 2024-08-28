@@ -130,9 +130,9 @@ func TestBlockBuilder_NextConsumeCycle(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_blockbuilder_consumer_lag The per-topic-partition lag, in number of records, instance needs to work through each cycle.
-		# TYPE cortex_blockbuilder_consumer_lag gauge
-		cortex_blockbuilder_consumer_lag{partition="0",topic="test"} 1
-		cortex_blockbuilder_consumer_lag{partition="1",topic="test"} 0
-	`), "cortex_blockbuilder_consumer_lag"))
+		# HELP cortex_blockbuilder_consumer_lag_records The per-topic-partition number of records, instance needs to work through each cycle.
+		# TYPE cortex_blockbuilder_consumer_lag_records gauge
+		cortex_blockbuilder_consumer_lag_records{partition="0",topic="test"} 1
+		cortex_blockbuilder_consumer_lag_records{partition="1",topic="test"} 0
+	`), "cortex_blockbuilder_consumer_lag_records"))
 }
