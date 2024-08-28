@@ -46,16 +46,16 @@ func newQueueBroker(
 		var algos []QueuingAlgorithm
 		if prioritizeQueryComponents {
 			algos = []QueuingAlgorithm{
-				&roundRobinState{}, // root; QueuingAlgorithm selects query component
-				tqas,               // query components; QueuingAlgorithm selects tenants
-				&roundRobinState{}, // tenant queues; QueuingAlgorithm selects from local queue
+				NewQuerierWorkerQueuePriorityAlgo(), // root; algorithm selects query component based on worker ID
+				tqas,                                // query components; algorithm selects tenants
+				&roundRobinState{},                  // tenant queues; algorithm selects query from local queue
 
 			}
 		} else {
 			algos = []QueuingAlgorithm{
-				tqas,               // root; QueuingAlgorithm selects tenants
-				&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
-				&roundRobinState{}, // query components; QueuingAlgorithm selects query from local queue
+				tqas,               // root; algorithm selects tenants
+				&roundRobinState{}, // tenant queues; algorithm selects query component
+				&roundRobinState{}, // query components; algorithm selects query from local queue
 			}
 		}
 		tree, err = NewTree(algos...)
