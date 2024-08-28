@@ -9,11 +9,11 @@ package queue
 //
 // This significantly outperforms the previous round-robin approach which simply rotated through the node order.
 // Although a vanilla round-robin algorithm will select a given query-component node 1 / 4 of the time,
-// in situations of high latency on a query component, the one slow query component will still grow asymptotically
-// to dominate the utilization the querier-worker connections, as measured by inflight query processing time.
+// in situations of high latency on a query component, the utilization of the querier-worker connections
+// as measured by inflight query processing time will grow asymptotically to be dominated by the slow query component.
 //
 // There are 4 possible query components: "ingester", "store-gateway", "ingester-and-store-gateway", and "unknown".
-// With all 4 queue nodes active, approximately 1 / 4 of the querier-workers are prioritized to each queue node.
+// When all 4 queue nodes exist, approximately 1 / 4 of the querier-workers are prioritized to each queue node.
 // This algorithm requires a minimum of 4 querier-workers per querier to prevent queue starvation.
 // The minimum is enforced in the queriers by overriding -querier.max-concurrent if necessary.
 //
