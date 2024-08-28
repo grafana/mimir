@@ -19,7 +19,7 @@ type MinMaxAggregationGroup struct {
 	floatValues  []float64
 	floatPresent []bool
 
-	accumulatePoint func(idx int64, t int64, f float64)
+	accumulatePoint func(idx int64, f float64)
 }
 
 func NewMinMaxAggregationGroup(max bool) *MinMaxAggregationGroup {
@@ -33,14 +33,14 @@ func NewMinMaxAggregationGroup(max bool) *MinMaxAggregationGroup {
 	return g
 }
 
-func (g *MinMaxAggregationGroup) maxAccumulatePoint(idx int64, t int64, f float64) {
+func (g *MinMaxAggregationGroup) maxAccumulatePoint(idx int64, f float64) {
 	if !g.floatPresent[idx] || g.floatPresent[idx] && f > g.floatValues[idx] {
 		g.floatValues[idx] = f
 		g.floatPresent[idx] = true
 	}
 }
 
-func (g *MinMaxAggregationGroup) minAccumulatePoint(idx int64, t int64, f float64) {
+func (g *MinMaxAggregationGroup) minAccumulatePoint(idx int64, f float64) {
 	if !g.floatPresent[idx] || g.floatPresent[idx] && f < g.floatValues[idx] {
 		g.floatValues[idx] = f
 		g.floatPresent[idx] = true
@@ -69,14 +69,14 @@ func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeries
 			continue
 		}
 		idx := (p.T - start) / interval
-		g.accumulatePoint(idx, p.T, p.F)
+		g.accumulatePoint(idx, p.F)
 	}
 
 	// If a histogram exists max treats it as 0. We have to detect this here so that we return a 0 value instead of nothing.
 	// This is consistent with prometheus but may not be desired value: https://github.com/prometheus/prometheus/issues/14711
 	for _, p := range data.Histograms {
 		idx := (p.T - start) / interval
-		g.accumulatePoint(idx, p.T, 0)
+		g.accumulatePoint(idx, 0)
 	}
 
 	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
