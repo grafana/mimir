@@ -863,7 +863,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 			}
 			for _, s := range testCase.input {
 				// Count the memory for the given floats + histograms
-				memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*uint64(len(s.Floats)) + types.HPointSize*uint64(len(s.Histograms)))
+				require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*uint64(len(s.Floats))+types.HPointSize*uint64(len(s.Histograms))))
 			}
 
 			result, err := o.mergeOneSide(testCase.input, testCase.sourceSeriesIndices, testCase.sourceSeriesMetadata, "right")
@@ -1137,7 +1137,7 @@ func TestBinaryOperationSeriesBuffer(t *testing.T) {
 	seriesUsed := []bool{true, false, true, true, true}
 	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
 	// We have 6 FPoints from the inner series
-	memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize * 6)
+	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*6))
 	buffer := newBinaryOperationSeriesBuffer(inner, seriesUsed, memoryConsumptionTracker)
 	ctx := context.Background()
 
