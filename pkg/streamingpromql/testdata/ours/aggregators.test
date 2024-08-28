@@ -183,3 +183,14 @@ eval range from 0 to 5m step 1m min(series)
 	{} -20 -10 -10 0 -10 0
 
 clear
+
+# Test native histogram compaction
+load 1m
+    single_histogram{label="value"}  {{schema:1 sum:5 count:5 buckets:[1 3 1 4 0 2]}}
+    single_histogram{label="value2"} {{schema:1 sum:5 count:5 buckets:[1 3 1]}}
+
+# Compaction will happen in this sum. It will fail without it.
+eval instant at 1m sum(single_histogram)
+    {} {{schema:1 count:10 sum:10 buckets:[2 6 2 4 0 2]}}
+
+clear
