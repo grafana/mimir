@@ -17,11 +17,11 @@ import (
 
 type SumAggregationGroup struct {
 	// Sum, presence, and histograms for each step.
-	floatSums              []float64
-	floatCompensatingMeans []float64 // Mean, or "compensating value" for Kahan summation.
-	floatPresent           []bool
-	histogramSums          []*histogram.FloatHistogram
-	histogramPointCount    int
+	floatSums               []float64
+	floatCompensatingValues []float64 // Compensation value for Kahan summation.
+	floatPresent            []bool
+	histogramSums           []*histogram.FloatHistogram
+	histogramPointCount     int
 }
 
 func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) (bool, error) {
@@ -33,7 +33,7 @@ func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 			return false, err
 		}
 
-		g.floatCompensatingMeans, err = types.Float64SlicePool.Get(steps, memoryConsumptionTracker)
+		g.floatCompensatingValues, err = types.Float64SlicePool.Get(steps, memoryConsumptionTracker)
 		if err != nil {
 			return false, err
 		}
@@ -43,7 +43,7 @@ func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 			return false, err
 		}
 		g.floatSums = g.floatSums[:steps]
-		g.floatCompensatingMeans = g.floatCompensatingMeans[:steps]
+		g.floatCompensatingValues = g.floatCompensatingValues[:steps]
 		g.floatPresent = g.floatPresent[:steps]
 	}
 
@@ -71,7 +71,7 @@ func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 			removeConflictingPoint(idx)
 			continue
 		}
-		g.floatSums[idx], g.floatCompensatingMeans[idx] = floats.KahanSumInc(p.F, g.floatSums[idx], g.floatCompensatingMeans[idx])
+		g.floatSums[idx], g.floatCompensatingValues[idx] = floats.KahanSumInc(p.F, g.floatSums[idx], g.floatCompensatingValues[idx])
 		g.floatPresent[idx] = true
 	}
 
@@ -141,7 +141,7 @@ func (g *SumAggregationGroup) ComputeOutputSeries(start int64, interval int64, m
 		for i, havePoint := range g.floatPresent {
 			if havePoint {
 				t := start + int64(i)*interval
-				f := g.floatSums[i] + g.floatCompensatingMeans[i]
+				f := g.floatSums[i] + g.floatCompensatingValues[i]
 				floatPoints = append(floatPoints, promql.FPoint{T: t, F: f})
 			}
 		}
@@ -164,7 +164,7 @@ func (g *SumAggregationGroup) ComputeOutputSeries(start int64, interval int64, m
 	}
 
 	types.Float64SlicePool.Put(g.floatSums, memoryConsumptionTracker)
-	types.Float64SlicePool.Put(g.floatCompensatingMeans, memoryConsumptionTracker)
+	types.Float64SlicePool.Put(g.floatCompensatingValues, memoryConsumptionTracker)
 	types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
 	types.HistogramSlicePool.Put(g.histogramSums, memoryConsumptionTracker)
 
