@@ -67,6 +67,7 @@ The following features are currently experimental:
   - `-ruler.max-independent-rule-evaluation-concurrency`
   - `-ruler.max-independent-rule-evaluation-concurrency-per-tenant`
   - `-ruler.independent-rule-evaluation-concurrency-min-duration-percentage`
+  - `-ruler.rule-evaluation-write-enabled`
 - Distributor
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`

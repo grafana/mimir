@@ -167,14 +167,14 @@ func (e *executor[R]) OnFailure(listener func(ExecutionDoneEvent[R])) Executor[R
 
 func (e *executor[R]) Run(fn func() error) error {
 	_, err := e.executeSync(func(_ Execution[R]) (R, error) {
-		return *(new(R)), fn()
+		return *new(R), fn()
 	}, false)
 	return err
 }
 
 func (e *executor[R]) RunWithExecution(fn func(exec Execution[R]) error) error {
 	_, err := e.executeSync(func(exec Execution[R]) (R, error) {
-		return *(new(R)), fn(exec)
+		return *new(R), fn(exec)
 	}, true)
 	return err
 }
@@ -193,13 +193,13 @@ func (e *executor[R]) GetWithExecution(fn func(exec Execution[R]) (R, error)) (R
 
 func (e *executor[R]) RunAsync(fn func() error) ExecutionResult[R] {
 	return e.executeAsync(func(_ Execution[R]) (R, error) {
-		return *(new(R)), fn()
+		return *new(R), fn()
 	}, false)
 }
 
 func (e *executor[R]) RunWithExecutionAsync(fn func(exec Execution[R]) error) ExecutionResult[R] {
 	return e.executeAsync(func(exec Execution[R]) (R, error) {
-		return *(new(R)), fn(exec)
+		return *new(R), fn(exec)
 	}, true)
 }
 
@@ -264,7 +264,7 @@ func (e *executor[R]) execute(fn func(exec Execution[R]) (R, error), outerExec *
 
 	// Compose policy executors from the innermost policy to the outermost
 	for i := len(e.policies) - 1; i >= 0; i-- {
-		pe := e.policies[i].ToExecutor(*(new(R))).(policyExecutor[R])
+		pe := e.policies[i].ToExecutor(*new(R)).(policyExecutor[R])
 		outerFn = pe.Apply(outerFn)
 	}
 

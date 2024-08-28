@@ -703,7 +703,7 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest_AcceptHeader(t *testing.T) {
 			case formatProtobuf:
 				require.Equal(t, "application/vnd.mimir.queryresponse+protobuf,application/json", encodedRequest.Header.Get("Accept"))
 			default:
-				t.Fatalf(fmt.Sprintf("unknown query result payload format: %v", queryResultPayloadFormat))
+				t.Fatalf("unknown query result payload format: %v", queryResultPayloadFormat)
 			}
 		})
 	}

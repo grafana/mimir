@@ -87,17 +87,6 @@
         },
         {
           "kind": "field",
-          "name": "enable_otel_metadata_translation",
-          "required": false,
-          "desc": "If true, store metadata when ingesting metrics via OTLP. This makes metric descriptions and types available for metrics ingested via OTLP.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "distributor.enable-otlp-metadata-storage",
-          "fieldType": "boolean",
-          "fieldCategory": "deprecated"
-        },
-        {
-          "kind": "field",
           "name": "get_request_for_ingester_shutdown_enabled",
           "required": false,
           "desc": "Enable GET requests to the /ingester/shutdown endpoint to trigger an ingester shutdown. This is a potentially dangerous operation and should only be enabled consciously.",
@@ -1935,7 +1924,7 @@
           "kind": "field",
           "name": "max_concurrent",
           "required": false,
-          "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier.",
+          "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. The minimum value is four; lower values are ignored and set to the minimum",
           "fieldValue": null,
           "fieldDefaultValue": 20,
           "fieldFlag": "querier.max-concurrent",
@@ -12652,6 +12641,17 @@
           "fieldDefaultValue": 50,
           "fieldFlag": "ruler.independent-rule-evaluation-concurrency-min-duration-percentage",
           "fieldType": "float",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "rule_evaluation_write_enabled",
+          "required": false,
+          "desc": "Writes the results of rule evaluation to ingesters or ingest storage when enabled. Use this option for testing purposes. To disable, set to false.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "ruler.rule-evaluation-write-enabled",
+          "fieldType": "boolean",
           "fieldCategory": "experimental"
         }
       ],
