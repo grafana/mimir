@@ -203,7 +203,7 @@ func commonKafkaClientOptions(cfg KafkaConfig, logger log.Logger, metrics *kprom
 		kgo.DialTimeout(cfg.DialTimeout),
 		kgo.MetadataMinAge(10 * time.Second),
 		kgo.MetadataMaxAge(10 * time.Second),
-		kgo.WithLogger(newKafkaLogger(logger)),
+		kgo.WithLogger(ingest.NewKafkaLogger(logger)),
 	}
 	if metrics != nil {
 		opts = append(opts, kgo.WithHooks(metrics))
