@@ -14,7 +14,15 @@ import (
 
 // MergeSeries merges the series in data into a single InstantVectorSeriesData, or returns information about a conflict between series.
 //
+// For example, MergeSeries would return a single series with points [1, 2, 3] given the two input series:
+//
+//	1 2 _
+//	_ _ 3
+//
 // MergeSeries is optimised for the case where there is only one source series, or the source series do not overlap, as in the example above.
+//
+// sourceSeriesIndices should contain the indices of the original series in data. For example, if data contains the first, fourth and tenth
+// series, then sourceSeriesIndices would be [0, 3, 9]. These indices are used to include source series information when a conflict occurs.
 //
 // MergeSeries re-orders both data and sourceSeriesIndices.
 func MergeSeries(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, *MergeConflict, error) {
