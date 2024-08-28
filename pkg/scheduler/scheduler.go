@@ -440,18 +440,19 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 	}
 	defer s.requestQueue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
 
-	lastUserIndex := queue.FirstTenant()
+	lastTenantIdx := queue.FirstTenant()
 
 	// In stopping state scheduler is not accepting new queries, but still dispatching queries in the queues.
 	for s.isRunningOrStopping() {
-		queueReq, idx, err := s.requestQueue.WaitForRequestForQuerier(querier.Context(), lastUserIndex, querierID)
+		dequeueReq := queue.NewQuerierWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
+		queryReq, idx, err := s.requestQueue.AwaitRequestForQuerier(dequeueReq)
 		if err != nil {
 			return s.transformRequestQueueError(err)
 		}
 
-		lastUserIndex = idx
+		lastTenantIdx = idx
 
-		schedulerReq := queueReq.(*queue.SchedulerRequest)
+		schedulerReq := queryReq.(*queue.SchedulerRequest)
 
 		queueTime := time.Since(schedulerReq.EnqueueTime)
 		additionalQueueDimensionLabels := strings.Join(schedulerReq.AdditionalQueueDimensions, ":")
@@ -474,7 +475,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 			// remove from pending requests
 			s.cancelRequestAndRemoveFromPending(schedulerReq.Key(), "request cancelled")
 			s.requestQueue.QueryComponentUtilization.MarkRequestCompleted(schedulerReq)
-			lastUserIndex = lastUserIndex.ReuseLastTenant()
+			lastTenantIdx = lastTenantIdx.ReuseLastTenant()
 			continue
 		}
 

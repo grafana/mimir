@@ -19,7 +19,7 @@ type QuerierID string
 
 type tenantRequest struct {
 	tenantID TenantID
-	req      Request
+	req      QueryRequest
 }
 
 // queueBroker encapsulates access to tenant queues for pending requests
