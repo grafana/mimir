@@ -4,13 +4,9 @@ package blockbuilder
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -26,7 +22,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
-	storagetsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -41,10 +36,8 @@ type BlockBuilder struct {
 	bucket      objstore.Bucket
 
 	assignedPartitionIDs []int32
-	// fallbackOffset is the low watermark from where a partition which doesn't have a commit will be consumed.
-	// It can be either a timestamp or the kafkaStartOffset (the latter isn't supported still).
-	// TODO(v): to support setting it to kafkaStartOffset we need to rework how a lagging cycle is chopped into time frames.
-	fallbackOffset int64
+	// fallbackOffsetMillis is the milliseconds timestamp after which a partition that doesn't have a commit will be consumed from.
+	fallbackOffsetMillis int64
 
 	metrics blockBuilderMetrics
 }
@@ -63,15 +56,10 @@ func New(
 		metrics:  newBlockBuilderMetrics(reg),
 	}
 
-	instanceID, err := parseIDFromInstance(b.cfg.InstanceID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse instance id: %w", err)
-	}
-
-	var ok bool
-	b.assignedPartitionIDs, ok = b.cfg.PartitionAssignment[instanceID]
-	if !ok {
-		return nil, fmt.Errorf("instance id %d must be present in partition assignment", instanceID)
+	b.assignedPartitionIDs = b.cfg.PartitionAssignment[b.cfg.InstanceID]
+	if len(b.assignedPartitionIDs) == 0 {
+		// This is just an assertion check. The config validation prevents this from happening.
+		return nil, fmt.Errorf("no partitions assigned to instance %s", b.cfg.InstanceID)
 	}
 
 	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorageConfig.Bucket, "block-builder", logger, reg)
@@ -83,20 +71,6 @@ func New(
 	b.Service = services.NewBasicService(b.starting, b.running, b.stopping)
 
 	return b, nil
-}
-
-func parseIDFromInstance(instanceID string) (int, error) {
-	splits := strings.Split(instanceID, "-")
-	if len(splits) == 0 {
-		return 0, fmt.Errorf("malformed instance id %s", instanceID)
-	}
-
-	partID, err := strconv.Atoi(splits[len(splits)-1])
-	if err != nil {
-		return 0, fmt.Errorf("parse instance id %s, expect sequence number: %w", instanceID, err)
-	}
-
-	return partID, nil
 }
 
 func (b *BlockBuilder) starting(ctx context.Context) (err error) {
@@ -119,11 +93,11 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	// TODO: add a test to test the case where the consumption on startup happens
 	// after the LookbackOnNoCommit with records before the after the consumption
 	// start point.
-	startAtOffsets, fallbackOffset, err := b.findOffsetsToStartAt(ctx)
+	startAtOffsets, fallbackOffsetMillis, err := b.findOffsetsToStartAt(ctx)
 	if err != nil {
 		return fmt.Errorf("find offsets to start at: %w", err)
 	}
-	b.fallbackOffset = fallbackOffset
+	b.fallbackOffsetMillis = fallbackOffsetMillis
 
 	const fetchMaxBytes = 100_000_000
 
@@ -157,9 +131,6 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	return nil
 }
 
-// kafkaOffsetStart is a special offset value that means the beginning of the partition.
-const kafkaOffsetStart = int64(-2)
-
 func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context) (map[int32]kgo.Offset, int64, error) {
 	// We use an ephemeral client to fetch the offset and then create a new client with this offset.
 	// The reason for this is that changing the offset of an existing client requires to have used this client for fetching at least once.
@@ -172,26 +143,10 @@ func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context) (map[int32]kgo.
 
 	admClient := kadm.NewClient(cl)
 
-	var fallbackOffset int64
-	defaultKOffset := kgo.NewOffset()
-
-	// When LookbackOnNoCommit is positive, its value is used to calculate the timestamp after which the consumption starts,
-	// otherwise it is a special offset for the "start" of the partition.
-	if b.cfg.LookbackOnNoCommit > 0 {
-		ts := time.Now().Add(-b.cfg.LookbackOnNoCommit)
-		fallbackOffset = ts.UnixMilli()
-		defaultKOffset = defaultKOffset.AfterMilli(fallbackOffset)
-	} else {
-		fallbackOffset = int64(b.cfg.LookbackOnNoCommit)
-		switch fallbackOffset {
-		case kafkaOffsetStart:
-			defaultKOffset = defaultKOffset.AtStart()
-		default:
-			// We don't support consuming from the "end" of the partition because starting a cycle from the end always results to a zero lag.
-			// This may be done later.
-			return nil, -1, fmt.Errorf("unexpected fallback offset value %v", b.cfg.LookbackOnNoCommit)
-		}
-	}
+	// Fallback offset is the millisecond timestamp used to look up a real offset if partition doesn't have a commit.
+	ts := time.Now().Add(-b.cfg.LookbackOnNoCommit)
+	fallbackOffsetMillis := ts.UnixMilli()
+	defaultKOffset := kgo.NewOffset().AfterMilli(fallbackOffsetMillis)
 
 	fetchOffsets := func(ctx context.Context) (offsets map[int32]kgo.Offset, err error) {
 		resp, err := admClient.FetchOffsets(ctx, b.cfg.Kafka.ConsumerGroup)
@@ -228,7 +183,7 @@ func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context) (map[int32]kgo.
 		var offsets map[int32]kgo.Offset
 		offsets, err = fetchOffsets(ctx)
 		if err == nil {
-			return offsets, fallbackOffset, nil
+			return offsets, fallbackOffsetMillis, nil
 		}
 		level.Warn(b.logger).Log("msg", "failed to fetch startup offsets; will retry", "err", err)
 		boff.Wait()
@@ -370,7 +325,7 @@ func (b *BlockBuilder) getLagForPartition(ctx context.Context, partition int32) 
 		if lastErr != nil {
 			level.Error(b.logger).Log("msg", "failed to get consumer group lag", "err", lastErr, "partition", partition)
 		}
-		groupLag, err := getGroupLag(ctx, kadm.NewClient(b.kafkaClient), b.cfg.Kafka.Topic, b.cfg.Kafka.ConsumerGroup, b.fallbackOffset)
+		groupLag, err := getGroupLag(ctx, kadm.NewClient(b.kafkaClient), b.cfg.Kafka.Topic, b.cfg.Kafka.ConsumerGroup, b.fallbackOffsetMillis)
 		if err != nil {
 			lastErr = fmt.Errorf("get consumer group lag: %w", err)
 			continue
@@ -385,125 +340,4 @@ func (b *BlockBuilder) getLagForPartition(ctx context.Context, partition int32) 
 	}
 
 	return kadm.GroupMemberLag{}, lastErr
-}
-
-type Config struct {
-	InstanceID          string          `yaml:"instance_id" doc:"default=<hostname>" category:"advanced"`
-	PartitionAssignment map[int][]int32 `yaml:"partition_assignment" category:"experimental"`
-
-	ConsumeInterval       time.Duration `yaml:"consume_interval"`
-	ConsumeIntervalBuffer time.Duration `yaml:"consume_interval_buffer"`
-	LookbackOnNoCommit    time.Duration `yaml:"lookback_on_no_commit" category:"advanced"`
-
-	Kafka               KafkaConfig                     `yaml:"kafka"`
-	BlocksStorageConfig storagetsdb.BlocksStorageConfig `yaml:"-"`
-}
-
-func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	hostname, err := os.Hostname()
-	if err != nil {
-		level.Error(logger).Log("msg", "failed to get hostname", "err", err)
-		os.Exit(1)
-	}
-
-	cfg.Kafka.RegisterFlagsWithPrefix("block-builder.", f)
-
-	f.StringVar(&cfg.InstanceID, "block-builder.instance-id", hostname, "Instance id.")
-	f.Var(newPartitionAssignmentVar(&cfg.PartitionAssignment), "block-builder.partition-assignment", "Static partition assignment. Format map[instance-id][]partitions).")
-	f.DurationVar(&cfg.ConsumeInterval, "block-builder.consume-interval", time.Hour, "Interval between consumption cycles.")
-	f.DurationVar(&cfg.ConsumeIntervalBuffer, "block-builder.consume-interval-buffer", 15*time.Minute, "Extra buffer between subsequent consumption cycles. To avoid small blocks the block-builder consumes until the last hour boundary of the consumption interval, plus the buffer.")
-	f.DurationVar(&cfg.LookbackOnNoCommit, "block-builder.lookback-on-no-commit", 12*time.Hour, "How much of the historical records to look back when there is no kafka commit for a partition.")
-}
-
-func (cfg *Config) Validate() error {
-	if err := cfg.Kafka.Validate(); err != nil {
-		return err
-	}
-
-	if len(cfg.PartitionAssignment) == 0 {
-		return fmt.Errorf("partition assignment is required")
-	}
-	// TODO(codesome): validate the consumption interval. Must be <=2h and can divide 2h into an integer.
-	if cfg.ConsumeInterval < 0 {
-		return fmt.Errorf("-consume-interval must be non-negative")
-	}
-
-	return nil
-}
-
-type KafkaConfig struct {
-	Address       string        `yaml:"address"`
-	Topic         string        `yaml:"topic"`
-	ClientID      string        `yaml:"client_id"`
-	DialTimeout   time.Duration `yaml:"dial_timeout"`
-	ConsumerGroup string        `yaml:"consumer_group"`
-}
-
-func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.Address, prefix+"kafka.address", "", "The Kafka seed broker address.")
-	f.StringVar(&cfg.Topic, prefix+"kafka.topic", "", "The Kafka topic name.")
-	f.StringVar(&cfg.ClientID, prefix+"kafka.client-id", "", "The Kafka client ID.")
-	f.DurationVar(&cfg.DialTimeout, prefix+"kafka.dial-timeout", 5*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
-	f.StringVar(&cfg.ConsumerGroup, prefix+"kafka.consumer-group", "block-builder", "The consumer group used to keep track of the consumed offsets for each partition.")
-}
-
-func (cfg *KafkaConfig) Validate() error {
-	return nil
-}
-
-type partitionAssignmentVar map[int][]int32
-
-func newPartitionAssignmentVar(p *map[int][]int32) *partitionAssignmentVar {
-	return (*partitionAssignmentVar)(p)
-}
-
-func (v *partitionAssignmentVar) Set(s string) error {
-	if s == "" {
-		return nil
-	}
-	val := make(map[int][]int32)
-	err := json.Unmarshal([]byte(s), &val)
-	if err != nil {
-		return fmt.Errorf("unmarshal partition assignment: %w", err)
-	}
-	*v = val
-	return nil
-}
-
-func (v partitionAssignmentVar) String() string {
-	return fmt.Sprintf("%v", map[int][]int32(v))
-}
-
-type kafkaLogger struct {
-	logger log.Logger
-}
-
-func newKafkaLogger(logger log.Logger) *kafkaLogger {
-	return &kafkaLogger{
-		logger: log.With(logger, "component", "kafka_client"),
-	}
-}
-
-func (l *kafkaLogger) Level() kgo.LogLevel {
-	// The Kafka client calls Level() to check whether debug level is enabled or not.
-	// To keep it simple, we always return Info, so the Kafka client will never try
-	// to log expensive debug messages.
-	return kgo.LogLevelInfo
-}
-
-func (l *kafkaLogger) Log(lev kgo.LogLevel, msg string, keyvals ...any) {
-	if lev == kgo.LogLevelNone {
-		return
-	}
-	keyvals = append([]any{"msg", msg}, keyvals...)
-	switch lev {
-	case kgo.LogLevelDebug:
-		level.Debug(l.logger).Log(keyvals...)
-	case kgo.LogLevelInfo:
-		level.Info(l.logger).Log(keyvals...)
-	case kgo.LogLevelWarn:
-		level.Warn(l.logger).Log(keyvals...)
-	case kgo.LogLevelError:
-		level.Error(l.logger).Log(keyvals...)
-	}
 }

@@ -12,14 +12,21 @@ import (
 	"github.com/twmb/franz-go/pkg/kerr"
 )
 
+const (
+	// kafkaOffsetEnd is a special offset value that means the end of the partition.
+	kafkaOffsetEnd = int64(-1)
+	// kafkaOffsetStart is a special offset value that means the beginning of the partition.
+	kafkaOffsetStart = int64(-2)
+)
+
 // getGroupLag is similar to `kadm.Client.Lag` but works when the group doesn't have live participants.
 // Similar to `kadm.CalculateGroupLagWithStartOffsets`, it takes into account that the group may not have any commits.
 //
 // The lag is the difference between the last produced offset (high watermark) and an offset in the "past".
 // If the block builder committed an offset for a given partition to the consumer group at least once, then
-// the lag is the difference between the last produced offset and the offset committed in the consumer group.+
+// the lag is the difference between the last produced offset and the offset committed in the consumer group.
 // Otherwise, if the block builder didn't commit an offset for a given partition yet (e.g. block builder is
-// running for the first time), then the lag is the difference between the last produced offset and fallbackOffset.
+// running for the first time), then the lag is the difference between the last produced offset and fallbackOffsetMillis.
 func getGroupLag(ctx context.Context, admClient *kadm.Client, topic, group string, fallbackOffset int64) (kadm.GroupLag, error) {
 	offsets, err := admClient.FetchOffsets(ctx, group)
 	if err != nil {
@@ -41,16 +48,18 @@ func getGroupLag(ctx context.Context, admClient *kadm.Client, topic, group strin
 	}
 
 	resolveFallbackOffsets := sync.OnceValues(func() (kadm.ListedOffsets, error) {
-		if fallbackOffset == kafkaOffsetStart {
-			return startOffsets, nil
-		}
 		if fallbackOffset > 0 {
 			return admClient.ListOffsetsAfterMilli(ctx, fallbackOffset, topic)
 		}
-		// This should not happen because fallbackOffset already went through the validation by this point.
+		switch fallbackOffset {
+		case kafkaOffsetStart:
+			return startOffsets, nil
+		case kafkaOffsetEnd:
+			return endOffsets, nil
+		}
 		return nil, fmt.Errorf("cannot resolve fallback offset for value %v", fallbackOffset)
 	})
-	// If the group-partition in offsets doesn't have a commit, fall back depending on where fallbackOffset points at.
+	// If the group-partition in offsets doesn't have a commit, fall back depending on where fallbackOffsetMillis points at.
 	for topic, pt := range startOffsets.Offsets() {
 		for partition := range pt {
 			if _, ok := offsets.Lookup(topic, partition); ok {

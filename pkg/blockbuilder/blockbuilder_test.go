@@ -32,6 +32,9 @@ func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Override
 	flagext.DefaultValues(&cfg)
 
 	cfg.InstanceID = "block-builder-0"
+	cfg.PartitionAssignment = map[string][]int32{
+		"block-builder-0": {0}, // instance 0 -> partition 0
+	}
 
 	// Kafka related options.
 	cfg.Kafka.Address = addr
@@ -52,52 +55,6 @@ func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Override
 	return cfg, overrides
 }
 
-func TestBlockBuilder_StartupFailures(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancelCause(context.Background())
-	t.Cleanup(func() { cancel(errors.New("test done")) })
-
-	const numPartitions = 2
-
-	_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
-
-	t.Run("bad instance id", func(t *testing.T) {
-		cfg, overrides := blockBuilderConfig(t, addr)
-		// No instance number in the id.
-		cfg.InstanceID = "the-block-builder"
-		_, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides)
-		require.Error(t, err)
-	})
-
-	t.Run("bad partition assignment", func(t *testing.T) {
-		cfg, overrides := blockBuilderConfig(t, addr)
-		cfg.InstanceID = "block-builder-0"
-		// Instance 0 isn't present in the assignment
-		cfg.PartitionAssignment = map[int][]int32{
-			1:   {0},
-			100: {1},
-		}
-
-		_, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides)
-		require.Error(t, err)
-	})
-
-	t.Run("unsupported lookback_on_no_commit", func(t *testing.T) {
-		cfg, overrides := blockBuilderConfig(t, addr)
-		cfg.PartitionAssignment = map[int][]int32{
-			0: {0},
-		}
-		// Cannot consume from partition's end (offset=-1) because "the end" doesn't have anything to consume.
-		cfg.LookbackOnNoCommit = -1
-
-		bb, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides)
-		require.NoError(t, err)
-
-		require.Error(t, services.StartAndAwaitRunning(ctx, bb))
-	})
-}
-
 func TestBlockBuilder_NextConsumeCycle(t *testing.T) {
 	t.Parallel()
 
@@ -112,8 +69,8 @@ func TestBlockBuilder_NextConsumeCycle(t *testing.T) {
 	produceRecords(ctx, t, kafkaClient, time.Now().Add(-time.Hour), "1", testTopic, 0, []byte(`test value`))
 
 	cfg, overrides := blockBuilderConfig(t, addr)
-	cfg.PartitionAssignment = map[int][]int32{
-		0: {0, 1}, // instance 0 -> partitions 0, 1
+	cfg.PartitionAssignment = map[string][]int32{
+		"block-builder-0": {0, 1}, // instance 0 -> partitions 0, 1
 	}
 
 	reg := prometheus.NewPedanticRegistry()
