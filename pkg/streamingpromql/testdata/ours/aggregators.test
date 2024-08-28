@@ -158,7 +158,7 @@ eval_warn instant at 1m sum(single_histogram)
 
 clear
 
-# Test max aggregation with histograms and a mix of histogram+float valeus
+# Test min/max aggregation with histograms and a mix of histogram+float values
 load 1m
 	series{label="value"}   -10 -10 -10                                        10                                         -10                                        {{schema:1 sum:10 count:5 buckets:[1 3 1]}}
 	series{label="value2"}  0   -9  {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:1 sum:5 count:5 buckets:[1 3 1]}}

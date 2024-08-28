@@ -19,8 +19,32 @@ type MinMaxAggregationGroup struct {
 	floatValues  []float64
 	floatPresent []bool
 
+	accumulatePoint func(idx int64, t int64, f float64)
+}
+
+func NewMinMaxAggregationGroup(max bool) *MinMaxAggregationGroup {
 	// max represents whether this aggregation is `max` (true), or `min` (false)
-	max bool
+	g := &MinMaxAggregationGroup{}
+	if max {
+		g.accumulatePoint = g.maxAccumulatePoint
+	} else {
+		g.accumulatePoint = g.minAccumulatePoint
+	}
+	return g
+}
+
+func (g *MinMaxAggregationGroup) maxAccumulatePoint(idx int64, t int64, f float64) {
+	if !g.floatPresent[idx] || g.floatPresent[idx] && f > g.floatValues[idx] {
+		g.floatValues[idx] = f
+		g.floatPresent[idx] = true
+	}
+}
+
+func (g *MinMaxAggregationGroup) minAccumulatePoint(idx int64, t int64, f float64) {
+	if !g.floatPresent[idx] || g.floatPresent[idx] && f < g.floatValues[idx] {
+		g.floatValues[idx] = f
+		g.floatPresent[idx] = true
+	}
 }
 
 func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ functions.EmitAnnotationFunc) (bool, error) {
@@ -40,27 +64,19 @@ func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeries
 		g.floatPresent = g.floatPresent[:steps]
 	}
 
-	accumulatePoint := func(t int64, f float64) {
-		idx := (t - start) / interval
-		if !g.floatPresent[idx] ||
-			(g.max && g.floatPresent[idx] && f > g.floatValues[idx]) ||
-			(!g.max && g.floatPresent[idx] && f < g.floatValues[idx]) {
-			g.floatValues[idx] = f
-			g.floatPresent[idx] = true
-		}
-	}
-
 	for _, p := range data.Floats {
 		if math.IsNaN(p.F) {
 			continue
 		}
-		accumulatePoint(p.T, p.F)
+		idx := (p.T - start) / interval
+		g.accumulatePoint(idx, p.T, p.F)
 	}
 
 	// If a histogram exists max treats it as 0. We have to detect this here so that we return a 0 value instead of nothing.
 	// This is consistent with prometheus but may not be desired value: https://github.com/prometheus/prometheus/issues/14711
 	for _, p := range data.Histograms {
-		accumulatePoint(p.T, 0)
+		idx := (p.T - start) / interval
+		g.accumulatePoint(idx, p.T, 0)
 	}
 
 	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
