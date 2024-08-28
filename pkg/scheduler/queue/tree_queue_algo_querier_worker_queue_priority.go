@@ -2,6 +2,8 @@
 
 package queue
 
+import "slices"
+
 // QuerierWorkerQueuePriorityAlgo implements QueuingAlgorithm by mapping worker IDs to a queue node to prioritize.
 // Querier-workers' prioritized queue nodes are calculated by the integer workerID % len(nodeOrder).
 // This distribution of workers across query component subtrees ensures that when one query component is experiencing
@@ -103,13 +105,7 @@ func (qa *QuerierWorkerQueuePriorityAlgo) addChildNode(parent, child *Node) {
 		} else {
 			// insert into the order behind current child queue index
 			// to prevent the possibility of new nodes continually jumping the line
-			qa.nodeOrder = append(
-				qa.nodeOrder[:qa.currentNodeOrderIndex],
-				append(
-					[]string{child.Name()},
-					qa.nodeOrder[qa.currentNodeOrderIndex:]...,
-				)...,
-			)
+			qa.nodeOrder = slices.Insert(qa.nodeOrder, qa.currentNodeOrderIndex, child.Name())
 			// since the new node was inserted into the order behind the current node,
 			// the currentNodeOrderIndex must be pushed forward to remain pointing at the same node
 			qa.wrapCurrentNodeOrderIndex(true)
@@ -145,17 +141,15 @@ func (qa *QuerierWorkerQueuePriorityAlgo) dequeueUpdateState(node *Node, dequeue
 		// only delete from global nodeOrder if the global nodeCount is now zero
 		// meaning there are no nodes with this name remaining in the tree
 		if qa.nodeCounts[childName] == 0 {
-			for idx, name := range qa.nodeOrder {
-				if name == childName {
-					qa.nodeOrder = append(qa.nodeOrder[:idx], qa.nodeOrder[idx+1:]...)
-					break
-				}
+			childIndex := slices.Index(qa.nodeOrder, childName)
+			if childIndex != -1 {
+				qa.nodeOrder = slices.Delete(qa.nodeOrder, childIndex, childIndex+1)
+				// we do not need to increment currentNodeOrderIndex
+				// the node removed is always the node pointed to by currentNodeOrderIndex
+				// so removing it sets our currentNodeOrderIndex to the next node already
+				// we will wrap if needed, as currentNodeOrderIndex may be pointing past the end of the slice now
+				qa.wrapCurrentNodeOrderIndex(false)
 			}
-			// we do not need to increment currentNodeOrderIndex
-			// the node removed is always the node pointed to by currentNodeOrderIndex
-			// so removing it sets our currentNodeOrderIndex to the next node already
-			// we will wrap if needed, as currentNodeOrderIndex may be pointing past the end of the slice now
-			qa.wrapCurrentNodeOrderIndex(false)
 		}
 
 		// delete child node from its parent's queueMap

@@ -660,8 +660,7 @@ func FirstTenant() TenantIndex {
 }
 
 // QuerierWorkerDequeueRequest is a request from a querier-worker which is ready to receive the next query.
-// It embeds the unbuffered `recvChan` to receive the querierWorkerDequeueResponse "response" from the RequestQueue.
-// The request/response terminology is avoided in naming to disambiguate with the actual query requests.
+// It embeds the unbuffered `recvChan` to receive the querierWorkerDequeueResponse from the RequestQueue.
 type QuerierWorkerDequeueRequest struct {
 	*QuerierWorkerConn
 	lastTenantIndex TenantIndex
