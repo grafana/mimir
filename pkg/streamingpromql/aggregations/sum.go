@@ -24,23 +24,23 @@ type SumAggregationGroup struct {
 	histogramPointCount     int
 }
 
-func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) (bool, error) {
+func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, steps int, start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc functions.EmitAnnotationFunc) error {
 	var err error
 	if len(data.Floats) > 0 && g.floatSums == nil {
 		// First series with float values for this group, populate it.
 		g.floatSums, err = types.Float64SlicePool.Get(steps, memoryConsumptionTracker)
 		if err != nil {
-			return false, err
+			return err
 		}
 
 		g.floatCompensatingValues, err = types.Float64SlicePool.Get(steps, memoryConsumptionTracker)
 		if err != nil {
-			return false, err
+			return err
 		}
 
 		g.floatPresent, err = types.BoolSlicePool.Get(steps, memoryConsumptionTracker)
 		if err != nil {
-			return false, err
+			return err
 		}
 		g.floatSums = g.floatSums[:steps]
 		g.floatCompensatingValues = g.floatCompensatingValues[:steps]
@@ -51,26 +51,13 @@ func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 		// First series with histogram values for this group, populate it.
 		g.histogramSums, err = types.HistogramSlicePool.Get(steps, memoryConsumptionTracker)
 		if err != nil {
-			return false, err
+			return err
 		}
 		g.histogramSums = g.histogramSums[:steps]
 	}
 
-	haveMixedFloatsAndHistograms := false
-	removeConflictingPoint := func(idx int64) {
-		haveMixedFloatsAndHistograms = true
-		g.floatPresent[idx] = false
-		g.histogramSums[idx] = nil
-		g.histogramPointCount--
-	}
-
 	for _, p := range data.Floats {
 		idx := (p.T - start) / interval
-		// Check that a NH doesn't already exist at this point. If both exist, the vector is removed.
-		if g.histogramSums != nil && g.histogramSums[idx] != nil {
-			removeConflictingPoint(idx)
-			continue
-		}
 		g.floatSums[idx], g.floatCompensatingValues[idx] = floats.KahanSumInc(p.F, g.floatSums[idx], g.floatCompensatingValues[idx])
 		g.floatPresent[idx] = true
 	}
@@ -80,18 +67,10 @@ func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 	for _, p := range data.Histograms {
 		idx := (p.T - start) / interval
 
-		// Check that a float doesn't already exist at this point. If both exist, the vector is removed.
-		if g.floatPresent != nil && g.floatPresent[idx] {
-			removeConflictingPoint(idx)
-			continue
-		}
-
 		if g.histogramSums[idx] == invalidCombinationOfHistograms {
 			// We've already seen an invalid combination of histograms at this timestamp. Ignore this point.
 			continue
-		}
-
-		if g.histogramSums[idx] != nil {
+		} else if g.histogramSums[idx] != nil {
 			g.histogramSums[idx], err = g.histogramSums[idx].Add(p.H)
 			if err != nil {
 				// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
@@ -100,7 +79,7 @@ func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 
 				if err := functions.NativeHistogramErrorToAnnotation(err, emitAnnotationFunc); err != nil {
 					// Unknown error: we couldn't convert the error to an annotation. Give up.
-					return false, err
+					return err
 				}
 			}
 		} else if lastUncopiedHistogram == p.H {
@@ -118,24 +97,58 @@ func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 	}
 
 	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
-	return haveMixedFloatsAndHistograms, nil
+	return nil
 }
 
-func (g *SumAggregationGroup) ComputeOutputSeries(start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
-	var floatPoints []promql.FPoint
-	var err error
-
+// reconcileAndCountFloatPoints will return the number of points with a float present.
+// It also takes the opportunity whilst looping through the floats to check if there
+// is a conflicting Histogram present. If both are present, an empty vector should
+// be returned. So this method removes the float+histogram where they conflict.
+func (g *SumAggregationGroup) reconcileAndCountFloatPoints() (int, bool) {
+	// It would be possible to calculate the number of points when constructing
+	// the series groups. However, it requires checking each point at each input
+	// series which is more costly than looping again here and just checking each
+	// point of the already grouped series.
+	// See: https://github.com/grafana/mimir/pull/8442
+	// We also take two different approaches here: One with extra checks if we
+	// have both Floats and Histograms present, and one without these checks
+	// so we don't have to do it at every point.
 	floatPointCount := 0
-	for _, p := range g.floatPresent {
-		if p {
-			floatPointCount++
+	haveEmittedMixedFloatsAndHistogramsWarning := false
+	if len(g.floatPresent) > 0 && len(g.histogramSums) > 0 {
+		for idx, present := range g.floatPresent {
+			if present {
+				if g.histogramSums[idx] != nil {
+					// If a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely
+					// and a warning annotation is emitted.
+					g.floatPresent[idx] = false
+					g.histogramSums[idx] = nil
+					g.histogramPointCount--
+
+					haveEmittedMixedFloatsAndHistogramsWarning = true
+				} else {
+					floatPointCount++
+				}
+			}
+		}
+	} else {
+		for _, p := range g.floatPresent {
+			if p {
+				floatPointCount++
+			}
 		}
 	}
+	return floatPointCount, haveEmittedMixedFloatsAndHistogramsWarning
+}
 
+func (g *SumAggregationGroup) ComputeOutputSeries(start int64, interval int64, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
+	floatPointCount, hasMixedData := g.reconcileAndCountFloatPoints()
+	var floatPoints []promql.FPoint
+	var err error
 	if floatPointCount > 0 {
 		floatPoints, err = types.FPointSlicePool.Get(floatPointCount, memoryConsumptionTracker)
 		if err != nil {
-			return types.InstantVectorSeriesData{}, err
+			return types.InstantVectorSeriesData{}, hasMixedData, err
 		}
 
 		for i, havePoint := range g.floatPresent {
@@ -151,7 +164,7 @@ func (g *SumAggregationGroup) ComputeOutputSeries(start int64, interval int64, m
 	if g.histogramPointCount > 0 {
 		histogramPoints, err = types.HPointSlicePool.Get(g.histogramPointCount, memoryConsumptionTracker)
 		if err != nil {
-			return types.InstantVectorSeriesData{}, err
+			return types.InstantVectorSeriesData{}, hasMixedData, err
 		}
 
 		for i, h := range g.histogramSums {
@@ -168,5 +181,5 @@ func (g *SumAggregationGroup) ComputeOutputSeries(start int64, interval int64, m
 	types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
 	types.HistogramSlicePool.Put(g.histogramSums, memoryConsumptionTracker)
 
-	return types.InstantVectorSeriesData{Floats: floatPoints, Histograms: histogramPoints}, nil
+	return types.InstantVectorSeriesData{Floats: floatPoints, Histograms: histogramPoints}, hasMixedData, nil
 }
