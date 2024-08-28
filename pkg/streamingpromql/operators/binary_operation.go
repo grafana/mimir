@@ -472,13 +472,20 @@ func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sou
 		sourceSeriesIndices: sourceSeriesIndices,
 	}
 
-	floats, err := b.mergeOneSideFloats(ds, sourceSeriesMetadata, side)
+	floats, conflict, err := b.mergeOneSideFloats(ds)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
-	histograms, err := b.mergeOneSideHistograms(ds, sourceSeriesMetadata, side)
+	if conflict != nil {
+		return types.InstantVectorSeriesData{}, b.mergeConflictToError(conflict, sourceSeriesMetadata, side)
+	}
+
+	histograms, conflict, err := b.mergeOneSideHistograms(ds)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
+	}
+	if conflict != nil {
+		return types.InstantVectorSeriesData{}, b.mergeConflictToError(conflict, sourceSeriesMetadata, side)
 	}
 
 	// Check for any conflicts between floats and histograms
@@ -501,19 +508,35 @@ func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sou
 	return types.InstantVectorSeriesData{Floats: floats, Histograms: histograms}, nil
 }
 
-func (b *BinaryOperation) mergeOneSideFloats(seriesGroupSide seriesForOneGroupSide, sourceSeriesMetadata []types.SeriesMetadata, side string) ([]promql.FPoint, error) {
+func (b *BinaryOperation) mergeConflictToError(conflict *mergeConflict, sourceSeriesMetadata []types.SeriesMetadata, side string) error {
+	firstConflictingSeriesLabels := sourceSeriesMetadata[conflict.firstConflictingSeriesIndex].Labels
+	secondConflictingSeriesLabels := sourceSeriesMetadata[conflict.secondConflictingSeriesIndex].Labels
+	groupLabels := b.groupLabelsFunc()(firstConflictingSeriesLabels)
+
+	return fmt.Errorf(
+		"found %s for the match group %s on the %s side of the operation at timestamp %s: %s and %s",
+		conflict.description,
+		groupLabels,
+		side,
+		timestamp.Time(conflict.timestamp).Format(time.RFC3339Nano),
+		firstConflictingSeriesLabels,
+		secondConflictingSeriesLabels,
+	)
+}
+
+func (b *BinaryOperation) mergeOneSideFloats(seriesGroupSide seriesForOneGroupSide) ([]promql.FPoint, *mergeConflict, error) {
 	if len(seriesGroupSide.data) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if len(seriesGroupSide.data) == 1 {
-		return seriesGroupSide.data[0].Floats, nil
+		return seriesGroupSide.data[0].Floats, nil, nil
 	}
 
 	sort.Sort(floatSideSorter{side: seriesGroupSide})
 
 	// After sorting, if the first series has no floats, we're done, as that means there are no floats in any series
 	if len(seriesGroupSide.data[0].Floats) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	mergedSize := len(seriesGroupSide.data[0].Floats)
@@ -549,7 +572,7 @@ func (b *BinaryOperation) mergeOneSideFloats(seriesGroupSide seriesForOneGroupSi
 
 	if remainingSeriesWithFloats == 1 {
 		// No other series had any floats
-		return seriesGroupSide.data[0].Floats, nil
+		return seriesGroupSide.data[0].Floats, nil, nil
 	}
 
 	// We're going to create a new slice, so return this one to the pool.
@@ -564,7 +587,7 @@ func (b *BinaryOperation) mergeOneSideFloats(seriesGroupSide seriesForOneGroupSi
 
 	output, err := types.FPointSlicePool.Get(mergedSize, b.MemoryConsumptionTracker)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if !haveOverlaps {
@@ -574,7 +597,7 @@ func (b *BinaryOperation) mergeOneSideFloats(seriesGroupSide seriesForOneGroupSi
 			output = append(output, d.Floats...)
 		}
 
-		return output, nil
+		return output, nil, nil
 	}
 
 	// Slow path: there are overlaps, so we need to merge slices together and check for conflicts as we go.
@@ -585,7 +608,7 @@ func (b *BinaryOperation) mergeOneSideFloats(seriesGroupSide seriesForOneGroupSi
 			for _, d := range data {
 				if len(d.Floats) > 0 {
 					output = append(output, d.Floats...)
-					return output, nil
+					return output, nil, nil
 				}
 			}
 		}
@@ -601,11 +624,14 @@ func (b *BinaryOperation) mergeOneSideFloats(seriesGroupSide seriesForOneGroupSi
 			nextPointInSeries := d.Floats[0]
 			if nextPointInSeries.T == nextT {
 				// Another series has a point with the same timestamp. We have a conflict.
-				firstConflictingSeriesLabels := sourceSeriesMetadata[seriesGroupSide.sourceSeriesIndices[sourceSeriesIndexInData]].Labels
-				secondConflictingSeriesLabels := sourceSeriesMetadata[seriesGroupSide.sourceSeriesIndices[seriesIndexInData]].Labels
-				groupLabels := b.groupLabelsFunc()(firstConflictingSeriesLabels)
+				conflict := &mergeConflict{
+					firstConflictingSeriesIndex:  seriesGroupSide.sourceSeriesIndices[sourceSeriesIndexInData],
+					secondConflictingSeriesIndex: seriesGroupSide.sourceSeriesIndices[seriesIndexInData],
+					description:                  "duplicate series",
+					timestamp:                    nextT,
+				}
 
-				return nil, fmt.Errorf("found duplicate series for the match group %s on the %s side of the operation at timestamp %s: %s and %s", groupLabels, side, timestamp.Time(nextT).Format(time.RFC3339Nano), firstConflictingSeriesLabels, secondConflictingSeriesLabels)
+				return nil, conflict, nil
 			}
 
 			if d.Floats[0].T < nextT {
@@ -623,19 +649,19 @@ func (b *BinaryOperation) mergeOneSideFloats(seriesGroupSide seriesForOneGroupSi
 	}
 }
 
-func (b *BinaryOperation) mergeOneSideHistograms(seriesGroupSide seriesForOneGroupSide, sourceSeriesMetadata []types.SeriesMetadata, side string) ([]promql.HPoint, error) {
+func (b *BinaryOperation) mergeOneSideHistograms(seriesGroupSide seriesForOneGroupSide) ([]promql.HPoint, *mergeConflict, error) {
 	if len(seriesGroupSide.data) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if len(seriesGroupSide.data) == 1 {
-		return seriesGroupSide.data[0].Histograms, nil
+		return seriesGroupSide.data[0].Histograms, nil, nil
 	}
 
 	sort.Sort(histogramSideSorter{side: seriesGroupSide})
 
 	// After sorting, if the first series has no histograms, we're done, as that means there are no histograms in any series
 	if len(seriesGroupSide.data[0].Histograms) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	mergedSize := len(seriesGroupSide.data[0].Histograms)
@@ -670,7 +696,7 @@ func (b *BinaryOperation) mergeOneSideHistograms(seriesGroupSide seriesForOneGro
 
 	if remainingSeriesWithHistograms == 1 {
 		// No other series had any histograms
-		return seriesGroupSide.data[0].Histograms, nil
+		return seriesGroupSide.data[0].Histograms, nil, nil
 	}
 
 	// We're going to create a new slice, so return this one to the pool.
@@ -685,7 +711,7 @@ func (b *BinaryOperation) mergeOneSideHistograms(seriesGroupSide seriesForOneGro
 
 	output, err := types.HPointSlicePool.Get(mergedSize, b.MemoryConsumptionTracker)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if !haveOverlaps {
@@ -695,7 +721,7 @@ func (b *BinaryOperation) mergeOneSideHistograms(seriesGroupSide seriesForOneGro
 			output = append(output, d.Histograms...)
 		}
 
-		return output, nil
+		return output, nil, nil
 	}
 
 	// Slow path: there are overlaps, so we need to merge slices together and check for conflicts as we go.
@@ -706,7 +732,7 @@ func (b *BinaryOperation) mergeOneSideHistograms(seriesGroupSide seriesForOneGro
 			for _, d := range data {
 				if len(d.Histograms) > 0 {
 					output = append(output, d.Histograms...)
-					return output, nil
+					return output, nil, nil
 				}
 			}
 		}
@@ -722,11 +748,14 @@ func (b *BinaryOperation) mergeOneSideHistograms(seriesGroupSide seriesForOneGro
 			nextPointInSeries := d.Histograms[0]
 			if nextPointInSeries.T == nextT {
 				// Another series has a point with the same timestamp. We have a conflict.
-				firstConflictingSeriesLabels := sourceSeriesMetadata[seriesGroupSide.sourceSeriesIndices[sourceSeriesIndexInData]].Labels
-				secondConflictingSeriesLabels := sourceSeriesMetadata[seriesGroupSide.sourceSeriesIndices[seriesIndexInData]].Labels
-				groupLabels := b.groupLabelsFunc()(firstConflictingSeriesLabels)
+				conflict := &mergeConflict{
+					firstConflictingSeriesIndex:  seriesGroupSide.sourceSeriesIndices[sourceSeriesIndexInData],
+					secondConflictingSeriesIndex: seriesGroupSide.sourceSeriesIndices[seriesIndexInData],
+					description:                  "duplicate series",
+					timestamp:                    nextT,
+				}
 
-				return nil, fmt.Errorf("found duplicate series for the match group %s on the %s side of the operation at timestamp %s: %s and %s", groupLabels, side, timestamp.Time(nextT).Format(time.RFC3339Nano), firstConflictingSeriesLabels, secondConflictingSeriesLabels)
+				return nil, conflict, nil
 			}
 
 			if d.Histograms[0].T < nextT {
@@ -742,6 +771,13 @@ func (b *BinaryOperation) mergeOneSideHistograms(seriesGroupSide seriesForOneGro
 			remainingSeriesWithHistograms--
 		}
 	}
+}
+
+type mergeConflict struct {
+	firstConflictingSeriesIndex  int
+	secondConflictingSeriesIndex int
+	description                  string
+	timestamp                    int64
 }
 
 func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, right types.InstantVectorSeriesData) (types.InstantVectorSeriesData, error) {
