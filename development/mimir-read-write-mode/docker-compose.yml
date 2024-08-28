@@ -1,23 +1,4 @@
 "services":
-  "grafana":
-    "environment":
-      - "GF_AUTH_ANONYMOUS_ENABLED=true"
-      - "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin"
-    "image": "grafana/grafana:10.4.3"
-    "ports":
-      - "3000:3000"
-    "volumes":
-      - "./config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml"
-  "grafana-agent":
-    "command":
-      - "-config.file=/etc/agent-config/grafana-agent.yaml"
-      - "-metrics.wal-directory=/tmp"
-      - "-server.http.address=127.0.0.1:9091"
-    "image": "grafana/agent:v0.37.3"
-    "ports":
-      - "9091:9091"
-    "volumes":
-      - "./config:/etc/agent-config"
   "memcached":
     "image": "memcached:1.6.19-alpine"
   "mimir-backend-1":
@@ -28,6 +9,7 @@
       - "./mimir"
       - "-config.file=./config/mimir.yaml"
       - "-target=backend"
+      - "-log.level=debug"
       - "-activity-tracker.filepath=/activity/mimir-backend-1"
     "depends_on":
       - "minio"
@@ -47,6 +29,7 @@
       - "./mimir"
       - "-config.file=./config/mimir.yaml"
       - "-target=backend"
+      - "-log.level=debug"
       - "-activity-tracker.filepath=/activity/mimir-backend-2"
     "depends_on":
       - "minio"
@@ -66,6 +49,7 @@
       - "./mimir"
       - "-config.file=./config/mimir.yaml"
       - "-target=read"
+      - "-log.level=debug"
       - "-activity-tracker.filepath=/activity/mimir-read-1"
     "depends_on":
       - "minio"
@@ -85,6 +69,7 @@
       - "./mimir"
       - "-config.file=./config/mimir.yaml"
       - "-target=read"
+      - "-log.level=debug"
       - "-activity-tracker.filepath=/activity/mimir-read-2"
     "depends_on":
       - "minio"
@@ -104,6 +89,7 @@
       - "./mimir"
       - "-config.file=./config/mimir.yaml"
       - "-target=write"
+      - "-log.level=debug"
       - "-activity-tracker.filepath=/activity/mimir-write-1"
     "depends_on":
       - "minio"
@@ -124,6 +110,7 @@
       - "./mimir"
       - "-config.file=./config/mimir.yaml"
       - "-target=write"
+      - "-log.level=debug"
       - "-activity-tracker.filepath=/activity/mimir-write-2"
     "depends_on":
       - "minio"
@@ -144,6 +131,7 @@
       - "./mimir"
       - "-config.file=./config/mimir.yaml"
       - "-target=write"
+      - "-log.level=debug"
       - "-activity-tracker.filepath=/activity/mimir-write-3"
     "depends_on":
       - "minio"

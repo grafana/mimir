@@ -27,6 +27,7 @@ import (
 	alertingNotify "github.com/grafana/alerting/notify"
 	"github.com/grafana/alerting/notify/nfstatus"
 	alertingReceivers "github.com/grafana/alerting/receivers"
+	"github.com/grafana/alerting/receivers/teams"
 	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
@@ -643,7 +644,45 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 			}
 			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), gTmpl, am.logger)
 		} else {
-			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, nw)
+			if len(rcv.MSTeamsConfigs) > 0 {
+				var grafanaIntegrationCfgs []*alertingNotify.GrafanaIntegrationConfig
+				// Translate into Grafana config.
+				for _, cfg := range rcv.MSTeamsConfigs {
+					gCfg := teams.Config{
+						URL:     cfg.WebhookURL.String(),
+						Message: cfg.Text,
+						Title:   cfg.Title,
+					}
+					settings, err := json.Marshal(gCfg)
+					if err != nil {
+						return nil, err
+					}
+
+					grafanaIntegrationCfgs = append(grafanaIntegrationCfgs, &alertingNotify.GrafanaIntegrationConfig{
+						Name:                  rcv.Name,
+						Type:                  "teams",
+						DisableResolveMessage: !cfg.SendResolved(),
+						Settings:              json.RawMessage(settings),
+					})
+				}
+				gInts := alertingNotify.APIReceiver{
+					GrafanaIntegrations: alertingNotify.GrafanaIntegrations{
+						Integrations: grafanaIntegrationCfgs,
+					},
+				}
+				// TODO: should we use the grafana tmpl struct?
+				integrations, err = buildGrafanaReceiverIntegrations(emailCfg, &gInts, tmpl, am.logger)
+				if err != nil {
+					return nil, err
+				}
+			}
+			// Empty the Teams configs so we don't create upstream integrations.
+			rcv.MSTeamsConfigs = nil
+			gIntegrations, err := buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, nw)
+			if err != nil {
+				return nil, err
+			}
+			integrations = append(integrations, gIntegrations...)
 		}
 		if err != nil {
 			return nil, err

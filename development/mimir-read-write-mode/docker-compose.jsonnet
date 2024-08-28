@@ -6,8 +6,8 @@ std.manifestYamlDoc({
     self.backend +
     self.nginx +
     self.minio +
-    self.grafana +
-    self.grafana_agent +
+    // self.grafana +
+    // self.grafana_agent +
     self.memcached +
     self.prometheus +
     {},
@@ -159,6 +159,7 @@ std.manifestYamlDoc({
       './mimir',
       '-config.file=./config/mimir.yaml' % options,
       '-target=%(target)s' % options,
+      '-log.level=debug' % options,
       '-activity-tracker.filepath=/activity/%(name)s' % options,
     ],
     environment: [
