@@ -11,6 +11,10 @@ import (
 type EngineOpts struct {
 	CommonOpts     promql.EngineOpts
 	FeatureToggles FeatureToggles
+
+	// When operating in pedantic mode, we panic if memory consumption is > 0 after Query.Close()
+	// (indicating something was not returned to a pool).
+	Pedantic bool
 }
 
 type FeatureToggles struct {
