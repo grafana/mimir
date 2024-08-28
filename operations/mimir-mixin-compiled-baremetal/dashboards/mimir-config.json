@@ -1,23 +1,7 @@
 {
-      "__requires": [
-         {
-            "id": "grafana",
-            "name": "Grafana",
-            "type": "grafana",
-            "version": "8.0.0"
-         }
-      ],
-      "annotations": {
-         "list": [ ]
-      },
-      "editable": true,
-      "gnetId": null,
-      "graphTooltip": 1,
-      "hideControls": false,
       "links": [
          {
             "asDropdown": true,
-            "icon": "external link",
             "includeVars": true,
             "keepTime": true,
             "tags": [
@@ -28,131 +12,125 @@
             "type": "dashboards"
          }
       ],
-      "refresh": "5m",
-      "rows": [
+      "panels": [
          {
-            "collapse": false,
-            "height": "250px",
-            "panels": [
-               {
-                  "datasource": "$datasource",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 100,
-                           "lineWidth": 0,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "normal"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "instances"
-                     },
-                     "overrides": [ ]
-                  },
-                  "id": 1,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "multi",
-                        "sort": "none"
-                     }
-                  },
-                  "span": 12,
-                  "targets": [
-                     {
-                        "expr": "count(cortex_config_hash{cluster=~\"$cluster\", namespace=~\"$namespace\"}) by (sha256)",
-                        "format": "time_series",
-                        "legendFormat": "sha256:{{sha256}}",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Startup config file hashes",
-                  "type": "timeseries"
-               }
-            ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
+            "collapsed": false,
+            "gridPos": {
+               "h": 1,
+               "w": 24,
+               "x": 0
+            },
+            "id": 1,
             "title": "Startup config file",
-            "titleSize": "h6"
+            "type": "row"
          },
          {
-            "collapse": false,
-            "height": "250px",
-            "panels": [
+            "datasource": {
+               "type": "prometheus",
+               "uid": "$datasource"
+            },
+            "fieldConfig": {
+               "defaults": {
+                  "custom": {
+                     "fillOpacity": 100,
+                     "lineWidth": 0,
+                     "stacking": {
+                        "mode": "normal"
+                     }
+                  }
+               }
+            },
+            "gridPos": {
+               "h": "7",
+               "w": "24"
+            },
+            "id": 2,
+            "options": {
+               "legend": {
+                  "showLegend": true
+               },
+               "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
+               }
+            },
+            "pluginVersion": "v11.0.0",
+            "targets": [
                {
-                  "datasource": "$datasource",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 100,
-                           "lineWidth": 0,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "normal"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "instances"
-                     },
-                     "overrides": [ ]
+                  "datasource": {
+                     "type": "prometheus",
+                     "uid": "$datasource"
                   },
-                  "id": 2,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": true
-                     },
-                     "tooltip": {
-                        "mode": "multi",
-                        "sort": "none"
-                     }
-                  },
-                  "span": 12,
-                  "targets": [
-                     {
-                        "expr": "count(cortex_runtime_config_hash{cluster=~\"$cluster\", namespace=~\"$namespace\"}) by (sha256)",
-                        "format": "time_series",
-                        "legendFormat": "sha256:{{sha256}}",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Runtime config file hashes",
-                  "type": "timeseries"
+                  "expr": "count(cortex_config_hash{cluster=~\"$cluster\", namespace=~\"$namespace\"}) by (sha256)",
+                  "legendFormat": "sha256:{{sha256}}"
                }
             ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
+            "title": "Startup config file hashes",
+            "type": "timeseries"
+         },
+         {
+            "collapsed": false,
+            "gridPos": {
+               "h": 1,
+               "w": 24,
+               "x": 0
+            },
+            "id": 3,
             "title": "Runtime config file",
-            "titleSize": "h6"
+            "type": "row"
+         },
+         {
+            "datasource": {
+               "type": "prometheus",
+               "uid": "$datasource"
+            },
+            "fieldConfig": {
+               "defaults": {
+                  "custom": {
+                     "fillOpacity": 100,
+                     "lineWidth": 0,
+                     "stacking": {
+                        "mode": "normal"
+                     }
+                  }
+               }
+            },
+            "gridPos": {
+               "h": "7",
+               "w": "24"
+            },
+            "id": 4,
+            "options": {
+               "legend": {
+                  "showLegend": true
+               },
+               "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
+               }
+            },
+            "pluginVersion": "v11.0.0",
+            "targets": [
+               {
+                  "datasource": {
+                     "type": "prometheus",
+                     "uid": "$datasource"
+                  },
+                  "expr": "count(cortex_runtime_config_hash{cluster=~\"$cluster\", namespace=~\"$namespace\"}) by (sha256)",
+                  "fieldConfig": {
+                     "defaults": {
+                        "unit": "instances"
+                     }
+                  },
+                  "legendFormat": "sha256:{{sha256}}"
+               }
+            ],
+            "title": "Runtime config file hashes",
+            "type": "timeseries"
          }
       ],
-      "schemaVersion": 14,
-      "style": "dark",
+      "refresh": "5m",
+      "schemaVersion": 39,
       "tags": [
          "mimir"
       ],
@@ -160,65 +138,61 @@
          "list": [
             {
                "current": {
+                  "selected": false,
                   "text": "default",
                   "value": "default"
                },
-               "hide": 0,
                "label": "Data source",
                "name": "datasource",
-               "options": [ ],
                "query": "prometheus",
-               "refresh": 1,
                "regex": "",
                "type": "datasource"
             },
             {
                "allValue": ".+",
                "current": {
-                  "selected": true,
-                  "text": "All",
-                  "value": "$__all"
+                  "selected": false,
+                  "text": [
+                     "All"
+                  ],
+                  "value": [
+                     "$__all"
+                  ]
                },
-               "datasource": "$datasource",
-               "hide": 0,
+               "datasource": {
+                  "type": "query",
+                  "uid": "$datasource"
+               },
                "includeAll": true,
                "label": "cluster",
                "multi": true,
                "name": "cluster",
-               "options": [ ],
                "query": "label_values(cortex_build_info, cluster)",
-               "refresh": 1,
-               "regex": "",
                "sort": 1,
-               "tagValuesQuery": "",
-               "tags": [ ],
-               "tagsQuery": "",
-               "type": "query",
-               "useTags": false
+               "type": "query"
             },
             {
                "allValue": ".+",
                "current": {
-                  "selected": true,
-                  "text": "All",
-                  "value": "$__all"
+                  "selected": false,
+                  "text": [
+                     "All"
+                  ],
+                  "value": [
+                     "$__all"
+                  ]
                },
-               "datasource": "$datasource",
-               "hide": 0,
+               "datasource": {
+                  "type": "query",
+                  "uid": "$datasource"
+               },
                "includeAll": false,
                "label": "namespace",
                "multi": true,
                "name": "namespace",
-               "options": [ ],
                "query": "label_values(cortex_build_info{cluster=~\"$cluster\"}, namespace)",
-               "refresh": 1,
-               "regex": "",
                "sort": 1,
-               "tagValuesQuery": "",
-               "tags": [ ],
-               "tagsQuery": "",
-               "type": "query",
-               "useTags": false
+               "type": "query"
             }
          ]
       },
@@ -253,6 +227,5 @@
       },
       "timezone": "utc",
       "title": "Mimir / Config",
-      "uid": "5d9d0b4724c0f80d68467088ec61e003",
-      "version": 0
+      "uid": "5d9d0b4724c0f80d68467088ec61e003"
    }
