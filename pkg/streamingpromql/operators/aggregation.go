@@ -111,7 +111,7 @@ type group struct {
 	lastSeriesIndex int
 
 	// The AggregationGroup to perform over this group of series.
-	aggregationGroup aggregations.AggregationGroup
+	aggregation aggregations.AggregationGroup
 }
 
 var _ types.InstantVectorOperator = &Aggregation{}
@@ -154,7 +154,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		if !groupExists {
 			g.labels = groupLabelsFunc(series.Labels)
 			g.group = groupPool.Get()
-			g.group.aggregationGroup = a.aggregationGroupFactory()
+			g.group.aggregation = a.aggregationGroupFactory()
 			g.group.remainingSeriesCount = 0
 
 			groups[string(groupLabelsString)] = g
@@ -270,7 +270,7 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	}
 
 	// Construct the group and return it
-	seriesData, err := thisGroup.aggregationGroup.ComputeOutputSeries(a.Start, a.Interval, a.MemoryConsumptionTracker)
+	seriesData, err := thisGroup.aggregation.ComputeOutputSeries(a.Start, a.Interval, a.MemoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -292,7 +292,7 @@ func (a *Aggregation) accumulateUntilGroupComplete(ctx context.Context, g *group
 
 		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
 		a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
-		hasMixedData, err := thisSeriesGroup.aggregationGroup.AccumulateSeries(s, a.Steps, a.Start, a.Interval, a.MemoryConsumptionTracker, a.emitAnnotationFunc)
+		hasMixedData, err := thisSeriesGroup.aggregation.AccumulateSeries(s, a.Steps, a.Start, a.Interval, a.MemoryConsumptionTracker, a.emitAnnotationFunc)
 		if err != nil {
 			return err
 		}
