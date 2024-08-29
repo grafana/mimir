@@ -137,7 +137,7 @@ func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context) (map[int32]kgo.
 
 	// Fallback offset is the millisecond timestamp used to look up a real offset if partition doesn't have a commit.
 	fallbackOffsetMillis := time.Now().Add(-b.cfg.LookbackOnNoCommit).UnixMilli()
-	defaultKOffset := kgo.NewOffset().AfterMilli(fallbackOffsetMillis)
+	fallbackOffset := kgo.NewOffset().AfterMilli(fallbackOffsetMillis)
 
 	fetchOffsets := func(ctx context.Context) (offsets map[int32]kgo.Offset, err error) {
 		resp, err := admClient.FetchOffsets(ctx, b.cfg.Kafka.ConsumerGroup)
@@ -158,7 +158,7 @@ func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context) (map[int32]kgo.
 			if _, ok := offsets[partition]; ok {
 				level.Info(b.logger).Log("msg", "consuming from last consumed offset", "consumer_group", b.cfg.Kafka.ConsumerGroup, "partition", partition, "offset", offsets[partition].String())
 			} else {
-				offsets[partition] = defaultKOffset
+				offsets[partition] = fallbackOffset
 				level.Info(b.logger).Log("msg", "consuming from partition lookback because no offset has been found", "consumer_group", b.cfg.Kafka.ConsumerGroup, "partition", partition, "offset", offsets[partition].String())
 			}
 		}
@@ -212,7 +212,7 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 	// Do initial consumption on start using current time as the point up to which we are consuming.
 	// To avoid small blocks at startup, we consume until the <consume interval> boundary + buffer.
 	cycleEnd := cycleEndAtStartup(time.Now, b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
-	err := b.NextConsumeCycle(ctx, cycleEnd)
+	err := b.nextConsumeCycle(ctx, cycleEnd)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil
@@ -225,7 +225,7 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 		select {
 		case <-time.After(waitDur):
 			level.Info(b.logger).Log("msg", "triggering next consume cycle", "cycle_end", cycleEnd)
-			err := b.NextConsumeCycle(ctx, cycleEnd)
+			err := b.nextConsumeCycle(ctx, cycleEnd)
 			if err != nil && !errors.Is(err, context.Canceled) {
 				// Fail the whole service in case of a non-recoverable error.
 				return fmt.Errorf("consume next cycle until cycle_end %s: %w", cycleEnd, err)
@@ -265,10 +265,10 @@ func nextCycleEnd(now func() time.Time, interval, buffer time.Duration) (time.Ti
 	return cycleEnd, waitTime
 }
 
-// NextConsumeCycle manages consumption of currently assigned partitions.
+// nextConsumeCycle manages consumption of currently assigned partitions.
 // The cycleEnd argument indicates the timestamp (relative to Kafka records) up until which to consume from partitions
 // in this cycle. That is, Kafka records produced after the cycleEnd mark will be consumed in the next cycle.
-func (b *BlockBuilder) NextConsumeCycle(ctx context.Context, cycleEnd time.Time) error {
+func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, cycleEnd time.Time) error {
 	defer func(t time.Time) {
 		b.metrics.consumeCycleDuration.Observe(time.Since(t).Seconds())
 	}(time.Now())

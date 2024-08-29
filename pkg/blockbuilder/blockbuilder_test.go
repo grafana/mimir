@@ -76,8 +76,8 @@ func TestBlockBuilder_NextConsumeCycle(t *testing.T) {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
 	})
 
-	// Explicitly call NextConsumeCycle and verify that we observed the expected per-partition lag.
-	err = bb.NextConsumeCycle(ctx, time.Now())
+	// Explicitly call nextConsumeCycle and verify that we observed the expected per-partition lag.
+	err = bb.nextConsumeCycle(ctx, time.Now())
 	require.NoError(t, err)
 
 	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
