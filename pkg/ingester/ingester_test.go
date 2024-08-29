@@ -4392,8 +4392,6 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 
 	// Run tests
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			req := &client.MetricsForLabelMatchersRequest{
 				StartTimestampMs: testData.from,
@@ -10925,12 +10923,6 @@ func TestIngester_PrepareUnregisterHandler(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		// Avoid a common gotcha with table driven tests and t.Parallel().
-		// See https://gist.github.com/posener/92a55c4cd441fc5e5e85f27bca008721.
-		// As of writing these tests, Mimir runs on go 1.21. Once go.mod is updated to specify go 1.22, this line can
-		// be dropped. See https://tip.golang.org/wiki/LoopvarExperiment.
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
