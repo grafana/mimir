@@ -97,3 +97,15 @@ For more information on shuffle sharding, refer to [Configuring shuffle sharding
 Out-of-order samples are discarded by default. If the system writing samples to Mimir produces out-of-order samples, you can enable ingestion of such samples.
 
 For more information about out-of-order samples ingestion, refer to [Configuring out of order samples ingestion]({{< relref "../../../configure/configure-out-of-order-samples-ingestion" >}}).
+
+## Read-only mode
+
+Ingesters can be put into "Read-only" mode via an API call.
+Ingesters in read-only mode will not be receiving any write requests, but can still receive read requests.
+Ingesters in read-only mode are not part of the shuffle shard for the write operation.
+
+Read-only mode is useful in downscaling scenarios and is a preparation for later shutdown of the ingester.
+
+Ingester ring state like JOINING, ACTIVE or LEAVING is separate from read-only mode.
+Ingester that is both ACTIVE and read-only does not receive write requests. 
+Read-only mode is stored in the hash ring as well.
