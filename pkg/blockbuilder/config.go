@@ -18,6 +18,7 @@ import (
 type Config struct {
 	InstanceID          string             `yaml:"instance_id" doc:"default=<hostname>" category:"advanced"`
 	PartitionAssignment map[string][]int32 `yaml:"partition_assignment" category:"experimental"`
+	DataDir             string             `yaml:"data_dir"`
 
 	ConsumeInterval       time.Duration `yaml:"consume_interval"`
 	ConsumeIntervalBuffer time.Duration `yaml:"consume_interval_buffer"`
@@ -40,6 +41,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.StringVar(&cfg.InstanceID, "block-builder.instance-id", hostname, "Instance id.")
 	f.Var(newPartitionAssignmentVar(&cfg.PartitionAssignment), "block-builder.partition-assignment", "Static partition assignment. Format is a JSON encoded map[instance-id][]partitions).")
+	f.StringVar(&cfg.DataDir, "block-builder.data-dir", "./data-block-builder/", "Directory to temporarily store blocks during building. This directory is wiped out between the restarts.")
 	f.DurationVar(&cfg.ConsumeInterval, "block-builder.consume-interval", time.Hour, "Interval between consumption cycles.")
 	f.DurationVar(&cfg.ConsumeIntervalBuffer, "block-builder.consume-interval-buffer", 15*time.Minute, "Extra buffer between subsequent consumption cycles. To avoid small blocks the block-builder consumes until the last hour boundary of the consumption interval, plus the buffer.")
 	f.DurationVar(&cfg.LookbackOnNoCommit, "block-builder.lookback-on-no-commit", 12*time.Hour, "How much of the historical records to look back when there is no kafka commit for a partition.")
@@ -55,6 +57,9 @@ func (cfg *Config) Validate() error {
 	}
 	if _, ok := cfg.PartitionAssignment[cfg.InstanceID]; !ok {
 		return fmt.Errorf("instance id %q must be present in partition assignment", cfg.InstanceID)
+	}
+	if cfg.DataDir == "" {
+		return fmt.Errorf("data-dir is required")
 	}
 	// TODO(codesome): validate the consumption interval. Must be <=2h and can divide 2h into an integer.
 	if cfg.ConsumeInterval < 0 {

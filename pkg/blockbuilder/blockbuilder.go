@@ -83,11 +83,11 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 	}()
 
 	// Empty any previous artifacts.
-	if err := os.RemoveAll(b.cfg.BlocksStorageConfig.TSDB.Dir); err != nil {
-		return fmt.Errorf("removing tsdb dir: %w", err)
+	if err := os.RemoveAll(b.cfg.DataDir); err != nil {
+		return fmt.Errorf("removing data dir: %w", err)
 	}
-	if err := os.MkdirAll(b.cfg.BlocksStorageConfig.TSDB.Dir, os.ModePerm); err != nil {
-		return fmt.Errorf("creating tsdb dir: %w", err)
+	if err := os.MkdirAll(b.cfg.DataDir, os.ModePerm); err != nil {
+		return fmt.Errorf("creating data dir: %w", err)
 	}
 
 	// TODO: add a test to test the case where the consumption on startup happens

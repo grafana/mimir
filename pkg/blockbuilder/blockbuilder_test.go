@@ -5,54 +5,47 @@ package blockbuilder
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-const (
-	testTopic = "test"
-	testGroup = "testgroup"
-)
+func TestBlockBuilder_WipeOutDataDirOnStart(t *testing.T) {
+	t.Parallel()
 
-func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Overrides) {
-	cfg := Config{}
-	flagext.DefaultValues(&cfg)
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
 
-	cfg.InstanceID = "block-builder-0"
-	cfg.PartitionAssignment = map[string][]int32{
-		"block-builder-0": {0}, // instance 0 -> partition 0
-	}
+	const numPartitions = 2
 
-	// Kafka related options.
-	cfg.Kafka.Address = addr
-	cfg.Kafka.Topic = testTopic
-	cfg.Kafka.ConsumerGroup = testGroup
+	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
 
-	// Block storage related options.
-	cfg.BlocksStorageConfig.TSDB.Dir = t.TempDir()
-	cfg.BlocksStorageConfig.Bucket.StorageBackendConfig.Backend = bucket.Filesystem
-	cfg.BlocksStorageConfig.Bucket.Filesystem.Directory = t.TempDir()
+	f, err := os.CreateTemp(cfg.DataDir, "block")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, f.Close()) })
 
-	limits := defaultLimitsTestConfig()
-	limits.OutOfOrderTimeWindow = 2 * model.Duration(time.Hour)
-	limits.NativeHistogramsIngestionEnabled = true
-	overrides, err := validation.NewOverrides(limits, nil)
+	bb, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides)
 	require.NoError(t, err)
 
-	return cfg, overrides
+	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
+	})
+
+	// Verify that the data_dir was wiped out on the block-builder's start.
+	list, err := os.ReadDir(cfg.DataDir)
+	require.NoError(t, err, "expected data_dir to exist")
+	require.Empty(t, list, "expected data_dir to be empty")
 }
 
 func TestBlockBuilder_NextConsumeCycle(t *testing.T) {
@@ -63,12 +56,12 @@ func TestBlockBuilder_NextConsumeCycle(t *testing.T) {
 
 	const numPartitions = 2
 
-	_, addr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
-	kafkaClient := mustKafkaClient(t, addr)
+	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+	kafkaClient := mustKafkaClient(t, kafkaAddr)
 
 	produceRecords(ctx, t, kafkaClient, time.Now().Add(-time.Hour), "1", testTopic, 0, []byte(`test value`))
 
-	cfg, overrides := blockBuilderConfig(t, addr)
+	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
 	cfg.PartitionAssignment = map[string][]int32{
 		"block-builder-0": {0, 1}, // instance 0 -> partitions 0, 1
 	}
