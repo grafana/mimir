@@ -541,8 +541,6 @@ func TestDefaultManagerFactory_ShouldNotWriteRecordingRuleResultsWhenDisabled(t 
 	const userID = "tenant-1"
 
 	for _, writeEnabled := range []bool{false, true} {
-		writeEnabled := writeEnabled
-
 		t.Run(fmt.Sprintf("write enabled: %t", writeEnabled), func(t *testing.T) {
 			t.Parallel()
 
