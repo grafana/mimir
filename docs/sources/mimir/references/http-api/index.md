@@ -50,7 +50,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Prepare for Shutdown](#prepare-for-shutdown) | Ingester | `GET,POST,DELETE /ingester/prepare-shutdown` |
 | [Shutdown](#shutdown) | Ingester | `POST /ingester/shutdown` |
 | [Prepare Partition Downscale](#prepare-partition-downscale) | Ingester | `GET,POST,DELETE /ingester/prepare-partition-downscale` |
-| [Prepare Instance Ring Downscale](#prepare-instance-ring-dowscale) | Ingester | `GET,POST,DELETE /ingester/prepare-instance-ring-downscale` |
+| [Prepare Instance Ring Downscale](#prepare-instance-ring-downscale) | Ingester | `GET,POST,DELETE /ingester/prepare-instance-ring-downscale` |
 | [Ingesters ring status](#ingesters-ring-status) | Distributor,Ingester | `GET /ingester/ring` |
 | [Ingester tenants](#ingester-tenants) | Ingester | `GET /ingester/tenants` |
 | [Ingester tenant TSDB](#ingester-tenant-tsdb) | Ingester | `GET /ingester/tsdb/{tenant}` |
