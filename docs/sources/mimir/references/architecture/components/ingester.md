@@ -107,5 +107,5 @@ Ingesters in read-only mode are not part of the shuffle shard for the write oper
 Read-only mode is useful in downscaling scenarios and is a preparation for later shutdown of the ingester.
 
 Ingester ring state like JOINING, ACTIVE or LEAVING is separate from read-only mode.
-Ingester that is both ACTIVE and read-only does not receive write requests. 
+Ingester that is both ACTIVE and read-only does not receive write requests.
 Read-only mode is stored in the hash ring as well.
