@@ -69,7 +69,7 @@ func TestQuerierWorkerQueuePriority_SingleWorkerBehavior(t *testing.T) {
 			require.NoError(t, err)
 		}
 		if operation.kind == dequeue {
-			path, obj := tree.Dequeue()
+			path, obj := tree.Dequeue(nil)
 			require.Equal(t, operation.path, path)
 			require.Equal(t, operation.obj, obj)
 		}
@@ -103,59 +103,50 @@ func TestQuerierWorkerQueuePriority_StartPositionByWorker(t *testing.T) {
 	assert.Equal(t, expectedInitialNodeOrder, querierWorkerPrioritizationQueueAlgo.nodeOrder)
 
 	// with 3 queues present, first node to be dequeued from is determined by worker ID % 3
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(0)
-	path, obj := tree.Dequeue()
+	path, obj := tree.Dequeue(&DequeueArgs{workerID: 0})
 	assert.Equal(t, QueuePath{ingesterQueueDimension}, path)
 	assert.Equal(t, "obj-1", obj)
 
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(1)
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(&DequeueArgs{workerID: 1})
 	assert.Equal(t, QueuePath{storeGatewayQueueDimension}, path)
 	assert.Equal(t, "obj-2", obj)
 
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(2)
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(&DequeueArgs{workerID: 2})
 	assert.Equal(t, QueuePath{ingesterAndStoreGatewayQueueDimension}, path)
 	assert.Equal(t, "obj-3", obj)
 
 	// worker IDs can come in "out of order" to dequeue, and they will still start at the correct queue
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(5)
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(&DequeueArgs{workerID: 5})
 	assert.Equal(t, QueuePath{ingesterAndStoreGatewayQueueDimension}, path)
 	assert.Equal(t, "obj-6", obj)
 
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(3)
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(&DequeueArgs{workerID: 3})
 	assert.Equal(t, QueuePath{ingesterQueueDimension}, path)
 	assert.Equal(t, "obj-4", obj)
 
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(4)
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(&DequeueArgs{workerID: 4})
 	assert.Equal(t, QueuePath{storeGatewayQueueDimension}, path)
 	assert.Equal(t, "obj-5", obj)
 
 	// only 1 item left in each queue; as queue nodes are emptied and deleted,
 	// worker IDs will be remapped to different node types by the modulo operation
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(0)
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(&DequeueArgs{workerID: 0})
 	assert.Equal(t, QueuePath{ingesterQueueDimension}, path)
 	assert.Equal(t, "obj-7", obj)
 
 	// ingester queue empty and deleted: 2 queues left are ["store-gateway", "ingester-and-store-gateway"]
 	// with 2 queues present, first node to be dequeued from is determined by worker ID % 2
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(1)
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(&DequeueArgs{workerID: 1})
 	assert.Equal(t, QueuePath{ingesterAndStoreGatewayQueueDimension}, path)
 	assert.Equal(t, "obj-9", obj)
 
 	// ingester-and-store-gateway queue empty and deleted: 1 queue left is just ["store-gateway"]
 	// every worker will dequeue from the same queue since there is only 1 left
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(999)
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(&DequeueArgs{workerID: 999})
 	assert.Equal(t, QueuePath{storeGatewayQueueDimension}, path)
 	assert.Equal(t, "obj-8", obj)
 
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(nil)
 	assert.Equal(t, QueuePath{}, path)
 	// tree is now empty
 	assert.Nil(t, obj)
@@ -235,34 +226,28 @@ func TestQuerierWorkerQueuePriority_StartPositionByWorker_MultipleNodeCountsInTr
 
 	// show two-layer behavior (with top layer as vanilla round-robin) before any nodes are deleted
 	// with 3 queues present, first node to be dequeued from is determined by worker ID % 3
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(0)
-	path, obj := tree.Dequeue()
+	path, obj := tree.Dequeue(&DequeueArgs{workerID: 0})
 	assert.Equal(t, QueuePath{"a", ingesterQueueDimension}, path)
 	assert.Equal(t, "obj-a-i-1", obj)
 
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(1)
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(&DequeueArgs{workerID: 1})
 	assert.Equal(t, QueuePath{"b", storeGatewayQueueDimension}, path)
 	assert.Equal(t, "obj-b-sg-1", obj)
 
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(2)
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(&DequeueArgs{workerID: 2})
 	assert.Equal(t, QueuePath{"a", ingesterAndStoreGatewayQueueDimension}, path)
 	assert.Equal(t, "obj-a-isg-1", obj)
 
 	// worker IDs can come in "out of order" to dequeue, and they will still start at the correct queue
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(5)
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(&DequeueArgs{workerID: 5})
 	assert.Equal(t, QueuePath{"b", ingesterAndStoreGatewayQueueDimension}, path)
 	assert.Equal(t, "obj-b-isg-1", obj)
 
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(4)
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(&DequeueArgs{workerID: 4})
 	assert.Equal(t, QueuePath{"a", storeGatewayQueueDimension}, path)
 	assert.Equal(t, "obj-a-sg-1", obj)
 
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(3)
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(&DequeueArgs{workerID: 3})
 	assert.Equal(t, QueuePath{"b", ingesterQueueDimension}, path)
 	assert.Equal(t, "obj-b-i-1", obj)
 
@@ -271,8 +256,7 @@ func TestQuerierWorkerQueuePriority_StartPositionByWorker_MultipleNodeCountsInTr
 	// when the last node of each type is deleted and the node type is removed from the global order.
 
 	// dequeue with a worker ID mapped to the ingester node type
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(0)
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(&DequeueArgs{workerID: 0})
 	assert.Equal(t, QueuePath{"a", ingesterQueueDimension}, path)
 	assert.Equal(t, "obj-a-i-2", obj)
 	// node at path "a/ingester" is now empty and deleted but "ingester" is still in the global order
@@ -282,8 +266,7 @@ func TestQuerierWorkerQueuePriority_StartPositionByWorker_MultipleNodeCountsInTr
 	)
 
 	// dequeue again with a worker ID mapped to the ingester node type
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(3)
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(&DequeueArgs{workerID: 3})
 	assert.Equal(t, QueuePath{"b", ingesterQueueDimension}, path)
 	assert.Equal(t, "obj-b-i-2", obj)
 	// the last node of the "ingester" type is empty and deleted, it is removed from the global order
@@ -295,8 +278,7 @@ func TestQuerierWorkerQueuePriority_StartPositionByWorker_MultipleNodeCountsInTr
 	// subsequent dequeues demonstrate that worker IDs are remapped to the remaining node types
 
 	// dequeue with a worker ID mapped to the ingester-and-store-gateway node type
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(1)
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(&DequeueArgs{workerID: 1})
 	assert.Equal(t, QueuePath{"a", ingesterAndStoreGatewayQueueDimension}, path)
 	assert.Equal(t, "obj-a-isg-2", obj)
 	// node at path "a/ingester-and-store-gateway" is now empty and deleted but "ingester-and-store-gateway" is still in the global order
@@ -306,8 +288,7 @@ func TestQuerierWorkerQueuePriority_StartPositionByWorker_MultipleNodeCountsInTr
 	)
 
 	// dequeue with a worker ID mapped to the store-gateway node type
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(2)
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(&DequeueArgs{workerID: 2})
 	assert.Equal(t, QueuePath{"b", storeGatewayQueueDimension}, path)
 	assert.Equal(t, "obj-b-sg-2", obj)
 	// node at path "b/store-gateway" is now empty and deleted but "store-gateway" is still in the global order
@@ -317,8 +298,7 @@ func TestQuerierWorkerQueuePriority_StartPositionByWorker_MultipleNodeCountsInTr
 	)
 
 	// dequeue with a worker ID mapped to the ingester-and-store-gateway node type
-	querierWorkerPrioritizationQueueAlgo.SetCurrentQuerierWorker(1)
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(&DequeueArgs{workerID: 1})
 	assert.Equal(t, QueuePath{"b", ingesterAndStoreGatewayQueueDimension}, path)
 	assert.Equal(t, "obj-b-isg-2", obj)
 	// the last node of the "ingester-and-store-gateway" type is empty and deleted, it is removed from the global order
@@ -329,7 +309,7 @@ func TestQuerierWorkerQueuePriority_StartPositionByWorker_MultipleNodeCountsInTr
 
 	// no need to re-assign the current querier-worker ID; there is only 1 node type left
 	// so any worker ID will dequeue from the same node type
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(nil)
 	assert.Equal(t, QueuePath{"a", storeGatewayQueueDimension}, path)
 	assert.Equal(t, "obj-a-sg-2", obj)
 	// the last node of the "store-gateway" type is empty and deleted, it is removed from the global order
@@ -338,7 +318,7 @@ func TestQuerierWorkerQueuePriority_StartPositionByWorker_MultipleNodeCountsInTr
 		querierWorkerPrioritizationQueueAlgo.nodeOrder,
 	)
 
-	path, obj = tree.Dequeue()
+	path, obj = tree.Dequeue(nil)
 	assert.Equal(t, QueuePath{}, path)
 	// tree is now empty
 	assert.Nil(t, obj)

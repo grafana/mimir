@@ -159,10 +159,10 @@ func Test_EnqueueFrontByPath(t *testing.T) {
 			require.NoError(t, err)
 
 			for _, expectedVal := range tt.expected {
-				_, v := tree.Dequeue()
+				_, v := tree.Dequeue(&DequeueArgs{querierID: someQuerier})
 				require.Equal(t, expectedVal, v)
 			}
-			_, v := tree.Dequeue()
+			_, v := tree.Dequeue(&DequeueArgs{querierID: someQuerier})
 			require.Nil(t, v)
 		})
 	}
@@ -173,31 +173,39 @@ func Test_Dequeue_RootNode(t *testing.T) {
 		name          string
 		rootAlgo      QueuingAlgorithm
 		enqueueToRoot []any
+		dequeueArgs   *DequeueArgs
+		expected      []any
 	}{
 		{
 			name:     "dequeue from empty round-robin root node",
 			rootAlgo: &roundRobinState{},
 		},
 		{
-			name:     "dequeue from empty tenant-querier root node",
-			rootAlgo: newTenantQuerierAssignments(0),
+			name:        "dequeue from empty tenant-querier root node",
+			rootAlgo:    newTenantQuerierAssignments(0),
+			dequeueArgs: &DequeueArgs{querierID: "placeholder", lastTenantIndex: localQueueIndex},
 		},
 		{
 			name:          "dequeue from non-empty round-robin root node",
 			rootAlgo:      &roundRobinState{},
 			enqueueToRoot: []any{"something-in-root"},
+			expected:      []any{"something-in-root"},
 		},
 		{
 			name:          "dequeue from non-empty tenant-querier root node",
 			rootAlgo:      newTenantQuerierAssignments(0),
 			enqueueToRoot: []any{"something-else-in-root"},
+			expected:      []any{"something-else-in-root"},
+			dequeueArgs:   &DequeueArgs{querierID: "placeholder", lastTenantIndex: localQueueIndex},
+		},
+		{
+			name:          "dequeue from non-empty tenant-querier root node with no current querier",
+			rootAlgo:      newTenantQuerierAssignments(0),
+			enqueueToRoot: []any{"something-in-root"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tqa, ok := tt.rootAlgo.(*tenantQuerierAssignments); ok {
-				tqa.updateQueuingAlgorithmState("placeholder", localQueueIndex)
-			}
 			tree, err := NewTree(tt.rootAlgo)
 			require.NoError(t, err)
 
@@ -208,13 +216,18 @@ func Test_Dequeue_RootNode(t *testing.T) {
 			}
 
 			for _, elt := range tt.enqueueToRoot {
-				dequeuePath, v := tree.Dequeue()
-				require.Equal(t, path, dequeuePath)
-				require.Equal(t, elt, v)
+				dequeuePath, v := tree.Dequeue(tt.dequeueArgs)
+				if tt.expected != nil {
+					require.Equal(t, path, dequeuePath)
+					require.Equal(t, elt, v)
+				} else {
+					require.Equal(t, path, dequeuePath)
+					require.Nil(t, v)
+				}
 
 			}
 
-			dequeuePath, v := tree.Dequeue()
+			dequeuePath, v := tree.Dequeue(tt.dequeueArgs)
 			require.Equal(t, path, dequeuePath)
 			require.Nil(t, v)
 
@@ -276,7 +289,7 @@ func Test_RoundRobinDequeue(t *testing.T) {
 			}
 
 			for _, expected := range tt.expected {
-				_, val := tree.Dequeue()
+				_, val := tree.Dequeue(nil)
 				v, ok := val.(string)
 				require.True(t, ok)
 				require.Equal(t, expected, v)
@@ -352,7 +365,7 @@ func Test_DequeueOrderAfterEnqueue(t *testing.T) {
 					require.NoError(t, err)
 				}
 				if operation.kind == dequeue {
-					path, obj := tree.Dequeue()
+					path, obj := tree.Dequeue(&DequeueArgs{querierID: placeholderQuerier})
 					require.Equal(t, operation.path, path)
 					require.Equal(t, operation.obj, obj)
 				}
@@ -533,13 +546,6 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tqas := make([]*tenantQuerierAssignments, 0)
-			for _, da := range tt.treeAlgosByDepth {
-				if tqa, ok := da.(*tenantQuerierAssignments); ok {
-					tqas = append(tqas, tqa)
-				}
-			}
-
 			tree, err := NewTree(tt.treeAlgosByDepth...)
 			require.NoError(t, err)
 
@@ -550,10 +556,7 @@ func Test_TenantQuerierAssignmentsDequeue(t *testing.T) {
 			// currQuerier at position i is used to dequeue the expected result at position i
 			require.Equal(t, len(tt.currQuerier), len(tt.expected))
 			for i := 0; i < len(tt.expected); i++ {
-				for _, tqa := range tqas {
-					tqa.updateQueuingAlgorithmState(tt.currQuerier[i], i-1)
-				}
-				_, v := tree.Dequeue()
+				_, v := tree.Dequeue(&DequeueArgs{querierID: tt.currQuerier[i], lastTenantIndex: i - 1})
 				require.Equal(t, tt.expected[i], v)
 			}
 		})
@@ -593,32 +596,29 @@ func Test_ChangeTenantQuerierAssignments(t *testing.T) {
 	querier2 := QuerierID("querier-2")
 	querier3 := QuerierID("querier-3")
 
-	// set state to querier-2 should dequeue query-2
-	tqa.updateQueuingAlgorithmState(querier2, -1)
-	_, v := tree.Dequeue()
+	// dequeue for querier-2 should dequeue query-2
+	_, v := tree.Dequeue(&DequeueArgs{querierID: querier2, lastTenantIndex: -1})
 	require.Equal(t, "query-2", v)
 
-	// update tqa to querier-1 should dequeue query-1
-	tqa.updateQueuingAlgorithmState(querier1, -1)
-	_, v = tree.Dequeue()
+	// dequeue for querier-1 should dequeue query-1
+	_, v = tree.Dequeue(&DequeueArgs{querierID: querier1, lastTenantIndex: -1})
 	require.Equal(t, "query-1", v)
 
-	// update tqa map to add querier-3 as assigned to tenant-2, then set tqa to querier-3 should dequeue query-3
+	// update tqa map to add querier-3 as assigned to tenant-2, then dequeue for querier-3 should dequeue query-3
 	tqa.tenantQuerierIDs["tenant-2"]["querier-3"] = struct{}{}
-	tqa.updateQueuingAlgorithmState(querier3, -1)
-	_, v = tree.Dequeue()
+	_, v = tree.Dequeue(&DequeueArgs{querierID: querier3, lastTenantIndex: -1})
 	require.Equal(t, "query-3", v)
 
 	// during reshuffle, we only ever reassign tenant values, we don't assign an entirely new map value
 	// to tenantQuerierIDs. Reassign tenant-2 to an empty map value, and query-5 (tenant-3), which can be handled
 	// by any querier, should be dequeued,
 	tqa.tenantQuerierIDs["tenant-2"] = map[QuerierID]struct{}{}
-	_, v = tree.Dequeue()
+	_, v = tree.Dequeue(&DequeueArgs{querierID: querier3})
 	require.Equal(t, "query-5", v)
 
 	// then we should not be able to dequeue query-4
 	tqa.tenantQuerierIDs["tenant-2"] = map[QuerierID]struct{}{}
-	_, v = tree.Dequeue()
+	_, v = tree.Dequeue(&DequeueArgs{querierID: querier3})
 	require.Nil(t, v)
 
 }
@@ -680,7 +680,7 @@ func Test_DequeueBalancedRoundRobinTree(t *testing.T) {
 	dequeuedPathCache := make([]QueuePath, rotationsBeforeRepeat)
 
 	for !tree.IsEmpty() {
-		dequeuedPath, _ := tree.Dequeue()
+		dequeuedPath, _ := tree.Dequeue(nil)
 
 		// require dequeued path has not repeated before the expected number of rotations
 		require.NotContains(t, dequeuedPathCache, dequeuedPath)
@@ -716,7 +716,7 @@ func Test_DequeueUnbalancedRoundRobinTree(t *testing.T) {
 	}
 
 	for _, expected := range expectedVals {
-		_, v := tree.Dequeue()
+		_, v := tree.Dequeue(nil)
 		require.Equal(t, expected, v)
 	}
 
@@ -759,17 +759,17 @@ func Test_EnqueueDuringDequeueRespectsRoundRobin(t *testing.T) {
 	require.Equal(t, []string{"0", "1", "2"}, root.queueOrder)
 
 	// dequeue first item
-	dequeuedPath, _ := tree.Dequeue()
+	dequeuedPath, _ := tree.Dequeue(nil)
 	require.Equal(t, QueuePath{"0"}, dequeuedPath)
 
 	// dequeue second item; root:1 is now exhausted and deleted
-	dequeuedPath, _ = tree.Dequeue()
+	dequeuedPath, _ = tree.Dequeue(nil)
 	require.Equal(t, QueuePath{"1"}, dequeuedPath)
 	require.Nil(t, root.getNode(QueuePath{"1"}))
 	require.Equal(t, []string{"0", "2"}, root.queueOrder)
 
 	// dequeue third item
-	dequeuedPath, _ = tree.Dequeue()
+	dequeuedPath, _ = tree.Dequeue(nil)
 	require.Equal(t, QueuePath{"2"}, dequeuedPath)
 
 	// root:1 was previously exhausted; root:0, then root:2 will be next in the rotation
@@ -782,16 +782,16 @@ func Test_EnqueueDuringDequeueRespectsRoundRobin(t *testing.T) {
 
 	// dequeue fourth item; the newly-enqueued root:1 item
 	// has not jumped the line in front of root:0
-	dequeuedPath, _ = tree.Dequeue()
+	dequeuedPath, _ = tree.Dequeue(nil)
 	require.Equal(t, QueuePath{"0"}, dequeuedPath)
 
 	// dequeue fifth item; the newly-enqueued root:1 item
 	// has not jumped the line in front of root:2
-	dequeuedPath, _ = tree.Dequeue()
+	dequeuedPath, _ = tree.Dequeue(nil)
 	require.Equal(t, QueuePath{"2"}, dequeuedPath)
 
 	// dequeue sixth item; verifying the order 0->2->1 is being followed
-	dequeuedPath, _ = tree.Dequeue()
+	dequeuedPath, _ = tree.Dequeue(nil)
 	require.Equal(t, QueuePath{"1"}, dequeuedPath)
 
 	// all items have been dequeued
@@ -818,7 +818,7 @@ func Test_NodeCannotDeleteItself(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, tree)
 
-			_, _ = tree.Dequeue()
+			_, _ = tree.Dequeue(nil)
 
 			require.NotNil(t, tree.rootNode)
 			require.Zero(t, tree.rootNode.getLocalQueue().Len())
@@ -884,18 +884,6 @@ func makeUnbalancedRoundRobinTree(t *testing.T) *MultiQueuingAlgorithmTreeQueue 
 	require.NoError(t, tree.EnqueueBackByPath(childPath, item))
 	require.Equal(t, 3, tree.rootNode.nodeCount())
 	require.Equal(t, 1, tree.rootNode.ItemCount())
-
-	//// enqueue two items to root:1
-	//childPath = QueuePath{"1"}
-	//item = makeItemForChildQueue(tree.rootNode, childPath, cache)
-	//require.NoError(t, tree.EnqueueBackByPath(childPath, item))
-	//require.Equal(t, 3, tree.rootNode.nodeCount())
-	//require.Equal(t, 2, tree.rootNode.ItemCount())
-	//
-	//item = makeItemForChildQueue(tree.rootNode, childPath, cache)
-	//require.NoError(t, tree.EnqueueBackByPath(childPath, item))
-	//require.Equal(t, 3, tree.rootNode.nodeCount())
-	//require.Equal(t, 3, tree.rootNode.ItemCount())
 
 	// enqueue two items to root:1:a
 	childPath = QueuePath{"1", "a"}

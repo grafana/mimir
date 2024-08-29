@@ -483,7 +483,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 				testCaseReports[testCaseName] = report
 
 				// ensure everything was dequeued
-				path, val := tree.tree.Dequeue()
+				path, val := tree.tree.Dequeue(&DequeueArgs{querierID: tqa.currentQuerier})
 				assert.Nil(t, val)
 				assert.Equal(t, path, QueuePath{})
 			})

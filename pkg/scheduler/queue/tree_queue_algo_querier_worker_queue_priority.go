@@ -67,12 +67,12 @@ func NewQuerierWorkerQueuePriorityAlgo() *QuerierWorkerQueuePriorityAlgo {
 	}
 }
 
-func (qa *QuerierWorkerQueuePriorityAlgo) SetCurrentQuerierWorker(workerID int) {
-	qa.currentQuerierWorker = workerID
+func (qa *QuerierWorkerQueuePriorityAlgo) setup(dequeueArgs *DequeueArgs) {
+	qa.currentQuerierWorker = dequeueArgs.workerID
 	if len(qa.nodeOrder) == 0 {
 		qa.currentNodeOrderIndex = 0
 	} else {
-		qa.currentNodeOrderIndex = workerID % len(qa.nodeOrder)
+		qa.currentNodeOrderIndex = qa.currentQuerierWorker % len(qa.nodeOrder)
 	}
 }
 

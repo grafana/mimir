@@ -68,7 +68,10 @@ func assertExpectedValuesOnDequeue(t *testing.T, qb *queueBroker, lastTenantInde
 	var err error
 
 	for _, expected := range expectedVals {
-		req, tenant, lastTenantIndex, err = qb.dequeueRequestForQuerier(lastTenantIndex, querierID)
+		req, tenant, lastTenantIndex, err = qb.dequeueRequestForQuerier(&QuerierWorkerDequeueRequest{
+			QuerierWorkerConn: &QuerierWorkerConn{QuerierID: querierID},
+			lastTenantIndex:   TenantIndex{last: lastTenantIndex},
+		})
 		assert.Equal(t, expected.req, req)
 		assert.Equal(t, expected.tenant, tenant)
 		assert.NoError(t, err)
@@ -78,6 +81,7 @@ func assertExpectedValuesOnDequeue(t *testing.T, qb *queueBroker, lastTenantInde
 
 // TestQueues_NoShuffleSharding tests dequeueing of objects for different queriers, where any querier can
 // handle queries for any tenant, as tenant queues are added and removed
+
 func TestQueues_NoShuffleSharding(t *testing.T) {
 	treeTypes := buildTreeTestsStruct()
 	for _, tt := range treeTypes {
@@ -89,7 +93,10 @@ func TestQueues_NoShuffleSharding(t *testing.T) {
 			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1"))
 			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2"))
 
-			req, tenant, lastTenantIndexQuerierOne, err := qb.dequeueRequestForQuerier(-1, "querier-1")
+			req, tenant, lastTenantIndexQuerierOne, err := qb.dequeueRequestForQuerier(&QuerierWorkerDequeueRequest{
+				QuerierWorkerConn: &QuerierWorkerConn{QuerierID: "querier-1"},
+				lastTenantIndex:   TenantIndex{-1},
+			})
 			assert.Nil(t, req)
 			assert.Nil(t, tenant)
 			assert.NoError(t, err)
@@ -207,7 +214,11 @@ func TestQueues_NoShuffleSharding(t *testing.T) {
 			qb.removeTenantQueue("four")
 			assert.NoError(t, isConsistent(qb))
 
-			req, tenant, _, err = qb.dequeueRequestForQuerier(lastTenantIndexQuerierOne, "querier-1")
+			req, tenant, _, err = qb.dequeueRequestForQuerier(&QuerierWorkerDequeueRequest{
+				QuerierWorkerConn: &QuerierWorkerConn{QuerierID: "querier-1"},
+				lastTenantIndex:   TenantIndex{lastTenantIndexQuerierOne},
+			},
+			)
 			assert.Nil(t, req)
 			assert.Nil(t, tenant)
 			assert.NoError(t, err)
@@ -306,7 +317,10 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 
 			// dequeue a request
 			qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), "querier-1"))
-			dequeuedTenantReq, _, _, err := qb.dequeueRequestForQuerier(-1, "querier-1")
+			dequeuedTenantReq, _, _, err := qb.dequeueRequestForQuerier(&QuerierWorkerDequeueRequest{
+				QuerierWorkerConn: &QuerierWorkerConn{QuerierID: "querier-1"},
+				lastTenantIndex:   TenantIndex{-1},
+			})
 			assert.NoError(t, err)
 			assert.NotNil(t, dequeuedTenantReq)
 
@@ -365,7 +379,10 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 
 			// After notify shutdown for querier-2, it's expected to own no queue.
 			qb.notifyQuerierShutdown("querier-2")
-			req, tenant, qTwolastTenantIndex, err := qb.dequeueRequestForQuerier(qTwolastTenantIndex, "querier-2")
+			req, tenant, qTwolastTenantIndex, err := qb.dequeueRequestForQuerier(&QuerierWorkerDequeueRequest{
+				QuerierWorkerConn: &QuerierWorkerConn{QuerierID: "querier-2"},
+				lastTenantIndex:   TenantIndex{qTwolastTenantIndex},
+			})
 			assert.Nil(t, req)
 			assert.Nil(t, tenant)
 			assert.Equal(t, ErrQuerierShuttingDown, err)
@@ -379,7 +396,10 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 			}
 
 			for _, expected := range expectedDequeueVals {
-				req, tenant, qOneLastTenantIndex, err = qb.dequeueRequestForQuerier(qOneLastTenantIndex, "querier-1")
+				req, tenant, qOneLastTenantIndex, err = qb.dequeueRequestForQuerier(&QuerierWorkerDequeueRequest{
+					QuerierWorkerConn: &QuerierWorkerConn{QuerierID: "querier-1"},
+					lastTenantIndex:   TenantIndex{qOneLastTenantIndex},
+				})
 				assert.Equal(t, expected.req, req)
 				assert.Equal(t, expected.tenant, tenant)
 				assert.NoError(t, err)
@@ -387,7 +407,10 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 
 			// After disconnecting querier-2, it's expected to own no queue.
 			qb.tenantQuerierAssignments.removeQuerier("querier-2")
-			req, tenant, _, err = qb.dequeueRequestForQuerier(qTwolastTenantIndex, "querier-2")
+			req, tenant, _, err = qb.dequeueRequestForQuerier(&QuerierWorkerDequeueRequest{
+				QuerierWorkerConn: &QuerierWorkerConn{QuerierID: "querier-2"},
+				lastTenantIndex:   TenantIndex{qTwolastTenantIndex},
+			})
 			assert.Nil(t, req)
 			assert.Nil(t, tenant)
 			assert.Equal(t, ErrQuerierShuttingDown, err)
@@ -414,7 +437,10 @@ func TestQueues_QuerierDistribution(t *testing.T) {
 				qb.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), qid))
 
 				// No querier has any queues yet.
-				req, tenant, _, err := qb.dequeueRequestForQuerier(-1, QuerierID(qid))
+				req, tenant, _, err := qb.dequeueRequestForQuerier(&QuerierWorkerDequeueRequest{
+					QuerierWorkerConn: &QuerierWorkerConn{QuerierID: qid},
+					lastTenantIndex:   TenantIndex{-1},
+				})
 				assert.Nil(t, req)
 				assert.Nil(t, tenant)
 				assert.NoError(t, err)
@@ -746,6 +772,7 @@ func generateQuerier(r *rand.Rand) QuerierID {
 }
 
 // getTenantsByQuerier returns the list of tenants handled by the provided QuerierID.
+
 func getTenantsByQuerier(broker *queueBroker, querierID QuerierID) []TenantID {
 	var tenantIDs []TenantID
 	for _, tenantID := range broker.tenantQuerierAssignments.tenantIDOrder {
