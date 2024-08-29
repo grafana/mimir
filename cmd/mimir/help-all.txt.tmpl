@@ -1211,6 +1211,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.
   -distributor.metric-relabeling-enabled
     	[experimental] Enable metric relabeling for the tenant. This configuration option can be used to forcefully disable metric relabeling on a per-tenant basis. (default true)
+  -distributor.otel-created-timestamp-zero-ingestion-enabled
+    	[experimental] Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.
   -distributor.otel-metric-suffixes-enabled
     	Whether to enable automatic suffixes to names of metrics ingested through OTLP.
   -distributor.remote-timeout duration

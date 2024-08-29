@@ -59,6 +59,7 @@
     * `cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total`
     * `cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total`
     * `cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total`
+* [ENHANCEMENT] OTLP: If the flag `-distributor.otel-created-timestamp-zero-ingestion-enabled` is true, OTel start timestamps are converted to Prometheus zero samples to mark series start. #9131
 * [BUGFIX] Ruler: add support for draining any outstanding alert notifications before shutting down. This can be enabled with the `-ruler.drain-notification-queue-on-shutdown=true` CLI flag. #8346
 * [BUGFIX] Query-frontend: fix `-querier.max-query-lookback` enforcement when `-compactor.blocks-retention-period` is not set, and viceversa. #8388
 * [BUGFIX] Ingester: fix sporadic `not found` error causing an internal server error if label names are queried with matchers during head compaction. #8391
