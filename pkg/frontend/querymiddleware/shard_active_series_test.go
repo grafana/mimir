@@ -486,7 +486,7 @@ func runTestShardActiveSeriesMiddlewareMergeResponseContextCancellation(t *testi
 	require.NoError(t, err)
 
 	cancelCause := "request canceled while streaming response"
-	cancel(fmt.Errorf(cancelCause))
+	cancel(errors.New(cancelCause))
 
 	_, err = io.Copy(&buf, resp.Body)
 	require.NoError(t, err)

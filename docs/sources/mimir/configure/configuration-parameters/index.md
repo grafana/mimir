@@ -141,11 +141,6 @@ api:
   # CLI flag: -api.skip-label-name-validation-header-enabled
   [skip_label_name_validation_header_enabled: <boolean> | default = false]
 
-  # (deprecated) If true, store metadata when ingesting metrics via OTLP. This
-  # makes metric descriptions and types available for metrics ingested via OTLP.
-  # CLI flag: -distributor.enable-otlp-metadata-storage
-  [enable_otel_metadata_translation: <boolean> | default = true]
-
   # (deprecated) Enable GET requests to the /ingester/shutdown endpoint to
   # trigger an ingester shutdown. This is a potentially dangerous operation and
   # should only be enabled consciously.
@@ -1484,7 +1479,8 @@ store_gateway_client:
 [enable_query_engine_fallback: <boolean> | default = true]
 
 # The number of workers running in each querier process. This setting limits the
-# maximum number of concurrent queries in each querier.
+# maximum number of concurrent queries in each querier. The minimum value is
+# four; lower values are ignored and set to the minimum
 # CLI flag: -querier.max-concurrent
 [max_concurrent: <int> | default = 20]
 
@@ -1517,20 +1513,25 @@ store_gateway_client:
 [promql_experimental_functions_enabled: <boolean> | default = false]
 
 mimir_query_engine:
+  # (experimental) Enable support for aggregation operations in Mimir's query
+  # engine. Only applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-aggregation-operations
+  [enable_aggregation_operations: <boolean> | default = true]
+
   # (experimental) Enable support for binary operations in Mimir's query engine.
   # Only applies if the Mimir query engine is in use.
   # CLI flag: -querier.mimir-query-engine.enable-binary-operations
   [enable_binary_operations: <boolean> | default = true]
 
-  # (experimental) Enable support for ..._over_time functions in Mimir's query
-  # engine. Only applies if the Mimir query engine is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-over-time-functions
-  [enable_over_time_functions: <boolean> | default = true]
-
   # (experimental) Enable support for offset modifier in Mimir's query engine.
   # Only applies if the Mimir query engine is in use.
   # CLI flag: -querier.mimir-query-engine.enable-offset-modifier
   [enable_offset_modifier: <boolean> | default = true]
+
+  # (experimental) Enable support for ..._over_time functions in Mimir's query
+  # engine. Only applies if the Mimir query engine is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-over-time-functions
+  [enable_over_time_functions: <boolean> | default = true]
 
   # (experimental) Enable support for scalars in Mimir's query engine. Only
   # applies if the Mimir query engine is in use.
@@ -1962,11 +1963,6 @@ alertmanager_client:
   # (if any).
   # CLI flag: -ruler.alertmanager-client.basic-auth-password
   [basic_auth_password: <string> | default = ""]
-
-# (experimental) Drain all outstanding alert notifications when shutting down.
-# If false, any outstanding alert notifications are dropped when shutting down.
-# CLI flag: -ruler.drain-notification-queue-on-shutdown
-[drain_notification_queue_on_shutdown: <boolean> | default = false]
 
 # (advanced) Max time to tolerate outage for restoring "for" state of alert.
 # CLI flag: -ruler.for-outage-tolerance

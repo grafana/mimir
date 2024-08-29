@@ -35,6 +35,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
@@ -787,9 +788,13 @@ func (c prometheusCodec) EncodeResponse(ctx context.Context, req *http.Request, 
 		return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
 	}
 
-	c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(time.Since(start).Seconds())
+	encodeDuration := time.Since(start)
+	c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(encodeDuration.Seconds())
 	c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(len(b)))
 	sp.LogFields(otlog.Int("bytes", len(b)))
+
+	queryStats := stats.FromContext(ctx)
+	queryStats.AddEncodeTime(encodeDuration)
 
 	resp := http.Response{
 		Header: http.Header{

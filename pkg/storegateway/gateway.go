@@ -253,7 +253,8 @@ func (g *StoreGateway) starting(ctx context.Context) (err error) {
 	// At this point, the instance is registered with some tokens
 	// and we can start the bucket stores.
 	g.bucketSync.WithLabelValues(syncReasonInitial).Inc()
-	if err = services.StartAndAwaitRunning(ctx, g.stores); err != nil {
+	// We pass context.Background() because we want to control the shutdown of stores ourselves instead of stopping it immediately after when ctx is cancelled.
+	if err = services.StartAndAwaitRunning(context.Background(), g.stores); err != nil {
 		return errors.Wrap(err, "starting bucket stores")
 	}
 

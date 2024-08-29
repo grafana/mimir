@@ -1527,3 +1527,81 @@ func (m *mockBlocksStorageQuerier) LabelNames(ctx context.Context, hints *storag
 func (m *mockBlocksStorageQuerier) Close() error {
 	return nil
 }
+
+func TestTenantQueryLimitsProvider(t *testing.T) {
+	tenantLimits := &staticTenantLimits{
+		limits: map[string]*validation.Limits{
+			"user-1": {
+				MaxEstimatedMemoryConsumptionPerQuery: 1000,
+			},
+			"user-2": {
+				MaxEstimatedMemoryConsumptionPerQuery: 10,
+			},
+			"user-3": {
+				MaxEstimatedMemoryConsumptionPerQuery: 3000,
+			},
+			"unlimited-user": {
+				MaxEstimatedMemoryConsumptionPerQuery: 0,
+			},
+		},
+	}
+
+	overrides, err := validation.NewOverrides(defaultLimitsConfig(), tenantLimits)
+	require.NoError(t, err)
+
+	provider := &tenantQueryLimitsProvider{
+		limits: overrides,
+	}
+
+	testCases := map[string]struct {
+		ctx           context.Context
+		expectedLimit uint64
+		expectedError error
+	}{
+		"no tenant ID provided": {
+			ctx:           context.Background(),
+			expectedError: user.ErrNoOrgID,
+		},
+		"single tenant ID provided, has limit": {
+			ctx:           user.InjectOrgID(context.Background(), "user-1"),
+			expectedLimit: 1000,
+		},
+		"single tenant ID provided, unlimited": {
+			ctx:           user.InjectOrgID(context.Background(), "unlimited-user"),
+			expectedLimit: 0,
+		},
+		"multiple tenant IDs provided, all have limits": {
+			ctx:           user.InjectOrgID(context.Background(), "user-1|user-2|user-3"),
+			expectedLimit: 4010,
+		},
+		"multiple tenant IDs provided, one unlimited": {
+			ctx:           user.InjectOrgID(context.Background(), "user-1|unlimited-user|user-3"),
+			expectedLimit: 0,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			actualLimit, actualErr := provider.GetMaxEstimatedMemoryConsumptionPerQuery(testCase.ctx)
+
+			if testCase.expectedError == nil {
+				require.NoError(t, actualErr)
+				require.Equal(t, testCase.expectedLimit, actualLimit)
+			} else {
+				require.ErrorIs(t, actualErr, testCase.expectedError)
+			}
+		})
+	}
+}
+
+type staticTenantLimits struct {
+	limits map[string]*validation.Limits
+}
+
+func (s *staticTenantLimits) ByUserID(userID string) *validation.Limits {
+	return s.limits[userID]
+}
+
+func (s *staticTenantLimits) AllByUserID() map[string]*validation.Limits {
+	return s.limits
+}

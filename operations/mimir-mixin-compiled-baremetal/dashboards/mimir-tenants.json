@@ -2653,6 +2653,7 @@
                },
                "hide": 0,
                "includeAll": false,
+               "label": "limit",
                "multi": false,
                "name": "limit",
                "options": [
@@ -2682,7 +2683,10 @@
                      "value": "1000"
                   }
                ],
-               "type": "custom"
+               "query": "10 : 10,50 : 50,100 : 100,500 : 500,1000 : 1000",
+               "skipUrlSync": false,
+               "type": "custom",
+               "useTags": false
             }
          ]
       },

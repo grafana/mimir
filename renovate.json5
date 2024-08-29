@@ -26,6 +26,13 @@
           "github.com/charleskorn/go-grpc"
         ],
         "enabled": false
+      },
+      // Pin Go at the current version, since we want to upgrade it manually.
+      // Remember to keep this in sync when upgrading our Go version!
+      {
+        "matchDatasources": ["docker", "golang-version"],
+        "matchPackageNames": ["go", "golang"],
+        "allowedVersions": "<=1.22.5"
       }
     ],
     "branchPrefix": "deps-update/",

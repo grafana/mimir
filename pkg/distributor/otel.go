@@ -56,7 +56,6 @@ func OTLPHandler(
 	maxRecvMsgSize int,
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
-	enableOtelMetadataStorage bool,
 	limits OTLPHandlerLimits,
 	retryCfg RetryConfig,
 	push PushFunc,
@@ -91,7 +90,7 @@ func OTLPHandler(
 				protoBodySize, err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
 				var tooLargeErr util.MsgSizeTooLargeErr
 				if errors.As(err, &tooLargeErr) {
-					return exportReq, 0, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
+					return exportReq, 0, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
 						actual: tooLargeErr.Actual,
 						limit:  tooLargeErr.Limit,
 					}.Error())
@@ -119,7 +118,7 @@ func OTLPHandler(
 				reader = http.MaxBytesReader(nil, reader, int64(maxRecvMsgSize))
 				if _, err := buf.ReadFrom(reader); err != nil {
 					if util.IsRequestBodyTooLarge(err) {
-						return exportReq, 0, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
+						return exportReq, 0, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
 							actual: -1,
 							limit:  maxRecvMsgSize,
 						}.Error())
@@ -138,7 +137,7 @@ func OTLPHandler(
 		// Check the request size against the message size limit, regardless of whether the request is compressed.
 		// If the request is compressed and its compressed length already exceeds the size limit, there's no need to decompress it.
 		if r.ContentLength > int64(maxRecvMsgSize) {
-			return httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
+			return httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
 				actual: int(r.ContentLength),
 				limit:  maxRecvMsgSize,
 			}.Error())
@@ -200,11 +199,7 @@ func OTLPHandler(
 		)
 
 		req.Timeseries = metrics
-
-		if enableOtelMetadataStorage {
-			metadata := otelMetricsToMetadata(addSuffixes, otlpReq.Metrics())
-			req.Metadata = metadata
-		}
+		req.Metadata = otelMetricsToMetadata(addSuffixes, otlpReq.Metrics())
 
 		return nil
 	})
@@ -234,7 +229,7 @@ func otlpHandler(
 			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
 				// Check for httpgrpc error, default to client error if parsing failed
 				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
-					err = httpgrpc.Errorf(http.StatusBadRequest, err.Error())
+					err = httpgrpc.Error(http.StatusBadRequest, err.Error())
 				}
 
 				rb.CleanUp()

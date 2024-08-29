@@ -45,3 +45,5 @@ compose
 compose-simple
 .DS_Store
 coverage.txt
+# Go Telemetry
+.config/go/telemetry/

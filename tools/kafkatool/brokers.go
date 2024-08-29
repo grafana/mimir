@@ -70,9 +70,9 @@ func (c *BrokersCommand) listLeadersByPartition(_ *kingpin.ParseContext) error {
 			}
 
 			if leader, ok := brokersByNodeID[partition.Leader]; ok {
-				c.printer.PrintLine(fmt.Sprintf("Partition: %d \tLeader: %s", partition.Partition, leader.Host))
+				c.printer.PrintLine(fmt.Sprintf("Partition: %d \tLeader: %s:%d (ID: %d)", partition.Partition, leader.Host, leader.Port, leader.NodeID))
 			} else {
-				c.printer.PrintLine(fmt.Sprintf("Partition: %d \tLeader: unknown", partition.Partition))
+				c.printer.PrintLine(fmt.Sprintf("Partition: %d \tLeader: unknown (ID: %d)", partition.Partition, partition.Leader))
 			}
 		}
 	}

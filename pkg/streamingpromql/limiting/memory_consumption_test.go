@@ -44,6 +44,9 @@ func TestMemoryConsumptionTracker_Unlimited(t *testing.T) {
 	require.Equal(t, uint64(131), tracker.PeakEstimatedMemoryConsumptionBytes)
 
 	assertRejectedQueriesCount(t, reg, 0)
+
+	// Test reducing memory consumption to a negative panics
+	require.Panics(t, func() { tracker.DecreaseMemoryConsumption(150) })
 }
 
 func TestMemoryConsumptionTracker_Limited(t *testing.T) {
@@ -93,6 +96,9 @@ func TestMemoryConsumptionTracker_Limited(t *testing.T) {
 	require.Equal(t, uint64(11), tracker.CurrentEstimatedMemoryConsumptionBytes)
 	require.Equal(t, uint64(11), tracker.PeakEstimatedMemoryConsumptionBytes)
 	assertRejectedQueriesCount(t, reg, 1)
+
+	// Test reducing memory consumption to a negative panics
+	require.Panics(t, func() { tracker.DecreaseMemoryConsumption(150) })
 }
 
 func assertRejectedQueriesCount(t *testing.T, reg *prometheus.Registry, expectedRejectionCount int) {

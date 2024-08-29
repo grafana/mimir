@@ -17,9 +17,10 @@ exclusions:
     - dashboard: Mimir / Top tenants
       panel: Top $limit users by received exemplars rate in last 5m
   target-promql-rule:
-    reason: Skipping in dashboards where the linter parses a Loki query as Prometheus one.
+    reason: Skipping in dashboards where the linter parses a Loki query as Prometheus one, or we define label matchers as template variables.
     entries:
     - dashboard: Mimir / Slow queries
+    - dashboard: Mimir / Queries
   template-datasource-rule:
     reason: We prefer to keep calling "datasource" the Prometheus datasource to keep consistency between dashboards.
     entries:

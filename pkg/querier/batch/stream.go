@@ -13,7 +13,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
-// batchStream deals with iteratoring through multiple, non-overlapping batches,
+// batchStream deals with iterating through multiple, non-overlapping batches,
 // and building new slices of non-overlapping batches.  Designed to be used
 // without allocations.
 type batchStream struct {

@@ -6,7 +6,7 @@ metadata:
   name: test-requests-and-limits-values-minio
   labels:
     app: minio
-    chart: minio-5.0.14
+    chart: minio-5.2.0
     release: test-requests-and-limits-values
     heritage: Helm
 spec:
@@ -27,8 +27,8 @@ spec:
         app: minio
         release: test-requests-and-limits-values
       annotations:
-        checksum/secrets: 6e3ae82c32886261a486ef424711edf4ce9b0fbb5b124d03327413d444f6538c
-        checksum/config: 01addfaa3b993cf71f25b142c22aa2c99f99cf44cb3ca9f1f0bba72bb2f56c65
+        checksum/secrets: a539951d6f896787f4af980bd2cef5ad463aaab1616c10aff82f4ee0eb8a8b2d
+        checksum/config: 7e9c8454c47d42db8c2c7f18be09ccc8f2625fef6d029eb1a780c8927c0c7ac6
     spec:
       securityContext:
         runAsUser: 1000
@@ -39,7 +39,7 @@ spec:
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2023-09-30T07-02-29Z"
+          image: "quay.io/minio/minio:RELEASE.2024-04-18T19-09-19Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"
