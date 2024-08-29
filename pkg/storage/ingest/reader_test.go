@@ -1965,6 +1965,115 @@ func TestPartitionReader_Commit(t *testing.T) {
 	})
 }
 
+func TestHandleKafkaFetchErr_OffsetOutOfRange(t *testing.T) {
+	logger := log.NewNopLogger()
+
+	tests := map[string]struct {
+		err error
+		hwm int64
+		lso int64
+		fw  fetchWant
+
+		expectedFw           fetchWant
+		expectedShortBackoff bool
+		expectedLongBackoff  bool
+	}{
+		"no error": {
+			err: nil,
+			hwm: 10,
+			lso: 1,
+			fw: fetchWant{
+				startOffset: 1,
+				endOffset:   5,
+			},
+			expectedFw: fetchWant{
+				startOffset: 1,
+				endOffset:   5,
+			},
+		},
+		"offset out of range - fetching slightly before start": {
+			err: kerr.OffsetOutOfRange,
+			hwm: 10,
+			lso: 5,
+			fw: fetchWant{
+				startOffset: 4,
+				endOffset:   10,
+			},
+			expectedFw: fetchWant{
+				startOffset: 5,
+				endOffset:   10,
+			},
+		},
+		"offset out of range - fetching completely outside of available offsets": {
+			err: kerr.OffsetOutOfRange,
+			hwm: 10,
+			lso: 5,
+			fw: fetchWant{
+				startOffset: 1,
+				endOffset:   3,
+			},
+			expectedFw: fetchWant{
+				startOffset: 3,
+				endOffset:   3,
+			},
+		},
+		"offset out of range - fetching after end": {
+			err: kerr.OffsetOutOfRange,
+			hwm: 10,
+			lso: 5,
+			fw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedFw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedShortBackoff: true,
+		},
+		"recoverable error": {
+			err: kerr.KafkaStorageError,
+			hwm: -1, // unknown
+			lso: -1, // unknown
+			fw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedFw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedLongBackoff: true,
+		},
+	}
+
+	for testName, testCase := range tests {
+		t.Run(testName, func(t *testing.T) {
+			require.False(t, testCase.expectedShortBackoff && testCase.expectedLongBackoff, "set either long or short backoff")
+			waitedShort := false
+			waitedLong := false
+			longBackOff := waiterFunc(func() { waitedLong = true })
+			shortBackOff := waiterFunc(func() { waitedShort = true })
+
+			result := fetchResult{
+				FetchPartition: kgo.FetchPartition{
+					Err:            testCase.err,
+					HighWatermark:  testCase.hwm,
+					LogStartOffset: testCase.lso,
+				},
+			}
+			actualFw := handleKafkaFetchErr(result, testCase.fw, shortBackOff, longBackOff, logger)
+			assert.Equal(t, testCase.expectedFw, actualFw)
+			assert.Equal(t, testCase.expectedShortBackoff, waitedShort)
+			assert.Equal(t, testCase.expectedLongBackoff, waitedLong)
+		})
+	}
+}
+
+type waiterFunc func()
+
+func (w waiterFunc) Wait() { w() }
+
 type testConsumer struct {
 	records chan []byte
 }

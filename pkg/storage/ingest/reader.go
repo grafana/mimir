@@ -894,7 +894,12 @@ func (r *concurrentFetchers) pollFetches(ctx context.Context) (result kgo.Fetche
 	}
 }
 
-func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant) fetchResult {
+// fetchSingle returns a fetchResult which may or may not fulfil the entire fetchWant.
+func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant, logger log.Logger) (fr fetchResult) {
+	defer func(fetchStartTime time.Time) {
+		logCompletedFetch(logger, fr, fetchStartTime, fw)
+	}(time.Now())
+
 	req := kmsg.NewFetchRequest()
 	req.MinBytes = 1
 	req.Version = 13
@@ -927,6 +932,7 @@ func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant) fetc
 		}, 0}
 	}
 	rawPartitionResp := resp.Topics[0].Partitions[0]
+	// Here we ignore resp.ErrorCode. That error code was added for support for KIP-227 and is only set if we're using fetch sessions. We don't use fetch sessions.
 	// TODO dimitarvdimitrov make this conditional on the kafka backend - for WS we use uncompressed bytes (sumRecordLengths), for kafka we use the size of the response (rawPartitionResp.RecordBatches)
 	r.metrics.fetchesCompressedBytes.Add(float64(len(rawPartitionResp.RecordBatches))) // This doesn't include overhead in the response, but that should be small.
 	partition := processRespPartition(&rawPartitionResp, r.topicName)
@@ -959,6 +965,51 @@ func (r *concurrentFetchers) getEndOffset(ctx context.Context) (int64, error) {
 	return offsets[r.topicName][r.partitionID].Offset, nil
 }
 
+func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.WaitGroup, wants chan fetchWant, logger log.Logger) {
+	defer fetchersWg.Done()
+	errBackoff := backoff.New(ctx, backoff.Config{
+		MinBackoff: 250 * time.Millisecond,
+		MaxBackoff: 2 * time.Second,
+		MaxRetries: 0, // retry forever
+	})
+
+	// more aggressive backoff when we're waiting for records to be produced.
+	// It's likely there's already some records produced by the time we get back the response and send another request.
+	newRecordsProducedBackoff := backoff.New(ctx, backoff.Config{
+		MinBackoff: 10 * time.Millisecond,
+		MaxBackoff: time.Second,
+		MaxRetries: 0, // retry forever
+	})
+
+	for w := range wants {
+		for attempt := 0; errBackoff.Ongoing() && w.endOffset > w.startOffset; attempt++ {
+			attemptLogger := log.With(logger, "attempt", attempt)
+			f := r.fetchSingle(ctx, w, attemptLogger)
+			if f.Err != nil {
+				w = handleKafkaFetchErr(f, w, errBackoff, newRecordsProducedBackoff, attemptLogger)
+			}
+			if len(f.Records) == 0 {
+				// Typically if we had an error, then there wouldn't eb any records.
+				// But it's hard to verify this for all errors from the Kafka API docs, so just to be sure, we process any records we might have received.
+				continue
+			}
+			// Next attempt will be from the last record onwards.
+			w.startOffset = f.Records[len(f.Records)-1].Offset + 1
+
+			// We reset the backoff if we received any records whatsoever. A received record means _some_ success.
+			// We don't want to slow down until we hit a larger error.
+			errBackoff.Reset()
+			newRecordsProducedBackoff.Reset()
+
+			select {
+			case w.result <- f:
+			case <-ctx.Done():
+			}
+		}
+		close(w.result)
+	}
+}
+
 func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64) {
 	fetchersWg := &sync.WaitGroup{}
 	fetchersWg.Add(r.concurrency)
@@ -968,64 +1019,7 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 	defer close(wants)
 	for i := 0; i < r.concurrency; i++ {
 		logger := log.With(r.logger, "fetcher", i)
-		go func() {
-			defer fetchersWg.Done()
-			errBackoff := backoff.New(ctx, backoff.Config{
-				MinBackoff: 250 * time.Millisecond,
-				MaxBackoff: 2 * time.Second,
-				MaxRetries: 0, // retry forever
-			})
-
-			// more aggressive backoff when we're waiting for records to be produced.
-			// It's likely there's already some records produced by the time we get back the response and send another request.
-			newRecordsProducedBackoff := backoff.New(ctx, backoff.Config{
-				MinBackoff: 10 * time.Millisecond,
-				MaxBackoff: time.Second,
-				MaxRetries: 0, // retry forever
-			})
-
-			for w := range wants {
-				for attempt := 0; errBackoff.Ongoing() && w.endOffset > w.startOffset; attempt++ {
-					fetchStartTime := time.Now()
-					f := r.fetchSingle(ctx, w)
-					logCompletedFetch(logger, f, fetchStartTime, attempt, w)
-					if errors.Is(f.Err, kerr.OffsetOutOfRange) {
-						// Note that Kafka might return -1 for HWM and LSO if those are unknown (around startup or leader changes).
-						// They can also be equal when the partition is empty. So be careful how you use those.
-						// In those cases it's also safe to retry.
-						if w.startOffset < f.LogStartOffset {
-							// We're too far behind.
-							if f.LogStartOffset >= w.endOffset {
-								// The next fetch want is responsible for this range. We can finish this one.
-								break
-							}
-							// Only some of the offsets of our want are out of range, so let's fast-forward.
-							w.startOffset = f.LogStartOffset
-							continue
-						}
-						// If the broker is behind or if we are requesting offsets which have not yet been produced, we end up here.
-						// If the broker is behind HWM might be lower than the start offset, but we'd still get OFFSET_OUT_OF_RANGE.
-						// So there's no use in looking at the HWM. See KIP-392 for more details.
-						// We set a MaxWaitMillis, but even then there may be no records for some time.
-						newRecordsProducedBackoff.Wait()
-						continue
-					}
-					if len(f.Records) == 0 {
-						errBackoff.Wait()
-						continue
-					}
-					errBackoff.Reset()
-					newRecordsProducedBackoff.Reset()
-					w.startOffset = f.Records[len(f.Records)-1].Offset + 1
-
-					select {
-					case w.result <- f:
-					case <-ctx.Done():
-					}
-				}
-				close(w.result)
-			}
-		}()
+		go r.runFetcher(ctx, fetchersWg, wants, logger)
 	}
 
 	var (
@@ -1079,22 +1073,87 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 	}
 }
 
-func logCompletedFetch(logger log.Logger, f fetchResult, fetchStartTime time.Time, attempt int, w fetchWant) {
+type waiter interface {
+	Wait()
+}
+
+// handleKafkaFetchErr handles all the errors listed in the franz-go documentation as possible errors when fetching records.
+// For most of them we just apply a backoff. They are listed here so we can be explicit in what we're handling and how.
+// It may also return an adjusted fetchWant in case the error indicated, we were consuming not yet produced records or records already deleted due to retention.
+func handleKafkaFetchErr(fr fetchResult, fw fetchWant, shortBackoff, longBackoff waiter, logger log.Logger) fetchWant {
+	err := fr.Err
+	switch {
+	case err == nil:
+	case errors.Is(err, kerr.OffsetOutOfRange):
+		// Note that Kafka might return -1 for HWM and LSO if those are unknown (around startup or leader changes).
+		// They can also be equal when the partition is empty. So be careful how you use those.
+		// In those cases it's also safe to retry.
+		if fw.startOffset < fr.LogStartOffset {
+			// We're too far behind.
+			if fr.LogStartOffset >= fw.endOffset {
+				// The next fetch want is responsible for this range. We set startOffset=endOffset to effectively mark this fetch as complete.
+				// If we're fetching from before the start waiting won't help.
+				fw.startOffset = fw.endOffset
+				break
+			}
+			// Only some of the offsets of our want are out of range, so let's fast-forward.
+			fw.startOffset = fr.LogStartOffset
+		} else {
+			// If the broker is behind or if we are requesting offsets which have not yet been produced, we end up here.
+			// We set a MaxWaitMillis on fetch requests, but even then there may be no records for some time.
+			// Wait for a short time to allow the broker to catch up or for new records to be produced.
+			shortBackoff.Wait()
+		}
+	case errors.Is(err, kerr.TopicAuthorizationFailed):
+		longBackoff.Wait()
+	case errors.Is(err, kerr.UnknownTopicOrPartition):
+		longBackoff.Wait()
+	case errors.Is(err, kerr.UnsupportedCompressionType):
+		level.Error(logger).Log("msg", "received UNSUPPORTED_COMPRESSION_TYPE from kafka; this shouldn't happen; please report this as a bug", "err", err)
+		longBackoff.Wait() // this shouldn't happen - only happens when the request version was under 10, but we always use 13 - log error and backoff - we can't afford to lose records
+	case errors.Is(err, kerr.UnsupportedVersion):
+		level.Error(logger).Log("msg", "received UNSUPPORTED_VERSION from kafka; the Kafka cluster is probably too old", "err", err)
+		longBackoff.Wait() // in this case our client is too old, not much we can do. This will probably continue logging the error until someone upgrades their Kafka cluster.
+	case errors.Is(err, kerr.KafkaStorageError):
+		longBackoff.Wait() // server-side error, effectively same as HTTP 500
+	case errors.Is(err, kerr.UnknownTopicID):
+		longBackoff.Wait() // Maybe it wasn't created by the producers yet.
+	case errors.Is(err, kerr.OffsetMovedToTieredStorage):
+		level.Error(logger).Log("msg", "received OFFSET_MOVED_TO_TIERED_STORAGE from kafka; this shouldn't happen; please report this as a bug", "err", err)
+		longBackoff.Wait() // This should be only intra-broker error, and we shouldn't get it.
+	case errors.Is(err, kerr.NotLeaderForPartition):
+		longBackoff.Wait() // our metadata is out of date, we should refresh and try again with a leader who is up to date // TODO this current doesn't happen
+	case errors.Is(err, kerr.ReplicaNotAvailable):
+		longBackoff.Wait() // our metadata is out of date, we should refresh and try again with a leader who is up to date // TODO this current doesn't happen
+	case errors.Is(err, kerr.UnknownLeaderEpoch):
+		longBackoff.Wait() // our metadata is out of date, we should refresh and try again with a leader who is up to date // TODO this current doesn't happen
+	case errors.Is(err, kerr.FencedLeaderEpoch):
+		longBackoff.Wait() // our metadata is out of date, we should refresh and try again with a leader who is up to date // TODO this current doesn't happen
+	default:
+		level.Error(logger).Log("msg", "received an error we're not prepared to handle; this shouldn't happen; please report this as a bug", "err", err)
+		longBackoff.Wait()
+	}
+	return fw
+}
+
+func logCompletedFetch(logger log.Logger, f fetchResult, fetchStartTime time.Time, w fetchWant) {
 	msg := "fetched records"
 	if f.Err != nil {
 		msg = "received an error while fetching records; will retry after processing received records (if any)"
-		logger = level.Info(logger)
-	} else {
-		logger = level.Debug(logger)
 	}
 	var (
 		gotRecords   = int64(len(f.Records))
 		askedRecords = w.endOffset - w.startOffset
 	)
+	switch {
+	case f.Err == nil, errors.Is(f.Err, kerr.OffsetOutOfRange):
+		logger = level.Debug(logger)
+	default:
+		logger = level.Error(logger)
+	}
 	logger.Log(
 		"msg", msg,
 		"duration", time.Since(fetchStartTime),
-		"attempt", attempt,
 		"start_offset", w.startOffset,
 		"end_offset", w.endOffset,
 		"asked_records", askedRecords,
