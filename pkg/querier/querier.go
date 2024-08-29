@@ -405,8 +405,6 @@ func (mq multiQuerier) LabelValues(ctx context.Context, name string, hints *stor
 	)
 
 	for _, querier := range queriers {
-		// Need to reassign as the original variable will change and can't be relied on in a goroutine.
-		querier := querier
 		g.Go(func() error {
 			// NB: Values are sorted in Mimir already.
 			myValues, myWarnings, err := querier.LabelValues(ctx, name, hints, matchers...)
@@ -452,8 +450,6 @@ func (mq multiQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints
 	)
 
 	for _, querier := range queriers {
-		// Need to reassign as the original variable will change and can't be relied on in a goroutine.
-		querier := querier
 		g.Go(func() error {
 			// NB: Names are sorted in Mimir already.
 			myNames, myWarnings, err := querier.LabelNames(ctx, hints, matchers...)
