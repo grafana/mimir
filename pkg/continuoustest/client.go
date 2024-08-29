@@ -24,7 +24,8 @@ import (
 )
 
 const (
-	maxErrMsgLen = 256
+	maxErrMsgLen  = 256
+	defaultTenant = "anonymous"
 )
 
 // MimirClient is the interface implemented by a client used to interact with Mimir.
@@ -58,10 +59,10 @@ type ClientConfig struct {
 }
 
 func (cfg *ClientConfig) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&cfg.TenantID, "tests.tenant-id", "anonymous", "The tenant ID to use to write and read metrics in tests. (mutually exclusive with basic-auth or bearer-token flags)")
-	f.StringVar(&cfg.BasicAuthUser, "tests.basic-auth-user", "", "The username to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)")
-	f.StringVar(&cfg.BasicAuthPassword, "tests.basic-auth-password", "", "The password to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)")
-	f.StringVar(&cfg.BearerToken, "tests.bearer-token", "", "The bearer token to use for HTTP bearer authentication. (mutually exclusive with tenant-id flag or basic-auth flags)")
+	f.StringVar(&cfg.TenantID, "tests.tenant-id", defaultTenant, "The tenant ID to use to write and read metrics in tests.")
+	f.StringVar(&cfg.BasicAuthUser, "tests.basic-auth-user", "", "The username to use for HTTP bearer authentication. (mutually exclusive with bearer-token flag)")
+	f.StringVar(&cfg.BasicAuthPassword, "tests.basic-auth-password", "", "The password to use for HTTP bearer authentication. (mutually exclusive with bearer-token flag)")
+	f.StringVar(&cfg.BearerToken, "tests.bearer-token", "", "The bearer token to use for HTTP bearer authentication. (mutually exclusive with basic-auth flags)")
 
 	f.Var(&cfg.WriteBaseEndpoint, "tests.write-endpoint", "The base endpoint on the write path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/push for the remote write API endpoint, so the configured URL must not include it.")
 	f.IntVar(&cfg.WriteBatchSize, "tests.write-batch-size", 1000, "The maximum number of series to write in a single request.")
@@ -104,9 +105,10 @@ func NewClient(cfg ClientConfig, logger log.Logger) (*Client, error) {
 	if cfg.WriteProtocol != "prometheus" && cfg.WriteProtocol != "otlp-http" {
 		return nil, fmt.Errorf("the only supported write protocols are \"prometheus\" or \"otlp-http\"")
 	}
-	// Ensure not both tenant-id and basic-auth are used at the same time
+	// Ensure not multiple auth methods set at the same time
+	// Allow tenantID and auth to be defined at the same time for tenant testing
 	// anonymous is the default value for TenantID.
-	if (cfg.TenantID != "anonymous" && cfg.BasicAuthUser != "" && cfg.BasicAuthPassword != "" && cfg.BearerToken != "") || // all authentication at once
+	if (cfg.TenantID != defaultTenant && cfg.BasicAuthUser != "" && cfg.BasicAuthPassword != "" && cfg.BearerToken != "") || // all authentication at once
 		(cfg.BasicAuthUser != "" && cfg.BasicAuthPassword != "" && cfg.BearerToken != "") { // basic auth and bearer token
 		return nil, errors.New("either set tests.tenant-id or tests.basic-auth-user/tests.basic-auth-password or tests.bearer-token")
 	}
@@ -272,8 +274,14 @@ func (rt *clientRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 
 	if rt.bearerToken != "" {
 		req.Header.Set("Authorization", "Bearer "+rt.bearerToken)
+		if rt.tenantID != defaultTenant {
+			req.Header.Set("X-Scope-OrgID", rt.tenantID)
+		}
 	} else if rt.basicAuthUser != "" && rt.basicAuthPassword != "" {
 		req.SetBasicAuth(rt.basicAuthUser, rt.basicAuthPassword)
+		if rt.tenantID != defaultTenant {
+			req.Header.Set("X-Scope-OrgID", rt.tenantID)
+		}
 	} else {
 		req.Header.Set("X-Scope-OrgID", rt.tenantID)
 	}

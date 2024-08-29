@@ -1119,8 +1119,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] When enabled, OTLP write requests are directly translated to Mimir equivalents, for optimum performance. (default true)
   -distributor.drop-label string
     	This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
-  -distributor.enable-otlp-metadata-storage
-    	[deprecated] If true, store metadata when ingesting metrics via OTLP. This makes metric descriptions and types available for metrics ingested via OTLP. (default true)
   -distributor.ha-tracker.cluster string
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
   -distributor.ha-tracker.consul.acl-token string
@@ -1876,7 +1874,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.lookback-delta duration
     	Time since the last sample after which a time series is considered stale and ignored by expression evaluations. This config option should be set on query-frontend too when query sharding is enabled. (default 5m0s)
   -querier.max-concurrent int
-    	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. (default 20)
+    	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. The minimum value is four; lower values are ignored and set to the minimum (default 20)
   -querier.max-estimated-fetched-chunks-per-query-multiplier float
     	[experimental] Maximum number of chunks estimated to be fetched in a single query from ingesters and store-gateways, as a multiple of -querier.max-fetched-chunks-per-query. This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.
   -querier.max-estimated-memory-consumption-per-query uint
@@ -1899,6 +1897,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers. (default 14)
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
+  -querier.mimir-query-engine.enable-aggregation-operations
+    	[experimental] Enable support for aggregation operations in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
   -querier.mimir-query-engine.enable-binary-operations
     	[experimental] Enable support for binary operations in Mimir's query engine. Only applies if the Mimir query engine is in use. (default true)
   -querier.mimir-query-engine.enable-offset-modifier
@@ -2623,8 +2623,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -ruler.disabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants whose rules this ruler cannot evaluate. If specified, a ruler that would normally pick the specified tenant(s) for processing will ignore them instead. Subject to sharding.
-  -ruler.drain-notification-queue-on-shutdown
-    	[experimental] Drain all outstanding alert notifications when shutting down. If false, any outstanding alert notifications are dropped when shutting down.
   -ruler.enable-api
     	Enable the ruler config API. (default true)
   -ruler.enabled-tenants comma-separated-list-of-strings
@@ -2783,6 +2781,8 @@ Usage of ./cmd/mimir/mimir:
     	The prefix for the keys in the store. Should end with a /. (default "rulers/")
   -ruler.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -ruler.rule-evaluation-write-enabled
+    	[experimental] Writes the results of rule evaluation to ingesters or ingest storage when enabled. Use this option for testing purposes. To disable, set to false. (default true)
   -ruler.rule-path string
     	Directory to store temporary rule files loaded by the Prometheus rule managers. This directory is not required to be persisted between restarts. (default "./data-ruler/")
   -ruler.sync-rules-on-changes-enabled
@@ -2990,11 +2990,11 @@ Usage of ./cmd/mimir/mimir:
   -tenant-federation.max-tenants int
     	The max number of tenant IDs that may be supplied for a federated query if enabled. 0 to disable the limit.
   -tests.basic-auth-password string
-    	The password to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)
+    	The password to use for HTTP bearer authentication. (mutually exclusive with bearer-token flag)
   -tests.basic-auth-user string
-    	The username to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)
+    	The username to use for HTTP bearer authentication. (mutually exclusive with bearer-token flag)
   -tests.bearer-token string
-    	The bearer token to use for HTTP bearer authentication. (mutually exclusive with tenant-id flag or basic-auth flags)
+    	The bearer token to use for HTTP bearer authentication. (mutually exclusive with basic-auth flags)
   -tests.read-endpoint string
     	The base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/query_range for range query API, so the configured URL must not include it.
   -tests.read-timeout duration
@@ -3006,7 +3006,7 @@ Usage of ./cmd/mimir/mimir:
   -tests.smoke-test
     	Run a smoke test, i.e. run all tests once and exit.
   -tests.tenant-id string
-    	The tenant ID to use to write and read metrics in tests. (mutually exclusive with basic-auth or bearer-token flags) (default "anonymous")
+    	The tenant ID to use to write and read metrics in tests. (default "anonymous")
   -tests.write-batch-size int
     	The maximum number of series to write in a single request. (default 1000)
   -tests.write-endpoint string

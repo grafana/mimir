@@ -67,7 +67,7 @@ func (l *Limiter) Reserve(num uint64) error {
 		// We need to protect from the counter being incremented twice due to concurrency
 		// while calling Reserve().
 		l.failedOnce.Do(l.failedCounter.Inc)
-		return httpgrpc.Errorf(http.StatusUnprocessableEntity, l.limitErrorMsg)
+		return httpgrpc.Error(http.StatusUnprocessableEntity, l.limitErrorMsg)
 	}
 	return nil
 }

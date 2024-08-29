@@ -202,7 +202,7 @@ var (
 			"-querier.frontend-client.backoff-min-period": "100ms",
 			"-querier.frontend-client.backoff-max-period": "100ms",
 			"-querier.frontend-client.backoff-retries":    "1",
-			"-querier.max-concurrent":                     "1",
+			"-querier.max-concurrent":                     "4",
 			// Distributor.
 			"-distributor.ring.store": "memberlist",
 			// Ingester.

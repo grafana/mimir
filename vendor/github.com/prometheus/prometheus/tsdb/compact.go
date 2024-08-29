@@ -939,7 +939,7 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blockPop
 	return nil
 }
 
-func debugOutOfOrderChunks(chks []chunks.Meta, logger log.Logger) {
+func debugOutOfOrderChunks(lbls labels.Labels, chks []chunks.Meta, logger log.Logger) {
 	if len(chks) <= 1 {
 		return
 	}
@@ -954,25 +954,11 @@ func debugOutOfOrderChunks(chks []chunks.Meta, logger log.Logger) {
 		}
 
 		// Looks like the chunk is out of order.
-		prevSafeChk, prevIsSafeChk := prevChk.Chunk.(*safeHeadChunk)
-		currSafeChk, currIsSafeChk := currChk.Chunk.(*safeHeadChunk)
-
-		// Get info out of safeHeadChunk (if possible).
-		prevHeadChunkID := chunks.HeadChunkID(0)
-		currHeadChunkID := chunks.HeadChunkID(0)
-		prevLabels := labels.Labels{}
-		currLabels := labels.Labels{}
-		if prevSafeChk != nil {
-			prevHeadChunkID = prevSafeChk.cid
-			prevLabels = prevSafeChk.s.lset
-		}
-		if currSafeChk != nil {
-			currHeadChunkID = currSafeChk.cid
-			currLabels = currSafeChk.s.lset
-		}
-
-		level.Warn(logger).Log(
+		logValues := []any{
 			"msg", "found out-of-order chunk when compacting",
+			"num_chunks_for_series", len(chks),
+			"index", i,
+			"labels", lbls.String(),
 			"prev_ref", prevChk.Ref,
 			"curr_ref", currChk.Ref,
 			"prev_min_time", timeFromMillis(prevChk.MinTime).UTC().String(),
@@ -981,14 +967,23 @@ func debugOutOfOrderChunks(chks []chunks.Meta, logger log.Logger) {
 			"curr_max_time", timeFromMillis(currChk.MaxTime).UTC().String(),
 			"prev_samples", prevChk.Chunk.NumSamples(),
 			"curr_samples", currChk.Chunk.NumSamples(),
-			"prev_is_safe_chunk", prevIsSafeChk,
-			"curr_is_safe_chunk", currIsSafeChk,
-			"prev_head_chunk_id", prevHeadChunkID,
-			"curr_head_chunk_id", currHeadChunkID,
-			"prev_labelset", prevLabels.String(),
-			"curr_labelset", currLabels.String(),
-			"num_chunks_for_series", len(chks),
-		)
+		}
+
+		// Get info out of safeHeadChunk (if possible).
+		if prevSafeChk, prevIsSafeChk := prevChk.Chunk.(*safeHeadChunk); prevIsSafeChk {
+			logValues = append(logValues,
+				"prev_head_chunk_id", prevSafeChk.cid,
+				"prev_labelset", prevSafeChk.s.lset.String(),
+			)
+		}
+		if currSafeChk, currIsSafeChk := currChk.Chunk.(*safeHeadChunk); currIsSafeChk {
+			logValues = append(logValues,
+				"curr_head_chunk_id", currSafeChk.cid,
+				"curr_labelset", currSafeChk.s.lset.String(),
+			)
+		}
+
+		level.Warn(logger).Log(logValues...)
 	}
 }
 
@@ -1173,7 +1168,7 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 			continue
 		}
 
-		debugOutOfOrderChunks(chks, logger)
+		debugOutOfOrderChunks(s.Labels(), chks, logger)
 
 		obIx := uint64(0)
 		if len(outBlocks) > 1 {

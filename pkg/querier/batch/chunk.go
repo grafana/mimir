@@ -32,8 +32,6 @@ func (i *chunkIterator) reset(chunk GenericChunk) {
 	i.batch.Index = 0
 }
 
-// Seek advances the iterator forward to the value at or after
-// the given timestamp.
 func (i *chunkIterator) Seek(t int64, size int) chunkenc.ValueType {
 	// We assume seeks only care about a specific window; if this chunk doesn't
 	// contain samples in that window, we can shortcut.

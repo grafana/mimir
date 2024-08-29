@@ -126,30 +126,38 @@ local utils = import 'mixin-utils/utils.libsonnet';
       addActiveUserSelectorTemplates()::
         self.addTemplate('user', 'cortex_ingester_active_series{%s=~"$cluster", %s=~"$namespace"}' % [$._config.per_cluster_label, $._config.per_namespace_label], 'user', sort=sortAscending),
 
-      addCustomTemplate(name, values, defaultIndex=0):: self {
+      addCustomTemplate(label, name, options, defaultIndex=0):: self {
+        // Escape the comma because it's used a separator in the options list.
+        local escapeValue(v) = std.strReplace(v, ',', '\\,'),
+
         templating+: {
-          list+: [
-            {
-              name: name,
-              options: [
-                {
-                  selected: v == values[defaultIndex],
-                  text: v,
-                  value: v,
-                }
-                for v in values
-              ],
-              current: {
-                selected: true,
-                text: values[defaultIndex],
-                value: values[defaultIndex],
-              },
-              type: 'custom',
-              hide: 0,
-              includeAll: false,
-              multi: false,
+          list+: [{
+            current: {
+              selected: true,
+              text: options[defaultIndex].label,
+              value: escapeValue(options[defaultIndex].value),
             },
-          ],
+            hide: 0,
+            includeAll: false,
+            label: label,
+            multi: false,
+            name: name,
+            query: std.join(',', [
+              '%s : %s' % [option.label, escapeValue(option.value)]
+              for option in options
+            ]),
+            options: [
+              {
+                selected: option.label == options[defaultIndex].label,
+                text: option.label,
+                value: escapeValue(option.value),
+              }
+              for option in options
+            ],
+            skipUrlSync: false,
+            type: 'custom',
+            useTags: false,
+          }],
         },
       },
     },
@@ -1884,7 +1892,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
-  ingestStorageFetchLastProducedOffsetRequestsPanel(jobName)::
+  ingestStorageFetchLastProducedOffsetRequestsPanel(jobMatcher)::
     $.timeseriesPanel('Fetch last produced offset requests / sec') +
     $.panelDescription(
       'Fetch last produced offset requests / sec',
@@ -1896,10 +1904,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
           sum(rate(cortex_ingest_storage_reader_last_produced_offset_requests_total{%s}[$__rate_interval]))
           -
           sum(rate(cortex_ingest_storage_reader_last_produced_offset_failures_total{%s}[$__rate_interval]))
-        ||| % [$.jobMatcher($._config.job_names[jobName]), $.jobMatcher($._config.job_names[jobName])],
+        ||| % [jobMatcher, jobMatcher],
         |||
           sum(rate(cortex_ingest_storage_reader_last_produced_offset_failures_total{%s}[$__rate_interval]))
-        ||| % [$.jobMatcher($._config.job_names[jobName])],
+        ||| % [jobMatcher],
       ],
       [
         'successful',
@@ -1913,7 +1921,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.aliasColors({ successful: $._colors.success, failed: $._colors.failed }) +
     $.stack,
 
-  ingestStorageFetchLastProducedOffsetLatencyPanel(jobName)::
+  ingestStorageFetchLastProducedOffsetLatencyPanel(jobMatcher)::
     $.timeseriesPanel('Fetch last produced offset latency') +
     $.panelDescription(
       'Fetch last produced offset latency',
@@ -1923,10 +1931,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ) +
     $.queryPanel(
       [
-        'histogram_avg(sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
-        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
-        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
-        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+        'histogram_avg(sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [jobMatcher],
+        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [jobMatcher],
+        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [jobMatcher],
+        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds{%s}[$__rate_interval])))' % [jobMatcher],
       ],
       [
         'avg',
@@ -1940,10 +1948,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
-  ingestStorageStrongConsistencyRequestsPanel(jobName)::
-    // The unit changes whether the metric is exposed from ingesters or other components. In the ingesters it's the
+  ingestStorageStrongConsistencyRequestsPanel(component, jobMatcher)::
+    // The unit changes whether the metric is exposed from ingesters (partition-reader) or other components. In the ingesters it's the
     // requests issued by queriers to ingesters, while in other components it's the actual query.
-    local unit = if jobName == 'ingester' then 'requests' else 'queries';
+    local unit = if component == 'partition-reader' then 'requests' else 'queries';
     local title = '%s with strong read consistency / sec' % (std.asciiUpper(std.substr(unit, 0, 1)) + std.substr(unit, 1, std.length(unit) - 1));
 
     $.timeseriesPanel(title) +
@@ -1956,13 +1964,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.queryPanel(
       [
         |||
-          sum(rate(cortex_ingest_storage_strong_consistency_requests_total{%s}[$__rate_interval]))
+          sum(rate(cortex_ingest_storage_strong_consistency_requests_total{component="%(component)s", %(jobMatcher)s}[$__rate_interval]))
           -
-          sum(rate(cortex_ingest_storage_strong_consistency_failures_total{%s}[$__rate_interval]))
-        ||| % [$.jobMatcher($._config.job_names[jobName]), $.jobMatcher($._config.job_names[jobName])],
+          sum(rate(cortex_ingest_storage_strong_consistency_failures_total{component="%(component)s", %(jobMatcher)s}[$__rate_interval]))
+        ||| % { jobMatcher: jobMatcher, component: component },
         |||
-          sum(rate(cortex_ingest_storage_strong_consistency_failures_total{%s}[$__rate_interval]))
-        ||| % [$.jobMatcher($._config.job_names[jobName])],
+          sum(rate(cortex_ingest_storage_strong_consistency_failures_total{component="%(component)s", %(jobMatcher)s}[$__rate_interval]))
+        ||| % { jobMatcher: jobMatcher, component: component },
       ],
       [
         'successful',
@@ -1976,7 +1984,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.aliasColors({ successful: $._colors.success, failed: $._colors.failed }) +
     $.stack,
 
-  ingestStorageStrongConsistencyWaitLatencyPanel(jobName)::
+  ingestStorageStrongConsistencyWaitLatencyPanel(component, jobMatcher)::
     $.timeseriesPanel('Strong read consistency queries — wait latency') +
     $.panelDescription(
       'Strong read consistency queries — wait latency',
@@ -1984,10 +1992,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ) +
     $.queryPanel(
       [
-        'histogram_avg(sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
-        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
-        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
-        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+        'histogram_avg(sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component="%(component)s", %(jobMatcher)s}[$__rate_interval])))' % { component: component, jobMatcher: jobMatcher },
+        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component="%(component)s", %(jobMatcher)s}[$__rate_interval])))' % { component: component, jobMatcher: jobMatcher },
+        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component="%(component)s", %(jobMatcher)s}[$__rate_interval])))' % { component: component, jobMatcher: jobMatcher },
+        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_strong_consistency_wait_duration_seconds{component="%(component)s", %(jobMatcher)s}[$__rate_interval])))' % { component: component, jobMatcher: jobMatcher },
       ],
       [
         'avg',

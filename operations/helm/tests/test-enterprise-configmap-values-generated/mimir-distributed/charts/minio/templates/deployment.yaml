@@ -6,7 +6,7 @@ metadata:
   name: test-enterprise-configmap-values-minio
   labels:
     app: minio
-    chart: minio-5.0.14
+    chart: minio-5.2.0
     release: test-enterprise-configmap-values
     heritage: Helm
 spec:
@@ -27,8 +27,8 @@ spec:
         app: minio
         release: test-enterprise-configmap-values
       annotations:
-        checksum/secrets: 967789519b41836921914d80cddb1027c1199821c7ea053bb25dce64bc3719f9
-        checksum/config: efd17deb2a661f384a83562c80bea3856469da972ac9db4bea5f13857c7b9c89
+        checksum/secrets: 5d5920ea002920ae3047c9d054e8cdc0b0ea2c0d671dc8a71f17e3bcc84b2df1
+        checksum/config: 020b3256212a57eb52c2d17f7a3ea3383ada94276a7f7e7fca0dd998b917cc7f
     spec:
       securityContext:
         runAsUser: 1000
@@ -39,7 +39,7 @@ spec:
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2023-09-30T07-02-29Z"
+          image: "quay.io/minio/minio:RELEASE.2024-04-18T19-09-19Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"

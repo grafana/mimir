@@ -54,6 +54,8 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 			NativeHistogramBucketFactor: 1.1,
 		}),
 		queriesRejectedDueToPeakMemoryConsumption: metrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption),
+
+		pedantic: opts.Pedantic,
 	}, nil
 }
 
@@ -67,6 +69,10 @@ type Engine struct {
 	logger                                    log.Logger
 	estimatedPeakMemoryConsumption            prometheus.Histogram
 	queriesRejectedDueToPeakMemoryConsumption prometheus.Counter
+
+	// When operating in pedantic mode, we panic if memory consumption is > 0 after Query.Close()
+	// (indicating something was not returned to a pool).
+	pedantic bool
 }
 
 func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {

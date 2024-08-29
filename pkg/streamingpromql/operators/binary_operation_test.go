@@ -187,6 +187,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
 			o := &BinaryOperation{
 				// Simulate an expression with "on (env)".
 				// This is used to generate error messages.
@@ -194,7 +195,11 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 					On:             true,
 					MatchingLabels: []string{"env"},
 				},
-				MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+			for _, s := range testCase.input {
+				// Count the memory for the given floats + histograms
+				require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*uint64(len(s.Floats))+types.HPointSize*uint64(len(s.Histograms))))
 			}
 
 			result, err := o.mergeOneSide(testCase.input, testCase.sourceSeriesIndices, testCase.sourceSeriesMetadata, "right")

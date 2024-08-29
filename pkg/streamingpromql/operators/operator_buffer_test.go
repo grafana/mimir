@@ -44,7 +44,9 @@ func TestInstantVectorOperatorBuffer_BufferingSubsetOfInputSeries(t *testing.T) 
 	}
 
 	seriesUsed := []bool{true, false, true, true, true}
-	buffer := NewInstantVectorOperatorBuffer(inner, seriesUsed, limiting.NewMemoryConsumptionTracker(0, nil))
+	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*6)) // We have 6 FPoints from the inner series.
+	buffer := NewInstantVectorOperatorBuffer(inner, seriesUsed, memoryConsumptionTracker)
 	ctx := context.Background()
 
 	// Read first series.
@@ -107,7 +109,9 @@ func TestInstantVectorOperatorBuffer_BufferingAllInputSeries(t *testing.T) {
 		},
 	}
 
-	buffer := NewInstantVectorOperatorBuffer(inner, nil, limiting.NewMemoryConsumptionTracker(0, nil))
+	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*6)) // We have 6 FPoints from the inner series.
+	buffer := NewInstantVectorOperatorBuffer(inner, nil, memoryConsumptionTracker)
 	ctx := context.Background()
 
 	// Read first series.

@@ -31,12 +31,10 @@ func (fl *FakeLogger) Log(...interface{}) error {
 
 func TestNewApiWithoutSourceIPExtractor(t *testing.T) {
 	cfg := Config{}
-	serverCfg := server.Config{
-		HTTPListenAddress: "localhost",
-		GRPCListenAddress: "localhost",
-		MetricsNamespace:  "without_source_ip_extractor",
-	}
+	serverCfg := getServerConfig(t)
+	serverCfg.MetricsNamespace = "without_source_ip_extractor"
 	federationCfg := tenantfederation.Config{}
+
 	require.NoError(t, serverCfg.LogLevel.Set("info"))
 	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
@@ -48,13 +46,11 @@ func TestNewApiWithoutSourceIPExtractor(t *testing.T) {
 
 func TestNewApiWithSourceIPExtractor(t *testing.T) {
 	cfg := Config{}
-	serverCfg := server.Config{
-		LogSourceIPs:      true,
-		HTTPListenAddress: "localhost",
-		GRPCListenAddress: "localhost",
-		MetricsNamespace:  "with_source_ip_extractor",
-	}
+	serverCfg := getServerConfig(t)
+	serverCfg.LogSourceIPs = true
+	serverCfg.MetricsNamespace = "with_source_ip_extractor"
 	federationCfg := tenantfederation.Config{}
+
 	require.NoError(t, serverCfg.LogLevel.Set("info"))
 	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
@@ -69,12 +65,11 @@ func TestNewApiWithInvalidSourceIPExtractor(t *testing.T) {
 	s := server.Server{
 		HTTP: &mux.Router{},
 	}
-	serverCfg := server.Config{
-		LogSourceIPs:       true,
-		LogSourceIPsHeader: "SomeHeader",
-		LogSourceIPsRegex:  "[*",
-		MetricsNamespace:   "with_invalid_source_ip_extractor",
-	}
+	serverCfg := getServerConfig(t)
+	serverCfg.LogSourceIPs = true
+	serverCfg.LogSourceIPsHeader = "SomeHeader"
+	serverCfg.LogSourceIPsRegex = "[*"
+	serverCfg.MetricsNamespace = "with_invalid_source_ip_extractor"
 	federationCfg := tenantfederation.Config{}
 
 	api, err := New(cfg, federationCfg, serverCfg, &s, &FakeLogger{})
@@ -229,13 +224,15 @@ func TestApiIngesterShutdown(t *testing.T) {
 			srv, err := server.New(serverCfg)
 			require.NoError(t, err)
 
-			go func() { _ = srv.Run() }()
-			t.Cleanup(srv.Stop)
-
 			api, err := New(cfg, federationCfg, serverCfg, srv, log.NewNopLogger())
 			require.NoError(t, err)
-
 			api.RegisterIngester(&MockIngester{})
+
+			go func() { _ = srv.Run() }()
+			t.Cleanup(func() {
+				srv.Stop()
+				srv.Shutdown()
+			})
 
 			req := httptest.NewRequest("GET", "/ingester/shutdown", nil)
 			w := httptest.NewRecorder()

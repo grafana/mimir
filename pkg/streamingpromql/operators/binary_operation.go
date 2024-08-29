@@ -529,10 +529,13 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 			// Can fit output in left side, and the left side is smaller than the right
 			canReturnLeftFPointSlice = false
 			fPoints = left.Floats[:0]
-		} else if !mixedPoints && maxPoints <= cap(right.Floats) {
+			return nil
+		}
+		if !mixedPoints && maxPoints <= cap(right.Floats) {
 			// Can otherwise fit in the right side
 			canReturnRightFPointSlice = false
 			fPoints = right.Floats[:0]
+			return nil
 		}
 		// Either we have mixed points or we can't fit in either left or right side, so create a new slice
 		var err error
@@ -547,10 +550,13 @@ func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, righ
 			// Can fit output in left side, and the left side is smaller than the right
 			canReturnLeftHPointSlice = false
 			hPoints = left.Histograms[:0]
-		} else if !mixedPoints && maxPoints <= cap(right.Histograms) {
+			return nil
+		}
+		if !mixedPoints && maxPoints <= cap(right.Histograms) {
 			// Can otherwise fit in the right side
 			canReturnRightHPointSlice = false
 			hPoints = right.Histograms[:0]
+			return nil
 		}
 		// Either we have mixed points or we can't fit in either left or right side, so create a new slice
 		var err error
