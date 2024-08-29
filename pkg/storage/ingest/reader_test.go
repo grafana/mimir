@@ -2161,11 +2161,6 @@ func newTestConsumer(capacity int) testConsumer {
 	}
 }
 
-func (t testConsumer) Close(context.Context) error {
-	// We don't close the channel because the same consumer can be reused to consume multiple fetches.
-	return nil
-}
-
 func (t testConsumer) Consume(ctx context.Context, records []record) error {
 	for _, r := range records {
 		select {
@@ -2206,10 +2201,6 @@ func (t testConsumer) waitRecords(numRecords int, waitTimeout, drainPeriod time.
 }
 
 type consumerFunc func(ctx context.Context, records []record) error
-
-func (consumerFunc) Close(context.Context) error {
-	return nil
-}
 
 func (c consumerFunc) Consume(ctx context.Context, records []record) error {
 	return c(ctx, records)
