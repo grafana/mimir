@@ -236,8 +236,6 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 		t.Parallel()
 
 		for _, withOffset := range []bool{false, true} {
-			withOffset := withOffset
-
 			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
 				t.Parallel()
 
@@ -303,8 +301,6 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 		t.Parallel()
 
 		for _, withOffset := range []bool{false, true} {
-			withOffset := withOffset
-
 			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
 				t.Parallel()
 
@@ -358,8 +354,6 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 		t.Parallel()
 
 		for _, withOffset := range []bool{false, true} {
-			withOffset := withOffset
-
 			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
 				t.Parallel()
 
@@ -413,8 +407,6 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 		t.Parallel()
 
 		for _, withOffset := range []bool{false, true} {
-			withOffset := withOffset
-
 			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
 				t.Parallel()
 
@@ -448,8 +440,6 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 		t.Parallel()
 
 		for _, withOffset := range []bool{false, true} {
-			withOffset := withOffset
-
 			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
 				t.Parallel()
 
@@ -1260,8 +1250,6 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		t.Parallel()
 
 		for _, consumeFromPosition := range consumeFromPositionOptions {
-			consumeFromPosition := consumeFromPosition
-
 			t.Run(fmt.Sprintf("consume from position: %s", consumeFromPosition), func(t *testing.T) {
 				t.Parallel()
 

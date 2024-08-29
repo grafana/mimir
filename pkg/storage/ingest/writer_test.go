@@ -215,8 +215,6 @@ func TestWriter_WriteSync(t *testing.T) {
 		t.Parallel()
 
 		for _, writeClients := range []int{1, 2, 10} {
-			writeClients := writeClients
-
 			t.Run(fmt.Sprintf("Write clients = %d", writeClients), func(t *testing.T) {
 				t.Parallel()
 

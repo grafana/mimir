@@ -95,8 +95,6 @@ func (r *bucketChunkReader) load(res []seriesChunks, chunksPool *pool.SafeSlabPo
 		})
 
 		for _, p := range parts {
-			seq := seq
-			p := p
 			indices := pIdxs[p.ElemRng[0]:p.ElemRng[1]]
 			g.Go(func() error {
 				return r.loadChunks(ctx, res, seq, p, indices, chunksPool, stats)
