@@ -107,6 +107,11 @@ type ScalarData struct {
 }
 
 func HasDuplicateSeries(metadata []SeriesMetadata) bool {
+	// Note that there's a risk here that we incorrectly flag two series as duplicates when in reality they're different
+	// due to hash collisions.
+	// However, the hashes are 64-bit integers, so the likelihood of collisions is very small, and this is the same method
+	// that Prometheus' engine uses, so we'll at least be consistent with that.
+
 	switch len(metadata) {
 	case 0, 1:
 		return false
@@ -118,11 +123,6 @@ func HasDuplicateSeries(metadata []SeriesMetadata) bool {
 		return false
 
 	default:
-		// Note that there's a risk here that we incorrectly flag two series as duplicates when in reality they're different
-		// due to hash collisions.
-		// However, the hashes are 64-bit integers, so the likelihood of collisions is very small, and this is the same method
-		// that Prometheus' engine uses, so we'll at least be consistent with that.
-
 		seen := make(map[uint64]struct{}, len(metadata))
 
 		for _, m := range metadata {
