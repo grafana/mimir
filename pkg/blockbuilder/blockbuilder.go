@@ -74,14 +74,6 @@ func New(
 }
 
 func (b *BlockBuilder) starting(ctx context.Context) (err error) {
-	defer func() {
-		if err != nil {
-			if b.kafkaClient != nil {
-				b.kafkaClient.Close()
-			}
-		}
-	}()
-
 	// Empty any previous artifacts.
 	if err := os.RemoveAll(b.cfg.DataDir); err != nil {
 		return fmt.Errorf("removing data dir: %w", err)
