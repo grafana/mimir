@@ -679,9 +679,6 @@ func TestQuerySharding_Correctness(t *testing.T) {
 	queryable := storageSeriesQueryable(series)
 
 	for testName, testData := range tests {
-		// Change scope to ensure it work fine when test cases are executed concurrently.
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 			reqs := []MetricsQueryRequest{
@@ -1705,7 +1702,6 @@ func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 

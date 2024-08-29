@@ -912,14 +912,10 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 
 	// Test it against all routes.
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, consistencyLevel := range []string{querierapi.ReadConsistencyEventual, querierapi.ReadConsistencyStrong} {
-				consistencyLevel := consistencyLevel
-
 				t.Run(fmt.Sprintf("consistency level: %s", consistencyLevel), func(t *testing.T) {
 					t.Parallel()
 

@@ -1609,7 +1609,6 @@ func Test_DecodeOptions(t *testing.T) {
 			},
 		},
 	} {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			actual := &Options{}
@@ -1651,7 +1650,6 @@ func TestPrometheusCodec_DecodeEncode(t *testing.T) {
 			headers: http.Header{cacheControlHeader: []string{noStoreValue}},
 		},
 	} {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
