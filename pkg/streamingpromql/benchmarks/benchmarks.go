@@ -94,6 +94,13 @@ func TestCases(metricSizes []int) []BenchCase {
 			Expr:  "rate(a_X[1m])",
 			Steps: 10000,
 		},
+		{
+			Expr: "rate(nh_X[1m])",
+		},
+		{
+			Expr:  "rate(nh_X[1m])",
+			Steps: 10000,
+		},
 		//// Holt-Winters and long ranges.
 		//{
 		//	Expr: "holt_winters(a_X[1d], 0.3, 0.3)",
@@ -103,6 +110,22 @@ func TestCases(metricSizes []int) []BenchCase {
 		//},
 		{
 			Expr: "rate(a_X[1d])",
+		},
+		// Test a long range histogram. 1d slows tests down too much, so use 1h.
+		{
+			Expr: "rate(nh_X[1h])",
+		},
+		{
+			Expr: "avg_over_time(a_X[1m])",
+		},
+		{
+			Expr: "avg_over_time(nh_X[1m])",
+		},
+		{
+			Expr: "sum_over_time(a_X[1m])",
+		},
+		{
+			Expr: "sum_over_time(nh_X[1m])",
 		},
 		//{
 		//	Expr: "absent_over_time(a_X[1d])",
@@ -118,6 +141,12 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr:  "a_X - b_X",
 			Steps: 10000,
+		},
+		{
+			Expr: "nh_X + nh_X",
+		},
+		{
+			Expr: "nh_X / a_X",
 		},
 		// Test the case where one side of a binary operation has many more series than the other.
 		{
@@ -158,17 +187,23 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "sum(a_X)",
 		},
-		//{
-		//	Expr: "sum without (l)(h_X)",
-		//},
-		//{
-		//	Expr: "sum without (le)(h_X)",
-		//},
+		{
+			Expr: "sum without (l)(h_X)",
+		},
+		{
+			Expr: "sum without (le)(h_X)",
+		},
+		{
+			Expr: "sum(nh_X)",
+		},
 		{
 			Expr: "sum by (l)(h_X)",
 		},
 		{
 			Expr: "sum by (le)(h_X)",
+		},
+		{
+			Expr: "sum by (l)(nh_X)",
 		},
 		//{
 		//	Expr: "count_values('value', h_X)",
@@ -190,12 +225,12 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "sum by (le)(rate(h_X[1m]))",
 		},
-		//{
-		//	Expr: "sum without (l)(rate(a_X[1m]))",
-		//},
-		//{
-		//	Expr: "sum without (l)(rate(a_X[1m])) / sum without (l)(rate(b_X[1m]))",
-		//},
+		{
+			Expr: "sum without (l)(rate(a_X[1m]))",
+		},
+		{
+			Expr: "sum without (l)(rate(a_X[1m])) / sum without (l)(rate(b_X[1m]))",
+		},
 		//{
 		//	Expr: "histogram_quantile(0.9, rate(h_X[5m]))",
 		//},

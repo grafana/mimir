@@ -27,6 +27,7 @@ import (
 type ProxyConfig struct {
 	ServerHTTPServiceAddress            string
 	ServerHTTPServicePort               int
+	ServerGracefulShutdownTimeout       time.Duration
 	ServerGRPCServiceAddress            string
 	ServerGRPCServicePort               int
 	BackendEndpoints                    string
@@ -46,6 +47,7 @@ type ProxyConfig struct {
 func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.ServerHTTPServiceAddress, "server.http-service-address", "", "Bind address for server where query-tee service listens for HTTP requests.")
 	f.IntVar(&cfg.ServerHTTPServicePort, "server.http-service-port", 80, "The HTTP port where the query-tee service listens for HTTP requests.")
+	f.DurationVar(&cfg.ServerGracefulShutdownTimeout, "server.graceful-shutdown-timeout", 30*time.Second, "Time to wait for inflight requests to complete when shutting down. Setting this to 0 will terminate all inflight requests immediately when a shutdown signal is received.")
 	f.StringVar(&cfg.ServerGRPCServiceAddress, "server.grpc-service-address", "", "Bind address for server where query-tee service listens for HTTP over gRPC requests.")
 	f.IntVar(&cfg.ServerGRPCServicePort, "server.grpc-service-port", 9095, "The GRPC port where the query-tee service listens for HTTP over gRPC messages.")
 	f.StringVar(&cfg.BackendEndpoints, "backend.endpoints", "",
@@ -189,7 +191,7 @@ func (p *Proxy) Start() error {
 		HTTPListenPort:                p.cfg.ServerHTTPServicePort,
 		HTTPServerReadTimeout:         1 * time.Minute,
 		HTTPServerWriteTimeout:        2 * time.Minute,
-		ServerGracefulShutdownTimeout: 0,
+		ServerGracefulShutdownTimeout: p.cfg.ServerGracefulShutdownTimeout,
 
 		// gRPC configs
 		GRPCListenAddress: p.cfg.ServerGRPCServiceAddress,

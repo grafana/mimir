@@ -88,6 +88,10 @@
       alertmanager: ['alertmanager', 'cortex', 'mimir', 'mimir-backend.*'],
       overrides_exporter: ['overrides-exporter', 'mimir-backend.*'],
 
+      // The following are job matchers used to select all components in the read path.
+      main_read_path: std.uniq(std.sort(self.query_frontend + self.query_scheduler + self.querier)),
+      remote_ruler_read_path: std.uniq(std.sort(self.ruler_query_frontend + self.ruler_query_scheduler + self.ruler_querier)),
+
       // The following are job matchers used to select all components in a given "path".
       write: ['distributor.*', 'ingester.*', 'mimir-write.*'],
       read: ['query-frontend.*', 'querier.*', 'ruler-query-frontend.*', 'ruler-querier.*', 'mimir-read.*'],
@@ -630,6 +634,10 @@
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'ruler-querier',
       },
+      store_gateway: {
+        enabled: false,
+        hpa_name: $._config.autoscaling_hpa_prefix + 'store-gateway-zone-a',
+      },
       distributor: {
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'distributor',
@@ -646,6 +654,10 @@
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'ingester-zone-a',
       },
+      compactor: {
+        enabled: false,
+        hpa_name: $._config.autoscaling_hpa_prefix + 'compactor',
+      },
     },
 
 
@@ -656,6 +668,9 @@
 
     // All query methods from IngesterServer interface. Basically everything except Push.
     ingester_read_path_routes_regex: '/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)',
+
+    // All query methods from StoregatewayServer interface.
+    store_gateway_read_path_routes_regex: '/gatewaypb.StoreGateway/.*',
 
     // The default datasource used for dashboards.
     dashboard_datasource: 'default',

@@ -36,10 +36,10 @@ func testChunkIter(t *testing.T, encoding chunk.Encoding) {
 	iter := &chunkIterator{}
 
 	iter.reset(chunk)
-	testIter(t, 100, newIteratorAdapter(nil, iter), encoding)
+	testIter(t, 100, newIteratorAdapter(nil, iter, labels.EmptyLabels()), encoding)
 
 	iter.reset(chunk)
-	testSeek(t, 100, newIteratorAdapter(nil, iter), encoding)
+	testSeek(t, 100, newIteratorAdapter(nil, iter, labels.EmptyLabels()), encoding)
 }
 
 func mkChunk(t require.TestingT, from model.Time, points int, encoding chunk.Encoding) chunk.Chunk {
@@ -221,4 +221,41 @@ func (i *mockIterator) Batch(_ int, valueType chunkenc.ValueType, _ *zeropool.Po
 
 func (i *mockIterator) Err() error {
 	return nil
+}
+
+func TestChunkIterator_SeekBeforeCurrentBatch(t *testing.T) {
+	chunkTimestamps := []int64{50, 60, 70, 80, 90, 100}
+
+	ch := chunkenc.NewXORChunk()
+	app, err := ch.Appender()
+	require.NoError(t, err)
+	for _, ts := range chunkTimestamps {
+		app.Append(ts, float64(ts))
+	}
+
+	genericChunk := NewGenericChunk(chunkTimestamps[0], chunkTimestamps[len(chunkTimestamps)-1], func(reuse chunk.Iterator) chunk.Iterator {
+		chk, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
+		require.NoError(t, err)
+		require.NoError(t, chk.UnmarshalFromBuf(ch.Bytes()))
+
+		// We should never need to reset this iterator, as the Seek call below should be satisfiable by the initial batch.
+		return &chunkIteratorThatForbidsFindAtOrAfter{chk.NewIterator(reuse)}
+	})
+
+	it := &chunkIterator{}
+	it.reset(genericChunk)
+
+	require.Equal(t, chunkenc.ValFloat, it.Next(2))
+	require.Equal(t, int64(50), it.AtTime())
+
+	require.Equal(t, chunkenc.ValFloat, it.Seek(45, 1))
+	require.Equal(t, int64(50), it.AtTime())
+}
+
+type chunkIteratorThatForbidsFindAtOrAfter struct {
+	chunk.Iterator
+}
+
+func (it *chunkIteratorThatForbidsFindAtOrAfter) FindAtOrAfter(model.Time) chunkenc.ValueType {
+	panic("FindAtOrAfter should never be called")
 }

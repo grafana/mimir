@@ -98,7 +98,7 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				// Non-retryable error.
 				1: testkafka.CreateProduceResponseError(0, kafkaTopic, 1, kerr.InvalidTopicException),
 			},
-			expectedErr: fmt.Errorf(fmt.Sprintf("%s %d", failedPushingToPartitionMessage, 1)),
+			expectedErr: fmt.Errorf("%s 1", failedPushingToPartitionMessage),
 			expectedSeriesByPartition: map[int32][]string{
 				// Partition 1 is missing because it failed.
 				0: {"series_four", "series_one", "series_three"},
@@ -231,27 +231,6 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 					# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 					# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
 					cortex_distributor_latest_seen_sample_timestamp_seconds{user="user"} %f
-
-					# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
-					# TYPE cortex_distributor_sample_delay_seconds histogram
-					cortex_distributor_sample_delay_seconds_bucket{le="-60"} 0
-					cortex_distributor_sample_delay_seconds_bucket{le="-15"} 0
-					cortex_distributor_sample_delay_seconds_bucket{le="-5"} 0
-					cortex_distributor_sample_delay_seconds_bucket{le="30"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="60"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="120"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="240"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="480"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="600"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="1800"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="3600"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="7200"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="10800"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="21600"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="86400"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 5
-					cortex_distributor_sample_delay_seconds_sum 0
-					cortex_distributor_sample_delay_seconds_count 5
 				`, float64(now.UnixMilli())/1000.)),
 				"cortex_distributor_received_requests_total",
 				"cortex_distributor_received_samples_total",
@@ -262,7 +241,6 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				"cortex_distributor_exemplars_in_total",
 				"cortex_distributor_metadata_in_total",
 				"cortex_distributor_latest_seen_sample_timestamp_seconds",
-				"cortex_distributor_sample_delay_seconds",
 			))
 		})
 	}

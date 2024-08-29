@@ -29,12 +29,31 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards. #7674
-  * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric.
+* [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards.
+  * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric. #7674
+  * Writes dashboard: `cortex_request_duration_seconds` metric. #8757
+  * Reads dashboard: `cortex_request_duration_seconds` metric. #8752
+  * Rollout progress dashboard: `cortex_request_duration_seconds` metric. #8779
+  * Alertmanager dashboard: `cortex_request_duration_seconds` metric. #8792
+  * Ruler dashboard: `cortex_request_duration_seconds` metric. #8795
+  * Queries dashboard: `cortex_request_duration_seconds` metric. #8800
+  * Remote ruler reads dashboard: `cortex_request_duration_seconds` metric. #8801
 * [ENHANCEMENT] Memcached: Update to Memcached 1.6.28 and memcached-exporter 0.14.4. #8557
 * [ENHANCEMENT] Add missing fields in multiple topology spread constraints. #8533
 * [ENHANCEMENT] Add support for setting the image pull secrets, node selectors, tolerations and topology spread constraints for the Grafana Agent pods used for metamonitoring. #8670
+* [ENHANCEMENT] Add support for setting resource requests and limits in the Grafana Agent pods used for metamonitoring. #8715
+* [ENHANCEMENT] Add support for setting namespace for dashboard config maps. #8813
+* [ENHANCEMENT] Add support for string `extraObjects` for better support with templating. #8825
+* [ENHANCEMENT] Helm : allow setting a read and write urls to continous-test. #7674
+* [ENHANCEMENT] Alerts: `RequestErrors` and `RulerRemoteEvaluationFailing` have been enriched with a native histogram version. #9004
 * [BUGFIX] Add missing container security context to run `continuous-test` under the restricted security policy. #8653
+* [BUGFIX] Add `global.extraVolumeMounts` to the exporter container on memcached statefulsets #8787
+* [BUGFIX] Fix helm releases failing when `querier.kedaAutoscaling.predictiveScalingEnabled=true`. #8731
+* [BUGFIX] Alertmanager: Set -server.http-idle-timeout to avoid EOF errors in ruler. #8192
+
+## 5.4.1
+
+* [CHANGE] Upgrade GEM version to v2.13.1.
 
 ## 5.4.0
 
@@ -65,7 +84,6 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Helm: Allowed setting static NodePort for nginx gateway via `gateway.service.nodePort`. #6966
 * [BUGFIX] Helm: Expose AM configs in the `gateway` NGINX configuration. #8248
 * [BUGFIX] Helm: fix ServiceMonitor and PVC template to not show diff in ArgoCD. #8829
-* [BUGFIX] Alertmanager: Set -server.http-idle-timeout to avoid EOF errors in ruler. #8192
 
 ## 5.3.0
 

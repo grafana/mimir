@@ -17,6 +17,12 @@ load 5m
 # 	{path="/biz"} 0
 
 # Unsupported by streaming engine.
+# eval instant at 50m resets(http_requests[300])
+# 	{path="/foo"} 0
+# 	{path="/bar"} 0
+# 	{path="/biz"} 0
+
+# Unsupported by streaming engine.
 # eval instant at 50m resets(http_requests[20m])
 # 	{path="/foo"} 1
 # 	{path="/bar"} 0
@@ -152,10 +158,9 @@ load 5m
 eval instant at 50m rate(calculate_rate_window[50m])
 	{} 0.26666666666666666
 
-# Unsupported by streaming engine.
-# eval instant at 50m rate(calculate_rate_offset[10m] offset 5m)
-# 	{x="a"} 0.03333333333333333
-#  	{x="b"} 0.06666666666666667
+eval instant at 50m rate(calculate_rate_offset[10m] offset 5m)
+	{x="a"} 0.03333333333333333
+	{x="b"} 0.06666666666666667
 
 clear
 
@@ -171,21 +176,21 @@ load 4m
 # reach half a sampling interval (2m). Beyond that, we only
 # extrapolate by half a sampling interval.
 eval instant at 10m rate(testcounter_zero_cutoff[20m])
- 	{start="0m"} 0.5
- 	{start="1m"} 0.55
- 	{start="2m"} 0.6
- 	{start="3m"} 0.6
- 	{start="4m"} 0.6
- 	{start="5m"} 0.6
+	{start="0m"} 0.5
+	{start="1m"} 0.55
+	{start="2m"} 0.6
+	{start="3m"} 0.6
+	{start="4m"} 0.6
+	{start="5m"} 0.6
 
 # Normal half-interval cutoff for left-side extrapolation.
 eval instant at 50m rate(testcounter_zero_cutoff[20m])
- 	{start="0m"} 0.6
- 	{start="1m"} 0.6
- 	{start="2m"} 0.6
- 	{start="3m"} 0.6
- 	{start="4m"} 0.6
- 	{start="5m"} 0.6
+	{start="0m"} 0.6
+	{start="1m"} 0.6
+	{start="2m"} 0.6
+	{start="3m"} 0.6
+	{start="4m"} 0.6
+	{start="5m"} 0.6
 
 clear
 
@@ -237,9 +242,8 @@ load 5m
 	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
 
 # deriv should return the same as rate in simple cases.
-# Unsupported by streaming engine.
-# eval instant at 50m rate(http_requests{group="canary", instance="1", job="app-server"}[50m])
-# 	{group="canary", instance="1", job="app-server"} 0.26666666666666666
+eval instant at 50m rate(http_requests{group="canary", instance="1", job="app-server"}[50m])
+	{group="canary", instance="1", job="app-server"} 0.26666666666666666
 
 # Unsupported by streaming engine.
 # eval instant at 50m deriv(http_requests{group="canary", instance="1", job="app-server"}[50m])
@@ -268,9 +272,17 @@ load 5m
 # eval instant at 50m predict_linear(testcounter_reset_middle[50m], 3600)
 # 	{} 76.81818181818181
 
+# Unsupported by streaming engine.
+# eval instant at 50m predict_linear(testcounter_reset_middle[50m], 1h)
+# 	{} 76.81818181818181
+
 # intercept at t = 3000+3600 = 6600
 # Unsupported by streaming engine.
 # eval instant at 50m predict_linear(testcounter_reset_middle[50m] @ 3000, 3600)
+# 	{} 76.81818181818181
+
+# Unsupported by streaming engine.
+# eval instant at 50m predict_linear(testcounter_reset_middle[50m] @ 3000, 1h)
 # 	{} 76.81818181818181
 
 # intercept at t = 600+3600 = 4200
@@ -428,9 +440,8 @@ load 5m
 clear
 
 # Tests for vector.
-# Unsupported by streaming engine.
-# eval instant at 0m vector(1)
-#   {} 1
+eval instant at 0m vector(1)
+  {} 1
 
 # Unsupported by streaming engine.
 # eval instant at 0s vector(time())
@@ -507,12 +518,12 @@ load 5m
 	test_sgn{src="sgn-f"}	100
 
 eval instant at 0m sgn(test_sgn)
- 	{src="sgn-a"}	-1
- 	{src="sgn-b"}	1
- 	{src="sgn-c"}	NaN
- 	{src="sgn-d"}	-1
- 	{src="sgn-e"}	0
- 	{src="sgn-f"}	1
+	{src="sgn-a"}	-1
+	{src="sgn-b"}	1
+	{src="sgn-c"}	NaN
+	{src="sgn-d"}	-1
+	{src="sgn-e"}	0
+	{src="sgn-f"}	1
 
 
 # Tests for sort/sort_desc.
@@ -758,120 +769,102 @@ load 10s
   metric9 -9.988465674311579e+307 -9.988465674311579e+307 -9.988465674311579e+307
   metric10 -9.988465674311579e+307 9.988465674311579e+307
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric[1m])
-#   {} 3
+eval instant at 1m avg_over_time(metric[1m])
+  {} 3
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric[1m])/count_over_time(metric[1m])
-#   {} 3
+eval instant at 1m sum_over_time(metric[1m])/count_over_time(metric[1m])
+  {} 3
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric2[1m])
-#   {} Inf
+eval instant at 1m avg_over_time(metric2[1m])
+  {} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric2[1m])/count_over_time(metric2[1m])
-#   {} Inf
+eval instant at 1m sum_over_time(metric2[1m])/count_over_time(metric2[1m])
+  {} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric3[1m])
-#   {} -Inf
+eval instant at 1m avg_over_time(metric3[1m])
+  {} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric3[1m])/count_over_time(metric3[1m])
-#   {} -Inf
+eval instant at 1m sum_over_time(metric3[1m])/count_over_time(metric3[1m])
+  {} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric4[1m])
-#   {} NaN
+eval instant at 1m avg_over_time(metric4[1m])
+  {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric4[1m])/count_over_time(metric4[1m])
-#   {} NaN
+eval instant at 1m sum_over_time(metric4[1m])/count_over_time(metric4[1m])
+  {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric5[1m])
-#   {} Inf
+eval instant at 1m avg_over_time(metric5[1m])
+  {} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric5[1m])/count_over_time(metric5[1m])
-#   {} Inf
+eval instant at 1m sum_over_time(metric5[1m])/count_over_time(metric5[1m])
+  {} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric5b[1m])
-#   {} Inf
+eval instant at 1m avg_over_time(metric5b[1m])
+  {} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric5b[1m])/count_over_time(metric5b[1m])
-#   {} Inf
+eval instant at 1m sum_over_time(metric5b[1m])/count_over_time(metric5b[1m])
+  {} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric5c[1m])
-#   {} NaN
+eval instant at 1m avg_over_time(metric5c[1m])
+  {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric5c[1m])/count_over_time(metric5c[1m])
-#   {} NaN
+eval instant at 1m sum_over_time(metric5c[1m])/count_over_time(metric5c[1m])
+  {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric6[1m])
-#   {} -Inf
+eval instant at 1m avg_over_time(metric6[1m])
+  {} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric6[1m])/count_over_time(metric6[1m])
-#   {} -Inf
+eval instant at 1m sum_over_time(metric6[1m])/count_over_time(metric6[1m])
+  {} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric6b[1m])
-#   {} -Inf
+eval instant at 1m avg_over_time(metric6b[1m])
+  {} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric6b[1m])/count_over_time(metric6b[1m])
-#   {} -Inf
+eval instant at 1m sum_over_time(metric6b[1m])/count_over_time(metric6b[1m])
+  {} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric6c[1m])
-#   {} NaN
+eval instant at 1m avg_over_time(metric6c[1m])
+  {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric6c[1m])/count_over_time(metric6c[1m])
-#   {} NaN
+eval instant at 1m sum_over_time(metric6c[1m])/count_over_time(metric6c[1m])
+  {} NaN
 
+eval instant at 1m avg_over_time(metric7[1m])
+  {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric7[1m])
-#   {} NaN
+eval instant at 1m sum_over_time(metric7[1m])/count_over_time(metric7[1m])
+  {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric7[1m])/count_over_time(metric7[1m])
-#   {} NaN
-
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric8[1m])
-#   {} 9.988465674311579e+307
+eval instant at 1m avg_over_time(metric8[1m])
+  {} 9.988465674311579e+307
 
 # This overflows float64.
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric8[1m])/count_over_time(metric8[1m])
-#   {} Inf
+eval instant at 1m sum_over_time(metric8[1m])/count_over_time(metric8[1m])
+  {} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric9[1m])
-#   {} -9.988465674311579e+307
+eval instant at 1m avg_over_time(metric9[1m])
+  {} -9.988465674311579e+307
 
 # This overflows float64.
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric9[1m])/count_over_time(metric9[1m])
-#   {} -Inf
+eval instant at 1m sum_over_time(metric9[1m])/count_over_time(metric9[1m])
+  {} -Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m avg_over_time(metric10[1m])
-#   {} 0
+eval instant at 1m avg_over_time(metric10[1m])
+  {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 1m sum_over_time(metric10[1m])/count_over_time(metric10[1m])
-#   {} 0
+eval instant at 1m sum_over_time(metric10[1m])/count_over_time(metric10[1m])
+  {} 0
+
+# Test if very big intermediate values cause loss of detail.
+clear
+load 10s
+  metric 1 1e100 1 -1e100
+
+eval instant at 1m sum_over_time(metric[1m])
+  {} 2
+
+eval instant at 1m avg_over_time(metric[1m])
+  {} 0.5
 
 # Tests for stddev_over_time and stdvar_over_time.
 clear
@@ -951,19 +944,19 @@ load 10s
 # 	{test="uneven samples"} 4
 
 # Unsupported by streaming engine.
-# eval instant at 1m quantile_over_time(-1, data[1m])
+# eval_warn instant at 1m quantile_over_time(-1, data[1m])
 # 	{test="two samples"} -Inf
 # 	{test="three samples"} -Inf
 # 	{test="uneven samples"} -Inf
 
 # Unsupported by streaming engine.
-# eval instant at 1m quantile_over_time(2, data[1m])
+# eval_warn instant at 1m quantile_over_time(2, data[1m])
 # 	{test="two samples"} +Inf
 # 	{test="three samples"} +Inf
 # 	{test="uneven samples"} +Inf
 
 # Unsupported by streaming engine.
-# eval instant at 1m (quantile_over_time(2, (data[1m])))
+# eval_warn instant at 1m (quantile_over_time(2, (data[1m])))
 # 	{test="two samples"} +Inf
 # 	{test="three samples"} +Inf
 # 	{test="uneven samples"} +Inf
@@ -1096,29 +1089,26 @@ load 10s
 	data{type="some_nan3"} NaN 0 1
 	data{type="only_nan"} NaN NaN NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m min_over_time(data[1m])
-# 	{type="numbers"} 0
-# 	{type="some_nan"} 0
-# 	{type="some_nan2"} 1
-# 	{type="some_nan3"} 0
-# 	{type="only_nan"} NaN
+eval instant at 1m min_over_time(data[1m])
+	{type="numbers"} 0
+	{type="some_nan"} 0
+	{type="some_nan2"} 1
+	{type="some_nan3"} 0
+	{type="only_nan"} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m max_over_time(data[1m])
-# 	{type="numbers"} 3
-# 	{type="some_nan"} 2
-# 	{type="some_nan2"} 2
-# 	{type="some_nan3"} 1
-# 	{type="only_nan"} NaN
+eval instant at 1m max_over_time(data[1m])
+	{type="numbers"} 3
+	{type="some_nan"} 2
+	{type="some_nan2"} 2
+	{type="some_nan3"} 1
+	{type="only_nan"} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m last_over_time(data[1m])
-# 	data{type="numbers"} 3
-# 	data{type="some_nan"} NaN
-# 	data{type="some_nan2"} 1
-# 	data{type="some_nan3"} 1
-# 	data{type="only_nan"} NaN
+eval instant at 1m last_over_time(data[1m])
+	data{type="numbers"} 3
+	data{type="some_nan"} NaN
+	data{type="some_nan2"} 1
+	data{type="some_nan3"} 1
+	data{type="only_nan"} NaN
 
 clear
 
@@ -1269,23 +1259,18 @@ load 1m
 clear
 
 # Testdata for present_over_time()
-# Unsupported by streaming engine.
-# eval instant at 1m present_over_time(http_requests[5m])
+eval instant at 1m present_over_time(http_requests[5m])
 
-# Unsupported by streaming engine.
-# eval instant at 1m present_over_time(http_requests{handler="/foo"}[5m])
+eval instant at 1m present_over_time(http_requests{handler="/foo"}[5m])
 
-# Unsupported by streaming engine.
-# eval instant at 1m present_over_time(http_requests{handler!="/foo"}[5m])
+eval instant at 1m present_over_time(http_requests{handler!="/foo"}[5m])
 
-# Unsupported by streaming engine.
-# eval instant at 1m present_over_time(http_requests{handler="/foo", handler="/bar", handler="/foobar"}[5m])
+eval instant at 1m present_over_time(http_requests{handler="/foo", handler="/bar", handler="/foobar"}[5m])
 
 # Unsupported by streaming engine.
 # eval instant at 1m present_over_time(rate(nonexistant[5m])[5m:])
 
-# Unsupported by streaming engine.
-# eval instant at 1m present_over_time(http_requests{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m])
+eval instant at 1m present_over_time(http_requests{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m])
 
 load 1m
 	http_requests{path="/foo",instance="127.0.0.1",job="httpd"}	1+1x10
@@ -1294,56 +1279,45 @@ load 1m
 	httpd_log_lines_total{instance="127.0.0.1",job="node"}	1
 	ssl_certificate_expiry_seconds{job="ingress"} NaN NaN NaN NaN NaN
 
-# Unsupported by streaming engine.
-# eval instant at 5m present_over_time(http_requests[5m])
-#     {instance="127.0.0.1", job="httpd", path="/bar"} 1
-#     {instance="127.0.0.1", job="httpd", path="/foo"} 1
+eval instant at 5m present_over_time(http_requests[5m])
+    {instance="127.0.0.1", job="httpd", path="/bar"} 1
+    {instance="127.0.0.1", job="httpd", path="/foo"} 1
 
 # Unsupported by streaming engine.
 # eval instant at 5m present_over_time(rate(http_requests[5m])[5m:1m])
 #     {instance="127.0.0.1", job="httpd", path="/bar"} 1
 #     {instance="127.0.0.1", job="httpd", path="/foo"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 0m present_over_time(httpd_log_lines_total[30s])
-#     {instance="127.0.0.1",job="node"} 1
+eval instant at 0m present_over_time(httpd_log_lines_total[30s])
+    {instance="127.0.0.1",job="node"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 1m present_over_time(httpd_log_lines_total[30s])
+eval instant at 1m present_over_time(httpd_log_lines_total[30s])
 
-# Unsupported by streaming engine.
-# eval instant at 15m present_over_time(http_requests[5m])
-#     {instance="127.0.0.1", job="httpd", path="/bar"} 1
-#     {instance="127.0.0.1", job="httpd", path="/foo"} 1
+eval instant at 15m present_over_time(http_requests[5m])
+    {instance="127.0.0.1", job="httpd", path="/bar"} 1
+    {instance="127.0.0.1", job="httpd", path="/foo"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 16m present_over_time(http_requests[5m])
+eval instant at 16m present_over_time(http_requests[5m])
 
-# Unsupported by streaming engine.
-# eval instant at 16m present_over_time(http_requests[6m])
-#     {instance="127.0.0.1", job="httpd", path="/bar"} 1
-#     {instance="127.0.0.1", job="httpd", path="/foo"} 1
+eval instant at 16m present_over_time(http_requests[6m])
+    {instance="127.0.0.1", job="httpd", path="/bar"} 1
+    {instance="127.0.0.1", job="httpd", path="/foo"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 16m present_over_time(httpd_handshake_failures_total[1m])
-#     {instance="127.0.0.1", job="node"} 1
+eval instant at 16m present_over_time(httpd_handshake_failures_total[1m])
+    {instance="127.0.0.1", job="node"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 16m present_over_time({instance="127.0.0.1"}[5m])
-#     {instance="127.0.0.1",job="node"} 1
+eval instant at 16m present_over_time({instance="127.0.0.1"}[5m])
+    {instance="127.0.0.1",job="node"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 21m present_over_time({job="grok"}[20m])
+eval instant at 21m present_over_time({job="grok"}[20m])
 
 # Unsupported by streaming engine.
 # eval instant at 30m present_over_time({instance="127.0.0.1"}[5m:5s])
 
-# Unsupported by streaming engine.
-# eval instant at 5m present_over_time({job="ingress"}[4m])
-#     {job="ingress"} 1
+eval instant at 5m present_over_time({job="ingress"}[4m])
+    {job="ingress"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 10m present_over_time({job="ingress"}[4m])
+eval instant at 10m present_over_time({job="ingress"}[4m])
 
 clear
 
@@ -1353,8 +1327,8 @@ load 5m
 	exp_root_log{l="y"} 20
 
 eval instant at 5m exp(exp_root_log)
- 	{l="x"} 22026.465794806718
- 	{l="y"} 485165195.4097903
+	{l="x"} 22026.465794806718
+	{l="y"} 485165195.4097903
 
 # Unsupported by streaming engine.
 # eval instant at 5m exp(exp_root_log - 10)
@@ -1367,8 +1341,8 @@ eval instant at 5m exp(exp_root_log)
 # 	{l="y"} 1
 
 eval instant at 5m ln(exp_root_log)
- 	{l="x"} 2.302585092994046
- 	{l="y"} 2.995732273553991
+	{l="x"} 2.302585092994046
+	{l="y"} 2.995732273553991
 
 # Unsupported by streaming engine.
 # eval instant at 5m ln(exp_root_log - 10)
@@ -1381,16 +1355,16 @@ eval instant at 5m ln(exp_root_log)
 # 	{l="x"} NaN
 
 eval instant at 5m exp(ln(exp_root_log))
- 	{l="y"} 20
- 	{l="x"} 10
+	{l="y"} 20
+	{l="x"} 10
 
 eval instant at 5m sqrt(exp_root_log)
- 	{l="x"} 3.1622776601683795
- 	{l="y"} 4.47213595499958
+	{l="x"} 3.1622776601683795
+	{l="y"} 4.47213595499958
 
 eval instant at 5m log2(exp_root_log)
- 	{l="x"} 3.3219280948873626
- 	{l="y"} 4.321928094887363
+	{l="x"} 3.3219280948873626
+	{l="y"} 4.321928094887363
 
 # Unsupported by streaming engine.
 # eval instant at 5m log2(exp_root_log - 10)
@@ -1403,8 +1377,8 @@ eval instant at 5m log2(exp_root_log)
 # 	{l="y"} -Inf
 
 eval instant at 5m log10(exp_root_log)
- 	{l="x"} 1
- 	{l="y"} 1.301029995663981
+	{l="x"} 1
+	{l="y"} 1.301029995663981
 
 # Unsupported by streaming engine.
 # eval instant at 5m log10(exp_root_log - 10)
@@ -1425,4 +1399,4 @@ load 1m
 # We expect the value to be 0 for t=0s to t=59s (inclusive), then 60 for t=60s and t=61s.
 # Unsupported by streaming engine.
 # eval range from 0 to 61s step 1s timestamp(metric)
-#  {} 0x59 60 60
+#   {} 0x59 60 60

@@ -6,15 +6,14 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
 // Operator represents all operators.
 type Operator interface {
-	// SeriesMetadata returns a list of all series that will be returned by this operator.
-	// The returned []SeriesMetadata can be modified by the caller or returned to a pool.
-	// SeriesMetadata may return series in any order, but the same order must be used by both SeriesMetadata and NextSeries.
-	// SeriesMetadata should be called no more than once.
-	SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error)
+	// ExpressionPosition returns the position of the PromQL expression that this operator represents.
+	ExpressionPosition() posrange.PositionRange
 
 	// Close frees all resources associated with this operator.
 	// Calling SeriesMetadata or NextSeries after calling Close may result in unpredictable behaviour, corruption or crashes.
@@ -22,9 +21,20 @@ type Operator interface {
 	Close()
 }
 
+// SeriesOperator represents all operators that return one or more series.
+type SeriesOperator interface {
+	Operator
+
+	// SeriesMetadata returns a list of all series that will be returned by this operator.
+	// The returned []SeriesMetadata can be modified by the caller or returned to a pool.
+	// SeriesMetadata may return series in any order, but the same order must be used by both SeriesMetadata and NextSeries.
+	// SeriesMetadata should be called no more than once.
+	SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error)
+}
+
 // InstantVectorOperator represents all operators that produce instant vectors.
 type InstantVectorOperator interface {
-	Operator
+	SeriesOperator
 
 	// NextSeries returns the next series from this operator, or EOS if no more series are available.
 	// SeriesMetadata must be called exactly once before calling NextSeries.
@@ -35,7 +45,7 @@ type InstantVectorOperator interface {
 
 // RangeVectorOperator represents all operators that produce range vectors.
 type RangeVectorOperator interface {
-	Operator
+	SeriesOperator
 
 	// StepCount returns the number of time steps produced for each series by this operator.
 	// StepCount must only be called after calling SeriesMetadata.
@@ -61,6 +71,14 @@ type RangeVectorOperator interface {
 	// Keep in mind that HPoint contains a pointer to a histogram, so it is generally not safe to
 	// modify directly as the histogram may be used for other HPoint values, such as when lookback has occurred.
 	NextStepSamples(floats *FPointRingBuffer, histograms *HPointRingBuffer) (RangeVectorStepData, error)
+}
+
+// ScalarOperator represents all operators that produce scalars.
+type ScalarOperator interface {
+	Operator
+
+	// GetValues returns the samples for this scalar.
+	GetValues(ctx context.Context) (ScalarData, error)
 }
 
 var EOS = errors.New("operator stream exhausted") //nolint:revive

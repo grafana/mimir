@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/pooling"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -22,7 +22,10 @@ type Selector struct {
 	End       int64  // Milliseconds since Unix epoch
 	Timestamp *int64 // Milliseconds since Unix epoch, only set if selector uses @ modifier (eg. metric{...} @ 123)
 	Interval  int64  // In milliseconds
+	Offset    int64  // In milliseconds
 	Matchers  []*labels.Matcher
+
+	ExpressionPosition posrange.PositionRange
 
 	// Set for instant vector selectors, otherwise 0.
 	LookbackDelta time.Duration
@@ -49,15 +52,18 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 	endTimestamp := s.End
 
 	if s.Timestamp != nil {
+		// Timestamp from @ modifier takes precedence over query evaluation timestamp.
 		startTimestamp = *s.Timestamp
 		endTimestamp = *s.Timestamp
 	}
 
+	// Apply lookback delta, range and offset after adjusting for timestamp from @ modifier.
 	rangeMilliseconds := s.Range.Milliseconds()
-	start := startTimestamp - s.LookbackDelta.Milliseconds() - rangeMilliseconds
+	startTimestamp = startTimestamp - s.LookbackDelta.Milliseconds() - rangeMilliseconds - s.Offset
+	endTimestamp = endTimestamp - s.Offset
 
 	hints := &storage.SelectHints{
-		Start: start,
+		Start: startTimestamp,
 		End:   endTimestamp,
 		Step:  s.Interval,
 		Range: rangeMilliseconds,
@@ -73,7 +79,7 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 	}
 
 	var err error
-	s.querier, err = s.Queryable.Querier(start, endTimestamp)
+	s.querier, err = s.Queryable.Querier(startTimestamp, endTimestamp)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +165,7 @@ func (l *seriesList) Len() int {
 //
 // Calling ToSeriesMetadata after calling Pop may return an incomplete list.
 func (l *seriesList) ToSeriesMetadata() []types.SeriesMetadata {
-	metadata := pooling.GetSeriesMetadataSlice(l.length)
+	metadata := types.GetSeriesMetadataSlice(l.length)
 	batch := l.currentSeriesBatch
 
 	for batch != nil {

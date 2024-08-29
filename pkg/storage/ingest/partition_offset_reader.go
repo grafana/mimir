@@ -19,29 +19,26 @@ var (
 	errPartitionOffsetReaderStopped = errors.New("partition offset reader is stopped")
 )
 
-// partitionOffsetReader is responsible to read the offsets of a single partition.
-//
-// If in the future we'll need to read offsets of multiple partitions at once, then we shouldn't use
-// this structure but create a new one which fetches multiple partition offsets in a single request.
-type partitionOffsetReader struct {
+// genericOffsetReader is the base implementation used by offset readers.
+type genericOffsetReader[O any] struct {
 	services.Service
 
-	client      *partitionOffsetClient
-	logger      log.Logger
-	partitionID int32
+	logger log.Logger
+
+	// fetchLastProducedOffset is the implementation of the function used to fetch the last produced offset.
+	fetchLastProducedOffset func(context.Context) (O, error)
 
 	// nextResultPromise is the promise that will be notified about the result of the *next* "last produced offset"
 	// request that will be issued (not the current in-flight one, if any).
 	nextResultPromiseMx sync.RWMutex
-	nextResultPromise   *resultPromise[int64]
+	nextResultPromise   *resultPromise[O]
 }
 
-func newPartitionOffsetReader(client *kgo.Client, topic string, partitionID int32, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *partitionOffsetReader {
-	p := &partitionOffsetReader{
-		client:            newPartitionOffsetClient(client, topic, reg, logger),
-		partitionID:       partitionID,
-		logger:            logger, // Do not wrap with partition ID because it's already done by the caller.
-		nextResultPromise: newResultPromise[int64](),
+func newGenericOffsetReader[O any](fetchLastProducedOffset func(context.Context) (O, error), pollInterval time.Duration, logger log.Logger) *genericOffsetReader[O] {
+	p := &genericOffsetReader[O]{
+		logger:                  logger,
+		fetchLastProducedOffset: fetchLastProducedOffset,
+		nextResultPromise:       newResultPromise[O](),
 	}
 
 	p.Service = services.NewTimerService(pollInterval, nil, p.onPollInterval, p.stopping)
@@ -49,44 +46,81 @@ func newPartitionOffsetReader(client *kgo.Client, topic string, partitionID int3
 	return p
 }
 
-func (p *partitionOffsetReader) onPollInterval(ctx context.Context) error {
+func (r *genericOffsetReader[O]) onPollInterval(ctx context.Context) error {
 	// The following call blocks until the last produced offset has been fetched from Kafka. If fetching
 	// the offset takes longer than the poll interval, than we'll poll less frequently than configured.
-	p.getAndNotifyLastProducedOffset(ctx)
+	r.getAndNotifyLastProducedOffset(ctx)
 
 	// Never return error, otherwise the service stops.
 	return nil
 }
 
-func (p *partitionOffsetReader) stopping(_ error) error {
+func (r *genericOffsetReader[O]) stopping(_ error) error {
+	var zero O
+
 	// Release any waiting goroutine without swapping the result promise so that if any other goroutine
 	// will watch it after this point it will get immediately notified.
-	p.nextResultPromiseMx.Lock()
-	p.nextResultPromise.notify(0, errPartitionOffsetReaderStopped)
-	p.nextResultPromiseMx.Unlock()
+	r.nextResultPromiseMx.Lock()
+	r.nextResultPromise.notify(zero, errPartitionOffsetReaderStopped)
+	r.nextResultPromiseMx.Unlock()
 
 	return nil
 }
 
 // getAndNotifyLastProducedOffset fetches the last produced offset for a partition and notifies all waiting
 // goroutines (if any).
-func (p *partitionOffsetReader) getAndNotifyLastProducedOffset(ctx context.Context) {
+func (r *genericOffsetReader[O]) getAndNotifyLastProducedOffset(ctx context.Context) {
 	// Swap the next promise with a new one.
-	p.nextResultPromiseMx.Lock()
-	promise := p.nextResultPromise
-	p.nextResultPromise = newResultPromise[int64]()
-	p.nextResultPromiseMx.Unlock()
+	r.nextResultPromiseMx.Lock()
+	promise := r.nextResultPromise
+	r.nextResultPromise = newResultPromise[O]()
+	r.nextResultPromiseMx.Unlock()
 
-	// We call FetchPartitionLastProducedOffset() even if there are no goroutines waiting on the result in order to get
+	// We call fetchLastProducedOffset() even if there are no goroutines waiting on the result in order to get
 	// a constant load on the Kafka backend. In other words, the load produced on Kafka by this component is
 	// constant, regardless the number of received queries with strong consistency enabled.
-	offset, err := p.FetchLastProducedOffset(ctx)
+	offset, err := r.fetchLastProducedOffset(ctx)
 	if err != nil {
-		level.Warn(p.logger).Log("msg", "failed to fetch the last produced offset", "err", err)
+		level.Warn(r.logger).Log("msg", "failed to fetch the last produced offset", "err", err)
 	}
 
 	// Notify whoever was waiting for it.
 	promise.notify(offset, err)
+}
+
+// WaitNextFetchLastProducedOffset returns the result of the *next* "last produced offset" request
+// that will be issued.
+//
+// The "last produced offset" is the offset of the last message written to the partition (starting from 0), or -1 if no
+// message has been written yet.
+func (r *genericOffsetReader[O]) WaitNextFetchLastProducedOffset(ctx context.Context) (O, error) {
+	// Get the promise for the result of the next request that will be issued.
+	r.nextResultPromiseMx.RLock()
+	promise := r.nextResultPromise
+	r.nextResultPromiseMx.RUnlock()
+
+	return promise.wait(ctx)
+}
+
+// partitionOffsetReader is responsible to read the offsets of a single partition.
+type partitionOffsetReader struct {
+	*genericOffsetReader[int64]
+
+	client      *partitionOffsetClient
+	logger      log.Logger
+	partitionID int32
+}
+
+func newPartitionOffsetReader(client *kgo.Client, topic string, partitionID int32, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *partitionOffsetReader {
+	r := &partitionOffsetReader{
+		client:      newPartitionOffsetClient(client, topic, reg, logger),
+		partitionID: partitionID,
+		logger:      logger, // Do not wrap with partition ID because it's already done by the caller.
+	}
+
+	r.genericOffsetReader = newGenericOffsetReader[int64](r.FetchLastProducedOffset, pollInterval, logger)
+
+	return r
 }
 
 // FetchLastProducedOffset fetches and returns the last produced offset for a partition, or -1 if no record has
@@ -103,16 +137,47 @@ func (p *partitionOffsetReader) FetchPartitionStartOffset(ctx context.Context) (
 	return p.client.FetchPartitionStartOffset(ctx, p.partitionID)
 }
 
-// WaitNextFetchLastProducedOffset returns the result of the *next* "last produced offset" request
-// that will be issued.
-//
-// The "last produced offset" is the offset of the last message written to the partition (starting from 0), or -1 if no
-// message has been written yet.
-func (p *partitionOffsetReader) WaitNextFetchLastProducedOffset(ctx context.Context) (int64, error) {
-	// Get the promise for the result of the next request that will be issued.
-	p.nextResultPromiseMx.RLock()
-	promise := p.nextResultPromise
-	p.nextResultPromiseMx.RUnlock()
+type GetPartitionIDsFunc func(ctx context.Context) ([]int32, error)
 
-	return promise.wait(ctx)
+// TopicOffsetsReader is responsible to read the offsets of partitions in a topic.
+type TopicOffsetsReader struct {
+	*genericOffsetReader[map[int32]int64]
+
+	client          *partitionOffsetClient
+	topic           string
+	getPartitionIDs GetPartitionIDsFunc
+	logger          log.Logger
+}
+
+func NewTopicOffsetsReader(client *kgo.Client, topic string, getPartitionIDs GetPartitionIDsFunc, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *TopicOffsetsReader {
+	r := &TopicOffsetsReader{
+		client:          newPartitionOffsetClient(client, topic, reg, logger),
+		topic:           topic,
+		getPartitionIDs: getPartitionIDs,
+		logger:          logger,
+	}
+
+	r.genericOffsetReader = newGenericOffsetReader[map[int32]int64](r.FetchLastProducedOffset, pollInterval, logger)
+
+	return r
+}
+
+// NewTopicOffsetsReaderForAllPartitions returns a TopicOffsetsReader instance that fetches the offsets for all
+// existing partitions in a topic. The list of partitions is refreshed each time FetchLastProducedOffset() is called,
+// so using a TopicOffsetsReader created by this function adds an extra latency to refresh partitions each time.
+func NewTopicOffsetsReaderForAllPartitions(client *kgo.Client, topic string, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *TopicOffsetsReader {
+	offsetsClient := newPartitionOffsetClient(client, topic, reg, logger)
+
+	return NewTopicOffsetsReader(client, topic, offsetsClient.ListTopicPartitionIDs, pollInterval, reg, logger)
+}
+
+// FetchLastProducedOffset fetches and returns the last produced offset for each requested partition in the topic.
+// The offset is -1 if a partition has been created but no record has been produced yet.
+func (p *TopicOffsetsReader) FetchLastProducedOffset(ctx context.Context) (map[int32]int64, error) {
+	partitionIDs, err := p.getPartitionIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.client.FetchPartitionsLastProducedOffsets(ctx, partitionIDs)
 }

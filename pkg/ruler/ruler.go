@@ -46,7 +46,8 @@ import (
 )
 
 var (
-	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to 0")
+	errInvalidTenantShardSize                                 = errors.New("invalid tenant shard size, the value must be greater or equal to 0")
+	errInnvalidRuleEvaluationConcurrencyMinDurationPercentage = errors.New("invalid tenant minimum duration percentage for rule evaluation concurrency, the value must be greater or equal to 0")
 )
 
 const (
@@ -109,8 +110,6 @@ type Config struct {
 	NotificationTimeout time.Duration `yaml:"notification_timeout" category:"advanced"`
 	// Client configs for interacting with the Alertmanager
 	Notifier NotifierConfig `yaml:"alertmanager_client"`
-	// Enable draining the pending alert notification queue when shutting down.
-	DrainNotificationQueueOnShutdown bool `yaml:"drain_notification_queue_on_shutdown" category:"experimental"`
 
 	// Max time to tolerate outage for restoring "for" state of alert.
 	OutageTolerance time.Duration `yaml:"for_outage_tolerance" category:"advanced"`
@@ -136,6 +135,11 @@ type Config struct {
 	// Allow to override timers for testing purposes.
 	RingCheckPeriod             time.Duration `yaml:"-"`
 	rulerSyncQueuePollFrequency time.Duration `yaml:"-"`
+
+	MaxIndependentRuleEvaluationConcurrency                   int64   `yaml:"max_independent_rule_evaluation_concurrency" category:"experimental"`
+	IndependentRuleEvaluationConcurrencyMinDurationPercentage float64 `yaml:"independent_rule_evaluation_concurrency_min_duration_percentage" category:"experimental"`
+
+	RuleEvaluationWriteEnabled bool `yaml:"rule_evaluation_write_enabled" category:"experimental"`
 }
 
 // Validate config and returns error on failure
@@ -150,6 +154,10 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 
 	if err := cfg.QueryFrontend.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ruler query-frontend config")
+	}
+
+	if cfg.IndependentRuleEvaluationConcurrencyMinDurationPercentage < 0 {
+		return errInnvalidRuleEvaluationConcurrencyMinDurationPercentage
 	}
 
 	return nil
@@ -172,7 +180,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.AlertmanagerRefreshInterval, "ruler.alertmanager-refresh-interval", 1*time.Minute, "How long to wait between refreshing DNS resolutions of Alertmanager hosts.")
 	f.IntVar(&cfg.NotificationQueueCapacity, "ruler.notification-queue-capacity", 10000, "Capacity of the queue for notifications to be sent to the Alertmanager.")
 	f.DurationVar(&cfg.NotificationTimeout, "ruler.notification-timeout", 10*time.Second, "HTTP timeout duration when sending notifications to the Alertmanager.")
-	f.BoolVar(&cfg.DrainNotificationQueueOnShutdown, "ruler.drain-notification-queue-on-shutdown", false, "Drain all outstanding alert notifications when shutting down. If false, any outstanding alert notifications are dropped when shutting down.")
 
 	f.StringVar(&cfg.RulePath, "ruler.rule-path", "./data-ruler/", "Directory to store temporary rule files loaded by the Prometheus rule managers. This directory is not required to be persisted between restarts.")
 	f.BoolVar(&cfg.EnableAPI, "ruler.enable-api", true, "Enable the ruler config API.")
@@ -188,6 +195,11 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Var(&cfg.DisabledTenants, "ruler.disabled-tenants", "Comma separated list of tenants whose rules this ruler cannot evaluate. If specified, a ruler that would normally pick the specified tenant(s) for processing will ignore them instead. Subject to sharding.")
 
 	f.BoolVar(&cfg.EnableQueryStats, "ruler.query-stats-enabled", false, "Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.")
+
+	f.Int64Var(&cfg.MaxIndependentRuleEvaluationConcurrency, "ruler.max-independent-rule-evaluation-concurrency", 0, "Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.")
+	f.Float64Var(&cfg.IndependentRuleEvaluationConcurrencyMinDurationPercentage, "ruler.independent-rule-evaluation-concurrency-min-duration-percentage", 50.0, "Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval.")
+
+	f.BoolVar(&cfg.RuleEvaluationWriteEnabled, "ruler.rule-evaluation-write-enabled", true, "Writes the results of rule evaluation to ingesters or ingest storage when enabled. Use this option for testing purposes. To disable, set to false.")
 
 	cfg.RingCheckPeriod = 5 * time.Second
 }

@@ -60,7 +60,6 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 				LazyLoadingIdleTimeout: testData.lazyReaderIdleTimeout,
 			}
 			pool := NewReaderPool(log.NewNopLogger(), indexHeaderConfig, gate.NewNoop(), metrics)
-			defer pool.Close()
 
 			r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, indexHeaderConfig)
 			require.NoError(t, err)
@@ -91,11 +90,9 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 		LazyLoadingIdleTimeout:     idleTimeout,
 		EagerLoadingStartupEnabled: false,
 	}, gate.NewNoop(), metrics)
-	defer pool.Close()
 
 	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
 	require.NoError(t, err)
-	defer func() { require.NoError(t, r.Close()) }()
 
 	// Ensure it can read data.
 	labelNames, err := r.LabelNames(ctx)
@@ -106,7 +103,7 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 
 	// Wait enough time before checking it.
 	time.Sleep(idleTimeout * 2)
-	pool.closeIdleReaders()
+	require.NoError(t, pool.unloadIdleReaders(context.Background()), "closing idle readers shouldn't ever fail because it will abort periodically checking for idle readers")
 
 	// We expect the reader has been closed, but not released from the pool.
 	require.True(t, pool.isTracking(r.(*LazyBinaryReader)))

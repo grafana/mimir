@@ -22,7 +22,15 @@ local filename = 'mimir-tenants.json';
     ($.dashboard('Tenants') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addActiveUserSelectorTemplates()
-    .addCustomTemplate('limit', ['10', '50', '100', '500', '1000'])
+    .addCustomTemplate(
+      'limit', 'limit', [
+        { label: '10', value: '10' },
+        { label: '50', value: '50' },
+        { label: '100', value: '100' },
+        { label: '500', value: '500' },
+        { label: '1000', value: '1000' },
+      ]
+    )
     .addRowIf(
       $._config.show_dashboard_descriptions.tenants,
       ($.row('Tenants dashboard description') { height: '25px', showTitle: false })
@@ -333,6 +341,7 @@ local filename = 'mimir-tenants.json';
 
     .addRow(
       $.row('Samples ingestion funnel')
+      .justifyPanels()  // Make sure panels use all width even if 12 columns are not divisible by the number of panels.
       .addPanel(
         local title = 'Distributor samples incoming rate';
         $.timeseriesPanel(title) +
@@ -405,13 +414,31 @@ local filename = 'mimir-tenants.json';
           ],
           [
             '{{ reason }} (distributor)',
-            '{{ reason }} (ingester)',
+            '{{ reason }} (ingester, replicated)',
           ]
         ) +
         $.panelDescription(
           title,
           |||
             The rate of each sample's discarding reason.
+            This doesn't account for the replication factor.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Out-of-order samples appended';
+        $.timeseriesPanel(title) +
+        $.queryPanel(
+          'sum(rate(cortex_ingester_tsdb_out_of_order_samples_appended_total{%(job)s, user="$user"}[$__rate_interval]))'
+          % { job: $.jobMatcher($._config.job_names.ingester) },
+          'rate',
+        ) +
+        { options+: { legend+: { showLegend: false } } } +
+        $.panelDescription(
+          title,
+          |||
+            The rate of OOO samples that have been appended.
+            This doesn't account for the replication factor.
           |||
         ),
       ),
@@ -481,6 +508,7 @@ local filename = 'mimir-tenants.json';
           |||
             Total number of exemplars appended in the ingesters.
             This can be lower than ingested exemplars rate since TSDB does not append the same exemplar twice, and those can be frequent.
+            This doesn't account for the replication factor.
           |||
         ),
       ),

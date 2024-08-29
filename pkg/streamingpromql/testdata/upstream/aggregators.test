@@ -44,10 +44,9 @@ eval instant at 50m sum by (group) (http_requests{job="api-server"})
 #   {group="production"} 2
 
 # Simple without.
-# Unsupported by streaming engine.
-# eval instant at 50m sum without (instance) (http_requests{job="api-server"})
-#   {group="canary",job="api-server"} 700
-#   {group="production",job="api-server"} 300
+eval instant at 50m sum without (instance) (http_requests{job="api-server"})
+  {group="canary",job="api-server"} 700
+  {group="production",job="api-server"} 300
 
 # Empty by.
 eval instant at 50m sum by () (http_requests{job="api-server"})
@@ -58,10 +57,9 @@ eval instant at 50m sum(http_requests{job="api-server"})
   {} 1000
 
 # Empty without.
-# Unsupported by streaming engine.
-# eval instant at 50m sum without () (http_requests{job="api-server",group="production"})
-#   {group="production",job="api-server",instance="0"} 100
-#   {group="production",job="api-server",instance="1"} 200
+eval instant at 50m sum without () (http_requests{job="api-server",group="production"})
+  {group="production",job="api-server",instance="0"} 100
+  {group="production",job="api-server",instance="1"} 200
 
 # Without with mismatched and missing labels. Do not do this.
 # Unsupported by streaming engine.
@@ -125,11 +123,9 @@ eval instant at 50m SUM(http_requests) BY (job, group)
 # 	{job="api-server"} 100
 # 	{job="app-server"} 500
 
-# Unsupported by streaming engine.
-# Unsupported by streaming engine.
-# eval instant at 50m MAX(http_requests) BY (job)
-# 	{job="api-server"} 400
-# 	{job="app-server"} 800
+eval instant at 50m MAX(http_requests) BY (job)
+	{job="api-server"} 400
+	{job="app-server"} 800
 
 # Unsupported by streaming engine.
 # eval instant at 50m abs(-1 * http_requests{group="production",job="api-server"})
@@ -252,10 +248,9 @@ load 5m
   label_grouping_test{a="aa", b="bb"} 0+10x10
   label_grouping_test{a="a", b="abb"} 0+20x10
 
-# Unsupported by streaming engine.
-# eval instant at 50m sum(label_grouping_test) by (a, b)
-#   {a="a", b="abb"} 200
-#   {a="aa", b="bb"} 100
+eval instant at 50m sum(label_grouping_test) by (a, b)
+  {a="a", b="abb"} 200
+  {a="aa", b="bb"} 100
 
 
 
@@ -268,23 +263,19 @@ load 5m
   http_requests{job="api-server", instance="1", group="canary"}		3
   http_requests{job="api-server", instance="2", group="canary"}		4
 
-# Unsupported by streaming engine.
-# eval instant at 0m max(http_requests)
-#   {} 4
+eval instant at 0m max(http_requests)
+  {} 4
 
-# Unsupported by streaming engine.
-# eval instant at 0m min(http_requests)
-#   {} 1
+eval instant at 0m min(http_requests)
+  {} 1
 
-# Unsupported by streaming engine.
-# eval instant at 0m max by (group) (http_requests)
-#   {group="production"} 2
-#   {group="canary"} 4
+eval instant at 0m max by (group) (http_requests)
+  {group="production"} 2
+  {group="canary"} 4
 
-# Unsupported by streaming engine.
-# eval instant at 0m min by (group) (http_requests)
-#   {group="production"} 1
-#   {group="canary"} 3
+eval instant at 0m min by (group) (http_requests)
+  {group="production"} 1
+  {group="canary"} 3
 
 clear
 
@@ -401,9 +392,9 @@ load 5m
 
 # Unsupported by streaming engine.
 # eval instant at 5m count_values(((("version"))), version)
-#   {version="6"} 5
-#   {version="7"} 2
-#   {version="8"} 2
+#        {version="6"} 5
+#        {version="7"} 2
+#        {version="8"} 2
 
 
 # Unsupported by streaming engine.
@@ -463,10 +454,10 @@ load 10s
 # 	{test="uneven samples"} 2.8
 
 # Unsupported by streaming engine.
-# eval instant at 1m quantile without(point)(NaN, data)
-#  {test="two samples"} NaN
-#  {test="three samples"} NaN
-#  {test="uneven samples"} NaN
+# eval_warn instant at 1m quantile without(point)(NaN, data)
+#     {test="two samples"} NaN
+#     {test="three samples"} NaN
+#     {test="uneven samples"} NaN
 
 # Tests for group.
 clear
@@ -579,6 +570,70 @@ load 10s
 # Unsupported by streaming engine.
 # eval instant at 1m avg(data{test="bigzero"})
 # 	{} 0
+
+# Test summing and averaging extreme values.
+clear
+
+load 10s
+	data{test="ten",point="a"} 2
+	data{test="ten",point="b"} 8
+	data{test="ten",point="c"} 1e+100
+	data{test="ten",point="d"} -1e100
+	data{test="pos_inf",group="1",point="a"} Inf
+	data{test="pos_inf",group="1",point="b"} 2
+	data{test="pos_inf",group="2",point="a"} 2
+	data{test="pos_inf",group="2",point="b"} Inf
+	data{test="neg_inf",group="1",point="a"} -Inf
+	data{test="neg_inf",group="1",point="b"} 2
+	data{test="neg_inf",group="2",point="a"} 2
+	data{test="neg_inf",group="2",point="b"} -Inf
+	data{test="inf_inf",point="a"} Inf
+	data{test="inf_inf",point="b"} -Inf
+	data{test="nan",group="1",point="a"} NaN
+	data{test="nan",group="1",point="b"} 2
+	data{test="nan",group="2",point="a"} 2
+	data{test="nan",group="2",point="b"} NaN
+
+eval instant at 1m sum(data{test="ten"})
+	{} 10
+
+# Unsupported by streaming engine.
+# eval instant at 1m avg(data{test="ten"})
+# 	{} 2.5
+
+eval instant at 1m sum by (group) (data{test="pos_inf"})
+	{group="1"} Inf
+	{group="2"} Inf
+
+# Unsupported by streaming engine.
+# eval instant at 1m avg by (group) (data{test="pos_inf"})
+# 	{group="1"} Inf
+# 	{group="2"} Inf
+
+eval instant at 1m sum by (group) (data{test="neg_inf"})
+	{group="1"} -Inf
+	{group="2"} -Inf
+
+# Unsupported by streaming engine.
+# eval instant at 1m avg by (group) (data{test="neg_inf"})
+# 	{group="1"} -Inf
+# 	{group="2"} -Inf
+
+eval instant at 1m sum(data{test="inf_inf"})
+	{} NaN
+
+# Unsupported by streaming engine.
+# eval instant at 1m avg(data{test="inf_inf"})
+# 	{} NaN
+
+eval instant at 1m sum by (group) (data{test="nan"})
+	{group="1"} NaN
+	{group="2"} NaN
+
+# Unsupported by streaming engine.
+# eval instant at 1m avg by (group) (data{test="nan"})
+# 	{group="1"} NaN
+# 	{group="2"} NaN
 
 clear
 

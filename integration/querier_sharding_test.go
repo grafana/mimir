@@ -93,7 +93,7 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	}
 
 	// Start the query-frontend.
-	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags)
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.Start(queryFrontend))
 
 	if !cfg.querySchedulerEnabled {
@@ -142,11 +142,11 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 		require.NoError(t, err)
 	}
 
-	// Wait until both workers connect to the query-frontend or query-scheduler
+	// Wait until both workers connect to the query-frontend or query-scheduler, each with the minimum 4 connections.
 	if cfg.querySchedulerEnabled {
-		require.NoError(t, queryScheduler.WaitSumMetrics(e2e.Equals(2), "cortex_query_scheduler_connected_querier_clients"))
+		require.NoError(t, queryScheduler.WaitSumMetrics(e2e.Equals(8), "cortex_query_scheduler_connected_querier_clients"))
 	} else {
-		require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(2), "cortex_query_frontend_connected_clients"))
+		require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(8), "cortex_query_frontend_connected_clients"))
 	}
 
 	wg := sync.WaitGroup{}

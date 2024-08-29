@@ -260,25 +260,17 @@ func NewBucketStore(
 	return s, nil
 }
 
-func (s *BucketStore) subservices() []services.Service {
-	return []services.Service{s.snapshotter}
-}
-
 func (s *BucketStore) start(context.Context) error {
-	return nil
+	// Use context.Background() so that we stop the index reader pool ourselves and do it after closing all blocks.
+	return services.StartAndAwaitRunning(context.Background(), s.indexReaderPool)
 }
 
 func (s *BucketStore) stop(err error) error {
-	subservices := s.subservices()
-
 	errs := multierror.New(err)
-	for _, svc := range subservices {
-		if err := services.StopAndAwaitTerminated(context.Background(), svc); err != nil {
-			errs.Add(fmt.Errorf("stop %T: %w", svc, err))
-		}
-	}
-
-	s.indexReaderPool.Close()
+	errs.Add(s.closeAllBlocks())
+	// The snapshotter depends on the reader pool, so we close the snapshotter first.
+	errs.Add(services.StopAndAwaitTerminated(context.Background(), s.snapshotter))
+	errs.Add(services.StopAndAwaitTerminated(context.Background(), s.indexReaderPool))
 	return errs.Err()
 }
 
@@ -349,7 +341,7 @@ func (s *BucketStore) syncBlocks(ctx context.Context) error {
 		return metaFetchErr
 	}
 
-	blockIDs := s.blockSet.blockULIDs()
+	blockIDs := s.blockSet.openBlocksULIDs()
 	for _, id := range blockIDs {
 		if _, ok := metas[id]; ok {
 			continue
@@ -534,8 +526,12 @@ func (s *BucketStore) removeBlock(id ulid.ULID) (returnErr error) {
 	return nil
 }
 
+func (s *BucketStore) closeAllBlocks() error {
+	return s.blockSet.closeAll()
+}
+
 func (s *BucketStore) removeAllBlocks() error {
-	blockIDs := s.blockSet.blockULIDs()
+	blockIDs := s.blockSet.allBlockULIDs()
 
 	errs := multierror.New()
 	for _, id := range blockIDs {
@@ -741,14 +737,13 @@ func (s *BucketStore) recordRequestAmbientTime(stats *safeQueryStats, requestSta
 }
 
 func (s *BucketStore) limitConcurrentQueries(ctx context.Context, stats *safeQueryStats) (done func(), err error) {
-	span, spanCtx := opentracing.StartSpanFromContext(ctx, "store_query_gate_ismyturn")
-	defer span.Finish()
-
 	waitStart := time.Now()
-	err = s.queryGate.Start(spanCtx)
-	stats.update(func(stats *queryStats) {
-		stats.streamingSeriesConcurrencyLimitWaitDuration = time.Since(waitStart)
-	})
+	err = s.queryGate.Start(ctx)
+	waited := time.Since(waitStart)
+
+	stats.update(func(stats *queryStats) { stats.streamingSeriesConcurrencyLimitWaitDuration = waited })
+	level.Debug(spanlogger.FromContext(ctx, s.logger)).Log("msg", "waited for turn on query concurrency gate", "duration", waited)
+
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to wait for turn")
 	}
@@ -1567,7 +1562,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 
 		// This index reader shouldn't be used for ExpandedPostings, since it doesn't have the correct strategy.
 		// It's here only to make sure the block is held open inside the goroutine below.
-		indexr := b.indexReader(selectAllStrategy{})
+		indexr := b.indexReader(nil)
 
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(b.logger, indexr, "close block index reader")
@@ -1903,12 +1898,36 @@ func (s *bucketBlockSet) forEach(fn func(b *bucketBlock)) {
 	})
 }
 
-func (s *bucketBlockSet) blockULIDs() []ulid.ULID {
+// closeAll closes all blocks in the set and returns all encountered errors after trying all blocks.
+func (s *bucketBlockSet) closeAll() error {
+	errs := multierror.New()
+	s.blockSet.Range(func(_, val any) bool {
+		errs.Add(val.(*bucketBlock).Close())
+		return true
+	})
+	return errs.Err()
+}
+
+// openBlocksULIDs returns the ULIDs of all blocks in the set which are not closed.
+func (s *bucketBlockSet) openBlocksULIDs() []ulid.ULID {
 	ulids := make([]ulid.ULID, 0, s.len())
 	s.forEach(func(b *bucketBlock) {
 		ulids = append(ulids, b.meta.ULID)
 	})
 	return ulids
+}
+
+// allBlockULIDs returns the ULIDs of all blocks in the set regardless whether they are closed or not.
+func (s *bucketBlockSet) allBlockULIDs() []ulid.ULID {
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
+
+	ulids := make([]ulid.ULID, 0, len(s.blocks))
+	for _, b := range s.blocks {
+		ulids = append(ulids, b.meta.ULID)
+	}
+	return ulids
+
 }
 
 // timerange returns the minimum and maximum timestamp available in the set.

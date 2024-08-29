@@ -14,9 +14,9 @@ ingest_storage:
   kafka:
     address: kafka:9092
     topic:   mimir-ingest
+    last_produced_offset_poll_interval: 500ms
 
 ingester:
-  return_only_grpc_errors:     true
   track_ingester_owned_series: true
 
   partition_ring:

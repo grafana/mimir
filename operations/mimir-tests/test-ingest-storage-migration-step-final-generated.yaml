@@ -1066,7 +1066,9 @@ spec:
         - -ingest-storage.enabled=true
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
+        - -ingester.partition-ring.prefix=
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-queriers-per-tenant=10
@@ -1483,7 +1485,9 @@ spec:
         - -ingest-storage.enabled=true
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
+        - -ingester.partition-ring.prefix=
         - -query-frontend.cache-results=false
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-queriers-per-tenant=10
@@ -2952,8 +2956,8 @@ spec:
             value: 100
           selectPolicy: Min
           stabilizationWindowSeconds: 1800
-  maxReplicaCount: 10
-  minReplicaCount: 1
+  maxReplicaCount: 15
+  minReplicaCount: 2
   pollingInterval: 10
   scaleTargetRef:
     apiVersion: rollout-operator.grafana.com/v1

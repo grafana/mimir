@@ -4,6 +4,8 @@ package types
 
 import (
 	"github.com/prometheus/prometheus/promql"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 )
 
 // FPointRingBuffer and HPointRingBuffer are nearly identical, but exist for each
@@ -14,19 +16,14 @@ import (
 // (see: https://github.com/grafana/mimir/pull/8508#discussion_r1654668995)
 
 type FPointRingBuffer struct {
-	pool       FPointRingBufferPool
-	points     []promql.FPoint
-	firstIndex int // Index into 'points' of first point in this buffer.
-	size       int // Number of points in this buffer.
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	points                   []promql.FPoint
+	firstIndex               int // Index into 'points' of first point in this buffer.
+	size                     int // Number of points in this buffer.
 }
 
-type FPointRingBufferPool interface {
-	GetFPointSlice(size int) ([]promql.FPoint, error)
-	PutFPointSlice(s []promql.FPoint)
-}
-
-func NewFPointRingBuffer(pool FPointRingBufferPool) *FPointRingBuffer {
-	return &FPointRingBuffer{pool: pool}
+func NewFPointRingBuffer(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *FPointRingBuffer {
+	return &FPointRingBuffer{memoryConsumptionTracker: memoryConsumptionTracker}
 }
 
 // DiscardPointsBefore discards all points in this buffer with timestamp less than t.
@@ -84,7 +81,7 @@ func (b *FPointRingBuffer) CopyPoints(maxT int64) ([]promql.FPoint, error) {
 	}
 
 	head, tail := b.UnsafePoints(maxT)
-	combined, err := b.pool.GetFPointSlice(len(head) + len(tail))
+	combined, err := getFPointSliceForRingBuffer(len(head)+len(tail), b.memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +129,7 @@ func (b *FPointRingBuffer) Append(p promql.FPoint) error {
 			newSize = 2
 		}
 
-		newSlice, err := b.pool.GetFPointSlice(newSize)
+		newSlice, err := getFPointSliceForRingBuffer(newSize, b.memoryConsumptionTracker)
 		if err != nil {
 			return err
 		}
@@ -142,7 +139,7 @@ func (b *FPointRingBuffer) Append(p promql.FPoint) error {
 		copy(newSlice, b.points[b.firstIndex:])
 		copy(newSlice[pointsAtEnd:], b.points[:b.firstIndex])
 
-		b.pool.PutFPointSlice(b.points)
+		putFPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
 		b.points = newSlice
 		b.firstIndex = 0
 	}
@@ -161,8 +158,7 @@ func (b *FPointRingBuffer) Reset() {
 
 // Close releases any resources associated with this buffer.
 func (b *FPointRingBuffer) Close() {
-	b.Reset()
-	b.pool.PutFPointSlice(b.points)
+	putFPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
 	b.points = nil
 }
 
@@ -193,3 +189,33 @@ func (b *FPointRingBuffer) LastAtOrBefore(maxT int64) (promql.FPoint, bool) {
 
 	return promql.FPoint{}, false
 }
+
+// CountAtOrBefore returns the number of points in this ring buffer with timestamp less than or equal to maxT.
+func (b *FPointRingBuffer) CountAtOrBefore(maxT int64) int {
+	count := b.size
+
+	for count > 0 {
+		p := b.points[(b.firstIndex+count-1)%len(b.points)]
+
+		if p.T <= maxT {
+			return count
+		}
+
+		count--
+	}
+
+	return count
+}
+
+// AnyAtOrBefore returns true if this ring buffer contains any points with timestamp less than or equal to maxT.
+func (b *FPointRingBuffer) AnyAtOrBefore(maxT int64) bool {
+	if b.size == 0 {
+		return false
+	}
+
+	return b.points[b.firstIndex].T <= maxT
+}
+
+// These hooks exist so we can override them during unit tests.
+var getFPointSliceForRingBuffer = FPointSlicePool.Get
+var putFPointSliceForRingBuffer = FPointSlicePool.Put

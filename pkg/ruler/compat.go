@@ -141,6 +141,47 @@ func (t *PusherAppendable) Appender(ctx context.Context) storage.Appender {
 	}
 }
 
+type NoopAppender struct{}
+
+func (a *NoopAppender) Append(_ storage.SeriesRef, _ labels.Labels, _ int64, _ float64) (storage.SeriesRef, error) {
+	return 0, nil
+}
+
+func (a *NoopAppender) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
+	return 0, errors.New("exemplars are unsupported")
+}
+
+func (a *NoopAppender) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
+	return 0, errors.New("metadata updates are unsupported")
+}
+
+func (a *NoopAppender) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return 0, nil
+}
+
+func (a *NoopAppender) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+	return 0, errors.New("CT zero samples are unsupported")
+}
+
+func (a *NoopAppender) Commit() error {
+	return nil
+}
+
+func (a *NoopAppender) Rollback() error {
+	return nil
+}
+
+type NoopAppendable struct{}
+
+func NewNoopAppendable() *NoopAppendable {
+	return &NoopAppendable{}
+}
+
+// Appender returns a storage.Appender.
+func (t *NoopAppendable) Appender(_ context.Context) storage.Appender {
+	return &NoopAppender{}
+}
+
 // RulesLimits defines limits used by Ruler.
 type RulesLimits interface {
 	EvaluationDelay(userID string) time.Duration
@@ -151,6 +192,7 @@ type RulesLimits interface {
 	RulerAlertingRulesEvaluationEnabled(userID string) bool
 	RulerSyncRulesOnChangesEnabled(userID string) bool
 	RulerProtectedNamespaces(userID string) []string
+	RulerMaxIndependentRuleEvaluationConcurrencyPerTenant(userID string) int64
 }
 
 func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Counter, remoteQuerier bool) rules.QueryFunc {
@@ -266,9 +308,10 @@ type ManagerFactory func(ctx context.Context, userID string, notifier *notifier.
 
 func DefaultTenantManagerFactory(
 	cfg Config,
-	p Pusher,
+	pusher Pusher,
 	queryable storage.Queryable,
 	queryFunc rules.QueryFunc,
+	concurrencyController MultiTenantRuleConcurrencyController,
 	overrides RulesLimits,
 	reg prometheus.Registerer,
 ) ManagerFactory {
@@ -317,8 +360,15 @@ func DefaultTenantManagerFactory(
 		// Wrap the queryable with our custom logic.
 		wrappedQueryable := WrapQueryableWithReadConsistency(queryable, logger)
 
+		var appendeable storage.Appendable
+		if cfg.RuleEvaluationWriteEnabled {
+			appendeable = NewPusherAppendable(pusher, userID, totalWrites, failedWrites)
+		} else {
+			appendeable = NewNoopAppendable()
+		}
+
 		return rules.NewManager(&rules.ManagerOptions{
-			Appendable:                 NewPusherAppendable(p, userID, totalWrites, failedWrites),
+			Appendable:                 appendeable,
 			Queryable:                  wrappedQueryable,
 			QueryFunc:                  wrappedQueryFunc,
 			Context:                    user.InjectOrgID(ctx, userID),
@@ -336,6 +386,7 @@ func DefaultTenantManagerFactory(
 				// to metric that haven't been forwarded to Mimir yet.
 				return overrides.EvaluationDelay(userID)
 			},
+			RuleConcurrencyController: concurrencyController.NewTenantConcurrencyControllerFor(userID),
 		})
 	}
 }

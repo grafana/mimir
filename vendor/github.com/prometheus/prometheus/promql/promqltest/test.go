@@ -55,6 +55,11 @@ const (
 	DefaultMaxSamplesPerQuery = 10000
 )
 
+type TBRun interface {
+	testing.TB
+	Run(string, func(*testing.T)) bool
+}
+
 var testStartTime = time.Unix(0, 0).UTC()
 
 // LoadedStorage returns storage with generated data using the provided load statements.
@@ -89,7 +94,7 @@ func NewTestEngine(enablePerStepStats bool, lookbackDelta time.Duration, maxSamp
 }
 
 // RunBuiltinTests runs an acceptance test suite against the provided engine.
-func RunBuiltinTests(t *testing.T, engine promql.QueryEngine) {
+func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 	t.Cleanup(func() { parser.EnableExperimentalFunctions = false })
 	parser.EnableExperimentalFunctions = true
 
@@ -998,13 +1003,6 @@ func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 		return fmt.Errorf("error creating range query for %q (line %d): %w", cmd.expr, cmd.line, err)
 	}
 	res := q.Exec(t.context)
-	countWarnings, _ := res.Warnings.CountWarningsAndInfo()
-	if !cmd.warn && countWarnings > 0 {
-		return fmt.Errorf("unexpected warnings evaluating query %q (line %d): %v", cmd.expr, cmd.line, res.Warnings)
-	}
-	if cmd.warn && countWarnings == 0 {
-		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
-	}
 	if res.Err != nil {
 		if cmd.fail {
 			return cmd.checkExpectedFailure(res.Err)
@@ -1014,6 +1012,13 @@ func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 	}
 	if res.Err == nil && cmd.fail {
 		return fmt.Errorf("expected error evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
+	}
+	countWarnings, _ := res.Warnings.CountWarningsAndInfo()
+	if !cmd.warn && countWarnings > 0 {
+		return fmt.Errorf("unexpected warnings evaluating query %q (line %d): %v", cmd.expr, cmd.line, res.Warnings)
+	}
+	if cmd.warn && countWarnings == 0 {
+		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
 	}
 	defer q.Close()
 
@@ -1045,13 +1050,6 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 	}
 	defer q.Close()
 	res := q.Exec(t.context)
-	countWarnings, _ := res.Warnings.CountWarningsAndInfo()
-	if !cmd.warn && countWarnings > 0 {
-		return fmt.Errorf("unexpected warnings evaluating query %q (line %d): %v", iq.expr, cmd.line, res.Warnings)
-	}
-	if cmd.warn && countWarnings == 0 {
-		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", iq.expr, cmd.line)
-	}
 	if res.Err != nil {
 		if cmd.fail {
 			if err := cmd.checkExpectedFailure(res.Err); err != nil {
@@ -1064,6 +1062,13 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 	}
 	if res.Err == nil && cmd.fail {
 		return fmt.Errorf("expected error evaluating query %q (line %d) but got none", iq.expr, cmd.line)
+	}
+	countWarnings, _ := res.Warnings.CountWarningsAndInfo()
+	if !cmd.warn && countWarnings > 0 {
+		return fmt.Errorf("unexpected warnings evaluating query %q (line %d): %v", iq.expr, cmd.line, res.Warnings)
+	}
+	if cmd.warn && countWarnings == 0 {
+		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", iq.expr, cmd.line)
 	}
 	err = cmd.compareResult(res.Value)
 	if err != nil {

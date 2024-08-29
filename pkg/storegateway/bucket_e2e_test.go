@@ -764,7 +764,7 @@ func TestBucketStore_EagerLoading(t *testing.T) {
 
 			if testData.createLoadedBlocksSnapshotFn != nil {
 				// Create the snapshot manually so that we don't rely on the periodic snapshotting.
-				loadedBlocks := store.store.blockSet.blockULIDs()
+				loadedBlocks := store.store.blockSet.openBlocksULIDs()
 				staticLoader := staticLoadedBlocks(testData.createLoadedBlocksSnapshotFn(loadedBlocks))
 				snapshotter := indexheader.NewSnapshotter(cfg.logger, indexheader.SnapshotterConfig{
 					PersistInterval: time.Hour,
@@ -793,7 +793,13 @@ func TestBucketStore_PersistsLazyLoadedBlocks(t *testing.T) {
 	cfg.logger = test.NewTestingLogger(t)
 	cfg.bucketStoreConfig.IndexHeader.EagerLoadingPersistInterval = persistInterval
 	cfg.bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled = true
+	cfg.bucketStoreConfig.IndexHeader.LazyLoadingIdleTimeout = persistInterval * 3
 	ctx := context.Background()
+	readBlocksInSnapshot := func() map[ulid.ULID]int64 {
+		blocks, err := indexheader.RestoreLoadedBlocks(cfg.tempDir)
+		assert.NoError(t, err)
+		return blocks
+	}
 
 	// Start the store so we generate some blocks and can use them in the mock snapshot.
 	store := prepareStoreWithTestBlocks(t, bkt, cfg)
@@ -801,21 +807,23 @@ func TestBucketStore_PersistsLazyLoadedBlocks(t *testing.T) {
 	time.Sleep(persistInterval * 2)
 
 	// The snapshot should be empty.
-	blocks, err := indexheader.RestoreLoadedBlocks(cfg.tempDir)
-	assert.NoError(t, err)
-	assert.Empty(t, blocks)
+	assert.Empty(t, readBlocksInSnapshot())
 
 	// Run a simple request to trigger loading the blocks
 	resp, err := store.store.LabelNames(ctx, &storepb.LabelNamesRequest{End: math.MaxInt64})
 	require.NoError(t, err)
 	assert.NotEmpty(t, resp.Names)
 
-	// Wait for the snapshot to be persisted.
-	time.Sleep(persistInterval * 2)
+	// The snapshot should now contain the blocks we queried.
+	assert.Eventually(t, func() bool {
+		return len(readBlocksInSnapshot()) == cfg.numBlocks
+	}, persistInterval*5, persistInterval/2)
 
-	blocks, err = indexheader.RestoreLoadedBlocks(cfg.tempDir)
-	assert.NoError(t, err)
-	assert.Len(t, blocks, cfg.numBlocks)
+	// Wait for the blocks to be unloaded due to the lazy loading idle timeout.
+	// The snapshot should be empty.
+	assert.Eventually(t, func() bool {
+		return len(readBlocksInSnapshot()) == 0
+	}, persistInterval*5, persistInterval/2)
 }
 
 type staticLoadedBlocks map[ulid.ULID]int64

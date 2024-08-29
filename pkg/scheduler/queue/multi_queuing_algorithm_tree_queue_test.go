@@ -17,13 +17,6 @@ type enqueueObj struct {
 	path QueuePath
 }
 
-func newTenantQuerierAssignments() *tenantQuerierAssignments {
-	return &tenantQuerierAssignments{
-		tenantQuerierIDs: make(map[TenantID]map[QuerierID]struct{}),
-		tenantNodes:      make(map[string][]*Node),
-	}
-}
-
 func Test_NewTree(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -78,7 +71,7 @@ func Test_EnqueueBackByPath(t *testing.T) {
 		{
 			name: "enqueue round-robin node to tenant-querier node",
 			treeAlgosByDepth: []QueuingAlgorithm{
-				newTenantQuerierAssignments(),
+				newTenantQuerierAssignments(0),
 				&roundRobinState{},
 			},
 			childPathsToEnqueue: []QueuePath{{"child-1"}, {"child-2"}},
@@ -86,24 +79,25 @@ func Test_EnqueueBackByPath(t *testing.T) {
 		{
 			name: "enqueue tenant-querier node to tenant-querier node",
 			treeAlgosByDepth: []QueuingAlgorithm{
-				newTenantQuerierAssignments(),
-				newTenantQuerierAssignments(),
+				newTenantQuerierAssignments(0),
+				newTenantQuerierAssignments(0),
 			},
 			childPathsToEnqueue: []QueuePath{{"child-1"}},
 		},
 		{
-			name: "enqueue grandchildren to a tree with max-depth of 2",
+			name: "fail to enqueue to a node at depth 1 in tree with max-depth of 2",
 			treeAlgosByDepth: []QueuingAlgorithm{
-				newTenantQuerierAssignments(),
+				newTenantQuerierAssignments(0),
 				&roundRobinState{},
-				newTenantQuerierAssignments(),
+				newTenantQuerierAssignments(0),
 			},
-			childPathsToEnqueue: []QueuePath{{"child"}, {"grandchild"}},
+			childPathsToEnqueue: []QueuePath{{"child"}},
+			expectErr:           true,
 		},
 		{
-			name:                "enqueue beyond max-depth",
+			name:                "fail to enqueue beyond max-depth",
 			treeAlgosByDepth:    []QueuingAlgorithm{&roundRobinState{}},
-			childPathsToEnqueue: []QueuePath{{"child"}, {"child, grandchild"}},
+			childPathsToEnqueue: []QueuePath{{"child, grandchild"}},
 			expectErr:           true,
 		},
 	}
@@ -186,7 +180,7 @@ func Test_Dequeue_RootNode(t *testing.T) {
 		},
 		{
 			name:     "dequeue from empty tenant-querier root node",
-			rootAlgo: newTenantQuerierAssignments(),
+			rootAlgo: newTenantQuerierAssignments(0),
 		},
 		{
 			name:          "dequeue from non-empty round-robin root node",
@@ -195,7 +189,7 @@ func Test_Dequeue_RootNode(t *testing.T) {
 		},
 		{
 			name:          "dequeue from non-empty tenant-querier root node",
-			rootAlgo:      newTenantQuerierAssignments(),
+			rootAlgo:      newTenantQuerierAssignments(0),
 			enqueueToRoot: []any{"something-else-in-root"},
 		},
 	}
@@ -231,7 +225,8 @@ func Test_Dequeue_RootNode(t *testing.T) {
 func Test_RoundRobinDequeue(t *testing.T) {
 	tests := []struct {
 		name                      string
-		selfQueueObjects          []string
+		treeDepth                 int
+		enqueueObjs               []enqueueObj
 		children                  []string
 		childQueueObjects         map[string][]any
 		grandchildren             []string
@@ -242,62 +237,42 @@ func Test_RoundRobinDequeue(t *testing.T) {
 		expected []string
 	}{
 		{
-			name:              "dequeue from round-robin child when local queue empty",
-			children:          []string{"child-1"},
-			childQueueObjects: map[string][]any{"child-1": {"child-1:some-object"}},
-			expected:          []string{"child-1:some-object"},
+			name:        "dequeue from round-robin child",
+			treeDepth:   2,
+			enqueueObjs: []enqueueObj{{"child-1:some-object", QueuePath{"child-1"}}},
+			expected:    []string{"child-1:some-object"},
 		},
 		{
-			name:              "dequeue from round-robin root when on node's turn",
-			selfQueueObjects:  []string{"root:object-1", "root:object-2"},
-			children:          []string{"child-1"},
-			childQueueObjects: map[string][]any{"child-1": {"child-1:object-1"}},
-			expected:          []string{"root:object-1", "child-1:object-1"},
+			name:        "dequeue from second round-robin child when first child is empty",
+			treeDepth:   2,
+			enqueueObjs: []enqueueObj{{nil, QueuePath{"child-1"}}, {"child-2:some-object", QueuePath{"cihld-2"}}},
+			expected:    []string{"child-2:some-object"},
 		},
 		{
-			name:              "dequeue from second round-robin child when first child is empty",
-			children:          []string{"child-1", "child-2"},
-			childQueueObjects: map[string][]any{"child-1": {nil}, "child-2": {"child-2:some-object"}},
-			expected:          []string{"child-2:some-object"},
-		},
-		{
-			name:              "dequeue from round-robin grandchild when non-empty",
-			children:          []string{"child-1", "child-2"},
-			childQueueObjects: map[string][]any{"child-1": {"child-1:object-1", "child-1:object-2"}, "child-2": {"child-2:object-1"}},
-			expected:          []string{"child-1:object-1", "child-2:object-1", "grandchild-1:object-1"},
-			grandchildren:     []string{"grandchild-1"},
-			grandchildrenQueueObjects: map[string]struct {
-				path QueuePath
-				objs []any
-			}{"grandchild-1": {
-				path: QueuePath{"child-1", "grandchild-1"},
-				objs: []any{"grandchild-1:object-1"},
-			}},
+			name:      "dequeue from round-robin grandchild",
+			treeDepth: 3,
+			enqueueObjs: []enqueueObj{
+				{"grandchild-1:object-1", QueuePath{"child-1", "grandchild-1"}},
+				{"grandchild-1:object-2", QueuePath{"child-1", "grandchild-1"}},
+				{"grandchild-2:object-1", QueuePath{"child-2", "grandchild-2"}},
+			},
+			expected:      []string{"grandchild-1:object-1", "grandchild-2:object-1", "grandchild-1:object-2"},
+			grandchildren: []string{"grandchild-1"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tree, err := NewTree(&roundRobinState{}, &roundRobinState{}, &roundRobinState{})
+			args := make([]QueuingAlgorithm, 0)
+			for i := 0; i < tt.treeDepth; i++ {
+				args = append(args, &roundRobinState{})
+			}
+			tree, err := NewTree(args...)
 			require.NoError(t, err)
 
-			for _, sqo := range tt.selfQueueObjects {
-				err = tree.EnqueueBackByPath(QueuePath{}, sqo)
+			for _, eo := range tt.enqueueObjs {
+				err = tree.EnqueueBackByPath(eo.path, eo.obj)
 				require.NoError(t, err)
-			}
-
-			for _, child := range tt.children {
-				for _, obj := range tt.childQueueObjects[child] {
-					_ = tree.EnqueueBackByPath(QueuePath{child}, obj)
-				}
-			}
-
-			for _, grandchild := range tt.grandchildren {
-				gqo := tt.grandchildrenQueueObjects[grandchild]
-				for _, obj := range gqo.objs {
-					err = tree.EnqueueBackByPath(gqo.path, obj)
-					require.NoError(t, err)
-				}
 			}
 
 			for _, expected := range tt.expected {
@@ -653,16 +628,54 @@ func Test_ChangeTenantQuerierAssignments(t *testing.T) {
 // Dequeuing from a balanced tree allows the test to have a simple looped structures
 // while running checks to ensure that round-robin order is respected.
 func Test_DequeueBalancedRoundRobinTree(t *testing.T) {
+	/* balanced tree structure:
+		root
+		├── 0
+		│   ├── a
+		│	│	├── 0:a:val0
+	    │   │   ├── 0:a:val1
+	    │   │   ├── 0:a:val2
+		│   │   ├── 0:a:val3
+		│   │   └── 0:a:val4
+		│   ├── b
+		│	│	├── 0:b:val0
+	    │   │   ├── 0:b:val1
+	    │   │   ├── 0:b:val2
+		│   │   ├── 0:b:val3
+		│   │   └── 0:b:val4
+		│   └── c
+		│	 	├── 0:c:val0
+	    │       ├── 0:c:val1
+	    │       ├── 0:c:val2
+		│       ├── 0:c:val3
+		│       └── 0:c:val4
+		├── 1
+		│   ├── a
+		│	│	...
+		│   ├── b
+		│	│	...
+		│   └── c
+		│		...
+		└── 2
+		    ├── a
+		 	│	...
+		    ├── b
+		 	│	...
+		    └── c
+		 		...
+	*/
 	firstDimensions := []string{"0", "1", "2"}
 	secondDimensions := []string{"a", "b", "c"}
 	itemsPerDimension := 5
+
 	tree := makeBalancedRoundRobinTree(t, firstDimensions, secondDimensions, itemsPerDimension)
 	require.NotNil(t, tree)
 
 	count := 0
 
-	// MultiQueuingAlgorithmTreeQueue will fairly dequeue from all levels of the tree
-	rotationsBeforeRepeat := len(firstDimensions) * len(secondDimensions)
+	// MultiQueuingAlgorithmTreeQueue will fairly dequeue from each child node; subtract one to avoid counting
+	// the local queue of first-dimension node.
+	rotationsBeforeRepeat := len(firstDimensions)*len(secondDimensions) - 1
 	// track dequeued paths to ensure round-robin dequeuing does not repeat before expected
 	dequeuedPathCache := make([]QueuePath, rotationsBeforeRepeat)
 
@@ -676,12 +689,10 @@ func Test_DequeueBalancedRoundRobinTree(t *testing.T) {
 		count++
 	}
 
-	// count items enqueued to nodes at depth 1
-	expectedFirstDimensionCount := len(firstDimensions) * itemsPerDimension
-	// count items enqueued to nodes at depth 2
+	// count items enqueued; there should be size(firstDim) * size(secondDim) * itemsPerDim
 	expectedSecondDimensionCount := len(firstDimensions) * len(secondDimensions) * itemsPerDimension
 
-	require.Equal(t, expectedFirstDimensionCount+expectedSecondDimensionCount, count)
+	require.Equal(t, expectedSecondDimensionCount, count)
 
 }
 
@@ -693,36 +704,21 @@ func Test_DequeueBalancedRoundRobinTree(t *testing.T) {
 func Test_DequeueUnbalancedRoundRobinTree(t *testing.T) {
 	tree := makeUnbalancedRoundRobinTree(t)
 
-	// dequeue from root until exhausted
-	_, v := tree.Dequeue()
-	require.Equal(t, "root:0:val0", v)
+	expectedVals := []string{
+		"root:0:a:val0",
+		"root:1:a:val0",
+		"root:2:a:val0",
+		"root:1:a:val1",
+		"root:2:b:val0",
+		"root:2:a:val1",
+		"root:2:b:val1",
+		"root:2:b:val2",
+	}
 
-	_, v = tree.Dequeue()
-	require.Equal(t, "root:1:val0", v)
-
-	_, v = tree.Dequeue()
-	require.Equal(t, "root:2:0:val0", v)
-
-	_, v = tree.Dequeue()
-	require.Equal(t, "root:1:0:val0", v)
-
-	_, v = tree.Dequeue()
-	require.Equal(t, "root:2:1:val0", v)
-
-	_, v = tree.Dequeue()
-	require.Equal(t, "root:1:val1", v)
-
-	_, v = tree.Dequeue()
-	require.Equal(t, "root:2:0:val1", v)
-
-	_, v = tree.Dequeue()
-	require.Equal(t, "root:1:0:val1", v)
-
-	_, v = tree.Dequeue()
-	require.Equal(t, "root:2:1:val1", v)
-
-	_, v = tree.Dequeue()
-	require.Equal(t, "root:2:1:val2", v)
+	for _, expected := range expectedVals {
+		_, v := tree.Dequeue()
+		require.Equal(t, expected, v)
+	}
 
 	// all items have been dequeued
 	require.Equal(t, 0, tree.rootNode.ItemCount())
@@ -733,7 +729,7 @@ func Test_DequeueUnbalancedRoundRobinTree(t *testing.T) {
 }
 
 func Test_EnqueueDuringDequeueRespectsRoundRobin(t *testing.T) {
-	tree, err := NewTree(&roundRobinState{}, &roundRobinState{}, &roundRobinState{})
+	tree, err := NewTree(&roundRobinState{}, &roundRobinState{})
 	require.NoError(t, err)
 	require.NotNil(t, tree)
 
@@ -840,11 +836,6 @@ func makeBalancedRoundRobinTree(t *testing.T, firstDimensions, secondDimensions 
 	cache := map[string]struct{}{}
 
 	for _, firstDimName := range firstDimensions {
-		for k := 0; k < itemsPerDimension; k++ {
-			childPath := QueuePath{firstDimName}
-			item := makeItemForChildQueue(tree.rootNode, childPath, cache)
-			require.NoError(t, tree.EnqueueBackByPath(childPath, item))
-		}
 		for _, secondDimName := range secondDimensions {
 			for k := 0; k < itemsPerDimension; k++ {
 				childPath := QueuePath{firstDimName, secondDimName}
@@ -859,29 +850,26 @@ func makeBalancedRoundRobinTree(t *testing.T, firstDimensions, secondDimensions 
 func makeUnbalancedRoundRobinTree(t *testing.T) *MultiQueuingAlgorithmTreeQueue {
 	/*
 	   root
-	   ├── child0
-	   │		 └── localQueue
-	   │		     └── val0
-	   ├── child1
-	   │		 ├── child0
-	   │		 │		 └── localQueue
-	   │		 │		     ├── val0
-	   │		 │		     └── val1
-	   │		 └── localQueue
-	   │		     ├── val0
-	   │		     └── val1
-	   ├── child2
-	   │		 ├── child0
-	   │		 │		 └── localQueue
-	   │		 │		     ├── val0
-	   │		 │		     └── val1
-	   │		 ├── child1
-	   │		 │		 └── localQueue
-	   │		 │		     ├── val0
-	   │		 │		     ├── val1
-	   │		 │		     └── val2
-	   │		 └── localQueue
-	   └── localQueue
+	   ├── 0
+	   │   └── a
+	   │	   └── localQueue
+	   │           └──val0
+	   ├── 1
+	   │   └── a
+	   │	   └── localQueue
+	   │		   ├── val0
+	   │		   └── val1
+	   └── 2
+	       ├── a
+	       │   └── localQueue
+	       │	   ├── val0
+	       │	   └── val1
+	       └── b
+	           └── localQueue
+	        	   ├── val0
+	        	   ├── val1
+	        	   └── val2
+
 	*/
 	tree, err := NewTree(&roundRobinState{}, &roundRobinState{}, &roundRobinState{})
 	require.NoError(t, err)
@@ -890,65 +878,65 @@ func makeUnbalancedRoundRobinTree(t *testing.T) *MultiQueuingAlgorithmTreeQueue 
 
 	cache := map[string]struct{}{}
 
-	// enqueue one item to root:0
-	childPath := QueuePath{"0"}
+	// enqueue one item to root:0:a
+	childPath := QueuePath{"0", "a"}
 	item := makeItemForChildQueue(tree.rootNode, childPath, cache)
 	require.NoError(t, tree.EnqueueBackByPath(childPath, item))
-	require.Equal(t, 2, tree.rootNode.nodeCount())
+	require.Equal(t, 3, tree.rootNode.nodeCount())
 	require.Equal(t, 1, tree.rootNode.ItemCount())
 
-	// enqueue two items to root:1
-	childPath = QueuePath{"1"}
+	//// enqueue two items to root:1
+	//childPath = QueuePath{"1"}
+	//item = makeItemForChildQueue(tree.rootNode, childPath, cache)
+	//require.NoError(t, tree.EnqueueBackByPath(childPath, item))
+	//require.Equal(t, 3, tree.rootNode.nodeCount())
+	//require.Equal(t, 2, tree.rootNode.ItemCount())
+	//
+	//item = makeItemForChildQueue(tree.rootNode, childPath, cache)
+	//require.NoError(t, tree.EnqueueBackByPath(childPath, item))
+	//require.Equal(t, 3, tree.rootNode.nodeCount())
+	//require.Equal(t, 3, tree.rootNode.ItemCount())
+
+	// enqueue two items to root:1:a
+	childPath = QueuePath{"1", "a"}
 	item = makeItemForChildQueue(tree.rootNode, childPath, cache)
 	require.NoError(t, tree.EnqueueBackByPath(childPath, item))
-	require.Equal(t, 3, tree.rootNode.nodeCount())
+	require.Equal(t, 5, tree.rootNode.nodeCount())
 	require.Equal(t, 2, tree.rootNode.ItemCount())
 
 	item = makeItemForChildQueue(tree.rootNode, childPath, cache)
 	require.NoError(t, tree.EnqueueBackByPath(childPath, item))
-	require.Equal(t, 3, tree.rootNode.nodeCount())
+	require.Equal(t, 5, tree.rootNode.nodeCount())
 	require.Equal(t, 3, tree.rootNode.ItemCount())
 
-	// enqueue two items to root:1:0
-	childPath = QueuePath{"1", "0"}
+	// enqueue two items to root:2:a
+	childPath = QueuePath{"2", "a"}
 	item = makeItemForChildQueue(tree.rootNode, childPath, cache)
 	require.NoError(t, tree.EnqueueBackByPath(childPath, item))
-	require.Equal(t, 4, tree.rootNode.nodeCount())
+	require.Equal(t, 7, tree.rootNode.nodeCount())
 	require.Equal(t, 4, tree.rootNode.ItemCount())
 
 	item = makeItemForChildQueue(tree.rootNode, childPath, cache)
 	require.NoError(t, tree.EnqueueBackByPath(childPath, item))
-	require.Equal(t, 4, tree.rootNode.nodeCount())
+	require.Equal(t, 7, tree.rootNode.nodeCount())
 	require.Equal(t, 5, tree.rootNode.ItemCount())
 
-	// enqueue two items to root:2:0
-	childPath = QueuePath{"2", "0"}
+	// enqueue three items to root:2:b
+	childPath = QueuePath{"2", "b"}
 	item = makeItemForChildQueue(tree.rootNode, childPath, cache)
 	require.NoError(t, tree.EnqueueBackByPath(childPath, item))
-	require.Equal(t, 6, tree.rootNode.nodeCount())
+	require.Equal(t, 8, tree.rootNode.nodeCount())
 	require.Equal(t, 6, tree.rootNode.ItemCount())
 
 	item = makeItemForChildQueue(tree.rootNode, childPath, cache)
 	require.NoError(t, tree.EnqueueBackByPath(childPath, item))
-	require.Equal(t, 6, tree.rootNode.nodeCount())
+	require.Equal(t, 8, tree.rootNode.nodeCount())
 	require.Equal(t, 7, tree.rootNode.ItemCount())
 
-	// enqueue three items to root:2:1
-	childPath = QueuePath{"2", "1"}
 	item = makeItemForChildQueue(tree.rootNode, childPath, cache)
 	require.NoError(t, tree.EnqueueBackByPath(childPath, item))
-	require.Equal(t, 7, tree.rootNode.nodeCount())
+	require.Equal(t, 8, tree.rootNode.nodeCount())
 	require.Equal(t, 8, tree.rootNode.ItemCount())
-
-	item = makeItemForChildQueue(tree.rootNode, childPath, cache)
-	require.NoError(t, tree.EnqueueBackByPath(childPath, item))
-	require.Equal(t, 7, tree.rootNode.nodeCount())
-	require.Equal(t, 9, tree.rootNode.ItemCount())
-
-	item = makeItemForChildQueue(tree.rootNode, childPath, cache)
-	require.NoError(t, tree.EnqueueBackByPath(childPath, item))
-	require.Equal(t, 7, tree.rootNode.nodeCount())
-	require.Equal(t, 10, tree.rootNode.ItemCount())
 
 	return tree
 }
