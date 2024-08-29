@@ -325,6 +325,8 @@ func (c parallelStoragePusher) Close() []error {
 	return errs
 }
 
+// shardsFor returns the parallelStorageShards for the given userID. Once created the same shards are re-used for the same userID.
+// We create a shard for each tenantID to parallelize the writes.
 func (c parallelStoragePusher) shardsFor(userID string) *parallelStorageShards {
 	if p := c.pushers[userID]; p != nil {
 		return p
@@ -334,6 +336,8 @@ func (c parallelStoragePusher) shardsFor(userID string) *parallelStorageShards {
 	return p
 }
 
+// parallelStorageShards is a collection of shards that are used to parallelize the writes to the storage by series.
+// Each series is hashed to a shard that contains its own BatchingQueue.
 type parallelStorageShards struct {
 	numTimeSeriesPerFlush prometheus.Histogram
 
@@ -348,12 +352,13 @@ type parallelStorageShards struct {
 	errs   chan error
 }
 
+// FlushableWriteRequest is a WriteRequest that can be flushed to the storage. It represents the current batch of time series that are to be flushed.
 type FlushableWriteRequest struct {
 	*mimirpb.WriteRequest
 	context.Context
 }
 
-// TODO dimitarvdimitrov if this is expensive, consider having this long-lived and not Close()-ing and recreating it on every fetch, but instead calling something like Flush() on it.
+// newParallelStorageShards creates a new parallelStorageShards instance.
 func newParallelStorageShards(numTimeSeriesPerFlush prometheus.Histogram, numShards int, batchSize int, capacity int, pusher Pusher) *parallelStorageShards {
 	p := &parallelStorageShards{
 		numShards:             numShards,
@@ -370,6 +375,7 @@ func newParallelStorageShards(numTimeSeriesPerFlush prometheus.Histogram, numSha
 	return p
 }
 
+// ShardWriteRequest hashes each time series in the write requests and sends them to the appropriate shard which is then handled by the current BatchingQueue in that shard.
 func (p *parallelStorageShards) ShardWriteRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
 	var (
 		builder         labels.ScratchBuilder
@@ -391,7 +397,7 @@ func (p *parallelStorageShards) ShardWriteRequest(ctx context.Context, request *
 		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, ts.Labels, &nonCopiedLabels)
 		shard := nonCopiedLabels.Hash() % uint64(p.numShards)
 
-		// TODO: Add metrics to measure how long are items sitting in the queub efore they are flushed.
+		// TODO: Add metrics to measure how long are items sitting in the queue before they are flushed.
 		p.shards[shard].AddToBatch(ctx, ts)
 	}
 
@@ -404,9 +410,11 @@ func (p *parallelStorageShards) ShardWriteRequest(ctx context.Context, request *
 	p.errs = make(chan error, p.numShards)
 
 	// Return whatever errors we have now, we'll call stop eventually and collect the rest.
+	// We might some data left in some of the queues in the shards, but they will be flushed eventually once Stop is called, and we're certain that no more data is coming.
 	return errs.Err()
 }
 
+// Stop stops all the shards and waits for them to finish.
 func (p *parallelStorageShards) Stop() error {
 	for _, shard := range p.shards {
 		shard.Close()
@@ -424,6 +432,7 @@ func (p *parallelStorageShards) Stop() error {
 	return errs.Err()
 }
 
+// start starts the shards, each in its own goroutine.
 func (p *parallelStorageShards) start() {
 	shards := make([]*BatchingQueue, p.numShards)
 	p.wg.Add(p.numShards)
@@ -436,6 +445,7 @@ func (p *parallelStorageShards) start() {
 	p.shards = shards
 }
 
+// run runs the BatchingQueue for the shard.
 func (p *parallelStorageShards) run(queue *BatchingQueue) {
 	defer p.wg.Done()
 	for wr := range queue.Channel() {
@@ -447,12 +457,15 @@ func (p *parallelStorageShards) run(queue *BatchingQueue) {
 	}
 }
 
+// BatchingQueue is a queue that batches the incoming time series according to the batch size.
+// Once the batch size is reached, the batch is pushed to a channel which can be accessed through the Channel() method.
 type BatchingQueue struct {
 	ch           chan FlushableWriteRequest
 	currentBatch FlushableWriteRequest
 	batchSize    int
 }
 
+// NewBatchingQueue creates a new BatchingQueue instance.
 func NewBatchingQueue(capacity int, batchSize int) *BatchingQueue {
 	return &BatchingQueue{
 		ch:           make(chan FlushableWriteRequest, capacity),
@@ -461,6 +474,7 @@ func NewBatchingQueue(capacity int, batchSize int) *BatchingQueue {
 	}
 }
 
+// AddToBatch adds a time series to the current batch. If the batch size is reached, the batch is pushed to the Channel().
 func (q *BatchingQueue) AddToBatch(ctx context.Context, ts mimirpb.PreallocTimeseries) {
 	s := &q.currentBatch
 	s.Timeseries = append(s.Timeseries, ts)
@@ -474,6 +488,8 @@ func (q *BatchingQueue) AddToBatch(ctx context.Context, ts mimirpb.PreallocTimes
 	}
 }
 
+// Close closes the BatchingQueue, it'll push the current branch to the channel if it's not empty.
+// and then close the channel.
 func (q *BatchingQueue) Close() {
 	if len(q.currentBatch.Timeseries) > 0 {
 		q.push(q.currentBatch)
@@ -482,6 +498,7 @@ func (q *BatchingQueue) Close() {
 	close(q.ch)
 }
 
+// Channel returns the channel where the batches are pushed.
 func (q *BatchingQueue) Channel() <-chan FlushableWriteRequest {
 	return q.ch
 }
