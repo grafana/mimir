@@ -3705,6 +3705,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -distributor.otel-metric-suffixes-enabled
 [otel_metric_suffixes_enabled: <boolean> | default = false]
 
+# (experimental) Whether to enable translation of OTel start timestamps to
+# Prometheus zero samples in the OTLP endpoint.
+# CLI flag: -distributor.otel-created-timestamp-zero-ingestion-enabled
+[otel_created_timestamp_zero_ingestion_enabled: <boolean> | default = false]
+
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
 # CLI flag: -ingest-storage.read-consistency
