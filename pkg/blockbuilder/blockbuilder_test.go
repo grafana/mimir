@@ -100,7 +100,7 @@ func TestNextCycleEnd(t *testing.T) {
 			interval:   time.Hour,
 			buffer:     15 * time.Minute,
 			testFunc: func(t *testing.T, cycleEnd time.Time, wait time.Duration) {
-				wantCycleEnd, _ := time.Parse(time.TimeOnly, "14:15:00")
+				wantCycleEnd := mustTimeParse(t, time.TimeOnly, "14:15:00")
 				require.Equal(t, wantCycleEnd, cycleEnd)
 				require.Equal(t, 3*time.Minute, wait)
 			},
@@ -110,7 +110,7 @@ func TestNextCycleEnd(t *testing.T) {
 			interval:   time.Hour,
 			buffer:     15 * time.Minute,
 			testFunc: func(t *testing.T, cycleEnd time.Time, wait time.Duration) {
-				wantCycleEnd, _ := time.Parse(time.TimeOnly, "15:15:00")
+				wantCycleEnd := mustTimeParse(t, time.TimeOnly, "15:15:00")
 				require.Equal(t, wantCycleEnd, cycleEnd)
 				require.Equal(t, 58*time.Minute, wait)
 			},
@@ -120,7 +120,7 @@ func TestNextCycleEnd(t *testing.T) {
 			interval:   time.Hour,
 			buffer:     15 * time.Minute,
 			testFunc: func(t *testing.T, cycleEnd time.Time, wait time.Duration) {
-				wantCycleEnd, _ := time.Parse(time.TimeOnly, "15:15:00")
+				wantCycleEnd := mustTimeParse(t, time.TimeOnly, "15:15:00")
 				require.Equal(t, wantCycleEnd, cycleEnd)
 				require.Equal(t, 28*time.Minute, wait)
 			},
@@ -130,7 +130,7 @@ func TestNextCycleEnd(t *testing.T) {
 			interval:   30 * time.Minute,
 			buffer:     time.Minute,
 			testFunc: func(t *testing.T, cycleEnd time.Time, wait time.Duration) {
-				wantCycleEnd, _ := time.Parse(time.TimeOnly, "14:31:00")
+				wantCycleEnd := mustTimeParse(t, time.TimeOnly, "14:31:00")
 				require.Equal(t, wantCycleEnd, cycleEnd)
 				require.Equal(t, 19*time.Minute, wait)
 			},
@@ -140,7 +140,7 @@ func TestNextCycleEnd(t *testing.T) {
 			interval:   30 * time.Minute,
 			buffer:     time.Minute,
 			testFunc: func(t *testing.T, cycleEnd time.Time, wait time.Duration) {
-				wantCycleEnd, _ := time.Parse(time.TimeOnly, "15:01:00")
+				wantCycleEnd := mustTimeParse(t, time.TimeOnly, "15:01:00")
 				require.Equal(t, wantCycleEnd, cycleEnd)
 				require.Equal(t, 29*time.Minute, wait)
 			},
@@ -150,12 +150,17 @@ func TestNextCycleEnd(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("now=%s/%s+%s", tc.nowTimeStr, tc.interval, tc.buffer), func(t *testing.T) {
 			nowFunc := func() time.Time {
-				now, _ := time.Parse(time.TimeOnly, tc.nowTimeStr)
-				require.False(t, now.IsZero())
-				return now
+				return mustTimeParse(t, time.TimeOnly, tc.nowTimeStr)
 			}
 			cycleEnd, wait := nextCycleEnd(nowFunc, tc.interval, tc.buffer)
 			tc.testFunc(t, cycleEnd, wait)
 		})
 	}
+}
+
+func mustTimeParse(t *testing.T, layout, v string) time.Time {
+	ts, err := time.Parse(layout, v)
+	require.NoError(t, err)
+	require.False(t, ts.IsZero())
+	return ts
 }
