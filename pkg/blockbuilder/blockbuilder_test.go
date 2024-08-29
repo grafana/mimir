@@ -88,6 +88,71 @@ func TestBlockBuilder_NextConsumeCycle(t *testing.T) {
 	`), "cortex_blockbuilder_consumer_lag_records"))
 }
 
+func TestCycleEndAtStartup(t *testing.T) {
+	testCases := []struct {
+		nowTimeStr string
+		interval   time.Duration
+		buffer     time.Duration
+		testFunc   func(t *testing.T, cycleEnd time.Time)
+	}{
+		{
+			nowTimeStr: "14:12:00",
+			interval:   time.Hour,
+			buffer:     15 * time.Minute,
+			testFunc: func(t *testing.T, cycleEnd time.Time) {
+				wantCycleEnd := mustTimeParse(t, time.TimeOnly, "13:15:00")
+				require.Equal(t, wantCycleEnd, cycleEnd)
+			},
+		},
+		{
+			nowTimeStr: "14:16:00",
+			interval:   time.Hour,
+			buffer:     15 * time.Minute,
+			testFunc: func(t *testing.T, cycleEnd time.Time) {
+				wantCycleEnd := mustTimeParse(t, time.TimeOnly, "14:15:00")
+				require.Equal(t, wantCycleEnd, cycleEnd)
+			},
+		},
+		{
+			nowTimeStr: "14:50:00",
+			interval:   time.Hour,
+			buffer:     15 * time.Minute,
+			testFunc: func(t *testing.T, cycleEnd time.Time) {
+				wantCycleEnd := mustTimeParse(t, time.TimeOnly, "14:15:00")
+				require.Equal(t, wantCycleEnd, cycleEnd)
+			},
+		},
+		{
+			nowTimeStr: "14:12:00",
+			interval:   30 * time.Minute,
+			buffer:     time.Minute,
+			testFunc: func(t *testing.T, cycleEnd time.Time) {
+				wantCycleEnd := mustTimeParse(t, time.TimeOnly, "14:01:00")
+				require.Equal(t, wantCycleEnd, cycleEnd)
+			},
+		},
+		{
+			nowTimeStr: "14:32:00",
+			interval:   30 * time.Minute,
+			buffer:     time.Minute,
+			testFunc: func(t *testing.T, cycleEnd time.Time) {
+				wantCycleEnd := mustTimeParse(t, time.TimeOnly, "14:31:00")
+				require.Equal(t, wantCycleEnd, cycleEnd)
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("now=%s/%s+%s", tc.nowTimeStr, tc.interval, tc.buffer), func(t *testing.T) {
+			nowFunc := func() time.Time {
+				return mustTimeParse(t, time.TimeOnly, tc.nowTimeStr)
+			}
+			cycleEnd := cycleEndAtStartup(nowFunc, tc.interval, tc.buffer)
+			tc.testFunc(t, cycleEnd)
+		})
+	}
+}
+
 func TestNextCycleEnd(t *testing.T) {
 	testCases := []struct {
 		nowTimeStr string
