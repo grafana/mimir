@@ -400,7 +400,7 @@ func (p *parallelStorageShards) ShardWriteRequest(ctx context.Context, request *
 
 	wg.Wait()
 
-	// now that we have all the errors collected, we'll need to re-open the errors channel so that hte next run can still collect errors.
+	// now that we have all the errors collected, we'll need to re-open the errors channel so that the next run can still collect errors.
 	p.errs = make(chan error, p.numShards)
 
 	// Return whatever errors we have now, we'll call stop eventually and collect the rest.
