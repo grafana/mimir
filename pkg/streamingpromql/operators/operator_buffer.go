@@ -18,8 +18,10 @@ type InstantVectorOperatorBuffer struct {
 	source          types.InstantVectorOperator
 	nextIndexToRead int
 
-	// If seriesUsed[i] == true, then the series at index i is needed for this operation and should be buffered if not used immediately.
-	// If seriesUsed[i] == false, then the series at index i is never used and can be immediately discarded.
+	// If seriesUsed == nil, then all series are needed for this operation and should be buffered if not used immediately.
+	// Otherwise:
+	//  - If seriesUsed[i] == true, then the series at index i is needed for this operation and should be buffered if not used immediately.
+	//  - If seriesUsed[i] == false, then the series at index i is never used and can be immediately discarded.
 	// FIXME: could use a bitmap here to save some memory
 	seriesUsed []bool
 
@@ -71,7 +73,7 @@ func (b *InstantVectorOperatorBuffer) getSingleSeries(ctx context.Context, serie
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		if b.seriesUsed[b.nextIndexToRead] {
+		if b.seriesUsed == nil || b.seriesUsed[b.nextIndexToRead] {
 			// We need this series later, but not right now. Store it for later.
 			b.buffer[b.nextIndexToRead] = d
 		} else {

@@ -109,6 +109,12 @@ type FunctionOverRangeVector struct {
 	// If SeriesMetadataFunc is nil, the input series are used as-is.
 	SeriesMetadataFunc SeriesMetadataFunction
 
+	// NeedsSeriesDeduplication enables deduplication and merging of output series with the same labels.
+	//
+	// This should be set to true if SeriesMetadataFunc modifies the input series labels in such a way that duplicates may be
+	// present in the output series labels (eg. dropping a label).
+	NeedsSeriesDeduplication bool
+
 	// NeedsSeriesNamesForAnnotations indicates that this function uses the names of input series when emitting annotations.
 	NeedsSeriesNamesForAnnotations bool
 }

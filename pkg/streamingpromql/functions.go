@@ -37,7 +37,8 @@ type ScalarFunctionOperatorFactory func(
 //   - name: The name of the function
 //   - metadataFunc: The function for handling metadata
 //   - seriesDataFunc: The function to handle series data
-func SingleInputVectorFunctionOperatorFactory(name string, metadataFunc functions.SeriesMetadataFunction, seriesDataFunc functions.InstantVectorFunction) InstantVectorFunctionOperatorFactory {
+//   - needsSeriesDeduplication: Set to true if metadataFunc may produce multiple series with the same labels and therefore deduplication is required
+func SingleInputVectorFunctionOperatorFactory(name string, metadataFunc functions.SeriesMetadataFunction, seriesDataFunc functions.InstantVectorFunction, needsSeriesDeduplication bool) InstantVectorFunctionOperatorFactory {
 	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange) (types.InstantVectorOperator, error) {
 		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
@@ -50,7 +51,13 @@ func SingleInputVectorFunctionOperatorFactory(name string, metadataFunc function
 			return nil, fmt.Errorf("expected an instant vector argument for %s, got %T", name, args[0])
 		}
 
-		return operators.NewFunctionOverInstantVector(inner, memoryConsumptionTracker, metadataFunc, seriesDataFunc, expressionPosition), nil
+		var o types.InstantVectorOperator = operators.NewFunctionOverInstantVector(inner, memoryConsumptionTracker, metadataFunc, seriesDataFunc, expressionPosition)
+
+		if needsSeriesDeduplication {
+			o = operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
+		}
+
+		return o, nil
 	}
 }
 
@@ -61,7 +68,7 @@ func SingleInputVectorFunctionOperatorFactory(name string, metadataFunc function
 //   - name: The name of the function
 //   - seriesDataFunc: The function to handle series data
 func InstantVectorTransformationFunctionOperatorFactory(name string, seriesDataFunc functions.InstantVectorFunction) InstantVectorFunctionOperatorFactory {
-	return SingleInputVectorFunctionOperatorFactory(name, functions.DropSeriesName, seriesDataFunc)
+	return SingleInputVectorFunctionOperatorFactory(name, functions.DropSeriesName, seriesDataFunc, true)
 }
 
 // InstantVectorLabelManipulationFunctionOperatorFactory creates an InstantVectorFunctionOperator for functions
@@ -72,8 +79,9 @@ func InstantVectorTransformationFunctionOperatorFactory(name string, seriesDataF
 // Parameters:
 //   - name: The name of the function
 //   - metadataFunc: The function for handling metadata
-func InstantVectorLabelManipulationFunctionOperatorFactory(name string, metadataFunc functions.SeriesMetadataFunction) InstantVectorFunctionOperatorFactory {
-	return SingleInputVectorFunctionOperatorFactory(name, metadataFunc, functions.PassthroughData)
+//   - needsSeriesDeduplication: Set to true if metadataFunc may produce multiple series with the same labels and therefore deduplication is required
+func InstantVectorLabelManipulationFunctionOperatorFactory(name string, metadataFunc functions.SeriesMetadataFunction, needsSeriesDeduplication bool) InstantVectorFunctionOperatorFactory {
+	return SingleInputVectorFunctionOperatorFactory(name, metadataFunc, functions.PassthroughData, needsSeriesDeduplication)
 }
 
 // FunctionOverRangeVectorOperatorFactory creates an InstantVectorFunctionOperatorFactory for functions
@@ -98,7 +106,13 @@ func FunctionOverRangeVectorOperatorFactory(
 			return nil, fmt.Errorf("expected a range vector argument for %s, got %T", name, args[0])
 		}
 
-		return operators.NewFunctionOverRangeVector(inner, memoryConsumptionTracker, f, annotations, expressionPosition), nil
+		var o types.InstantVectorOperator = operators.NewFunctionOverRangeVector(inner, memoryConsumptionTracker, f, annotations, expressionPosition)
+
+		if f.NeedsSeriesDeduplication {
+			o = operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
+		}
+
+		return o, nil
 	}
 }
 
