@@ -49,6 +49,8 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Flush chunks / blocks](#flush-chunks--blocks) | Ingester | `GET,POST /ingester/flush` |
 | [Prepare for Shutdown](#prepare-for-shutdown) | Ingester | `GET,POST,DELETE /ingester/prepare-shutdown` |
 | [Shutdown](#shutdown) | Ingester | `POST /ingester/shutdown` |
+| [Prepare Partition Downscale](#prepare-partition-downscale) | Ingester | `GET,POST,DELETE /ingester/prepare-partition-downscale` |
+| [Prepare Instance Ring Downscale](#prepare-instance-ring-dowscale) | Ingester | `GET,POST,DELETE /ingester/prepare-instance-ring-downscale` |
 | [Ingesters ring status](#ingesters-ring-status) | Distributor,Ingester | `GET /ingester/ring` |
 | [Ingester tenants](#ingester-tenants) | Ingester | `GET /ingester/tenants` |
 | [Ingester tenant TSDB](#ingester-tenant-tsdb) | Ingester | `GET /ingester/tsdb/{tenant}` |
@@ -419,6 +421,42 @@ During this time, `/ready` does not return 200.
 This endpoint unregisters the ingester from the ring even if you disable `-ingester.ring.unregister-on-shutdown`.
 
 This API endpoint is usually used by scale down automations.
+
+### Prepare Partition Downscale
+
+```
+GET,POST,DELETE /ingester/prepare-partition-downscale
+```
+
+This endpoint prepares the ingester's partition for downscaling by setting it to `INACTIVE` state.
+
+A `GET` call to this endpoint returns timestamp when partition was switched to `INACTIVE` state, or 0, if partition is not in `INACTIVE` state.
+
+A `POST` call switches this ingester's partition to `INACTIVE` state (if it isn't `INACTIVE` yet), and returns the timestamp when the switch to `INACTIVE` state happened.
+
+A `DELETE` sets partition back from `INACTIVE` to `ACTIVE` state.
+
+If ingester is not configured to use with ingest-storage, any call to this endpoint fails.
+
+This API endpoint is usually used by scale down automation, e.g. rollout-operator.
+
+### Prepare Instance Ring Downscale
+
+```
+GET,POST,DELETE /ingester/prepare-instance-ring-downscale
+```
+
+This endpoint prepares the ingester for downscaling by setting it to read-only mode.
+
+A `GET` call to this endpoint returns timestamp when the ingester was switched to read-only mode, or 0, if ingester is not in the read-only mode.
+
+A `POST` call switches this ingester's partition to read-only mode, if it isn't yet, and returns the timestamp when the switch to read-only mode happened.
+
+A `DELETE` sets the ingester back to read-write mode.
+
+If ingester is configured to use ingest-storage, any call to this endpoint fails.
+
+This API endpoint is usually used by scale down automation, e.g. rollout-operator.
 
 ### Prepare for unregister
 
