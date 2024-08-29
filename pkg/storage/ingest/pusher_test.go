@@ -6,7 +6,9 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
@@ -392,8 +394,7 @@ func (m *mockPusher) PushToStorage(ctx context.Context, request *mimirpb.WriteRe
 	return args.Error(0)
 }
 
-func TestShardingPusher(t *testing.T) {
-	t.Skipf("skipping because this is producing different results on the CI than locally because of the Prometheus label hashing")
+func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 	noopHistogram := promauto.With(prometheus.NewRegistry()).NewHistogram(prometheus.HistogramOpts{Name: "noop", NativeHistogramBucketFactor: 1.1})
 
 	testCases := map[string]struct {
@@ -601,14 +602,14 @@ func TestShardingPusher(t *testing.T) {
 			pusher := &mockPusher{}
 			// run with a buffer of one, so some of the tests can fill the buffer and test the error handling
 			const buffer = 1
-			shardingP := newShardingPusher(noopHistogram, tc.shardCount, tc.batchSize, buffer, pusher)
+			shardingP := newParallelStorageShards(noopHistogram, tc.shardCount, tc.batchSize, buffer, pusher)
 
 			for i, req := range tc.expectedUpstreamPushes {
 				pusher.On("PushToStorage", mock.Anything, req).Return(tc.upstreamPushErrs[i])
 			}
 			var actualPushErrs []error
 			for _, req := range tc.requests {
-				err := shardingP.PushToStorage(context.Background(), req)
+				err := shardingP.ShardWriteRequest(context.Background(), req)
 				actualPushErrs = append(actualPushErrs, err)
 			}
 
@@ -624,10 +625,127 @@ func TestShardingPusher(t *testing.T) {
 				assert.Equalf(t, tc.expectedErrsCount, receivedErrs, "received %d errors instead of %d: %v", receivedErrs, tc.expectedErrsCount, actualPushErrs)
 			}
 
-			closeErr := shardingP.close()
+			closeErr := shardingP.Stop()
 			assert.ErrorIs(t, closeErr, tc.expectedCloseErr)
 			pusher.AssertNumberOfCalls(t, "PushToStorage", len(tc.expectedUpstreamPushes))
 			pusher.AssertExpectations(t)
 		})
 	}
+}
+
+func TestBatchingQueue(t *testing.T) {
+	capacity := 5
+	batchSize := 3
+
+	series1 := mockPreallocTimeseries("series_1")
+	series2 := mockPreallocTimeseries("series_2")
+
+	series := []mimirpb.PreallocTimeseries{series1, series2}
+
+	t.Run("batch not flushed because batch size is 3 and we have 2 items in the queue", func(t *testing.T) {
+		queue := setupQueue(t, capacity, batchSize, series)
+
+		select {
+		case <-queue.Channel():
+			t.Fatal("expected batch to not be flushed")
+		case <-time.After(100 * time.Millisecond):
+		}
+	})
+
+	t.Run("batch flushed because batch size is 3 and we have 3 items in the queue", func(t *testing.T) {
+		queue := setupQueue(t, capacity, batchSize, series)
+
+		series3 := mockPreallocTimeseries("series_3")
+		queue.AddToBatch(context.Background(), series3)
+
+		select {
+		case batch := <-queue.Channel():
+			require.Len(t, batch.WriteRequest.Timeseries, 3)
+			require.Equal(t, series1, batch.WriteRequest.Timeseries[0])
+			require.Equal(t, series2, batch.WriteRequest.Timeseries[1])
+			require.Equal(t, series3, batch.WriteRequest.Timeseries[2])
+		case <-time.After(time.Second):
+			t.Fatal("expected batch to be flushed")
+		}
+
+		// after the batch is flushed, the queue should be empty.
+		require.Len(t, queue.currentBatch.Timeseries, 0)
+	})
+
+	t.Run("if you close the queue with items in the queue, the queue should flush the items", func(t *testing.T) {
+		queue := setupQueue(t, capacity, batchSize, series)
+
+		// Channel is empty.
+		select {
+		case <-queue.Channel():
+			t.Fatal("expected batch to not be flushed")
+		case <-time.After(100 * time.Millisecond):
+		}
+
+		// Read in a separate goroutine as when we close the queue, the channel will be closed.
+		var batch FlushableWriteRequest
+		wg := sync.WaitGroup{}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for b := range queue.Channel() {
+				batch = b
+			}
+		}()
+
+		// Close the queue, and the items should be flushed.
+		queue.Close()
+		wg.Wait()
+
+		require.Len(t, batch.WriteRequest.Timeseries, 2)
+		require.Equal(t, series1, batch.WriteRequest.Timeseries[0])
+		require.Equal(t, series2, batch.WriteRequest.Timeseries[1])
+	})
+
+	t.Run("test queue capacity", func(t *testing.T) {
+		queue := setupQueue(t, capacity, batchSize, nil)
+
+		// Queue channel is empty because there are only 2 items in the current currentBatch.
+		require.Len(t, queue.ch, 0)
+		require.Len(t, queue.currentBatch.Timeseries, 0)
+
+		// Add items to the queue until it's full.
+		for i := 0; i < capacity*batchSize; i++ {
+			s := mockPreallocTimeseries(fmt.Sprintf("series_%d", i))
+			queue.AddToBatch(context.Background(), s)
+		}
+
+		// We should have 5 items in the queue channel and 0 items in the currentBatch.
+		require.Len(t, queue.ch, 5)
+		require.Len(t, queue.currentBatch.Timeseries, 0)
+
+		// Read one item to free up a queue space.
+		batch := <-queue.Channel()
+		require.Len(t, batch.WriteRequest.Timeseries, 3)
+
+		// Queue should have 4 items now and the currentBatch remains the same.
+		require.Len(t, queue.ch, 4)
+		require.Len(t, queue.currentBatch.Timeseries, 0)
+
+		// Add three more items to fill up the queue again, this shouldn't block.
+		s := mockPreallocTimeseries("series_100")
+		queue.AddToBatch(context.Background(), s)
+		queue.AddToBatch(context.Background(), s)
+		queue.AddToBatch(context.Background(), s)
+
+		require.Len(t, queue.ch, 5)
+		require.Len(t, queue.currentBatch.Timeseries, 0)
+	})
+}
+
+func setupQueue(t *testing.T, capacity, batchSize int, series []mimirpb.PreallocTimeseries) *BatchingQueue {
+	t.Helper()
+
+	queue := NewBatchingQueue(capacity, batchSize)
+
+	for _, s := range series {
+		queue.AddToBatch(context.Background(), s)
+	}
+
+	return queue
 }

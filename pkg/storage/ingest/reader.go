@@ -35,7 +35,6 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.uber.org/atomic"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -60,8 +59,6 @@ type record struct {
 }
 
 type recordConsumer interface {
-	Close(context.Context) error
-
 	// Consume consumes the given records in the order they are provided. We need this as samples that will be ingested,
 	// are also needed to be in order to avoid ingesting samples out of order.
 	// The function is expected to be idempotent and incremental, meaning that it can be called multiple times with the same records, and it won't respond to context cancellation.
@@ -101,28 +98,6 @@ type consumerFactoryFunc func() recordConsumer
 
 func (c consumerFactoryFunc) consumer() recordConsumer {
 	return c()
-}
-
-type noopPusherCloser struct {
-	metrics *pusherConsumerMetrics
-
-	Pusher
-}
-
-func newNoopPusherCloser(metrics *pusherConsumerMetrics, pusher Pusher) noopPusherCloser {
-	return noopPusherCloser{
-		metrics: metrics,
-		Pusher:  pusher,
-	}
-}
-
-func (c noopPusherCloser) PushToStorage(ctx context.Context, wr *mimirpb.WriteRequest) error {
-	c.metrics.numTimeSeriesPerFlush.Observe(float64(len(wr.Timeseries)))
-	return c.Pusher.PushToStorage(ctx, wr)
-}
-
-func (noopPusherCloser) Close() []error {
-	return nil
 }
 
 func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instanceID string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
@@ -495,10 +470,7 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		consumeCtx := context.WithoutCancel(ctx)
 		err := consumer.Consume(consumeCtx, records)
 		if err == nil {
-			err = consumer.Close(consumeCtx)
-			if err == nil {
-				break
-			}
+			break
 		}
 		level.Error(r.logger).Log(
 			"msg", "encountered error while ingesting data from Kafka; should retry",
