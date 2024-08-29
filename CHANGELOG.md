@@ -203,6 +203,8 @@
 * [ENHANCEMENT] Specify in which component the configuration flags `-compactor.blocks-retention-period`, `-querier.max-query-lookback`, `-query-frontend.max-total-query-length`, `-query-frontend.max-query-expression-size-bytes` are applied and that they are applied to remote read as well. #8433
 * [ENHANCEMENT] Provide more detailed recommendations on how to migrate from classic to native histograms. #8864
 * [ENHANCEMENT] Clarify that `{namespace}` and `{groupName}` path segments in the ruler config API should be URL-escaped. #8969
+* [ENHANCEMENT] Document `/ingester/prepare-partition-downscale` and `/ingester/prepare-instance-ring-downscale` endpoints. #9132
+* [ENHANCEMENT] Describe read-only mode of ingesters in component documentation. #9132
 
 ### Tools
 
