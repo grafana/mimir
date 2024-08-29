@@ -136,8 +136,7 @@ func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context) (map[int32]kgo.
 	admClient := kadm.NewClient(cl)
 
 	// Fallback offset is the millisecond timestamp used to look up a real offset if partition doesn't have a commit.
-	ts := time.Now().Add(-b.cfg.LookbackOnNoCommit)
-	fallbackOffsetMillis := ts.UnixMilli()
+	fallbackOffsetMillis := time.Now().Add(-b.cfg.LookbackOnNoCommit).UnixMilli()
 	defaultKOffset := kgo.NewOffset().AfterMilli(fallbackOffsetMillis)
 
 	fetchOffsets := func(ctx context.Context) (offsets map[int32]kgo.Offset, err error) {
@@ -211,7 +210,7 @@ func (b *BlockBuilder) stopping(_ error) error {
 
 func (b *BlockBuilder) running(ctx context.Context) error {
 	// Do initial consumption on start using current time as the point up to which we are consuming.
-	// To avoid small blocks at startup, we consume until the last hour boundary + buffer.
+	// To avoid small blocks at startup, we consume until the <consume interval> boundary + buffer.
 	cycleEnd := cycleEndAtStartup(time.Now, b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
 	err := b.NextConsumeCycle(ctx, cycleEnd)
 	if err != nil {
@@ -257,8 +256,9 @@ func nextCycleEnd(now func() time.Time, interval, buffer time.Duration) (time.Ti
 	cycleEnd := t.Truncate(interval).Add(interval + buffer)
 	waitTime := cycleEnd.Sub(t)
 	for waitTime > interval {
-		// NB: at now=14:12, next cycle starts at 14:15 (startup cycle ended at 13:15)
-		//     at now=14:17, next cycle starts at 15:15 (startup cycle ended at 14:15)
+		// Example - with interval=1h and buffer=15m:
+		// - at now=14:12, next cycle starts at 14:15 (startup cycle ended at 13:15)
+		// - at now=14:17, next cycle starts at 15:15 (startup cycle ended at 14:15)
 		cycleEnd = cycleEnd.Add(-interval)
 		waitTime -= interval
 	}
