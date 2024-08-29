@@ -1070,10 +1070,14 @@ func (r *concurrentFetchers) runFetchers(ctx context.Context, startOffset int64)
 	}
 }
 
+type waiter interface {
+	Wait()
+}
+
 // handleKafkaFetchErr handles all the errors listed in the franz-go documentation as possible errors when fetching records.
 // For most of them we just apply a backoff. They are listed here so we can be explicit in what we're handling and how.
 // It may also return an adjusted fetchWant in case the error indicated, we were consuming not yet produced records or records already deleted due to retention.
-func handleKafkaFetchErr(fr fetchResult, fw fetchWant, shortBackoff, longBackoff *backoff.Backoff, logger log.Logger) fetchWant {
+func handleKafkaFetchErr(fr fetchResult, fw fetchWant, shortBackoff, longBackoff waiter, logger log.Logger) fetchWant {
 	err := fr.Err
 	switch {
 	case err == nil:
@@ -1091,13 +1095,12 @@ func handleKafkaFetchErr(fr fetchResult, fw fetchWant, shortBackoff, longBackoff
 			}
 			// Only some of the offsets of our want are out of range, so let's fast-forward.
 			fw.startOffset = fr.LogStartOffset
+		} else {
 			// If the broker is behind or if we are requesting offsets which have not yet been produced, we end up here.
 			// We set a MaxWaitMillis on fetch requests, but even then there may be no records for some time.
 			// Wait for a short time to allow the broker to catch up or for new records to be produced.
 			shortBackoff.Wait()
 		}
-		// If the broker is behind or if we are requesting offsets which have not yet been produced, we end up here.
-		// In these cases we can continue fetching from the same offset because it should eventually become available.
 	case errors.Is(err, kerr.TopicAuthorizationFailed):
 		longBackoff.Wait()
 	case errors.Is(err, kerr.UnknownTopicOrPartition):
