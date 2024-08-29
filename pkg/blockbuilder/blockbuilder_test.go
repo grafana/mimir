@@ -5,6 +5,7 @@ package blockbuilder
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -85,4 +86,76 @@ func TestBlockBuilder_NextConsumeCycle(t *testing.T) {
 		cortex_blockbuilder_consumer_lag_records{partition="0",topic="test"} 1
 		cortex_blockbuilder_consumer_lag_records{partition="1",topic="test"} 0
 	`), "cortex_blockbuilder_consumer_lag_records"))
+}
+
+func TestNextCycleEnd(t *testing.T) {
+	testCases := []struct {
+		nowTimeStr string
+		interval   time.Duration
+		buffer     time.Duration
+		testFunc   func(t *testing.T, cycleEnd time.Time, wait time.Duration)
+	}{
+		{
+			nowTimeStr: "14:12:00",
+			interval:   time.Hour,
+			buffer:     15 * time.Minute,
+			testFunc: func(t *testing.T, cycleEnd time.Time, wait time.Duration) {
+				wantCycleEnd, _ := time.Parse(time.TimeOnly, "14:15:00")
+				require.Equal(t, wantCycleEnd, cycleEnd)
+				require.Equal(t, 3*time.Minute, wait)
+			},
+		},
+		{
+			nowTimeStr: "14:17:00",
+			interval:   time.Hour,
+			buffer:     15 * time.Minute,
+			testFunc: func(t *testing.T, cycleEnd time.Time, wait time.Duration) {
+				wantCycleEnd, _ := time.Parse(time.TimeOnly, "15:15:00")
+				require.Equal(t, wantCycleEnd, cycleEnd)
+				require.Equal(t, 58*time.Minute, wait)
+			},
+		},
+		{
+			nowTimeStr: "14:47:00",
+			interval:   time.Hour,
+			buffer:     15 * time.Minute,
+			testFunc: func(t *testing.T, cycleEnd time.Time, wait time.Duration) {
+				wantCycleEnd, _ := time.Parse(time.TimeOnly, "15:15:00")
+				require.Equal(t, wantCycleEnd, cycleEnd)
+				require.Equal(t, 28*time.Minute, wait)
+			},
+		},
+		{
+			nowTimeStr: "14:12:00",
+			interval:   30 * time.Minute,
+			buffer:     time.Minute,
+			testFunc: func(t *testing.T, cycleEnd time.Time, wait time.Duration) {
+				wantCycleEnd, _ := time.Parse(time.TimeOnly, "14:31:00")
+				require.Equal(t, wantCycleEnd, cycleEnd)
+				require.Equal(t, 19*time.Minute, wait)
+			},
+		},
+		{
+			nowTimeStr: "14:32:00",
+			interval:   30 * time.Minute,
+			buffer:     time.Minute,
+			testFunc: func(t *testing.T, cycleEnd time.Time, wait time.Duration) {
+				wantCycleEnd, _ := time.Parse(time.TimeOnly, "15:01:00")
+				require.Equal(t, wantCycleEnd, cycleEnd)
+				require.Equal(t, 29*time.Minute, wait)
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("now=%s/%s+%s", tc.nowTimeStr, tc.interval, tc.buffer), func(t *testing.T) {
+			nowFunc := func() time.Time {
+				now, _ := time.Parse(time.TimeOnly, tc.nowTimeStr)
+				require.False(t, now.IsZero())
+				return now
+			}
+			cycleEnd, wait := nextCycleEnd(nowFunc, tc.interval, tc.buffer)
+			tc.testFunc(t, cycleEnd, wait)
+		})
+	}
 }

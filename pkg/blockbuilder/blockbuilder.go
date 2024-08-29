@@ -220,7 +220,7 @@ func (b *BlockBuilder) stopping(_ error) error {
 func (b *BlockBuilder) running(ctx context.Context) error {
 	// Do initial consumption on start using current time as the point up to which we are consuming.
 	// To avoid small blocks at startup, we consume until the last hour boundary + buffer.
-	cycleEnd := cycleEndAtStartup(b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
+	cycleEnd := cycleEndAtStartup(time.Now, b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
 	err := b.NextConsumeCycle(ctx, cycleEnd)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -229,19 +229,10 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 		return err
 	}
 
-	nextCycleTime := time.Now().Truncate(b.cfg.ConsumeInterval).Add(b.cfg.ConsumeInterval + b.cfg.ConsumeIntervalBuffer)
-	waitTime := time.Until(nextCycleTime)
-	for waitTime > b.cfg.ConsumeInterval {
-		// NB: at now=14:12, next cycle starts at 14:15 (startup cycle ended at 13:15)
-		//     at now=14:17, next cycle starts at 15:15 (startup cycle ended at 14:15)
-		nextCycleTime = nextCycleTime.Add(-b.cfg.ConsumeInterval)
-		waitTime -= b.cfg.ConsumeInterval
-	}
-
+	cycleEnd, waitDur := nextCycleEnd(time.Now, b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
 	for {
 		select {
-		case <-time.After(waitTime):
-			cycleEnd := nextCycleTime
+		case <-time.After(waitDur):
 			level.Info(b.logger).Log("msg", "triggering next consume cycle", "cycle_end", cycleEnd)
 			err := b.NextConsumeCycle(ctx, cycleEnd)
 			if err != nil && !errors.Is(err, context.Canceled) {
@@ -250,9 +241,9 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 			}
 
 			// If we took more than ConsumeInterval to consume the records, this will immediately start the next consumption.
-			// TODO(codesome): track waitTime < 0, which is the time we ran over. Should have an alert on this.
-			nextCycleTime = nextCycleTime.Add(b.cfg.ConsumeInterval)
-			waitTime = time.Until(nextCycleTime)
+			// TODO(codesome): track waitDur < 0, which is the time we ran over. Should have an alert on this.
+			cycleEnd = cycleEnd.Add(b.cfg.ConsumeInterval)
+			waitDur = time.Until(cycleEnd)
 		case <-ctx.Done():
 			level.Info(b.logger).Log("msg", "context cancelled, stopping")
 			return nil
@@ -260,12 +251,26 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 	}
 }
 
-func cycleEndAtStartup(interval, buffer time.Duration) time.Time {
-	cycleEnd := time.Now().Truncate(interval).Add(buffer)
-	if cycleEnd.After(time.Now()) {
+func cycleEndAtStartup(now func() time.Time, interval, buffer time.Duration) time.Time {
+	t := now()
+	cycleEnd := t.Truncate(interval).Add(buffer)
+	if cycleEnd.After(t) {
 		cycleEnd = cycleEnd.Add(-interval)
 	}
 	return cycleEnd
+}
+
+func nextCycleEnd(now func() time.Time, interval, buffer time.Duration) (time.Time, time.Duration) {
+	t := now()
+	cycleEnd := t.Truncate(interval).Add(interval + buffer)
+	waitTime := cycleEnd.Sub(t)
+	for waitTime > interval {
+		// NB: at now=14:12, next cycle starts at 14:15 (startup cycle ended at 13:15)
+		//     at now=14:17, next cycle starts at 15:15 (startup cycle ended at 14:15)
+		cycleEnd = cycleEnd.Add(-interval)
+		waitTime -= interval
+	}
+	return cycleEnd, waitTime
 }
 
 // NextConsumeCycle manages consumption of currently assigned partitions.
