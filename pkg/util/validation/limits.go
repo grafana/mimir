@@ -131,6 +131,7 @@ type Limits struct {
 	MaxGlobalMetadataPerMetric          int `yaml:"max_global_metadata_per_metric" json:"max_global_metadata_per_metric"`
 	// Exemplars
 	MaxGlobalExemplarsPerUser int `yaml:"max_global_exemplars_per_user" json:"max_global_exemplars_per_user" category:"experimental"`
+	IgnoreOOOExemplars				bool `yaml:"ignore_ooo_exemplars" json:"ignore_ooo_exemplars" category:"experimental"`
 	// Native histograms
 	NativeHistogramsIngestionEnabled bool `yaml:"native_histograms_ingestion_enabled" json:"native_histograms_ingestion_enabled" category:"experimental"`
 	// Active series custom trackers
@@ -271,6 +272,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, MaxMetadataPerUserFlag, 0, "The maximum number of in-memory metrics with metadata per tenant, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, MaxMetadataPerMetricFlag, 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalExemplarsPerUser, "ingester.max-global-exemplars-per-user", 0, "The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.")
+	f.BoolVar(&l.IgnoreOOOExemplars, "ingester.ignore-ooo-exemplars", false, "Whether to ignore exemplars with out-of-order timestamps. If enabled, exemplars with out-of-order timestamps are silently dropped, otherwise they cause partial errors.")
 	f.Var(&l.ActiveSeriesCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
 	f.Var(&l.OutOfOrderTimeWindow, "ingester.out-of-order-time-window", fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", false, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
@@ -737,6 +739,11 @@ func (o *Overrides) MaxGlobalMetadataPerMetric(userID string) int {
 // MaxGlobalExemplarsPerUser returns the maximum number of exemplars held in memory across the cluster.
 func (o *Overrides) MaxGlobalExemplarsPerUser(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalExemplarsPerUser
+}
+
+// IgnoreOOOExemplars returns whether to ignore out-of-order exemplars.
+func (o *Overrides) IgnoreOOOExemplars(userID string) bool {
+	return o.getOverridesForUser(userID).IgnoreOOOExemplars
 }
 
 func (o *Overrides) ActiveSeriesCustomTrackersConfig(userID string) activeseries.CustomTrackersConfig {

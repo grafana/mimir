@@ -3975,6 +3975,17 @@
         },
         {
           "kind": "field",
+          "name": "ignore_ooo_exemplars",
+          "required": false,
+          "desc": "Whether to ignore exemplars with out-of-order timestamps. If enabled, exemplars with out-of-order timestamps are silently dropped, otherwise they cause partial errors.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.ignore-ooo-exemplars",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "native_histograms_ingestion_enabled",
           "required": false,
           "desc": "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.",
