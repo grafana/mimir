@@ -56,9 +56,11 @@ type stubReplicator struct{}
 func (*stubReplicator) ReplicateStateForUser(context.Context, string, *clusterpb.Part) error {
 	return nil
 }
+
 func (*stubReplicator) GetPositionForUser(string) int {
 	return 0
 }
+
 func (*stubReplicator) ReadFullStateForUser(context.Context, string) ([]*clusterpb.FullState, error) {
 	return nil, nil
 }
@@ -80,7 +82,7 @@ func createAlertmanagerAndSendAlerts(t *testing.T, alertGroups, groupsLimit, exp
 		ReplicationFactor: 1,
 		// We have to set this interval non-zero, though we don't need the persister to do anything.
 		PersisterConfig: PersisterConfig{Interval: time.Hour},
-	}, reg)
+	}, reg, &url.URL{Path: "/am"})
 	require.NoError(t, err)
 	defer am.StopAndWait()
 
@@ -165,7 +167,7 @@ func TestDispatcherLoggerInsightKey(t *testing.T) {
 		Replicator:        &stubReplicator{},
 		ReplicationFactor: 1,
 		PersisterConfig:   PersisterConfig{Interval: time.Hour},
-	}, reg)
+	}, reg, &url.URL{Path: "/am"})
 	require.NoError(t, err)
 	defer am.StopAndWait()
 
@@ -371,7 +373,7 @@ func TestSilenceLimits(t *testing.T) {
 		// We have set this to 1 hour, but we don't use it in this
 		// test as we override the broadcast function with SetBroadcast.
 		PersisterConfig: PersisterConfig{Interval: time.Hour},
-	}, r)
+	}, r, &url.URL{Path: "/am"})
 	require.NoError(t, err)
 	defer am.StopAndWait()
 
@@ -508,7 +510,7 @@ func TestExperimentalReceiversAPI(t *testing.T) {
 		Replicator:        &stubReplicator{},
 		ReplicationFactor: 1,
 		PersisterConfig:   PersisterConfig{Interval: time.Hour},
-	}, reg)
+	}, reg, &url.URL{Path: "/am"})
 	require.NoError(t, err)
 	defer am.StopAndWait()
 
