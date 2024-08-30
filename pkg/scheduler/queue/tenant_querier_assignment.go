@@ -471,7 +471,7 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(dequeueReq *DequeueReques
 		return node, checkedAllNodes
 	}
 
-	checkIndex := dequeueReq.lastTenantIndex.last
+	checkIndex := tqa.tenantOrderIndex
 
 	// iterate through the tenant order until we find a tenant that is assigned to the current querier, or
 	// have checked the entire tenantIDOrder, whichever comes first
