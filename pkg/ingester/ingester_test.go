@@ -984,7 +984,7 @@ func TestIngester_Push(t *testing.T) {
 			`,
 		},
 		"should succeed on new float series and an exemplar and an out of order exemplar but OOO exemplars are ignored": {
-			maxExemplars: 2,
+			maxExemplars:       2,
 			ignoreOOOExemplars: true,
 			reqs: []*mimirpb.WriteRequest{
 				{
@@ -1026,7 +1026,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: nil,  // Explicit to show that we expect no error due to ignoreOOOExemplars.
+			expectedErr: nil, // Explicit to show that we expect no error due to ignoreOOOExemplars.
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}}},
 			},
@@ -2100,8 +2100,8 @@ func TestIngester_Push(t *testing.T) {
 			`,
 		},
 		"should succeed on existing histogram series if all exemplars are out of order but OOO exemplars are ignored": {
-			maxExemplars:     2,
-			nativeHistograms: true,
+			maxExemplars:       2,
+			nativeHistograms:   true,
 			ignoreOOOExemplars: true,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
@@ -2143,7 +2143,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				),
 			},
-			expectedErr: nil,  // Explicit to show that we expect no error due to ignoreOOOExemplars.
+			expectedErr: nil, // Explicit to show that we expect no error due to ignoreOOOExemplars.
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
 					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: 9},
