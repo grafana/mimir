@@ -294,7 +294,7 @@ func TestCachingOffsetReader(t *testing.T) {
 
 	t.Run("should initialize with fetched offset", func(t *testing.T) {
 		ctx := context.Background()
-		mockFetch := func(ctx context.Context) (int64, error) {
+		mockFetch := func(context.Context) (int64, error) {
 			return 42, nil
 		}
 
@@ -312,7 +312,7 @@ func TestCachingOffsetReader(t *testing.T) {
 	t.Run("should cache error from initial fetch", func(t *testing.T) {
 		ctx := context.Background()
 		expectedErr := fmt.Errorf("fetch error")
-		mockFetch := func(ctx context.Context) (int64, error) {
+		mockFetch := func(context.Context) (int64, error) {
 			return 0, expectedErr
 		}
 
@@ -358,7 +358,7 @@ func TestCachingOffsetReader(t *testing.T) {
 
 	t.Run("should handle context cancellation", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
-		mockFetch := func(ctx context.Context) (int64, error) {
+		mockFetch := func(context.Context) (int64, error) {
 			return 42, nil
 		}
 
@@ -377,7 +377,7 @@ func TestCachingOffsetReader(t *testing.T) {
 
 	t.Run("should handle concurrent access", func(t *testing.T) {
 		ctx := context.Background()
-		mockFetch := func(ctx context.Context) (int64, error) {
+		mockFetch := func(context.Context) (int64, error) {
 			return 42, nil
 		}
 
