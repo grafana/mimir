@@ -403,7 +403,7 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 
 func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	converter := otlp.NewMimirConverter()
-	errs := converter.FromMetrics(ctx, md, otlp.Settings{
+	_, errs := converter.FromMetrics(ctx, md, otlp.Settings{
 		AddMetricSuffixes: addSuffixes,
 	})
 	mimirTS := converter.TimeSeries()
