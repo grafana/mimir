@@ -73,8 +73,8 @@ func TestKafkaGetGroupLag(t *testing.T) {
 		require.EqualValues(t, 0, getTopicPartitionLag(t, groupLag, testTopic, 2), "partition 2 has no data and must have no lag")
 	})
 
-	t.Run("fallbackOffset=start", func(t *testing.T) {
-		groupLag, err := getGroupLag(ctx, admClient, testTopic, testGroup, kafkaOffsetStart)
+	t.Run("fallbackOffset=0", func(t *testing.T) {
+		groupLag, err := getGroupLag(ctx, admClient, testTopic, testGroup, 0)
 		require.NoError(t, err)
 
 		require.EqualValues(t, 0, getTopicPartitionLag(t, groupLag, testTopic, 0), "partition 0 must have no lag")
@@ -82,17 +82,13 @@ func TestKafkaGetGroupLag(t *testing.T) {
 		require.EqualValues(t, 0, getTopicPartitionLag(t, groupLag, testTopic, 2), "partition 2 has no data and must have no lag")
 	})
 
-	t.Run("fallbackOffset=end", func(t *testing.T) {
-		groupLag, err := getGroupLag(ctx, admClient, testTopic, testGroup, kafkaOffsetEnd)
-		require.NoError(t, err)
-
-		require.EqualValues(t, 0, getTopicPartitionLag(t, groupLag, testTopic, 0), "partition 0 must have no lag")
-		require.EqualValues(t, 0, getTopicPartitionLag(t, groupLag, testTopic, 1), "partition 1 must fall back to the end and get no lag")
-		require.EqualValues(t, 0, getTopicPartitionLag(t, groupLag, testTopic, 2), "partition 2 has no data and must have no lag")
+	t.Run("fallbackOffset=wrong", func(t *testing.T) {
+		_, err := getGroupLag(ctx, admClient, testTopic, testGroup, -1)
+		require.Error(t, err)
 	})
 
 	t.Run("group=unknown", func(t *testing.T) {
-		groupLag, err := getGroupLag(ctx, admClient, testTopic, "unknown", kafkaOffsetStart)
+		groupLag, err := getGroupLag(ctx, admClient, testTopic, "unknown", 0)
 		require.NoError(t, err)
 
 		// This group doesn't have any commits, so it must calc its lag from the fallback.
