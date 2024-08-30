@@ -451,7 +451,7 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) (*Node, bool)
 		return nil, true
 	}
 
-	checkedAllNodes := node.childrenChecked == len(node.queueMap)+1 // must check local queue as well
+	checkedAllNodes := node.childrenChecked == len(node.queueMap) // must check local queue as well
 
 	// advance queue position for dequeue
 	tqa.tenantOrderIndex++
@@ -484,7 +484,7 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) (*Node, bool)
 			continue
 		}
 
-		checkedAllNodes = node.childrenChecked == len(node.queueMap)+1
+		checkedAllNodes = node.childrenChecked == len(node.queueMap)
 
 		// if the tenant-querier set is nil, any querier can serve this tenant
 		if tqa.tenantQuerierIDs[tenantID] == nil {
