@@ -19,6 +19,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
@@ -453,7 +454,7 @@ func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
 					require.Equal(t, 200, recorder.Result().StatusCode)
 					require.Equal(t, []string{api.ContentTypeRemoteReadStreamedChunks}, recorder.Result().Header["Content-Type"])
 
-					stream := prom_remote.NewChunkedReader(recorder.Result().Body, prom_remote.DefaultChunkedReadLimit, nil)
+					stream := prom_remote.NewChunkedReader(recorder.Result().Body, config.DefaultChunkedReadLimit, nil)
 
 					i := 0
 					for {
