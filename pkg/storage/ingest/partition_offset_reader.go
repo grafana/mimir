@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.uber.org/atomic"
 )
 
 var (
@@ -112,8 +113,13 @@ type partitionOffsetReader struct {
 }
 
 func newPartitionOffsetReader(client *kgo.Client, topic string, partitionID int32, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *partitionOffsetReader {
+	offsetClient := newPartitionOffsetClient(client, topic, reg, logger)
+	return newPartitionOffsetReaderWithOffsetClient(offsetClient, partitionID, pollInterval, logger)
+}
+
+func newPartitionOffsetReaderWithOffsetClient(offsetClient *partitionOffsetClient, partitionID int32, pollInterval time.Duration, logger log.Logger) *partitionOffsetReader {
 	r := &partitionOffsetReader{
-		client:      newPartitionOffsetClient(client, topic, reg, logger),
+		client:      offsetClient,
 		partitionID: partitionID,
 		logger:      logger, // Do not wrap with partition ID because it's already done by the caller.
 	}
@@ -162,4 +168,59 @@ func NewTopicOffsetsReader(client *kgo.Client, topic string, pollInterval time.D
 // The offset is -1 if a partition has been created but no record has been produced yet.
 func (p *TopicOffsetsReader) FetchLastProducedOffset(ctx context.Context) (map[int32]int64, error) {
 	return p.client.FetchTopicLastProducedOffsets(ctx)
+}
+
+// cachingOffsetReader is like genericOffsetReader, but it caches the last returned offset so it can be read even if outdated.
+type cachingOffsetReader[O any] struct {
+	services.Service
+	genericReader *genericOffsetReader[O]
+
+	fetchOffset  func(context.Context) (O, error)
+	cachedOffset *atomic.Pointer[cachedOffset[O]]
+}
+
+type cachedOffset[O any] struct {
+	offset O
+	err    error
+}
+
+func (r cachingOffsetReader[O]) CachedOffset() (O, error) {
+	c := r.cachedOffset.Load()
+	return c.offset, c.err
+}
+
+func (r cachingOffsetReader[O]) start(ctx context.Context) error {
+	offset, err := r.fetchOffset(ctx)
+	r.cachedOffset.Store(&cachedOffset[O]{offset: offset, err: err})
+	return services.StartAndAwaitRunning(ctx, r.genericReader)
+}
+
+func (r cachingOffsetReader[O]) stop(_ error) error {
+	return services.StopAndAwaitTerminated(context.Background(), r.genericReader)
+}
+
+func (r cachingOffsetReader[O]) run(ctx context.Context) error {
+	for ctx.Err() == nil {
+		offset, err := r.genericReader.WaitNextFetchLastProducedOffset(ctx)
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
+		r.cachedOffset.Store(&cachedOffset[O]{offset: offset, err: err})
+	}
+	return nil
+}
+
+func newCachingOffsetReader[O any](fetchOffset func(context.Context) (O, error), pollInterval time.Duration, logger log.Logger) *cachingOffsetReader[O] {
+	genericReader := newGenericOffsetReader[O](fetchOffset, pollInterval, logger)
+
+	var zero cachedOffset[O]
+	p := &cachingOffsetReader[O]{
+		genericReader: genericReader,
+		fetchOffset:   fetchOffset,
+		cachedOffset:  atomic.NewPointer(&zero),
+	}
+
+	p.Service = services.NewBasicService(p.start, p.run, p.stop)
+
+	return p
 }

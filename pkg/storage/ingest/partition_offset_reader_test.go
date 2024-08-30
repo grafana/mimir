@@ -4,6 +4,7 @@ package ingest
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -285,5 +286,117 @@ func TestTopicOffsetsReader_WaitNextFetchLastProducedOffset(t *testing.T) {
 
 		_, err := reader.WaitNextFetchLastProducedOffset(canceledCtx)
 		assert.ErrorIs(t, err, context.Canceled)
+	})
+}
+
+func TestCachingOffsetReader(t *testing.T) {
+	logger := log.NewNopLogger()
+
+	t.Run("should initialize with fetched offset", func(t *testing.T) {
+		ctx := context.Background()
+		mockFetch := func(ctx context.Context) (int64, error) {
+			return 42, nil
+		}
+
+		reader := newCachingOffsetReader[int64](mockFetch, time.Second, logger)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+		})
+
+		offset, err := reader.CachedOffset()
+		assert.NoError(t, err)
+		assert.Equal(t, int64(42), offset)
+	})
+
+	t.Run("should cache error from initial fetch", func(t *testing.T) {
+		ctx := context.Background()
+		expectedErr := fmt.Errorf("fetch error")
+		mockFetch := func(ctx context.Context) (int64, error) {
+			return 0, expectedErr
+		}
+
+		reader := newCachingOffsetReader[int64](mockFetch, time.Second, logger)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+		})
+
+		offset, err := reader.CachedOffset()
+		assert.ErrorIs(t, err, expectedErr)
+		assert.Equal(t, int64(0), offset)
+	})
+
+	t.Run("should update cache on poll interval", func(t *testing.T) {
+		ctx := context.Background()
+		fetchCount := 0
+		fetchChan := make(chan struct{}, 3) // Buffer size of 3 to allow multiple fetches
+		mockFetch := func(ctx context.Context) (int64, error) {
+			fetchCount++
+			select {
+			case <-ctx.Done():
+			case fetchChan <- struct{}{}:
+			}
+			return int64(fetchCount), nil
+		}
+
+		reader := newCachingOffsetReader[int64](mockFetch, 10*time.Millisecond, logger)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+		})
+
+		// Wait for at least two fetches to complete and have their results cached.
+		<-fetchChan
+		<-fetchChan
+		<-fetchChan
+
+		offset, err := reader.CachedOffset()
+		assert.NoError(t, err)
+		assert.GreaterOrEqual(t, offset, int64(2), "Offset should have been updated at least once")
+	})
+
+	t.Run("should handle context cancellation", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		mockFetch := func(ctx context.Context) (int64, error) {
+			return 42, nil
+		}
+
+		reader := newCachingOffsetReader[int64](mockFetch, time.Second, logger)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+		t.Cleanup(func() {
+			cancel()
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), reader))
+		})
+
+		// The cached offset should be available
+		offset, err := reader.CachedOffset()
+		assert.NoError(t, err)
+		assert.Equal(t, int64(42), offset)
+	})
+
+	t.Run("should handle concurrent access", func(t *testing.T) {
+		ctx := context.Background()
+		mockFetch := func(ctx context.Context) (int64, error) {
+			return 42, nil
+		}
+
+		reader := newCachingOffsetReader[int64](mockFetch, time.Second, logger)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+		})
+
+		var wg sync.WaitGroup
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				offset, err := reader.CachedOffset()
+				assert.NoError(t, err)
+				assert.Equal(t, int64(42), offset)
+			}()
+		}
+		wg.Wait()
 	})
 }
