@@ -101,6 +101,9 @@ func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 			compareExpectedAndActual(t, expected.TimestampMs, actual.TimestampMs, expected.Histogram.Sum, actual.Histogram.Sum, j, a.Labels, "histogram", 1e-12)
 		}
 	}
+
+	require.ElementsMatch(t, a.Infos, b.Infos, "expected same info annotations")
+	require.ElementsMatch(t, a.Warnings, b.Warnings, "expected same info annotations")
 }
 
 func compareExpectedAndActual(t *testing.T, expectedTs, actualTs int64, expectedVal, actualVal float64, j int, labels []mimirpb.LabelAdapter, sampleType string, tolerance float64) {
