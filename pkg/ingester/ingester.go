@@ -2749,8 +2749,6 @@ func (i *Ingester) closeAllTSDB() {
 
 	// Concurrently close all users TSDB
 	for userID, userDB := range i.tsdbs {
-		userID := userID
-
 		go func(db *userTSDB) {
 			defer wg.Done()
 

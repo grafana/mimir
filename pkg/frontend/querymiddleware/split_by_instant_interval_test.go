@@ -501,9 +501,6 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 			queryable := storageSeriesQueryable(series)
 
 			for testName, testData := range tests {
-				// Change scope to ensure it work fine when test cases are executed concurrently.
-				testData := testData
-
 				t.Run(testName, func(t *testing.T) {
 					t.Parallel()
 					reqs := []MetricsQueryRequest{
@@ -615,8 +612,6 @@ func TestInstantQuerySplittingHTTPOptions(t *testing.T) {
 			expectedDownstreamCall: 3, // [3h] range interval with 1h split interval should be split in 3 partial queries
 		},
 	} {
-		tt := tt
-
 		t.Run(tt.name, func(t *testing.T) {
 			req := &PrometheusInstantQueryRequest{
 				path:      "/query",

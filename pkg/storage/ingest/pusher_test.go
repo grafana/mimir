@@ -180,9 +180,7 @@ func TestPusherConsumer(t *testing.T) {
 	}
 
 	for name, tc := range testCases {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
-
 			receivedReqs := 0
 			pusher := pusherFunc(func(ctx context.Context, request *mimirpb.WriteRequest) error {
 				defer func() { receivedReqs++ }()

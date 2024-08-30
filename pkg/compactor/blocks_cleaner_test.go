@@ -59,8 +59,6 @@ func TestBlocksCleaner(t *testing.T) {
 		{concurrency: 2},
 		{concurrency: 10},
 	} {
-		options := options
-
 		t.Run(options.String(), func(t *testing.T) {
 			t.Parallel()
 			testBlocksCleanerWithOptions(t, options)

@@ -398,12 +398,11 @@ func TestExpandEnvironmentVariables(t *testing.T) {
 		}`},
 	}
 
-	for _, test := range tests {
-		test := test
-		t.Run(test.in, func(t *testing.T) {
-			_ = os.Setenv("y", test.env)
-			output := expandEnvironmentVariables([]byte(test.in))
-			assert.Equal(t, test.out, string(output), "Input: %s", test.in)
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			_ = os.Setenv("y", tt.env)
+			output := expandEnvironmentVariables([]byte(tt.in))
+			assert.Equal(t, tt.out, string(output), "Input: %s", tt.in)
 		})
 	}
 }
@@ -482,13 +481,12 @@ func TestParseConfigFileParameter(t *testing.T) {
 		{"--config.file=foo --opt1 --config.expand-env", "foo", true},
 		{"--config.expand-env --opt1 --config.file=foo", "foo", true},
 	}
-	for _, test := range tests {
-		test := test
-		t.Run(test.args, func(t *testing.T) {
-			args := strings.Split(test.args, " ")
+	for _, tt := range tests {
+		t.Run(tt.args, func(t *testing.T) {
+			args := strings.Split(tt.args, " ")
 			configFile, expandEnv := parseConfigFileParameter(args)
-			assert.Equal(t, test.configFile, configFile)
-			assert.Equal(t, test.expandEnv, expandEnv)
+			assert.Equal(t, tt.configFile, configFile)
+			assert.Equal(t, tt.expandEnv, expandEnv)
 		})
 	}
 }
