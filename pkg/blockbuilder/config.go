@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
@@ -20,14 +21,14 @@ type Config struct {
 	PartitionAssignment map[string][]int32 `yaml:"partition_assignment" category:"experimental"`
 	DataDir             string             `yaml:"data_dir"`
 
+	ConsumerGroup         string        `yaml:"consumer_group"`
 	ConsumeInterval       time.Duration `yaml:"consume_interval"`
 	ConsumeIntervalBuffer time.Duration `yaml:"consume_interval_buffer"`
 	LookbackOnNoCommit    time.Duration `yaml:"lookback_on_no_commit" category:"advanced"`
 
-	Kafka KafkaConfig `yaml:"kafka"`
-
-	// BlocksStorageConfig is defined outside the block-builder config and is injected dynamically.
-	BlocksStorageConfig tsdb.BlocksStorageConfig `yaml:"-"`
+	// Config parameters defined outside the block-builder config and are injected dynamically.
+	Kafka         ingest.KafkaConfig       `yaml:"-"`
+	BlocksStorage tsdb.BlocksStorageConfig `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -42,6 +43,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.InstanceID, "block-builder.instance-id", hostname, "Instance id.")
 	f.Var(newPartitionAssignmentVar(&cfg.PartitionAssignment), "block-builder.partition-assignment", "Static partition assignment. Format is a JSON encoded map[instance-id][]partitions).")
 	f.StringVar(&cfg.DataDir, "block-builder.data-dir", "./data-block-builder/", "Directory to temporarily store blocks during building. This directory is wiped out between the restarts.")
+	f.StringVar(&cfg.ConsumerGroup, "block-builder.kafka.consumer-group", "block-builder", "The Kafka consumer group used to keep track of the consumed offsets for assigned partitions.")
 	f.DurationVar(&cfg.ConsumeInterval, "block-builder.consume-interval", time.Hour, "Interval between consumption cycles.")
 	f.DurationVar(&cfg.ConsumeIntervalBuffer, "block-builder.consume-interval-buffer", 15*time.Minute, "Extra buffer between subsequent consumption cycles. To avoid small blocks the block-builder consumes until the last hour boundary of the consumption interval, plus the buffer.")
 	f.DurationVar(&cfg.LookbackOnNoCommit, "block-builder.lookback-on-no-commit", 12*time.Hour, "How much of the historical records to look back when there is no kafka commit for a partition.")
@@ -69,26 +71,6 @@ func (cfg *Config) Validate() error {
 		return fmt.Errorf("lookback-on-no-commit cannot be negative")
 	}
 
-	return nil
-}
-
-type KafkaConfig struct {
-	Address       string        `yaml:"address"`
-	Topic         string        `yaml:"topic"`
-	ClientID      string        `yaml:"client_id"`
-	DialTimeout   time.Duration `yaml:"dial_timeout"`
-	ConsumerGroup string        `yaml:"consumer_group"`
-}
-
-func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.Address, prefix+"kafka.address", "", "The Kafka seed broker address.")
-	f.StringVar(&cfg.Topic, prefix+"kafka.topic", "", "The Kafka topic name.")
-	f.StringVar(&cfg.ClientID, prefix+"kafka.client-id", "", "The Kafka client ID.")
-	f.DurationVar(&cfg.DialTimeout, prefix+"kafka.dial-timeout", 5*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
-	f.StringVar(&cfg.ConsumerGroup, prefix+"kafka.consumer-group", "block-builder", "The consumer group used to keep track of the consumed offsets for each partition.")
-}
-
-func (cfg *KafkaConfig) Validate() error {
 	return nil
 }
 
