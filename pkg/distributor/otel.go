@@ -432,7 +432,7 @@ func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes, 
 // Old, less efficient, version of otelMetricsToTimeseries.
 func otelMetricsToTimeseriesOld(ctx context.Context, tenantID string, addSuffixes, enableCTZeroIngestion bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	converter := prometheusremotewrite.NewPrometheusConverter()
-	errs := converter.FromMetrics(ctx, md, prometheusremotewrite.Settings{
+	annots, errs := converter.FromMetrics(ctx, md, prometheusremotewrite.Settings{
 		AddMetricSuffixes:                   addSuffixes,
 		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
 	})
@@ -451,6 +451,10 @@ func otelMetricsToTimeseriesOld(ctx context.Context, tenantID string, addSuffixe
 		}
 
 		level.Warn(logger).Log("msg", "OTLP parse error", "err", parseErrs)
+	}
+	ws, _ := annots.AsStrings("", 0, 0)
+	if len(ws) > 0 {
+		level.Warn(logger).Log("msg", "Warnings translating OTLP metrics to Prometheus write request", "warnings", ws)
 	}
 
 	mimirTS := mimirpb.PreallocTimeseriesSliceFromPool()
