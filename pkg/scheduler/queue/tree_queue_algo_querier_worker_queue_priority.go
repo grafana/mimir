@@ -124,10 +124,10 @@ func (qa *QuerierWorkerQueuePriorityAlgo) dequeueSelectNode(dequeueReq *DequeueR
 	} else {
 		qa.currentNodeOrderIndex++
 	}
+	qa.nodesChecked++
 
 	nodeName := qa.nodeOrder[qa.currentNodeOrderIndex]
 	if node, ok := node.queueMap[nodeName]; ok {
-		qa.nodesChecked++
 		qa.wrapCurrentNodeOrderIndex(true)
 		return node, qa.checkedAllNodes()
 	}

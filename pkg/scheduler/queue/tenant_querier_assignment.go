@@ -460,6 +460,9 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(dequeueReq *DequeueReques
 		tqa.tenantOrderIndex++
 	}
 	if tqa.tenantOrderIndex >= len(tqa.tenantIDOrder) {
+		// do not use modulo to wrap this index; tenantOrderIndex is provided from an outer process
+		// which does not know if the tenant list has changed since the last dequeue
+		// wrapping with modulo after shrinking the list could cause us to skip tenants
 		tqa.tenantOrderIndex = localQueueIndex
 	}
 
@@ -471,25 +474,28 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(dequeueReq *DequeueReques
 		return node, checkedAllNodes
 	}
 
-	checkIndex := tqa.tenantOrderIndex
+	//checkIndex := tqa.tenantOrderIndex
 
 	// iterate through the tenant order until we find a tenant that is assigned to the current querier, or
 	// have checked the entire tenantIDOrder, whichever comes first
 	for iters := 0; iters < len(tqa.tenantIDOrder); iters++ {
-		// should not hit this; we already wrapped above
-		//if tqa.tenantOrderIndex >= len(tqa.tenantIDOrder) {
-		//	// do not use modulo to wrap this index; tenantOrderIndex is provided from an outer process
-		//	// which does not know if the tenant list has changed since the last dequeue
-		//	// wrapping with modulo after shrinking the list could cause us to skip tenants
-		//	tqa.tenantOrderIndex = 0
-		//}
 		tqa.nodesChecked++
+		tqa.tenantOrderIndex++
+
+		if tqa.tenantOrderIndex >= len(tqa.tenantIDOrder) {
+			// TODO move comment up to first wrap point because the length will not change during a given dequeue attempt
+			// do not use modulo to wrap this index; tenantOrderIndex is provided from an outer process
+			// which does not know if the tenant list has changed since the last dequeue
+			// wrapping with modulo after shrinking the list could cause us to skip tenants
+			tqa.tenantOrderIndex = 0
+		}
+
 		tenantID := tqa.tenantIDOrder[tqa.tenantOrderIndex]
 		tenantName := string(tenantID)
 
 		if _, ok := node.queueMap[tenantName]; !ok {
 			// tenant not in _this_ node's children, move on
-			tqa.tenantOrderIndex = checkIndex
+			//tqa.tenantOrderIndex = checkIndex
 			continue
 		}
 
@@ -499,17 +505,16 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(dequeueReq *DequeueReques
 
 		// if the tenant-querier set is nil, any querier can serve this tenant
 		if tqa.tenantQuerierIDs[tenantID] == nil {
-			tqa.tenantOrderIndex = checkIndex
+			//tqa.tenantOrderIndex = checkIndex
 			return node.queueMap[tenantName], checkedAllNodes
 		}
 		// otherwise, check if the querier is assigned to this tenant
 		if tenantQuerierSet, ok := tqa.tenantQuerierIDs[tenantID]; ok {
 			if _, ok := tenantQuerierSet[dequeueReq.QuerierID]; ok {
-				tqa.tenantOrderIndex = checkIndex
+				//tqa.tenantOrderIndex = checkIndex
 				return node.queueMap[tenantName], checkedAllNodes
 			}
 		}
-		checkIndex++
 	}
 	return nil, checkedAllNodes
 }
