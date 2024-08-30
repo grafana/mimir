@@ -201,7 +201,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, err
 		}
 
-		return operators.NewBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+		return operators.NewVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
 		return q.convertToInstantVectorOperator(e.Expr)

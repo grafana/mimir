@@ -24,8 +24,8 @@ import (
 // The merging behaviour has many edge cases, so it's easier to test it directly from Go.
 //
 // Most of the edge cases are already covered by TestMergeSeries, so we focus on the logic
-// unique to BinaryOperation: converting conflicts to user-friendly error messages.
-func TestBinaryOperation_SeriesMerging(t *testing.T) {
+// unique to VectorVectorBinaryOperation: converting conflicts to user-friendly error messages.
+func TestVectorVectorBinaryOperation_SeriesMerging(t *testing.T) {
 	testCases := map[string]struct {
 		input                []types.InstantVectorSeriesData
 		sourceSeriesIndices  []int
@@ -188,7 +188,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
-			o := &BinaryOperation{
+			o := &VectorVectorBinaryOperation{
 				// Simulate an expression with "on (env)".
 				// This is used to generate error messages.
 				VectorMatching: parser.VectorMatching{
@@ -214,7 +214,7 @@ func TestBinaryOperation_SeriesMerging(t *testing.T) {
 	}
 }
 
-func TestBinaryOperation_Sorting(t *testing.T) {
+func TestVectorVectorBinaryOperation_Sorting(t *testing.T) {
 	testCases := map[string]struct {
 		series []*binaryOperationOutputSeries
 
