@@ -23,9 +23,7 @@ type FunctionOverInstantVector struct {
 	// what we use for the SeriesMetadata.
 	Inner                    types.InstantVectorOperator
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
-
-	SeriesMetadataFunc functions.SeriesMetadataFunction
-	SeriesDataFunc     functions.InstantVectorFunction
+	Func                     functions.FunctionOverInstantVector
 
 	expressionPosition posrange.PositionRange
 }
@@ -35,16 +33,13 @@ var _ types.InstantVectorOperator = &FunctionOverInstantVector{}
 func NewFunctionOverInstantVector(
 	inner types.InstantVectorOperator,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
-	metadataFunc functions.SeriesMetadataFunction,
-	seriesDataFunc functions.InstantVectorFunction,
+	f functions.FunctionOverInstantVector,
 	expressionPosition posrange.PositionRange,
 ) *FunctionOverInstantVector {
 	return &FunctionOverInstantVector{
 		Inner:                    inner,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
-
-		SeriesMetadataFunc: metadataFunc,
-		SeriesDataFunc:     seriesDataFunc,
+		Func:                     f,
 
 		expressionPosition: expressionPosition,
 	}
@@ -60,8 +55,8 @@ func (m *FunctionOverInstantVector) SeriesMetadata(ctx context.Context) ([]types
 		return nil, err
 	}
 
-	if m.SeriesMetadataFunc != nil {
-		return m.SeriesMetadataFunc(metadata, m.MemoryConsumptionTracker)
+	if m.Func.SeriesMetadataFunc != nil {
+		return m.Func.SeriesMetadataFunc(metadata, m.MemoryConsumptionTracker)
 	}
 
 	return metadata, nil
@@ -73,7 +68,7 @@ func (m *FunctionOverInstantVector) NextSeries(ctx context.Context) (types.Insta
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	return m.SeriesDataFunc(series, m.MemoryConsumptionTracker)
+	return m.Func.SeriesDataFunc(series, m.MemoryConsumptionTracker)
 }
 
 func (m *FunctionOverInstantVector) Close() {

@@ -24,11 +24,11 @@ func DropSeriesName(seriesMetadata []types.SeriesMetadata, _ *limiting.MemoryCon
 	return seriesMetadata, nil
 }
 
-// InstantVectorFunction is a function that takes in a instant vector and produces an instant vector.
-type InstantVectorFunction func(seriesData types.InstantVectorSeriesData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error)
+// InstantVectorSeriesFunction is a function that takes in an instant vector and produces an instant vector.
+type InstantVectorSeriesFunction func(seriesData types.InstantVectorSeriesData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error)
 
 // floatTransformationFunc is not needed elsewhere, so it is not exported yet
-func floatTransformationFunc(transform func(f float64) float64) InstantVectorFunction {
+func floatTransformationFunc(transform func(f float64) float64) InstantVectorSeriesFunction {
 	return func(seriesData types.InstantVectorSeriesData, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		for i := range seriesData.Floats {
 			seriesData.Floats[i].F = transform(seriesData.Floats[i].F)
@@ -37,7 +37,7 @@ func floatTransformationFunc(transform func(f float64) float64) InstantVectorFun
 	}
 }
 
-func FloatTransformationDropHistogramsFunc(transform func(f float64) float64) InstantVectorFunction {
+func FloatTransformationDropHistogramsFunc(transform func(f float64) float64) InstantVectorSeriesFunction {
 	ft := floatTransformationFunc(transform)
 	return func(seriesData types.InstantVectorSeriesData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		// Functions that do not explicitly mention native histograms in their documentation will ignore histogram samples.
@@ -88,6 +88,22 @@ type RangeVectorSeriesValidationFunction func(seriesData types.InstantVectorSeri
 
 // RangeVectorSeriesValidationFunctionFactory is a factory function that returns a RangeVectorSeriesValidationFunction
 type RangeVectorSeriesValidationFunctionFactory func() RangeVectorSeriesValidationFunction
+
+type FunctionOverInstantVector struct {
+	// SeriesDataFunc is the function that computes an output series for a single input series.
+	SeriesDataFunc InstantVectorSeriesFunction
+
+	// SeriesMetadataFunc is the function that computes the output series for this function based on the given input series.
+	//
+	// If SeriesMetadataFunc is nil, the input series are used as-is.
+	SeriesMetadataFunc SeriesMetadataFunction
+
+	// NeedsSeriesDeduplication enables deduplication and merging of output series with the same labels.
+	//
+	// This should be set to true if SeriesMetadataFunc modifies the input series labels in such a way that duplicates may be
+	// present in the output series labels (eg. dropping a label).
+	NeedsSeriesDeduplication bool
+}
 
 type FunctionOverRangeVector struct {
 	// StepFunc is the function that computes an output sample for a single step.
