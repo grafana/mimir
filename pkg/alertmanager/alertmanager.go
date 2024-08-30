@@ -519,6 +519,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 
 	am.templatesMtx.Lock()
 	am.templates = tmpls
+	am.tmplExternalURL = tmplExternalURL
 	am.templatesMtx.Unlock()
 
 	pipeline := am.pipelineBuilder.New(
