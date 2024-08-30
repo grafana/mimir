@@ -30,6 +30,11 @@ import (
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
+func init() {
+	// Reduce the time the fake kafka would wait for new records. Sometimes this blocks startup.
+	fetchMinBytesWaitTime = time.Second
+}
+
 func TestKafkaStartOffset(t *testing.T) {
 	t.Run("should match Kafka client start offset", func(t *testing.T) {
 		expected := kgo.NewOffset().AtStart().EpochOffset().Offset
@@ -1965,7 +1970,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 	})
 }
 
-func TestHandleKafkaFetchErr_OffsetOutOfRange(t *testing.T) {
+func TestHandleKafkaFetchErr(t *testing.T) {
 	logger := log.NewNopLogger()
 
 	tests := map[string]struct {
@@ -1974,9 +1979,10 @@ func TestHandleKafkaFetchErr_OffsetOutOfRange(t *testing.T) {
 		lso int64
 		fw  fetchWant
 
-		expectedFw           fetchWant
-		expectedShortBackoff bool
-		expectedLongBackoff  bool
+		expectedFw              fetchWant
+		expectedShortBackoff    bool
+		expectedLongBackoff     bool
+		expectedMetadataRefresh bool
 	}{
 		"no error": {
 			err: nil,
@@ -2045,16 +2051,101 @@ func TestHandleKafkaFetchErr_OffsetOutOfRange(t *testing.T) {
 			},
 			expectedLongBackoff: true,
 		},
+		"NotLeaderForPartition": {
+			err: kerr.NotLeaderForPartition,
+			lso: 5,
+			fw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedFw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedLongBackoff:     true,
+			expectedMetadataRefresh: true,
+		},
+		"ReplicaNotAvailable": {
+			err: kerr.ReplicaNotAvailable,
+			lso: 5,
+			fw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedFw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedLongBackoff:     true,
+			expectedMetadataRefresh: true,
+		},
+		"UnknownLeaderEpoch": {
+			err: kerr.UnknownLeaderEpoch,
+			lso: 5,
+			fw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedFw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedLongBackoff:     true,
+			expectedMetadataRefresh: true,
+		},
+		"FencedLeaderEpoch": {
+			err: kerr.FencedLeaderEpoch,
+			lso: 5,
+			fw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedFw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedLongBackoff:     true,
+			expectedMetadataRefresh: true,
+		},
+		"LeaderNotAvailable": {
+			err: kerr.LeaderNotAvailable,
+			lso: 5,
+			fw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedFw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedLongBackoff:     true,
+			expectedMetadataRefresh: true,
+		},
+		"errUnknownPartitionLeader": {
+			err: errUnknownPartitionLeader,
+			lso: 5,
+			fw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedFw: fetchWant{
+				startOffset: 11,
+				endOffset:   15,
+			},
+			expectedLongBackoff:     true,
+			expectedMetadataRefresh: true,
+		},
 	}
 
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
 			require.False(t, testCase.expectedShortBackoff && testCase.expectedLongBackoff, "set either long or short backoff")
 			waitedShort := false
+			shortBackOff := waiterFunc(func() { waitedShort = true })
 			waitedLong := false
 			longBackOff := waiterFunc(func() { waitedLong = true })
-			shortBackOff := waiterFunc(func() { waitedShort = true })
-
+			refreshed := false
+			refresher := refresherFunc(func() { refreshed = true })
 			result := fetchResult{
 				FetchPartition: kgo.FetchPartition{
 					Err:            testCase.err,
@@ -2062,10 +2153,11 @@ func TestHandleKafkaFetchErr_OffsetOutOfRange(t *testing.T) {
 					LogStartOffset: testCase.lso,
 				},
 			}
-			actualFw := handleKafkaFetchErr(result, testCase.fw, shortBackOff, longBackOff, logger)
+			actualFw := handleKafkaFetchErr(result, testCase.fw, shortBackOff, longBackOff, refresher, logger)
 			assert.Equal(t, testCase.expectedFw, actualFw)
 			assert.Equal(t, testCase.expectedShortBackoff, waitedShort)
 			assert.Equal(t, testCase.expectedLongBackoff, waitedLong)
+			assert.Equal(t, testCase.expectedMetadataRefresh, refreshed)
 		})
 	}
 }
@@ -2073,6 +2165,10 @@ func TestHandleKafkaFetchErr_OffsetOutOfRange(t *testing.T) {
 type waiterFunc func()
 
 func (w waiterFunc) Wait() { w() }
+
+type refresherFunc func()
+
+func (r refresherFunc) ForceMetadataRefresh() { r() }
 
 type testConsumer struct {
 	records chan []byte
