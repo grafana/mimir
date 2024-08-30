@@ -2971,6 +2971,8 @@ nginx:
     httpSnippet: ""
     # -- Allows to set a custom resolver
     resolver: null
+    # -- Configures whether or not NGINX bind IPv6
+    enableIPv6: true
     # -- Config file contents for Nginx. Passed through the `tpl` function to allow templating
     # @default -- See values.yaml
     file: |
@@ -3032,7 +3034,9 @@ nginx:
         proxy_read_timeout 300;
         server {
           listen 8080;
+          {{- if .Values.nginx.nginxConfig.enableIPv6 }}
           listen [::]:8080;
+          {{- end }}
 
           {{- if .Values.nginx.basicAuth.enabled }}
           auth_basic           "Mimir";
