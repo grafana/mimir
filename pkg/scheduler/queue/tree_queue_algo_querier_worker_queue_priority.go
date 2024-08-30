@@ -56,9 +56,9 @@ import "slices"
 //     until a dequeue-able tenant queue node is found, or every query component node subtree has been exhausted.
 type QuerierWorkerQueuePriorityAlgo struct {
 	//currentQuerierWorker  int
-	currentNodeOrderIndex int
 	nodeOrder             []string
 	nodeCounts            map[string]int
+	currentNodeOrderIndex int
 	nodesChecked          int
 }
 
@@ -117,10 +117,18 @@ func (qa *QuerierWorkerQueuePriorityAlgo) addChildNode(parent, child *Node) {
 }
 
 func (qa *QuerierWorkerQueuePriorityAlgo) dequeueSelectNode(dequeueReq *DequeueRequest, node *Node) (*Node, bool) {
-	nodeIndex := dequeueReq.WorkerID % len(qa.nodeOrder)
-	nodeName := qa.nodeOrder[nodeIndex]
+	startingNodeIndexFromWorkerID := dequeueReq.WorkerID % len(qa.nodeOrder)
+	if qa.nodesChecked == 0 {
+		// first iteration in this dequeue attempt
+		qa.currentNodeOrderIndex = startingNodeIndexFromWorkerID
+	} else {
+		qa.currentNodeOrderIndex++
+	}
+
+	nodeName := qa.nodeOrder[qa.currentNodeOrderIndex]
 	if node, ok := node.queueMap[nodeName]; ok {
 		qa.nodesChecked++
+		qa.wrapCurrentNodeOrderIndex(true)
 		return node, qa.checkedAllNodes()
 	}
 	return nil, qa.checkedAllNodes()
@@ -158,5 +166,6 @@ func (qa *QuerierWorkerQueuePriorityAlgo) dequeueUpdateState(node *Node, dequeue
 	}
 
 	// reset state after successful dequeue
+	qa.currentNodeOrderIndex = 0 // doesn't really matter if we reset this tbh
 	qa.nodesChecked = 0
 }
