@@ -191,8 +191,8 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 
 	// It's ok to have the start offset slightly outdated.
 	// We only need this offset accurate if we fall behind or if we start and the log gets truncated from beneath us.
-	// In both cases we should recover from a single updated value.
-	// This offset is more often used when we're fetching from after the end, there we don't need an accurate value.
+	// In both cases we should recover after receiving one updated value.
+	// In the more common case where this offset is used when we're fetching from after the end, there we don't need an accurate value.
 	const startOffsetReaderRefreshDuration = 10 * time.Second
 	getPartitionStart := func(ctx context.Context) (int64, error) {
 		return offsetsClient.FetchPartitionStartOffset(ctx, r.partitionID)
