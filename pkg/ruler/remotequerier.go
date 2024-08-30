@@ -204,7 +204,7 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query, sortSerie
 			break
 		}
 	}
-	if contentType != "application/x-protobuf" {
+	if len(contentType) > 0 && contentType != "application/x-protobuf" {
 		return nil, errors.Errorf("unexpected response content type %s", contentType)
 	}
 
