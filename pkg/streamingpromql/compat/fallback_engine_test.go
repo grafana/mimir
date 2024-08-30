@@ -5,18 +5,18 @@ package compat
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
-	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/stretchr/testify/require"
+
+	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestEngineWithFallback(t *testing.T) {
@@ -45,11 +45,11 @@ func TestEngineWithFallback(t *testing.T) {
 				require.Equal(t, preferredEngine.query, query, "should return query from preferred engine")
 				require.False(t, fallbackEngine.wasCalled, "should not call fallback engine if expression is supported by preferred engine")
 
-				require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+				util_test.AssertGatherAndCompare(t, reg, `
 					# HELP cortex_mimir_query_engine_supported_queries_total Total number of queries that were supported by the Mimir query engine.
 					# TYPE cortex_mimir_query_engine_supported_queries_total counter
 					cortex_mimir_query_engine_supported_queries_total 1
-				`), "cortex_mimir_query_engine_supported_queries_total", "cortex_mimir_query_engine_unsupported_queries_total"))
+				`, "cortex_mimir_query_engine_supported_queries_total", "cortex_mimir_query_engine_unsupported_queries_total")
 			})
 
 			t.Run("should fall back for unsupported expressions", func(t *testing.T) {
@@ -63,14 +63,14 @@ func TestEngineWithFallback(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, fallbackEngine.query, query, "should return query from fallback engine if expression is not supported by preferred engine")
 
-				require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+				util_test.AssertGatherAndCompare(t, reg, `
 					# HELP cortex_mimir_query_engine_supported_queries_total Total number of queries that were supported by the Mimir query engine.
 					# TYPE cortex_mimir_query_engine_supported_queries_total counter
 					cortex_mimir_query_engine_supported_queries_total 0
 					# HELP cortex_mimir_query_engine_unsupported_queries_total Total number of queries that were not supported by the Mimir query engine and so fell back to Prometheus' engine.
 					# TYPE cortex_mimir_query_engine_unsupported_queries_total counter
 					cortex_mimir_query_engine_unsupported_queries_total{reason="this expression is not supported"} 1
-				`), "cortex_mimir_query_engine_supported_queries_total", "cortex_mimir_query_engine_unsupported_queries_total"))
+				`, "cortex_mimir_query_engine_supported_queries_total", "cortex_mimir_query_engine_unsupported_queries_total")
 			})
 
 			t.Run("should not fall back if creating query fails for another reason", func(t *testing.T) {
@@ -96,14 +96,14 @@ func TestEngineWithFallback(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, fallbackEngine.query, query, "should return query from fallback engine if expression is not supported by preferred engine")
 
-				require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+				util_test.AssertGatherAndCompare(t, reg, `
 					# HELP cortex_mimir_query_engine_supported_queries_total Total number of queries that were supported by the Mimir query engine.
 					# TYPE cortex_mimir_query_engine_supported_queries_total counter
 					cortex_mimir_query_engine_supported_queries_total 0
 					# HELP cortex_mimir_query_engine_unsupported_queries_total Total number of queries that were not supported by the Mimir query engine and so fell back to Prometheus' engine.
 					# TYPE cortex_mimir_query_engine_unsupported_queries_total counter
 					cortex_mimir_query_engine_unsupported_queries_total{reason="fallback forced by HTTP header"} 1
-				`), "cortex_mimir_query_engine_supported_queries_total", "cortex_mimir_query_engine_unsupported_queries_total"))
+				`, "cortex_mimir_query_engine_supported_queries_total", "cortex_mimir_query_engine_unsupported_queries_total")
 			})
 		})
 	}
