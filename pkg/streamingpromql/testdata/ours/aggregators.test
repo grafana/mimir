@@ -194,3 +194,15 @@ eval instant at 1m sum(single_histogram)
     {} {{schema:1 count:10 sum:10 buckets:[2 6 2 4 0 2]}}
 
 clear
+
+# This test is for checking NH's do not have a copied PositiveSpan
+# It works because a sum will modify a span that a subsequent value is using.
+load 5m
+  native_histogram{instance="1"} {{schema:5 sum:10 count:7 buckets:[1 2 3 1]}} {{schema:5 sum:8 count:7 buckets:[1 5 1]}}  {{schema:5 sum:18 count:17 buckets:[1 5 1]}}
+  native_histogram{instance="2"} {{schema:3 sum:4 count:4 buckets:[4]}}
+
+# Test range query with native histograms
+eval range from 0m to 10m step 5m sum (native_histogram)
+  {} {{schema:3 count:11 sum:14 buckets:[5 6]}} {{schema:3 count:11 sum:12 buckets:[5 6]}} {{schema:5 count:17 sum:18 buckets:[1 5 1]}}
+
+clear

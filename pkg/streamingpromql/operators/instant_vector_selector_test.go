@@ -151,6 +151,20 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 				requireNotSame(t, points[0].H, points[2].H)
 			},
 		},
+		"different histograms have different spans": {
+			data: `
+				load 1m
+					my_metric {{schema:0 sum:1 count:1 buckets:[1 0 1]}} {{schema:0 sum:3 count:2 buckets:[1 0 1]}}
+			`,
+			stepCount: 2,
+			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
+				require.Len(t, points, 2)
+				requireNotSame(t, points[0].H, points[1].H)
+				// requireNotSame only checks the slice headers are different. It does not check that the slices do not point the same underlying arrays
+				// So specifically check the if the first elements are different
+				require.NotSame(t, &points[0].H.PositiveSpans[0], &points[1].H.PositiveSpans[0], "must not point to the same underlying array")
+			},
+		},
 		// FIXME: this test currently fails due to https://github.com/prometheus/prometheus/issues/14172
 		//
 		//"point has same value as a previous point, but there is a float value in between": {
