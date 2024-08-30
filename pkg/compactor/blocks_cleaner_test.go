@@ -464,12 +464,7 @@ func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *tes
 	require.ElementsMatch(t, []string{"user-1", "user-2"}, cleaner.lastOwnedUsers)
 
 	// But there are no metrics for any user, because we did not in fact clean them.
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
-		# TYPE cortex_bucket_blocks_count gauge
-	`),
-		"cortex_bucket_blocks_count",
-	))
+	test.AssertGatherAndCompare(t, reg, "", "cortex_bucket_blocks_count")
 
 	// Running cleanUsers again will see that users are no longer owned.
 	require.NoError(t, cleaner.runCleanupWithErr(ctx))
