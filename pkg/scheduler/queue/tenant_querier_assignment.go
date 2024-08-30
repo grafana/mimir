@@ -127,14 +127,14 @@ type tenantQuerierAssignments struct {
 	// the querier, and then updated to the index of the last tenant dequeued from, so it
 	// can be returned to the querier. Newly connected queriers should pass -1 to start at the
 	// beginning of tenantIDOrder.
-	tenantOrderIndex int
-	tenantNodes      map[string][]*Node
+	//tenantOrderIndex int
+	tenantNodes map[string][]*Node
 
 	// Tenant assigned querier ID set as determined by shuffle sharding.
 	// If tenant querier ID set is not nil, only those queriers can handle the tenant's requests,
 	// Tenant querier ID is set to nil if sharding is off or available queriers <= tenant's maxQueriers.
 	tenantQuerierIDs map[TenantID]map[QuerierID]struct{}
-	currentQuerier   QuerierID
+	//currentQuerier   QuerierID
 }
 
 func newTenantQuerierAssignments(forgetDelay time.Duration) *tenantQuerierAssignments {
@@ -146,8 +146,8 @@ func newTenantQuerierAssignments(forgetDelay time.Duration) *tenantQuerierAssign
 		tenantsByID:        map[TenantID]*queueTenant{},
 		tenantQuerierIDs:   map[TenantID]map[QuerierID]struct{}{},
 		tenantNodes:        map[string][]*Node{},
-		currentQuerier:     "",
-		tenantOrderIndex:   localQueueIndex,
+		//currentQuerier:     "",
+		//tenantOrderIndex:   localQueueIndex,
 	}
 }
 
@@ -445,26 +445,29 @@ func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID TenantID, sc
 //
 // Note that because we use the shared  tenantIDOrder and tenantOrderIndex to manage the queue, we functionally
 // ignore each Node's individual queueOrder and queuePosition.
-func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) (*Node, bool) {
+func (tqa *tenantQuerierAssignments) dequeueSelectNode(dequeueReq *DequeueRequest, node *Node) (*Node, bool) {
 	// can't get a tenant if no querier set
-	if tqa.currentQuerier == "" {
+	if dequeueReq.QuerierID == "" {
 		return nil, true
 	}
 
 	checkedAllNodes := node.childrenChecked == len(node.queueMap)+1 // must check local queue as well
 
 	// advance queue position for dequeue
-	tqa.tenantOrderIndex++
-	if tqa.tenantOrderIndex >= len(tqa.tenantIDOrder) {
-		tqa.tenantOrderIndex = localQueueIndex
-	}
+	//tqa.tenantOrderIndex++
+	//if tqa.tenantOrderIndex >= len(tqa.tenantIDOrder) {
+	//	tqa.tenantOrderIndex = localQueueIndex
+	//}
 
 	// no children or local queue reached
-	if len(node.queueMap) == 0 || tqa.tenantOrderIndex == localQueueIndex {
+	if len(node.queueMap) == 0 {
 		return node, checkedAllNodes
 	}
+	//if len(node.queueMap) == 0 || tqa.tenantOrderIndex == localQueueIndex {
+	//	return node, checkedAllNodes
+	//}
 
-	checkIndex := tqa.tenantOrderIndex
+	checkIndex := dequeueReq.lastTenantIndex.last
 
 	// iterate through the tenant order until we find a tenant that is assigned to the current querier, or
 	// have checked the entire tenantIDOrder, whichever comes first
@@ -488,13 +491,13 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) (*Node, bool)
 
 		// if the tenant-querier set is nil, any querier can serve this tenant
 		if tqa.tenantQuerierIDs[tenantID] == nil {
-			tqa.tenantOrderIndex = checkIndex
+			//tqa.tenantOrderIndex = checkIndex
 			return node.queueMap[tenantName], checkedAllNodes
 		}
 		// otherwise, check if the querier is assigned to this tenant
 		if tenantQuerierSet, ok := tqa.tenantQuerierIDs[tenantID]; ok {
-			if _, ok := tenantQuerierSet[tqa.currentQuerier]; ok {
-				tqa.tenantOrderIndex = checkIndex
+			if _, ok := tenantQuerierSet[dequeueReq.QuerierID]; ok {
+				//tqa.tenantOrderIndex = checkIndex
 				return node.queueMap[tenantName], checkedAllNodes
 			}
 		}
@@ -591,7 +594,7 @@ func (tqa *tenantQuerierAssignments) addChildNode(parent, child *Node) {
 // updateQueuingAlgorithmState should be called before attempting to dequeue, and updates inputs required by this
 // QueuingAlgorithm to dequeue the appropriate value for the given querier. In some test cases, it need not be called
 // before consecutive dequeues for the same querier, but in all operating cases, it should be called ahead of a dequeue.
-func (tqa *tenantQuerierAssignments) updateQueuingAlgorithmState(querierID QuerierID, tenantOrderIndex int) {
-	tqa.currentQuerier = querierID
-	tqa.tenantOrderIndex = tenantOrderIndex
-}
+//func (tqa *tenantQuerierAssignments) updateQueuingAlgorithmState(querierID QuerierID, tenantOrderIndex int) {
+//	tqa.currentQuerier = querierID
+//	tqa.tenantOrderIndex = tenantOrderIndex
+//}

@@ -22,7 +22,7 @@ type QueuingAlgorithm interface {
 	// The Tree uses the bool returned to determine when no dequeue-able value can be found at this child. If all
 	// children in the subtree have been checked, but no dequeue-able value is found, the Tree traverses to the next
 	// child in the given node's order. dequeueSelectNode does *not* update any Node fields.
-	dequeueSelectNode(node *Node) (*Node, bool)
+	dequeueSelectNode(dequeueReq *DequeueRequest, node *Node) (*Node, bool)
 
 	// dequeueUpdateState is called after we have finished dequeuing from a node. When a child is left empty after the
 	// dequeue operation, dequeueUpdateState should perform cleanup by deleting that child from the Node and update
@@ -58,7 +58,7 @@ func (rrs *roundRobinState) addChildNode(parent, child *Node) {
 
 // dequeueSelectNode returns the node at the node's queuePosition. queuePosition represents the position of
 // the next node to dequeue from, and is incremented in dequeueUpdateState.
-func (rrs *roundRobinState) dequeueSelectNode(node *Node) (*Node, bool) {
+func (rrs *roundRobinState) dequeueSelectNode(dequeueReq *DequeueRequest, node *Node) (*Node, bool) {
 	checkedAllNodes := node.childrenChecked == len(node.queueOrder)+1 // must check local queue as well
 	if node.queuePosition == localQueueIndex {
 		return node, checkedAllNodes

@@ -154,8 +154,7 @@ func (qb *queueBroker) makeQueuePath(request *tenantRequest) (QueuePath, error) 
 }
 
 func (qb *queueBroker) dequeueRequestForQuerier(
-	lastTenantIndex int,
-	querierID QuerierID,
+	dequeueReq *DequeueRequest,
 ) (
 	*tenantRequest,
 	*queueTenant,
@@ -163,29 +162,29 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 	error,
 ) {
 	// check if querier is registered and is not shutting down
-	if q := qb.tenantQuerierAssignments.queriersByID[querierID]; q == nil || q.shuttingDown {
-		return nil, nil, qb.tenantQuerierAssignments.tenantOrderIndex, ErrQuerierShuttingDown
+	if q := qb.tenantQuerierAssignments.queriersByID[dequeueReq.QuerierID]; q == nil || q.shuttingDown {
+		return nil, nil, dequeueReq.lastTenantIndex.last, ErrQuerierShuttingDown
 	}
 
 	var queuePath QueuePath
 	var queueElement any
 	if tq, ok := qb.tree.(*TreeQueue); ok {
-		tenant, tenantIndex, err := qb.tenantQuerierAssignments.getNextTenantForQuerier(lastTenantIndex, querierID)
+		tenant, tenantIndex, err := qb.tenantQuerierAssignments.getNextTenantForQuerier(dequeueReq.lastTenantIndex.last, dequeueReq.QuerierID)
 		if tenant == nil || err != nil {
 			return nil, tenant, tenantIndex, err
 		}
-		qb.tenantQuerierAssignments.tenantOrderIndex = tenantIndex
+		//qb.tenantQuerierAssignments.tenantOrderIndex = tenantIndex
 		// We can manually build queuePath here because TreeQueue only supports one tree structure ordering:
 		// root --> tenant --> (optional: query dimensions)
 		queuePath = QueuePath{string(tenant.tenantID)}
 		queueElement = tq.DequeueByPath(queuePath)
 	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-		qb.tenantQuerierAssignments.updateQueuingAlgorithmState(querierID, lastTenantIndex)
-		queuePath, queueElement = itq.Dequeue()
+		//qb.tenantQuerierAssignments.updateQueuingAlgorithmState(querierID, lastTenantIndex)
+		queuePath, queueElement = itq.Dequeue(dequeueReq)
 	}
 
 	if queueElement == nil {
-		return nil, nil, qb.tenantQuerierAssignments.tenantOrderIndex, nil
+		return nil, nil, dequeueReq.lastTenantIndex.last, nil
 	}
 
 	var request *tenantRequest
@@ -196,8 +195,10 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 	tenantID = request.tenantID
 
 	var tenant *queueTenant
+	var newTenantOrderIndex int
 	if tenantID != "" {
 		tenant = qb.tenantQuerierAssignments.tenantsByID[tenantID]
+		// TODO: update newTenantOrderIndex to the tenant that was dequeued from
 	}
 
 	// TODO (casie): When deprecating TreeQueue, clean this up.
@@ -217,7 +218,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 			qb.tenantQuerierAssignments.removeTenant(tenantID)
 		}
 	}
-	return request, tenant, qb.tenantQuerierAssignments.tenantOrderIndex, nil
+	return request, tenant, newTenantOrderIndex, nil
 }
 
 // below methods simply pass through to the queueBroker's tenantQuerierAssignments; this layering could be skipped

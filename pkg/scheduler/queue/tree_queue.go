@@ -216,7 +216,7 @@ func (q *TreeQueue) DequeueByPath(childPath QueuePath) any {
 //
 // Nodes that empty down to the leaf after being dequeued from are deleted as the recursion returns
 // up the stack. This maintains structural guarantees relied on to make IsEmpty() non-recursive.
-func (q *TreeQueue) Dequeue() (QueuePath, any) {
+func (q *TreeQueue) Dequeue(*DequeueRequest) (QueuePath, any) {
 	var childPath QueuePath
 	var v any
 	initialLen := len(q.childQueueOrder)

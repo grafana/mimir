@@ -55,7 +55,7 @@ import "slices"
 //     and recurs again to search that next subtree for tenant queue nodes sharded to this querier, from step 3, etc.,
 //     until a dequeue-able tenant queue node is found, or every query component node subtree has been exhausted.
 type QuerierWorkerQueuePriorityAlgo struct {
-	currentQuerierWorker  int
+	//currentQuerierWorker  int
 	currentNodeOrderIndex int
 	nodeOrder             []string
 	nodeCounts            map[string]int
@@ -68,14 +68,14 @@ func NewQuerierWorkerQueuePriorityAlgo() *QuerierWorkerQueuePriorityAlgo {
 	}
 }
 
-func (qa *QuerierWorkerQueuePriorityAlgo) SetCurrentQuerierWorker(workerID int) {
-	qa.currentQuerierWorker = workerID
-	if len(qa.nodeOrder) == 0 {
-		qa.currentNodeOrderIndex = 0
-	} else {
-		qa.currentNodeOrderIndex = workerID % len(qa.nodeOrder)
-	}
-}
+//func (qa *QuerierWorkerQueuePriorityAlgo) SetCurrentQuerierWorker(workerID int) {
+//	qa.currentQuerierWorker = workerID
+//	if len(qa.nodeOrder) == 0 {
+//		qa.currentNodeOrderIndex = 0
+//	} else {
+//		qa.currentNodeOrderIndex = workerID % len(qa.nodeOrder)
+//	}
+//}
 
 func (qa *QuerierWorkerQueuePriorityAlgo) wrapCurrentNodeOrderIndex(increment bool) {
 	if increment {
@@ -116,9 +116,10 @@ func (qa *QuerierWorkerQueuePriorityAlgo) addChildNode(parent, child *Node) {
 	qa.nodeCounts[child.Name()]++
 }
 
-func (qa *QuerierWorkerQueuePriorityAlgo) dequeueSelectNode(node *Node) (*Node, bool) {
-	currentNodeName := qa.nodeOrder[qa.currentNodeOrderIndex]
-	if node, ok := node.queueMap[currentNodeName]; ok {
+func (qa *QuerierWorkerQueuePriorityAlgo) dequeueSelectNode(dequeueReq *DequeueRequest, node *Node) (*Node, bool) {
+	nodeIndex := dequeueReq.WorkerID % len(qa.nodeOrder)
+	nodeName := qa.nodeOrder[nodeIndex]
+	if node, ok := node.queueMap[nodeName]; ok {
 		qa.nodesChecked++
 		return node, qa.checkedAllNodes()
 	}

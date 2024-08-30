@@ -7,6 +7,11 @@ import (
 	"fmt"
 )
 
+type DequeueRequest struct {
+	*QuerierWorkerConn
+	lastTenantIndex TenantIndex
+}
+
 type QueuePath []string //nolint:revive // disallows types beginning with package name
 type QueueIndex int     //nolint:revive // disallows types beginning with package name
 
@@ -15,7 +20,7 @@ const localQueueIndex = -1
 type Tree interface {
 	EnqueueFrontByPath(QueuePath, any) error
 	EnqueueBackByPath(QueuePath, any) error
-	Dequeue() (QueuePath, any)
+	Dequeue(dequeueReq *DequeueRequest) (QueuePath, any)
 	ItemCount() int
 	IsEmpty() bool
 }
@@ -71,8 +76,8 @@ func (t *MultiQueuingAlgorithmTreeQueue) IsEmpty() bool {
 // Nodes that empty down to the leaf after being dequeued from (or which are found to be empty leaf
 // nodes during the dequeue operation) are deleted as the recursion returns up the stack. This
 // maintains structural guarantees relied upon to make IsEmpty() non-recursive.
-func (t *MultiQueuingAlgorithmTreeQueue) Dequeue() (QueuePath, any) {
-	path, v := t.rootNode.dequeue()
+func (t *MultiQueuingAlgorithmTreeQueue) Dequeue(dequeueReq *DequeueRequest) (QueuePath, any) {
+	path, v := t.rootNode.dequeue(dequeueReq)
 	// The returned node dequeue path includes the root node; exclude
 	// this so that the return path can be used if needed to enqueue.
 	return path[1:], v
@@ -215,7 +220,7 @@ func (n *Node) enqueueBackByPath(tree *MultiQueuingAlgorithmTreeQueue, pathFromN
 	return nil
 }
 
-func (n *Node) dequeue() (QueuePath, any) {
+func (n *Node) dequeue(dequeueReq *DequeueRequest) (QueuePath, any) {
 	var v any
 	var childPath QueuePath
 
@@ -229,7 +234,7 @@ func (n *Node) dequeue() (QueuePath, any) {
 			// we can't dequeue a value from an empty node; return early
 			return path, nil
 		}
-		dequeueNode, checkedAllNodes = n.queuingAlgorithm.dequeueSelectNode(n)
+		dequeueNode, checkedAllNodes = n.queuingAlgorithm.dequeueSelectNode(dequeueReq, n)
 		switch dequeueNode {
 		case n:
 			if n.isLeaf() {
@@ -248,7 +253,7 @@ func (n *Node) dequeue() (QueuePath, any) {
 			checkedAllNodes = true
 		// dequeue from a child
 		default:
-			childPath, v = dequeueNode.dequeue()
+			childPath, v = dequeueNode.dequeue(dequeueReq)
 		}
 
 		if v == nil {

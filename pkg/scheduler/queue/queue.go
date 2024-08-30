@@ -420,15 +420,20 @@ func (q *RequestQueue) enqueueRequestInternal(r requestToEnqueue) error {
 // b) an ErrQuerierShuttingDown indicating the querier has been placed in a graceful shutdown state.
 func (q *RequestQueue) trySendNextRequestForQuerier(dequeueReq *QuerierWorkerDequeueRequest) (done bool) {
 	// TODO: This is a temporary solution to set the current querier-worker for the QuerierWorkerQueuePriorityAlgo.
-	if itq, ok := q.queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
-		for _, algoState := range itq.algosByDepth {
-			if qwpAlgo, ok := algoState.(*QuerierWorkerQueuePriorityAlgo); ok {
-				qwpAlgo.SetCurrentQuerierWorker(dequeueReq.WorkerID)
-			}
-		}
-	}
+	//if itq, ok := q.queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+	//	for _, algoState := range itq.algosByDepth {
+	//		if qwpAlgo, ok := algoState.(*QuerierWorkerQueuePriorityAlgo); ok {
+	//			qwpAlgo.SetCurrentQuerierWorker(dequeueReq.WorkerID)
+	//		}
+	//	}
+	//}
 
-	req, tenant, idx, err := q.queueBroker.dequeueRequestForQuerier(dequeueReq.lastTenantIndex.last, dequeueReq.QuerierID)
+	req, tenant, idx, err := q.queueBroker.dequeueRequestForQuerier(
+		&DequeueRequest{
+			QuerierWorkerConn: dequeueReq.QuerierWorkerConn,
+			lastTenantIndex:   dequeueReq.lastTenantIndex,
+		},
+	)
 	if err != nil {
 		// If this querier has told us it's shutting down, terminate AwaitRequestForQuerier with an error now...
 		dequeueReq.sendError(err)
