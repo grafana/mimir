@@ -183,25 +183,62 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 			return nil, compat.NewNotSupportedError("binary expressions")
 		}
 
-		if e.LHS.Type() != parser.ValueTypeVector || e.RHS.Type() != parser.ValueTypeVector {
-			return nil, compat.NewNotSupportedError("binary expression between scalar and instant vector")
-		}
+		if e.LHS.Type() == parser.ValueTypeScalar {
+			// LHS is a scalar, RHS is a vector.
+			scalar, err := q.convertToScalarOperator(e.LHS)
+			if err != nil {
+				return nil, err
+			}
 
-		if e.VectorMatching.Card != parser.CardOneToOne {
-			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with %v matching", e.VectorMatching.Card))
-		}
+			vector, err := q.convertToInstantVectorOperator(e.RHS)
+			if err != nil {
+				return nil, err
+			}
 
-		lhs, err := q.convertToInstantVectorOperator(e.LHS)
-		if err != nil {
-			return nil, err
-		}
+			o, err := operators.NewVectorScalarBinaryOperation(scalar, vector, true, e.Op, q.startT, q.endT, q.intervalMs, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+			if err != nil {
+				return nil, err
+			}
 
-		rhs, err := q.convertToInstantVectorOperator(e.RHS)
-		if err != nil {
-			return nil, err
-		}
+			return operators.NewDeduplicateAndMerge(o, q.memoryConsumptionTracker), err
+		} else if e.RHS.Type() == parser.ValueTypeScalar {
+			// RHS is a scalar, LHS is a vector.
+			vector, err := q.convertToInstantVectorOperator(e.LHS)
+			if err != nil {
+				return nil, err
+			}
 
-		return operators.NewVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+			scalar, err := q.convertToScalarOperator(e.RHS)
+			if err != nil {
+				return nil, err
+			}
+
+			o, err := operators.NewVectorScalarBinaryOperation(scalar, vector, false, e.Op, q.startT, q.endT, q.intervalMs, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+			if err != nil {
+				return nil, err
+			}
+
+			return operators.NewDeduplicateAndMerge(o, q.memoryConsumptionTracker), err
+		} else {
+			// Vectors on both sides.
+			// We don't need to handle scalars on both sides here, as that would produce a scalar and so is handled in convertToScalarOperator.
+
+			if e.VectorMatching.Card != parser.CardOneToOne {
+				return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with %v matching", e.VectorMatching.Card))
+			}
+
+			lhs, err := q.convertToInstantVectorOperator(e.LHS)
+			if err != nil {
+				return nil, err
+			}
+
+			rhs, err := q.convertToInstantVectorOperator(e.RHS)
+			if err != nil {
+				return nil, err
+			}
+
+			return operators.NewVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+		}
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
 		return q.convertToInstantVectorOperator(e.Expr)

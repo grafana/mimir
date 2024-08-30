@@ -42,8 +42,6 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
 		"1 + 2":                      "binary expression between two scalars",
-		"1 + metric{}":               "binary expression between scalar and instant vector",
-		"metric{} + 1":               "binary expression between scalar and instant vector",
 		"metric{} < other_metric{}":  "binary expression with '<'",
 		"metric{} or other_metric{}": "binary expression with many-to-many matching",
 		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
