@@ -34,25 +34,27 @@ var (
 
 // shardedQueryable is an implementor of the Queryable interface.
 type shardedQueryable struct {
-	req             MetricsQueryRequest
-	handler         MetricsQueryHandler
-	responseHeaders *responseHeadersTracker
+	req                   MetricsQueryRequest
+	annotationAccumulator *annotationAccumulator
+	handler               MetricsQueryHandler
+	responseHeaders       *responseHeadersTracker
 }
 
 // newShardedQueryable makes a new shardedQueryable. We expect a new queryable is created for each
 // query, otherwise the response headers tracker doesn't work as expected, because it merges the
 // headers for all queries run through the queryable and never reset them.
-func newShardedQueryable(req MetricsQueryRequest, next MetricsQueryHandler) *shardedQueryable {
+func newShardedQueryable(req MetricsQueryRequest, annotationAccumulator *annotationAccumulator, next MetricsQueryHandler) *shardedQueryable {
 	return &shardedQueryable{
-		req:             req,
-		handler:         next,
-		responseHeaders: newResponseHeadersTracker(),
+		req:                   req,
+		annotationAccumulator: annotationAccumulator,
+		handler:               next,
+		responseHeaders:       newResponseHeadersTracker(),
 	}
 }
 
 // Querier implements storage.Queryable.
 func (q *shardedQueryable) Querier(_, _ int64) (storage.Querier, error) {
-	return &shardedQuerier{req: q.req, handler: q.handler, responseHeaders: q.responseHeaders}, nil
+	return &shardedQuerier{req: q.req, annotationAccumulator: q.annotationAccumulator, handler: q.handler, responseHeaders: q.responseHeaders}, nil
 }
 
 // getResponseHeaders returns the merged response headers received by the downstream
@@ -65,8 +67,9 @@ func (q *shardedQueryable) getResponseHeaders() []*PrometheusHeader {
 // from the astmapper.EmbeddedQueriesMetricName metric label value and concurrently run embedded queries
 // through the downstream handler.
 type shardedQuerier struct {
-	req     MetricsQueryRequest
-	handler MetricsQueryHandler
+	req                   MetricsQueryRequest
+	annotationAccumulator *annotationAccumulator
+	handler               MetricsQueryHandler
 
 	// Keep track of response headers received when running embedded queries.
 	responseHeaders *responseHeadersTracker
@@ -119,13 +122,20 @@ func (q *shardedQuerier) handleEmbeddedQueries(ctx context.Context, queries []st
 			return err
 		}
 
-		resStreams, err := responseToSamples(resp)
+		promRes, ok := resp.(*PrometheusResponse)
+		if !ok {
+			return errors.Errorf("error invalid response type: %T, expected: %T", resp, &PrometheusResponse{})
+		}
+		resStreams, err := responseToSamples(promRes)
 		if err != nil {
 			return err
 		}
 		streams[idx] = resStreams // No mutex is needed since each job writes its own index. This is like writing separate variables.
 
 		q.responseHeaders.mergeHeaders(resp.(*PrometheusResponse).Headers)
+		q.annotationAccumulator.addInfos(promRes.Infos)
+		q.annotationAccumulator.addWarnings(promRes.Warnings)
+
 		return nil
 	})
 
@@ -289,25 +299,22 @@ func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *sto
 }
 
 // responseToSamples is needed to map back from api response to the underlying series data
-func responseToSamples(resp Response) ([]SampleStream, error) {
-	promRes, ok := resp.(*PrometheusResponse)
-	if !ok {
-		return nil, errors.Errorf("error invalid response type: %T, expected: %T", resp, &PrometheusResponse{})
+func responseToSamples(resp *PrometheusResponse) ([]SampleStream, error) {
+	if resp.Error != "" {
+		return nil, errors.New(resp.Error)
 	}
-	if promRes.Error != "" {
-		return nil, errors.New(promRes.Error)
-	}
-	switch promRes.Data.ResultType {
+
+	switch resp.Data.ResultType {
 	case string(parser.ValueTypeString),
 		string(parser.ValueTypeScalar),
 		string(parser.ValueTypeVector),
 		string(parser.ValueTypeMatrix):
-		return promRes.Data.Result, nil
+		return resp.Data.Result, nil
 	}
 
 	return nil, errors.Errorf(
 		"Invalid promql.Value type: [%s]. Only %s, %s, %s and %s supported",
-		promRes.Data.ResultType,
+		resp.Data.ResultType,
 		parser.ValueTypeString,
 		parser.ValueTypeScalar,
 		parser.ValueTypeVector,

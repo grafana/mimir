@@ -179,7 +179,9 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 	if err != nil {
 		return nil, err
 	}
-	shardedQueryable := newShardedQueryable(req, s.next)
+
+	annotationAccumulator := newAnnotationAccumulator()
+	shardedQueryable := newShardedQueryable(req, annotationAccumulator, s.next)
 
 	qry, err := newQuery(ctx, req, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
 	if err != nil {
@@ -193,17 +195,26 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 		level.Warn(spanLog).Log("msg", "failed to execute split instant query", "err", err)
 		return nil, mapEngineError(err)
 	}
+
+	// Note that the positions based on the original query may be wrong as the rewritten
+	// query which is actually used is different, but the user does not see the rewritten
+	// query, so we pass in an empty string as the query so the positions will be hidden.
 	warn, info := res.Warnings.AsStrings("", 0, 0)
+
+	// Add any annotations returned by the sharded queries, and remove any duplicates.
+	accumulatedWarnings, accumulatedInfos := annotationAccumulator.getAll()
+	warn = append(warn, accumulatedWarnings...)
+	info = append(info, accumulatedInfos...)
+	warn = removeDuplicates(warn)
+	info = removeDuplicates(info)
+
 	return &PrometheusResponse{
 		Status: statusSuccess,
 		Data: &PrometheusData{
 			ResultType: string(res.Value.Type()),
 			Result:     extracted,
 		},
-		Headers: shardedQueryable.getResponseHeaders(),
-		// Note that the positions based on the original query may be wrong as the rewritten
-		// query which is actually used is different, but the user does not see the rewritten
-		// query, so we pass in an empty string as the query so the positions will be hidden.
+		Headers:  shardedQueryable.getResponseHeaders(),
 		Warnings: warn,
 		Infos:    info,
 	}, nil
