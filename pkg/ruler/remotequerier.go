@@ -28,6 +28,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/remote"
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -147,7 +149,7 @@ func NewRemoteQuerier(
 
 // Read satisfies Prometheus remote.ReadClient.
 // See: https://github.com/prometheus/prometheus/blob/1291ec71851a7383de30b089f456fdb6202d037a/storage/remote/client.go#L264
-func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
+func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query, sortSeries bool) (storage.SeriesSet, error) {
 	log, ctx := spanlogger.NewWithLogger(ctx, q.logger, "ruler.RemoteQuerier.Read")
 	defer log.Span.Finish()
 
@@ -195,6 +197,17 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.
 	}
 	level.Debug(log).Log("msg", "remote read successfully performed", "qs", query)
 
+	var contentType string
+	for _, h := range resp.GetHeaders() {
+		if strings.ToLower(h.GetKey()) == "content-type" {
+			contentType = h.GetValues()[0]
+			break
+		}
+	}
+	if contentType != "application/x-protobuf" {
+		return nil, errors.Errorf("unexpected response content type %s", contentType)
+	}
+
 	uncompressed, err := snappy.Decode(nil, resp.Body)
 	if err != nil {
 		return nil, errors.Wrap(err, "error reading response")
@@ -209,7 +222,9 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.
 	if len(rdResp.Results) != 1 {
 		return nil, errors.Errorf("responses: want %d, got %d", 1, len(rdResp.Results))
 	}
-	return rdResp.Results[0], nil
+
+	res := rdResp.Results[0]
+	return remote.FromQueryResult(sortSeries, res), nil
 }
 
 // Query performs a query for the given time.
