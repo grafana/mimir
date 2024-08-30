@@ -229,6 +229,10 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 
 		writeClient := newKafkaProduceClient(t, clusterAddr)
 
+		t.Cleanup(func() {
+			assert.NoError(t, services.StopAndAwaitTerminated(context.Background(), reader))
+		})
+
 		return reader, writeClient, reg
 	}
 
