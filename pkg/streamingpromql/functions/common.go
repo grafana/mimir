@@ -13,10 +13,9 @@ import (
 // SeriesMetadataFunction is a function to operate on the metadata across series.
 type SeriesMetadataFunction func(seriesMetadata []types.SeriesMetadata, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error)
 
-func PassthroughSeriesMetadata(seriesMetadata []types.SeriesMetadata, _ *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
-	return seriesMetadata, nil
-}
-
+// DropSeriesName is a SeriesMetadataFunc that removes the __name__ label from all series in seriesMetadata.
+//
+// It does not check that the list of returned series is free of duplicates.
 func DropSeriesName(seriesMetadata []types.SeriesMetadata, _ *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
 	for i := range seriesMetadata {
 		seriesMetadata[i].Labels = seriesMetadata[i].Labels.DropMetricName()
@@ -106,7 +105,15 @@ type FunctionOverRangeVector struct {
 	SeriesValidationFuncFactory RangeVectorSeriesValidationFunctionFactory
 
 	// SeriesMetadataFunc is the function that computes the output series for this function based on the given input series.
+	//
+	// If SeriesMetadataFunc is nil, the input series are used as-is.
 	SeriesMetadataFunc SeriesMetadataFunction
+
+	// NeedsSeriesDeduplication enables deduplication and merging of output series with the same labels.
+	//
+	// This should be set to true if SeriesMetadataFunc modifies the input series labels in such a way that duplicates may be
+	// present in the output series labels (eg. dropping a label).
+	NeedsSeriesDeduplication bool
 
 	// NeedsSeriesNamesForAnnotations indicates that this function uses the names of input series when emitting annotations.
 	NeedsSeriesNamesForAnnotations bool

@@ -86,7 +86,11 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 	m.numSteps = m.Inner.StepCount()
 	m.rangeSeconds = m.Inner.Range().Seconds()
 
-	return m.Func.SeriesMetadataFunc(metadata, m.MemoryConsumptionTracker)
+	if m.Func.SeriesMetadataFunc != nil {
+		return m.Func.SeriesMetadataFunc(metadata, m.MemoryConsumptionTracker)
+	}
+
+	return metadata, nil
 }
 
 func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {

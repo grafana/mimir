@@ -44,8 +44,8 @@ type BinaryOperation struct {
 	rightMetadata []types.SeriesMetadata
 
 	remainingSeries []*binaryOperationOutputSeries
-	leftBuffer      *binaryOperationSeriesBuffer
-	rightBuffer     *binaryOperationSeriesBuffer
+	leftBuffer      *InstantVectorOperatorBuffer
+	rightBuffer     *InstantVectorOperatorBuffer
 	leftIterator    types.InstantVectorSeriesDataIterator
 	rightIterator   types.InstantVectorSeriesDataIterator
 	opFunc          binaryOperationFunc
@@ -143,8 +143,8 @@ func (b *BinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMet
 	b.sortSeries(allMetadata, allSeries)
 	b.remainingSeries = allSeries
 
-	b.leftBuffer = newBinaryOperationSeriesBuffer(b.Left, leftSeriesUsed, b.MemoryConsumptionTracker)
-	b.rightBuffer = newBinaryOperationSeriesBuffer(b.Right, rightSeriesUsed, b.MemoryConsumptionTracker)
+	b.leftBuffer = NewInstantVectorOperatorBuffer(b.Left, leftSeriesUsed, b.MemoryConsumptionTracker)
+	b.rightBuffer = NewInstantVectorOperatorBuffer(b.Right, rightSeriesUsed, b.MemoryConsumptionTracker)
 
 	return allMetadata, nil
 }
@@ -416,7 +416,7 @@ func (b *BinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSe
 	thisSeries := b.remainingSeries[0]
 	b.remainingSeries = b.remainingSeries[1:]
 
-	allLeftSeries, err := b.leftBuffer.getSeries(ctx, thisSeries.leftSeriesIndices)
+	allLeftSeries, err := b.leftBuffer.GetSeries(ctx, thisSeries.leftSeriesIndices)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -426,7 +426,7 @@ func (b *BinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSe
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	allRightSeries, err := b.rightBuffer.getSeries(ctx, thisSeries.rightSeriesIndices)
+	allRightSeries, err := b.rightBuffer.GetSeries(ctx, thisSeries.rightSeriesIndices)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -451,297 +451,48 @@ func (b *BinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSe
 //
 // mergeOneSide is optimised for the case where there is only one source series, or the source series do not overlap, as in the example above.
 //
-// NOTE: mergeOneSide has the side-effect of re-ordering both data and sourceSeriesIndices.
+// NOTE: mergeOneSide has the side effect of re-ordering both data and sourceSeriesIndices.
 //
 // FIXME: for many-to-one / one-to-many matching, we could avoid re-merging each time for the side used multiple times
 func (b *BinaryOperation) mergeOneSide(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, sourceSeriesMetadata []types.SeriesMetadata, side string) (types.InstantVectorSeriesData, error) {
-	if len(data) == 1 {
-		// Fast path: if there's only one series on this side, there's no merging required.
-		return data[0], nil
-	}
+	merged, conflict, err := MergeSeries(data, sourceSeriesIndices, b.MemoryConsumptionTracker)
 
-	if len(data) == 0 {
-		return types.InstantVectorSeriesData{}, nil
-	}
-
-	// Merge floats and histograms individually.
-	// After which we check if there are any duplicate points in either the floats or histograms.
-
-	ds := seriesForOneGroupSide{
-		data:                data,
-		sourceSeriesIndices: sourceSeriesIndices,
-	}
-
-	floats, err := b.mergeOneSideFloats(ds, sourceSeriesMetadata, side)
-	if err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
-	histograms, err := b.mergeOneSideHistograms(ds, sourceSeriesMetadata, side)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	// Check for any conflicts between floats and histograms
-	idxFloats, idxHistograms := 0, 0
-	for idxFloats < len(floats) && idxHistograms < len(histograms) {
-		if floats[idxFloats].T == histograms[idxHistograms].T {
-			// Conflict found
-			firstConflictingSeriesLabels := sourceSeriesMetadata[0].Labels
-			groupLabels := b.groupLabelsFunc()(firstConflictingSeriesLabels)
-
-			return types.InstantVectorSeriesData{}, fmt.Errorf("found both float and histogram samples for the match group %s on the %s side of the operation at timestamp %s", groupLabels, side, timestamp.Time(floats[idxFloats].T).Format(time.RFC3339Nano))
-		}
-		if floats[idxFloats].T < histograms[idxHistograms].T {
-			idxFloats++
-		} else {
-			idxHistograms++
-		}
+	if conflict != nil {
+		return types.InstantVectorSeriesData{}, b.mergeConflictToError(conflict, sourceSeriesMetadata, side)
 	}
 
-	return types.InstantVectorSeriesData{Floats: floats, Histograms: histograms}, nil
+	return merged, nil
 }
 
-func (b *BinaryOperation) mergeOneSideFloats(seriesGroupSide seriesForOneGroupSide, sourceSeriesMetadata []types.SeriesMetadata, side string) ([]promql.FPoint, error) {
-	if len(seriesGroupSide.data) == 0 {
-		return nil, nil
-	}
-	if len(seriesGroupSide.data) == 1 {
-		return seriesGroupSide.data[0].Floats, nil
-	}
+func (b *BinaryOperation) mergeConflictToError(conflict *MergeConflict, sourceSeriesMetadata []types.SeriesMetadata, side string) error {
+	firstConflictingSeriesLabels := sourceSeriesMetadata[conflict.firstConflictingSeriesIndex].Labels
+	groupLabels := b.groupLabelsFunc()(firstConflictingSeriesLabels)
 
-	sort.Sort(floatSideSorter{side: seriesGroupSide})
-
-	// After sorting, if the first series has no floats, we're done, as that means there are no floats in any series
-	if len(seriesGroupSide.data[0].Floats) == 0 {
-		return nil, nil
-	}
-
-	mergedSize := len(seriesGroupSide.data[0].Floats)
-	remainingSeriesWithFloats := 1
-	haveOverlaps := false
-
-	for i := 0; i < len(seriesGroupSide.data)-1; i++ {
-		first := seriesGroupSide.data[i]
-		second := seriesGroupSide.data[i+1]
-
-		// We're going to create a new slice, so return this one to the pool.
-		// We must defer here, rather than at the end, as the merge loop below reslices Floats.
-		// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
-		defer types.FPointSlicePool.Put(second.Floats, b.MemoryConsumptionTracker)
-
-		if len(second.Floats) == 0 {
-			// We've reached the end of all series with floats.
-			// However, continue iterating so we can return all of the slices.
-			// (As they may have length 0, but a non-zero capacity).
-			continue
-		}
-
-		mergedSize += len(second.Floats)
-		remainingSeriesWithFloats++
-
-		// Check if first overlaps with second.
-		// InstantVectorSeriesData.Floats is required to be sorted in timestamp order, so if the last point
-		// of the first series is before the first point of the second series, it cannot overlap.
-		if first.Floats[len(first.Floats)-1].T >= second.Floats[0].T {
-			haveOverlaps = true
-		}
+	if conflict.secondConflictingSeriesIndex == -1 {
+		return fmt.Errorf(
+			"found %s for the match group %s on the %s side of the operation at timestamp %s",
+			conflict.description,
+			groupLabels,
+			side,
+			timestamp.Time(conflict.timestamp).Format(time.RFC3339Nano),
+		)
 	}
 
-	if remainingSeriesWithFloats == 1 {
-		// No other series had any floats
-		return seriesGroupSide.data[0].Floats, nil
-	}
+	secondConflictingSeriesLabels := sourceSeriesMetadata[conflict.secondConflictingSeriesIndex].Labels
 
-	// We're going to create a new slice, so return this one to the pool.
-	// We'll return the other slices in the for loop below.
-	// We must defer here, rather than at the end, as the merge loop below reslices Floats.
-	// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
-	defer types.FPointSlicePool.Put(seriesGroupSide.data[0].Floats, b.MemoryConsumptionTracker)
-
-	// Re-slice the ds.data with just the series with floats to make the rest of our job easier
-	// Because we aren't re-sorting here it doesn't matter that ds.sourceSeriesIndices remains longer.
-	data := seriesGroupSide.data[:remainingSeriesWithFloats]
-
-	output, err := types.FPointSlicePool.Get(mergedSize, b.MemoryConsumptionTracker)
-	if err != nil {
-		return nil, err
-	}
-
-	if !haveOverlaps {
-		// Fast path: no overlaps, so we can just concatenate the slices together, and there's no
-		// need to check for conflicts either.
-		for _, d := range data {
-			output = append(output, d.Floats...)
-		}
-
-		return output, nil
-	}
-
-	// Slow path: there are overlaps, so we need to merge slices together and check for conflicts as we go.
-	// We don't expect to have many series here, so something like a loser tree is likely unnecessary.
-	for {
-		if remainingSeriesWithFloats == 1 {
-			// Only one series left, just copy remaining points.
-			for _, d := range data {
-				if len(d.Floats) > 0 {
-					output = append(output, d.Floats...)
-					return output, nil
-				}
-			}
-		}
-
-		nextT := int64(math.MaxInt64)
-		sourceSeriesIndexInData := -1
-
-		for seriesIndexInData, d := range data {
-			if len(d.Floats) == 0 {
-				continue
-			}
-
-			nextPointInSeries := d.Floats[0]
-			if nextPointInSeries.T == nextT {
-				// Another series has a point with the same timestamp. We have a conflict.
-				firstConflictingSeriesLabels := sourceSeriesMetadata[seriesGroupSide.sourceSeriesIndices[sourceSeriesIndexInData]].Labels
-				secondConflictingSeriesLabels := sourceSeriesMetadata[seriesGroupSide.sourceSeriesIndices[seriesIndexInData]].Labels
-				groupLabels := b.groupLabelsFunc()(firstConflictingSeriesLabels)
-
-				return nil, fmt.Errorf("found duplicate series for the match group %s on the %s side of the operation at timestamp %s: %s and %s", groupLabels, side, timestamp.Time(nextT).Format(time.RFC3339Nano), firstConflictingSeriesLabels, secondConflictingSeriesLabels)
-			}
-
-			if d.Floats[0].T < nextT {
-				nextT = d.Floats[0].T
-				sourceSeriesIndexInData = seriesIndexInData
-			}
-		}
-
-		output = append(output, data[sourceSeriesIndexInData].Floats[0])
-		data[sourceSeriesIndexInData].Floats = data[sourceSeriesIndexInData].Floats[1:]
-
-		if len(data[sourceSeriesIndexInData].Floats) == 0 {
-			remainingSeriesWithFloats--
-		}
-	}
-}
-
-func (b *BinaryOperation) mergeOneSideHistograms(seriesGroupSide seriesForOneGroupSide, sourceSeriesMetadata []types.SeriesMetadata, side string) ([]promql.HPoint, error) {
-	if len(seriesGroupSide.data) == 0 {
-		return nil, nil
-	}
-	if len(seriesGroupSide.data) == 1 {
-		return seriesGroupSide.data[0].Histograms, nil
-	}
-
-	sort.Sort(histogramSideSorter{side: seriesGroupSide})
-
-	// After sorting, if the first series has no histograms, we're done, as that means there are no histograms in any series
-	if len(seriesGroupSide.data[0].Histograms) == 0 {
-		return nil, nil
-	}
-
-	mergedSize := len(seriesGroupSide.data[0].Histograms)
-	remainingSeriesWithHistograms := 1
-	haveOverlaps := false
-
-	for i := 0; i < len(seriesGroupSide.data)-1; i++ {
-		first := seriesGroupSide.data[i]
-		second := seriesGroupSide.data[i+1]
-
-		// We're going to create a new slice, so return this one to the pool.
-		// We must defer here, rather than at the end, as the merge loop below reslices Histograms.
-		// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
-		defer types.HPointSlicePool.Put(second.Histograms, b.MemoryConsumptionTracker)
-
-		if len(second.Histograms) == 0 {
-			// We've reached the end of all series with histograms.
-			// However, continue iterating so we can return all of the slices.
-			// (As they may have length 0, but a non-zero capacity).
-			continue
-		}
-		mergedSize += len(second.Histograms)
-		remainingSeriesWithHistograms++
-
-		// Check if first overlaps with second.
-		// InstantVectorSeriesData.Histograms is required to be sorted in timestamp order, so if the last point
-		// of the first series is before the first point of the second series, it cannot overlap.
-		if first.Histograms[len(first.Histograms)-1].T >= second.Histograms[0].T {
-			haveOverlaps = true
-		}
-	}
-
-	if remainingSeriesWithHistograms == 1 {
-		// No other series had any histograms
-		return seriesGroupSide.data[0].Histograms, nil
-	}
-
-	// We're going to create a new slice, so return this one to the pool.
-	// We'll return the other slices in the for loop below.
-	// We must defer here, rather than at the end, as the merge loop below reslices Histograms.
-	// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
-	defer types.HPointSlicePool.Put(seriesGroupSide.data[0].Histograms, b.MemoryConsumptionTracker)
-
-	// Re-slice data with just the series with histograms to make the rest of our job easier
-	// Because we aren't re-sorting here it doesn't matter that ds.sourceSeriesIndices remains longer.
-	data := seriesGroupSide.data[:remainingSeriesWithHistograms]
-
-	output, err := types.HPointSlicePool.Get(mergedSize, b.MemoryConsumptionTracker)
-	if err != nil {
-		return nil, err
-	}
-
-	if !haveOverlaps {
-		// Fast path: no overlaps, so we can just concatenate the slices together, and there's no
-		// need to check for conflicts either.
-		for _, d := range data {
-			output = append(output, d.Histograms...)
-		}
-
-		return output, nil
-	}
-
-	// Slow path: there are overlaps, so we need to merge slices together and check for conflicts as we go.
-	// We don't expect to have many series here, so something like a loser tree is likely unnecessary.
-	for {
-		if remainingSeriesWithHistograms == 1 {
-			// Only one series left, just copy remaining points.
-			for _, d := range data {
-				if len(d.Histograms) > 0 {
-					output = append(output, d.Histograms...)
-					return output, nil
-				}
-			}
-		}
-
-		nextT := int64(math.MaxInt64)
-		sourceSeriesIndexInData := -1
-
-		for seriesIndexInData, d := range data {
-			if len(d.Histograms) == 0 {
-				continue
-			}
-
-			nextPointInSeries := d.Histograms[0]
-			if nextPointInSeries.T == nextT {
-				// Another series has a point with the same timestamp. We have a conflict.
-				firstConflictingSeriesLabels := sourceSeriesMetadata[seriesGroupSide.sourceSeriesIndices[sourceSeriesIndexInData]].Labels
-				secondConflictingSeriesLabels := sourceSeriesMetadata[seriesGroupSide.sourceSeriesIndices[seriesIndexInData]].Labels
-				groupLabels := b.groupLabelsFunc()(firstConflictingSeriesLabels)
-
-				return nil, fmt.Errorf("found duplicate series for the match group %s on the %s side of the operation at timestamp %s: %s and %s", groupLabels, side, timestamp.Time(nextT).Format(time.RFC3339Nano), firstConflictingSeriesLabels, secondConflictingSeriesLabels)
-			}
-
-			if d.Histograms[0].T < nextT {
-				nextT = d.Histograms[0].T
-				sourceSeriesIndexInData = seriesIndexInData
-			}
-		}
-
-		output = append(output, data[sourceSeriesIndexInData].Histograms[0])
-		data[sourceSeriesIndexInData].Histograms = data[sourceSeriesIndexInData].Histograms[1:]
-
-		if len(data[sourceSeriesIndexInData].Histograms) == 0 {
-			remainingSeriesWithHistograms--
-		}
-	}
+	return fmt.Errorf(
+		"found %s for the match group %s on the %s side of the operation at timestamp %s: %s and %s",
+		conflict.description,
+		groupLabels,
+		side,
+		timestamp.Time(conflict.timestamp).Format(time.RFC3339Nano),
+		firstConflictingSeriesLabels,
+		secondConflictingSeriesLabels,
+	)
 }
 
 func (b *BinaryOperation) computeResult(left types.InstantVectorSeriesData, right types.InstantVectorSeriesData) (types.InstantVectorSeriesData, error) {
@@ -904,102 +655,11 @@ func (b *BinaryOperation) Close() {
 	}
 
 	if b.leftBuffer != nil {
-		b.leftBuffer.close()
+		b.leftBuffer.Close()
 	}
 
 	if b.rightBuffer != nil {
-		b.rightBuffer.close()
-	}
-}
-
-// binaryOperationSeriesBuffer buffers series data until it is needed by BinaryOperation.
-//
-// For example, if the source operator produces series in order A, B, C, but their corresponding output series from the
-// binary operation are in order B, A, C, binaryOperationSeriesBuffer will buffer the data for series A while series B is
-// produced, then return series A when needed.
-type binaryOperationSeriesBuffer struct {
-	source          types.InstantVectorOperator
-	nextIndexToRead int
-
-	// If seriesUsed[i] == true, then the series at index i is needed for this operation and should be buffered if not used immediately.
-	// If seriesUsed[i] == false, then the series at index i is never used and can be immediately discarded.
-	// FIXME: could use a bitmap here to save some memory
-	seriesUsed []bool
-
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
-
-	// Stores series read but required for later series.
-	buffer map[int]types.InstantVectorSeriesData
-
-	// Reused to avoid allocating on every call to getSeries.
-	output []types.InstantVectorSeriesData
-}
-
-func newBinaryOperationSeriesBuffer(source types.InstantVectorOperator, seriesUsed []bool, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *binaryOperationSeriesBuffer {
-	return &binaryOperationSeriesBuffer{
-		source:                   source,
-		seriesUsed:               seriesUsed,
-		memoryConsumptionTracker: memoryConsumptionTracker,
-		buffer:                   map[int]types.InstantVectorSeriesData{},
-	}
-}
-
-// getSeries returns the data for the series in seriesIndices.
-// The returned slice is only safe to use until getSeries is called again.
-// seriesIndices should be sorted in ascending order to avoid unnecessary buffering.
-func (b *binaryOperationSeriesBuffer) getSeries(ctx context.Context, seriesIndices []int) ([]types.InstantVectorSeriesData, error) {
-	if cap(b.output) < len(seriesIndices) {
-		b.output = make([]types.InstantVectorSeriesData, len(seriesIndices))
-	}
-
-	b.output = b.output[:len(seriesIndices)]
-
-	for i, seriesIndex := range seriesIndices {
-		d, err := b.getSingleSeries(ctx, seriesIndex)
-
-		if err != nil {
-			return nil, err
-		}
-
-		b.output[i] = d
-	}
-
-	return b.output, nil
-}
-
-func (b *binaryOperationSeriesBuffer) getSingleSeries(ctx context.Context, seriesIndex int) (types.InstantVectorSeriesData, error) {
-	for seriesIndex > b.nextIndexToRead {
-		d, err := b.source.NextSeries(ctx)
-		if err != nil {
-			return types.InstantVectorSeriesData{}, err
-		}
-
-		if b.seriesUsed[b.nextIndexToRead] {
-			// We need this series later, but not right now. Store it for later.
-			b.buffer[b.nextIndexToRead] = d
-		} else {
-			// We don't need this series at all, return the slice to the pool now.
-			types.PutInstantVectorSeriesData(d, b.memoryConsumptionTracker)
-		}
-
-		b.nextIndexToRead++
-	}
-
-	if seriesIndex == b.nextIndexToRead {
-		// Don't bother buffering data if we can return it directly.
-		b.nextIndexToRead++
-		return b.source.NextSeries(ctx)
-	}
-
-	d := b.buffer[seriesIndex]
-	delete(b.buffer, seriesIndex)
-
-	return d, nil
-}
-
-func (b *binaryOperationSeriesBuffer) close() {
-	if b.seriesUsed != nil {
-		types.BoolSlicePool.Put(b.seriesUsed, b.memoryConsumptionTracker)
+		b.rightBuffer.Close()
 	}
 }
 
@@ -1051,63 +711,4 @@ var arithmeticOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 	parser.ATAN2: func(lhs, rhs float64, _, _ *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
 		return math.Atan2(lhs, rhs), nil, true, nil
 	},
-}
-
-// seriesForOneGroupSide couples data and sourceSeriesIndices for use by mergeOneSide.
-// Specifically it is used for histogramSideSorter and floatSideSorter which providing a sorting interface
-// (sort.Interface) which will sort both data and sourceSeriesIndices at the same time to retain a mapping
-// of their indexes on either the present float timestamps or histogram timestamps.
-type seriesForOneGroupSide struct {
-	data                []types.InstantVectorSeriesData
-	sourceSeriesIndices []int
-}
-
-// floatSideSorter sorts side by the timestamp of the first float point in each series.
-// It maintains the order of both data and sourceSeriesIndices.
-type floatSideSorter struct {
-	side seriesForOneGroupSide
-}
-
-func (f floatSideSorter) Len() int {
-	return len(f.side.data)
-}
-
-func (f floatSideSorter) Swap(i, j int) {
-	f.side.data[i], f.side.data[j] = f.side.data[j], f.side.data[i]
-	f.side.sourceSeriesIndices[i], f.side.sourceSeriesIndices[j] = f.side.sourceSeriesIndices[j], f.side.sourceSeriesIndices[i]
-}
-
-func (f floatSideSorter) Less(i, j int) bool {
-	if len(f.side.data[i].Floats) == 0 {
-		return false
-	}
-	if len(f.side.data[j].Floats) == 0 {
-		return true
-	}
-	return f.side.data[i].Floats[0].T < f.side.data[j].Floats[0].T
-}
-
-// histogramSideSorter sorts side by the timestamp of the first histogram point in each series.
-// It maintains the order of both data and sourceSeriesIndices.
-type histogramSideSorter struct {
-	side seriesForOneGroupSide
-}
-
-func (h histogramSideSorter) Len() int {
-	return len(h.side.data)
-}
-
-func (h histogramSideSorter) Swap(i, j int) {
-	h.side.data[i], h.side.data[j] = h.side.data[j], h.side.data[i]
-	h.side.sourceSeriesIndices[i], h.side.sourceSeriesIndices[j] = h.side.sourceSeriesIndices[j], h.side.sourceSeriesIndices[i]
-}
-
-func (h histogramSideSorter) Less(i, j int) bool {
-	if len(h.side.data[i].Histograms) == 0 {
-		return false
-	}
-	if len(h.side.data[j].Histograms) == 0 {
-		return true
-	}
-	return h.side.data[i].Histograms[0].T < h.side.data[j].Histograms[0].T
 }
