@@ -355,7 +355,7 @@ func (q *blocksStoreQuerier) LabelNames(ctx context.Context, _ *storage.LabelHin
 	// Clamp minT; we cannot push this down into queryWithConsistencyCheck as not all its callers need to clamp minT
 	maxQueryLength := q.limits.MaxLabelsQueryLength(tenantID)
 	if maxQueryLength != 0 {
-		minT = clampLabelsMinTime(spanLog, minT, maxT, time.Now().UnixMilli(), maxQueryLength.Milliseconds())
+		minT = clampToMaxLabelQueryLength(spanLog, minT, maxT, time.Now().UnixMilli(), maxQueryLength.Milliseconds())
 	}
 
 	var (
@@ -400,7 +400,7 @@ func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, _ *st
 	// Clamp minT; we cannot push this down into queryWithConsistencyCheck as not all its callers need to clamp minT
 	maxQueryLength := q.limits.MaxLabelsQueryLength(tenantID)
 	if maxQueryLength != 0 {
-		minT = clampLabelsMinTime(spanLog, minT, maxT, time.Now().UnixMilli(), maxQueryLength.Milliseconds())
+		minT = clampToMaxLabelQueryLength(spanLog, minT, maxT, time.Now().UnixMilli(), maxQueryLength.Milliseconds())
 	}
 
 	var (

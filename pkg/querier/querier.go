@@ -339,7 +339,7 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 		return storage.ErrSeriesSet(err)
 	}
 	if sp.Func == "series" { // Clamp max time range for series-only queries, before we check max length.
-		startMs = clampSeriesMinTime(spanLog, startMs, endMs, now.UnixMilli(), mq.limits.MaxLabelsQueryLength(userID).Milliseconds())
+		startMs = clampToMaxLabelQueryLength(spanLog, startMs, endMs, now.UnixMilli(), mq.limits.MaxLabelsQueryLength(userID).Milliseconds())
 	}
 
 	// The time range may have been manipulated during the validation,
@@ -382,11 +382,7 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 	return mq.mergeSeriesSets(result)
 }
 
-func clampLabelsMinTime(spanLog *spanlogger.SpanLogger, startMs, endMs, nowMs, maxLabelQueryLengthMs int64) int64 {
-	return clampSeriesMinTime(spanLog, startMs, endMs, nowMs, maxLabelQueryLengthMs)
-}
-
-func clampSeriesMinTime(spanLog *spanlogger.SpanLogger, startMs, endMs, nowMs, maxLabelQueryLengthMs int64) int64 {
+func clampToMaxLabelQueryLength(spanLog *spanlogger.SpanLogger, startMs, endMs, nowMs, maxLabelQueryLengthMs int64) int64 {
 	if maxLabelQueryLengthMs == 0 {
 		// It's unlimited.
 		return startMs
