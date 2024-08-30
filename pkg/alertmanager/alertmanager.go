@@ -92,7 +92,6 @@ type Config struct {
 	Retention                         time.Duration
 	MaxConcurrentGetRequestsPerTenant int
 	ExternalURL                       *url.URL
-	TmplExternalURL                   *url.URL
 	Limits                            Limits
 	Features                          featurecontrol.Flagger
 
@@ -130,6 +129,7 @@ type Alertmanager struct {
 	receivers       []*nfstatus.Receiver
 	templatesMtx    sync.RWMutex
 	templates       []alertingTemplates.TemplateDefinition
+	tmplExternalURL *url.URL
 	emailCfgMtx     sync.RWMutex
 	emailCfg        alertingReceivers.EmailSenderConfig
 
@@ -192,7 +192,7 @@ type Replicator interface {
 }
 
 // New creates a new Alertmanager.
-func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
+func New(cfg *Config, reg *prometheus.Registry, tmplExternalURL *url.URL) (*Alertmanager, error) {
 	if cfg.TenantDataDir == "" {
 		return nil, fmt.Errorf("directory for tenant-specific AlertManager is not configured")
 	}
@@ -211,6 +211,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 			Help: "Number of rate-limited notifications per integration.",
 		}, []string{"integration"}), // "integration" is consistent with other alertmanager metrics.
 
+		tmplExternalURL: tmplExternalURL,
 	}
 
 	am.registry = reg
@@ -400,7 +401,7 @@ func (am *Alertmanager) TestReceiversHandler(w http.ResponseWriter, r *http.Requ
 	}
 	am.templatesMtx.RUnlock()
 
-	response, status, err := alertingNotify.TestReceivers(r.Context(), c, tmpls, am.buildGrafanaReceiverIntegrations, am.cfg.TmplExternalURL.String())
+	response, status, err := alertingNotify.TestReceivers(r.Context(), c, tmpls, am.buildGrafanaReceiverIntegrations, am.tmplExternalURL.String())
 	if err != nil {
 		http.Error(w,
 			fmt.Sprintf("error testing receivers: %s", err.Error()),

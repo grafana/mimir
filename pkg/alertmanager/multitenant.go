@@ -912,7 +912,6 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		Retention:                         am.cfg.Retention,
 		MaxConcurrentGetRequestsPerTenant: am.cfg.MaxConcurrentGetRequestsPerTenant,
 		ExternalURL:                       am.cfg.ExternalURL.URL,
-		TmplExternalURL:                   tmplExternalURL,
 		Replicator:                        am,
 		ReplicationFactor:                 am.cfg.ShardingRing.ReplicationFactor,
 		Store:                             am.store,
@@ -920,7 +919,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		Limits:                            am.limits,
 		Features:                          am.features,
 		GrafanaAlertmanagerCompatibility:  am.cfg.GrafanaAlertmanagerCompatibilityEnabled,
-	}, reg)
+	}, reg, tmplExternalURL)
 	if err != nil {
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
 	}
@@ -1189,7 +1188,6 @@ func (am *MultitenantAlertmanager) UpdateState(ctx context.Context, part *cluste
 
 // deleteUnusedRemoteUserState deletes state objects in remote storage for users that are no longer configured.
 func (am *MultitenantAlertmanager) deleteUnusedRemoteUserState(ctx context.Context, allUsers []string) {
-
 	users := make(map[string]struct{}, len(allUsers))
 	for _, userID := range allUsers {
 		users[userID] = struct{}{}
