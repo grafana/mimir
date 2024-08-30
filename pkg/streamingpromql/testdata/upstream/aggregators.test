@@ -118,29 +118,25 @@ eval instant at 50m SUM(http_requests) BY (job, group)
 # 	{job="api-server"} 250
 # 	{job="app-server"} 650
 
-# Unsupported by streaming engine.
-# eval instant at 50m MIN(http_requests) BY (job)
-# 	{job="api-server"} 100
-# 	{job="app-server"} 500
+eval instant at 50m MIN(http_requests) BY (job)
+	{job="api-server"} 100
+	{job="app-server"} 500
 
 eval instant at 50m MAX(http_requests) BY (job)
 	{job="api-server"} 400
 	{job="app-server"} 800
 
-# Unsupported by streaming engine.
-# eval instant at 50m abs(-1 * http_requests{group="production",job="api-server"})
-# 	{group="production", instance="0", job="api-server"} 100
-# 	{group="production", instance="1", job="api-server"} 200
+eval instant at 50m abs(-1 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 100
+	{group="production", instance="1", job="api-server"} 200
 
-# Unsupported by streaming engine.
-# eval instant at 50m floor(0.004 * http_requests{group="production",job="api-server"})
-# 	{group="production", instance="0", job="api-server"} 0
-# 	{group="production", instance="1", job="api-server"} 0
+eval instant at 50m floor(0.004 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 0
+	{group="production", instance="1", job="api-server"} 0
 
-# Unsupported by streaming engine.
-# eval instant at 50m ceil(0.004 * http_requests{group="production",job="api-server"})
-# 	{group="production", instance="0", job="api-server"} 1
-# 	{group="production", instance="1", job="api-server"} 1
+eval instant at 50m ceil(0.004 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 1
+	{group="production", instance="1", job="api-server"} 1
 
 # Unsupported by streaming engine.
 # eval instant at 50m round(0.004 * http_requests{group="production",job="api-server"})
