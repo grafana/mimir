@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -36,9 +37,10 @@ type SamplesResponse struct {
 }
 
 type SampleComparisonOptions struct {
-	Tolerance         float64
-	UseRelativeError  bool
-	SkipRecentSamples time.Duration
+	Tolerance              float64
+	UseRelativeError       bool
+	SkipRecentSamples      time.Duration
+	RequireExactErrorMatch bool
 }
 
 func NewSamplesComparator(opts SampleComparisonOptions) *SamplesComparator {
@@ -83,7 +85,7 @@ func (s *SamplesComparator) Compare(expectedResponse, actualResponse []byte) (Co
 		return ComparisonFailed, fmt.Errorf("expected error type '%s' but got '%s'", expected.ErrorType, actual.ErrorType)
 	}
 
-	if expected.Error != actual.Error {
+	if !s.errorsMatch(expected.Error, actual.Error) {
 		return ComparisonFailed, fmt.Errorf("expected error '%s' but got '%s'", expected.Error, actual.Error)
 	}
 
@@ -114,6 +116,60 @@ func (s *SamplesComparator) Compare(expectedResponse, actualResponse []byte) (Co
 	}
 
 	return ComparisonSuccess, nil
+}
+
+var errorEquivalenceClasses = [][]*regexp.Regexp{
+	{
+		// Invalid expression type for range query: MQE and Prometheus' engine return different error messages.
+		// Prometheus' engine:
+		regexp.MustCompile(`invalid parameter "query": invalid expression type "range vector" for range query, must be Scalar or instant Vector`),
+		// MQE:
+		regexp.MustCompile(`invalid parameter "query": query expression produces a range vector, but expression for range queries must produce an instant vector or scalar`),
+	},
+	{
+		// Binary operation conflict on right (one-to-one) / many (one-to-many/many-to-one) side: MQE and Prometheus' engine return different error messages, and there's no guarantee they'll pick the same series as examples.
+		// Even comparing Prometheus' engine to another instance of Prometheus' engine can produce different results: the series selected as examples are not deterministic.
+		// Prometheus' engine:
+		regexp.MustCompile(`found duplicate series for the match group \{.*\} on the (left|right) hand-side of the operation: \[.*\];many-to-many matching not allowed: matching labels must be unique on one side`),
+		// MQE:
+		regexp.MustCompile(`found duplicate series for the match group \{.*\} on the (left|right) side of the operation at timestamp \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z: \{.*\} and \{.*\}`),
+	},
+	{
+		// Same as above, but for left (one-to-one) / one (one-to-many/many-to-one) side.
+		// Prometheus' engine:
+		regexp.MustCompile(`multiple matches for labels: many-to-one matching must be explicit \(group_left/group_right\)`),
+		// MQE:
+		regexp.MustCompile(`found duplicate series for the match group \{.*\} on the (left|right) side of the operation at timestamp \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z: \{.*\} and \{.*\}`),
+	},
+}
+
+func (s *SamplesComparator) errorsMatch(expected, actual string) bool {
+	if expected == actual {
+		return true
+	}
+
+	if s.opts.RequireExactErrorMatch {
+		// Errors didn't match exactly, and we want an exact match. We're done.
+		return false
+	}
+
+	for _, equivalenceClass := range errorEquivalenceClasses {
+		if anyMatch(expected, equivalenceClass) && anyMatch(actual, equivalenceClass) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func anyMatch(s string, patterns []*regexp.Regexp) bool {
+	for _, pattern := range patterns {
+		if pattern.MatchString(s) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func slicesEqualIgnoringOrder(a, b []string) bool {
