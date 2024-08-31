@@ -13,28 +13,33 @@ eval instant at 15m metric{env="1"}
 	metric{env="1"} 120
 
 # Drops __name__ for unary operators
-eval instant at 15m -metric
-	{env="1"} -120
+# Unsupported by streaming engine.
+# eval instant at 15m -metric
+# 	{env="1"} -120
 
 # Drops __name__ for binary operators
 eval instant at 15m metric + another_metric
 	{env="1"} 300
 
 # Does not drop __name__ for binary comparison operators
-eval instant at 15m metric <= another_metric
-	metric{env="1"} 120
+# Unsupported by streaming engine.
+# eval instant at 15m metric <= another_metric
+# 	metric{env="1"} 120
 
 # Drops __name__ for binary comparison operators with "bool" modifier
-eval instant at 15m metric <= bool another_metric
-	{env="1"} 1
+# Unsupported by streaming engine.
+# eval instant at 15m metric <= bool another_metric
+# 	{env="1"} 1
 
 # Drops __name__ for vector-scalar operations
-eval instant at 15m metric * 2
-	{env="1"} 240
+# Unsupported by streaming engine.
+# eval instant at 15m metric * 2
+# 	{env="1"} 240
 
 # Drops __name__ for instant-vector functions
-eval instant at 15m clamp(metric, 0, 100)
-	{env="1"} 100
+# Unsupported by streaming engine.
+# eval instant at 15m clamp(metric, 0, 100)
+# 	{env="1"} 100
 
 # Drops __name__ for range-vector functions
 eval instant at 15m rate(metric{env="1"}[10m])
@@ -49,24 +54,28 @@ eval instant at 15m max_over_time(metric{env="1"}[10m])
 	{env="1"} 120
 
 # Allows relabeling (to-be-dropped) __name__  via label_replace
-eval instant at 15m label_replace(rate({env="1"}[10m]), "my_name", "rate_$1", "__name__", "(.+)")
-	{my_name="rate_metric", env="1"} 0.2
-	{my_name="rate_another_metric", env="1"} 0.2
+# Unsupported by streaming engine.
+# eval instant at 15m label_replace(rate({env="1"}[10m]), "my_name", "rate_$1", "__name__", "(.+)")
+# 	{my_name="rate_metric", env="1"} 0.2
+# 	{my_name="rate_another_metric", env="1"} 0.2
 
 # Allows preserving __name__ via label_replace
-eval instant at 15m label_replace(rate({env="1"}[10m]), "__name__", "rate_$1", "__name__", "(.+)")
-	rate_metric{env="1"} 0.2
-	rate_another_metric{env="1"} 0.2
+# Unsupported by streaming engine.
+# eval instant at 15m label_replace(rate({env="1"}[10m]), "__name__", "rate_$1", "__name__", "(.+)")
+# 	rate_metric{env="1"} 0.2
+# 	rate_another_metric{env="1"} 0.2
 
 # Allows relabeling (to-be-dropped) __name__  via label_join
-eval instant at 15m label_join(rate({env="1"}[10m]), "my_name", "_", "__name__")
-	{my_name="metric", env="1"} 0.2
-	{my_name="another_metric", env="1"} 0.2
+# Unsupported by streaming engine.
+# eval instant at 15m label_join(rate({env="1"}[10m]), "my_name", "_", "__name__")
+# 	{my_name="metric", env="1"} 0.2
+# 	{my_name="another_metric", env="1"} 0.2
 
 # Allows preserving __name__ via label_join
-eval instant at 15m label_join(rate({env="1"}[10m]), "__name__", "_", "__name__", "env")
-	metric_1{env="1"} 0.2
-	another_metric_1{env="1"} 0.2
+# Unsupported by streaming engine.
+# eval instant at 15m label_join(rate({env="1"}[10m]), "__name__", "_", "__name__", "env")
+# 	metric_1{env="1"} 0.2
+# 	another_metric_1{env="1"} 0.2
 
 # Does not drop metric names fro aggregation operators
 eval instant at 15m sum by (__name__, env) (metric{env="1"})
