@@ -50,6 +50,7 @@ const (
 var (
 	errWaitStrongReadConsistencyTimeoutExceeded = errors.Wrap(context.DeadlineExceeded, "wait strong read consistency timeout exceeded")
 	errWaitTargetLagDeadlineExceeded            = errors.Wrap(context.DeadlineExceeded, "target lag deadline exceeded")
+	errUnknownPartitionLeader                   = fmt.Errorf("unknown partition leader")
 )
 
 type record struct {
@@ -900,8 +901,6 @@ func (r *concurrentFetchers) pollFetches(ctx context.Context) (result kgo.Fetche
 		}}
 	}
 }
-
-var errUnknownPartitionLeader = fmt.Errorf("unknown partition leader")
 
 // fetchMinBytesWaitTime is the time the Kafka broker can wait for MinBytes to be filled.
 // This is usually used when there aren't enough records available to fulfil MinBytes, so the broker waits for more records to be produced.
