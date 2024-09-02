@@ -162,6 +162,7 @@
   * `mimirtool rules diff`
   * `mimirtool rules check`
   * `mimirtool rules prepare`
+* [ENHANCEMENT] Remote read and backfill now supports the experimental native histograms. #9156
 
 ### Mimir Continuous Test
 
