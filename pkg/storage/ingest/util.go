@@ -80,7 +80,7 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		kgo.MetadataMinAge(10 * time.Second),
 		kgo.MetadataMaxAge(10 * time.Second),
 
-		kgo.WithLogger(newKafkaLogger(logger)),
+		kgo.WithLogger(NewKafkaLogger(logger)),
 
 		kgo.RetryTimeoutFn(func(key int16) time.Duration {
 			switch key {
