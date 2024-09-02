@@ -807,7 +807,7 @@ type fetchResult struct {
 	fetchedBytes int
 }
 
-func emptyFetchResult(err error) fetchResult {
+func newEmptyFetchResult(err error) fetchResult {
 	return fetchResult{kgo.FetchPartition{Err: err}, 0}
 }
 
@@ -917,9 +917,9 @@ func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant, logg
 	leaderID, leaderEpoch, err := r.client.PartitionLeader(r.topicName, r.partitionID)
 	if err != nil || (leaderID == -1 && leaderEpoch == -1) {
 		if err != nil {
-			return emptyFetchResult(fmt.Errorf("finding leader for partition: %w", err))
+			return newEmptyFetchResult(fmt.Errorf("finding leader for partition: %w", err))
 		}
-		return emptyFetchResult(errUnknownPartitionLeader)
+		return newEmptyFetchResult(errUnknownPartitionLeader)
 	}
 
 	req := kmsg.NewFetchRequest()
@@ -944,9 +944,9 @@ func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant, logg
 	resp, err := req.RequestWith(ctx, r.client.Broker(int(leaderID)))
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return emptyFetchResult(nil)
+			return newEmptyFetchResult(nil)
 		}
-		return emptyFetchResult(fmt.Errorf("fetching from kafka: %w", err))
+		return newEmptyFetchResult(fmt.Errorf("fetching from kafka: %w", err))
 	}
 	rawPartitionResp := resp.Topics[0].Partitions[0]
 	// Here we ignore resp.ErrorCode. That error code was added for support for KIP-227 and is only set if we're using fetch sessions. We don't use fetch sessions.
