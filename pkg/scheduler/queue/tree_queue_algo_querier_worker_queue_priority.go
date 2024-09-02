@@ -59,7 +59,6 @@ type QuerierWorkerQueuePriorityAlgo struct {
 	currentNodeOrderIndex int
 	nodeOrder             []string
 	nodeCounts            map[string]int
-	nodesChecked          int
 }
 
 func NewQuerierWorkerQueuePriorityAlgo() *QuerierWorkerQueuePriorityAlgo {
@@ -87,8 +86,8 @@ func (qa *QuerierWorkerQueuePriorityAlgo) wrapCurrentNodeOrderIndex(increment bo
 	}
 }
 
-func (qa *QuerierWorkerQueuePriorityAlgo) checkedAllNodes() bool {
-	return qa.nodesChecked == len(qa.nodeOrder)
+func (qa *QuerierWorkerQueuePriorityAlgo) checkedAllNodes(n *Node) bool {
+	return n.childrenChecked == len(n.queueMap)
 }
 
 func (qa *QuerierWorkerQueuePriorityAlgo) addChildNode(parent, child *Node) {
@@ -118,11 +117,11 @@ func (qa *QuerierWorkerQueuePriorityAlgo) addChildNode(parent, child *Node) {
 
 func (qa *QuerierWorkerQueuePriorityAlgo) dequeueSelectNode(node *Node) (*Node, bool) {
 	currentNodeName := qa.nodeOrder[qa.currentNodeOrderIndex]
-	if node, ok := node.queueMap[currentNodeName]; ok {
-		qa.nodesChecked++
-		return node, qa.checkedAllNodes()
+	checkedAllNodes := qa.checkedAllNodes(node)
+	if childNode, ok := node.queueMap[currentNodeName]; ok {
+		return childNode, checkedAllNodes
 	}
-	return nil, qa.checkedAllNodes()
+	return nil, checkedAllNodes
 }
 
 func (qa *QuerierWorkerQueuePriorityAlgo) dequeueUpdateState(node *Node, dequeuedFrom *Node) {
@@ -155,7 +154,4 @@ func (qa *QuerierWorkerQueuePriorityAlgo) dequeueUpdateState(node *Node, dequeue
 		// delete child node from its parent's queueMap
 		delete(node.queueMap, childName)
 	}
-
-	// reset state after successful dequeue
-	qa.nodesChecked = 0
 }
