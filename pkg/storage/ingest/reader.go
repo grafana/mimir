@@ -857,7 +857,8 @@ func newConcurrentFetchers(ctx context.Context, client *kgo.Client, logger log.L
 	topics, err := kadm.NewClient(client).ListTopics(ctx, topic)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find topic ID: %w", err)
-	} else if !topics.Has(topic) {
+	}
+	if !topics.Has(topic) {
 		return nil, fmt.Errorf("failed to find topic ID: topic not found")
 	}
 	f.topicID = topics[topic].ID
