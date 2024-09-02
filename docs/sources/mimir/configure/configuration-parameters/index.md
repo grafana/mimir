@@ -2497,6 +2497,12 @@ alertmanager_client:
 # configuration while it was enabled.
 # CLI flag: -alertmanager.utf8-strict-mode-enabled
 [utf8_strict_mode: <boolean> | default = false]
+
+# (experimental) Enable logging when parsing label matchers. This flag is
+# intended to be used with -alertmanager.utf8-strict-mode-enabled to validate
+# UTF-8 strict mode is working as intended.
+# CLI flag: -alertmanager.log-parsing-label-matchers
+[log_parsing_label_matchers: <boolean> | default = false]
 ```
 
 ### alertmanager_storage

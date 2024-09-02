@@ -185,6 +185,8 @@ Usage of ./cmd/mimir/mimir:
     	Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration. (default true)
   -alertmanager.grafana-alertmanager-compatibility-enabled
     	[experimental] Enable routes to support the migration and operation of the Grafana Alertmanager.
+  -alertmanager.log-parsing-label-matchers
+    	[experimental] Enable logging when parsing label matchers. This flag is intended to be used with -alertmanager.utf8-strict-mode-enabled to validate UTF-8 strict mode is working as intended.
   -alertmanager.max-alerts-count int
     	Maximum number of alerts that a single tenant can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
   -alertmanager.max-alerts-size-bytes int
