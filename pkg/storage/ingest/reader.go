@@ -193,7 +193,7 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 	}
 
 	if r.kafkaCfg.ReplayConcurrency > 1 {
-		r.fetcher, err = newConcurrentFetchers(ctx, r.client, r.logger, r.kafkaCfg.Topic, r.partitionID, startOffset, r.kafkaCfg.ReplayConcurrency, r.kafkaCfg.RecordsPerFetch, &r.metrics)
+		r.fetcher, err = newConcurrentFetchers(ctx, r.client, r.logger, r.kafkaCfg.Topic, r.partitionID, startOffset, r.kafkaCfg.ReplayConcurrency, r.kafkaCfg.RecordsPerFetch, r.kafkaCfg.MinBytesMaxWaitDuration, &r.metrics)
 		if err != nil {
 			return errors.Wrap(err, "creating concurrent fetchers")
 		}
@@ -821,15 +821,16 @@ type concurrentFetchers struct {
 	metrics     *readerMetrics
 	tracer      *kotel.Tracer
 
-	concurrency     int
-	recordsPerFetch int
+	concurrency      int
+	recordsPerFetch  int
+	minBytesWaitTime time.Duration
 
 	orderedFetches     chan kgo.FetchPartition
 	lastReturnedRecord int64
 }
 
 // newConcurrentFetchers creates a new concurrentFetchers. startOffset can be kafkaOffsetStart, kafkaOffsetEnd or a specific offset.
-func newConcurrentFetchers(ctx context.Context, client *kgo.Client, logger log.Logger, topic string, partition int32, startOffset int64, concurrency int, recordsPerFetch int, metrics *readerMetrics) (*concurrentFetchers, error) {
+func newConcurrentFetchers(ctx context.Context, client *kgo.Client, logger log.Logger, topic string, partition int32, startOffset int64, concurrency int, recordsPerFetch int, minBytesWaitTime time.Duration, metrics *readerMetrics) (*concurrentFetchers, error) {
 	const noReturnedRecords = -1 // we still haven't returned the 0 offset.
 	f := &concurrentFetchers{
 		client:             client,
@@ -839,6 +840,7 @@ func newConcurrentFetchers(ctx context.Context, client *kgo.Client, logger log.L
 		partitionID:        partition,
 		metrics:            metrics,
 		recordsPerFetch:    recordsPerFetch,
+		minBytesWaitTime:   minBytesWaitTime,
 		lastReturnedRecord: noReturnedRecords,
 		tracer:             kotel.NewTracer(kotel.TracerPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}))),
 		orderedFetches:     make(chan kgo.FetchPartition),
@@ -902,10 +904,6 @@ func (r *concurrentFetchers) pollFetches(ctx context.Context) (result kgo.Fetche
 	}
 }
 
-// fetchMinBytesWaitTime is the time the Kafka broker can wait for MinBytes to be filled.
-// This is usually used when there aren't enough records available to fulfil MinBytes, so the broker waits for more records to be produced.
-var fetchMinBytesWaitTime = 10 * time.Second
-
 // fetchSingle sends a fetch request to the leader Kafka broker for a partition for the fetchWant and parses the responses.
 // fetchSingle returns a fetchResult which may or may not fulfil the entire fetchWant.
 // If ctx is cancelled, fetchSingle will return an empty fetchResult without an error.
@@ -925,7 +923,7 @@ func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant, logg
 	req := kmsg.NewFetchRequest()
 	req.MinBytes = 1
 	req.Version = 13
-	req.MaxWaitMillis = int32(fetchMinBytesWaitTime / time.Millisecond)
+	req.MaxWaitMillis = int32(r.minBytesWaitTime / time.Millisecond)
 	req.MaxBytes = fw.MaxBytes()
 
 	reqTopic := kmsg.NewFetchRequestTopic()
