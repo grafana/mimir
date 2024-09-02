@@ -320,6 +320,37 @@ eval range from 0m to 24m step 6m 2 / my_metric
   {job="foo"} 2 1 0.6666666666666667 0.5 0.4
   {job="bar"} 0.2 0.1 0.06666666666666667 _ 0.04
 
+# Test other arithmetic operations.
+eval range from 0m to 24m step 6m my_metric + 2
+  {histograms="only"} 2 2
+  {histograms="both"} 7 12 2
+  {job="foo"} 3 4 5 6 7
+  {job="bar"} 12 22 32 _ 52
+
+eval range from 0m to 24m step 6m my_metric - 2
+  {histograms="only"} -2 -2
+  {histograms="both"} 3 8 -2
+  {job="foo"} -1 0 1 2 3
+  {job="bar"} 8 18 28 _ 48
+
+eval range from 0m to 24m step 6m my_metric * 2
+  {histograms="only"} {{schema:0 sum:2 count:2 buckets:[2]}} {{schema:0 sum:4 count:6 buckets:[6]}}
+  {histograms="both"} 10 20 {{schema:0 sum:2 count:2 buckets:[2]}}
+  {job="foo"} 2 4 6 8 10
+  {job="bar"} 20 40 60 _ 100
+
+eval range from 0m to 24m step 6m my_metric ^ 2
+  {histograms="only"} 0 0
+  {histograms="both"} 25 100 0
+  {job="foo"} 1 4 9 16 25
+  {job="bar"} 100 400 900 _ 2500
+
+eval range from 0m to 24m step 6m my_metric % 2
+  {histograms="only"} 0 0
+  {histograms="both"} 1 0 0
+  {job="foo"} 1 0 1 0 1
+  {job="bar"} 0 0 0 _ 0
+
 # Merging of input series, no conflicts
 eval range from 0m to 18m step 6m 2 * {job="bar"}
   {job="bar"} 20 40 60 800
