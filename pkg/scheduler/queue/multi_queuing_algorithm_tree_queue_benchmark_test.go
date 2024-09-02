@@ -347,8 +347,6 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 		},
 	}
 
-	maxQueriersPerTenant := 0 // disable shuffle sharding
-
 	// Increase totalRequests to tighten up variations when running locally, but do not commit higher values;
 	// the later test cases with a higher percentage of slow queries will take a long time to run.
 	totalRequests := 1000
@@ -364,6 +362,12 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 	// slow request approximately 100x longer than the fast request seems fair;
 	// an ingester can respond in 0.3 seconds while a slow store-gateway query can take 30 seconds
 	slowConsumerLatency := 100 * time.Millisecond
+
+	// enable shuffle sharding; we cannot be too restrictive with only two tenants,
+	// or some consumers will not get sharded to any of the two tenants.
+	// enabling shuffle sharding ensures we will hit cases where a querier-worker
+	// does not find any tenant leaf nodes it can work on under its prioritized query component node
+	maxQueriersPerTenant := numConsumers - 1
 
 	var testCaseNames []string
 	testCaseReports := map[string]*testScenarioQueueDurationReport{}
