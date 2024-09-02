@@ -43,12 +43,12 @@ const (
 	DebugMetas = "debug/metas"
 )
 
-type TSDBBlockRecoverableError struct {
-	Message string
+type ErrMarkerExists struct {
+	message string
 }
 
-func (e *TSDBBlockRecoverableError) Error() string {
-	return e.Message
+func (e *ErrMarkerExists) Error() string {
+	return e.message
 }
 
 // Download downloads a directory meant to be a block directory. If any one of the files
@@ -344,7 +344,7 @@ func GetMetaAttributes(ctx context.Context, meta *Meta, bucketReader objstore.Bu
 	return attrs, nil
 }
 
-// MarkForNoCompact creates a file which marks block to be not compacted.
+// MarkForNoCompact creates a file which marks block to be not compacted. It would return ErrMarkerExists when no-compact marker already exists.
 func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucket, id ulid.ULID, reason NoCompactReason, details string, markedForNoCompact prometheus.Counter) error {
 	m := path.Join(id.String(), NoCompactMarkFilename)
 	noCompactMarkExists, err := bkt.Exists(ctx, m)
@@ -352,8 +352,8 @@ func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucke
 		return errors.Wrapf(err, "check exists %s in bucket", m)
 	}
 	if noCompactMarkExists {
-		return &TSDBBlockRecoverableError{
-			Message: fmt.Sprintf("requested to mark for no compaction, but file %s already exists in bucket", m)}
+		return &ErrMarkerExists{
+			message: fmt.Sprintf("requested to mark for no compaction, but file %s already exists in bucket", m)}
 	}
 
 	noCompactMark, err := json.Marshal(NoCompactMark{

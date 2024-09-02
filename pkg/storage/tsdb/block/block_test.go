@@ -334,7 +334,7 @@ func TestMarkForDeletion(t *testing.T) {
 			blocksMarked: 1,
 		},
 		{
-			name: "block with deletion mark already, expected recoverable error and no metric increment",
+			name: "block with deletion mark already, expected log and no metric increment",
 			preUpload: func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {
 				deletionMark, err := json.Marshal(DeletionMark{
 					ID:           id,
@@ -384,7 +384,7 @@ func TestMarkForNoCompact(t *testing.T) {
 			expectedErr:  func(_ ulid.ULID) error { return nil },
 		},
 		{
-			name: "block with no-compact mark already, expected error and no metric increment",
+			name: "block with no-compact mark already, expected log and no metric increment",
 			preUpload: func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {
 				m, err := json.Marshal(NoCompactMark{
 					ID:            id,
@@ -396,8 +396,8 @@ func TestMarkForNoCompact(t *testing.T) {
 			},
 			blocksMarked: 0,
 			expectedErr: func(id ulid.ULID) error {
-				return &TSDBBlockRecoverableError{
-					Message: fmt.Sprintf("requested to mark for no compaction, but file %s already exists in bucket", path.Join(id.String(), NoCompactMarkFilename))}
+				return &ErrMarkerExists{
+					message: fmt.Sprintf("requested to mark for no compaction, but file %s already exists in bucket", path.Join(id.String(), NoCompactMarkFilename))}
 			},
 		},
 	} {
