@@ -21,23 +21,22 @@ func WrapGRPCErrorWithContextError(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
 	}
+	if ctx.Err() == nil {
+		return err
+	}
 	if stat, ok := grpcutil.ErrorToStatus(err); ok {
 		switch stat.Code() {
 		case codes.Canceled:
-			if ctx.Err() != nil {
-				return &ErrorWithStatus{
-					UnderlyingErr: err,
-					Status:        stat,
-					ctxErr:        context.Canceled,
-				}
+			return &ErrorWithStatus{
+				UnderlyingErr: err,
+				Status:        stat,
+				ctxErr:        context.Canceled,
 			}
 		case codes.DeadlineExceeded:
-			if ctx.Err() != nil {
-				return &ErrorWithStatus{
-					UnderlyingErr: err,
-					Status:        stat,
-					ctxErr:        context.DeadlineExceeded,
-				}
+			return &ErrorWithStatus{
+				UnderlyingErr: err,
+				Status:        stat,
+				ctxErr:        context.DeadlineExceeded,
 			}
 		default:
 			return err
