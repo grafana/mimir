@@ -223,6 +223,6 @@ It's rare to find cases of disagreement in a tenant configuration, as most tenan
 
 1. To confirm UTF-8 is enabled, search for `Starting Alertmanager in UTF-8 strict mode` in the Mimir server logs.
 
-1. Any incompatible tenant configurations will fail to load. You can identify if any tenant configurations are failing to load by searching the Mimir server logs for lines containing `error applying config`, or querying the `alertmanager_config_last_reload_successful` gauage for `0`.
+1. Any incompatible tenant configurations will fail to load. To identify if any tenant configurations are failing to load, search the Mimir server logs for lines containing `error applying config`, or query the `cortex_alertmanager_config_last_reload_successful` gauge for `0`.
 
 1. You can disable debug-level logging.
