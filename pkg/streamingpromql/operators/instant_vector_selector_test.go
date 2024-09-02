@@ -152,7 +152,7 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 				requireNotSame(t, points[0].H, points[2].H)
 			},
 		},
-		"different histograms have different spans": {
+		"different histograms should have different spans": {
 			data: `
 				load 1m
 					my_metric {{schema:0 sum:1 count:1 buckets:[1 0 1]}} {{schema:0 sum:3 count:2 buckets:[1 0 1]}}
@@ -163,7 +163,7 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 				requireNotSame(t, points[0].H, points[1].H)
 			},
 		},
-		"successive histograms returned due to lookback, but refer to different histograms": {
+		"successive histograms returned due to lookback should create different histograms at each point": {
 			data: `
 				load 30s
 					my_metric _   {{schema:5 sum:10 count:7 buckets:[1 2 3 1]}} _   {{schema:5 sum:12 count:8 buckets:[1 2 3 2]}} _

@@ -191,14 +191,13 @@ func (v *InstantVectorSelector) Close() {
 	v.Selector.Close()
 }
 
+// v.memoizedIterator.PeekPrev() does not allow us to supply an existing histogram and instead creates one and returns it.
+// The problem is that histograms with the same schema returned from chunkenc.floatHistogramIterator share the same
+// underlying Span slices.
+// This causes a problem when a NH schema is modified (for example, during a Sum) then the other NHs with the same
+// spans are also modified. As such, we need to create new Span slices for each NH.
+// TODO(jhesketh): remove this if https://github.com/prometheus/prometheus/pull/14771 merges
 func applyWorkaroundForSharedSpanSlices(h *histogram.FloatHistogram) {
-	// v.memoizedIterator.PeekPrev() does not allow us to supply an existing histogram and instead creates one and returns it.
-	// The problem is that histograms with the same schema returned from chunkenc.floatHistogramIterator share the same
-	// underlying Span slices.
-	// This causes a problem when a NH schema is modified (for example, during a Sum) then the other NHs with the same
-	// spans are also modified. As such, we need to create new Span slices for each NH.
-	// TODO(jhesketh): remove this if https://github.com/prometheus/prometheus/pull/14771 merges
-
 	h.PositiveSpans = slices.Clone(h.PositiveSpans)
 	h.NegativeSpans = slices.Clone(h.NegativeSpans)
 }
