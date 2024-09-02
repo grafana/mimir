@@ -339,8 +339,6 @@ func (p *shardingPusher) PushToStorage(ctx context.Context, request *mimirpb.Wri
 		s.Context = ctx // retain the last context in case we have to flush it when closing shardingPusher
 
 		if len(s.Timeseries) < p.batchSize {
-			// We modified a value so far. Write it back.
-			p.unfilledShards[shard] = s
 			continue
 		}
 		p.unfilledShards[shard] = flushableWriteRequest{
