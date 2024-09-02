@@ -1599,7 +1599,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					}
 
 					// Error adding exemplar. Do not report to client if the error was out of order and we ignore such error.
-					if !(isOOOExemplar && i.limits.IgnoreOOOExemplars(userID)) {
+					if !isOOOExemplar || !i.limits.IgnoreOOOExemplars(userID) {
 						updateFirstPartial(nil, func() softError {
 							return newTSDBIngestExemplarErr(err, model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
 						})
