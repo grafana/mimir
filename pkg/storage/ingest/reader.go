@@ -1101,6 +1101,15 @@ type metadataRefresher interface {
 // For most of them we just apply a backoff. They are listed here so we can be explicit in what we're handling and how.
 // It may also return an adjusted fetchWant in case the error indicated, we were consuming not yet produced records or records already deleted due to retention.
 func handleKafkaFetchErr(fr fetchResult, fw fetchWant, shortBackoff, longBackoff waiter, refresher metadataRefresher, logger log.Logger) fetchWant {
+	// Typically franz-go will update its own metadata when it detects a change in brokers. But it's hard to verify this.
+	// So we force a metadata refresh here to be sure.
+	// It's ok to call this from multiple fetchers concurrently. franz-go will only be sending one metadata request at a time (whether automatic, periodic, or forced).
+	//
+	// Metadata refresh is asynchronous. So even after forcing the refresh we might have outdated metadata.
+	// Hopefully the backoff that will follow is enough to get the latest metadata.
+	// If not, the fetcher will end up here again on the next attempt.
+	triggerMetadataRefresh := refresher.ForceMetadataRefresh
+
 	err := fr.Err
 	switch {
 	case err == nil:
@@ -1143,27 +1152,27 @@ func handleKafkaFetchErr(fr fetchResult, fw fetchWant, shortBackoff, longBackoff
 		longBackoff.Wait() // This should be only intra-broker error, and we shouldn't get it.
 	case errors.Is(err, kerr.NotLeaderForPartition):
 		// We're asking a broker which is no longer the leader. For a partition. We should refresh our metadata and try again.
-		triggerMetadataRefresh(refresher)
+		triggerMetadataRefresh()
 		longBackoff.Wait()
 	case errors.Is(err, kerr.ReplicaNotAvailable):
 		// Maybe the replica hasn't replicated the log yet, or it is no longer a replica for this partition.
 		// We should refresh and try again with a leader or replica which is up to date.
-		triggerMetadataRefresh(refresher)
+		triggerMetadataRefresh()
 		longBackoff.Wait()
 	case errors.Is(err, kerr.UnknownLeaderEpoch):
 		// Maybe there's an ongoing election. We should refresh our metadata and try again with a leader in the current epoch.
-		triggerMetadataRefresh(refresher)
+		triggerMetadataRefresh()
 		longBackoff.Wait()
 	case errors.Is(err, kerr.FencedLeaderEpoch):
 		// We missed a new epoch (leader election). We should refresh our metadata and try again with a leader in the current epoch.
-		triggerMetadataRefresh(refresher)
+		triggerMetadataRefresh()
 		longBackoff.Wait()
 	case errors.Is(err, kerr.LeaderNotAvailable):
 		// This isn't listed in the possible errors in franz-go, but Apache Kafka returns it when the partition has no leader.
-		triggerMetadataRefresh(refresher)
+		triggerMetadataRefresh()
 		longBackoff.Wait()
 	case errors.Is(err, errUnknownPartitionLeader):
-		triggerMetadataRefresh(refresher)
+		triggerMetadataRefresh()
 		longBackoff.Wait()
 	case errors.Is(err, &kgo.ErrFirstReadEOF{}):
 		longBackoff.Wait()
@@ -1173,17 +1182,6 @@ func handleKafkaFetchErr(fr fetchResult, fw fetchWant, shortBackoff, longBackoff
 		longBackoff.Wait()
 	}
 	return fw
-}
-
-func triggerMetadataRefresh(client metadataRefresher) {
-	// Typically franz-go will update its own metadata when it detects a change in brokers. But it's hard to verify this.
-	// So we force a metadata refresh here to be sure.
-	// It's ok to call this from multiple fetchers concurrently. franz-go will only be sending one metadata request at a time (whether automatic, periodic, or forced).
-	//
-	// Metadata refresh is asynchronous. So even after forcing the refresh we might have outdated metadata.
-	// Hopefully the backoff that will follow is enough to get the latest metadata.
-	// If not, the fetcher will end up here again on the next attempt.
-	client.ForceMetadataRefresh()
 }
 
 func logCompletedFetch(logger log.Logger, f fetchResult, fetchStartTime time.Time, w fetchWant) {
