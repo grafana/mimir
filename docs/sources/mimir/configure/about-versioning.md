@@ -81,6 +81,8 @@ The following features are currently experimental:
     - `-distributor.max-request-pool-buffer-size`
   - Enable direct translation from OTLP write requests to Mimir equivalents
     - `-distributor.direct-otlp-translation-enabled`
+  - Enable conversion of OTel start timestamps to Prometheus zero samples to mark series start
+    - `-distributor.otel-created-timestamp-zero-ingestion-enabled`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
