@@ -114,6 +114,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				// May be restorable if upstream accepts creating new Span slices for each native histogram.
 				// This creates an overhead for them since they don't currently experience any problems sharing spans
 				// because they copy NH's before performing any operations.
+				// TODO(jhesketh): change this back if https://github.com/prometheus/prometheus/pull/14771 merges
 
 				t = v.memoizedIterator.AtT()
 				h = &histogram.FloatHistogram{}
