@@ -904,7 +904,7 @@ func (r *concurrentFetchers) pollFetches(ctx context.Context) (result kgo.Fetche
 	}
 }
 
-// fetchSingle sends a fetch request to the leader Kafka broker for a partition for the fetchWant and parses the responses.
+// fetchSingle attempts to find out the leader leader Kafka broker for a partition and then sends a fetch request to the leader of the fetchWant request and parses the responses
 // fetchSingle returns a fetchResult which may or may not fulfil the entire fetchWant.
 // If ctx is cancelled, fetchSingle will return an empty fetchResult without an error.
 func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant, logger log.Logger) (fr fetchResult) {
