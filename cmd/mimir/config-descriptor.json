@@ -14846,6 +14846,17 @@
           "fieldFlag": "alertmanager.log-parsing-label-matchers",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "utf8_migration_logging",
+          "required": false,
+          "desc": "Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "alertmanager.utf8-migration-logging-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
