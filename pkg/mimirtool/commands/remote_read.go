@@ -106,8 +106,9 @@ func (s *setTenantIDTransport) RoundTrip(req *http.Request) (*http.Response, err
 }
 
 type timeSeriesIterator struct {
-	ss storage.SeriesSet
-	it chunkenc.Iterator
+	seriesSet           storage.SeriesSet
+	currentSeriesChunks chunkenc.Iterator
+
 	ts int64
 	v  float64
 	h  *histogram.Histogram
@@ -116,35 +117,35 @@ type timeSeriesIterator struct {
 
 func newTimeSeriesIterator(seriesSet storage.SeriesSet) *timeSeriesIterator {
 	return &timeSeriesIterator{
-		ss: seriesSet,
-		it: chunkenc.NewNopIterator(),
+		seriesSet:           seriesSet,
+		currentSeriesChunks: chunkenc.NewNopIterator(),
 	}
 }
 
 func (i *timeSeriesIterator) Next() error {
-	// Find non empty series iterator.
+	// Find non empty chunk iterator.
 	var vt chunkenc.ValueType
-	for vt = i.it.Next(); vt == chunkenc.ValNone; vt = i.it.Next() {
-		if !i.ss.Next() {
-			err := i.ss.Err()
+	for vt = i.currentSeriesChunks.Next(); vt == chunkenc.ValNone; vt = i.currentSeriesChunks.Next() {
+		if !i.seriesSet.Next() {
+			err := i.seriesSet.Err()
 			if err != nil {
 				return err
 			}
 			return io.EOF
 		}
-		i.it = i.ss.At().Iterator(i.it)
+		i.currentSeriesChunks = i.seriesSet.At().Iterator(i.currentSeriesChunks)
 	}
 	switch vt {
 	case chunkenc.ValFloat:
-		i.ts, i.v = i.it.At()
+		i.ts, i.v = i.currentSeriesChunks.At()
 		i.h = nil
 		i.fh = nil
 	case chunkenc.ValHistogram:
-		i.ts, i.h = i.it.AtHistogram(nil)
+		i.ts, i.h = i.currentSeriesChunks.AtHistogram(nil)
 		i.v = i.h.Sum
 		i.fh = nil
 	case chunkenc.ValFloatHistogram:
-		i.ts, i.fh = i.it.AtFloatHistogram(nil)
+		i.ts, i.fh = i.currentSeriesChunks.AtFloatHistogram(nil)
 		i.v = i.fh.Sum
 		i.h = nil
 	default:
@@ -154,7 +155,7 @@ func (i *timeSeriesIterator) Next() error {
 }
 
 func (i *timeSeriesIterator) Labels() (l labels.Labels) {
-	return i.ss.At().Labels()
+	return i.seriesSet.At().Labels()
 }
 
 func (i *timeSeriesIterator) Sample() (ts int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) {

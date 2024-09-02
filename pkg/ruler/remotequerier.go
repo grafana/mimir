@@ -148,7 +148,7 @@ func NewRemoteQuerier(
 }
 
 // Read satisfies Prometheus remote.ReadClient.
-// See: https://github.com/prometheus/prometheus/blob/1291ec71851a7383de30b089f456fdb6202d037a/storage/remote/client.go#L264
+// See: https://github.com/prometheus/prometheus/blob/28a830ed9f331e71549c24c2ac3b441033201e8f/storage/remote/client.go#L342
 func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query, sortSeries bool) (storage.SeriesSet, error) {
 	log, ctx := spanlogger.NewWithLogger(ctx, q.logger, "ruler.RemoteQuerier.Read")
 	defer log.Span.Finish()
@@ -205,7 +205,7 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query, sortSerie
 		}
 	}
 	if len(contentType) > 0 && contentType != "application/x-protobuf" {
-		return nil, errors.Errorf("unexpected response content type %s", contentType)
+		return nil, errors.Errorf("unexpected response content type %s expected application/x-protobuf", contentType)
 	}
 
 	uncompressed, err := snappy.Decode(nil, resp.Body)
