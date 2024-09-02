@@ -53,8 +53,8 @@ func NewVectorScalarBinaryOperation(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*VectorScalarBinaryOperation, error) {
-	opFunc := arithmeticOperationFuncs[op]
-	if opFunc == nil {
+	f := arithmeticOperationFuncs[op]
+	if f == nil {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
 	}
 
@@ -79,11 +79,11 @@ func NewVectorScalarBinaryOperation(
 
 	if b.ScalarIsLeftSide {
 		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
-			return opFunc(scalar, vectorF, nil, vectorH)
+			return f(scalar, vectorF, nil, vectorH)
 		}
 	} else {
 		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
-			return opFunc(vectorF, scalar, vectorH, nil)
+			return f(vectorF, scalar, vectorH, nil)
 		}
 	}
 
