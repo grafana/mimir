@@ -111,14 +111,14 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 
 	blockUlidsString := req.Form.Get("block_ulids")
 	if action != ActionTypeNone && blockUlidsString != "" {
-		var uids []string
+		var ulids []string
 
-		err := json.Unmarshal([]byte(blockUlidsString), &uids)
+		err := json.Unmarshal([]byte(blockUlidsString), &ulids)
 		if err != nil {
 			util.WriteTextResponse(w, fmt.Sprintf("Can't decode base64 of selected blocks' uid: %s", err))
 			return
 		}
-		err = s.performActionsOnBlocks(tenantID, req, action, uids)
+		err = s.performActionsOnBlocks(tenantID, req, action, ulids)
 		if err != nil {
 			util.WriteTextResponse(w, err.Error())
 			return

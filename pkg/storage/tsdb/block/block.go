@@ -47,7 +47,7 @@ type ErrMarkerExists struct {
 	message string
 }
 
-func (e *ErrMarkerExists) Error() string {
+func (e ErrMarkerExists) Error() string {
 	return e.message
 }
 
