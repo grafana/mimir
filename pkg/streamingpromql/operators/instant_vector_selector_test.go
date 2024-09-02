@@ -20,11 +20,12 @@ import (
 func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 	requireNotSame := func(t *testing.T, h1, h2 *histogram.FloatHistogram) {
 		require.NotSame(t, h1, h2, "must not point to the same *FloatHistogram")
-		require.NotSame(t, h1.PositiveSpans, h2.PositiveSpans, "must not point to the same positive spans slice")
-		require.NotSame(t, h1.NegativeSpans, h2.NegativeSpans, "must not point to the same negative spans slice")
-		require.NotSame(t, h1.PositiveBuckets, h2.PositiveBuckets, "must not point to the same positive buckets slice")
-		require.NotSame(t, h1.NegativeBuckets, h2.NegativeBuckets, "must not point to the same negative buckets slice")
-		require.NotSame(t, h1.CustomValues, h2.CustomValues, "must not point to the same custom values slice")
+
+		requireNotSameSlices(t, h1.PositiveSpans, h2.PositiveSpans, "positive spans")
+		requireNotSameSlices(t, h1.NegativeSpans, h2.NegativeSpans, "negative spans")
+		requireNotSameSlices(t, h1.PositiveBuckets, h2.PositiveBuckets, "positive buckets")
+		requireNotSameSlices(t, h1.NegativeBuckets, h2.NegativeBuckets, "negative buckets")
+		requireNotSameSlices(t, h1.CustomValues, h2.CustomValues, "custom values")
 	}
 
 	testCases := map[string]struct {
@@ -160,9 +161,6 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 2)
 				requireNotSame(t, points[0].H, points[1].H)
-				// requireNotSame only checks the slice headers are different. It does not check that the slices do not point the same underlying arrays
-				// So specifically check the if the first elements are different
-				require.NotSame(t, &points[0].H.PositiveSpans[0], &points[1].H.PositiveSpans[0], "must not point to the same underlying array")
 			},
 		},
 		"successive histograms returned due to lookback, but refer to different histograms": {
@@ -175,9 +173,6 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			check: func(t *testing.T, points []promql.HPoint, _ []promql.FPoint) {
 				require.Len(t, points, 2)
 				requireNotSame(t, points[0].H, points[1].H)
-				// requireNotSame only checks the slice headers are different. It does not check that the slices do not point the same underlying arrays
-				// So specifically check the if the first elements are different
-				require.NotSame(t, &points[0].H.PositiveSpans[0], &points[1].H.PositiveSpans[0], "must not point to the same underlying array")
 			},
 		},
 		// FIXME: this test currently fails due to https://github.com/prometheus/prometheus/issues/14172
@@ -229,5 +224,15 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			require.NoError(t, err)
 			testCase.check(t, series.Histograms, series.Floats)
 		})
+	}
+}
+
+func requireNotSameSlices[T any](t *testing.T, s1, s2 []T, description string) {
+	require.NotSamef(t, s1, s2, "must not point to the same %v slice", description)
+
+	// require.NotSame only checks the slice headers are different. It does not check that the slices do not point the same underlying arrays.
+	// So specifically check if the first elements are different.
+	if len(s1) > 0 && len(s2) > 0 {
+		require.NotSamef(t, &s1[0], &s2[0], "must not point to the same underlying %v array", description)
 	}
 }
