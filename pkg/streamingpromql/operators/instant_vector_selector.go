@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/value"
@@ -99,26 +100,8 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				// if they are going to mutate it, so this is safe to do.
 				t, h = atT, lastHistogram
 			} else {
-				// v.memoizedIterator.AtFloatHistogram() does not allow us to supply an existing histogram and instead creates one and returns it.
-				// The problem is that histograms with the same schema returned from vendor/github.com/prometheus/prometheus/tsdb/chunkenc/float_histogram.go
-				// share the same underlying Span slices.
-				// This causes a problem when a NH schema is modified (for example, during a Sum) then the
-				// other NH's with the same spans are also modified. As such, we need to create a new Span
-				// for each NH.
-				// We can guarantee new spans by providing a NH to chunkIterator.AtFloatHistogram(). This is because the
-				// chunkIterator copies the values into the NH.
-				// This doesn't have an overhead for us because memoizedIterator.AtFloatHistogram creates a NH when none is supplied.
-
-				// The original line:
-				// t, h = v.memoizedIterator.AtFloatHistogram()
-				// May be restorable if upstream accepts creating new Span slices for each native histogram.
-				// This creates an overhead for them since they don't currently experience any problems sharing spans
-				// because they copy NH's before performing any operations.
-				// TODO(jhesketh): change this back if https://github.com/prometheus/prometheus/pull/14771 merges
-
-				t = v.memoizedIterator.AtT()
-				h = &histogram.FloatHistogram{}
-				v.chunkIterator.AtFloatHistogram(h)
+				t, h = v.memoizedIterator.AtFloatHistogram()
+				applyWorkaroundForSharedSpanSlices(h)
 				lastHistogramT = t
 				lastHistogram = h
 			}
@@ -143,6 +126,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 					// this, we can end up with incorrect query results.
 					h = lastHistogram
 				} else {
+					applyWorkaroundForSharedSpanSlices(h)
 					lastHistogramT = t
 					lastHistogram = h
 				}
@@ -187,4 +171,16 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 
 func (v *InstantVectorSelector) Close() {
 	v.Selector.Close()
+}
+
+func applyWorkaroundForSharedSpanSlices(h *histogram.FloatHistogram) {
+	// v.memoizedIterator.AtFloatHistogram() does not allow us to supply an existing histogram and instead creates one and returns it.
+	// The problem is that histograms with the same schema returned from chunkenc.floatHistogramIterator share the same
+	// underlying Span slices.
+	// This causes a problem when a NH schema is modified (for example, during a Sum) then the other NHs with the same
+	// spans are also modified. As such, we need to create new Span slices for each NH.
+	// TODO(jhesketh): remove this if https://github.com/prometheus/prometheus/pull/14771 merges
+
+	h.PositiveSpans = slices.Clone(h.PositiveSpans)
+	h.NegativeSpans = slices.Clone(h.NegativeSpans)
 }
