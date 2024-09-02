@@ -219,7 +219,7 @@ It's rare to find cases of disagreement in a tenant configuration, as most tenan
 
 1. After identifying and fixing all affected tenant configurations, check the Mimir server logs again to make sure you haven't missed any tenant configurations.
 
-1. To enable UTF-8, set [`utf8-strict-mode-enabled`]({{< relref "./../../../configure/configuration-parameters#alertmanager" >}}) to `true`. You will need to restart Mimir for the changes to take effect.
+1. To enable UTF-8, set [`utf8-strict-mode-enabled`]({{< relref "./../../../configure/configuration-parameters#alertmanager" >}}) to `true`. You must restart Mimir for the changes to take effect.
 
 1. To confirm UTF-8 is enabled, search for `Starting Alertmanager in UTF-8 strict mode` in the Mimir server logs.
 
