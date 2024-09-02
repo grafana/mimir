@@ -3280,6 +3280,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.max-global-exemplars-per-user
 [max_global_exemplars_per_user: <int> | default = 0]
 
+# (experimental) Whether to ignore exemplars with out-of-order timestamps. If
+# enabled, exemplars with out-of-order timestamps are silently dropped,
+# otherwise they cause partial errors.
+# CLI flag: -ingester.ignore-ooo-exemplars
+[ignore_ooo_exemplars: <boolean> | default = false]
+
 # (experimental) Enable ingestion of native histogram samples. If false, native
 # histogram samples are ignored without an error. To query native histograms
 # with query-sharding enabled make sure to set
