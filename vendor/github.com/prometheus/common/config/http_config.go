@@ -964,7 +964,7 @@ func (rt *oauth2RoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 			}
 
 			rt.mtx.Lock()
-			rt.lastSecret = secret
+			rt.lastSecret = newSecret
 			rt.lastRT.Source = source
 			if rt.client != nil {
 				rt.client.CloseIdleConnections()
