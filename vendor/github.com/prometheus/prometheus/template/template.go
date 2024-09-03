@@ -166,7 +166,7 @@ func NewTemplateExpander(
 				return html_template.HTML(text)
 			},
 			"match":     regexp.MatchString,
-			"title":     strings.Title, //nolint:staticcheck // TODO(beorn7): Need to come up with a replacement using the cases package.
+			"title":     strings.Title, //nolint:staticcheck
 			"toUpper":   strings.ToUpper,
 			"toLower":   strings.ToLower,
 			"graphLink": strutil.GraphLinkForExpression,

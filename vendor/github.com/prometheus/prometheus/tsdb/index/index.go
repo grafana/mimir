@@ -197,9 +197,8 @@ func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 	return toc, d.Err()
 }
 
-// NewWriterWithEncoder returns a new Writer to the given filename. It
-// serializes data in format version 2. It uses the given encoder to encode each
-// postings list.
+// NewWriter returns a new Writer to the given filename. It serializes data in format version 2.
+// It uses the given encoder to encode each postings list.
 func NewWriterWithEncoder(ctx context.Context, fn string, encoder PostingsEncoder) (*Writer, error) {
 	dir := filepath.Dir(fn)
 

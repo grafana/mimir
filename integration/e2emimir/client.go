@@ -28,7 +28,6 @@ import (
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
-	promConfig "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
 	"github.com/prometheus/prometheus/storage/remote"
@@ -352,7 +351,7 @@ func parseRemoteReadSamples(resp *http.Response) (*prompb.QueryResult, error) {
 }
 
 func parseRemoteReadChunks(resp *http.Response) ([]prompb.ChunkedReadResponse, error) {
-	stream := remote.NewChunkedReader(resp.Body, promConfig.DefaultChunkedReadLimit, nil)
+	stream := remote.NewChunkedReader(resp.Body, remote.DefaultChunkedReadLimit, nil)
 
 	var results []prompb.ChunkedReadResponse
 	for {

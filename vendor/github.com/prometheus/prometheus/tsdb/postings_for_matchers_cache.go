@@ -24,7 +24,7 @@ const (
 
 	DefaultPostingsForMatchersCacheTTL      = 10 * time.Second
 	DefaultPostingsForMatchersCacheMaxItems = 100
-	DefaultPostingsForMatchersCacheMaxBytes = 10 * 1024 * 1024 // DefaultPostingsForMatchersCacheMaxBytes is based on the default max items, 10MB / 100 = 100KB per cached entry on average.
+	DefaultPostingsForMatchersCacheMaxBytes = 10 * 1024 * 1024 // Based on the default max items, 10MB / 100 = 100KB per cached entry on average.
 	DefaultPostingsForMatchersCacheForce    = false
 )
 

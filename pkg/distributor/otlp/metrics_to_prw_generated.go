@@ -29,7 +29,6 @@ import (
 	"go.uber.org/multierr"
 
 	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
-	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -59,7 +58,7 @@ func NewMimirConverter() *MimirConverter {
 }
 
 // FromMetrics converts pmetric.Metrics to Mimir remote write format.
-func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings) (annots annotations.Annotations, errs error) {
+func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings) (errs error) {
 	c.everyN = everyNTimes{n: 128}
 	resourceMetricsSlice := md.ResourceMetrics()
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
@@ -134,15 +133,13 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					ws, err := c.addExponentialHistogramDataPoints(
+					if err := c.addExponentialHistogramDataPoints(
 						ctx,
 						dataPoints,
 						resource,
 						settings,
 						promName,
-					)
-					annots.Merge(ws)
-					if err != nil {
+					); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -168,7 +165,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 		addResourceTargetInfo(resource, settings, mostRecentTimestamp, c)
 	}
 
-	return annots, errs
+	return
 }
 
 func isSameMetric(ts *mimirpb.TimeSeries, lbls []mimirpb.LabelAdapter) bool {

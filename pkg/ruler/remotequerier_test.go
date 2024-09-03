@@ -65,7 +65,7 @@ func TestRemoteQuerier_Read(t *testing.T) {
 		client, inReq := setup()
 
 		q := NewRemoteQuerier(client, time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
-		_, err := q.Read(context.Background(), &prompb.Query{}, false)
+		_, err := q.Read(context.Background(), &prompb.Query{})
 		require.NoError(t, err)
 
 		require.NotNil(t, inReq)
@@ -77,7 +77,7 @@ func TestRemoteQuerier_Read(t *testing.T) {
 		client, inReq := setup()
 
 		q := NewRemoteQuerier(client, time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
-		_, err := q.Read(context.Background(), &prompb.Query{}, false)
+		_, err := q.Read(context.Background(), &prompb.Query{})
 		require.NoError(t, err)
 
 		require.Equal(t, "", getHeader(inReq.Headers, api.ReadConsistencyHeader))
@@ -89,7 +89,7 @@ func TestRemoteQuerier_Read(t *testing.T) {
 		q := NewRemoteQuerier(client, time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
 
 		ctx := api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyStrong)
-		_, err := q.Read(ctx, &prompb.Query{}, false)
+		_, err := q.Read(ctx, &prompb.Query{})
 		require.NoError(t, err)
 
 		require.Equal(t, api.ReadConsistencyStrong, getHeader(inReq.Headers, api.ReadConsistencyHeader))
@@ -103,7 +103,7 @@ func TestRemoteQuerier_ReadReqTimeout(t *testing.T) {
 	}
 	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Second, formatJSON, "/prometheus", log.NewNopLogger())
 
-	_, err := q.Read(context.Background(), &prompb.Query{}, false)
+	_, err := q.Read(context.Background(), &prompb.Query{})
 	require.Error(t, err)
 }
 

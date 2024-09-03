@@ -352,7 +352,8 @@ func (f inspector) Visit(node Node, path []Node) (Visitor, error) {
 // f(node, path); node must not be nil. If f returns a nil error, Inspect invokes f
 // for all the non-nil children of node, recursively.
 func Inspect(node Node, f inspector) {
-	Walk(f, node, nil) //nolint:errcheck
+	//nolint: errcheck
+	Walk(f, node, nil)
 }
 
 // Children returns a list of all child nodes of a syntax tree node.
@@ -418,7 +419,7 @@ func mergeRanges(first, last Node) posrange.PositionRange {
 	}
 }
 
-// PositionRange implements the Node interface.
+// Item implements the Node interface.
 // This makes it possible to call mergeRanges on them.
 func (i *Item) PositionRange() posrange.PositionRange {
 	return posrange.PositionRange{

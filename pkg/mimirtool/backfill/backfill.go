@@ -18,7 +18,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -67,7 +66,7 @@ func getFormattedBytes(bytes int64, humanReadable bool) string {
 
 type Iterator interface {
 	Next() error
-	Sample() (ts int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram)
+	Sample() (ts int64, v float64)
 	Labels() (l labels.Labels)
 }
 
@@ -118,18 +117,13 @@ func CreateBlocks(input IteratorCreator, mint, maxt int64, maxSamplesInAppender 
 					return errors.Wrap(err, "input")
 				}
 
-				ts, v, h, fh := i.Sample()
+				ts, v := i.Sample()
 				if ts < t || ts >= tsUpper {
 					continue
 				}
 
 				l := i.Labels()
-				if h != nil || fh != nil {
-					_, err = app.AppendHistogram(0, i.Labels(), ts, h, fh)
-				} else {
-					_, err = app.Append(0, i.Labels(), ts, v)
-				}
-				if err != nil {
+				if _, err := app.Append(0, i.Labels(), ts, v); err != nil {
 					return errors.Wrap(err, fmt.Sprintf("add sample for metric=%s ts=%s value=%f", l, model.Time(ts).Time().Format(time.RFC3339Nano), v))
 				}
 
