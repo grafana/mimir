@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Store-gateway: bucket tenant blocks</title>
+    <script src="https://unpkg.com/htmx.org"></script>
 </head>
 <body>
 <h1>Store-gateway: bucket tenant blocks</h1>
@@ -22,11 +23,18 @@
         </button>
         <br>
         <br>
-        <input type="checkbox" id="show-deleted" name="show_deleted" {{ if .ShowDeleted }} checked {{ end }}>&nbsp;<label for="show-deleted">Show Deleted</label> &nbsp;&nbsp;
-        <input type="checkbox" id="show-sources" name="show_sources" {{ if .ShowSources }} checked {{ end }}>&nbsp;<label for="show-sources">Show Sources</label> &nbsp;&nbsp;
-        <input type="checkbox" id="show-parents" name="show_parents" {{ if .ShowParents }} checked {{ end }}>&nbsp;<label for="show-parents">Show Parents</label> &nbsp;&nbsp;
+        <input type="checkbox" id="show-deleted" name="show_deleted" value="on" {{ if .ShowDeleted }} checked {{ end }}>&nbsp;<label for="show-deleted">Show Deleted</label> &nbsp;&nbsp;
+        <input type="checkbox" id="show-sources" name="show_sources" value="on" {{ if .ShowSources }} checked {{ end }}>&nbsp;<label for="show-sources">Show Sources</label> &nbsp;&nbsp;
+        <input type="checkbox" id="show-parents" name="show_parents" value="on" {{ if .ShowParents }} checked {{ end }}>&nbsp;<label for="show-parents">Show Parents</label> &nbsp;&nbsp;
         <label for="split-count">Split count (non-zero value shows block split ID):</label>&nbsp;<input id="split-count" name="split_count" type="text" value="{{ .SplitCount }}" style="width: 6em;" />
-        <button type="submit" style="background-color: lightgrey;" onclick="reloadWithoutAction()">
+        <input type="hidden" name="block_ulids" id="block_ulids" value="" />
+        <button type="submit" 
+                style="background-color: lightgrey;"
+                hx-get="/store-gateway/tenant/{{ .Tenant }}/blocks"
+                hx-trigger="click"
+                hx-target="body"
+                hx-include="#configForm"
+                hx-push-url="true">
             <span style="padding: 0.5em 1em; font-size: 100%;">Reload</span>
         </button>
     </form>
@@ -129,17 +137,6 @@
     var isVisible = dropdown.value !== "none";
     toggleVisibility(isVisible);
 
-    function reloadWithoutAction() {
-        var form = document.getElementById('configForm');
-
-        // Check if the input field already exists
-        var blockULIDsField = form.querySelector('input[name="block_ulids"]');
-        if (blockULIDsField) {
-            blockULIDsField.remove();
-        }
-        form.submit();
-    }
-
     // Function to reload the page with the action
     function reloadWithAction() {
         // Get the blocks uid from the table and add it to the form
@@ -167,26 +164,10 @@
             // Display an alert popup if the array is empty
             alert("Select at least one block and then perform the action");
         }
-
-        var form = document.getElementById('configForm');
-
-        // Check if the input field already exists
-        var blockULIDsField = form.querySelector('input[name="block_ulids"]');
-
-        if (blockULIDsField) {
-            // If it exists, update its value
-            blockULIDsField.value = JSON.stringify(blockULIDs);
-        } else {
-            // If it doesn't exist, create a new input field
-            blockULIDsField = document.createElement('input');
-            blockULIDsField.type = 'hidden';
-            blockULIDsField.name = 'block_ulids';
-            blockULIDsField.value = JSON.stringify(blockULIDs);
-
-            // Append the new input to the form
-            form.appendChild(blockULIDsField);
-        }
-
+        var form = document.getElementById('configForm');    
+        // Append new values to the hidden field
+        form.querySelector('input[name="block_ulids"]').value = JSON.stringify(blockULIDs);
+        form.method = 'POST';
         form.submit();
     }
 </script>

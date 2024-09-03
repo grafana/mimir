@@ -82,7 +82,7 @@ type richMeta struct {
 	SplitID     *uint32 `json:"splitId,omitempty"`
 }
 
-func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
+func (s *StoreGateway) BlocksReadHandler(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
 	tenantID := vars["tenant"]
 	if tenantID == "" {
@@ -95,9 +95,6 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	showDeleted := req.Form.Get("show_deleted") == "on"
-	showSources := req.Form.Get("show_sources") == "on"
-	showParents := req.Form.Get("show_parents") == "on"
 	actionType := req.Form.Get("action_type")
 	if actionType == "" {
 		actionType = string(ActionTypeNone) // Set the default value to "none"
@@ -108,22 +105,14 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	action := ActionType(actionType)
+	// we pass action into readBlocks just to keep the current action on the UI
+	s.readBlocks(req, w, action, tenantID)
+}
 
-	blockUlidsString := req.Form.Get("block_ulids")
-	if action != ActionTypeNone && blockUlidsString != "" {
-		var ulids []string
-
-		err := json.Unmarshal([]byte(blockUlidsString), &ulids)
-		if err != nil {
-			util.WriteTextResponse(w, fmt.Sprintf("Can't decode base64 of selected blocks' uid: %s", err))
-			return
-		}
-		err = s.performActionsOnBlocks(tenantID, req, action, ulids)
-		if err != nil {
-			util.WriteTextResponse(w, err.Error())
-			return
-		}
-	}
+func (s *StoreGateway) readBlocks(req *http.Request, w http.ResponseWriter, action ActionType, tenantID string) {
+	showDeleted := req.Form.Get("show_deleted") == "on"
+	showSources := req.Form.Get("show_sources") == "on"
+	showParents := req.Form.Get("show_parents") == "on"
 
 	var splitCount int
 	if sc := req.Form.Get("split_count"); sc != "" {
@@ -209,6 +198,49 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		ShowParents: showParents,
 		ActionType:  action,
 	}, blocksPageTemplate, req)
+}
+
+func (s *StoreGateway) BlocksWriteHandler(w http.ResponseWriter, req *http.Request) {
+	vars := mux.Vars(req)
+	tenantID := vars["tenant"]
+	if tenantID == "" {
+		util.WriteTextResponse(w, "Tenant ID can't be empty")
+		return
+	}
+
+	if err := req.ParseForm(); err != nil {
+		util.WriteTextResponse(w, fmt.Sprintf("Can't parse form: %s", err))
+		return
+	}
+	actionType := req.Form.Get("action_type")
+	if actionType == "" {
+		actionType = string(ActionTypeNone) // Set the default value to "none"
+	}
+
+	if !isValidActionType(ActionType(actionType)) {
+		util.WriteTextResponse(w, fmt.Sprintf("Invalid Action Type: %s\n", actionType))
+		return
+	}
+
+	// Perform the action on selected blocks
+	action := ActionType(actionType)
+
+	blockUlidsString := req.Form.Get("block_ulids")
+	if action != ActionTypeNone && blockUlidsString != "" {
+		var uids []string
+
+		err := json.Unmarshal([]byte(blockUlidsString), &uids)
+		if err != nil {
+			util.WriteTextResponse(w, fmt.Sprintf("Can't decode base64 of selected blocks' uid: %s", err))
+			return
+		}
+		err = s.performActionsOnBlocks(tenantID, req, action, uids)
+		if err != nil {
+			util.WriteTextResponse(w, err.Error())
+			return
+		}
+	}
+	s.readBlocks(req, w, action, tenantID)
 }
 
 func (s *StoreGateway) performActionsOnBlocks(tenantID string, req *http.Request, action ActionType, blockUlids []string) error {
