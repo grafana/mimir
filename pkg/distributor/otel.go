@@ -49,7 +49,6 @@ const (
 
 type OTLPHandlerLimits interface {
 	OTelMetricSuffixesEnabled(id string) bool
-	OTelCreatedTimestampZeroIngestionEnabled(id string) bool
 }
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
@@ -163,19 +162,18 @@ func OTLPHandler(
 			return err
 		}
 		addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
-		enableCTZeroIngestion := limits.OTelCreatedTimestampZeroIngestionEnabled(tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
 		var metrics []mimirpb.PreallocTimeseries
 		if directTranslation {
-			metrics, err = otelMetricsToTimeseries(ctx, tenantID, addSuffixes, enableCTZeroIngestion, discardedDueToOtelParseError, logger, otlpReq.Metrics())
+			metrics, err = otelMetricsToTimeseries(ctx, tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 			if err != nil {
 				return err
 			}
 		} else {
-			metrics, err = otelMetricsToTimeseriesOld(ctx, tenantID, addSuffixes, enableCTZeroIngestion, discardedDueToOtelParseError, logger, otlpReq.Metrics())
+			metrics, err = otelMetricsToTimeseriesOld(ctx, tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 			if err != nil {
 				return err
 			}
@@ -403,11 +401,10 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 	return metadata
 }
 
-func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes, enableCTZeroIngestion bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	converter := otlp.NewMimirConverter()
 	_, errs := converter.FromMetrics(ctx, md, otlp.Settings{
-		AddMetricSuffixes:                   addSuffixes,
-		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
+		AddMetricSuffixes: addSuffixes,
 	})
 	mimirTS := converter.TimeSeries()
 	if errs != nil {
@@ -430,11 +427,10 @@ func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes, 
 }
 
 // Old, less efficient, version of otelMetricsToTimeseries.
-func otelMetricsToTimeseriesOld(ctx context.Context, tenantID string, addSuffixes, enableCTZeroIngestion bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+func otelMetricsToTimeseriesOld(ctx context.Context, tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	converter := prometheusremotewrite.NewPrometheusConverter()
-	annots, errs := converter.FromMetrics(ctx, md, prometheusremotewrite.Settings{
-		AddMetricSuffixes:                   addSuffixes,
-		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
+	_, errs := converter.FromMetrics(ctx, md, prometheusremotewrite.Settings{
+		AddMetricSuffixes: addSuffixes,
 	})
 	promTS := converter.TimeSeries()
 	if errs != nil {
@@ -451,10 +447,6 @@ func otelMetricsToTimeseriesOld(ctx context.Context, tenantID string, addSuffixe
 		}
 
 		level.Warn(logger).Log("msg", "OTLP parse error", "err", parseErrs)
-	}
-	ws, _ := annots.AsStrings("", 0, 0)
-	if len(ws) > 0 {
-		level.Warn(logger).Log("msg", "Warnings translating OTLP metrics to Prometheus write request", "warnings", ws)
 	}
 
 	mimirTS := mimirpb.PreallocTimeseriesSliceFromPool()

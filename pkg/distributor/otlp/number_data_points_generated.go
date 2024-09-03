@@ -48,9 +48,9 @@ func (c *MimirConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoint
 			model.MetricNameLabel,
 			name,
 		)
-		timestamp := convertTimeStamp(pt.Timestamp())
 		sample := &mimirpb.Sample{
-			TimestampMs: timestamp,
+			// convert ns to ms
+			TimestampMs: convertTimeStamp(pt.Timestamp()),
 		}
 		switch pt.ValueType() {
 		case pmetric.NumberDataPointValueTypeInt:
@@ -75,7 +75,6 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 		}
 
 		pt := dataPoints.At(x)
-		startTimestampNs := pt.StartTimestamp()
 		lbls := createAttributes(
 			resource,
 			pt.Attributes(),
@@ -85,9 +84,9 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 			model.MetricNameLabel,
 			name,
 		)
-		timestamp := convertTimeStamp(pt.Timestamp())
 		sample := &mimirpb.Sample{
-			TimestampMs: timestamp,
+			// convert ns to ms
+			TimestampMs: convertTimeStamp(pt.Timestamp()),
 		}
 		switch pt.ValueType() {
 		case pmetric.NumberDataPointValueTypeInt:
@@ -97,10 +96,6 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 		}
 		if pt.Flags().NoRecordedValue() {
 			sample.Value = math.Float64frombits(value.StaleNaN)
-		}
-		isMonotonic := metric.Sum().IsMonotonic()
-		if isMonotonic {
-			c.handleStartTime(convertTimeStamp(startTimestampNs), timestamp, sample.Value, lbls, settings)
 		}
 		ts := c.addSample(sample, lbls)
 		if ts != nil {
@@ -112,8 +107,9 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 		}
 
 		// add created time series if needed
-		if settings.ExportCreatedMetric && isMonotonic {
-			if startTimestampNs == 0 {
+		if settings.ExportCreatedMetric && metric.Sum().IsMonotonic() {
+			startTimestamp := pt.StartTimestamp()
+			if startTimestamp == 0 {
 				return nil
 			}
 
@@ -125,7 +121,7 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 					break
 				}
 			}
-			c.addTimeSeriesIfNeeded(createdLabels, startTimestampNs, pt.Timestamp())
+			c.addTimeSeriesIfNeeded(createdLabels, startTimestamp, pt.Timestamp())
 		}
 	}
 

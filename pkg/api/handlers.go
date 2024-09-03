@@ -250,7 +250,7 @@ func NewQuerierHandler(
 
 	const (
 		remoteWriteEnabled = false
-		otlpEnabled        = false
+		oltpEnabled        = false
 	)
 
 	api := v1.NewAPI(
@@ -281,8 +281,7 @@ func NewQuerierHandler(
 		nil,
 		remoteWriteEnabled,
 		nil,
-		otlpEnabled,
-		true,
+		oltpEnabled,
 	)
 
 	api.InstallCodec(protobufCodec{})
