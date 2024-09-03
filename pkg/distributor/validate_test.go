@@ -172,6 +172,11 @@ func TestValidateLabels(t *testing.T) {
 				),
 			),
 		},
+		{
+			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "label1": "abc\xfe\xfddef"},
+			true,
+			nil,
+		},
 	} {
 		err := validateLabels(s, cfg, userID, "custom label", mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation)
 		assert.Equal(t, c.err, err, "wrong error")
