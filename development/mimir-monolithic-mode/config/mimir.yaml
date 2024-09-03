@@ -74,6 +74,7 @@ ruler_storage:
 limits:
   native_histograms_ingestion_enabled: true
   max_global_exemplars_per_user: 100000
+  otel_created_timestamp_zero_ingestion_enabled: true
 
 runtime_config:
   file: ./config/runtime.yaml

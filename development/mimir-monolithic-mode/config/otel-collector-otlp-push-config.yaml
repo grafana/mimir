@@ -4,7 +4,9 @@ receivers:
   otlp: # Allow sending data via OTLP protocol
     protocols:
       grpc:
+        endpoint: 0.0.0.0:4317
       http:
+        endpoint: 0.0.0.0:4318
 
   # Data sources: metrics
   prometheus: # Scrape self
@@ -35,6 +37,8 @@ processors:
 exporters:
   otlphttp:
     endpoint: http://mimir-1:8001/otlp
+  debug:
+    verbosity: detailed
 
 extensions:
   health_check:
@@ -45,6 +49,9 @@ service:
   extensions: [health_check, pprof, zpages]
   pipelines:
     metrics:
-      receivers: [otlp, prometheus]
-      processors: [batch]
-      exporters: [otlphttp]
+      receivers: [otlp]
+#      processors: [batch]
+      exporters: [otlphttp, debug]
+  # telemetry:
+  #   logs:
+  #     level: debug
