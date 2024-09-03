@@ -381,17 +381,7 @@ func (p *parallelStorageShards) ShardWriteRequest(ctx context.Context, request *
 		builder         labels.ScratchBuilder
 		nonCopiedLabels labels.Labels
 		errs            multierror.MultiError
-		wg              sync.WaitGroup
 	)
-
-	// Collect the errors in a separate goroutine so that we try not to block whilst processing.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for err := range p.errs {
-			errs.Add(err)
-		}
-	}()
 
 	for _, ts := range request.Timeseries {
 		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, ts.Labels, &nonCopiedLabels)
@@ -399,15 +389,29 @@ func (p *parallelStorageShards) ShardWriteRequest(ctx context.Context, request *
 
 		// TODO: Add metrics to measure how long are items sitting in the queue before they are flushed.
 		p.shards[shard].AddToBatch(ctx, ts)
+
+		// After each addition, check for any errors in the error channel
+		select {
+		case err := <-p.errs:
+			errs.Add(err)
+		default:
+			// No errors, continue processing
+		}
 	}
 
-	// Close the channel so that the goroutine collecting errors can finish.
-	close(p.errs)
-
-	wg.Wait()
-
-	// now that we have all the errors collected, we'll need to re-open the errors channel so that the next run can still collect errors.
-	p.errs = make(chan error, p.numShards)
+	// ensure we drain the errors before closing the channels
+	// TODO: I'm not entirely sure this is right. How can we be sure that we've drained all the errors?
+	// I guess we'll know by the time we've hit Stop().
+drain:
+	for {
+		select {
+		case err := <-p.errs:
+			errs.Add(err)
+		default:
+			// No more errors to drain, exit loop
+			break drain
+		}
+	}
 
 	// Return whatever errors we have now, we'll call stop eventually and collect the rest.
 	// We might some data left in some of the queues in the shards, but they will be flushed eventually once Stop is called, and we're certain that no more data is coming.
