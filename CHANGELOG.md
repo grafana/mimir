@@ -213,6 +213,8 @@
 * [ENHANCEMENT] `tsdb-print-chunk`: print counter reset information for native histograms. #8812
 * [ENHANCEMENT] `grpcurl-query-ingesters`: print counter reset information for native histograms. #8820
 * [ENHANCEMENT] `grpcurl-query-ingesters`: concurrently query ingesters. #9102
+* [ENHANCEMENT] `grpcurl-query-ingesters`: sort series and chunks in output. #9180
+* [ENHANCEMENT] `grpcurl-query-ingesters`: print full chunk timestamps, not just time component. #9180
 * [ENHANCEMENT] `tsdb-series`: Added `-json` option to generate JSON output for easier post-processing. #8844
 * [ENHANCEMENT] `tsdb-series`: Added `-min-time` and `-max-time` options to filter samples that are used for computing data-points per minute. #8844
 
