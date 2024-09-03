@@ -16,9 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
 	"github.com/twmb/franz-go/pkg/kadm"
-	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/plugin/kprom"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -62,7 +60,7 @@ func New(
 		return nil, fmt.Errorf("no partitions assigned to instance %s", b.cfg.InstanceID)
 	}
 
-	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorageConfig.Bucket, "block-builder", logger, reg)
+	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorage.Bucket, "block-builder", logger, reg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create the bucket client: %w", err)
 	}
@@ -73,7 +71,7 @@ func New(
 	return b, nil
 }
 
-func (b *BlockBuilder) starting(ctx context.Context) (err error) {
+func (b *BlockBuilder) starting(context.Context) (err error) {
 	// Empty any previous artifacts.
 	if err := os.RemoveAll(b.cfg.DataDir); err != nil {
 		return fmt.Errorf("removing data dir: %w", err)
@@ -82,124 +80,27 @@ func (b *BlockBuilder) starting(ctx context.Context) (err error) {
 		return fmt.Errorf("creating data dir: %w", err)
 	}
 
-	// TODO: add a test to test the case where the consumption on startup happens
-	// after the LookbackOnNoCommit with records before the after the consumption
-	// start point.
-	startAtOffsets, fallbackOffsetMillis, err := b.findOffsetsToStartAt(ctx)
-	if err != nil {
-		return fmt.Errorf("find offsets to start at: %w", err)
-	}
-	b.fallbackOffsetMillis = fallbackOffsetMillis
-
-	const fetchMaxBytes = 100_000_000
+	// Fallback offset is a millisecond timestamp used to look up a real offset if partition doesn't have a commit.
+	b.fallbackOffsetMillis = time.Now().Add(-b.cfg.LookbackOnNoCommit).UnixMilli()
 
 	opts := []kgo.Opt{
-		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
-			b.cfg.Kafka.Topic: startAtOffsets,
-		}),
-		kgo.FetchMinBytes(128),
-		kgo.FetchMaxBytes(fetchMaxBytes),
-		kgo.FetchMaxWait(5 * time.Second),
-		kgo.FetchMaxPartitionBytes(50_000_000),
-		// BrokerMaxReadBytes sets the maximum response size that can be read from
-		// Kafka. This is a safety measure to avoid OOMing on invalid responses.
-		// franz-go recommendation is to set it 2x FetchMaxBytes.
-		kgo.BrokerMaxReadBytes(2 * fetchMaxBytes),
+		kgo.ConsumeTopics(b.cfg.Kafka.Topic),
+		kgo.ConsumeResetOffset(kgo.NewOffset().AfterMilli(b.fallbackOffsetMillis)),
 	}
-
-	metrics := ingest.NewKafkaReaderClientMetrics("block-builder", b.register)
-	opts = append(
-		commonKafkaClientOptions(b.cfg.Kafka, b.logger, metrics),
+	b.kafkaClient, err = ingest.NewKafkaReaderClient(
+		b.cfg.Kafka,
+		ingest.NewKafkaReaderClientMetrics("block-builder", b.register),
+		b.logger,
 		opts...,
 	)
-	b.kafkaClient, err = kgo.NewClient(opts...)
 	if err != nil {
-		return fmt.Errorf("creating kafka client: %w", err)
+		return fmt.Errorf("creating kafka reader: %w", err)
 	}
 
 	// Immediately pause fetching all assigned partitions. We control the order and the pace of partition fetching within the cycles.
 	b.kafkaClient.PauseFetchPartitions(map[string][]int32{b.cfg.Kafka.Topic: b.assignedPartitionIDs})
 
 	return nil
-}
-
-func (b *BlockBuilder) findOffsetsToStartAt(ctx context.Context) (map[int32]kgo.Offset, int64, error) {
-	// We use an ephemeral client to fetch the offset and then create a new client with this offset.
-	// The reason for this is that changing the offset of an existing client requires to have used this client for fetching at least once.
-	// We don't want to do noop fetches just to warm up the client, so we create a new client instead.
-	cl, err := kgo.NewClient(commonKafkaClientOptions(b.cfg.Kafka, b.logger, nil)...)
-	if err != nil {
-		return nil, -1, fmt.Errorf("unable to create bootstrap client: %w", err)
-	}
-	defer cl.Close()
-
-	admClient := kadm.NewClient(cl)
-
-	// Fallback offset is the millisecond timestamp used to look up a real offset if partition doesn't have a commit.
-	fallbackOffsetMillis := time.Now().Add(-b.cfg.LookbackOnNoCommit).UnixMilli()
-	fallbackOffset := kgo.NewOffset().AfterMilli(fallbackOffsetMillis)
-
-	fetchOffsets := func(ctx context.Context) (offsets map[int32]kgo.Offset, err error) {
-		resp, err := admClient.FetchOffsets(ctx, b.cfg.Kafka.ConsumerGroup)
-		if err == nil {
-			err = resp.Error()
-		}
-		// Either success or the requested group does not exist.
-		if errors.Is(err, kerr.GroupIDNotFound) || errors.Is(err, kerr.UnknownTopicOrPartition) {
-			offsets = make(map[int32]kgo.Offset)
-		} else if err != nil {
-			return nil, fmt.Errorf("unable to fetch group offsets: %w", err)
-		} else {
-			offsets = resp.KOffsets()[b.cfg.Kafka.Topic]
-		}
-
-		// Look over the assigned partitions and fallback to the ConsumerResetOffset if a partition doesn't have any commit for the configured group.
-		for _, partition := range b.assignedPartitionIDs {
-			if _, ok := offsets[partition]; ok {
-				level.Info(b.logger).Log("msg", "consuming from last consumed offset", "consumer_group", b.cfg.Kafka.ConsumerGroup, "partition", partition, "offset", offsets[partition].String())
-			} else {
-				offsets[partition] = fallbackOffset
-				level.Info(b.logger).Log("msg", "consuming from partition lookback because no offset has been found", "consumer_group", b.cfg.Kafka.ConsumerGroup, "partition", partition, "offset", offsets[partition].String())
-			}
-		}
-		return offsets, nil
-	}
-
-	boff := backoff.New(ctx, backoff.Config{
-		MinBackoff: 100 * time.Millisecond,
-		MaxBackoff: 2 * time.Second,
-		MaxRetries: 10,
-	})
-	for boff.Ongoing() {
-		var offsets map[int32]kgo.Offset
-		offsets, err = fetchOffsets(ctx)
-		if err == nil {
-			return offsets, fallbackOffsetMillis, nil
-		}
-		level.Warn(b.logger).Log("msg", "failed to fetch startup offsets; will retry", "err", err)
-		boff.Wait()
-	}
-	// Handle the case the context was canceled before the first attempt.
-	if err == nil {
-		err = boff.Err()
-	}
-	return nil, -1, err
-}
-
-// TODO(v): consider exposing storage/ingest.commonKafkaClientOptions
-func commonKafkaClientOptions(cfg KafkaConfig, logger log.Logger, metrics *kprom.Metrics) []kgo.Opt {
-	opts := []kgo.Opt{
-		kgo.ClientID(cfg.ClientID),
-		kgo.SeedBrokers(cfg.Address),
-		kgo.DialTimeout(cfg.DialTimeout),
-		kgo.MetadataMinAge(10 * time.Second),
-		kgo.MetadataMaxAge(10 * time.Second),
-		kgo.WithLogger(ingest.NewKafkaLogger(logger)),
-	}
-	if metrics != nil {
-		opts = append(opts, kgo.WithHooks(metrics))
-	}
-	return opts
 }
 
 func (b *BlockBuilder) stopping(_ error) error {
@@ -319,7 +220,7 @@ func (b *BlockBuilder) getLagForPartition(ctx context.Context, partition int32) 
 	})
 	var lastErr error
 	for boff.Ongoing() {
-		groupLag, err := getGroupLag(ctx, kadm.NewClient(b.kafkaClient), b.cfg.Kafka.Topic, b.cfg.Kafka.ConsumerGroup, b.fallbackOffsetMillis)
+		groupLag, err := getGroupLag(ctx, kadm.NewClient(b.kafkaClient), b.cfg.Kafka.Topic, b.cfg.ConsumerGroup, b.fallbackOffsetMillis)
 		if err != nil {
 			lastErr = fmt.Errorf("get consumer group lag: %w", err)
 		} else {
