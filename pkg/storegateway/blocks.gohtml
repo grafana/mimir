@@ -165,11 +165,28 @@
             alert("Select at least one block and then perform the action");
         }
         var form = document.getElementById('configForm');    
-        // Append new values to the hidden field
         form.querySelector('input[name="block_ulids"]').value = JSON.stringify(blockULIDs);
         form.method = 'POST';
         form.submit();
     }
+
+    document.addEventListener("DOMContentLoaded", function() {
+        var infoText = "{{.InfoText}}";
+        if (infoText) {
+            var infoLine = document.createElement("p");
+            infoLine.textContent = infoText;
+            infoLine.style.color = "red"; // Customize the style as needed
+            infoLine.style.whiteSpace = "pre-line";
+            
+            // Find the tbody element
+            var tbodyElement = document.querySelector("#blocksInfo");
+
+            // Insert the infoLine before the tbody element
+            if (tbodyElement) {
+                tbodyElement.parentNode.insertBefore(infoLine, tbodyElement);
+            }
+        }
+    });
 </script>
 </body>
 </html>

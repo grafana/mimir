@@ -40,6 +40,7 @@ type blocksPageContents struct {
 	ShowParents     bool                 `json:"-"`
 	SplitCount      int                  `json:"-"`
 	ActionType      ActionType           `json:"-"`
+	InfoText        string               `json:"infoText"`
 }
 
 type ActionType string
@@ -106,10 +107,10 @@ func (s *StoreGateway) BlocksReadHandler(w http.ResponseWriter, req *http.Reques
 	}
 	action := ActionType(actionType)
 	// we pass action into readBlocks just to keep the current action on the UI
-	s.readBlocks(req, w, action, tenantID)
+	s.readBlocks(req, w, action, tenantID, "")
 }
 
-func (s *StoreGateway) readBlocks(req *http.Request, w http.ResponseWriter, action ActionType, tenantID string) {
+func (s *StoreGateway) readBlocks(req *http.Request, w http.ResponseWriter, action ActionType, tenantID string, infoText string) {
 	showDeleted := req.Form.Get("show_deleted") == "on"
 	showSources := req.Form.Get("show_sources") == "on"
 	showParents := req.Form.Get("show_parents") == "on"
@@ -197,6 +198,7 @@ func (s *StoreGateway) readBlocks(req *http.Request, w http.ResponseWriter, acti
 		ShowSources: showSources,
 		ShowParents: showParents,
 		ActionType:  action,
+		InfoText:    infoText,
 	}, blocksPageTemplate, req)
 }
 
@@ -226,6 +228,7 @@ func (s *StoreGateway) BlocksWriteHandler(w http.ResponseWriter, req *http.Reque
 	action := ActionType(actionType)
 
 	blockUlidsString := req.Form.Get("block_ulids")
+	var infoText string
 	if action != ActionTypeNone && blockUlidsString != "" {
 		var uids []string
 
@@ -234,36 +237,51 @@ func (s *StoreGateway) BlocksWriteHandler(w http.ResponseWriter, req *http.Reque
 			util.WriteTextResponse(w, fmt.Sprintf("Can't decode base64 of selected blocks' uid: %s", err))
 			return
 		}
-		err = s.performActionsOnBlocks(tenantID, req, action, uids)
+		performedBlocks, err := s.performActionsOnBlocks(tenantID, req, action, uids)
 		if err != nil {
-			util.WriteTextResponse(w, err.Error())
-			return
+			infoText += fmt.Sprintf("!! Error(s) found during marking block(s), error(s):\n %s !! \n\n", err.Error())
+		}
+		if len(performedBlocks) > 0 {
+			infoText += fmt.Sprintf("Total %d block(s) modified with action %s, block(s): %s\n", len(performedBlocks), actionType, strings.Join(performedBlocks, ", "))
+		} else {
+			infoText += "There is no block modified. \n"
 		}
 	}
-	s.readBlocks(req, w, action, tenantID)
+	s.readBlocks(req, w, action, tenantID, infoText)
 }
 
-func (s *StoreGateway) performActionsOnBlocks(tenantID string, req *http.Request, action ActionType, blockUlids []string) error {
+func (s *StoreGateway) performActionsOnBlocks(tenantID string, req *http.Request, action ActionType, blockUlids []string) ([]string, error) {
 	// When blockUlids is set, and dropdown action is "no-compact" or "delete-no-compact",
 	// we will perform the action on the selected blocks
+	performedBlocks := []string{}
 	if (action != ActionTypeNoCompact && action != ActionTypeDeleteNoCompact) || len(blockUlids) == 0 {
-		return nil
+		return performedBlocks, nil
 	}
 
 	errs := multierror.MultiError{}
 	for _, uid := range blockUlids {
 		ulid, err := ulid.Parse(uid)
 		if err != nil {
-			return fmt.Errorf("can't parse ULID %s: %w", uid, err)
+			return performedBlocks, fmt.Errorf("can't parse ULID %s: %w", uid, err)
 		}
 		bkt := block.BucketWithGlobalMarkers(bucket.NewUserBucketClient(tenantID, s.stores.bucket, nil))
 		switch action {
 		case ActionTypeNoCompact:
-			errs.Add(block.MarkForNoCompact(req.Context(), s.logger, bkt, ulid, block.ManualNoCompactReason, "Manual Operations from Admin UI: Mark for no compaction", nil))
+			err := block.MarkForNoCompact(req.Context(), s.logger, bkt, ulid, block.ManualNoCompactReason, "Manual Operations from Admin UI: Mark for no compaction", nil)
+			if err != nil {
+				errs.Add(err)
+			} else {
+				performedBlocks = append(performedBlocks, uid)
+			}
 		case ActionTypeDeleteNoCompact:
-			errs.Add(block.DeleteNoCompactMarker(req.Context(), s.logger, bkt, ulid))
+			err := block.DeleteNoCompactMarker(req.Context(), s.logger, bkt, ulid)
+			if err != nil {
+				errs.Add(err)
+			} else {
+				performedBlocks = append(performedBlocks, uid)
+			}
 		default:
-			return nil
+			return performedBlocks, nil
 		}
 	}
 	ip := req.Header.Get("X-Forwarded-For")
@@ -273,9 +291,9 @@ func (s *StoreGateway) performActionsOnBlocks(tenantID string, req *http.Request
 	}
 	level.Info(s.logger).Log("msg", "Performed action on blocks", "action", action, "blocks", blockUlids, "ip", ip)
 	if errs.Err() != nil {
-		return fmt.Errorf("action failed with error: %w", errs.Err())
+		return performedBlocks, fmt.Errorf("action failed with error: %w", errs.Err())
 	}
-	return nil
+	return performedBlocks, nil
 }
 
 func formatTimeIfNotZero(t int64, format string) string {
