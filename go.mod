@@ -12,7 +12,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/edsrzf/mmap-go v1.1.0
 	github.com/failsafe-go/failsafe-go v0.6.8
-	github.com/felixge/fgprof v0.9.4
+	github.com/felixge/fgprof v0.9.5
 	github.com/go-kit/log v0.2.1
 	github.com/go-openapi/strfmt v0.23.0
 	github.com/go-openapi/swag v0.23.0
@@ -34,9 +34,9 @@ require (
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.27.0
-	github.com/prometheus/client_golang v1.19.1
+	github.com/prometheus/client_golang v1.20.0
 	github.com/prometheus/client_model v0.6.1
-	github.com/prometheus/common v0.55.0
+	github.com/prometheus/common v0.56.0
 	github.com/prometheus/prometheus v1.99.0
 	github.com/segmentio/fasthash v1.0.3
 	github.com/sirupsen/logrus v1.9.3
@@ -278,7 +278,11 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240826084742-bf5bf35a1b4d
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240830150301-6b342fac9c48
+
+// client_golang v1.20.0 has some bugs https://github.com/prometheus/client_golang/issues/1605, https://github.com/prometheus/client_golang/issues/1607
+// Stick to v1.19.1 until they are fixed.
+replace github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.19.1
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:

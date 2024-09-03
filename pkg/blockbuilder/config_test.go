@@ -85,16 +85,18 @@ func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Override
 	cfg.PartitionAssignment = map[string][]int32{
 		"block-builder-0": {0}, // instance 0 -> partition 0
 	}
+	cfg.ConsumerGroup = testGroup
 	cfg.DataDir = t.TempDir()
 
 	// Kafka related options.
+	flagext.DefaultValues(&cfg.Kafka)
 	cfg.Kafka.Address = addr
 	cfg.Kafka.Topic = testTopic
-	cfg.Kafka.ConsumerGroup = testGroup
 
 	// Block storage related options.
-	cfg.BlocksStorageConfig.Bucket.StorageBackendConfig.Backend = bucket.Filesystem
-	cfg.BlocksStorageConfig.Bucket.Filesystem.Directory = t.TempDir()
+	flagext.DefaultValues(&cfg.BlocksStorage)
+	cfg.BlocksStorage.Bucket.StorageBackendConfig.Backend = bucket.Filesystem
+	cfg.BlocksStorage.Bucket.Filesystem.Directory = t.TempDir()
 
 	limits := defaultLimitsTestConfig()
 	limits.OutOfOrderTimeWindow = 2 * model.Duration(time.Hour)

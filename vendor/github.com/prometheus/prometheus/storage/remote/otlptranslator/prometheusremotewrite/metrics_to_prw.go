@@ -28,16 +28,18 @@ import (
 
 	"github.com/prometheus/prometheus/prompb"
 	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type Settings struct {
-	Namespace                 string
-	ExternalLabels            map[string]string
-	DisableTargetInfo         bool
-	ExportCreatedMetric       bool
-	AddMetricSuffixes         bool
-	SendMetadata              bool
-	PromoteResourceAttributes []string
+	Namespace                           string
+	ExternalLabels                      map[string]string
+	DisableTargetInfo                   bool
+	ExportCreatedMetric                 bool
+	AddMetricSuffixes                   bool
+	SendMetadata                        bool
+	PromoteResourceAttributes           []string
+	EnableCreatedTimestampZeroIngestion bool
 }
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
@@ -55,7 +57,7 @@ func NewPrometheusConverter() *PrometheusConverter {
 }
 
 // FromMetrics converts pmetric.Metrics to Prometheus remote write format.
-func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings) (errs error) {
+func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings) (annots annotations.Annotations, errs error) {
 	c.everyN = everyNTimes{n: 128}
 	resourceMetricsSlice := md.ResourceMetrics()
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
@@ -130,13 +132,15 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addExponentialHistogramDataPoints(
+					ws, err := c.addExponentialHistogramDataPoints(
 						ctx,
 						dataPoints,
 						resource,
 						settings,
 						promName,
-					); err != nil {
+					)
+					annots.Merge(ws)
+					if err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -162,7 +166,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		addResourceTargetInfo(resource, settings, mostRecentTimestamp, c)
 	}
 
-	return
+	return annots, errs
 }
 
 func isSameMetric(ts *prompb.TimeSeries, lbls []prompb.Label) bool {
