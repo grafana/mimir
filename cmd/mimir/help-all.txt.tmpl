@@ -1417,8 +1417,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -ingester.error-sample-rate int
     	Each error will be logged once in this many times. Use 0 to log all of them. (default 10)
-  -ingester.ignore-ooo-exemplars
-    	[experimental] Whether to ignore exemplars with out-of-order timestamps. If enabled, exemplars with out-of-order timestamps are silently dropped, otherwise they cause partial errors.
   -ingester.ignore-series-limit-for-metric-names string
     	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
   -ingester.instance-limits.max-inflight-push-requests int
