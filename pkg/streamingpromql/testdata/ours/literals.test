@@ -8,3 +8,6 @@ eval range from 0m to 2m step 1m 1
 
 eval range from 0m to 2m step 1m (2)
   {} 2 2 2
+
+eval range from 0m to 2m step 1m -(2)
+  {} -2 -2 -2
