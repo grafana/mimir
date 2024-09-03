@@ -26,10 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-var (
-	grpcClientConnectionIsClosingErr = "grpc: the client connection is closing"
-)
-
 func TestWrapContextError(t *testing.T) {
 	t.Run("should wrap gRPC context errors", func(t *testing.T) {
 		tests := map[string]struct {

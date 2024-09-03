@@ -13,6 +13,10 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
+var (
+	grpcClientConnectionIsClosingErr = "grpc: the client connection is closing"
+)
+
 // WrapGRPCErrorWithContextError checks if the given error is a gRPC error corresponding
 // to a standard golang context error, and if it is, wraps the former with the latter.
 // If the given error isn't a gRPC error, or it doesn't correspond to a standard golang
@@ -27,10 +31,12 @@ func WrapGRPCErrorWithContextError(ctx context.Context, err error) error {
 	if stat, ok := grpcutil.ErrorToStatus(err); ok {
 		switch stat.Code() {
 		case codes.Canceled:
-			return &ErrorWithStatus{
-				UnderlyingErr: err,
-				Status:        stat,
-				ctxErr:        context.Canceled,
+			if stat.Message() != grpcClientConnectionIsClosingErr {
+				return &ErrorWithStatus{
+					UnderlyingErr: err,
+					Status:        stat,
+					ctxErr:        context.Canceled,
+				}
 			}
 		case codes.DeadlineExceeded:
 			return &ErrorWithStatus{
