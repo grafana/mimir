@@ -27,6 +27,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"time"
 	"unicode/utf8"
 
 	"github.com/cespare/xxhash/v2"
@@ -618,5 +619,5 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 
 // convertTimeStamp converts OTLP timestamp in ns to timestamp in ms
 func convertTimeStamp(timestamp pcommon.Timestamp) int64 {
-	return int64(timestamp) / 1_000_000
+	return timestamp.AsTime().UnixNano() / (int64(time.Millisecond) / int64(time.Nanosecond))
 }

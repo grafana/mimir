@@ -93,8 +93,6 @@ type Options struct {
 	skipOffsetting bool
 }
 
-const DefaultNameEscapingScheme = model.ValueEncodingEscaping
-
 // Manager maintains a set of scrape pools and manages start/stop cycles
 // when receiving new target groups from the discovery manager.
 type Manager struct {
@@ -142,7 +140,7 @@ func (m *Manager) UnregisterMetrics() {
 
 func (m *Manager) reloader() {
 	reloadIntervalDuration := m.opts.DiscoveryReloadInterval
-	if reloadIntervalDuration == model.Duration(0) {
+	if reloadIntervalDuration < model.Duration(5*time.Second) {
 		reloadIntervalDuration = model.Duration(5 * time.Second)
 	}
 

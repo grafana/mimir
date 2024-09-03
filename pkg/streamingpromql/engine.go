@@ -29,19 +29,15 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 	}
 
 	if !opts.CommonOpts.EnableAtModifier {
-		return nil, errors.New("disabling @ modifier not supported by Mimir query engine")
+		return nil, errors.New("disabling @ modifier not supported by streaming engine")
 	}
 
 	if !opts.CommonOpts.EnableNegativeOffset {
-		return nil, errors.New("disabling negative offsets not supported by Mimir query engine")
+		return nil, errors.New("disabling negative offsets not supported by streaming engine")
 	}
 
 	if opts.CommonOpts.EnablePerStepStats {
-		return nil, errors.New("enabling per-step stats not supported by Mimir query engine")
-	}
-
-	if opts.CommonOpts.EnableDelayedNameRemoval {
-		return nil, errors.New("enabling delayed name removal not supported by Mimir query engine")
+		return nil, errors.New("enabling per-step stats not supported by streaming engine")
 	}
 
 	return &Engine{

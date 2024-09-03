@@ -58,16 +58,15 @@ type WriteTo interface {
 	StoreSeries([]record.RefSeries, int)
 	StoreMetadata([]record.RefMetadata)
 
-	// UpdateSeriesSegment and SeriesReset are intended for
-	// garbage-collection:
-	// First we call UpdateSeriesSegment on all current series.
+	// Next two methods are intended for garbage-collection: first we call
+	// UpdateSeriesSegment on all current series
 	UpdateSeriesSegment([]record.RefSeries, int)
-	// Then SeriesReset is called to allow the deletion of all series
-	// created in a segment lower than the argument.
+	// Then SeriesReset is called to allow the deletion
+	// of all series created in a segment lower than the argument.
 	SeriesReset(int)
 }
 
-// WriteNotified notifies the watcher that data has been written so that it can read.
+// Used to notify the watcher that data has been written so that it can read.
 type WriteNotified interface {
 	Notify()
 }
@@ -573,7 +572,6 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				w.writer.AppendHistograms(histogramsToSend)
 				histogramsToSend = histogramsToSend[:0]
 			}
-
 		case record.FloatHistogramSamples:
 			// Skip if experimental "histograms over remote write" is not enabled.
 			if !w.sendHistograms {
@@ -612,13 +610,11 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				return err
 			}
 			w.writer.StoreMetadata(meta)
-
-		case record.Unknown:
-			// Could be corruption, or reading from a WAL from a newer Prometheus.
-			w.recordDecodeFailsMetric.Inc()
+		case record.Tombstones:
 
 		default:
-			// We're not interested in other types of records.
+			// Could be corruption, or reading from a WAL from a newer Prometheus.
+			w.recordDecodeFailsMetric.Inc()
 		}
 	}
 	if err := r.Err(); err != nil {
@@ -647,12 +643,14 @@ func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error 
 			}
 			w.writer.UpdateSeriesSegment(series, segmentNum)
 
-		case record.Unknown:
-			// Could be corruption, or reading from a WAL from a newer Prometheus.
-			w.recordDecodeFailsMetric.Inc()
+		// Ignore these; we're only interested in series.
+		case record.Samples:
+		case record.Exemplars:
+		case record.Tombstones:
 
 		default:
-			// We're only interested in series.
+			// Could be corruption, or reading from a WAL from a newer Prometheus.
+			w.recordDecodeFailsMetric.Inc()
 		}
 	}
 	if err := r.Err(); err != nil {
@@ -691,11 +689,10 @@ func (w *Watcher) readCheckpoint(checkpointDir string, readFn segmentReadFn) err
 		if err != nil {
 			return fmt.Errorf("unable to open segment: %w", err)
 		}
+		defer sr.Close()
 
 		r := NewLiveReader(w.logger, w.readerMetrics, sr)
-		err = readFn(w, r, index, false)
-		sr.Close()
-		if err != nil && !errors.Is(err, io.EOF) {
+		if err := readFn(w, r, index, false); err != nil && !errors.Is(err, io.EOF) {
 			return fmt.Errorf("readSegment: %w", err)
 		}
 
