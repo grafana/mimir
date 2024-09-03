@@ -229,7 +229,13 @@ func (n *Node) dequeue() (QueuePath, any) {
 			// we can't dequeue a value from an empty node; return early
 			return path, nil
 		}
-		dequeueNode, checkedAllNodes = n.queuingAlgorithm.dequeueSelectNode(n)
+		if n.isLeaf() {
+			checkedAllNodes = n.childrenChecked == 1
+		} else {
+			checkedAllNodes = n.childrenChecked == len(n.queueMap)
+		}
+
+		dequeueNode = n.queuingAlgorithm.dequeueSelectNode(n)
 		switch dequeueNode {
 		case n:
 			if n.isLeaf() {
