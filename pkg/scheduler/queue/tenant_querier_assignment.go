@@ -445,13 +445,11 @@ func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID TenantID, sc
 //
 // Note that because we use the shared  tenantIDOrder and tenantOrderIndex to manage the queue, we functionally
 // ignore each Node's individual queueOrder and queuePosition.
-func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) (*Node, bool) {
+func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) *Node {
 	// can't get a tenant if no querier set
 	if tqa.currentQuerier == "" {
-		return nil, true
+		return nil
 	}
-
-	checkedAllNodes := node.childrenChecked == len(node.queueMap)
 
 	// advance queue position for dequeue
 	tqa.tenantOrderIndex++
@@ -461,7 +459,7 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) (*Node, bool)
 
 	// no children or local queue reached
 	if len(node.queueMap) == 0 || tqa.tenantOrderIndex == localQueueIndex {
-		return node, checkedAllNodes
+		return node
 	}
 
 	checkIndex := tqa.tenantOrderIndex
@@ -487,18 +485,18 @@ func (tqa *tenantQuerierAssignments) dequeueSelectNode(node *Node) (*Node, bool)
 		// if the tenant-querier set is nil, any querier can serve this tenant
 		if tqa.tenantQuerierIDs[tenantID] == nil {
 			tqa.tenantOrderIndex = checkIndex
-			return node.queueMap[tenantName], checkedAllNodes
+			return node.queueMap[tenantName]
 		}
 		// otherwise, check if the querier is assigned to this tenant
 		if tenantQuerierSet, ok := tqa.tenantQuerierIDs[tenantID]; ok {
 			if _, ok := tenantQuerierSet[tqa.currentQuerier]; ok {
 				tqa.tenantOrderIndex = checkIndex
-				return node.queueMap[tenantName], checkedAllNodes
+				return node.queueMap[tenantName]
 			}
 		}
 		checkIndex++
 	}
-	return nil, checkedAllNodes
+	return nil
 }
 
 // dequeueUpdateState deletes the dequeued-from node from the following locations if it is empty:
