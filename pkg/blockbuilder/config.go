@@ -38,8 +38,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 		os.Exit(1)
 	}
 
-	cfg.Kafka.RegisterFlagsWithPrefix("block-builder.", f)
-
 	f.StringVar(&cfg.InstanceID, "block-builder.instance-id", hostname, "Instance id.")
 	f.Var(newPartitionAssignmentVar(&cfg.PartitionAssignment), "block-builder.partition-assignment", "Static partition assignment. Format is a JSON encoded map[instance-id][]partitions).")
 	f.StringVar(&cfg.DataDir, "block-builder.data-dir", "./data-block-builder/", "Directory to temporarily store blocks during building. This directory is wiped out between the restarts.")
