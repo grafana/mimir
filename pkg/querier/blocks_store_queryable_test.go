@@ -3334,7 +3334,7 @@ func TestShouldRetry(t *testing.T) {
 		"should retry on wrapped grpc.ErrClientConnClosing": {
 			// Ignore deprecation warning for now
 			// nolint:staticcheck
-			err:      globalerror.WrapGRPCErrorWithContextError(grpc.ErrClientConnClosing),
+			err:      globalerror.WrapGRPCErrorWithContextError(context.Background(), grpc.ErrClientConnClosing),
 			expected: true,
 		},
 		"should retry on generic error": {
