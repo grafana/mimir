@@ -4,8 +4,8 @@ index 8e2109f8ae..1ec0a3ecf9 100644
 +++ b/pkg/mimirpb/mimir.pb.go
 @@ -241,9 +241,6 @@ type WriteRequest struct {
  	Metadata   []*MetricMetadata       `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
- 	// Skip validation of label names.
- 	SkipLabelNameValidation bool `protobuf:"varint,1000,opt,name=skip_label_name_validation,json=skipLabelNameValidation,proto3" json:"skip_label_name_validation,omitempty"`
+ 	// Skip validation of label names and values.
+ 	SkipLabelValidation bool `protobuf:"varint,1000,opt,name=skip_label_validation,json=skipLabelValidation,proto3" json:"skip_label_validation,omitempty"`
 -
 -	// Skip unmarshaling of exemplars.
 -	skipUnmarshalingExemplars bool

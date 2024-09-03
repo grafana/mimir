@@ -715,10 +715,10 @@ func (p *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *Writ
 	}
 
 	return &WriteRequest{
-		Timeseries:              timeseries,
-		Metadata:                metadata,
-		Source:                  p.Source,
-		SkipLabelNameValidation: p.SkipLabelNameValidation,
+		Timeseries:          timeseries,
+		Metadata:            metadata,
+		Source:              p.Source,
+		SkipLabelValidation: p.SkipLabelValidation,
 	}
 }
 

@@ -868,8 +868,8 @@ func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {
 
 func TestMarshalWriteRequestToRecords(t *testing.T) {
 	req := &mimirpb.WriteRequest{
-		Source:                  mimirpb.RULE,
-		SkipLabelNameValidation: true,
+		Source:              mimirpb.RULE,
+		SkipLabelValidation: true,
 		Timeseries: []mimirpb.PreallocTimeseries{
 			mockPreallocTimeseries("series_1"),
 			mockPreallocTimeseries("series_2"),
@@ -884,7 +884,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 
 	// Pre-requisite check: WriteRequest fields are set to non-zero values.
 	require.NotZero(t, req.Source)
-	require.NotZero(t, req.SkipLabelNameValidation)
+	require.NotZero(t, req.SkipLabelValidation)
 	require.NotZero(t, req.Timeseries)
 	require.NotZero(t, req.Metadata)
 
@@ -924,21 +924,21 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 
 		assert.Equal(t, []*mimirpb.WriteRequest{
 			{
-				Source:                  mimirpb.RULE,
-				SkipLabelNameValidation: true,
-				Timeseries:              []mimirpb.PreallocTimeseries{req.Timeseries[0], req.Timeseries[1]},
+				Source:              mimirpb.RULE,
+				SkipLabelValidation: true,
+				Timeseries:          []mimirpb.PreallocTimeseries{req.Timeseries[0], req.Timeseries[1]},
 			}, {
-				Source:                  mimirpb.RULE,
-				SkipLabelNameValidation: true,
-				Timeseries:              []mimirpb.PreallocTimeseries{req.Timeseries[2]},
+				Source:              mimirpb.RULE,
+				SkipLabelValidation: true,
+				Timeseries:          []mimirpb.PreallocTimeseries{req.Timeseries[2]},
 			}, {
-				Source:                  mimirpb.RULE,
-				SkipLabelNameValidation: true,
-				Metadata:                []*mimirpb.MetricMetadata{req.Metadata[0], req.Metadata[1]},
+				Source:              mimirpb.RULE,
+				SkipLabelValidation: true,
+				Metadata:            []*mimirpb.MetricMetadata{req.Metadata[0], req.Metadata[1]},
 			}, {
-				Source:                  mimirpb.RULE,
-				SkipLabelNameValidation: true,
-				Metadata:                []*mimirpb.MetricMetadata{req.Metadata[2]},
+				Source:              mimirpb.RULE,
+				SkipLabelValidation: true,
+				Metadata:            []*mimirpb.MetricMetadata{req.Metadata[2]},
 			},
 		}, partials)
 	})
@@ -964,29 +964,29 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 
 		assert.Equal(t, []*mimirpb.WriteRequest{
 			{
-				Source:                  mimirpb.RULE,
-				SkipLabelNameValidation: true,
-				Timeseries:              []mimirpb.PreallocTimeseries{req.Timeseries[0]},
+				Source:              mimirpb.RULE,
+				SkipLabelValidation: true,
+				Timeseries:          []mimirpb.PreallocTimeseries{req.Timeseries[0]},
 			}, {
-				Source:                  mimirpb.RULE,
-				SkipLabelNameValidation: true,
-				Timeseries:              []mimirpb.PreallocTimeseries{req.Timeseries[1]},
+				Source:              mimirpb.RULE,
+				SkipLabelValidation: true,
+				Timeseries:          []mimirpb.PreallocTimeseries{req.Timeseries[1]},
 			}, {
-				Source:                  mimirpb.RULE,
-				SkipLabelNameValidation: true,
-				Timeseries:              []mimirpb.PreallocTimeseries{req.Timeseries[2]},
+				Source:              mimirpb.RULE,
+				SkipLabelValidation: true,
+				Timeseries:          []mimirpb.PreallocTimeseries{req.Timeseries[2]},
 			}, {
-				Source:                  mimirpb.RULE,
-				SkipLabelNameValidation: true,
-				Metadata:                []*mimirpb.MetricMetadata{req.Metadata[0]},
+				Source:              mimirpb.RULE,
+				SkipLabelValidation: true,
+				Metadata:            []*mimirpb.MetricMetadata{req.Metadata[0]},
 			}, {
-				Source:                  mimirpb.RULE,
-				SkipLabelNameValidation: true,
-				Metadata:                []*mimirpb.MetricMetadata{req.Metadata[1]},
+				Source:              mimirpb.RULE,
+				SkipLabelValidation: true,
+				Metadata:            []*mimirpb.MetricMetadata{req.Metadata[1]},
 			}, {
-				Source:                  mimirpb.RULE,
-				SkipLabelNameValidation: true,
-				Metadata:                []*mimirpb.MetricMetadata{req.Metadata[2]},
+				Source:              mimirpb.RULE,
+				SkipLabelValidation: true,
+				Metadata:            []*mimirpb.MetricMetadata{req.Metadata[2]},
 			},
 		}, partials)
 	})

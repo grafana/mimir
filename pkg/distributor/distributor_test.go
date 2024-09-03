@@ -1271,11 +1271,11 @@ func TestDistributor_Push_LabelNameValidation(t *testing.T) {
 				numDistributors:  1,
 				shuffleShardSize: 0,
 				configure: func(config *Config) {
-					config.SkipLabelNameValidation = tc.skipLabelNameValidationCfg
+					config.SkipLabelValidation = tc.skipLabelNameValidationCfg
 				},
 			})
 			req := mockWriteRequest(tc.inputLabels, 42, 100000)
-			req.SkipLabelNameValidation = tc.skipLabelNameValidationReq
+			req.SkipLabelValidation = tc.skipLabelNameValidationReq
 			_, err := ds[0].Push(ctx, req)
 			if tc.errExpected {
 				fromError, _ := grpcutil.ErrorToStatus(err)
