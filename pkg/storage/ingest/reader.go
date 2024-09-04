@@ -963,6 +963,15 @@ func (r *concurrentFetchers) buildFetchRequest(fw fetchWant, leaderEpoch int32) 
 func (r *concurrentFetchers) parseFetchResponse(startOffset int64, resp *kmsg.FetchResponse) fetchResult {
 	// Here we ignore resp.ErrorCode. That error code was added for support for KIP-227 and is only set if we're using fetch sessions. We don't use fetch sessions.
 	// We also ignore rawPartitionResp.PreferredReadReplica to keep the code simpler. We don't provide any rack in the FetchRequest, so the broker _probably_ doesn't have a recommended replica for us.
+
+	// Sanity check for the response we get.
+	// If we get something we didn't expect, maybe we're sending the wrong request or there's a bug in the kafka implementation.
+	// Even in case of errors we get the topic partition.
+	err := assertResponseContainsPartition(resp, r.topicID, r.partitionID)
+	if err != nil {
+		return newEmptyFetchResult(err)
+	}
+
 	parseOptions := kgo.ProcessFetchPartitionOptions{
 		KeepControlRecords: false,
 		Offset:             startOffset,
@@ -975,7 +984,7 @@ func (r *concurrentFetchers) parseFetchResponse(startOffset int64, resp *kmsg.Fe
 		brokerMeta := kgo.BrokerMetadata{} // leave it empty because kprom doesn't use it, and we don't exactly have all the metadata
 		r.metrics.kprom.OnFetchBatchRead(brokerMeta, r.topicName, r.partitionID, m)
 	}
-	// TODO dimitarvdimitrov assert the topic partitions we got
+
 	partition, _ := kgo.ProcessRespPartition(parseOptions, &resp.Topics[0].Partitions[0], observeMetrics)
 	partition.EachRecord(r.tracer.OnFetchRecordBuffered)
 
@@ -983,6 +992,24 @@ func (r *concurrentFetchers) parseFetchResponse(startOffset int64, resp *kmsg.Fe
 		FetchPartition: partition,
 		fetchedBytes:   sumRecordLengths(partition.Records),
 	}
+}
+
+func assertResponseContainsPartition(resp *kmsg.FetchResponse, topicID kadm.TopicID, partitionID int32) error {
+	if topics := resp.Topics; len(topics) < 1 || topics[0].TopicID != topicID {
+		receivedTopicID := kadm.TopicID{}
+		if len(topics) > 0 {
+			receivedTopicID = topics[0].TopicID
+		}
+		return fmt.Errorf("didn't find expected topic %s in fetch response; received topic %s", topicID, receivedTopicID)
+	}
+	if partitions := resp.Topics[0].Partitions; len(partitions) < 1 || partitions[0].Partition != partitionID {
+		receivedPartitionID := int32(-1)
+		if len(partitions) > 0 {
+			receivedPartitionID = partitions[0].Partition
+		}
+		return fmt.Errorf("didn't find expected partition %d in fetch response; received partition %d", partitionID, receivedPartitionID)
+	}
+	return nil
 }
 
 func sumRecordLengths(records []*kgo.Record) (sum int) {
