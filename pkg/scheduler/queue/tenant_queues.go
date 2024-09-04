@@ -35,37 +35,28 @@ type queueBroker struct {
 
 func newQueueBroker(
 	maxTenantQueueSize int,
-	useMultiAlgoTreeQueue bool,
 	prioritizeQueryComponents bool,
 	forgetDelay time.Duration,
 ) *queueBroker {
 	tqas := newTenantQuerierAssignments(forgetDelay)
 	var tree Tree
 	var err error
-	if useMultiAlgoTreeQueue {
-		var algos []QueuingAlgorithm
-		if prioritizeQueryComponents {
-			algos = []QueuingAlgorithm{
-				&roundRobinState{}, // root; QueuingAlgorithm selects query component
-				tqas,               // query components; QueuingAlgorithm selects tenants
-				&roundRobinState{}, // tenant queues; QueuingAlgorithm selects from local queue
+	var algos []QueuingAlgorithm
+	if prioritizeQueryComponents {
+		algos = []QueuingAlgorithm{
+			&roundRobinState{}, // root; QueuingAlgorithm selects query component
+			tqas,               // query components; QueuingAlgorithm selects tenants
+			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects from local queue
 
-			}
-		} else {
-			algos = []QueuingAlgorithm{
-				tqas,               // root; QueuingAlgorithm selects tenants
-				&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
-				&roundRobinState{}, // query components; QueuingAlgorithm selects query from local queue
-			}
 		}
-		tree, err = NewTree(algos...)
 	} else {
-		// by default, use the legacy tree queue
-		if prioritizeQueryComponents {
-			panic("cannot prioritize query components for legacy tree queue")
+		algos = []QueuingAlgorithm{
+			tqas,               // root; QueuingAlgorithm selects tenants
+			&roundRobinState{}, // tenant queues; QueuingAlgorithm selects query component
+			&roundRobinState{}, // query components; QueuingAlgorithm selects query from local queue
 		}
-		tree = NewTreeQueue("root")
 	}
+	tree, err = NewTree(algos...)
 
 	// An error building the tree is fatal; we must panic
 	if err != nil {
@@ -99,16 +90,7 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 		return err
 	}
 
-	// TODO (casie): When deprecating TreeQueue, clean this up.
-	// Technically, the MultiQueuingAlgorithmTreeQueue approach is adequate for both tree types, but we are temporarily
-	// maintaining the legacy tree behavior as much as possible for stability reasons.
-	if tq, ok := qb.tree.(*TreeQueue); ok {
-		if tenantQueueNode := tq.getNode(queuePath[:1]); tenantQueueNode != nil {
-			if tenantQueueNode.ItemCount()+1 > qb.maxTenantQueueSize {
-				return ErrTooManyRequests
-			}
-		}
-	} else if _, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+	if _, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 		itemCount := 0
 		for _, tenantNode := range qb.tenantQuerierAssignments.tenantNodes[string(request.tenantID)] {
 			itemCount += tenantNode.ItemCount()
@@ -168,17 +150,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 
 	var queuePath QueuePath
 	var queueElement any
-	if tq, ok := qb.tree.(*TreeQueue); ok {
-		tenant, tenantIndex, err := qb.tenantQuerierAssignments.getNextTenantForQuerier(dequeueReq.lastTenantIndex.last, dequeueReq.QuerierID)
-		if tenant == nil || err != nil {
-			return nil, tenant, tenantIndex, err
-		}
-		qb.tenantQuerierAssignments.tenantOrderIndex = tenantIndex
-		// We can manually build queuePath here because TreeQueue only supports one tree structure ordering:
-		// root --> tenant --> (optional: query dimensions)
-		queuePath = QueuePath{string(tenant.tenantID)}
-		queueElement = tq.DequeueByPath(queuePath)
-	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+	if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 		queuePath, queueElement = itq.Dequeue(
 			&DequeueArgs{
 				querierID:       dequeueReq.QuerierID,
@@ -203,17 +175,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 		tenant = qb.tenantQuerierAssignments.tenantsByID[tenantID]
 	}
 
-	// TODO (casie): When deprecating TreeQueue, clean this up.
-	// This cannot be handled by the Tree interface without defining some other, more expansive interfaces
-	// between the legacy and integrated tree queues, which would be more overhead than it's worth, given
-	// that we will eventually retire the legacy tree queue.
-	if tq, ok := qb.tree.(*TreeQueue); ok {
-		queueNodeAfterDequeue := tq.getNode(queuePath)
-		if queueNodeAfterDequeue == nil {
-			// queue node was deleted due to being empty after dequeue
-			qb.tenantQuerierAssignments.removeTenant(tenant.tenantID)
-		}
-	} else if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+	if itq, ok := qb.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 		queueNodeAfterDequeue := itq.GetNode(queuePath)
 		if queueNodeAfterDequeue == nil && len(qb.tenantQuerierAssignments.tenantNodes[string(tenantID)]) == 0 {
 			// queue node was deleted due to being empty after dequeue

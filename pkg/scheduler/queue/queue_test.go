@@ -114,7 +114,6 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 									queue, err := NewRequestQueue(
 										log.NewNopLogger(),
 										maxOutstandingRequestsPerTenant,
-										t.useMultiAlgoTreeQueue,
 										t.prioritizeQueryComponents,
 										forgetQuerierDelay,
 										promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -361,7 +360,6 @@ func TestRequestQueue_RegisterAndUnregisterQuerierWorkerConnections(t *testing.T
 			queue, err := NewRequestQueue(
 				log.NewNopLogger(),
 				1,
-				tt.useMultiAlgoTreeQueue,
 				tt.prioritizeQueryComponents,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -455,7 +453,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 			queue, err := NewRequestQueue(
 				log.NewNopLogger(),
 				1,
-				tt.useMultiAlgoTreeQueue,
 				tt.prioritizeQueryComponents,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -536,7 +533,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 			queue, err := NewRequestQueue(
 				log.NewNopLogger(),
 				1,
-				tt.useMultiAlgoTreeQueue,
 				tt.prioritizeQueryComponents,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -633,7 +629,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 			queue, err := NewRequestQueue(
 				log.NewNopLogger(),
 				1,
-				tt.useMultiAlgoTreeQueue,
 				tt.prioritizeQueryComponents,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -699,7 +694,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 			queue, err := NewRequestQueue(
 				log.NewNopLogger(),
 				1,
-				tt.useMultiAlgoTreeQueue,
 				tt.prioritizeQueryComponents,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -738,7 +732,6 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 			queue, err := NewRequestQueue(
 				log.NewNopLogger(),
 				1,
-				tt.useMultiAlgoTreeQueue,
 				tt.prioritizeQueryComponents,
 				forgetDelay,
 				promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
@@ -750,7 +743,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 
 			// bypassing queue dispatcher loop for direct usage of the queueBroker and
 			// passing a QuerierWorkerDequeueRequest for a canceled querier connection
-			queueBroker := newQueueBroker(queue.maxOutstandingPerTenant, tt.useMultiAlgoTreeQueue, tt.prioritizeQueryComponents, queue.forgetDelay)
+			queueBroker := newQueueBroker(queue.maxOutstandingPerTenant, tt.prioritizeQueryComponents, queue.forgetDelay)
 			queueBroker.addQuerierWorkerConn(NewUnregisteredQuerierWorkerConn(context.Background(), querierID))
 
 			tenantMaxQueriers := 0 // no sharding
@@ -775,16 +768,10 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 				multiAlgorithmTreeQueuePath = append([]string{"tenant-1"}, queueDim...)
 			}
 
-			// TODO (casie): Clean this up when deprecating legacy tree queue
-			if tq, ok := queueBroker.tree.(*TreeQueue); ok {
-				require.Nil(t, tq.getNode(QueuePath{"tenant-1"}))
-				require.NoError(t, queueBroker.enqueueRequestBack(&tr, tenantMaxQueriers))
-				require.False(t, tq.getNode(QueuePath{"tenant-1"}).IsEmpty())
-			} else if itq, ok := queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+			if itq, ok := queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 				require.Nil(t, itq.GetNode(multiAlgorithmTreeQueuePath))
 				require.NoError(t, queueBroker.enqueueRequestBack(&tr, tenantMaxQueriers))
 				require.False(t, itq.GetNode(multiAlgorithmTreeQueuePath).IsEmpty())
-
 			}
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -803,10 +790,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 			// indicating not to re-submit a request for QuerierWorkerDequeueRequest for the querier
 			require.True(t, queue.trySendNextRequestForQuerier(call))
 			// assert request was re-enqueued for tenant after failed send
-			// TODO (casie): Clean this up when deprecating legacy tree queue
-			if tq, ok := queueBroker.tree.(*TreeQueue); ok {
-				require.False(t, tq.getNode(QueuePath{"tenant-1"}).IsEmpty())
-			} else if itq, ok := queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
+			if itq, ok := queueBroker.tree.(*MultiQueuingAlgorithmTreeQueue); ok {
 				require.False(t, itq.GetNode(multiAlgorithmTreeQueuePath).IsEmpty())
 			}
 
