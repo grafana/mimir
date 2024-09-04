@@ -21,6 +21,9 @@ const (
 	kafkaConfigFlagPrefix          = "ingest-storage.kafka"
 	targetConsumerLagAtStartupFlag = kafkaConfigFlagPrefix + ".target-consumer-lag-at-startup"
 	maxConsumerLagAtStartupFlag    = kafkaConfigFlagPrefix + ".max-consumer-lag-at-startup"
+
+	KafkaSASLPlainUserEnvVar = "KAFKA_SASL_PLAIN_USER"
+	KafkaSASLPlainPassEnvVar = "KAFKA_SASL_PLAIN_PASS"
 )
 
 var (
@@ -71,6 +74,9 @@ type KafkaConfig struct {
 	WriteTimeout time.Duration `yaml:"write_timeout"`
 	WriteClients int           `yaml:"write_clients"`
 
+	SASLPlainUser string `yaml:"sasl_plain_user"`
+	SASLPlainPass string `yaml:"sasl_plain_pass"`
+
 	ConsumerGroup                     string        `yaml:"consumer_group"`
 	ConsumerGroupOffsetCommitInterval time.Duration `yaml:"consumer_group_offset_commit_interval"`
 
@@ -105,6 +111,9 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.DurationVar(&cfg.DialTimeout, prefix+".dial-timeout", 2*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
 	f.DurationVar(&cfg.WriteTimeout, prefix+".write-timeout", 10*time.Second, "How long to wait for an incoming write request to be successfully committed to the Kafka backend.")
 	f.IntVar(&cfg.WriteClients, prefix+".write-clients", 1, "The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka.")
+
+	f.StringVar(&cfg.SASLPlainUser, prefix+".sasl-plain-user", "", fmt.Sprintf("Username to use when authenticating with the Kafka backend using SASL/PLAIN. Can alternatively be set by using the %s environment variable.", KafkaSASLPlainUserEnvVar))
+	f.StringVar(&cfg.SASLPlainPass, prefix+".sasl-plain-pass", "", fmt.Sprintf("Password to use when authenticating with the Kafka backend using SASL/PLAIN. Can alternatively be set by using the %s environment variable.", KafkaSASLPlainPassEnvVar))
 
 	f.StringVar(&cfg.ConsumerGroup, prefix+".consumer-group", "", "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.")
 	f.DurationVar(&cfg.ConsumerGroupOffsetCommitInterval, prefix+".consumer-group-offset-commit-interval", time.Second, "How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left.")

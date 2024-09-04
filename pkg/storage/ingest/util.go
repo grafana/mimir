@@ -4,7 +4,9 @@ package ingest
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
+	"net"
 	"strconv"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/plugin/kotel"
 	"github.com/twmb/franz-go/plugin/kprom"
 	"go.opentelemetry.io/otel/propagation"
@@ -57,7 +60,6 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 	opts := []kgo.Opt{
 		kgo.ClientID(cfg.ClientID),
 		kgo.SeedBrokers(cfg.Address),
-		kgo.DialTimeout(cfg.DialTimeout),
 
 		// A cluster metadata update is a request sent to a broker and getting back the map of partitions and
 		// the leader broker for each partition. The cluster metadata can be updated (a) periodically or
@@ -91,6 +93,17 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 			// 30s is the default timeout in the Kafka client.
 			return 30 * time.Second
 		}),
+	}
+
+	if cfg.SASLPlainUser != "" && cfg.SASLPlainPass != "" {
+		mechanism := plain.Auth{User: cfg.SASLPlainUser, Pass: cfg.SASLPlainPass}.AsMechanism()
+		opts = append(opts, kgo.SASL(mechanism))
+
+		// TLS is required with SASL/PLAIN.
+		tlsDialer := &tls.Dialer{NetDialer: &net.Dialer{Timeout: cfg.DialTimeout}}
+		opts = append(opts, kgo.Dialer(tlsDialer.DialContext))
+	} else {
+		opts = append(opts, kgo.DialTimeout(cfg.DialTimeout))
 	}
 
 	if cfg.AutoCreateTopicEnabled {
