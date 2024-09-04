@@ -890,7 +890,7 @@ func (r *concurrentFetchers) pollFetches(ctx context.Context) (result kgo.Fetche
 			r.metrics.fetchedBytes.Add(float64(len(record.Value))) // TODO dimitarvdimitrov maybe use the same metric name as franz-go, but make sure we're not conflicting with the actual client; perhaps disable metrics there and just use our own
 			if record.Offset <= r.lastReturnedRecord {
 				trimUntil++
-				return // don't finish the traces multiple times
+				spanlogger.FromContext(record.Context, r.logger).DebugLog("msg", "skipping record because it has already been returned", "offset", record.Offset)
 			}
 			r.tracer.OnFetchRecordUnbuffered(record, true)
 		})
@@ -926,6 +926,20 @@ func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant, logg
 		return newEmptyFetchResult(errUnknownPartitionLeader)
 	}
 
+	req := r.buildFetchRequest(fw, leaderEpoch)
+
+	resp, err := req.RequestWith(ctx, r.client.Broker(int(leaderID)))
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return newEmptyFetchResult(nil)
+		}
+		return newEmptyFetchResult(fmt.Errorf("fetching from kafka: %w", err))
+	}
+
+	return r.parseFetchResponse(fw.startOffset, resp)
+}
+
+func (r *concurrentFetchers) buildFetchRequest(fw fetchWant, leaderEpoch int32) kmsg.FetchRequest {
 	req := kmsg.NewFetchRequest()
 	req.MinBytes = 1
 	req.Version = 13
@@ -944,22 +958,34 @@ func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant, logg
 
 	reqTopic.Partitions = append(reqTopic.Partitions, reqPartition)
 	req.Topics = append(req.Topics, reqTopic)
+	return req
+}
 
-	resp, err := req.RequestWith(ctx, r.client.Broker(int(leaderID)))
-	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			return newEmptyFetchResult(nil)
-		}
-		return newEmptyFetchResult(fmt.Errorf("fetching from kafka: %w", err))
-	}
+func (r *concurrentFetchers) parseFetchResponse(startOffset int64, resp *kmsg.FetchResponse) fetchResult {
 	rawPartitionResp := resp.Topics[0].Partitions[0]
 	// Here we ignore resp.ErrorCode. That error code was added for support for KIP-227 and is only set if we're using fetch sessions. We don't use fetch sessions.
 	// We also ignore rawPartitionResp.PreferredReadReplica to keep the code simpler. We don't provide any rack in the FetchRequest, so the broker _probably_ doesn't have a recommended replica for us.
-	// TODO dimitarvdimitrov make this conditional on the kafka backend - for WS we use uncompressed bytes (sumRecordLengths), for kafka we use the size of the response (rawPartitionResp.RecordBatches)
+	parseOptions := kgo.ProcessFetchPartitionOptions{
+		KeepControlRecords: false,
+		Offset:             startOffset,
+		IsolationLevel:     kgo.ReadUncommitted(), // we don't produce in transactions, but leaving this here so it's explicit.
+		Topic:              r.topicName,
+		Partition:          r.partitionID,
+	}
+	// TODO dimitarvdimitrov revisit metrics
 	r.metrics.fetchesCompressedBytes.Add(float64(len(rawPartitionResp.RecordBatches))) // This doesn't include overhead in the response, but that should be small.
-	partition := processRespPartition(&rawPartitionResp, r.topicName)
-	partition.EachRecord(r.tracer.OnFetchRecordBuffered) // TODO dimitarvdimitrov we might end up buffering the same record multiple times - what happens then?
-	return fetchResult{partition, sumRecordLengths(partition.Records)}
+
+	observeMetrics := func(m kgo.FetchBatchMetrics) {
+		brokerMeta := kgo.BrokerMetadata{} // leave it empty because kprom doesn't use it, and we don't exactly have all the metadata
+		r.metrics.kprom.OnFetchBatchRead(brokerMeta, r.topicName, r.partitionID, m)
+	}
+	partition, _ := kgo.ProcessRespPartition(parseOptions, &rawPartitionResp, observeMetrics)
+	partition.EachRecord(r.tracer.OnFetchRecordBuffered)
+
+	return fetchResult{
+		FetchPartition: partition,
+		fetchedBytes:   sumRecordLengths(partition.Records),
+	}
 }
 
 func sumRecordLengths(records []*kgo.Record) (sum int) {

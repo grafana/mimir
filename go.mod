@@ -304,3 +304,5 @@ replace github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc
 
 // Replacing prometheus/alertmanager with our fork.
 replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240625192351-66ec17e3aa45
+
+replace github.com/twmb/franz-go => github.com/dimitarvdimitrov/franz-go v0.0.0-20240808160155-396d6f9c1eba
