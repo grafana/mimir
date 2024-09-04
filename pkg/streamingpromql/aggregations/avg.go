@@ -140,24 +140,41 @@ func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 		)
 	}
 
-	for _, p := range data.Histograms {
+	var lastUncopiedHistogram *histogram.FloatHistogram
+
+	for i, p := range data.Histograms {
 		idx := (p.T - start) / interval
 		g.groupSeriesCounts[idx]++
-		if g.histograms[idx] == nil {
-			// The first point is just taken as the value
-			g.histograms[idx] = p.H.Copy()
-			g.histogramPointCount++
-			continue
-		}
 
 		if g.histograms[idx] == invalidCombinationOfHistograms {
 			// We've already seen an invalid combination of histograms at this timestamp. Ignore this point.
 			continue
 		}
 
-		left := p.H.Copy().Div(g.groupSeriesCounts[idx])
-		right := g.histograms[idx].Copy().Div(g.groupSeriesCounts[idx])
-		toAdd, err := left.Sub(right)
+		if g.histograms[idx] == nil {
+			if lastUncopiedHistogram == p.H {
+				// We've already used this histogram for a previous point due to lookback.
+				// Make a copy of it so we don't modify the other point.
+				g.histograms[idx] = p.H.Copy()
+				g.histogramPointCount++
+				continue
+			}
+			// This is the first time we have seen this histogram.
+			// It is safe to store it and modify it later without copying, as we'll make copies above if the same histogram is used for subsequent points.
+			g.histograms[idx] = p.H
+			g.histogramPointCount++
+			lastUncopiedHistogram = p.H
+			continue
+		}
+
+		// Check if the next point in data.Histograms is the same as the current point (due to lookback)
+		// If it is, create a copy before modifying it.
+		toAdd := p.H
+		if i+1 < len(data.Histograms) && data.Histograms[i+1].H == p.H {
+			toAdd = p.H.Copy()
+		}
+		_, err = toAdd.Sub(g.histograms[idx])
+
 		if err != nil {
 			// Unable to subtract histograms (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
 			g.histograms[idx] = invalidCombinationOfHistograms
@@ -169,6 +186,7 @@ func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 			}
 			continue
 		}
+		toAdd.Div(g.groupSeriesCounts[idx])
 		_, err = g.histograms[idx].Add(toAdd)
 		if err != nil {
 			// Unable to subtract histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
