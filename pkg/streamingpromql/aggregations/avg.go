@@ -18,14 +18,13 @@ import (
 )
 
 type AvgAggregationGroup struct {
-	// Sum, presence, and histograms for each step.
-	floatSums              []float64
+	floats                 []float64
 	floatMeans             []float64
 	floatCompensatingMeans []float64 // Mean, or "compensating value" for Kahan summation.
+	incrementalMeans       []bool    // True after reverting to incremental calculation of the mean value.
 	floatPresent           []bool
 	histograms             []*histogram.FloatHistogram
 	histogramPointCount    int
-	incrementalMeans       []bool // True after reverting to incremental calculation of the mean value.
 
 	// Keeps track of how many series we have encountered thus far for the group at this point
 	// This is necessary to do per point (instead of just counting the groups) as a series may have
@@ -45,9 +44,9 @@ func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 
 	}
 
-	if len(data.Floats) > 0 && g.floatSums == nil {
+	if len(data.Floats) > 0 && g.floats == nil {
 		// First series with float values for this group, populate it.
-		g.floatSums, err = types.Float64SlicePool.Get(steps, memoryConsumptionTracker)
+		g.floats, err = types.Float64SlicePool.Get(steps, memoryConsumptionTracker)
 		if err != nil {
 			return err
 		}
@@ -67,7 +66,7 @@ func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 			return err
 		}
 
-		g.floatSums = g.floatSums[:steps]
+		g.floats = g.floats[:steps]
 		g.floatCompensatingMeans = g.floatCompensatingMeans[:steps]
 		g.floatPresent = g.floatPresent[:steps]
 		g.incrementalMeans = g.incrementalMeans[:steps]
@@ -87,18 +86,18 @@ func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 		g.groupSeriesCounts[idx]++
 		if !g.floatPresent[idx] {
 			// The first point is just taken as the value
-			g.floatSums[idx] = p.F
+			g.floats[idx] = p.F
 			g.floatPresent[idx] = true
 			continue
 		}
 
 		if !g.incrementalMeans[idx] {
-			newV, newC := floats.KahanSumInc(p.F, g.floatSums[idx], g.floatCompensatingMeans[idx])
+			newV, newC := floats.KahanSumInc(p.F, g.floats[idx], g.floatCompensatingMeans[idx])
 			if !math.IsInf(newV, 0) {
 				// The sum doesn't overflow, so we propagate it to the
 				// group struct and continue with the regular
 				// calculation of the mean value.
-				g.floatSums[idx], g.floatCompensatingMeans[idx] = newV, newC
+				g.floats[idx], g.floatCompensatingMeans[idx] = newV, newC
 				continue
 			}
 			// If we are here, we know that the sum _would_ overflow. So
@@ -112,7 +111,7 @@ func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 				g.floatMeans = g.floatMeans[:steps]
 			}
 			g.incrementalMeans[idx] = true
-			g.floatMeans[idx] = g.floatSums[idx] / (g.groupSeriesCounts[idx] - 1)
+			g.floatMeans[idx] = g.floats[idx] / (g.groupSeriesCounts[idx] - 1)
 			g.floatCompensatingMeans[idx] /= g.groupSeriesCounts[idx] - 1
 		}
 		if math.IsInf(g.floatMeans[idx], 0) {
@@ -264,7 +263,7 @@ func (g *AvgAggregationGroup) ComputeOutputSeries(start int64, interval int64, m
 				if g.incrementalMeans[i] {
 					f = g.floatMeans[i] + g.floatCompensatingMeans[i]
 				} else {
-					f = (g.floatSums[i] + g.floatCompensatingMeans[i]) / g.groupSeriesCounts[i]
+					f = (g.floats[i] + g.floatCompensatingMeans[i]) / g.groupSeriesCounts[i]
 				}
 				floatPoints = append(floatPoints, promql.FPoint{T: t, F: f})
 			}
@@ -286,7 +285,7 @@ func (g *AvgAggregationGroup) ComputeOutputSeries(start int64, interval int64, m
 		}
 	}
 
-	types.Float64SlicePool.Put(g.floatSums, memoryConsumptionTracker)
+	types.Float64SlicePool.Put(g.floats, memoryConsumptionTracker)
 	types.Float64SlicePool.Put(g.floatMeans, memoryConsumptionTracker)
 	types.Float64SlicePool.Put(g.floatCompensatingMeans, memoryConsumptionTracker)
 	types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
