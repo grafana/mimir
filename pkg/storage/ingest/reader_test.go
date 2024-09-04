@@ -30,11 +30,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
-func init() {
-	// Reduce the time the fake kafka would wait for new records. Sometimes this blocks startup.
-	defaultMinBytesWaitTime = time.Second
-}
-
 func TestKafkaStartOffset(t *testing.T) {
 	t.Run("should match Kafka client start offset", func(t *testing.T) {
 		expected := kgo.NewOffset().AtStart().EpochOffset().Offset
@@ -1852,6 +1847,9 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 
 	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
 	require.NoError(t, err)
+
+	// Reduce the time the fake kafka would wait for new records. Sometimes this blocks startup.
+	reader.concurrentFetchersMinBytesMaxWaitTime = time.Second
 
 	return reader
 }
