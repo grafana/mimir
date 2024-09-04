@@ -244,6 +244,21 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr) (types.InstantV
 		}
 
 		return operators.NewVectorVectorBinaryOperation(lhs, rhs, *e.VectorMatching, e.Op, q.memoryConsumptionTracker, q.annotations, e.PositionRange())
+	case *parser.UnaryExpr:
+		if e.Op != parser.SUB {
+			return nil, compat.NewNotSupportedError(fmt.Sprintf("unary expression with '%s'", e.Op))
+		}
+
+		if !q.engine.featureToggles.EnableUnaryNegation {
+			return nil, compat.NewNotSupportedError("unary negation of instant vectors")
+		}
+
+		inner, err := q.convertToInstantVectorOperator(e.Expr)
+		if err != nil {
+			return nil, err
+		}
+
+		return unaryNegationOfInstantVectorOperatorFactory(inner, q.memoryConsumptionTracker, e.PositionRange()), nil
 
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.

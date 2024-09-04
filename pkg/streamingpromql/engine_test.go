@@ -51,7 +51,6 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 		`count_values("foo", metric{})`:         "'count_values' aggregation with parameter",
 		"rate(metric{}[5m:1m])":                 "PromQL expression type *parser.SubqueryExpr for range vectors",
 		"quantile_over_time(0.4, metric{}[5m])": "'quantile_over_time' function",
-		"-sum(metric{})":                        "PromQL expression type *parser.UnaryExpr for instant vectors",
 		"-(1)":                                  "PromQL expression type *parser.UnaryExpr for scalars",
 	}
 
@@ -118,6 +117,14 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 
 		requireRangeQueryIsUnsupported(t, featureToggles, "2", "scalar values")
 		requireInstantQueryIsUnsupported(t, featureToggles, "2", "scalar values")
+	})
+
+	t.Run("unary negation", func(t *testing.T) {
+		featureToggles := EnableAllFeatures
+		featureToggles.EnableUnaryNegation = false
+
+		requireRangeQueryIsUnsupported(t, featureToggles, "-sum(metric{})", "unary negation of instant vectors")
+		requireInstantQueryIsUnsupported(t, featureToggles, "-sum(metric{})", "unary negation of instant vectors")
 	})
 }
 
