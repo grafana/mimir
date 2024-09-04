@@ -88,24 +88,26 @@ func (s *StoreGateway) BlocksReadHandler(w http.ResponseWriter, req *http.Reques
 	tenantID := vars["tenant"]
 	if tenantID == "" {
 		util.WriteTextResponse(w, "Tenant ID can't be empty")
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	if err := req.ParseForm(); err != nil {
 		util.WriteTextResponse(w, fmt.Sprintf("Can't parse form: %s", err))
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	actionType := req.Form.Get("action_type")
-	if actionType == "" {
-		actionType = string(ActionTypeNone) // Set the default value to "none"
+	action := ActionTypeNone
+	if actionType := req.Form.Get("action_type"); actionType != "" {
+		if !isValidActionType(ActionType(actionType)) {
+			util.WriteTextResponse(w, fmt.Sprintf("Invalid Action Type: %s\n", actionType))
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		action = ActionType(actionType)
 	}
 
-	if !isValidActionType(ActionType(actionType)) {
-		util.WriteTextResponse(w, fmt.Sprintf("Invalid Action Type: %s\n", actionType))
-		return
-	}
-	action := ActionType(actionType)
 	// we pass action into readBlocks just to keep the current action on the UI
 	s.readBlocks(req, w, action, tenantID, "")
 }
@@ -207,34 +209,34 @@ func (s *StoreGateway) BlocksWriteHandler(w http.ResponseWriter, req *http.Reque
 	tenantID := vars["tenant"]
 	if tenantID == "" {
 		util.WriteTextResponse(w, "Tenant ID can't be empty")
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	if err := req.ParseForm(); err != nil {
 		util.WriteTextResponse(w, fmt.Sprintf("Can't parse form: %s", err))
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	actionType := req.Form.Get("action_type")
-	if actionType == "" {
-		actionType = string(ActionTypeNone) // Set the default value to "none"
+	action := ActionTypeNone
+	if actionType := req.Form.Get("action_type"); actionType != "" {
+		if !isValidActionType(ActionType(actionType)) {
+			util.WriteTextResponse(w, fmt.Sprintf("Invalid Action Type: %s\n", actionType))
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		action = ActionType(actionType)
 	}
-
-	if !isValidActionType(ActionType(actionType)) {
-		util.WriteTextResponse(w, fmt.Sprintf("Invalid Action Type: %s\n", actionType))
-		return
-	}
-
-	// Perform the action on selected blocks
-	action := ActionType(actionType)
 
 	blockUlidsString := req.Form.Get("block_ulids")
 	var infoText string
-	if action != ActionTypeNone && blockUlidsString != "" {
+	if blockUlidsString != "" {
 		var uids []string
 
 		err := json.Unmarshal([]byte(blockUlidsString), &uids)
 		if err != nil {
 			util.WriteTextResponse(w, fmt.Sprintf("Can't decode base64 of selected blocks' uid: %s", err))
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		performedBlocks, err := s.performActionsOnBlocks(tenantID, req, action, uids)
@@ -242,7 +244,7 @@ func (s *StoreGateway) BlocksWriteHandler(w http.ResponseWriter, req *http.Reque
 			infoText += fmt.Sprintf("!! Error(s) found during marking block(s), error(s):\n %s !! \n\n", err.Error())
 		}
 		if len(performedBlocks) > 0 {
-			infoText += fmt.Sprintf("Total %d block(s) modified with action %s, block(s): %s\n", len(performedBlocks), actionType, strings.Join(performedBlocks, ", "))
+			infoText += fmt.Sprintf("Total %d block(s) modified with action %s, block(s): %s\n", len(performedBlocks), action, strings.Join(performedBlocks, ", "))
 		} else {
 			infoText += "There is no block modified. \n"
 		}

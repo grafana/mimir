@@ -11,14 +11,14 @@
 <p>Current time: {{ .Now }}</p>
 <p>Showing blocks for tenant: <strong>{{ .Tenant }}</strong></p>
 <p>
-    <form id="configForm">
+    <form id="config-form">
         <label for="action-type">Actions to perform:</label>&nbsp;
         <select id="action-type" name="action_type">
             <option value="none"{{ if or (eq .ActionType "") (eq .ActionType "none") }} selected{{ end }}>None</option>
             <option value="no-compact"{{ if eq .ActionType "no-compact" }} selected{{ end }}>Upload no-compact marker</option>
             <option value="delete-no-compact"{{ if eq .ActionType "delete-no-compact" }} selected{{ end }}>Delete no-compact marker</option>
         </select> &nbsp;
-        <button class="item-to-control" type="button" style="background-color: lightgrey;" onclick="reloadWithAction()">
+        <button class="item-to-control" type="button" style="background-color: lightgrey;" onclick="submitFormWithULIDs()">
             <span style="padding: 0.5em 1em; font-size: 100%;">Execute Action</span>
         </button>
         <br>
@@ -33,13 +33,13 @@
                 hx-get="/store-gateway/tenant/{{ .Tenant }}/blocks"
                 hx-trigger="click"
                 hx-target="body"
-                hx-include="#configForm"
+                hx-include="#config-form"
                 hx-push-url="true">
             <span style="padding: 0.5em 1em; font-size: 100%;">Reload</span>
         </button>
     </form>
 </p>
-<table border="1" cellpadding="5" style="border-collapse: collapse" id="blocksInfo">
+<table border="1" cellpadding="5" style="border-collapse: collapse" id="blocks-info">
     <thead>
     <tr>
         <th class="item-to-control">Action</th>
@@ -138,9 +138,9 @@
     toggleVisibility(isVisible);
 
     // Function to reload the page with the action
-    function reloadWithAction() {
+    function submitFormWithULIDs() {
         // Get the blocks uid from the table and add it to the form
-        var table = document.getElementById('blocksInfo');
+        var table = document.getElementById('blocks-info');
 
         // Create an array to hold the structured table data
         var blockULIDs = [];
@@ -164,7 +164,7 @@
             // Display an alert popup if the array is empty
             alert("Select at least one block and then perform the action");
         }
-        var form = document.getElementById('configForm');    
+        var form = document.getElementById('config-form');    
         form.querySelector('input[name="block_ulids"]').value = JSON.stringify(blockULIDs);
         form.method = 'POST';
         form.submit();
@@ -179,7 +179,7 @@
             infoLine.style.whiteSpace = "pre-line";
             
             // Find the tbody element
-            var tbodyElement = document.querySelector("#blocksInfo");
+            var tbodyElement = document.querySelector("#blocks-info");
 
             // Insert the infoLine before the tbody element
             if (tbodyElement) {
