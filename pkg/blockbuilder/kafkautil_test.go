@@ -98,6 +98,27 @@ func TestKafkaGetGroupLag(t *testing.T) {
 	})
 }
 
+func TestKafkaMarshallingCommitMeta(t *testing.T) {
+	v1 := int64(892734)
+	v2 := int64(598237948)
+	v3 := int64(340237948)
+
+	o1, o2, o3, err := unmarshallCommitMeta(marshallCommitMeta(v1, v2, v3))
+	require.NoError(t, err)
+	require.Equal(t, v1, o1)
+	require.Equal(t, v2, o2)
+	require.Equal(t, v3, o3)
+
+	// Unsupported version
+	_, _, _, err = unmarshallCommitMeta("2,2,3,4")
+	require.Error(t, err)
+	require.Equal(t, "unsupported commit meta version 2", err.Error())
+
+	// Error parsing
+	_, _, _, err = unmarshallCommitMeta("1,3,4")
+	require.Error(t, err)
+}
+
 func mustKafkaClient(t *testing.T, addrs ...string) *kgo.Client {
 	writeClient, err := kgo.NewClient(
 		kgo.SeedBrokers(addrs...),
@@ -129,4 +150,11 @@ func produceRecords(
 	produceResult := kafkaClient.ProduceSync(ctx, rec)
 	require.NoError(t, produceResult.FirstErr())
 	return produceResult
+}
+
+func commitOffset(ctx context.Context, t *testing.T, kafkaClient *kgo.Client, group string, offset kadm.Offset) {
+	offsets := make(kadm.Offsets)
+	offsets.Add(offset)
+	err := kadm.NewClient(kafkaClient).CommitAllOffsets(ctx, group, offsets)
+	require.NoError(t, err)
 }

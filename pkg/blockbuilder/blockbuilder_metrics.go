@@ -8,8 +8,12 @@ import (
 )
 
 type blockBuilderMetrics struct {
-	consumeCycleDuration prometheus.Histogram
-	consumerLagRecords   *prometheus.GaugeVec
+	consumeCycleDuration     prometheus.Histogram
+	processPartitionDuration *prometheus.HistogramVec
+	compactAndUploadDuration *prometheus.HistogramVec
+	fetchRecordsTotal        prometheus.Counter
+	fetchErrors              prometheus.Counter
+	consumerLagRecords       *prometheus.GaugeVec
 }
 
 func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
@@ -20,6 +24,27 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 		Help: "Time spent consuming a full cycle.",
 
 		NativeHistogramBucketFactor: 1.1,
+	})
+
+	m.processPartitionDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                        "cortex_blockbuilder_process_partition_duration_seconds",
+		Help:                        "Time spent processing one partition.",
+		NativeHistogramBucketFactor: 1.1,
+	}, []string{"partition"})
+
+	m.compactAndUploadDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                        "cortex_blockbuilder_compact_and_upload_duration_seconds",
+		Help:                        "Time spent compacting and uploading one partition.",
+		NativeHistogramBucketFactor: 1.1,
+	}, []string{"partition"})
+
+	m.fetchRecordsTotal = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_blockbuilder_fetch_records_total",
+		Help: "Total number of records received by the consumer.",
+	})
+	m.fetchErrors = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_blockbuilder_fetch_errors_total",
+		Help: "Total number of errors while fetching by the consumer.",
 	})
 
 	m.consumerLagRecords = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{

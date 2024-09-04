@@ -29,6 +29,7 @@ const (
 	CompactorSource       SourceType = "compactor"
 	CompactorRepairSource SourceType = "compactor.repair"
 	BucketRepairSource    SourceType = "bucket.repair"
+	BlockBuilderSource    SourceType = "block-builder"
 	TestSource            SourceType = "test"
 )
 

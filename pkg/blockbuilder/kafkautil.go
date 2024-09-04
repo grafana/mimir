@@ -76,3 +76,37 @@ func getGroupLag(ctx context.Context, admClient *kadm.Client, topic, group strin
 	}
 	return kadm.CalculateGroupLagWithStartOffsets(descrGroup, offsets, startOffsets, endOffsets), nil
 }
+
+const (
+	kafkaCommitMetaV1 = 1
+)
+
+// commitRecTs: timestamp of the record which was committed (and not the commit time).
+// lastRecOffset: offset of the last record processed (which will be >= commit record offset).
+// blockEnd: timestamp of the block end in this cycle.
+func marshallCommitMeta(commitRecTs, lastRecOffset, blockEnd int64) string {
+	return fmt.Sprintf("%d,%d,%d,%d", kafkaCommitMetaV1, commitRecTs, lastRecOffset, blockEnd)
+}
+
+// commitRecTs: timestamp of the record which was committed (and not the commit time).
+// lastRecOffset: offset of the last record processed (which will be >= commit record offset).
+// blockEnd: timestamp of the block end in this cycle.
+func unmarshallCommitMeta(s string) (commitRecTs, lastRecOffset, blockEnd int64, err error) {
+	if s == "" {
+		return
+	}
+	var (
+		version int
+		metaStr string
+	)
+	_, err = fmt.Sscanf(s, "%d,%s", &version, &metaStr)
+	if err != nil {
+		return
+	}
+
+	if version != kafkaCommitMetaV1 {
+		return 0, 0, 0, fmt.Errorf("unsupported commit meta version %d", version)
+	}
+	_, err = fmt.Sscanf(metaStr, "%d,%d,%d", &commitRecTs, &lastRecOffset, &blockEnd)
+	return
+}
