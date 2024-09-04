@@ -91,11 +91,12 @@ type KafkaConfig struct {
 	WaitStrongReadConsistencyTimeout time.Duration `yaml:"wait_strong_read_consistency_timeout"`
 
 	// Used when logging unsampled client errors. Set from ingester's ErrorSampleRate.
-	FallbackClientErrorSampleRate int64 `yaml:"-"`
-	ReplayConcurrency             int   `yaml:"replay_concurrency"`
-	ReplayShards                  int   `yaml:"replay_shards"`
-	BatchSize                     int   `yaml:"batch_size"`
-	RecordsPerFetch               int   `yaml:"records_per_fetch"`
+	FallbackClientErrorSampleRate     int64 `yaml:"-"`
+	ReplayConcurrency                 int   `yaml:"replay_concurrency"`
+	ReplayShards                      int   `yaml:"replay_shards"`
+	BatchSize                         int   `yaml:"batch_size"`
+	RecordsPerFetch                   int   `yaml:"records_per_fetch"`
+	UseCompressedBytesAsFetchMaxBytes bool  `yaml:"use_compressed_bytes_as_fetch_max_bytes"`
 }
 
 func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
@@ -134,6 +135,7 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.IntVar(&cfg.ReplayShards, prefix+".replay-shards", 0, "The number of concurrent appends to the TSDB head. 0 to disable.")
 	f.IntVar(&cfg.BatchSize, prefix+".batch-size", 128, "The number of timeseries to batch together before ingesting into TSDB.")
 	f.IntVar(&cfg.RecordsPerFetch, prefix+".records-per-fetch", 128, "The number of records to fetch from Kafka in a single request.")
+	f.BoolVar(&cfg.UseCompressedBytesAsFetchMaxBytes, prefix+".use-compressed-bytes-as-fetch-max-bytes", true, "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.")
 }
 
 func (cfg *KafkaConfig) Validate() error {

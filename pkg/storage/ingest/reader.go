@@ -204,7 +204,7 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 	}
 
 	if r.kafkaCfg.ReplayConcurrency > 1 {
-		r.fetcher, err = newConcurrentFetchers(ctx, r.client, r.logger, r.kafkaCfg.Topic, r.partitionID, startOffset, r.kafkaCfg.ReplayConcurrency, r.kafkaCfg.RecordsPerFetch, r.concurrentFetchersMinBytesMaxWaitTime, offsetsClient, startOffsetReader, &r.metrics)
+		r.fetcher, err = newConcurrentFetchers(ctx, r.client, r.logger, r.kafkaCfg.Topic, r.partitionID, startOffset, r.kafkaCfg.ReplayConcurrency, r.kafkaCfg.RecordsPerFetch, r.kafkaCfg.UseCompressedBytesAsFetchMaxBytes, r.concurrentFetchersMinBytesMaxWaitTime, offsetsClient, startOffsetReader, &r.metrics)
 		if err != nil {
 			return errors.Wrap(err, "creating concurrent fetchers")
 		}
@@ -839,6 +839,9 @@ type concurrentFetchers struct {
 	orderedFetches     chan kgo.FetchPartition
 	lastReturnedRecord int64
 	startOffsets       *genericOffsetReader[int64]
+
+	// trackCompressedBytes controls whether to calculate MaxBytes for fetch requests based on previous responses' compressed or uncompressed bytes.
+	trackCompressedBytes bool
 }
 
 // newConcurrentFetchers creates a new concurrentFetchers. startOffset can be kafkaOffsetStart, kafkaOffsetEnd or a specific offset.
@@ -851,6 +854,7 @@ func newConcurrentFetchers(
 	startOffset int64,
 	concurrency int,
 	recordsPerFetch int,
+	trackCompressedBytes bool,
 	minBytesWaitTime time.Duration,
 	offsetReader *partitionOffsetClient,
 	startOffsetsReader *genericOffsetReader[int64],
@@ -859,18 +863,19 @@ func newConcurrentFetchers(
 
 	const noReturnedRecords = -1 // we still haven't returned the 0 offset.
 	f := &concurrentFetchers{
-		client:             client,
-		logger:             logger,
-		concurrency:        concurrency,
-		topicName:          topic,
-		partitionID:        partition,
-		metrics:            metrics,
-		recordsPerFetch:    recordsPerFetch,
-		minBytesWaitTime:   minBytesWaitTime,
-		lastReturnedRecord: noReturnedRecords,
-		startOffsets:       startOffsetsReader,
-		tracer:             kotel.NewTracer(kotel.TracerPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}))),
-		orderedFetches:     make(chan kgo.FetchPartition),
+		client:               client,
+		logger:               logger,
+		concurrency:          concurrency,
+		topicName:            topic,
+		partitionID:          partition,
+		metrics:              metrics,
+		recordsPerFetch:      recordsPerFetch,
+		minBytesWaitTime:     minBytesWaitTime,
+		lastReturnedRecord:   noReturnedRecords,
+		startOffsets:         startOffsetsReader,
+		trackCompressedBytes: trackCompressedBytes,
+		tracer:               kotel.NewTracer(kotel.TracerPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}))),
+		orderedFetches:       make(chan kgo.FetchPartition),
 	}
 
 	var err error
@@ -1008,13 +1013,18 @@ func (r *concurrentFetchers) parseFetchResponse(startOffset int64, resp *kmsg.Fe
 		brokerMeta := kgo.BrokerMetadata{} // leave it empty because kprom doesn't use it, and we don't exactly have all the metadata
 		r.metrics.kprom.OnFetchBatchRead(brokerMeta, r.topicName, r.partitionID, m)
 	}
-
-	partition, _ := kgo.ProcessRespPartition(parseOptions, &resp.Topics[0].Partitions[0], observeMetrics)
+	rawPartitionResp := resp.Topics[0].Partitions[0]
+	partition, _ := kgo.ProcessRespPartition(parseOptions, &rawPartitionResp, observeMetrics)
 	partition.EachRecord(r.tracer.OnFetchRecordBuffered)
+
+	fetchedBytes := len(rawPartitionResp.RecordBatches)
+	if !r.trackCompressedBytes {
+		fetchedBytes = sumRecordLengths(partition.Records)
+	}
 
 	return fetchResult{
 		FetchPartition: partition,
-		fetchedBytes:   sumRecordLengths(partition.Records),
+		fetchedBytes:   fetchedBytes,
 	}
 }
 

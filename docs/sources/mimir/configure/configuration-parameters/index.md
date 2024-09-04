@@ -3835,6 +3835,13 @@ kafka:
   # CLI flag: -ingest-storage.kafka.records-per-fetch
   [records_per_fetch: <int> | default = 128]
 
+  # When enabled, the fetch request MaxBytes field is computed using the
+  # compressed size of previous records. When disabled, MaxBytes is computed
+  # using uncompressed bytes. Different Kafka implementations interpret MaxBytes
+  # differently.
+  # CLI flag: -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes
+  [use_compressed_bytes_as_fetch_max_bytes: <boolean> | default = true]
+
 migration:
   # When both this option and ingest storage are enabled, distributors write to
   # both Kafka and ingesters. A write request is considered successful only when
