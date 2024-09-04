@@ -259,12 +259,12 @@ func (s *StoreGateway) performActionsOnBlocks(tenantID string, req *http.Request
 	}
 
 	errs := multierror.MultiError{}
+	bkt := block.BucketWithGlobalMarkers(bucket.NewUserBucketClient(tenantID, s.stores.bucket, nil))
 	for _, uid := range blockUlids {
 		ulid, err := ulid.Parse(uid)
 		if err != nil {
 			return performedBlocks, fmt.Errorf("can't parse ULID %s: %w", uid, err)
 		}
-		bkt := block.BucketWithGlobalMarkers(bucket.NewUserBucketClient(tenantID, s.stores.bucket, nil))
 		switch action {
 		case ActionTypeNoCompact:
 			err := block.MarkForNoCompact(req.Context(), s.logger, bkt, ulid, block.ManualNoCompactReason, "Manual Operations from Admin UI: Mark for no compaction", nil)
