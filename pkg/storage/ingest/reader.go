@@ -887,7 +887,6 @@ func (r *concurrentFetchers) pollFetches(ctx context.Context) (result kgo.Fetche
 		r.metrics.fetchWaitDuration.Observe(time.Since(waitStartTime).Seconds())
 		trimUntil := 0
 		f.EachRecord(func(record *kgo.Record) {
-			r.metrics.fetchedBytes.Add(float64(len(record.Value))) // TODO dimitarvdimitrov maybe use the same metric name as franz-go, but make sure we're not conflicting with the actual client; perhaps disable metrics there and just use our own
 			if record.Offset <= r.lastReturnedRecord {
 				trimUntil++
 				spanlogger.FromContext(record.Context, r.logger).DebugLog("msg", "skipping record because it has already been returned", "offset", record.Offset)
@@ -962,7 +961,6 @@ func (r *concurrentFetchers) buildFetchRequest(fw fetchWant, leaderEpoch int32) 
 }
 
 func (r *concurrentFetchers) parseFetchResponse(startOffset int64, resp *kmsg.FetchResponse) fetchResult {
-	rawPartitionResp := resp.Topics[0].Partitions[0]
 	// Here we ignore resp.ErrorCode. That error code was added for support for KIP-227 and is only set if we're using fetch sessions. We don't use fetch sessions.
 	// We also ignore rawPartitionResp.PreferredReadReplica to keep the code simpler. We don't provide any rack in the FetchRequest, so the broker _probably_ doesn't have a recommended replica for us.
 	parseOptions := kgo.ProcessFetchPartitionOptions{
@@ -972,14 +970,13 @@ func (r *concurrentFetchers) parseFetchResponse(startOffset int64, resp *kmsg.Fe
 		Topic:              r.topicName,
 		Partition:          r.partitionID,
 	}
-	// TODO dimitarvdimitrov revisit metrics
-	r.metrics.fetchesCompressedBytes.Add(float64(len(rawPartitionResp.RecordBatches))) // This doesn't include overhead in the response, but that should be small.
 
 	observeMetrics := func(m kgo.FetchBatchMetrics) {
 		brokerMeta := kgo.BrokerMetadata{} // leave it empty because kprom doesn't use it, and we don't exactly have all the metadata
 		r.metrics.kprom.OnFetchBatchRead(brokerMeta, r.topicName, r.partitionID, m)
 	}
-	partition, _ := kgo.ProcessRespPartition(parseOptions, &rawPartitionResp, observeMetrics)
+	// TODO dimitarvdimitrov assert the topic partitions we got
+	partition, _ := kgo.ProcessRespPartition(parseOptions, &resp.Topics[0].Partitions[0], observeMetrics)
 	partition.EachRecord(r.tracer.OnFetchRecordBuffered)
 
 	return fetchResult{
@@ -1677,8 +1674,6 @@ type readerMetrics struct {
 	recordsPerFetch                  prometheus.Histogram
 	fetchesErrors                    prometheus.Counter
 	fetchesTotal                     prometheus.Counter
-	fetchedBytes                     prometheus.Counter
-	fetchesCompressedBytes           prometheus.Counter
 	fetchWaitDuration                prometheus.Histogram
 	fetchedDiscardedRecords          prometheus.Counter
 	strongConsistencyInstrumentation *StrongReadConsistencyInstrumentation[struct{}]
@@ -1729,14 +1724,6 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetric
 			Name:                        "cortex_ingest_storage_reader_records_batch_wait_duration_seconds",
 			Help:                        "How long a consumer spent waiting for a batch of records from the Kafka client. If fetching is faster than processing, then this will be close to 0.",
 			NativeHistogramBucketFactor: 1.1,
-		}),
-		fetchedBytes: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingest_storage_reader_fetched_bytes_total",
-			Help: "Total number of record bytes fetched from Kafka by the consumer.",
-		}),
-		fetchesCompressedBytes: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingest_storage_reader_fetches_compressed_bytes_total",
-			Help: "Total number of compressed bytes fetched from Kafka by the consumer.",
 		}),
 		fetchedDiscardedRecords: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_fetched_discarded_records_total",
