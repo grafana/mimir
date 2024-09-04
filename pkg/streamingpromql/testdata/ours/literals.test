@@ -9,5 +9,19 @@ eval range from 0m to 2m step 1m 1
 eval range from 0m to 2m step 1m (2)
   {} 2 2 2
 
+# Test unary negation of scalars.
+# The use of parentheses causes the expression to be treated as unary negation rather than a simple literal.
 eval range from 0m to 2m step 1m -(2)
   {} -2 -2 -2
+
+eval range from 0m to 2m step 1m -(-2)
+  {} 2 2 2
+
+eval range from 0m to 2m step 1m -(Inf)
+  {} -Inf -Inf -Inf
+
+eval range from 0m to 2m step 1m -(-Inf)
+  {} Inf Inf Inf
+
+eval range from 0m to 2m step 1m -(NaN)
+  {} NaN NaN NaN

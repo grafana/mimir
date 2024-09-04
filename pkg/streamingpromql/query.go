@@ -353,6 +353,23 @@ func (q *Query) convertToScalarOperator(expr parser.Expr) (types.ScalarOperator,
 
 	case *parser.Call:
 		return q.convertFunctionCallToScalarOperator(e)
+
+	case *parser.UnaryExpr:
+		if e.Op != parser.SUB {
+			return nil, compat.NewNotSupportedError(fmt.Sprintf("unary expression with '%s'", e.Op))
+		}
+
+		if !q.engine.featureToggles.EnableUnaryNegation {
+			return nil, compat.NewNotSupportedError("unary negation of scalars")
+		}
+
+		inner, err := q.convertToScalarOperator(e.Expr)
+		if err != nil {
+			return nil, err
+		}
+
+		return operators.NewUnaryNegationOfScalar(inner, e.PositionRange()), nil
+
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
 		return q.convertToScalarOperator(e.Expr)
