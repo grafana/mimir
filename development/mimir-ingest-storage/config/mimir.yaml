@@ -12,7 +12,7 @@ common:
 ingest_storage:
   enabled:       true
   kafka:
-    address: kafka:9092
+    address: kafka_1:9092
     topic:   mimir-ingest
     last_produced_offset_poll_interval: 500ms
 

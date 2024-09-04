@@ -50,6 +50,7 @@ const (
 var (
 	errWaitStrongReadConsistencyTimeoutExceeded = errors.Wrap(context.DeadlineExceeded, "wait strong read consistency timeout exceeded")
 	errWaitTargetLagDeadlineExceeded            = errors.Wrap(context.DeadlineExceeded, "target lag deadline exceeded")
+	errUnknownPartitionLeader                   = fmt.Errorf("unknown partition leader")
 )
 
 type record struct {
@@ -807,6 +808,10 @@ type fetchResult struct {
 	fetchedBytes int
 }
 
+func newEmptyFetchResult(err error) fetchResult {
+	return fetchResult{kgo.FetchPartition{Err: err}, 0}
+}
+
 type concurrentFetchers struct {
 	client      *kgo.Client
 	logger      log.Logger
@@ -816,12 +821,17 @@ type concurrentFetchers struct {
 	metrics     *readerMetrics
 	tracer      *kotel.Tracer
 
-	concurrency     int
-	recordsPerFetch int
+	concurrency      int
+	recordsPerFetch  int
+	minBytesWaitTime time.Duration
 
 	orderedFetches     chan kgo.FetchPartition
 	lastReturnedRecord int64
 }
+
+// defaultMinBytesWaitTime is the time the Kafka broker can wait for MinBytes to be filled.
+// This is usually used when there aren't enough records available to fulfil MinBytes, so the broker waits for more records to be produced.
+var defaultMinBytesWaitTime = 10 * time.Second
 
 // newConcurrentFetchers creates a new concurrentFetchers. startOffset can be kafkaOffsetStart, kafkaOffsetEnd or a specific offset.
 func newConcurrentFetchers(ctx context.Context, client *kgo.Client, logger log.Logger, topic string, partition int32, startOffset int64, concurrency int, recordsPerFetch int, metrics *readerMetrics) (*concurrentFetchers, error) {
@@ -834,6 +844,7 @@ func newConcurrentFetchers(ctx context.Context, client *kgo.Client, logger log.L
 		partitionID:        partition,
 		metrics:            metrics,
 		recordsPerFetch:    recordsPerFetch,
+		minBytesWaitTime:   defaultMinBytesWaitTime,
 		lastReturnedRecord: noReturnedRecords,
 		tracer:             kotel.NewTracer(kotel.TracerPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}))),
 		orderedFetches:     make(chan kgo.FetchPartition),
@@ -853,6 +864,9 @@ func newConcurrentFetchers(ctx context.Context, client *kgo.Client, logger log.L
 	topics, err := kadm.NewClient(client).ListTopics(ctx, topic)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find topic ID: %w", err)
+	}
+	if !topics.Has(topic) {
+		return nil, fmt.Errorf("failed to find topic ID: topic not found")
 	}
 	f.topicID = topics[topic].ID
 
@@ -894,45 +908,51 @@ func (r *concurrentFetchers) pollFetches(ctx context.Context) (result kgo.Fetche
 	}
 }
 
+// fetchSingle attempts to find out the leader leader Kafka broker for a partition and then sends a fetch request to the leader of the fetchWant request and parses the responses
 // fetchSingle returns a fetchResult which may or may not fulfil the entire fetchWant.
+// If ctx is cancelled, fetchSingle will return an empty fetchResult without an error.
 func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant, logger log.Logger) (fr fetchResult) {
 	defer func(fetchStartTime time.Time) {
 		logCompletedFetch(logger, fr, fetchStartTime, fw)
 	}(time.Now())
 
+	leaderID, leaderEpoch, err := r.client.PartitionLeader(r.topicName, r.partitionID)
+	if err != nil || (leaderID == -1 && leaderEpoch == -1) {
+		if err != nil {
+			return newEmptyFetchResult(fmt.Errorf("finding leader for partition: %w", err))
+		}
+		return newEmptyFetchResult(errUnknownPartitionLeader)
+	}
+
 	req := kmsg.NewFetchRequest()
 	req.MinBytes = 1
 	req.Version = 13
-	req.MaxWaitMillis = 10000
+	req.MaxWaitMillis = int32(r.minBytesWaitTime / time.Millisecond)
 	req.MaxBytes = fw.MaxBytes()
 
 	reqTopic := kmsg.NewFetchRequestTopic()
 	reqTopic.Topic = r.topicName
 	reqTopic.TopicID = r.topicID
 
-	// Using NewFetchRequestTopicPartition gives us a partition with the default values.
-	// One of them is CurrentLeaderEpoch: -1, which means we don't know the leader epoch and Kafka brokers are ok with that.
-	// It does mean that we might end up fetching from an out-of-sync replica.
-	// If we provide this the broker would check if we have up-to-date data.
 	reqPartition := kmsg.NewFetchRequestTopicPartition()
 	reqPartition.Partition = r.partitionID
 	reqPartition.FetchOffset = fw.startOffset
 	reqPartition.PartitionMaxBytes = req.MaxBytes
+	reqPartition.CurrentLeaderEpoch = leaderEpoch
 
 	reqTopic.Partitions = append(reqTopic.Partitions, reqPartition)
 	req.Topics = append(req.Topics, reqTopic)
 
-	resp, err := req.RequestWith(ctx, r.client)
+	resp, err := req.RequestWith(ctx, r.client.Broker(int(leaderID)))
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return fetchResult{kgo.FetchPartition{}, 0}
+			return newEmptyFetchResult(nil)
 		}
-		return fetchResult{kgo.FetchPartition{
-			Err: fmt.Errorf("fetching from kafka: %w", err),
-		}, 0}
+		return newEmptyFetchResult(fmt.Errorf("fetching from kafka: %w", err))
 	}
 	rawPartitionResp := resp.Topics[0].Partitions[0]
 	// Here we ignore resp.ErrorCode. That error code was added for support for KIP-227 and is only set if we're using fetch sessions. We don't use fetch sessions.
+	// We also ignore rawPartitionResp.PreferredReadReplica to keep the code simpler. We don't provide any rack in the FetchRequest, so the broker _probably_ doesn't have a recommended replica for us.
 	// TODO dimitarvdimitrov make this conditional on the kafka backend - for WS we use uncompressed bytes (sumRecordLengths), for kafka we use the size of the response (rawPartitionResp.RecordBatches)
 	r.metrics.fetchesCompressedBytes.Add(float64(len(rawPartitionResp.RecordBatches))) // This doesn't include overhead in the response, but that should be small.
 	partition := processRespPartition(&rawPartitionResp, r.topicName)
@@ -986,7 +1006,7 @@ func (r *concurrentFetchers) runFetcher(ctx context.Context, fetchersWg *sync.Wa
 			attemptLogger := log.With(logger, "attempt", attempt)
 			f := r.fetchSingle(ctx, w, attemptLogger)
 			if f.Err != nil {
-				w = handleKafkaFetchErr(f, w, errBackoff, newRecordsProducedBackoff, attemptLogger)
+				w = handleKafkaFetchErr(f, w, errBackoff, newRecordsProducedBackoff, r.client, attemptLogger)
 			}
 			if len(f.Records) == 0 {
 				// Typically if we had an error, then there wouldn't eb any records.
@@ -1077,10 +1097,23 @@ type waiter interface {
 	Wait()
 }
 
+type metadataRefresher interface {
+	ForceMetadataRefresh()
+}
+
 // handleKafkaFetchErr handles all the errors listed in the franz-go documentation as possible errors when fetching records.
 // For most of them we just apply a backoff. They are listed here so we can be explicit in what we're handling and how.
 // It may also return an adjusted fetchWant in case the error indicated, we were consuming not yet produced records or records already deleted due to retention.
-func handleKafkaFetchErr(fr fetchResult, fw fetchWant, shortBackoff, longBackoff waiter, logger log.Logger) fetchWant {
+func handleKafkaFetchErr(fr fetchResult, fw fetchWant, shortBackoff, longBackoff waiter, refresher metadataRefresher, logger log.Logger) fetchWant {
+	// Typically franz-go will update its own metadata when it detects a change in brokers. But it's hard to verify this.
+	// So we force a metadata refresh here to be sure.
+	// It's ok to call this from multiple fetchers concurrently. franz-go will only be sending one metadata request at a time (whether automatic, periodic, or forced).
+	//
+	// Metadata refresh is asynchronous. So even after forcing the refresh we might have outdated metadata.
+	// Hopefully the backoff that will follow is enough to get the latest metadata.
+	// If not, the fetcher will end up here again on the next attempt.
+	triggerMetadataRefresh := refresher.ForceMetadataRefresh
+
 	err := fr.Err
 	switch {
 	case err == nil:
@@ -1122,13 +1155,32 @@ func handleKafkaFetchErr(fr fetchResult, fw fetchWant, shortBackoff, longBackoff
 		level.Error(logger).Log("msg", "received OFFSET_MOVED_TO_TIERED_STORAGE from kafka; this shouldn't happen; please report this as a bug", "err", err)
 		longBackoff.Wait() // This should be only intra-broker error, and we shouldn't get it.
 	case errors.Is(err, kerr.NotLeaderForPartition):
-		longBackoff.Wait() // our metadata is out of date, we should refresh and try again with a leader who is up to date // TODO this current doesn't happen
+		// We're asking a broker which is no longer the leader. For a partition. We should refresh our metadata and try again.
+		triggerMetadataRefresh()
+		longBackoff.Wait()
 	case errors.Is(err, kerr.ReplicaNotAvailable):
-		longBackoff.Wait() // our metadata is out of date, we should refresh and try again with a leader who is up to date // TODO this current doesn't happen
+		// Maybe the replica hasn't replicated the log yet, or it is no longer a replica for this partition.
+		// We should refresh and try again with a leader or replica which is up to date.
+		triggerMetadataRefresh()
+		longBackoff.Wait()
 	case errors.Is(err, kerr.UnknownLeaderEpoch):
-		longBackoff.Wait() // our metadata is out of date, we should refresh and try again with a leader who is up to date // TODO this current doesn't happen
+		// Maybe there's an ongoing election. We should refresh our metadata and try again with a leader in the current epoch.
+		triggerMetadataRefresh()
+		longBackoff.Wait()
 	case errors.Is(err, kerr.FencedLeaderEpoch):
-		longBackoff.Wait() // our metadata is out of date, we should refresh and try again with a leader who is up to date // TODO this current doesn't happen
+		// We missed a new epoch (leader election). We should refresh our metadata and try again with a leader in the current epoch.
+		triggerMetadataRefresh()
+		longBackoff.Wait()
+	case errors.Is(err, kerr.LeaderNotAvailable):
+		// This isn't listed in the possible errors in franz-go, but Apache Kafka returns it when the partition has no leader.
+		triggerMetadataRefresh()
+		longBackoff.Wait()
+	case errors.Is(err, errUnknownPartitionLeader):
+		triggerMetadataRefresh()
+		longBackoff.Wait()
+	case errors.Is(err, &kgo.ErrFirstReadEOF{}):
+		longBackoff.Wait()
+
 	default:
 		level.Error(logger).Log("msg", "received an error we're not prepared to handle; this shouldn't happen; please report this as a bug", "err", err)
 		longBackoff.Wait()

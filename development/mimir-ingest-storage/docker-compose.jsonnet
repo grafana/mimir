@@ -9,7 +9,9 @@ std.manifestYamlDoc({
     self.grafana +
     self.grafana_agent +
     self.memcached +
-    self.kafka +
+    self.kafka_1 +
+    self.kafka_2 +
+    self.kafka_3 +
     {},
 
   write:: {
@@ -37,7 +39,7 @@ std.manifestYamlDoc({
     }),
     'mimir-write-zone-c-61': mimirService({
       name: 'mimir-write-zone-c-61',
-      target: 'write',
+      target: 'ingester',
       debug: false,
       publishedHttpPort: 8064,
       extraArguments: [
@@ -112,32 +114,76 @@ std.manifestYamlDoc({
     },
   },
 
-  kafka:: {
-    kafka: {
-      image: 'confluentinc/cp-kafka:latest',
-      environment: [
-        'CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg',  // Cluster ID is required in KRaft mode; the value is random UUID.
-        'KAFKA_BROKER_ID=1',
-        'KAFKA_NUM_PARTITIONS=100',  // Default number of partitions for auto-created topics.
-        'KAFKA_PROCESS_ROLES=broker,controller',
-        'KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092',
-        'KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092',
-        'KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT',
-        'KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT',
-        'KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER',
-        'KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093',
-        'KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1',
-        'KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS=10000',
-        //        'KAFKA_MAX_PARTITION_FETCH_BYTES=5000000',  // 50MB
-        //        'KAFKA_FETCH_MAX_BYTES=5000000',  // 50MB
+  local commonKafkaEnvVars = [
+    'CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg',  // Cluster ID is required in KRaft mode; the value is random UUID.
+    'KAFKA_NUM_PARTITIONS=100',  // Default number of partitions for auto-created topics.
+    'KAFKA_PROCESS_ROLES=broker,controller',
+    'KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT',
+    'KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT',
+    'KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER',
+    'KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka_1:9093,2@kafka_2:9093,3@kafka_3:9093',
+    'KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=2',
+    'KAFKA_DEFAULT_REPLICATION_FACTOR=2',
+    'KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS=10000',
 
-        // Decomment the following config to keep a short retention of records in Kafka.
-        // This is useful to test the behaviour when Kafka records are deleted.
-        // 'KAFKA_LOG_RETENTION_MINUTES=1',
-        // 'KAFKA_LOG_SEGMENT_BYTES=1000000',
+    // Decomment the following config to keep a short retention of records in Kafka.
+    // This is useful to test the behaviour when Kafka records are deleted.
+    // 'KAFKA_LOG_RETENTION_MINUTES=1',
+    // 'KAFKA_LOG_SEGMENT_BYTES=1000000',
+  ],
+
+  kafka_1:: {
+    kafka_1: {
+      image: 'confluentinc/cp-kafka:latest',
+      environment: commonKafkaEnvVars + [
+        'KAFKA_BROKER_ID=1',
+        'KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092',
+        'KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_1:9092,PLAINTEXT_HOST://localhost:29092',
       ],
       ports: [
         '29092:29092',
+      ],
+      healthcheck: {
+        test: 'nc -z localhost 9092 || exit -1',
+        start_period: '1s',
+        interval: '1s',
+        timeout: '1s',
+        retries: '30',
+      },
+    },
+  },
+
+
+  kafka_2:: {
+    kafka_2: {
+      image: 'confluentinc/cp-kafka:latest',
+      environment: commonKafkaEnvVars + [
+        'KAFKA_BROKER_ID=2',
+        'KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29093',
+        'KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_2:9092,PLAINTEXT_HOST://localhost:29093',
+      ],
+      ports: [
+        '29093:29093',
+      ],
+      healthcheck: {
+        test: 'nc -z localhost 9092 || exit -1',
+        start_period: '1s',
+        interval: '1s',
+        timeout: '1s',
+        retries: '30',
+      },
+    },
+  },
+  kafka_3:: {
+    kafka_3: {
+      image: 'confluentinc/cp-kafka:latest',
+      environment: commonKafkaEnvVars + [
+        'KAFKA_BROKER_ID=3',
+        'KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29094',
+        'KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_3:9092,PLAINTEXT_HOST://localhost:29094',
+      ],
+      ports: [
+        '29094:29094',
       ],
       healthcheck: {
         test: 'nc -z localhost 9092 || exit -1',
@@ -194,7 +240,8 @@ std.manifestYamlDoc({
       publishedHttpPort: error 'missing publishedHttpPort',
       dependsOn: {
         minio: { condition: 'service_started' },
-        kafka: { condition: 'service_healthy' },
+        kafka_1: { condition: 'service_healthy' },
+        kafka_2: { condition: 'service_healthy' },
       },
       env: {},
       extraArguments: [],
