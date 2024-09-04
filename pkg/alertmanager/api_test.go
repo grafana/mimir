@@ -881,6 +881,7 @@ alertmanager_config: |
 
 	limits := &mockAlertManagerLimits{}
 	am := &MultitenantAlertmanager{
+		cfg:    mockAlertmanagerConfig(t),
 		store:  prepareInMemoryAlertStore(),
 		logger: test.NewTestingLogger(t),
 		limits: limits,

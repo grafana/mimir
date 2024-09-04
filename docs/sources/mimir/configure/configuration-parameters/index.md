@@ -2503,6 +2503,11 @@ alertmanager_client:
 # UTF-8 strict mode is working as intended.
 # CLI flag: -alertmanager.log-parsing-label-matchers
 [log_parsing_label_matchers: <boolean> | default = false]
+
+# (experimental) Enable logging of tenant configurations that are incompatible
+# with UTF-8 strict mode.
+# CLI flag: -alertmanager.utf8-migration-logging-enabled
+[utf8_migration_logging: <boolean> | default = false]
 ```
 
 ### alertmanager_storage
